@@ -457,28 +457,24 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>
     /// D-22 on a fresh maintenance session, so it works whether or not the session's own connection (the
     /// holder's, a work session's) is still usable: the guarded <c>KILL</c>, then verification by
-    /// <c>session_id</c> and <c>login_time</c> until the session is gone or <paramref name="deadline"/> passes.
-    /// The request is validated before any connection is opened.
+    /// <c>session_id</c> and <c>login_time</c> until the session is gone or <paramref name="deadline"/>, which
+    /// bounds the connection, every request and every wait, has passed. The request is validated before any
+    /// connection is opened.
     /// </summary>
-    public async Task<DmsSessionTermination> TerminateSessionAsync(
+    public Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,
         TimeSpan deadline,
         CancellationToken cancellationToken
-    )
-    {
-        MssqlSessionQueries.ValidateRequest(session, deadline);
-        await using SqlConnection connection = await _adminConnection.OpenMaintenanceAsync(cancellationToken);
-        return await MssqlSessionQueries.TerminateAsync(
-            connection,
+    ) =>
+        MssqlSessionQueries.TerminateAsync(
+            _adminConnection,
             session,
             deadline,
-            _adminConnection.CommandTimeoutSeconds,
             _timeProvider,
             cancellationToken,
             GuardedKillStatement,
             ObservationHook
         );
-    }
 
     /// <summary>
     /// A 4060 refusal resolved by what is under the name now: absent; the expected instance, online, which

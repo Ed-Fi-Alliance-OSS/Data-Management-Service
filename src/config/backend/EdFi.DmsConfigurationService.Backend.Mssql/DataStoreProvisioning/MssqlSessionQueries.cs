@@ -31,6 +31,9 @@ internal static class MssqlSessionQueries
     /// <summary>The <c>Diagnostic.Operation</c> of a session the admin may not see (<c>VIEW SERVER STATE</c>).</summary>
     public const string IdentifySessionStep = "IdentifySession";
 
+    /// <summary>The <c>Diagnostic.Operation</c> of an observation after the kill that the termination budget cut short.</summary>
+    public const string VerifySessionStep = "VerifySession";
+
     /// <summary>The highest <c>session_id</c>: the column is a <c>smallint</c>.</summary>
     public const int MaximumSessionId = short.MaxValue;
 
@@ -177,80 +180,78 @@ internal static class MssqlSessionQueries
         };
 
     /// <summary>
-    /// The D-22 protocol on <paramref name="connection"/>, a fresh maintenance session: the guarded kill, then
-    /// observations every <see cref="VerificationInterval"/> while the killed session is still listed, until it
-    /// is gone (<see cref="DmsSessionTermination.Terminated"/>) or <paramref name="deadline"/>, measured from
-    /// before the kill, has passed (<see cref="DmsSessionTerminationFailure.TimedOut"/>, the session left to
-    /// finish its rollback). A wait never outlasts the remaining time, and no observation starts once the
-    /// deadline has passed. Every other exception propagates: an exception is not a proven-gone verdict. After
-    /// the caller cancels, a request failure is reported as <see cref="OperationCanceledException"/>, whatever
-    /// form the driver's cancellation took. The batch is <see cref="GuardedKill"/> unless a test passes another,
-    /// and a test may pass <paramref name="observationHook"/>, which sees every observation (0 for the one in
-    /// the batch, then 1, 2, … for each re-read) and returns the one the protocol acts on.
+    /// The D-22 protocol on a fresh maintenance session of <paramref name="adminConnection"/>: the guarded kill,
+    /// then observations every <see cref="VerificationInterval"/> while the killed session is still listed,
+    /// until it is gone (<see cref="DmsSessionTermination.Terminated"/>) or <paramref name="deadline"/> has
+    /// passed (<see cref="DmsSessionTerminationFailure.TimedOut"/>, the session left to finish its rollback).
+    /// The deadline is one budget, measured on <paramref name="timeProvider"/> from before the connection opens,
+    /// that bounds everything: opening the connection, the batch, each observation (through the token, and
+    /// through a driver timeout no longer than the remaining budget), and each wait, which never outlasts the
+    /// remaining time; no observation starts once it has passed. A request or wait the budget cuts short is
+    /// <see cref="DmsSessionTerminationFailure.TimedOut"/>, never absence: a cut request carries a diagnostic
+    /// with its type chain under <see cref="TerminateSessionStep"/> (connection or batch) or
+    /// <see cref="VerifySessionStep"/> (observation), because a kill batch cut short may or may not have killed
+    /// the session. Caller cancellation is distinct and wins over the budget: it propagates as
+    /// <see cref="OperationCanceledException"/>, whatever form the driver's cancellation took. Every other
+    /// exception propagates: an exception is not a proven-gone verdict. The batch is <see cref="GuardedKill"/>
+    /// unless a test passes another, and a test may pass <paramref name="observationHook"/>, which sees every
+    /// observation (0 for the one in the batch, then 1, 2, … for each re-read) and returns the one the protocol
+    /// acts on.
     /// </summary>
     public static async Task<DmsSessionTermination> TerminateAsync(
-        SqlConnection connection,
+        MssqlAdminConnection adminConnection,
         DmsServerSessionId session,
         TimeSpan deadline,
-        int commandTimeoutSeconds,
         TimeProvider timeProvider,
         CancellationToken cancellationToken,
         Func<short, string>? guardedKill = null,
         Func<int, MssqlSessionObservation, MssqlSessionObservation>? observationHook = null
     )
     {
-        ArgumentNullException.ThrowIfNull(connection);
+        ArgumentNullException.ThrowIfNull(adminConnection);
         ArgumentNullException.ThrowIfNull(timeProvider);
         short sessionId = ValidateRequest(session, deadline);
         DateTime loginTime = session.StartedAt.UtcDateTime;
         long started = timeProvider.GetTimestamp();
+        using CancellationTokenSource budget = new(deadline, timeProvider);
+        using CancellationTokenSource bounded = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            budget.Token
+        );
+        MssqlGuardedKillRow? killRow = null;
         try
         {
-            MssqlGuardedKillRow row = await KillAsync(
+            await using SqlConnection connection = await adminConnection.OpenMaintenanceAsync(bounded.Token);
+            killRow = await KillAsync(
                 connection,
                 (guardedKill ?? GuardedKill)(sessionId),
                 sessionId,
                 loginTime,
-                commandTimeoutSeconds,
-                cancellationToken
+                CommandTimeoutWithin(
+                    adminConnection.CommandTimeout,
+                    deadline - timeProvider.GetElapsedTime(started)
+                ),
+                bounded.Token
             );
-            int observation = 0;
-            DmsSessionTermination? verdict = VerdictOf(
-                row,
-                Hooked(observationHook, observation, ObservationOf(row.VisibleAfter, row.MatchedAfter))
-            );
-            while (verdict is null)
-            {
-                TimeSpan remaining = deadline - timeProvider.GetElapsedTime(started);
-                if (remaining <= TimeSpan.Zero)
-                {
-                    return TimedOut();
-                }
-
-                await Task.Delay(
-                    remaining < VerificationInterval ? remaining : VerificationInterval,
+            MssqlGuardedKillRow row = killRow.Value;
+            return VerdictOf(
+                    row,
+                    Hooked(observationHook, 0, ObservationOf(row.VisibleAfter, row.MatchedAfter))
+                )
+                ?? await VerifyAsync(
+                    new MssqlAddressedSession(connection, sessionId, loginTime),
+                    adminConnection.CommandTimeout,
+                    started,
+                    deadline,
                     timeProvider,
-                    cancellationToken
+                    observationHook,
+                    bounded.Token
                 );
-                if (timeProvider.GetElapsedTime(started) >= deadline)
-                {
-                    return TimedOut();
-                }
-
-                observation++;
-                MssqlSessionObservation observed = await ObserveAsync(
-                    connection,
-                    sessionId,
-                    loginTime,
-                    commandTimeoutSeconds,
-                    cancellationToken
-                );
-                verdict = AfterKill(Hooked(observationHook, observation, observed));
-            }
-
-            return verdict;
         }
-        catch (SqlException exception) when (cancellationToken.IsCancellationRequested)
+        catch (Exception exception)
+            when (cancellationToken.IsCancellationRequested
+                && exception is SqlException or OperationCanceledException
+            )
         {
             throw new OperationCanceledException(
                 "The session termination was cancelled.",
@@ -258,7 +259,77 @@ internal static class MssqlSessionQueries
                 cancellationToken
             );
         }
+        catch (Exception exception)
+            when (budget.IsCancellationRequested && exception is SqlException or OperationCanceledException)
+        {
+            // A wait the budget ended proves nothing either way; a request it ended may have done its work.
+            if (exception is not SqlException)
+            {
+                return TimedOut();
+            }
+
+            string step = killRow is null ? TerminateSessionStep : VerifySessionStep;
+            return new DmsSessionTermination.NotTerminated(
+                DmsSessionTerminationFailure.TimedOut,
+                DmsProvisioningDiagnostic.From(exception, step)
+            );
+        }
     }
+
+    /// <summary>
+    /// The re-reads after a kill that left the session listed: each wait is capped at the remaining time, no
+    /// observation starts once the deadline has passed, and each observation's driver timeout is within the
+    /// remaining time. Observation 1, 2, … pass through <paramref name="observationHook"/> when a test gives one.
+    /// </summary>
+    private static async Task<DmsSessionTermination> VerifyAsync(
+        MssqlAddressedSession addressed,
+        TimeSpan commandTimeout,
+        long started,
+        TimeSpan deadline,
+        TimeProvider timeProvider,
+        Func<int, MssqlSessionObservation, MssqlSessionObservation>? observationHook,
+        CancellationToken cancellationToken
+    )
+    {
+        int observation = 0;
+        while (true)
+        {
+            TimeSpan remaining = deadline - timeProvider.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+            {
+                return TimedOut();
+            }
+
+            await Task.Delay(
+                remaining < VerificationInterval ? remaining : VerificationInterval,
+                timeProvider,
+                cancellationToken
+            );
+            remaining = deadline - timeProvider.GetElapsedTime(started);
+            if (remaining <= TimeSpan.Zero)
+            {
+                return TimedOut();
+            }
+
+            observation++;
+            MssqlSessionObservation observed = await ObserveAsync(
+                addressed.Connection,
+                addressed.SessionId,
+                addressed.LoginTime,
+                CommandTimeoutWithin(commandTimeout, remaining),
+                cancellationToken
+            );
+            DmsSessionTermination? verdict = AfterKill(Hooked(observationHook, observation, observed));
+            if (verdict is not null)
+            {
+                return verdict;
+            }
+        }
+    }
+
+    /// <summary>The driver timeout for a request: the configured command timeout, or the remaining budget when that is shorter.</summary>
+    public static int CommandTimeoutWithin(TimeSpan commandTimeout, TimeSpan remaining) =>
+        MssqlAdminConnection.DriverTimeoutSeconds(remaining < commandTimeout ? remaining : commandTimeout);
 
     /// <summary>What the catalog says about <paramref name="session"/> now; a session the admin may not see is reported as such, never as absence.</summary>
     public static Task<MssqlSessionObservation> ObserveAsync(
@@ -383,6 +454,13 @@ internal readonly record struct MssqlGuardedKillRow(
     int? KillError,
     int? VisibleAfter,
     int? MatchedAfter
+);
+
+/// <summary>The maintenance connection a termination runs on and the session it addresses.</summary>
+internal readonly record struct MssqlAddressedSession(
+    SqlConnection Connection,
+    short SessionId,
+    DateTime LoginTime
 );
 
 /// <summary>The four things the catalog can say about a session addressed by <c>session_id</c> and <c>login_time</c> (D-22).</summary>

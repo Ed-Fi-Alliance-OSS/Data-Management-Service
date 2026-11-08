@@ -41,6 +41,10 @@ public class MssqlSessionTerminationTests
         CREATE INDEX IX_Payload_Filler ON dbo.Payload (Filler);
         """;
 
+    /// <summary>Requests other than the caller's whose batch text matches <c>@pattern</c>: how a marked test batch is seen running.</summary>
+    private const string RunningRequestQuery =
+        "SELECT COUNT(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.session_id <> @@SPID AND t.text LIKE @pattern;";
+
     private static readonly TimeSpan _bound = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan _writeBound = TimeSpan.FromMinutes(2);
     private static readonly TimeSpan _deadline = TimeSpan.FromSeconds(30);
@@ -481,6 +485,9 @@ public class MssqlSessionTerminationTests
         // reported listed before the deadline passes.
         private static readonly TimeSpan _shortDeadline = MssqlSessionQueries.VerificationInterval * 3;
 
+        // Far more fake time than the deadline: a protocol still waiting after this many steps ignores it.
+        private const int MaximumSteps = 30;
+
         private readonly SignallingClock _clock = new();
         private readonly TaskCompletionSource _listedAfterKill = new(
             TaskCreationOptions.RunContinuationsAsynchronously
@@ -515,7 +522,7 @@ public class MssqlSessionTerminationTests
 
             // Time moves one interval only after the protocol has registered a timer, so every wait it starts
             // is released by the clock and never by the real time the test takes.
-            while (true)
+            for (int step = 0; step < MaximumSteps; step++)
             {
                 Task<bool> created = _clock.TimerCreatedAsync(_bound);
                 if (await Task.WhenAny(created, terminating) != created || !await created)
@@ -551,6 +558,9 @@ public class MssqlSessionTerminationTests
         [Test]
         public void It_read_the_catalog_again_while_the_session_was_listed() =>
             _lastObservation.Should().BeGreaterThan(0);
+
+        [Test]
+        public void It_stops_reading_the_catalog_at_the_deadline() => _lastObservation.Should().BeLessThan(3);
 
         [Test]
         public void It_returns_once_the_deadline_passes() => _completedWithinBound.Should().BeTrue();
@@ -793,6 +803,108 @@ public class MssqlSessionTerminationTests
     }
 
     /// <summary>
+    /// The termination budget, not the command timeout, ends a request in flight: the batch is replaced (test
+    /// seam) by a marked <c>WAITFOR</c> ahead of the guarded kill, and once the server shows it running the fake
+    /// clock passes the deadline while the caller never cancels. The bound is shorter than the lane's command
+    /// timeout, so only the budget can end the request within it.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_deadline_passes_while_the_kill_batch_runs
+    {
+        private readonly FakeTimeProvider _clock = new();
+        private TestDatabase? _database;
+        private BusySession? _busy;
+        private bool _dispatched;
+        private bool _completedWithinBound;
+        private Exception? _thrown;
+        private DmsSessionTermination? _verdict;
+        private bool _presentAfter;
+        private string _waitTypeAfter = string.Empty;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDatabaseAsync("budget", PayloadTable);
+            _busy = await BusySession.StartAsync(_database);
+            string marker = UniqueName("kill_budget");
+            MssqlDmsTargetEngine engine = new(
+                AdminConnection(),
+                new MssqlDmsEngineSettings(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5)),
+                _clock,
+                NullLogger.Instance
+            )
+            {
+                GuardedKillStatement = id =>
+                    $"WAITFOR DELAY '00:02:00'; -- {marker}\n" + MssqlSessionQueries.GuardedKill(id),
+            };
+            Task<DmsSessionTermination> terminating = engine.TerminateSessionAsync(
+                _busy.Session,
+                _deadline,
+                CancellationToken.None
+            );
+            _dispatched = await WaitUntilAsync(
+                async () =>
+                    await ScalarOnServerAsync<int>(RunningRequestQuery, ("@pattern", "%" + marker + "%"))
+                    == 1,
+                _bound
+            );
+            _clock.Advance(_deadline);
+            _completedWithinBound = await Task.WhenAny(terminating, Task.Delay(_bound)) == terminating;
+            if (_completedWithinBound)
+            {
+                _thrown = await Record.ExceptionAsync(async () => _verdict = await terminating);
+            }
+
+            _presentAfter = await SessionExistsAsync(_busy.Session);
+            _waitTypeAfter = await WaitTypeOfAsync((int)_busy.Session.Id);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_busy is not null)
+            {
+                await _busy.DisposeAsync();
+            }
+
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_was_running_on_the_server() => _dispatched.Should().BeTrue();
+
+        [Test]
+        public void It_returns_within_the_budget_rather_than_the_command_timeout() =>
+            (_completedWithinBound, _thrown).Should().Be((true, null));
+
+        [Test]
+        public void It_reports_a_timeout_rather_than_a_proven_gone_verdict() =>
+            _verdict
+                .Should()
+                .BeOfType<DmsSessionTermination.NotTerminated>()
+                .Which.Reason.Should()
+                .Be(DmsSessionTerminationFailure.TimedOut);
+
+        [Test]
+        public void It_names_the_cut_request_by_type_only() =>
+            (
+                (_verdict as DmsSessionTermination.NotTerminated)?.Diagnostic?.Operation,
+                (_verdict as DmsSessionTermination.NotTerminated)?.Diagnostic?.ExceptionTypeChain.Split('/')[
+                    0
+                ]
+            )
+                .Should()
+                .Be((MssqlSessionQueries.TerminateSessionStep, typeof(SqlException).FullName));
+
+        [Test]
+        public void It_sends_no_kill() => (_presentAfter, _waitTypeAfter).Should().Be((true, WaitForWait));
+    }
+
+    /// <summary>
     /// Cancellation while the kill batch is on the server: the batch is replaced (test seam) by a marked
     /// <c>WAITFOR</c> ahead of the real guarded kill, and the caller cancels once the server shows it running.
     /// SqlClient reports that cancellation as a <see cref="SqlException"/>, which must surface as
@@ -801,9 +913,6 @@ public class MssqlSessionTerminationTests
     [TestFixture]
     public class Given_termination_is_cancelled_while_its_batch_runs
     {
-        private const string RunningRequestQuery =
-            "SELECT COUNT(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.session_id <> @@SPID AND t.text LIKE @pattern;";
-
         private TestDatabase? _database;
         private BusySession? _busy;
         private bool _dispatched;

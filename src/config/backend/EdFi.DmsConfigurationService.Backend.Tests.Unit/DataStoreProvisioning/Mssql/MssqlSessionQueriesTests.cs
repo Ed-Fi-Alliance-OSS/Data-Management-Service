@@ -76,6 +76,29 @@ public class MssqlSessionQueriesTests
     }
 
     [TestFixture]
+    public class Given_driver_timeout_vectors
+    {
+        [TestCase(60_000, 5_000, 5)]
+        [TestCase(30_000, 90_000, 30)]
+        [TestCase(30_000, 200, 1)]
+        [TestCase(30_000, 1_500, 2)]
+        [TestCase(30_000, 0, 1)]
+        [TestCase(30_000, -1_000, 1)]
+        public void It_never_lets_a_request_outlast_the_remaining_budget(
+            int commandTimeoutMilliseconds,
+            int remainingMilliseconds,
+            int expectedSeconds
+        ) =>
+            MssqlSessionQueries
+                .CommandTimeoutWithin(
+                    TimeSpan.FromMilliseconds(commandTimeoutMilliseconds),
+                    TimeSpan.FromMilliseconds(remainingMilliseconds)
+                )
+                .Should()
+                .Be(expectedSeconds);
+    }
+
+    [TestFixture]
     public class Given_a_request_the_engine_must_refuse
     {
         private Exception? _invalidId;
