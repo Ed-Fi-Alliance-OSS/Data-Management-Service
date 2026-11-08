@@ -19,13 +19,14 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 /// mismatch that 6.4 step 7 turns into <c>StagingIntegrityViolation</c> (Step 4.5). The reader cases need
 /// <see cref="ReaderCommandVariable"/> (a command prefix that runs its arguments as the reader, such as
 /// <c>setpriv --reuid=dmsreader --regid=dmsstaging --clear-groups</c> under root, or <c>sudo -n -u dmsreader</c>) and
-/// <see cref="StagingGroupVariable"/>; without them they are skipped.
+/// <see cref="StagingGroupVariable"/>; without them they are skipped. <c>docs/RUNNING-LOCALLY.md</c> runs them with
+/// real separate identities (Step 5.3): a non-root owner and a reader with the SQL Server container's uid.
 /// </summary>
 public class MssqlBackupStagerSeparateIdentityTests
 {
-    public const string ReaderCommandVariable = "DMS1438_STAGING_READER_COMMAND";
+    public const string ReaderCommandVariable = "DMS_PROVISIONING_STAGING_READER_COMMAND";
 
-    public const string StagingGroupVariable = "DMS1438_STAGING_GROUP";
+    public const string StagingGroupVariable = "DMS_PROVISIONING_STAGING_GROUP";
 
     private const UnixFileMode Mode2750 =
         UnixFileMode.SetGroup
