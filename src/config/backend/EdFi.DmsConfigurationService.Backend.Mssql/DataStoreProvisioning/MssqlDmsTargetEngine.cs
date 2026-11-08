@@ -28,10 +28,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// And publication (6.4 steps 10 and 12, 6.7): the rename into the target with the identity transition, the
 /// marker, and the compensation drop (the third part of this class).
 /// And the owned delete (6.6): the fence, its reversal and the owned drop (the fourth part of this class).
+/// And the environmental validation (7.3): server facts and privileges, the staging directory and its visibility to
+/// the server, and the lock probe (the fifth part of this class).
 /// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
-/// violation, because the authoritative DDL never produces one. Environmental validation arrives with
-/// Step 4.9.
+/// violation, because the authoritative DDL never produces one.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
 {
@@ -108,9 +109,6 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     /// re-read) and returns the one the protocol acts on; production has none.
     /// </summary>
     internal Func<int, MssqlSessionObservation, MssqlSessionObservation>? ObservationHook { get; init; }
-
-    public Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken) =>
-        throw NotYetImplemented(nameof(ValidateEnvironmentAsync), "Step 4.9");
 
     public async Task<DmsServerFacts> ReadServerFactsAsync(CancellationToken cancellationToken)
     {
@@ -682,9 +680,4 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     /// </summary>
     private static DateTimeOffset AsUtc(DateTime value) =>
         new(DateTime.SpecifyKind(value, DateTimeKind.Utc), TimeSpan.Zero);
-
-    private static NotImplementedException NotYetImplemented(string member, string step) =>
-        new(
-            $"{member} of the SQL Server DMS target engine arrives with {step}; this build contains the read members only."
-        );
 }

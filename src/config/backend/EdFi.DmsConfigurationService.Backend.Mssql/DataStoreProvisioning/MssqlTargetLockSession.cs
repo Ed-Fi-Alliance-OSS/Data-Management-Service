@@ -104,6 +104,12 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
         LockResourcePrefix + name.Value.ToLowerInvariant();
 
     /// <summary>
+    /// The readiness lock probe's resource (7.3 item 7): <see cref="LockResourcePrefix"/> plus <c>__probe__</c>,
+    /// which no target resource can equal, because a target name starts with a letter.
+    /// </summary>
+    public const string ProbeResource = LockResourcePrefix + "__probe__";
+
+    /// <summary>
     /// Opens the holder session and takes the lock, waiting at most <paramref name="acquireTimeout"/> on the
     /// server (<c>@LockTimeout</c>, which bounds this request only). A lock another session still holds when the
     /// budget ends is <see cref="DmsTargetLockResult.Timeout"/>; that holder is never identified or terminated.
@@ -252,6 +258,23 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
                 await connection.DisposeAsync();
             }
         }
+    }
+
+    /// <summary>
+    /// Runs the heartbeat's probe once, now, through the execution gate under <c>CommandTimeout</c>, with the
+    /// heartbeat's loss rules: a connection failure, or an answer that the lock is no longer held, declares the
+    /// holder lost. The readiness lock probe (7.3 item 7) uses it to prove one heartbeat on a fresh holder
+    /// without waiting for the timer.
+    /// </summary>
+    internal async Task<bool> ProbeOnceAsync(CancellationToken cancellationToken)
+    {
+        bool held = await RunAsync(ProbeAsync, _commandTimeout, cancellationToken);
+        if (!held)
+        {
+            DeclareLost();
+        }
+
+        return held;
     }
 
     /// <summary>

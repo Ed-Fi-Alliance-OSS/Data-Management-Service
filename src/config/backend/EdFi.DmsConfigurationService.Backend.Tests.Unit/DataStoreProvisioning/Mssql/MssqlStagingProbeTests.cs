@@ -14,7 +14,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// D-21: the verdict by error number, the server path joins, a probe the CMS cannot write never reaching the server,
-/// and a run that ends with an exception keeping that exception while it deletes the probe file or logs it by name.
+/// a probe the routine rejected and could not delete reported and logged by name (Step 4.9), and a run that ends
+/// with an exception keeping that exception while it deletes the probe file or logs it by name.
 /// </summary>
 public class MssqlStagingProbeTests
 {
@@ -96,6 +97,68 @@ public class MssqlStagingProbeTests
 
         [Test]
         public void It_reports_nothing_left_behind() => _result.ProbeDeleted.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_a_probe_the_routine_rejects_and_cannot_delete
+    {
+        private MssqlBackupStagerTests.StagingDirectory? _directory;
+        private FileStream? _heldOpen;
+        private readonly CapturingLogger<MssqlStagingProbe> _logger = new();
+        private MssqlStagingProbeResult _result = null!;
+        private string[] _left = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            MssqlBackupStagerTests.IgnoreIfPrivilegedOnUnix();
+            MssqlBackupStagerTests.StagingDirectory directory = new(cleanupAttempts: 2);
+            _directory = directory;
+            _logger.Entries.Clear();
+
+            // A byte written after the copy fails the re-hash of the zero-byte probe; the deletion is then blocked.
+            MssqlBackupStager stager = directory.Stager(afterCopy: path =>
+            {
+                File.WriteAllBytes(path, [7]);
+                if (OperatingSystem.IsWindows())
+                {
+                    _heldOpen = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+                }
+                else
+                {
+                    directory.MakeUndeletable(path);
+                }
+            });
+
+            // Reaching the server would throw instead of returning a verdict.
+            _result = await new MssqlStagingProbe(stager, Unreachable(), _logger).RunAsync(
+                CancellationToken.None
+            );
+            _left = directory.Entries();
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _heldOpen?.Dispose();
+            _directory?.Dispose();
+        }
+
+        [Test]
+        public void It_reports_the_probe_not_writable() =>
+            _result.Visibility.Should().Be(MssqlStagingVisibility.NotWritable);
+
+        [Test]
+        public void It_reports_the_probe_left_behind() => _result.ProbeDeleted.Should().BeFalse();
+
+        [Test]
+        public void It_logs_the_probe_file_by_its_generated_name()
+        {
+            JobsLogEntry entry = _logger.Entries.Should().ContainSingle().Subject;
+            entry.EventId.Should().Be(MssqlStagingProbe.ProbeFileResidue);
+            entry.Level.Should().Be(Microsoft.Extensions.Logging.LogLevel.Error);
+            entry.Field("ResourceId").Should().Be(_left.Single());
+        }
     }
 
     [TestFixture]

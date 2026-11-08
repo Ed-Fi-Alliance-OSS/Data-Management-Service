@@ -17,8 +17,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// server identity may not read) means not visible; <c>3241</c>, <c>3242</c>, or <c>3254</c> (the file opened and is
 /// not a backup; SQL Server 2025 reports an empty file as <c>3254</c>) means visible; anything else, including a
 /// header returned for a file that cannot hold one, is inconclusive. The probe file is deleted on every outcome with
-/// the routine's bounded deletion: a probe that cannot be deleted is reported in the result, or, when the run ends
-/// with an exception, logged by its generated name while the exception propagates unchanged. A run the caller
+/// the routine's bounded deletion: a probe that cannot be deleted is logged at Error by its generated name and, when
+/// the run returns a verdict, also reported in the result; when the run ends with an exception, that exception
+/// propagates unchanged. A run the caller
 /// cancels ends with <see cref="OperationCanceledException"/>, whatever form the driver's cancellation took, never
 /// with a verdict. Readiness (Step 4.9) maps the verdict to <c>StagingNotVisible</c> or <c>NotReady</c>.
 /// </summary>
@@ -67,6 +68,11 @@ public sealed class MssqlStagingProbe
         );
         if (staged is MssqlStagingResult.Failed failed)
         {
+            if (failed.Residue is { } residue)
+            {
+                LogResidue(residue.ResourceId);
+            }
+
             return new MssqlStagingProbeResult(
                 MssqlStagingVisibility.NotWritable,
                 failed.Diagnostic,
@@ -87,7 +93,7 @@ public sealed class MssqlStagingProbe
             throw;
         }
 
-        bool deleted = await _stager.DeleteAsync(probe);
+        bool deleted = await DeleteOrLogResidueAsync(probe);
         return new MssqlStagingProbeResult(visibility, diagnostic, deleted);
     }
 
@@ -120,20 +126,26 @@ public sealed class MssqlStagingProbe
         };
 
     /// <summary>
-    /// The deletion on a run that ends with an exception: the exception carries no residue, so a probe file the
-    /// bounded deletion could not remove is logged at Error by its generated name, never a path or a value.
+    /// The bounded deletion; a probe file it could not remove is logged at Error by its generated name, never a
+    /// path or a value, because an exception carries no residue and a verdict carries no name.
     /// </summary>
-    private async Task DeleteOrLogResidueAsync(MssqlStagedBackup probe)
+    private async Task<bool> DeleteOrLogResidueAsync(MssqlStagedBackup probe)
     {
-        if (!await _stager.DeleteAsync(probe))
+        bool deleted = await _stager.DeleteAsync(probe);
+        if (!deleted)
         {
-            _logger.LogError(
-                ProbeFileResidue,
-                "DMSPROV-ProbeFileResidue: the staging probe {ResourceId} could not be deleted",
-                probe.FileName
-            );
+            LogResidue(probe.FileName);
         }
+
+        return deleted;
     }
+
+    private void LogResidue(string fileName) =>
+        _logger.LogError(
+            ProbeFileResidue,
+            "DMSPROV-ProbeFileResidue: the staging probe {ResourceId} could not be deleted",
+            fileName
+        );
 
     /// <summary>
     /// The server's answer; once the caller has cancelled, any failure (SqlClient reports a request it cancelled

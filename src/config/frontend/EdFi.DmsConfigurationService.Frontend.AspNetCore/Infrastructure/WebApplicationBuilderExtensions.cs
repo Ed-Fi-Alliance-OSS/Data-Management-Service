@@ -283,10 +283,10 @@ public static class WebApplicationBuilderExtensions
     /// not match. Disabled (the shipped default): only the readiness singleton and the refusing provisioner,
     /// no options validation, no startup work. Enabled: the section is bound and validated at startup; the
     /// orchestrator replaces the refusing provisioner, beside the directory catalog, the protected set, and the
-    /// administrative connection source; and the engine adapter for the provider is registered. PostgreSQL has
-    /// its adapter; SQL Server has none in this build, so the <see cref="UnavailableDmsTargetEngine"/> stands
-    /// in for it and readiness can never become <c>Ready</c>. Every call is refused until startup records
-    /// <c>Ready</c> (D-2).
+    /// administrative connection source; and the engine adapter for the provider is registered. A provider
+    /// without an adapter (only possible for a value the options validator refuses, which stops the host) gets
+    /// the <see cref="UnavailableDmsTargetEngine"/>, so readiness can never become <c>Ready</c> for it. Every
+    /// call is refused until startup records <c>Ready</c> (D-2).
     /// </summary>
     private static void ConfigureDmsDataStoreProvisioning(
         WebApplicationBuilder webAppBuilder,
@@ -330,6 +330,13 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("DMS data store provisioning is enabled for target provider postgresql");
             webAppBuilder.Services.AddPostgresqlDmsTargetEngine();
+            return;
+        }
+
+        if (targetProvider == DmsDataStoreProvisioningOptions.MssqlProvider)
+        {
+            logger.Information("DMS data store provisioning is enabled for target provider mssql");
+            webAppBuilder.Services.AddMssqlDmsTargetEngine();
             return;
         }
 

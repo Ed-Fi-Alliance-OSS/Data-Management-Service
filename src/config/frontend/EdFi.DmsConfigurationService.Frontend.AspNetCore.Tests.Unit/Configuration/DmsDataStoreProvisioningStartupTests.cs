@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
@@ -26,15 +27,15 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configurat
 
 /// <summary>
 /// Spec Step 1.3: the shipped settings leave DMS data store provisioning disabled; enabling it with invalid
-/// static configuration stops the host naming the setting; enabling it for a target provider without an
-/// adapter registers the unavailable adapter, the directory catalog, and the orchestrator, and records
-/// <c>NotReady</c> with the adapter and trust policy reasons; Step 2.4: the catalog probes run at startup (a
+/// static configuration stops the host naming the setting; Step 2.4: the catalog probes run at startup (a
 /// valid policy over an empty artifact directory records <c>ArtifactMissing</c> per template); Step 3.9:
 /// enabled for PostgreSQL under either catalog datastore with a server nothing listens on, the host runs, the
 /// real adapter records the server and <c>psql</c> reasons, and the orchestrator refuses before any engine
 /// call; an engine and a catalog that both report ready make readiness <c>Ready</c> with the protected set
 /// logged; a secret that cannot be resolved is <c>SecretResolutionFailed</c> and the engine probes do not run;
-/// an engine validation that throws is recorded by type and the host keeps running.
+/// an engine validation that throws is recorded by type and the host keeps running; Step 4.9: enabled for SQL
+/// Server under either catalog datastore with a server nothing listens on, the host runs, the real adapter records
+/// the server and staging directory reasons, and the orchestrator refuses before any engine call.
 /// </summary>
 public class DmsDataStoreProvisioningStartupTests
 {
@@ -262,37 +263,64 @@ public class DmsDataStoreProvisioningStartupTests
                 .Contain($"{Section}:AdminConnectionString is required.");
     }
 
-    [TestFixture("mssql", "postgresql")]
-    [TestFixture("mssql", "mssql")]
-    public class Given_enabled_for_a_target_provider_without_an_adapter_under_a_catalog_datastore(
-        string provider,
+    /// <summary>
+    /// Step 4.9: enabled for SQL Server with a server nothing listens on and a staging directory that does not
+    /// exist. The real adapter is registered and wrapped by a recording fake, so the fixture sees every call that
+    /// reaches it.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_enabled_for_sqlserver_with_an_unreachable_server_under_a_catalog_datastore(
         string datastore
     )
     {
         private CapturingLoggerProvider _logs = null!;
         private WebApplicationFactory<Program> _factory = null!;
         private Exception? _exception;
-        private IDmsTargetEngine _engine = null!;
-        private ITemplateArtifactCatalog _catalog = null!;
+        private IDmsTargetEngine? _realEngine;
+        private IDmsTargetEngine _recordingEngine = null!;
         private IDmsDataStoreProvisioner _provisioner = null!;
         private DmsProvisionerReadiness _readiness = null!;
-        private DmsArtifactResolution _resolution = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+        private string[] _engineCalls = [];
         private CapturedLog[] _criticalEntries = [];
 
         [SetUp]
         public async Task Act()
         {
             _logs = new CapturingLoggerProvider();
-            _factory = CreateFactory(EnabledSettings(provider, datastore), _logs);
+            _factory = CreateFactory(
+                EnabledSettings("mssql", datastore),
+                _logs,
+                services =>
+                {
+                    ServiceDescriptor registered = services.Single(descriptor =>
+                        descriptor.ServiceType == typeof(IDmsTargetEngine)
+                    );
+                    services.Remove(registered);
+                    services.AddSingleton<IDmsTargetEngine>(provider =>
+                    {
+                        _realEngine = (IDmsTargetEngine)registered.ImplementationFactory!(provider);
+                        _recordingEngine = A.Fake<IDmsTargetEngine>(options => options.Wrapping(_realEngine));
+                        return _recordingEngine;
+                    });
+                }
+            );
             _exception = StartupExceptionFor(_factory);
-            _engine = _factory.Services.GetRequiredService<IDmsTargetEngine>();
-            _catalog = _factory.Services.GetRequiredService<ITemplateArtifactCatalog>();
-            _provisioner = _factory.Services.GetRequiredService<IDmsDataStoreProvisioner>();
             _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
-            _resolution = await _provisioner.ResolveArtifactAsync(
-                DmsDatabaseTemplate.Minimal,
+            _provisioner = _factory.Services.GetRequiredService<IDmsDataStoreProvisioner>();
+            _create = await _provisioner.CreateAsync(AnyCreateRequest(), CancellationToken.None);
+            _delete = await _provisioner.DeleteAsync(
+                new DmsDataStoreDeleteRequest(AnyCreateRequest().TargetName, Guid.NewGuid()),
                 CancellationToken.None
             );
+            _engineCalls =
+            [
+                .. Fake.GetCalls(_recordingEngine)
+                    .Select(call => call.Method.Name)
+                    .Where(name => name != "get_Provider"),
+            ];
             _criticalEntries =
             [
                 .. _logs.Entries.Where(entry =>
@@ -308,71 +336,89 @@ public class DmsDataStoreProvisioningStartupTests
             _logs.Dispose();
         }
 
+        private IReadOnlyList<DmsReadinessReason> Reasons =>
+            _readiness.Should().BeOfType<DmsProvisionerReadiness.NotReady>().Subject.Reasons;
+
         [Test]
         public void It_starts_and_keeps_running() => _exception.Should().BeNull();
 
         [Test]
-        public void It_registers_the_unavailable_adapter_for_the_target_provider_not_the_catalog_datastore() =>
-            _engine.Should().BeOfType<UnavailableDmsTargetEngine>().Which.Provider.Should().Be(provider);
-
-        [Test]
-        public void It_registers_the_directory_catalog() =>
-            _catalog.Should().BeOfType<TemplateArtifactCatalog>();
+        public void It_registers_the_sql_server_adapter_whatever_the_catalog_datastore() =>
+            _realEngine.Should().BeOfType<MssqlDmsTargetEngine>();
 
         [Test]
         public void It_registers_the_orchestrator_as_the_provisioner() =>
             _provisioner.Should().BeOfType<DmsDataStoreProvisioningService>();
 
         [Test]
-        public void It_records_not_ready_because_the_adapter_is_unavailable() =>
-            _readiness
+        public void It_records_the_unreachable_server_as_server_unavailable() =>
+            Reasons
                 .Should()
-                .BeOfType<DmsProvisionerReadiness.NotReady>()
-                .Which.Reasons.Should()
-                .Contain(
-                    new DmsReadinessReason(
-                        DmsProvisioningFailureCode.AdapterUnavailable,
-                        UnavailableDmsTargetEngine.Probe
-                    )
+                .ContainSingle(reason => reason.Probe == "TargetServer")
+                .Which.Should()
+                .Match<DmsReadinessReason>(reason =>
+                    reason.Code == DmsProvisioningFailureCode.ServerUnavailable
+                    && reason.Diagnostic!.Operation == "TargetServer.Connect"
+                    && reason.Diagnostic.ExceptionTypeChain.Length > 0
                 );
 
         [Test]
-        public void It_records_the_trust_policy_probe_failure_beside_it() =>
-            _readiness
+        public void It_records_the_missing_staging_directory_beside_it() =>
+            Reasons
                 .Should()
-                .BeOfType<DmsProvisionerReadiness.NotReady>()
-                .Which.Reasons.Should()
-                .ContainSingle(reason => reason.Probe == TemplateArtifactCatalog.TrustPolicyProbe)
-                .Which.Code.Should()
-                .Be(DmsProvisioningFailureCode.StartupValidationFailed);
-
-        [Test]
-        public void It_refuses_calls_as_adapter_unavailable() =>
-            _resolution
-                .Should()
-                .BeOfType<DmsArtifactResolution.Failure>()
-                .Which.Detail.Should()
-                .Match<DmsProvisioningFailure>(failure =>
-                    failure.Category == DmsProvisioningFailureCategory.NotReady
-                    && failure.Code == DmsProvisioningFailureCode.AdapterUnavailable
+                .ContainSingle(reason => reason.Probe == "StagingDirectory")
+                .Which.Should()
+                .Match<DmsReadinessReason>(reason =>
+                    reason.Code == DmsProvisioningFailureCode.StartupValidationFailed
+                    && reason.Diagnostic!.Operation == "StagingDirectory.Missing"
                 );
 
         [Test]
-        public void It_logs_each_reason_at_critical_naming_the_target_provider()
-        {
-            _criticalEntries.Should().HaveCount(2);
-            CapturedLog entry = _criticalEntries
+        public void It_skips_the_visibility_and_lock_probes_on_an_unreachable_server() =>
+            Reasons.Select(reason => reason.Probe).Should().NotContain(["StagingVisibility", "TargetLock"]);
+
+        [Test]
+        public void It_no_longer_reports_the_adapter_as_unavailable() =>
+            Reasons
+                .Select(reason => reason.Code)
                 .Should()
-                .ContainSingle(log =>
-                    Equals(log.State["Code"], DmsProvisioningFailureCode.AdapterUnavailable)
-                )
-                .Subject;
-            entry.State["Provider"].Should().Be(provider);
-            entry.State["Probe"].Should().Be(UnavailableDmsTargetEngine.Probe);
+                .NotContain(DmsProvisioningFailureCode.AdapterUnavailable);
+
+        [Test]
+        public void It_refuses_a_create_and_a_delete_as_not_ready() =>
+            new[] { FailureOf(_create), FailureOf(_delete) }
+                .Should()
+                .AllSatisfy(failure =>
+                    (failure.Category, failure.Code)
+                        .Should()
+                        .Be(
+                            (
+                                DmsProvisioningFailureCategory.NotReady,
+                                DmsProvisioningFailureCode.StartupValidationFailed
+                            )
+                        )
+                );
+
+        [Test]
+        public void It_reaches_the_engine_only_for_the_startup_validation() =>
+            _engineCalls.Should().Equal(nameof(IDmsTargetEngine.ValidateEnvironmentAsync));
+
+        [Test]
+        public void It_logs_the_engine_reasons_at_critical_naming_the_target_provider() =>
             _criticalEntries
+                .Where(log =>
+                    Equals(log.State["Probe"], "TargetServer")
+                    || Equals(log.State["Probe"], "StagingDirectory")
+                )
                 .Should()
-                .ContainSingle(log => Equals(log.State["Probe"], TemplateArtifactCatalog.TrustPolicyProbe));
-        }
+                .HaveCount(2)
+                .And.AllSatisfy(log => log.State["Provider"].Should().Be("mssql"));
+
+        private static DmsProvisioningFailure FailureOf(DmsDataStoreCreateResult result) =>
+            result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail;
+
+        private static DmsProvisioningFailure FailureOf(DmsDataStoreDeleteResult result) =>
+            result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
     }
 
     /// <summary>
