@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
@@ -63,9 +64,10 @@ public class PostgresqlRealPackageTests
     /// <summary>
     /// The lane engine with its replay held (Step 5.1 review): a wrapper runs the real <c>psql</c> with the engine's
     /// arguments and the real dump unchanged, then one trailing <c>\!</c>, inside the same single transaction, writes a
-    /// marker and sleeps until the runner kills the process tree. Nothing commits while the replay is held, so the
-    /// caller's cancellation, or the restore bound that only the test fires (<see cref="ControlledRestoreDeadline"/>),
-    /// always meets the whole dump replayed and uncommitted, however fast the replay ran.
+    /// marker naming <c>psql</c> and the holding shell and sleeps until the runner kills the process tree. Nothing
+    /// commits while the replay is held, so the caller's cancellation, or the restore bound that only the test fires
+    /// (<see cref="ControlledRestoreDeadline"/>), always meets the whole dump replayed and uncommitted, however fast the
+    /// replay ran. <see cref="Release"/> ends a hold the runner did not.
     /// </summary>
     private sealed class HeldReplay : IDisposable
     {
@@ -88,7 +90,7 @@ public class PostgresqlRealPackageTests
             string wrapper = Path.Combine(_directory, "psql");
             File.WriteAllText(
                 wrapper,
-                $"#!/bin/sh\nexec '{PsqlPath}' \"$@\" --command '\\! /usr/bin/touch {_marker} && exec /usr/bin/sleep infinity'\n"
+                $"#!/bin/sh\nexec '{PsqlPath}' \"$@\" --command '\\! echo $PPID $$ > {_marker}.tmp && /usr/bin/mv {_marker}.tmp {_marker} && exec /usr/bin/sleep infinity'\n"
             );
             if (!OperatingSystem.IsWindows())
             {
@@ -120,14 +122,66 @@ public class PostgresqlRealPackageTests
         public Task<bool> WaitUntilHeldAsync() =>
             WaitUntilAsync(() => Task.FromResult(File.Exists(_marker)), TimeSpan.FromMinutes(3));
 
+        /// <summary>
+        /// Kills the held <c>psql</c> first, so its transaction ends uncommitted, then the shell holding it; nothing when
+        /// the hold never began or the runner already ended it.
+        /// </summary>
+        public void Release()
+        {
+            if (!File.Exists(_marker))
+            {
+                return;
+            }
+
+            string[] held = File.ReadAllText(_marker)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            KillIfRunning(int.Parse(held[0]), "psql");
+            KillIfRunning(int.Parse(held[1]), "sleep");
+        }
+
+        private static void KillIfRunning(int processId, string processName)
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(processId);
+                if (process.ProcessName == processName)
+                {
+                    process.Kill();
+                }
+            }
+            catch (ArgumentException)
+            {
+                // No longer running.
+            }
+            catch (InvalidOperationException)
+            {
+                // Exited meanwhile.
+            }
+        }
+
+        /// <summary>Ends the hold the test owns, then removes the wrapper and the marker.</summary>
         public void Dispose()
         {
+            Release();
             if (Directory.Exists(_directory))
             {
                 Directory.Delete(_directory, recursive: true);
             }
         }
     }
+
+    /// <summary>Tears a held fixture down: the create first, ending its hold, then the lane; the hold's files go last.</summary>
+    private static Task TeardownHeldAsync(HeldCreate? create, Lane? lane, HeldReplay? replay) =>
+        HeldCreate.RunAllAsync(
+            () =>
+                create?.StopAsync(() =>
+                {
+                    replay?.Release();
+                    return Task.CompletedTask;
+                })
+                ?? Task.CompletedTask,
+            () => lane?.DisposeAsync().AsTask() ?? Task.CompletedTask
+        );
 
     [TestFixture(RestoreManifest.MinimalTemplateKind)]
     [TestFixture(RestoreManifest.PopulatedTemplateKind)]
@@ -411,7 +465,7 @@ public class PostgresqlRealPackageTests
     {
         private HeldReplay? _replay;
         private Lane? _lane;
-        private bool _replayHeld;
+        private HeldCreate? _create;
         private int _openTransactions;
         private Exception? _thrown;
         private DmsLiveTargetState _stagingAfter = null!;
@@ -422,56 +476,53 @@ public class PostgresqlRealPackageTests
         {
             RealTemplatePackage package = RequireRealPackage(RestoreManifest.PopulatedTemplateKind);
             _replay = new HeldReplay();
-            _lane = await Lane.BuildAsync(
+            Lane lane = _lane = await Lane.BuildAsync(
                 package,
                 DmsDatabaseTemplate.Sample,
                 new LaneHooks(),
                 _replay.Engine,
                 ControlledRestoreDeadline.RestoreTimeout
             );
-            using CancellationTokenSource cancellation = new();
-            Task<DmsDataStoreCreateResult> creating = _lane.Service.CreateAsync(
-                _lane.Request,
-                cancellation.Token
-            );
-            _replayHeld = await _replay.WaitUntilHeldAsync();
-            if (_replayHeld)
-            {
-                _openTransactions = await OpenTransactionsNamedAsync(_lane.Operation.RestoreApplicationName);
-            }
+            _create = HeldCreate.Start(token => lane.Service.CreateAsync(lane.Request, token));
+            (await _replay.WaitUntilHeldAsync())
+                .Should()
+                .BeTrue("the replay must hold the whole dump before the caller cancels");
+            _openTransactions = await OpenTransactionsNamedAsync(lane.Operation.RestoreApplicationName);
 
-            await cancellation.CancelAsync();
+            await _create.CancelAsync();
+            Task<DmsDataStoreCreateResult> ended = await _create.JoinAsync();
             try
             {
-                await creating;
+                await ended;
             }
             catch (Exception exception)
             {
                 _thrown = exception;
             }
 
-            _stagingAfter = await InspectAsync(_lane.Operation.StagingDatabaseName);
-            _targetAfter = await InspectAsync(_lane.Target);
+            _stagingAfter = await InspectAsync(lane.Operation.StagingDatabaseName);
+            _targetAfter = await InspectAsync(lane.Target);
         }
 
         [OneTimeTearDown]
         public async Task Teardown()
         {
-            if (_lane is not null)
+            try
             {
-                await _lane.DisposeAsync();
+                await TeardownHeldAsync(_create, _lane, _replay);
             }
-
-            _replay?.Dispose();
+            finally
+            {
+                _replay?.Dispose();
+            }
         }
 
         [Test]
         public void It_cancelled_the_replay_while_it_held_the_whole_dump_uncommitted() =>
-            (_replayHeld, _openTransactions, _lane!.Engine.RestoreOutcomes.Single())
+            (_openTransactions, _lane!.Engine.RestoreOutcomes.Single())
                 .Should()
                 .Be(
                     (
-                        true,
                         1,
                         new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
                             new DmsCommandFailure(
@@ -498,9 +549,8 @@ public class PostgresqlRealPackageTests
     {
         private HeldReplay? _replay;
         private Lane? _lane;
-        private bool _replayHeld;
+        private HeldCreate? _create;
         private int _openTransactions;
-        private int _boundsFired;
         private DmsDataStoreCreateResult _result = null!;
         private DmsLiveTargetState _stagingAfter = null!;
         private DmsLiveTargetState _targetAfter = null!;
@@ -510,45 +560,47 @@ public class PostgresqlRealPackageTests
         {
             RealTemplatePackage package = RequireRealPackage(RestoreManifest.PopulatedTemplateKind);
             _replay = new HeldReplay();
-            _lane = await Lane.BuildAsync(
+            Lane lane = _lane = await Lane.BuildAsync(
                 package,
                 DmsDatabaseTemplate.Sample,
                 new LaneHooks(),
                 _replay.Engine,
                 ControlledRestoreDeadline.RestoreTimeout
             );
-            Task<DmsDataStoreCreateResult> creating = _lane.CreateAsync();
-            _replayHeld = await _replay.WaitUntilHeldAsync();
-            if (_replayHeld)
-            {
-                _openTransactions = await OpenTransactionsNamedAsync(_lane.Operation.RestoreApplicationName);
-            }
+            _create = HeldCreate.Start(token => lane.Service.CreateAsync(lane.Request, token));
+            (await _replay.WaitUntilHeldAsync())
+                .Should()
+                .BeTrue("the replay must hold the whole dump before the bound expires");
+            _openTransactions = await OpenTransactionsNamedAsync(lane.Operation.RestoreApplicationName);
 
-            _boundsFired = _replay.Deadline.Expire();
-            _result = await creating;
-            _stagingAfter = await InspectAsync(_lane.Operation.StagingDatabaseName);
-            _targetAfter = await InspectAsync(_lane.Target);
+            _replay
+                .Deadline.Expire()
+                .Should()
+                .Be(1, "exactly the restore bound of the held replay must fire before the create is awaited");
+            _result = await await _create.JoinAsync();
+            _stagingAfter = await InspectAsync(lane.Operation.StagingDatabaseName);
+            _targetAfter = await InspectAsync(lane.Target);
         }
 
         [OneTimeTearDown]
         public async Task Teardown()
         {
-            if (_lane is not null)
+            try
             {
-                await _lane.DisposeAsync();
+                await TeardownHeldAsync(_create, _lane, _replay);
             }
-
-            _replay?.Dispose();
+            finally
+            {
+                _replay?.Dispose();
+            }
         }
 
         [Test]
         public void It_expired_the_bound_while_the_replay_held_the_whole_dump_uncommitted() =>
-            (_replayHeld, _openTransactions, _boundsFired, _lane!.Engine.RestoreOutcomes.Single())
+            (_openTransactions, _lane!.Engine.RestoreOutcomes.Single())
                 .Should()
                 .Be(
                     (
-                        true,
-                        1,
                         1,
                         new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
                             new DmsCommandFailure(
