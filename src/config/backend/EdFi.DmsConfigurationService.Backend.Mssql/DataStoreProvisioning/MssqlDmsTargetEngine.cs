@@ -98,6 +98,12 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>Test seam: the batch sent to kill a session; production sends <see cref="MssqlSessionQueries.GuardedKill"/>.</summary>
     internal Func<short, string> GuardedKillStatement { get; init; } = MssqlSessionQueries.GuardedKill;
 
+    /// <summary>
+    /// Test seam: sees each termination observation (0 for the one in the kill batch, then 1, 2, … for each
+    /// re-read) and returns the one the protocol acts on; production has none.
+    /// </summary>
+    internal Func<int, MssqlSessionObservation, MssqlSessionObservation>? ObservationHook { get; init; }
+
     public Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken) =>
         throw NotYetImplemented(nameof(ValidateEnvironmentAsync), "Step 4.9");
 
@@ -469,7 +475,8 @@ public sealed class MssqlDmsTargetEngine : IDmsTargetEngine
             _adminConnection.CommandTimeoutSeconds,
             _timeProvider,
             cancellationToken,
-            GuardedKillStatement
+            GuardedKillStatement,
+            ObservationHook
         );
     }
 

@@ -120,7 +120,14 @@ internal static class MssqlSessionQueries
     /// after-kill observation must confirm; any other refusal (<c>6104</c> own session, <c>6107</c> system
     /// session) is <see cref="DmsSessionTerminationFailure.Refused"/> with the number.
     /// </summary>
-    public static DmsSessionTermination? VerdictOf(MssqlGuardedKillRow row)
+    public static DmsSessionTermination? VerdictOf(MssqlGuardedKillRow row) =>
+        VerdictOf(row, ObservationOf(row.VisibleAfter, row.MatchedAfter));
+
+    /// <summary>
+    /// <see cref="VerdictOf(MssqlGuardedKillRow)"/> with the after-kill observation given separately, as the
+    /// protocol passes it once any observation hook has seen it.
+    /// </summary>
+    public static DmsSessionTermination? VerdictOf(MssqlGuardedKillRow row, MssqlSessionObservation after)
     {
         if (ObservationOf(row.Visible, row.Matched) is MssqlSessionObservation.IdentityHidden)
         {
@@ -132,7 +139,6 @@ internal static class MssqlSessionQueries
             return new DmsSessionTermination.AlreadyAbsent();
         }
 
-        MssqlSessionObservation after = ObservationOf(row.VisibleAfter, row.MatchedAfter);
         return row.KillError switch
         {
             MssqlErrorClassifier.KillNoPermission => new DmsSessionTermination.NotTerminated(
@@ -175,9 +181,12 @@ internal static class MssqlSessionQueries
     /// observations every <see cref="VerificationInterval"/> while the killed session is still listed, until it
     /// is gone (<see cref="DmsSessionTermination.Terminated"/>) or <paramref name="deadline"/>, measured from
     /// before the kill, has passed (<see cref="DmsSessionTerminationFailure.TimedOut"/>, the session left to
-    /// finish its rollback). Every other exception propagates: an exception is not a proven-gone verdict. After
+    /// finish its rollback). A wait never outlasts the remaining time, and no observation starts once the
+    /// deadline has passed. Every other exception propagates: an exception is not a proven-gone verdict. After
     /// the caller cancels, a request failure is reported as <see cref="OperationCanceledException"/>, whatever
-    /// form the driver's cancellation took. The batch is <see cref="GuardedKill"/> unless a test passes another.
+    /// form the driver's cancellation took. The batch is <see cref="GuardedKill"/> unless a test passes another,
+    /// and a test may pass <paramref name="observationHook"/>, which sees every observation (0 for the one in
+    /// the batch, then 1, 2, … for each re-read) and returns the one the protocol acts on.
     /// </summary>
     public static async Task<DmsSessionTermination> TerminateAsync(
         SqlConnection connection,
@@ -186,7 +195,8 @@ internal static class MssqlSessionQueries
         int commandTimeoutSeconds,
         TimeProvider timeProvider,
         CancellationToken cancellationToken,
-        Func<short, string>? guardedKill = null
+        Func<short, string>? guardedKill = null,
+        Func<int, MssqlSessionObservation, MssqlSessionObservation>? observationHook = null
     )
     {
         ArgumentNullException.ThrowIfNull(connection);
@@ -204,24 +214,38 @@ internal static class MssqlSessionQueries
                 commandTimeoutSeconds,
                 cancellationToken
             );
-            DmsSessionTermination? verdict = VerdictOf(row);
+            int observation = 0;
+            DmsSessionTermination? verdict = VerdictOf(
+                row,
+                Hooked(observationHook, observation, ObservationOf(row.VisibleAfter, row.MatchedAfter))
+            );
             while (verdict is null)
             {
-                if (timeProvider.GetElapsedTime(started) >= deadline)
+                TimeSpan remaining = deadline - timeProvider.GetElapsedTime(started);
+                if (remaining <= TimeSpan.Zero)
                 {
-                    return new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut);
+                    return TimedOut();
                 }
 
-                await Task.Delay(VerificationInterval, timeProvider, cancellationToken);
-                verdict = AfterKill(
-                    await ObserveAsync(
-                        connection,
-                        sessionId,
-                        loginTime,
-                        commandTimeoutSeconds,
-                        cancellationToken
-                    )
+                await Task.Delay(
+                    remaining < VerificationInterval ? remaining : VerificationInterval,
+                    timeProvider,
+                    cancellationToken
                 );
+                if (timeProvider.GetElapsedTime(started) >= deadline)
+                {
+                    return TimedOut();
+                }
+
+                observation++;
+                MssqlSessionObservation observed = await ObserveAsync(
+                    connection,
+                    sessionId,
+                    loginTime,
+                    commandTimeoutSeconds,
+                    cancellationToken
+                );
+                verdict = AfterKill(Hooked(observationHook, observation, observed));
             }
 
             return verdict;
@@ -337,6 +361,15 @@ internal static class MssqlSessionQueries
             DmsSessionTerminationFailure.PrivilegeMissing,
             DmsProvisioningDiagnostic.ForOperation(IdentifySessionStep)
         );
+
+    private static DmsSessionTermination.NotTerminated TimedOut() =>
+        new(DmsSessionTerminationFailure.TimedOut);
+
+    private static MssqlSessionObservation Hooked(
+        Func<int, MssqlSessionObservation, MssqlSessionObservation>? observationHook,
+        int observation,
+        MssqlSessionObservation observed
+    ) => observationHook is null ? observed : observationHook(observation, observed);
 
     /// <summary>A refusal the batch caught: no exception reached the client, so the chain is empty and only the number is kept.</summary>
     private static DmsProvisioningDiagnostic KillDiagnostic(int errorNumber) =>
