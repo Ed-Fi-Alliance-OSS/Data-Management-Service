@@ -30,7 +30,11 @@ public class MssqlStagingTests
     private static Task<string> ServerPropertyAsync(string property) =>
         ScalarOnServerAsync<string>($"SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('{property}'));");
 
-    private static MssqlStagingProbe Probe(string stagingPath, string stagingServerPath) =>
+    private static MssqlStagingProbe Probe(
+        string stagingPath,
+        string stagingServerPath,
+        Func<string, string>? headerStatement = null
+    ) =>
         new(
             new MssqlBackupStager(
                 new MssqlStagingSettings(
@@ -43,8 +47,12 @@ public class MssqlStagingTests
                 TimeProvider.System,
                 NullLogger.Instance
             ),
-            AdminConnection()
-        );
+            AdminConnection(),
+            NullLogger.Instance
+        )
+        {
+            HeaderStatement = headerStatement ?? MssqlRestorePlanner.HeaderOnlyStatement,
+        };
 
     [TestFixture]
     public class Given_a_real_backup_of_a_three_file_database
@@ -241,5 +249,89 @@ public class MssqlStagingTests
             _result.ProbeDeleted.Should().BeTrue();
             Directory.GetFiles(_stagingPath, "dms-provision-*.bak").Should().BeEmpty();
         }
+    }
+
+    /// <summary>
+    /// SqlClient reports a request it cancelled after sending as <see cref="SqlException"/> <c>0</c>; the probe must
+    /// end with <see cref="OperationCanceledException"/> and still delete its file. The header statement is replaced
+    /// by a long <c>WAITFOR</c> carrying a marker, so the test cancels only once the server is running the request.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_probe_cancelled_after_its_request_reached_the_server
+    {
+        private const string RunningRequestQuery =
+            "SELECT COUNT(*) FROM sys.dm_exec_requests r CROSS APPLY sys.dm_exec_sql_text(r.sql_handle) t WHERE r.session_id <> @@SPID AND t.text LIKE @pattern;";
+
+        private string _stagingPath = string.Empty;
+        private bool _dispatched;
+        private Exception? _thrown;
+        private MssqlStagingProbeResult? _result;
+        private bool _requestGone;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _stagingPath = Path.Combine(
+                Path.GetTempPath(),
+                "dms1438-probe-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))
+            );
+            Directory.CreateDirectory(_stagingPath);
+            string marker =
+                "dms1438_probe_cancel_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+            string pattern = "%" + marker + "%";
+            MssqlStagingProbe probe = Probe(
+                _stagingPath,
+                "/var/opt/dms-staging",
+                _ => $"WAITFOR DELAY '00:02:00'; -- {marker}"
+            );
+
+            using CancellationTokenSource cancellation = new();
+            Task<MssqlStagingProbeResult> run = probe.RunAsync(cancellation.Token);
+            _dispatched = await WaitUntilAsync(
+                async () => await ScalarOnServerAsync<int>(RunningRequestQuery, ("@pattern", pattern)) == 1,
+                TimeSpan.FromSeconds(30)
+            );
+            await cancellation.CancelAsync();
+            try
+            {
+                _result = await run;
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+
+            _requestGone = await WaitUntilAsync(
+                async () => await ScalarOnServerAsync<int>(RunningRequestQuery, ("@pattern", pattern)) == 0,
+                TimeSpan.FromSeconds(20)
+            );
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            if (Directory.Exists(_stagingPath))
+            {
+                Directory.Delete(_stagingPath, recursive: true);
+            }
+        }
+
+        [Test]
+        public void It_cancelled_while_the_server_ran_the_request() => _dispatched.Should().BeTrue();
+
+        [Test]
+        public void It_returns_no_verdict() => _result.Should().BeNull();
+
+        [Test]
+        public void It_ends_with_operation_canceled() =>
+            _thrown.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_deletes_the_probe_file() =>
+            Directory.GetFileSystemEntries(_stagingPath).Should().BeEmpty();
+
+        [Test]
+        public void It_leaves_no_request_on_the_server() => _requestGone.Should().BeTrue();
     }
 }

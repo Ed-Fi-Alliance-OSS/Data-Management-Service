@@ -65,7 +65,14 @@ public class MssqlBackupStagerTests
 
         public void Dispose()
         {
-            if (!OperatingSystem.IsWindows())
+            if (OperatingSystem.IsWindows())
+            {
+                foreach (string file in Directory.GetFiles(Root, "*", SearchOption.AllDirectories))
+                {
+                    File.SetAttributes(file, FileAttributes.Normal);
+                }
+            }
+            else
             {
                 File.SetUnixFileMode(
                     StagingPath,
@@ -74,6 +81,31 @@ public class MssqlBackupStagerTests
             }
 
             Directory.Delete(Root, recursive: true);
+        }
+
+        /// <summary>
+        /// Makes <paramref name="path"/> impossible to delete without stopping it being read: the read-only attribute
+        /// on Windows, a staging directory without write permission on Unix. <see cref="Dispose"/> undoes both.
+        /// </summary>
+        public void MakeUndeletable(string path)
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                File.SetAttributes(path, FileAttributes.ReadOnly);
+            }
+            else
+            {
+                File.SetUnixFileMode(StagingPath, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+            }
+        }
+    }
+
+    /// <summary>A privileged Unix process may unlink in a directory without write permission.</summary>
+    public static void IgnoreIfPrivilegedOnUnix()
+    {
+        if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess)
+        {
+            Assert.Ignore("A privileged process may unlink in a read-only directory.");
         }
     }
 
@@ -371,6 +403,92 @@ public class MssqlBackupStagerTests
             ((MssqlStagingResult.Failed)_result)
                 .Residue.Should()
                 .Be(new DmsCleanupResidue(DmsResidueKind.StagedBackup, "dms-provision-0123456789ab.bak"));
+    }
+
+    [TestFixture]
+    public class Given_the_mode_cannot_be_applied_to_the_new_file
+    {
+        private StagingDirectory _directory = null!;
+        private MssqlStagingResult _result = null!;
+        private bool _modeAttempted;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _directory = new StagingDirectory();
+            _modeAttempted = false;
+            MssqlBackupStager stager = new(_directory.Settings, TimeProvider.System, NullLogger.Instance)
+            {
+                ApplyModeOverride = _ =>
+                {
+                    _modeAttempted = true;
+                    throw new UnauthorizedAccessException("The mode change was refused.");
+                },
+            };
+            _result = await stager.StageAsync(_directory.Artifact, Operation(), CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _directory.Dispose();
+
+        [Test]
+        public void It_attempted_the_mode() => _modeAttempted.Should().BeTrue();
+
+        [Test]
+        public void It_fails_at_the_mode_step() =>
+            ((MssqlStagingResult.Failed)_result)
+                .Diagnostic.Operation.Should()
+                .Be(MssqlBackupStager.ApplyModeStep);
+
+        [Test]
+        public void It_deletes_the_file_it_created() => _directory.Entries().Should().BeEmpty();
+
+        [Test]
+        public void It_reports_no_residue() => ((MssqlStagingResult.Failed)_result).Residue.Should().BeNull();
+    }
+
+    [TestFixture]
+    public class Given_the_mode_cannot_be_applied_and_the_new_file_cannot_be_deleted
+    {
+        private StagingDirectory? _directory;
+        private MssqlStagingResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IgnoreIfPrivilegedOnUnix();
+            StagingDirectory directory = new(cleanupAttempts: 2);
+            _directory = directory;
+            MssqlBackupStager stager = new(directory.Settings, TimeProvider.System, NullLogger.Instance)
+            {
+                ApplyModeOverride = stream =>
+                {
+                    // Both failures at once: the file cannot be deleted, then the mode change is refused.
+                    directory.MakeUndeletable(stream.Name);
+                    throw new UnauthorizedAccessException("The mode change was refused.");
+                },
+            };
+            _result = await stager.StageAsync(directory.Artifact, Operation(), CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _directory?.Dispose();
+
+        [Test]
+        public void It_fails_at_the_mode_step() =>
+            ((MssqlStagingResult.Failed)_result)
+                .Diagnostic.Operation.Should()
+                .Be(MssqlBackupStager.ApplyModeStep);
+
+        [Test]
+        public void It_reports_the_file_it_owns_by_its_generated_name() =>
+            ((MssqlStagingResult.Failed)_result)
+                .Residue.Should()
+                .Be(new DmsCleanupResidue(DmsResidueKind.StagedBackup, "dms-provision-0123456789ab.bak"));
+
+        [Test]
+        public void It_leaves_the_reported_file_in_place() =>
+            _directory!.Entries().Should().Equal("dms-provision-0123456789ab.bak");
     }
 
     [TestFixture]

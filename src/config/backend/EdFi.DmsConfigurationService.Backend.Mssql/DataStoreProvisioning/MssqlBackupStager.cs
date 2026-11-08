@@ -31,6 +31,8 @@ public sealed class MssqlBackupStager
 
     public const string CreateStep = "StageBackup.Create";
 
+    public const string ApplyModeStep = "StageBackup.ApplyMode";
+
     public const string CopyStep = "StageBackup.Copy";
 
     public const string CopyHashMismatchStep = "StageBackup.CopyHashMismatch";
@@ -72,6 +74,12 @@ public sealed class MssqlBackupStager
     /// before the independent re-hash, the point where a writer could alter the file.
     /// </summary>
     internal Action<string>? AfterCopy { get; init; }
+
+    /// <summary>
+    /// Test seam: replaces the mode application on the new file's handle (Unix: the configured mode set on the
+    /// handle; Windows: nothing), so a failure there can be produced on either platform.
+    /// </summary>
+    internal Action<FileStream>? ApplyModeOverride { get; init; }
 
     /// <summary><c>dms-provision-&lt;op&gt;.bak</c>.</summary>
     public static string FileNameFor(DmsOperationId operation) =>
@@ -135,12 +143,28 @@ public sealed class MssqlBackupStager
         FileStream target;
         try
         {
-            target = CreateNew(localPath);
+            target = OpenNew(localPath);
         }
         catch (Exception exception) when (IsFileSystemFailure(exception))
         {
-            // Nothing of this operation exists: CreateNew refused, or the file was removed again inside CreateNew.
+            // Nothing of this operation exists: CreateNew refused the name, so the entry is not ours to touch.
             return new MssqlStagingResult.Failed(DmsProvisioningDiagnostic.From(exception, CreateStep), null);
+        }
+
+        // From here the file is this operation's own: every failure deletes it with the bounded deletion and
+        // reports it as residue when that fails.
+        try
+        {
+            (ApplyModeOverride ?? ApplyConfiguredMode)(target);
+        }
+        catch (Exception exception) when (IsFileSystemFailure(exception))
+        {
+            await target.DisposeAsync();
+            return await FailAsync(
+                localPath,
+                fileName,
+                DmsProvisioningDiagnostic.From(exception, ApplyModeStep)
+            );
         }
 
         string copiedSha256;
@@ -293,7 +317,8 @@ public sealed class MssqlBackupStager
         }
     }
 
-    private FileStream CreateNew(string localPath)
+    /// <summary>Creates the file, refusing any existing entry; the create mode is subject to the umask.</summary>
+    private FileStream OpenNew(string localPath)
     {
         FileStreamOptions options = new()
         {
@@ -307,23 +332,15 @@ public sealed class MssqlBackupStager
             options.UnixCreateMode = _settings.FileMode;
         }
 
-        FileStream stream = new(localPath, options);
-        if (OperatingSystem.IsWindows())
-        {
-            return stream;
-        }
+        return new FileStream(localPath, options);
+    }
 
-        try
+    /// <summary>Sets the configured mode on the handle, so the umask cannot narrow it (Unix only).</summary>
+    private void ApplyConfiguredMode(FileStream stream)
+    {
+        if (!OperatingSystem.IsWindows())
         {
             File.SetUnixFileMode(stream.SafeFileHandle, _settings.FileMode);
-            return stream;
-        }
-        catch
-        {
-            // The file is this call's own: remove it before reporting, so the caller sees nothing of this operation.
-            stream.Dispose();
-            TryDelete(localPath);
-            throw;
         }
     }
 

@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
@@ -16,8 +17,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// server identity may not read) means not visible; <c>3241</c>, <c>3242</c>, or <c>3254</c> (the file opened and is
 /// not a backup; SQL Server 2025 reports an empty file as <c>3254</c>) means visible; anything else, including a
 /// header returned for a file that cannot hold one, is inconclusive. The probe file is deleted on every outcome with
-/// the routine's bounded deletion, and a probe that cannot be deleted is reported. Readiness (Step 4.9) maps the
-/// verdict to <c>StagingNotVisible</c> or <c>NotReady</c>.
+/// the routine's bounded deletion: a probe that cannot be deleted is reported in the result, or, when the run ends
+/// with an exception, logged by its generated name while the exception propagates unchanged. A run the caller
+/// cancels ends with <see cref="OperationCanceledException"/>, whatever form the driver's cancellation took, never
+/// with a verdict. Readiness (Step 4.9) maps the verdict to <c>StagingNotVisible</c> or <c>NotReady</c>.
 /// </summary>
 public sealed class MssqlStagingProbe
 {
@@ -27,20 +30,31 @@ public sealed class MssqlStagingProbe
     /// <summary>SHA-256 of zero bytes.</summary>
     internal const string EmptySha256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855";
 
+    internal static readonly EventId ProbeFileResidue = new(1438_41, nameof(ProbeFileResidue));
+
     private readonly MssqlBackupStager _stager;
     private readonly MssqlAdminConnection _adminConnection;
+    private readonly ILogger _logger;
 
-    public MssqlStagingProbe(MssqlBackupStager stager, MssqlAdminConnection adminConnection)
+    /// <param name="stager">The real staging routine the probe file is written with.</param>
+    /// <param name="adminConnection">The administrative connection the server is asked on.</param>
+    /// <param name="logger">Receives a probe file left behind by a run that ended with an exception, by generated name only.</param>
+    public MssqlStagingProbe(MssqlBackupStager stager, MssqlAdminConnection adminConnection, ILogger logger)
     {
         ArgumentNullException.ThrowIfNull(stager);
         ArgumentNullException.ThrowIfNull(adminConnection);
+        ArgumentNullException.ThrowIfNull(logger);
         _stager = stager;
         _adminConnection = adminConnection;
+        _logger = logger;
     }
+
+    /// <summary>Test seam: the statement sent for the probe file's server path; production sends <c>RESTORE HEADERONLY</c>.</summary>
+    internal Func<string, string> HeaderStatement { get; init; } = MssqlRestorePlanner.HeaderOnlyStatement;
 
     /// <summary>
     /// Writes, probes, and deletes one probe file. A failure to reach the server propagates for readiness to
-    /// classify, after the probe file is deleted; so does cancellation.
+    /// classify after the deletion is attempted; so does cancellation, as <see cref="OperationCanceledException"/>.
     /// </summary>
     public async Task<MssqlStagingProbeResult> RunAsync(CancellationToken cancellationToken)
     {
@@ -69,7 +83,7 @@ public sealed class MssqlStagingProbe
         }
         catch
         {
-            await _stager.DeleteAsync(probe);
+            await DeleteOrLogResidueAsync(probe);
             throw;
         }
 
@@ -100,12 +114,52 @@ public sealed class MssqlStagingProbe
     }
 
     private SqlCommand HeaderCommand(string serverPath, SqlConnection connection) =>
-        new(MssqlRestorePlanner.HeaderOnlyStatement(serverPath), connection)
+        new(HeaderStatement(serverPath), connection)
         {
             CommandTimeout = _adminConnection.CommandTimeoutSeconds,
         };
 
+    /// <summary>
+    /// The deletion on a run that ends with an exception: the exception carries no residue, so a probe file the
+    /// bounded deletion could not remove is logged at Error by its generated name, never a path or a value.
+    /// </summary>
+    private async Task DeleteOrLogResidueAsync(MssqlStagedBackup probe)
+    {
+        if (!await _stager.DeleteAsync(probe))
+        {
+            _logger.LogError(
+                ProbeFileResidue,
+                "DMSPROV-ProbeFileResidue: the staging probe {ResourceId} could not be deleted",
+                probe.FileName
+            );
+        }
+    }
+
+    /// <summary>
+    /// The server's answer; once the caller has cancelled, any failure (SqlClient reports a request it cancelled
+    /// after sending as <see cref="SqlException"/> <c>0</c>) is <see cref="OperationCanceledException"/>.
+    /// </summary>
     private async Task<(MssqlStagingVisibility, DmsProvisioningDiagnostic?)> AskServerAsync(
+        string serverPath,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await AskServerCoreAsync(serverPath, cancellationToken);
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException && cancellationToken.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(
+                "The staging probe was cancelled.",
+                exception,
+                cancellationToken
+            );
+        }
+    }
+
+    private async Task<(MssqlStagingVisibility, DmsProvisioningDiagnostic?)> AskServerCoreAsync(
         string serverPath,
         CancellationToken cancellationToken
     )
@@ -120,7 +174,10 @@ public sealed class MssqlStagingProbe
                 // Drained only: any header row is the inconclusive answer below.
             }
         }
-        catch (SqlException exception) when (!MssqlErrorClassifier.IsConnectionFailure(exception))
+        catch (SqlException exception)
+            when (!cancellationToken.IsCancellationRequested
+                && !MssqlErrorClassifier.IsConnectionFailure(exception)
+            )
         {
             MssqlStagingVisibility visibility = Classify(MssqlErrorClassifier.ErrorNumbersOf(exception));
             return (

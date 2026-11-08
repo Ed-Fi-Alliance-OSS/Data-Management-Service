@@ -4,14 +4,27 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
+using JobsLogEntry = EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs.LogEntry;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Mssql;
 
-/// <summary>D-21: the verdict by error number, the server path joins, and a probe the CMS cannot write never reaching the server.</summary>
+/// <summary>
+/// D-21: the verdict by error number, the server path joins, a probe the CMS cannot write never reaching the server,
+/// and a run that ends with an exception keeping that exception while it deletes the probe file or logs it by name.
+/// </summary>
 public class MssqlStagingProbeTests
 {
+    /// <summary>Nothing listens on port 1: opening the connection fails at once.</summary>
+    private static MssqlAdminConnection Unreachable() =>
+        new(
+            "Server=127.0.0.1,1;User Id=sa;Password=unused;Connect Timeout=1;TrustServerCertificate=true",
+            TimeSpan.FromSeconds(5)
+        );
+
     [TestFixture]
     public class Given_error_number_vectors
     {
@@ -67,12 +80,10 @@ public class MssqlStagingProbeTests
                 NullLogger.Instance
             );
 
-            // Nothing listens on port 1: reaching the server would throw instead of returning a verdict.
-            MssqlAdminConnection unreachable = new(
-                "Server=127.0.0.1,1;User Id=sa;Password=unused;Connect Timeout=1;TrustServerCertificate=true",
-                TimeSpan.FromSeconds(5)
+            // Reaching the server would throw instead of returning a verdict.
+            _result = await new MssqlStagingProbe(stager, Unreachable(), NullLogger.Instance).RunAsync(
+                CancellationToken.None
             );
-            _result = await new MssqlStagingProbe(stager, unreachable).RunAsync(CancellationToken.None);
         }
 
         [Test]
@@ -85,5 +96,96 @@ public class MssqlStagingProbeTests
 
         [Test]
         public void It_reports_nothing_left_behind() => _result.ProbeDeleted.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_a_staged_probe_and_a_server_that_cannot_be_reached
+    {
+        private MssqlBackupStagerTests.StagingDirectory _directory = null!;
+        private readonly CapturingLogger<MssqlStagingProbe> _logger = new();
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _directory = new MssqlBackupStagerTests.StagingDirectory();
+            _logger.Entries.Clear();
+            _thrown = null;
+            try
+            {
+                await new MssqlStagingProbe(_directory.Stager(), Unreachable(), _logger).RunAsync(
+                    CancellationToken.None
+                );
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _directory.Dispose();
+
+        [Test]
+        public void It_propagates_the_connection_failure_unchanged() =>
+            _thrown.Should().BeOfType<SqlException>();
+
+        [Test]
+        public void It_deletes_the_probe_file() => _directory.Entries().Should().BeEmpty();
+
+        [Test]
+        public void It_logs_nothing() => _logger.Entries.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_staged_probe_the_cleanup_cannot_delete_and_a_server_that_cannot_be_reached
+    {
+        private MssqlBackupStagerTests.StagingDirectory? _directory;
+        private readonly CapturingLogger<MssqlStagingProbe> _logger = new();
+        private Exception? _thrown;
+        private string[] _left = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            MssqlBackupStagerTests.IgnoreIfPrivilegedOnUnix();
+            MssqlBackupStagerTests.StagingDirectory directory = new(cleanupAttempts: 2);
+            _directory = directory;
+            _logger.Entries.Clear();
+            _thrown = null;
+
+            // After the probe is written and before it is re-read: the re-hash still reads it, nothing can delete it.
+            MssqlBackupStager stager = directory.Stager(afterCopy: directory.MakeUndeletable);
+            try
+            {
+                await new MssqlStagingProbe(stager, Unreachable(), _logger).RunAsync(CancellationToken.None);
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+
+            _left = directory.Entries();
+        }
+
+        [TearDown]
+        public void TearDown() => _directory?.Dispose();
+
+        [Test]
+        public void It_propagates_the_connection_failure_unchanged() =>
+            _thrown.Should().BeOfType<SqlException>();
+
+        [Test]
+        public void It_leaves_one_probe_file() =>
+            _left.Should().ContainSingle().Which.Should().MatchRegex("^dms-provision-[0-9a-f]{12}\\.bak$");
+
+        [Test]
+        public void It_logs_the_probe_file_by_its_generated_name()
+        {
+            JobsLogEntry entry = _logger.Entries.Should().ContainSingle().Subject;
+            entry.EventId.Should().Be(MssqlStagingProbe.ProbeFileResidue);
+            entry.Level.Should().Be(Microsoft.Extensions.Logging.LogLevel.Error);
+            entry.Field("ResourceId").Should().Be(_left.Single());
+        }
     }
 }
