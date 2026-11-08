@@ -33,6 +33,10 @@ internal static class MssqlErrorClassifier
     public const int ServerPermissionDenied = 300;
     public const int DatabaseDoesNotExist = 911;
     public const int PrincipalCannotAccessDatabase = 916;
+
+    /// <summary>A database in single-user mode whose one slot another session holds refuses this use of it.</summary>
+    public const int DatabaseSingleUserOpen = 924;
+
     public const int DatabaseAlreadyExists = 1801;
     public const int DatabaseInUseForDrop = 3702;
     public const int DatabaseInUseForRestore = 3101;
@@ -52,6 +56,10 @@ internal static class MssqlErrorClassifier
     public const int AlterDatabaseNoPermission = 5011;
     public const int DatabaseNotExclusivelyLocked = 5030;
     public const int AlterDatabaseLockNotPlaced = 5061;
+
+    /// <summary>An option of a database in single-user mode cannot change while a user is connected to it.</summary>
+    public const int AlterDatabaseSingleUserConnected = 5064;
+
     public const int KillNoPermission = 6102;
     public const int KillNoSuchSession = 6106;
     public const int ActionNoPermission = 15247;
@@ -191,6 +199,8 @@ internal static class MssqlErrorClassifier
             DatabaseAlreadyExists => DmsCommandFailureClass.DuplicateName,
             AlterDatabaseLockNotPlaced
             or DatabaseNotExclusivelyLocked
+            or AlterDatabaseSingleUserConnected
+            or DatabaseSingleUserOpen
             or DatabaseInUseForDrop
             or DatabaseInUseForRestore => DmsCommandFailureClass.ObjectInUse,
             DatabaseDoesNotExist or InvalidObjectName or KillNoSuchSession =>

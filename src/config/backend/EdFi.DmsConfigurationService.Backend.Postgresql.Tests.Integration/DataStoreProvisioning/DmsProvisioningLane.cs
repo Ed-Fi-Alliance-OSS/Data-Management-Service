@@ -236,6 +236,16 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
         return inner.UnfenceAsync(holder, target, instance, cancellationToken);
     }
 
+    public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    )
+    {
+        Calls.Add((nameof(ReadIdentityOnHolderAsync), target.Value));
+        return inner.ReadIdentityOnHolderAsync(holder, target, cancellationToken);
+    }
+
     public Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,

@@ -102,6 +102,12 @@ public sealed class UnavailableDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     ) => throw Unavailable();
 
+    public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    ) => throw Unavailable();
+
     public Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,

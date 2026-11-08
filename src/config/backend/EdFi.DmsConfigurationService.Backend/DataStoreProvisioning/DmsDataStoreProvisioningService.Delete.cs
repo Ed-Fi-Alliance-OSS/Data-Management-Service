@@ -13,7 +13,11 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// bound to its instance and must carry the expected identity; it is then fenced on the holder session with
 /// every other session terminated and proven gone (D-22), its identity and instance are read again under the
 /// fence, our own session is closed and proven gone, and the drop re-verifies the instance, the fence and the
-/// absence of sessions before it runs. Every selected-target mutation is recorded in a <see cref="Deletion"/>
+/// absence of sessions before it runs. On SQL Server the fence (single-user mode with <c>ROLLBACK IMMEDIATE</c>)
+/// can keep no session, so our session is closed and proven gone before the fence; the holder session that set
+/// single-user mode then holds the database's one slot, so the identity is read again on the holder through a
+/// three-part name, and the instance by inspection.
+/// Every selected-target mutation is recorded in a <see cref="Deletion"/>
 /// ledger before it is sent: a failure after the fence reverses it on the holder session before the failure is
 /// reported, and whatever the lock could not settle (an outcome in doubt, loss, the caller's cancellation) is
 /// settled after it is released by reading state only, never by a further mutation. A target left fenced is
@@ -104,7 +108,6 @@ public sealed partial class DmsDataStoreProvisioningService
         Deletion deletion
     )
     {
-        DmsDataStoreProvisioningOptions settings = options.Value;
         DmsTargetDatabaseName target = request.TargetName;
 
         // 6.6 step 1: the preamble refuses protected and fenced targets.
@@ -120,6 +123,13 @@ public sealed partial class DmsDataStoreProvisioningService
         }
 
         DmsInstanceIdentity instance = present.Instance;
+
+        // SQL Server's fence ends every session on the target and keeps none (6.6 SQL Server step 3).
+        bool fenceKeepsNoSession = string.Equals(
+            engine.Provider,
+            DmsDataStoreProvisioningOptions.MssqlProvider,
+            StringComparison.Ordinal
+        );
 
         // 6.6 step 2: our target session, bound to the inspected instance; ownership is read, nothing is mutated.
         DmsSession? session = await OpenOwnedSessionAsync(
@@ -140,9 +150,17 @@ public sealed partial class DmsDataStoreProvisioningService
         {
             await VerifyOwnedAsync(scope, session, request.ExpectedSourceIdentity, DeleteIdentityStep);
 
+            if (fenceKeepsNoSession)
+            {
+                // 6.6 SQL Server step 3: our work session is closed and proven gone before the fence.
+                sessionClosed = true;
+                await session.DisposeAsync();
+                await ReleaseTargetSessionAsync(scope, targetSession);
+            }
+
             // 6.6 step 3: D-23, the last await point before the fence.
             await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeFence, scope.Operation, scope.CallerToken);
-            await FenceAsync(scope, target, instance, targetSession, deletion);
+            await FenceAsync(scope, target, instance, fenceKeepsNoSession ? null : targetSession, deletion);
 
             await WhileFencedAsync(
                 scope,
@@ -150,7 +168,16 @@ public sealed partial class DmsDataStoreProvisioningService
                 async () =>
                 {
                     // 6.6 step 4: ownership and instance again, now that no other session can change them.
-                    await VerifyOwnedAsync(scope, session, request.ExpectedSourceIdentity, VerifyFencedStep);
+                    // SQL Server: the holder holds the single-user slot, so it reads the identity itself.
+                    await VerifyOwnedAsync(
+                        scope,
+                        fenceKeepsNoSession
+                            ? token => engine.ReadIdentityOnHolderAsync(scope.Holder, target, token)
+                            : token => engine.ReadIdentityAsync(session, token),
+                        request.ExpectedSourceIdentity,
+                        VerifyFencedStep
+                    );
+
                     DmsLiveTargetState fenced = await scope.ReadAsync(
                         VerifyFencedStep,
                         token => engine.InspectAsync(target, token)
@@ -172,26 +199,12 @@ public sealed partial class DmsDataStoreProvisioningService
                             throw StepFailed(DmsProvisioningFailureCode.InstanceChanged, VerifyFencedStep);
                     }
 
-                    // 6.6 step 5: our own session is closed and proven gone before the drop checks for sessions.
-                    sessionClosed = true;
-                    await session.DisposeAsync();
-                    DmsSessionTermination released = await scope.CallAsync(
-                        ReleaseTargetSessionStep,
-                        settings.SessionTerminationTimeout + settings.CommandTimeout,
-                        token =>
-                            engine.TerminateSessionAsync(
-                                targetSession,
-                                settings.SessionTerminationTimeout,
-                                token
-                            ),
-                        observe: null
-                    );
-                    if (released is DmsSessionTermination.NotTerminated)
+                    if (!fenceKeepsNoSession)
                     {
-                        throw StepFailed(
-                            DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
-                            ReleaseTargetSessionStep
-                        );
+                        // 6.6 step 5: our own session is closed and proven gone before the drop checks for sessions.
+                        sessionClosed = true;
+                        await session.DisposeAsync();
+                        await ReleaseTargetSessionAsync(scope, targetSession);
                     }
 
                     // D-23: the last await point before the drop.
@@ -215,15 +228,43 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
+    /// Proves <paramref name="targetSession"/>, already closed by the client, gone from the server (D-22), so a later
+    /// fence or drop cannot meet it; unproven is <c>ExclusiveAccessNotEstablished</c>.
+    /// </summary>
+    private async Task ReleaseTargetSessionAsync(LockScope scope, DmsServerSessionId targetSession)
+    {
+        DmsDataStoreProvisioningOptions settings = options.Value;
+        DmsSessionTermination released = await scope.CallAsync(
+            ReleaseTargetSessionStep,
+            settings.SessionTerminationTimeout + settings.CommandTimeout,
+            token => engine.TerminateSessionAsync(targetSession, settings.SessionTerminationTimeout, token),
+            observe: null
+        );
+        if (released is DmsSessionTermination.NotTerminated)
+        {
+            throw StepFailed(
+                DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                ReleaseTargetSessionStep
+            );
+        }
+    }
+
+    /// <summary>
     /// The identity on <paramref name="session"/>: a refused or unreadable identity is
     /// <c>TargetUnverifiable</c> and another identity <c>TargetUnowned</c>, both under <paramref name="step"/>.
     /// </summary>
-    private async Task VerifyOwnedAsync(LockScope scope, DmsSession session, Guid expected, string step)
+    private Task VerifyOwnedAsync(LockScope scope, DmsSession session, Guid expected, string step) =>
+        VerifyOwnedAsync(scope, token => engine.ReadIdentityAsync(session, token), expected, step);
+
+    /// <summary>The identity <paramref name="read"/> returns, judged as <see cref="VerifyOwnedAsync(LockScope, DmsSession, Guid, string)"/> does.</summary>
+    private static async Task VerifyOwnedAsync(
+        LockScope scope,
+        Func<CancellationToken, Task<DmsIdentityRead>> read,
+        Guid expected,
+        string step
+    )
     {
-        DmsIdentityRead identity = await scope.ReadAsync(
-            step,
-            token => engine.ReadIdentityAsync(session, token)
-        );
+        DmsIdentityRead identity = await scope.ReadAsync(step, read);
         ThrowIfAccessDenied(identity, DmsProvisioningFailureCode.TargetUnverifiable, step);
         if (identity is not DmsIdentityRead.Found found)
         {
@@ -237,7 +278,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.6 step 3 on the holder session, keeping <paramref name="keep"/>. A target that is no longer the
+    /// 6.6 step 3 on the holder session, keeping <paramref name="keep"/> (none on SQL Server). A target that is no longer the
     /// instance is <c>InstanceChanged</c> with nothing fenced; a fence that stands but did not establish
     /// exclusivity is reversed first and reported as <c>ExclusiveAccessNotEstablished</c>, or
     /// <c>AdminPrivilegeMissing</c> for a missing privilege; an outcome in doubt puts the lock in doubt
@@ -247,7 +288,7 @@ public sealed partial class DmsDataStoreProvisioningService
         LockScope scope,
         DmsTargetDatabaseName target,
         DmsInstanceIdentity instance,
-        DmsServerSessionId keep,
+        DmsServerSessionId? keep,
         Deletion deletion
     )
     {

@@ -650,7 +650,8 @@ public class MssqlPublicationTests
         private DmsLiveTargetState _matchingAfter = null!;
         private DmsLiveTargetState _mismatchingAfter = null!;
         private DmsLiveTargetState _connectedAfter = null!;
-        private Exception? _ownedDelete;
+        private DmsCommandOutcome _ownedDelete = null!;
+        private DmsLiveTargetState _ownedDeleteAfter = null!;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -680,15 +681,14 @@ public class MssqlPublicationTests
                 default
             );
             _mismatchingAfter = await Staged.InspectAsync(_mismatching.Target);
-            _ownedDelete = await Record.ExceptionAsync(() =>
-                _mismatching.Engine.DropInstanceAsync(
-                    _mismatching.Holder,
-                    _mismatching.Target,
-                    other,
-                    DmsDropReason.Delete,
-                    default
-                )
+            _ownedDelete = await _mismatching.Engine.DropInstanceAsync(
+                _mismatching.Holder,
+                _mismatching.Target,
+                other,
+                DmsDropReason.Delete,
+                default
             );
+            _ownedDeleteAfter = await Staged.InspectAsync(_mismatching.Target);
 
             _connected = await Staged.CreateAsync("compensateinuse");
             DmsInstanceIdentity.Mssql inUse = await _connected.RenamedAsync();
@@ -766,7 +766,21 @@ public class MssqlPublicationTests
         }
 
         [Test]
-        public void It_leaves_the_owned_delete_to_step_4_8() =>
-            _ownedDelete.Should().BeOfType<NotImplementedException>();
+        public void It_routes_an_owned_delete_to_the_fenced_drop_which_refuses_an_unfenced_target()
+        {
+            _ownedDelete
+                .Should()
+                .Be(
+                    new DmsCommandOutcome.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.ObjectInUse,
+                            DmsProvisioningDiagnostic.ForOperation(
+                                MssqlDeletionQueries.DropTargetNotFencedStep
+                            )
+                        )
+                    )
+                );
+            _ownedDeleteAfter.Should().BeOfType<DmsLiveTargetState.Present>();
+        }
     }
 }

@@ -466,6 +466,16 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         );
     }
 
+    /// <summary>Not used on PostgreSQL: the fence keeps the delete's own session, which reads the identity (6.6 step 4).</summary>
+    public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    ) =>
+        throw new NotSupportedException(
+            "The PostgreSQL fence keeps the delete's own session; the identity is read there, not on the holder."
+        );
+
     /// <summary>
     /// On the holder session: the compensation drop (6.7), or the owned delete (6.6 step 5), which drops only a
     /// target that is still fenced with no client session on it.

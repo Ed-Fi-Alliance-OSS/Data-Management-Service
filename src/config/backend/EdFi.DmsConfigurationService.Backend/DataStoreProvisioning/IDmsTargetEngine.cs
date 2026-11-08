@@ -134,6 +134,18 @@ public interface IDmsTargetEngine
     );
 
     /// <summary>
+    /// On the holder session, under its fence: the delivered identity read of <paramref name="target"/> (6.6 SQL Server
+    /// step 4). On SQL Server the session that set single-user mode holds the database's one slot until it reverses the
+    /// fence, so no other session can read it; the holder reads it through a three-part name. Same outcomes as
+    /// <see cref="ReadIdentityAsync"/>. PostgreSQL keeps its own session through the fence and does not support it.
+    /// </summary>
+    Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// On the holder session: drops the selected target after re-verifying <paramref name="instance"/> under
     /// <paramref name="target"/>. Two callers: owned deletion (6.6 step 5), which by its nature drops a target
     /// found by inspection whose marker equals the expected identity, after fencing and verified exclusivity;

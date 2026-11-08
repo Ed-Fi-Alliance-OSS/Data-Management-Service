@@ -36,6 +36,8 @@ public class MssqlErrorClassifierTests
                 5030,
                 3702,
                 3101,
+                5064,
+                924,
                 3142,
                 3159,
                 3201,
@@ -71,6 +73,12 @@ public class MssqlErrorClassifierTests
             new[] { _classes[5030], _classes[3702], _classes[3101] }
                 .Should()
                 .AllBeEquivalentTo(DmsCommandFailureClass.ObjectInUse);
+
+        [Test]
+        public void It_classifies_the_single_user_slot_held_by_another_session_as_object_in_use() =>
+            (_classes[5064], _classes[924])
+                .Should()
+                .Be((DmsCommandFailureClass.ObjectInUse, DmsCommandFailureClass.ObjectInUse));
 
         [Test]
         public void It_classifies_a_restore_over_an_existing_file_as_rejected() =>

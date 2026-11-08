@@ -32,6 +32,7 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public const string DropInstance = "DropInstance";
     public const string Fence = "Fence";
     public const string Unfence = "Unfence";
+    public const string ReadIdentityOnHolder = "ReadIdentityOnHolder";
 
     public sealed record Call(string Member, string? DatabaseName);
 
@@ -145,6 +146,14 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         DmsInstanceIdentity instance,
         CancellationToken cancellationToken
     );
+
+    public delegate Task<DmsIdentityRead> HolderIdentityScript(
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    );
+
+    public HolderIdentityScript OnReadIdentityOnHolder { get; set; } =
+        (_, _) => throw NotExpected(ReadIdentityOnHolder);
 
     public CreateStagingScript OnCreateStaging { get; set; } = (_, _, _) => throw NotExpected(CreateStaging);
 
@@ -315,6 +324,16 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     {
         Record(Unfence, target.Value);
         return OnUnfence(target, instance, cancellationToken);
+    }
+
+    public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    )
+    {
+        Record(ReadIdentityOnHolder, target.Value);
+        return OnReadIdentityOnHolder(target, cancellationToken);
     }
 
     public Task<DmsCommandOutcome> DropInstanceAsync(

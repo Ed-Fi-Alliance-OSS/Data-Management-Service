@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
@@ -133,6 +135,13 @@ internal static class MssqlInventoryQueries
     /// </summary>
     public const string SourceIdentityRows =
         "SET NOCOUNT ON; SELECT TOP (2) CONVERT(nvarchar(max), [SourceIdentity]) FROM [dms].[DataStoreIdentity];";
+
+    /// <summary>
+    /// <see cref="SourceIdentityRows"/> through a three-part name, for the holder session in <c>master</c> that holds a
+    /// fenced target's single-user slot (6.6 SQL Server step 4). <c>NOCOUNT</c> is left as the holder has it.
+    /// </summary>
+    public static string SourceIdentityRowsIn(DmsDatabaseName database) =>
+        $"SELECT TOP (2) CONVERT(nvarchar(max), [SourceIdentity]) FROM {MssqlIdentifiers.Quote(database.Value)}.[dms].[DataStoreIdentity];";
 
     /// <summary>
     /// Every <c>DocumentJson</c> column in the <c>dms</c> schema with its type, declared length included

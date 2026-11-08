@@ -27,10 +27,11 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// database dropped by its instance or by the reserved primary file name (the second part of this class).
 /// And publication (6.4 steps 10 and 12, 6.7): the rename into the target with the identity transition, the
 /// marker, and the compensation drop (the third part of this class).
+/// And the owned delete (6.6): the fence, its reversal and the owned drop (the fourth part of this class).
 /// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
-/// violation, because the authoritative DDL never produces one. The remaining mutating members arrive with
-/// Steps 4.8 and 4.9.
+/// violation, because the authoritative DDL never produces one. Environmental validation arrives with
+/// Step 4.9.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
 {
@@ -400,21 +401,6 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             HasPopulatedDocument = hasPopulatedDocument,
         };
     }
-
-    public Task<DmsCommandOutcome> FenceAsync(
-        IDmsTargetLockHolder holder,
-        DmsTargetDatabaseName target,
-        DmsInstanceIdentity instance,
-        DmsServerSessionId? keep,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(FenceAsync), "Step 4.8");
-
-    public Task<DmsCommandOutcome> UnfenceAsync(
-        IDmsTargetLockHolder holder,
-        DmsTargetDatabaseName target,
-        DmsInstanceIdentity instance,
-        CancellationToken cancellationToken
-    ) => throw NotYetImplemented(nameof(UnfenceAsync), "Step 4.8");
 
     /// <summary>
     /// D-22 on a fresh maintenance session, so it works whether or not the session's own connection (the

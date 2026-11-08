@@ -42,7 +42,7 @@ internal static class MssqlSessionQueries
     /// where it exists (<c>HAS_PERMS_BY_NAME</c> returns null for an unknown permission name), the older one
     /// otherwise; both count implied permissions, so <c>sysadmin</c> and <c>VIEW SERVER STATE</c> qualify.
     /// </summary>
-    private const string SessionsVisible =
+    internal const string SessionsVisible =
         "CONVERT(int, COALESCE(HAS_PERMS_BY_NAME(NULL, NULL, N'VIEW SERVER PERFORMANCE STATE'), HAS_PERMS_BY_NAME(NULL, NULL, N'VIEW SERVER STATE')))";
 
     /// <summary>Null when no session has the id, 1 when it has the expected <c>login_time</c>, 0 when another session now has the id.</summary>

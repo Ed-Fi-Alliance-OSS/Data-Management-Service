@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
@@ -270,6 +271,16 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
         return inner.UnfenceAsync(holder, target, instance, cancellationToken);
     }
 
+    public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    )
+    {
+        Calls.Add((nameof(ReadIdentityOnHolderAsync), target.Value));
+        return inner.ReadIdentityOnHolderAsync(holder, target, cancellationToken);
+    }
+
     public Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
@@ -432,6 +443,44 @@ internal sealed class Lane : IAsyncDisposable
 
     public Task<DmsDataStoreCreateResult> CreateAsync(CancellationToken cancellationToken = default) =>
         Service.CreateAsync(Request, cancellationToken);
+
+    /// <summary>A delete of the lane's target under the record's expected identity.</summary>
+    public DmsDataStoreDeleteRequest DeleteRequest => new(Target, Request.ExpectedSourceIdentity);
+
+    public Task<DmsDataStoreDeleteResult> DeleteAsync() => Service.DeleteAsync(DeleteRequest, default);
+
+    /// <summary>Artifact bytes for a lane that only deletes: the catalog needs a package, a delete never restores it.</summary>
+    public static byte[] DeleteOnlyArtifact => "TAPE\0delete-only lane\n"u8.ToArray();
+
+    /// <summary>
+    /// Builds the lane's target without a restore: the committed DMS-shaped fixture under the target name, carrying
+    /// <paramref name="sourceIdentity"/> (the record's expected identity by default). A delete needs only the identity.
+    /// </summary>
+    public async Task<DmsInstanceIdentity.Mssql> SeedTargetAsync(Guid? sourceIdentity = null)
+    {
+        await ExecuteOnServerAsync($"CREATE DATABASE {MssqlIdentifiers.Quote(Target.Value)};");
+        TestDatabase target = new(Target.Value);
+        await target.ExecuteAsync(await File.ReadAllTextAsync(FixturePath("dms-shaped-database.sql")));
+        await target.ExecuteAsync(
+            $"UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = '{(sourceIdentity ?? Request.ExpectedSourceIdentity):D}';"
+        );
+        DmsInstanceIdentity.Mssql instance = await target.CatalogInstanceAsync();
+        await WaitForNoSessionsOnAsync(Target.Value);
+        return instance;
+    }
+
+    /// <summary>Whether the target exists, with its <c>database_id</c> and <c>user_access_desc</c>, read on a side connection.</summary>
+    public async Task<(bool Exists, int DatabaseId, string UserAccess)> TargetCatalogAsync()
+    {
+        await using SqlConnection connection = await AdminConnection().OpenMaintenanceAsync(default);
+        await using SqlCommand command = new(
+            "SELECT d.database_id, d.user_access_desc FROM sys.databases d WHERE d.name = @name;",
+            connection
+        );
+        command.Parameters.AddWithValue("@name", Target.Value);
+        await using SqlDataReader reader = await command.ExecuteReaderAsync();
+        return await reader.ReadAsync() ? (true, reader.GetInt32(0), reader.GetString(1)) : (false, 0, "");
+    }
 
     /// <summary>The <c>SourceIdentity</c> of the database under the target name, read on a fresh connection.</summary>
     public async Task<Guid> TargetIdentityAsync() =>
