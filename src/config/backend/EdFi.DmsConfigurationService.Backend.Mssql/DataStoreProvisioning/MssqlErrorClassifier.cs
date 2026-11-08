@@ -43,6 +43,10 @@ internal static class MssqlErrorClassifier
     public const int BackupDeviceCannotOpen = 3201;
     public const int BackupMediaFamilyMalformed = 3241;
     public const int BackupNotAValidBackupSet = 3242;
+
+    /// <summary>The volume on the device is empty: what <c>RESTORE HEADERONLY</c> reports for a zero-byte file it opened.</summary>
+    public const int BackupVolumeEmpty = 3254;
+
     public const int BatchAborted = 3980;
     public const int CannotOpenRequestedDatabase = 4060;
     public const int AlterDatabaseNoPermission = 5011;
@@ -92,6 +96,15 @@ internal static class MssqlErrorClassifier
 
     /// <summary>The number of the first SQL Server error in the chain (its first reported error), or null when there is none.</summary>
     public static int? ErrorNumberOf(Exception exception) => FirstSqlException(exception)?.Number;
+
+    /// <summary>
+    /// Every error number the first <see cref="SqlException"/> in the chain carries, in the order the server sent
+    /// them (<c>RESTORE</c> reports the specific error, then <c>3013</c>); empty when there is none.
+    /// </summary>
+    public static IReadOnlyList<int> ErrorNumbersOf(Exception exception) =>
+        FirstSqlException(exception) is { } sql
+            ? [.. sql.Errors.Cast<SqlError>().Select(error => error.Number)]
+            : [];
 
     /// <summary>
     /// Whether an error with this number and severity proves the session's connection failed (D-12 loss
