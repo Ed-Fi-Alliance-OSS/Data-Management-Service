@@ -164,14 +164,17 @@ Describe 'CDC qualification image pulls' {
 }
 
 Describe 'CDC qualification image-pull runner boundary' {
-    It 'retains pull evidence and reports unavailable prerequisites without starting tests after retries are exhausted' {
+    It 'retains <Lane> pull evidence and refuses tests after required <Failure> image pull retries are exhausted' -ForEach @(
+        @{ Lane = 'Kafka'; Suite = 'All'; Failure = 'Connect' },
+        @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Failure = 'UpgradeSource' }
+    ) {
         # Run the real entry point in a child process because it deliberately exits nonzero.
         # Docker and sleep shims keep this deterministic and independent of a live registry.
         $harness = Join-Path $TestDrive 'runner-harness.ps1'
-        $destination = Join-Path $TestDrive 'runner-evidence'
+        $destination = Join-Path $TestDrive "runner-evidence-$Lane"
         $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
         Set-Content -LiteralPath $harness -Value @'
-param([string] $Runner, [string] $Destination)
+param([string] $Runner, [string] $Destination, [string] $Lane, [string] $Suite, [string] $Failure)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Runner) '../..'))
 $qualified = Get-Content (Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
@@ -179,10 +182,13 @@ $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
 Remove-Item Env:CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE -ErrorAction SilentlyContinue
 $env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE = 'unqualified-local-override:latest'
 $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'fixture-postgres:latest'
+$global:failedImage = if ($Failure -eq 'UpgradeSource') {
+    & (Join-Path (Split-Path $Runner) 'Get-CdcQualificationKafkaImage.ps1') -UpgradeSource
+} else { $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }
 function global:docker {
     if ($env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE -eq 'unqualified-local-override:latest') { throw 'Qualification must select the shipped broker.' }
     $global:LASTEXITCODE = 0
-    if ($args[0] -eq 'pull' -and $args[-1] -eq $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE) {
+    if ($args[0] -eq 'pull' -and $args[-1] -eq $global:failedImage) {
         $global:LASTEXITCODE = 17
         'Error response from daemon: toomanyrequests: private-token'
     }
@@ -190,10 +196,10 @@ function global:docker {
 }
 function global:Start-Sleep { }
 function global:dotnet { throw 'The test suite must not start after a failed pull.' }
-& $Runner -Lane Kafka -ResultsDirectory $Destination -PullImages
+& $Runner -Lane $Lane -Suite $Suite -ResultsDirectory $Destination -PullImages
 exit $LASTEXITCODE
 '@
-        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination 2>&1 | Out-String
+        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination -Lane $Lane -Suite $Suite -Failure $Failure 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 1
         $output | Should -Not -Match 'private-token|The test suite must not start'
         $report = Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json -NoEnumerate
@@ -203,9 +209,15 @@ exit $LASTEXITCODE
         $report[0].Reason | Should -Match 'after 3 attempts \(exit=17, category=RateLimited\)'
         $records = @(Get-Content (Join-Path $destination 'image-pulls.jsonl') | ConvertFrom-Json)
         $records[0].Image | Should -Be (& (Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'))
-        $records.ExitCode | Should -Be @(0, 17, 17, 17)
-        $records.Attempt | Should -Be @(1, 1, 2, 3)
-        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 4
+        if ($Failure -eq 'UpgradeSource') {
+            $records[3].Image | Should -Be (& (Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1') -UpgradeSource)
+            $records.ExitCode | Should -Be @(0, 0, 0, 17, 17, 17)
+            $records.Attempt | Should -Be @(1, 1, 1, 1, 2, 3)
+        } else {
+            $records.ExitCode | Should -Be @(0, 17, 17, 17)
+            $records.Attempt | Should -Be @(1, 1, 2, 3)
+        }
+        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be $records.Count
         @(Get-ChildItem $destination -Name | Sort-Object) | Should -Be @('image-pulls.jsonl', 'qualification.json', 'runtime-inputs.json')
         (Get-ChildItem $destination -File | Get-Content -Raw) -join '' | Should -Not -Match 'private-token'
     }
@@ -2519,6 +2531,33 @@ Describe 'CDC API cleanup remaining resource probes' {
 }
 
 Describe 'CDC qualification Kafka image' {
+    It 'resolves the historical upgrade source and rejects missing, mutable or wrong-version inputs' {
+        $resolver = Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'
+        $image = & $resolver -UpgradeSource
+        $image | Should -Match '^apache/kafka:3\.9\.0@sha256:[a-f0-9]{64}$'
+        $source = Join-Path $TestDrive 'upgrade.cs'
+        foreach ($candidate in @('', 'apache/kafka:3.9.0', (& $resolver))) {
+            Set-Content $source "internal const string PreviousKafkaImage = `"$candidate`";"
+            { & $resolver -UpgradeSource -UpgradeSourceFile $source } | Should -Throw '*digest-pinned Apache Kafka 3.9.0*'
+        }
+        Set-Content $source "internal const string PreviousKafkaImage = `"$image`";"
+        (& $resolver -UpgradeSource -UpgradeSourceFile $source) | Should -Be $image
+    }
+
+    It 'rejects RecordSize evidence containing only fresh-volume persistence' {
+        $path = Join-Path $TestDrive 'missing-upgrade.trx'
+        $required = (Get-CdcRunbookRecordSizeReport (Join-Path $TestDrive 'missing.trx')).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            $count = if ($case.TestId -eq 'It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation') { 1 } else { $case.Required }
+            for ($i = 0; $i -lt $count; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookRecordSizeReport $path).Status | Should -Be Failed
+    }
+
     It 'reads the shipped image and rejects missing, mutable or mismatched pins' {
         $script = Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'
         $image = & $script

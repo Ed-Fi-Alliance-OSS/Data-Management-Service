@@ -75,6 +75,13 @@ automatically as a copy of the tracked `.env.example`, so a clean checkout
 needs no manual step. Edit `.env` to customize — `.env.example` itself is
 documentation only and is never consumed at runtime.
 
+For Kafka 3.9.0 data and the pinned 4.3.2 broker, read the
+[upgrade compatibility assessment](../../docs/KAFKA-UPGRADE.md) before changing an
+existing deployment. Retained managed CDC deployments fingerprint the Compose
+inputs and do not support an ungoverned broker-pin replacement. The
+[image security assessment](../../docs/KAFKA-IMAGE-SECURITY.md) records remaining
+package vulnerabilities separately from functional qualification.
+
 Kafka and Kafka UI compose files remain available for local infrastructure
 testing. Managed relational connector registration is available through
 `-EnableKafkaCdc` on the local/published bootstrap wrappers. Start with the

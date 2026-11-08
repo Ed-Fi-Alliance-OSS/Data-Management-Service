@@ -485,7 +485,7 @@ function Get-CdcRunbookRecordSizeReport {
         It_rejects_incomplete_or_mismatched_confirmation_without_mutation = 6
         It_requires_renewed_confirmation_at_every_interrupted_boundary = 7
         It_replays_the_uncommitted_over_budget_materialized_record_after_capacity_alignment = 1
-        It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation = 1
+        It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation = 2
     }
     Get-CdcRequiredMethodReport -Path $Path -Required $required -Name 'runbook-record-size-behavior' -ExactCount
 }

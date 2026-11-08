@@ -179,7 +179,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         CancellationToken cancellationToken,
         bool composeKafka = false,
         bool offlineKafka = false,
-        IReadOnlyList<string> schemaFiles = null!
+        IReadOnlyList<string> schemaFiles = null!,
+        bool upgradeKafka = false
     )
     {
         var suite = new CdcProviderAdmissionFixture(provider);
@@ -212,7 +213,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     }
                 },
                 composeKafka: composeKafka,
-                offlineKafka: offlineKafka
+                offlineKafka: offlineKafka,
+                upgradeKafka: upgradeKafka
             );
             return suite;
         }
@@ -401,11 +403,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         Kafka = Observed(
             CdcKafkaAdminAdapter.Create(
                 kafkaConfig,
-                new CdcComposeKafkaAuthorizationInspection(
-                    Infrastructure.Resources.ControllerProject,
-                    kafkaConfig.BootstrapServers,
-                    Request.ConnectorPolicy.KafkaBootstrapServers
-                )
+                Infrastructure.Resources.CreateControllerKafkaAuthorizationInspection()
             )
         );
         Controllers = CreateControllers();

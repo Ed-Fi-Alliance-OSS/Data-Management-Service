@@ -220,7 +220,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool exposeBroker = false,
         bool composeKafka = false,
         bool offlineKafka = false,
-        bool isolateSourceProducer = false
+        bool isolateSourceProducer = false,
+        bool upgradeKafka = false
     )
     {
         CdcConnectorTemplateSmokeSettings settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(
@@ -246,7 +247,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             exposeBroker: exposeBroker,
             composeKafka: composeKafka,
             offlineKafka: offlineKafka,
-            isolateSourceProducer: isolateSourceProducer
+            isolateSourceProducer: isolateSourceProducer,
+            upgradeKafka: upgradeKafka
         );
     }
 
@@ -263,7 +265,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         bool offlineKafka = false,
         Func<Exception, string, Task> writeStartupFailureEvidence = null!,
         bool isolateSourceProducer = false,
-        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> waitForConnect = null!
+        Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> waitForConnect = null!,
+        bool upgradeKafka = false
     )
     {
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
@@ -281,6 +284,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         {
             fixture._isolateSourceProducer = isolateSourceProducer;
             fixture._controllerComposeKafka = composeKafka;
+            fixture._upgradeKafka = upgradeKafka;
+            if (upgradeKafka && !composeKafka)
+            {
+                throw new ArgumentException("Kafka upgrades require the shipped Compose deployment.");
+            }
             if (exposeBroker)
             {
                 using var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);

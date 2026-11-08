@@ -13,13 +13,15 @@ using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-[TestFixture(CdcProvider.Postgresql, Category = "PostgresqlIntegration")]
-[TestFixture(CdcProvider.SqlServer, Category = "MssqlIntegration")]
+[TestFixture(CdcProvider.Postgresql, false, Category = "PostgresqlIntegration")]
+[TestFixture(CdcProvider.Postgresql, true, Category = "PostgresqlIntegration,CdcKafkaUpgrade")]
+[TestFixture(CdcProvider.SqlServer, false, Category = "MssqlIntegration")]
+[TestFixture(CdcProvider.SqlServer, true, Category = "MssqlIntegration,CdcKafkaUpgrade")]
 [Category(CdcControllerCategories.RecordSize)]
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
-public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
+public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider, bool upgradeFromPrevious)
 {
     private CdcProviderAdmissionFixture _fixture = null!;
     private CdcDeploymentRequest _request = null!;
@@ -41,7 +43,12 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
     {
         _evidence.Clear();
         _timeout = new(TimeSpan.FromMinutes(12));
-        _fixture = await CdcProviderAdmissionFixture.StartAsync(provider, Token, composeKafka: true);
+        _fixture = await CdcProviderAdmissionFixture.StartAsync(
+            provider,
+            Token,
+            composeKafka: true,
+            upgradeKafka: upgradeFromPrevious
+        );
         // Compose --wait includes the shipped 30-second health-check interval.
         _request = _fixture.WithTiming(
             new(
@@ -109,7 +116,14 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
         );
         await File.WriteAllTextAsync(
             path,
-            JsonSerializer.Serialize(new { Provider = provider.ToString(), Evidence = _evidence })
+            JsonSerializer.Serialize(
+                new
+                {
+                    Provider = provider.ToString(),
+                    UpgradeFromPrevious = upgradeFromPrevious,
+                    Evidence = _evidence,
+                }
+            )
         );
         TestContext.AddTestAttachment(path, "Sanitized shipped Compose recreation and continuity evidence");
         _sizes?.Dispose();
@@ -134,7 +148,44 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
         string originalContainer = await Resources.ComposeBrokerContainerIdAsync(Token);
         string originalWorker = await Resources.ComposeWorkerContainerIdAsync(Token);
         originalWorker.Should().HaveLength(64);
+        string originalStorage = await Resources.ComposeKafkaStorageIdentityAsync(
+            upgradeFromPrevious
+                ? CdcConnectorTemplatePinnedImageFixture.PreviousKafkaImage
+                : CdcComposeBrokerSizeDeployment.BrokerImage,
+            Token
+        );
+        string originalFeatures = await Resources.ComposeKafkaFeaturesAsync(Token);
+        string metadataVersion = upgradeFromPrevious ? "3.9-IV0" : "4.3-IV0";
+        originalFeatures
+            .Should()
+            .MatchRegex(@"Feature: metadata\.version\s+.*FinalizedVersionLevel: " + metadataVersion);
+        if (upgradeFromPrevious)
+        {
+            Resources.SelectShippedKafkaImage();
+        }
         await Resources.RecreateControllerComposeAsync(_request, _fixture.KafkaProvisioning(), Token);
+        (await Resources.ComposeKafkaStorageIdentityAsync(CdcComposeBrokerSizeDeployment.BrokerImage, Token))
+            .Should()
+            .Be(originalStorage, "upgrading the binary must not reformat existing storage");
+        string retainedFeatures = await Resources.ComposeKafkaFeaturesAsync(Token);
+        retainedFeatures
+            .Should()
+            .MatchRegex(@"Feature: metadata\.version\s+.*FinalizedVersionLevel: " + metadataVersion);
+        _evidence.Add(
+            new
+            {
+                Phase = upgradeFromPrevious ? "3.9.0-to-shipped-upgrade" : "fresh-shipped-startup",
+                SourceImage = upgradeFromPrevious
+                    ? CdcConnectorTemplatePinnedImageFixture.PreviousKafkaImage
+                    : CdcComposeBrokerSizeDeployment.BrokerImage,
+                TargetImage = CdcComposeBrokerSizeDeployment.BrokerImage,
+                StorageIdentity = originalStorage,
+                OriginalFeatures = originalFeatures,
+                RetainedFeatures = retainedFeatures,
+                StorageOwner = "1000:1000",
+                StaticQuorumRetained = true,
+            }
+        );
         (await Resources.ComposeWorkerContainerIdAsync(Token)).Should().NotBe(originalWorker);
         (await Resources.ComposeBrokerContainerIdAsync(Token)).Should().NotBe(originalContainer);
         await Resources.AssertComposeDataMountAsync(Token);

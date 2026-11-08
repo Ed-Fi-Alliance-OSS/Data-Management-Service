@@ -158,6 +158,36 @@ public class Given_Cdc_compose_authorization_inspection
         (await _adapter.InspectAsync([1], default)).State.Should().Be(CdcTransportEvidenceState.Unavailable);
     }
 
+    [TestCase("none", CdcTransportEvidenceState.Observed)]
+    [TestCase("reference", CdcTransportEvidenceState.Unavailable)]
+    [TestCase("image-id", CdcTransportEvidenceState.Unavailable)]
+    [TestCase("authorizer", CdcTransportEvidenceState.Unavailable)]
+    public async Task It_checks_historical_fixture_images_without_relaxing_live_authority(
+        string change,
+        CdcTransportEvidenceState expected
+    )
+    {
+        _image = "apache/kafka:historical@sha256:" + new string('b', 64);
+        // The ordinary construction must still reject a historical broker.
+        (await _adapter.InspectAsync([1], default))
+            .State.Should()
+            .Be(CdcTransportEvidenceState.Unavailable);
+        _adapter = new("selected", "127.0.0.1:9092", "dms-kafka1:9092", _docker, _image);
+        switch (change)
+        {
+            case "reference":
+                _image = CdcComposeBrokerSizeDeployment.BrokerImage;
+                break;
+            case "image-id":
+                _changeInspection = (container, _) => container["Image"] = "other-image";
+                break;
+            case "authorizer":
+                _properties += "authorizer.class.name=hidden\n";
+                break;
+        }
+        (await _adapter.InspectAsync([1], default)).State.Should().Be(expected);
+    }
+
     [Test]
     public async Task It_rejects_a_different_deployment()
     {
