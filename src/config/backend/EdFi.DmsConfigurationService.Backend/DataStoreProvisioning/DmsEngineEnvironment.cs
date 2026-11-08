@@ -5,9 +5,16 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>The verdict of <see cref="IDmsTargetEngine.ValidateEnvironmentAsync"/> (7.3 probes 4 to 7).</summary>
+/// <summary>
+/// The verdict of <see cref="IDmsTargetEngine.ValidateEnvironmentAsync"/> (7.3 probes 4 to 7), with the server's
+/// major version when the engine read it, so readiness can compare it with the templates' manifests
+/// (<see cref="DmsEngineCompatibility"/>).
+/// </summary>
 public abstract record DmsEngineEnvironment
 {
+    /// <summary>The live server's major version, as <see cref="DmsServerFacts.MajorVersion"/> reports it; null when the server was not read.</summary>
+    public int? ServerMajorVersion { get; init; }
+
     public sealed record Ready() : DmsEngineEnvironment;
 
     public sealed record NotReady : DmsEngineEnvironment

@@ -62,6 +62,7 @@ public class PostgresqlEnvironmentTests
     {
         private DmsEngineEnvironment _environment = null!;
         private long _probeLocksAfter;
+        private int _serverMajorVersion;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -71,6 +72,9 @@ public class PostgresqlEnvironmentTests
             await EnsureEnqueueOwnerRoleAsync();
             _environment = await Engine().ValidateEnvironmentAsync(default);
             long key = PostgresqlTargetLockSession.ProbeLockKey;
+            _serverMajorVersion = await ScalarOnServerAsync<int>(
+                "SELECT current_setting('server_version_num')::int / 10000;"
+            );
             _probeLocksAfter = await ScalarOnServerAsync<long>(
                 $"SELECT count(*) FROM pg_catalog.pg_locks WHERE locktype = 'advisory' AND classid = {(uint)((ulong)key >> 32)} AND objid = {(uint)(ulong)key} AND objsubid = 1;"
             );
@@ -88,6 +92,10 @@ public class PostgresqlEnvironmentTests
 
         [Test]
         public void It_releases_the_probe_lock() => _probeLocksAfter.Should().Be(0);
+
+        [Test]
+        public void It_reports_the_servers_major_version_for_the_template_comparison() =>
+            _environment.ServerMajorVersion.Should().Be(_serverMajorVersion);
     }
 
     [TestFixture]

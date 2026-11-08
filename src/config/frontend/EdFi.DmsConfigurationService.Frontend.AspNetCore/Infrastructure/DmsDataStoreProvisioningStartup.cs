@@ -17,7 +17,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// its text, which names settings and never values), then runs the probe groups of 7.3 and records every
 /// failed probe: secret resolution of the administrative connection string (item 1); the trust policy and
 /// catalog probes (items 2 and 3); and, once the connection string is resolved, the engine's probes (items 4
-/// to 7). The protected set is logged with sanitized names (item 8). When every probe passes the verdict is
+/// to 7). When the engine read the server's major version, it is compared with the <c>engineVersion</c> of
+/// every template whose manifest the catalog authenticated (D-9, 6.4 step 2), with the rule every create
+/// applies, so a template no create could restore is <c>EngineIncompatible</c> at startup. The protected set
+/// is logged with sanitized names (item 8). When every probe passes the verdict is
 /// <c>Ready</c> for the engine's provider; otherwise <c>NotReady</c> with each reason logged at Critical as
 /// <c>DMSPROV-&lt;Code&gt;</c>. A probe group that throws is recorded as <c>StartupValidationFailed</c> under
 /// its probe name rather than stopping the host. The host keeps running either way; the provisioner refuses
@@ -104,27 +107,48 @@ public static class DmsDataStoreProvisioningStartup
                 ),
             ]
             : [];
+        IReadOnlyList<TemplateEngineRequirement> engineRequirements = [];
         IReadOnlyList<DmsReadinessReason> catalogReasons = await RunGroupAsync(
-            catalog.ValidateAsync,
+            async token =>
+            {
+                TemplateCatalogValidation validation = await catalog.ValidateAsync(token);
+                engineRequirements = validation.EngineRequirements;
+                return validation.Reasons;
+            },
             CatalogProbesProbe,
             cancellationToken
         );
         IReadOnlyList<DmsReadinessReason> engineReasons = [];
+        int? serverMajorVersion = null;
         if (resolution is DmsAdminConnectionResolution.Resolved resolved)
         {
             // The engine connects with the connection string bound to its flow; startup binds its own.
             using IDisposable adminBinding = adminConnection.Bind(resolved.Connection);
             engineReasons = await RunGroupAsync(
                 async token =>
-                    await engine.ValidateEnvironmentAsync(token) is DmsEngineEnvironment.NotReady notReady
-                        ? notReady.Reasons
-                        : [],
+                {
+                    DmsEngineEnvironment environment = await engine.ValidateEnvironmentAsync(token);
+                    serverMajorVersion = environment.ServerMajorVersion;
+                    return environment is DmsEngineEnvironment.NotReady notReady ? notReady.Reasons : [];
+                },
                 EngineProbesProbe,
                 cancellationToken
             );
         }
 
-        IReadOnlyList<DmsReadinessReason> reasons = [.. secretReasons, .. catalogReasons, .. engineReasons];
+        // D-9 and 6.4 step 2 at startup: a server older than any authenticated template's engine is refused here,
+        // not by every create later. Nothing is compared when the server or a manifest could not be read.
+        IReadOnlyList<DmsReadinessReason> compatibilityReasons = serverMajorVersion is { } serverMajor
+            ? DmsEngineCompatibility.Evaluate(serverMajor, engineRequirements)
+            : [];
+
+        IReadOnlyList<DmsReadinessReason> reasons =
+        [
+            .. secretReasons,
+            .. catalogReasons,
+            .. engineReasons,
+            .. compatibilityReasons,
+        ];
 
         string provider = LoggingUtility.SanitizeForLog(engine.Provider);
         if (reasons.Count == 0)

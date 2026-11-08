@@ -75,13 +75,18 @@ public class MssqlEnvironmentValidationTests
     [TestFixture]
     public class Given_an_unreachable_server_and_a_missing_staging_directory
     {
+        private DmsEngineEnvironment _environment = null!;
         private IReadOnlyList<DmsReadinessReason> _reasons = [];
 
         [SetUp]
-        public async Task Setup() =>
-            _reasons = ReasonsOf(
-                await EngineWithStagingAt(NewDirectoryPath()).ValidateEnvironmentAsync(default)
-            );
+        public async Task Setup()
+        {
+            _environment = await EngineWithStagingAt(NewDirectoryPath()).ValidateEnvironmentAsync(default);
+            _reasons = ReasonsOf(_environment);
+        }
+
+        [Test]
+        public void It_reports_no_server_major_version() => _environment.ServerMajorVersion.Should().BeNull();
 
         [Test]
         public void It_reports_the_server_as_unavailable_and_the_directory_as_missing_only() =>

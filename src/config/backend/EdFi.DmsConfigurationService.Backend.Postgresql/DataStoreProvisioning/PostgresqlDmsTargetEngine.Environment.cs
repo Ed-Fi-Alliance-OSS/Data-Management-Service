@@ -21,7 +21,10 @@ public sealed partial class PostgresqlDmsTargetEngine
     public async Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken)
     {
         List<DmsReadinessReason> reasons = [];
-        bool serverReachable = await ValidateServerAsync(reasons, cancellationToken);
+        (bool serverReachable, int? serverMajorVersion) = await ValidateServerAsync(
+            reasons,
+            cancellationToken
+        );
 
         PsqlVersionProbeResult psql = await PsqlVersionProbe.ProbeAsync(
             _settings.PsqlPath,
@@ -40,12 +43,16 @@ public sealed partial class PostgresqlDmsTargetEngine
         }
 
         return reasons.Count == 0
-            ? new DmsEngineEnvironment.Ready()
-            : new DmsEngineEnvironment.NotReady(reasons);
+            ? new DmsEngineEnvironment.Ready() { ServerMajorVersion = serverMajorVersion }
+            : new DmsEngineEnvironment.NotReady(reasons) { ServerMajorVersion = serverMajorVersion };
     }
 
-    /// <summary>Connects, reads the facts, and applies the server rules; false when the server could not be reached.</summary>
-    private async Task<bool> ValidateServerAsync(
+    /// <summary>
+    /// Connects, reads the facts, and applies the server rules; returns whether the server was reached and its
+    /// major version (<c>server_version_num / 10000</c>, as <see cref="ReadServerFactsAsync"/> reports it), null
+    /// when the facts could not be read.
+    /// </summary>
+    private async Task<(bool Reachable, int? MajorVersion)> ValidateServerAsync(
         List<DmsReadinessReason> reasons,
         CancellationToken cancellationToken
     )
@@ -58,26 +65,26 @@ public sealed partial class PostgresqlDmsTargetEngine
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
             reasons.Add(ServerFailure(exception, PostgresqlEnvironment.ConnectOperation));
-            return false;
+            return (false, null);
         }
 
         await using (connection)
         {
             try
             {
-                reasons.AddRange(
-                    PostgresqlEnvironment.Evaluate(
-                        await PostgresqlEnvironment.ReadFactsAsync(connection, cancellationToken)
-                    )
+                PostgresqlEnvironmentFacts facts = await PostgresqlEnvironment.ReadFactsAsync(
+                    connection,
+                    cancellationToken
                 );
+                reasons.AddRange(PostgresqlEnvironment.Evaluate(facts));
+                return (true, facts.ServerVersionNum / 10000);
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
                 reasons.Add(ServerFailure(exception, PostgresqlEnvironment.ReadFactsOperation));
+                return (true, null);
             }
         }
-
-        return true;
     }
 
     /// <summary>

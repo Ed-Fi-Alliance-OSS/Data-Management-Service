@@ -43,7 +43,10 @@ public sealed partial class MssqlDmsTargetEngine
     private async Task<DmsEngineEnvironment> ValidateEnvironmentCoreAsync(CancellationToken cancellationToken)
     {
         List<DmsReadinessReason> reasons = [];
-        bool serverReachable = await ValidateServerAsync(reasons, cancellationToken);
+        (bool serverReachable, int? serverMajorVersion) = await ValidateServerAsync(
+            reasons,
+            cancellationToken
+        );
 
         bool directoryExists = ValidateStagingDirectory(reasons);
         if (serverReachable && directoryExists)
@@ -57,12 +60,15 @@ public sealed partial class MssqlDmsTargetEngine
         }
 
         return reasons.Count == 0
-            ? new DmsEngineEnvironment.Ready()
-            : new DmsEngineEnvironment.NotReady(reasons);
+            ? new DmsEngineEnvironment.Ready() { ServerMajorVersion = serverMajorVersion }
+            : new DmsEngineEnvironment.NotReady(reasons) { ServerMajorVersion = serverMajorVersion };
     }
 
-    /// <summary>Connects to <c>master</c>, reads the facts, and applies the server rules; false when the server could not be reached.</summary>
-    private async Task<bool> ValidateServerAsync(
+    /// <summary>
+    /// Connects to <c>master</c>, reads the facts, and applies the server rules; returns whether the server was
+    /// reached and the major version read (null when the facts could not be read).
+    /// </summary>
+    private async Task<(bool Reachable, int? MajorVersion)> ValidateServerAsync(
         List<DmsReadinessReason> reasons,
         CancellationToken cancellationToken
     )
@@ -81,23 +87,20 @@ public sealed partial class MssqlDmsTargetEngine
                     MssqlEnvironment.ConnectOperation
                 )
             );
-            return false;
+            return (false, null);
         }
 
         await using (connection)
         {
             try
             {
-                reasons.AddRange(
-                    MssqlEnvironment.Evaluate(
-                        await MssqlEnvironment.ReadFactsAsync(
-                            connection,
-                            _adminConnection.CommandTimeoutSeconds,
-                            cancellationToken
-                        ),
-                        MinimumProductMajorVersion
-                    )
+                MssqlEnvironmentFacts facts = await MssqlEnvironment.ReadFactsAsync(
+                    connection,
+                    _adminConnection.CommandTimeoutSeconds,
+                    cancellationToken
                 );
+                reasons.AddRange(MssqlEnvironment.Evaluate(facts, MinimumProductMajorVersion));
+                return (true, facts.ProductMajorVersion);
             }
             catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
             {
@@ -108,10 +111,9 @@ public sealed partial class MssqlDmsTargetEngine
                         MssqlEnvironment.ReadFactsOperation
                     )
                 );
+                return (true, null);
             }
         }
-
-        return true;
     }
 
     /// <summary>

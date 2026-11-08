@@ -133,6 +133,7 @@ public class MssqlEnvironmentTests
         private LocalStagingDirectory _staging = null!;
         private DmsEngineEnvironment _environment = null!;
         private int _probeLockGrantableAfter;
+        private int _serverMajorVersion;
 
         private static Task<int> ProbeLockGrantableAsync() =>
             ScalarOnServerAsync<int>(
@@ -148,6 +149,9 @@ public class MssqlEnvironmentTests
             _environment = await EngineWith(AdminConnection(), _staging.Path, await MissingServerPathAsync())
                 .ValidateEnvironmentAsync(default);
             _probeLockGrantableAfter = await ProbeLockGrantableAsync();
+            _serverMajorVersion = await ScalarOnServerAsync<int>(
+                "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));"
+            );
         }
 
         [OneTimeTearDown]
@@ -175,6 +179,10 @@ public class MssqlEnvironmentTests
 
         [Test]
         public void It_releases_the_probe_lock() => _probeLockGrantableAfter.Should().Be(1);
+
+        [Test]
+        public void It_reports_the_servers_major_version_for_the_template_comparison() =>
+            _environment.ServerMajorVersion.Should().Be(_serverMajorVersion);
     }
 
     [TestFixture]

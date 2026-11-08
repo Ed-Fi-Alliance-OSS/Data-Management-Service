@@ -96,7 +96,7 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Sample,
                 CancellationToken.None
             );
-            _reasons = await catalog.ValidateAsync(CancellationToken.None);
+            _reasons = (await catalog.ValidateAsync(CancellationToken.None)).Reasons;
             _operationEntries = _workspace.OperationEntries;
         }
 
@@ -358,7 +358,7 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Minimal,
                 CancellationToken.None
             );
-            _noProducersReasons = await noProducers.ValidateAsync(CancellationToken.None);
+            _noProducersReasons = (await noProducers.ValidateAsync(CancellationToken.None)).Reasons;
 
             _malformed = new CatalogWorkspace();
             _malformed.BuildBoth();
@@ -368,7 +368,7 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Minimal,
                 CancellationToken.None
             );
-            _malformedReasons = await malformed.ValidateAsync(CancellationToken.None);
+            _malformedReasons = (await malformed.ValidateAsync(CancellationToken.None)).Reasons;
 
             _missing = new CatalogWorkspace();
             _missing.BuildBoth();
@@ -378,7 +378,7 @@ public class TemplateArtifactCatalogTests
                 DmsDatabaseTemplate.Minimal,
                 CancellationToken.None
             );
-            _missingReasons = await missing.ValidateAsync(CancellationToken.None);
+            _missingReasons = (await missing.ValidateAsync(CancellationToken.None)).Reasons;
         }
 
         [TearDown]
@@ -764,11 +764,15 @@ public class TemplateArtifactCatalogTests
 
             DmsDataStoreProvisioningOptions otherHash = _workspace.Options();
             otherHash.Compatibility!.EffectiveSchemaHash = _otherHash;
-            _hashReasons = await _workspace.Catalog(otherHash).ValidateAsync(CancellationToken.None);
+            _hashReasons = (
+                await _workspace.Catalog(otherHash).ValidateAsync(CancellationToken.None)
+            ).Reasons;
 
             DmsDataStoreProvisioningOptions otherProjects = _workspace.Options();
             otherProjects.Compatibility!.Projects = ["edfi"];
-            _projectReasons = await _workspace.Catalog(otherProjects).ValidateAsync(CancellationToken.None);
+            _projectReasons = (
+                await _workspace.Catalog(otherProjects).ValidateAsync(CancellationToken.None)
+            ).Reasons;
         }
 
         [TearDown]
@@ -1259,5 +1263,77 @@ public class TemplateArtifactCatalogTests
         [Test]
         public void It_uses_the_configured_directory_without_a_trailing_separator() =>
             _configuredRoot.Should().Be(Path.Combine(Path.GetTempPath(), "dms-operations"));
+    }
+
+    /// <summary>
+    /// Step 4.9 review: the startup validation reports the <c>engineVersion</c> of each manifest it authenticated,
+    /// per template, and nothing for a template that did not resolve or when the policy cannot load.
+    /// </summary>
+    [TestFixture]
+    public class Given_templates_whose_manifests_declare_engine_versions
+    {
+        private CatalogWorkspace _both = null!;
+        private CatalogWorkspace _minimalOnly = null!;
+        private CatalogWorkspace _noPolicy = null!;
+        private TemplateCatalogValidation _bothValidation = null!;
+        private TemplateCatalogValidation _minimalOnlyValidation = null!;
+        private TemplateCatalogValidation _noPolicyValidation = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _both = new CatalogWorkspace();
+            _both.Build(_both.MinimalBuilder());
+            _both.Build(_both.SampleBuilder().WithManifest(manifest => manifest["engineVersion"] = "17.1"));
+            _bothValidation = await _both.Catalog().ValidateAsync(CancellationToken.None);
+
+            _minimalOnly = new CatalogWorkspace();
+            _minimalOnly.Build(_minimalOnly.MinimalBuilder());
+            _minimalOnlyValidation = await _minimalOnly.Catalog().ValidateAsync(CancellationToken.None);
+
+            _noPolicy = new CatalogWorkspace();
+            _noPolicy.BuildBoth();
+            File.Delete(_noPolicy.TrustPolicyPath);
+            _noPolicyValidation = await _noPolicy
+                .Catalog(WithoutOperationsRoot(_noPolicy))
+                .ValidateAsync(CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _both.Dispose();
+            _minimalOnly.Dispose();
+            _noPolicy.Dispose();
+        }
+
+        [Test]
+        public void It_passes_the_probes_for_both() => _bothValidation.Reasons.Should().BeEmpty();
+
+        [Test]
+        public void It_reports_each_templates_own_engine_version() =>
+            _bothValidation
+                .EngineRequirements.Should()
+                .Equal(
+                    new TemplateEngineRequirement(DmsDatabaseTemplate.Minimal, "16.8"),
+                    new TemplateEngineRequirement(DmsDatabaseTemplate.Sample, "17.1")
+                );
+
+        [Test]
+        public void It_reports_no_engine_version_for_a_template_that_did_not_resolve()
+        {
+            _minimalOnlyValidation
+                .EngineRequirements.Should()
+                .Equal(new TemplateEngineRequirement(DmsDatabaseTemplate.Minimal, "16.8"));
+            _minimalOnlyValidation
+                .Reasons.Should()
+                .ContainSingle()
+                .Which.Probe.Should()
+                .Be(TemplateArtifactCatalog.CatalogProbeFor(DmsDatabaseTemplate.Sample));
+        }
+
+        [Test]
+        public void It_reports_no_engine_version_when_the_policy_cannot_load() =>
+            _noPolicyValidation.EngineRequirements.Should().BeEmpty();
     }
 }

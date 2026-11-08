@@ -133,18 +133,31 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     public async Task<DmsArtifactResolution> ResolveAsync(
         DmsDatabaseTemplate template,
         CancellationToken cancellationToken
+    ) => (await ResolveWithManifestAsync(template, cancellationToken)).Resolution;
+
+    /// <summary>
+    /// The resolution, and on success the <c>engineVersion</c> of the manifest it authenticated, read before the
+    /// private directory is released.
+    /// </summary>
+    private async Task<(DmsArtifactResolution Resolution, string? EngineVersion)> ResolveWithManifestAsync(
+        DmsDatabaseTemplate template,
+        CancellationToken cancellationToken
     )
     {
         TemplateArtifactStaging staging = await StageAsync(template, DmsOperationId.New(), cancellationToken);
         switch (staging)
         {
             case TemplateArtifactStaging.Failure failure:
-                return new DmsArtifactResolution.Failure(failure.Detail, failure.Cleanup);
+                return (new DmsArtifactResolution.Failure(failure.Detail, failure.Cleanup), null);
             case TemplateArtifactStaging.Staged staged:
                 // 6.2 step 7: the pin is complete, nothing is extracted, and the private directory goes now.
                 DmsTrustedArtifactPin pin = staged.Artifact.Pin;
+                string engineVersion = staged.Artifact.Manifest.EngineVersion;
                 IReadOnlyList<DmsCleanupResidue> residue = staged.Artifact.Release();
-                return new DmsArtifactResolution.Resolved(pin, new DmsCleanupReport(residue));
+                return (
+                    new DmsArtifactResolution.Resolved(pin, new DmsCleanupReport(residue)),
+                    engineVersion
+                );
             default:
                 throw new InvalidOperationException("Unknown artifact staging result.");
         }
@@ -366,32 +379,42 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         return residue;
     }
 
-    public async Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken)
+    public async Task<TemplateCatalogValidation> ValidateAsync(CancellationToken cancellationToken)
     {
         (TemplateTrustPolicy? policy, DmsProvisioningFailure? policyFailure) = await LoadTrustPolicyAsync(
             cancellationToken
         );
         if (policyFailure is not null)
         {
-            return [new DmsReadinessReason(policyFailure.Code, TrustPolicyProbe, policyFailure.Diagnostic)];
+            return new TemplateCatalogValidation(
+                [new DmsReadinessReason(policyFailure.Code, TrustPolicyProbe, policyFailure.Diagnostic)],
+                []
+            );
         }
 
         if (!policy!.DetachedAttestationProducers.Any())
         {
-            return
-            [
-                new DmsReadinessReason(
-                    DmsProvisioningFailureCode.StartupValidationFailed,
-                    TrustPolicyProbe,
-                    DmsProvisioningDiagnostic.ForOperation(TrustPolicyStep + "." + NoProducersCheck)
-                ),
-            ];
+            return new TemplateCatalogValidation(
+                [
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        TrustPolicyProbe,
+                        DmsProvisioningDiagnostic.ForOperation(TrustPolicyStep + "." + NoProducersCheck)
+                    ),
+                ],
+                []
+            );
         }
 
         List<DmsReadinessReason> reasons = [];
+        List<TemplateEngineRequirement> requirements = [];
         foreach (DmsDatabaseTemplate template in DmsDatabaseTemplate.All)
         {
-            if (await ResolveAsync(template, cancellationToken) is DmsArtifactResolution.Failure failure)
+            (DmsArtifactResolution resolution, string? engineVersion) = await ResolveWithManifestAsync(
+                template,
+                cancellationToken
+            );
+            if (resolution is DmsArtifactResolution.Failure failure)
             {
                 reasons.Add(
                     new DmsReadinessReason(
@@ -401,9 +424,13 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
                     )
                 );
             }
+            else if (engineVersion is not null)
+            {
+                requirements.Add(new TemplateEngineRequirement(template, engineVersion));
+            }
         }
 
-        return reasons;
+        return new TemplateCatalogValidation(reasons, requirements);
     }
 
     /// <summary>The failure code and fixed operation a stager or extraction refusal maps to (spec row 5h).</summary>

@@ -299,7 +299,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         DmsDatabaseName stage = operation.StagingDatabaseName;
 
         // 6.3 step 2: the live major must carry the manifest's (D-9); the other floors are readiness probes.
-        if (scope.ServerFacts.MajorVersion < ManifestMajorOf(artifact.Manifest))
+        if (!DmsEngineCompatibility.Accepts(scope.ServerFacts.MajorVersion, artifact.Manifest.EngineVersion))
         {
             throw StepFailed(DmsProvisioningFailureCode.EngineIncompatible, EngineCheckStep);
         }
@@ -796,19 +796,6 @@ public sealed partial class DmsDataStoreProvisioningService(
                     failure.Diagnostic
                 );
         }
-    }
-
-    private static int ManifestMajorOf(RestoreManifest manifest)
-    {
-        ReadOnlySpan<char> version = manifest.EngineVersion;
-        int dot = version.IndexOf('.');
-        if (dot >= 0)
-        {
-            version = version[..dot];
-        }
-
-        // An unparsable major fails the floor: the manifest reader accepts only well-formed versions.
-        return int.TryParse(version, out int major) ? major : int.MaxValue;
     }
 
     /// <summary>The common preamble under the lock (6.1 steps 5 and 6).</summary>

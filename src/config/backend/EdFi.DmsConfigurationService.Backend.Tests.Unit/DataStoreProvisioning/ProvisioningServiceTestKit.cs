@@ -215,7 +215,7 @@ internal sealed class FakeCatalog : ITemplateArtifactCatalog
         return OnStage(template, operationId, cancellationToken);
     }
 
-    public Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken) =>
+    public Task<TemplateCatalogValidation> ValidateAsync(CancellationToken cancellationToken) =>
         throw new NotSupportedException("The orchestrator never runs the readiness probes.");
 }
 

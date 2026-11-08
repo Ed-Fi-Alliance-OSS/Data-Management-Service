@@ -36,7 +36,8 @@ public interface ITemplateArtifactCatalog
     /// <summary>
     /// The startup probes (7.3 steps 2 and 3): the trust policy loads and names at least one
     /// detached-attestation producer, and both allowlisted packages resolve against the configuration.
-    /// Returns one reason per failed probe; empty means every probe passed.
+    /// Returns one reason per failed probe (none means every probe passed) and the engine version each
+    /// resolved template's authenticated manifest declares, for readiness to compare with the live server.
     /// </summary>
-    Task<IReadOnlyList<DmsReadinessReason>> ValidateAsync(CancellationToken cancellationToken);
+    Task<TemplateCatalogValidation> ValidateAsync(CancellationToken cancellationToken);
 }

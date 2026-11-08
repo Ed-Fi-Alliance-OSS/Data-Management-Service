@@ -35,7 +35,9 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configurat
 /// logged; a secret that cannot be resolved is <c>SecretResolutionFailed</c> and the engine probes do not run;
 /// an engine validation that throws is recorded by type and the host keeps running; Step 4.9: enabled for SQL
 /// Server under either catalog datastore with a server nothing listens on, the host runs, the real adapter records
-/// the server and staging directory reasons, and the orchestrator refuses before any engine call.
+/// the server and staging directory reasons, and the orchestrator refuses before any engine call; an otherwise
+/// ready deployment whose server is older than the templates' engine is NotReady as EngineIncompatible, and one
+/// whose server reaches it is Ready.
 /// </summary>
 public class DmsDataStoreProvisioningStartupTests
 {
@@ -810,20 +812,124 @@ public class DmsDataStoreProvisioningStartupTests
                 );
     }
 
-    private static IDmsTargetEngine ReadyEngine()
+    /// <summary>
+    /// Step 4.9 review: an engine and a catalog that each report ready, for SQL Server, with templates whose
+    /// authenticated manifests name SQL Server 2025. A SQL Server 2022 server is <c>NotReady</c> with one
+    /// <c>EngineIncompatible</c> reason per template and every create refused; the control, a server of the
+    /// templates' major, is <c>Ready</c>.
+    /// </summary>
+    [TestFixture(16, false)]
+    [TestFixture(17, true)]
+    public class Given_an_otherwise_ready_deployment_and_templates_of_a_given_engine(
+        int serverMajor,
+        bool compatible
+    )
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private DmsProvisionerReadiness _readiness = null!;
+        private DmsDataStoreCreateResult? _create;
+
+        private static DmsReadinessReason Incompatible(DmsDatabaseTemplate template) =>
+            new(
+                DmsProvisioningFailureCode.EngineIncompatible,
+                DmsEngineCompatibility.ProbeFor(template),
+                DmsProvisioningDiagnostic.ForOperation(
+                    DmsEngineCompatibility.ProbeFor(template)
+                        + "."
+                        + DmsEngineCompatibility.ServerBelowManifestCheck
+                )
+            );
+
+        [SetUp]
+        public async Task Act()
+        {
+            IDmsTargetEngine engine = ReadyEngine(serverMajor, "mssql");
+            ITemplateArtifactCatalog catalog = ReadyCatalog(
+                new TemplateEngineRequirement(DmsDatabaseTemplate.Minimal, "17.0.900.7"),
+                new TemplateEngineRequirement(DmsDatabaseTemplate.Sample, "17.0.900.7")
+            );
+            _factory = CreateFactory(
+                EnabledSettings("mssql", "mssql"),
+                configureServices: services =>
+                {
+                    services.RemoveAll<IDmsTargetEngine>();
+                    services.AddSingleton(engine);
+                    services.RemoveAll<ITemplateArtifactCatalog>();
+                    services.AddSingleton(catalog);
+                }
+            );
+            _exception = StartupExceptionFor(_factory);
+            _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
+            if (!compatible)
+            {
+                _create = await _factory
+                    .Services.GetRequiredService<IDmsDataStoreProvisioner>()
+                    .CreateAsync(AnyCreateRequest(), CancellationToken.None);
+            }
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_starts() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_records_the_verdict_the_engine_versions_imply()
+        {
+            if (compatible)
+            {
+                _readiness
+                    .Should()
+                    .BeOfType<DmsProvisionerReadiness.Ready>()
+                    .Which.Provider.Should()
+                    .Be("mssql");
+                return;
+            }
+
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .Equal(Incompatible(DmsDatabaseTemplate.Minimal), Incompatible(DmsDatabaseTemplate.Sample));
+        }
+
+        [Test]
+        public void It_refuses_a_create_when_the_server_is_older_than_the_templates()
+        {
+            if (compatible)
+            {
+                Assert.Pass("The compatible control records Ready; no create is attempted.");
+            }
+
+            _create
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Failure>()
+                .Which.Detail.Category.Should()
+                .Be(DmsProvisioningFailureCategory.NotReady);
+        }
+    }
+
+    private static IDmsTargetEngine ReadyEngine(
+        int? serverMajorVersion = null,
+        string provider = "postgresql"
+    )
     {
         IDmsTargetEngine engine = A.Fake<IDmsTargetEngine>();
-        A.CallTo(() => engine.Provider).Returns("postgresql");
+        A.CallTo(() => engine.Provider).Returns(provider);
         A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
-            .Returns(new DmsEngineEnvironment.Ready());
+            .Returns(new DmsEngineEnvironment.Ready() { ServerMajorVersion = serverMajorVersion });
         return engine;
     }
 
-    private static ITemplateArtifactCatalog ReadyCatalog()
+    private static ITemplateArtifactCatalog ReadyCatalog(
+        params TemplateEngineRequirement[] engineRequirements
+    )
     {
         ITemplateArtifactCatalog catalog = A.Fake<ITemplateArtifactCatalog>();
         A.CallTo(() => catalog.ValidateAsync(A<CancellationToken>._))
-            .Returns(Task.FromResult<IReadOnlyList<DmsReadinessReason>>([]));
+            .Returns(new TemplateCatalogValidation([], engineRequirements));
         return catalog;
     }
 }
