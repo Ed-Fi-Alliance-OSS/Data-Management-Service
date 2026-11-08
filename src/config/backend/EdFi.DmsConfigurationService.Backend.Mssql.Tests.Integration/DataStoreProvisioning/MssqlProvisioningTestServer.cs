@@ -89,12 +89,13 @@ internal static partial class MssqlProvisioningTestServer
     public static MssqlDmsEngineSettings Settings(
         TimeSpan? lockAcquireTimeout = null,
         TimeSpan? lockHeartbeatInterval = null,
-        TimeSpan? restoreTimeout = null
+        TimeSpan? restoreTimeout = null,
+        TimeSpan? sessionTerminationTimeout = null
     ) =>
         new(
             lockAcquireTimeout ?? TimeSpan.FromSeconds(5),
             lockHeartbeatInterval ?? TimeSpan.FromSeconds(5),
-            TimeSpan.FromSeconds(30),
+            sessionTerminationTimeout ?? TimeSpan.FromSeconds(30),
             restoreTimeout ?? TimeSpan.FromMinutes(5),
             StagingSettings()
         );

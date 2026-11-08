@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using System.Runtime.CompilerServices;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using Microsoft.Data.SqlClient;
@@ -48,6 +47,8 @@ public sealed partial class MssqlDmsTargetEngine
     public const string DropStagingInstanceStep = "DropStaging.InstanceChanged";
 
     internal static readonly EventId RestoreResolutionFailed = new(1438_42, nameof(RestoreResolutionFailed));
+
+    internal static readonly EventId RestoreAbandoned = new(1438_43, nameof(RestoreAbandoned));
 
     /// <summary>
     /// Test seam: the statement sent as the restore, from the plan and the staged file's server path; production
@@ -268,7 +269,8 @@ public sealed partial class MssqlDmsTargetEngine
             return NotStarted(exception, cancellationToken);
         }
 
-        await using (work)
+        bool handedOff = false;
+        try
         {
             (
                 DmsServerSessionId session,
@@ -281,22 +283,35 @@ public sealed partial class MssqlDmsTargetEngine
             }
 
             // 6.4 step 6.
-            (DmsCommandFailure? rejected, DmsProvisioningDiagnostic? ended) = await RunRestoreAsync(
-                work,
-                session,
-                RestoreStatement(plan, backup.ServerPath),
-                cancellationToken
-            );
-            if (rejected is not null)
+            switch (
+                await RunRestoreAsync(
+                    work,
+                    session,
+                    RestoreStatement(plan, backup.ServerPath),
+                    operation,
+                    cancellationToken
+                )
+            )
             {
-                // Rejected in the restore's own response: nothing committed. A database the restore left
-                // RESTORING carries the operation's primary file name and is cleanup's to drop.
-                return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(rejected);
-            }
-
-            if (ended is not null)
-            {
-                return await ResolveRestoreAsync(staging, plan, backup, session, ended, operation);
+                case RestoreEnding.Abandoned:
+                    // D-7b: neither the work session's end nor the restore's completion is proven, so nothing is
+                    // read and nothing may be dropped; the session is named for the caller's own attempt. The
+                    // connection now belongs to the background close.
+                    handedOff = true;
+                    return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(session);
+                case RestoreEnding.Rejected rejected:
+                    // Rejected in the restore's own response: nothing committed. A database the restore left
+                    // RESTORING carries the operation's primary file name and is cleanup's to drop.
+                    return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(rejected.Failure);
+                case RestoreEnding.Ended ended:
+                    return await ResolveRestoreAsync(
+                        staging,
+                        plan,
+                        backup,
+                        session,
+                        ended.Diagnostic,
+                        operation
+                    );
             }
 
             // 6.4 step 7 on a token of its own: the restore committed, so the caller's cancellation no longer
@@ -311,6 +326,13 @@ public sealed partial class MssqlDmsTargetEngine
                 ),
                 operation
             );
+        }
+        finally
+        {
+            if (!handedOff)
+            {
+                await work.DisposeAsync();
+            }
         }
     }
 
@@ -384,20 +406,38 @@ public sealed partial class MssqlDmsTargetEngine
         };
     }
 
+    /// <summary>How the <c>RESTORE</c> statement ended, as <see cref="RunRestoreAsync"/> observed it.</summary>
+    private abstract record RestoreEnding
+    {
+        private RestoreEnding() { }
+
+        public sealed record Completed : RestoreEnding;
+
+        /// <summary>Rejected by the server in the statement's own response.</summary>
+        public sealed record Rejected(DmsCommandFailure Failure) : RestoreEnding;
+
+        /// <summary>Ended in doubt; the diagnostic names what ended it.</summary>
+        public sealed record Ended(DmsProvisioningDiagnostic Diagnostic) : RestoreEnding;
+
+        /// <summary>The token fired and neither the work session's end nor the statement's completion was proven within the budget.</summary>
+        public sealed record Abandoned : RestoreEnding;
+    }
+
     /// <summary>
-    /// Runs <paramref name="statement"/> on the work session under <c>RestoreTimeout</c>. Returns no failure and no
-    /// ending when it completed; the failure when the server rejected it in its own response; otherwise the
-    /// diagnostic of what ended it in doubt, named after the caller's cancellation, the bound, or anything else. With
-    /// the token handed to the driver, a cancellation after the <c>RESTORE</c> had streamed its progress messages was
-    /// observed not to end the batch, nor to let a kill registered on the same token run, until the batch ended on its
-    /// own (row 5ao). So the token is not handed to the driver: when it fires (the caller or the bound) the work
-    /// session is killed from a fresh maintenance session (D-7b), which ends the batch whatever state the driver is
-    /// in, and the kill has finished before this returns; the driver timeout stays a backstop.
+    /// Runs <paramref name="statement"/> on the work session under <c>RestoreTimeout</c>. With the token handed to
+    /// the driver, a cancellation after the <c>RESTORE</c> had streamed its progress messages was observed not to end
+    /// the batch, nor to let a kill registered on the same token run, until the batch ended on its own (row 5ao). So
+    /// the token is not handed to the driver: when it fires (the caller or the bound) the work session is killed from
+    /// a fresh maintenance session (D-7b), and the statement is awaited only within one budget,
+    /// <c>SessionTerminationTimeout</c> plus the command timeout (row 5ap). A statement that ended is completed,
+    /// rejected in its own response, or ended in doubt, named after the caller's cancellation, the bound, or anything
+    /// else; one whose end is not proven within the budget is abandoned to a background close.
     /// </summary>
-    private async Task<(DmsCommandFailure? Rejected, DmsProvisioningDiagnostic? Ended)> RunRestoreAsync(
+    private async Task<RestoreEnding> RunRestoreAsync(
         SqlConnection work,
         DmsServerSessionId session,
         string statement,
+        DmsOperationId operation,
         CancellationToken cancellationToken
     )
     {
@@ -406,31 +446,40 @@ public sealed partial class MssqlDmsTargetEngine
             cancellationToken,
             bound.Token
         );
-        StrongBox<Task?> killing = new(null);
+        SqlCommand command = new(statement, work);
+        command.CommandTimeout = MssqlAdminConnection.DriverTimeoutSeconds(_settings.RestoreTimeout);
+        Task restore = command.ExecuteNonQueryAsync(CancellationToken.None);
+
+        TaskCompletionSource fired = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using (linked.Token.Register(() => fired.TrySetResult()))
+        {
+            if (
+                await Task.WhenAny(restore, fired.Task) != restore
+                && !await EndAfterCancellationAsync(restore, session)
+            )
+            {
+                AbandonRestore(work, command, restore, operation);
+                return new RestoreEnding.Abandoned();
+            }
+        }
+
         try
         {
-            await using CancellationTokenRegistration onCancel = linked.Token.Register(() =>
-                Volatile.Write(ref killing.Value, Task.Run(() => KillWorkSessionAsync(session)))
-            );
-            await using SqlCommand command = new(statement, work);
-            command.CommandTimeout = MssqlAdminConnection.DriverTimeoutSeconds(_settings.RestoreTimeout);
-            await command.ExecuteNonQueryAsync(CancellationToken.None);
-            return (null, null);
+            await restore;
+            return new RestoreEnding.Completed();
         }
         catch (SqlException exception)
             when (!linked.IsCancellationRequested
                 && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
             )
         {
-            return (
-                new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, RestoreStep)),
-                null
+            return new RestoreEnding.Rejected(
+                new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, RestoreStep))
             );
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            return (
-                null,
+            return new RestoreEnding.Ended(
                 MssqlErrorClassifier.Diagnostic(
                     exception,
                     EndedStepOf(exception, cancellationToken, bound.Token)
@@ -439,11 +488,74 @@ public sealed partial class MssqlDmsTargetEngine
         }
         finally
         {
-            // A kill started by the token is finished before anything reads the session's fate.
-            if (Volatile.Read(ref killing.Value) is { } kill)
-            {
-                await kill;
-            }
+            await command.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// After the token fired: kills the work session and waits for <paramref name="restore"/>, both within one budget,
+    /// <c>SessionTerminationTimeout</c> plus the command timeout, on a token of their own. True when the statement has
+    /// completed, so its ending can be read; false when it has not, either because the kill was not proven (nothing
+    /// then bounds the statement any more) or because it did not complete within the budget. The kill has finished,
+    /// or its own bound has expired, before this returns.
+    /// </summary>
+    private async Task<bool> EndAfterCancellationAsync(Task restore, DmsServerSessionId session)
+    {
+        using CancellationTokenSource budget = new(
+            _settings.SessionTerminationTimeout + _adminConnection.CommandTimeout,
+            _timeProvider
+        );
+        Task<bool> kill = KillWorkSessionAsync(session, budget.Token);
+        if (await Task.WhenAny(restore, kill) == kill && !await kill)
+        {
+            return restore.IsCompleted;
+        }
+
+        TaskCompletionSource expired = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool completed;
+        await using (budget.Token.Register(() => expired.TrySetResult()))
+        {
+            completed = await Task.WhenAny(restore, expired.Task) == restore;
+        }
+
+        await kill;
+        return completed;
+    }
+
+    /// <summary>
+    /// Leaves a restore whose end is not proven: logged by operation id only, then the work connection is closed and
+    /// the statement and command are released in the background, so neither a close that waits for the driver nor the
+    /// statement itself is awaited by the operation (row 5ap).
+    /// </summary>
+    private void AbandonRestore(
+        SqlConnection work,
+        SqlCommand command,
+        Task restore,
+        DmsOperationId operation
+    )
+    {
+        _logger.LogWarning(
+            RestoreAbandoned,
+            "DMSPROV-RestoreAbandoned: the restore work session of operation {Operation} could not be proven ended after cancellation",
+            operation.Value
+        );
+        _ = Task.Run(async () =>
+        {
+            await IgnoreFailureAsync(work.DisposeAsync().AsTask());
+            await IgnoreFailureAsync(restore);
+            await command.DisposeAsync();
+        });
+    }
+
+    private static async Task IgnoreFailureAsync(Task task)
+    {
+        try
+        {
+            await task;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // The abandoned restore's fate is the outcome protocol's; nothing here may report it.
         }
     }
 
@@ -594,23 +706,20 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// Ends a restore whose token fired by killing its work session on a token of its own, bounded like the
-    /// resolution. It only ends the batch: the resolution that follows proves the session gone, so a failure here is
-    /// ignored.
+    /// Ends a restore whose token fired by killing its work session within <paramref name="budget"/>. True only for a
+    /// proven-gone verdict; a refusal, a timeout, or any exception is no proof.
     /// </summary>
-    private async Task KillWorkSessionAsync(DmsServerSessionId session)
+    private async Task<bool> KillWorkSessionAsync(DmsServerSessionId session, CancellationToken budget)
     {
         try
         {
-            using CancellationTokenSource bound = new(
-                _settings.SessionTerminationTimeout + _adminConnection.CommandTimeout,
-                _timeProvider
-            );
-            await TerminateSessionAsync(session, _settings.SessionTerminationTimeout, bound.Token);
+            return await TerminateSessionAsync(session, _settings.SessionTerminationTimeout, budget)
+                is not DmsSessionTermination.NotTerminated;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            // The resolution's own termination decides; only the type chain would be loggable.
+            // No proof; only the type chain would be loggable, and the caller reports the abandonment.
+            return false;
         }
     }
 

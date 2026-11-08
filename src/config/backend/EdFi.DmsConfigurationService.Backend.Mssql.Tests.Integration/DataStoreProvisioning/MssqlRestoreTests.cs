@@ -40,6 +40,28 @@ public class MssqlRestoreTests
             ? name
             : throw new InvalidOperationException("The candidate does not satisfy the target name rules.");
 
+    /// <summary>The planned restore left <c>RESTORING</c>, then a long wait the test interrupts while the database is restoring.</summary>
+    private static Func<MssqlRestorePlan, string, string> RestoringThenWaiting(string marker) =>
+        (plan, serverPath) =>
+            plan.RestoreStatement(serverPath)
+                .Replace("STATS = 10;", "NORECOVERY, STATS = 10;", StringComparison.Ordinal)
+            + $"\nWAITFOR DELAY '00:02:00'; -- {marker}";
+
+    /// <summary>Waits until the operation's work session is in the <c>WAITFOR</c> that follows the restore; returns its id, or 0.</summary>
+    private static async Task<int> WaitForWaitingWorkSessionAsync(DmsOperationId operation)
+    {
+        int sessionId = 0;
+        bool waiting = await WaitUntilAsync(
+            async () =>
+            {
+                sessionId = await SessionIdNamedAsync(operation.RestoreApplicationName);
+                return sessionId != 0 && await WaitTypeOfAsync(sessionId) == "WAITFOR";
+            },
+            TimeSpan.FromSeconds(60)
+        );
+        return waiting ? sessionId : 0;
+    }
+
     private static Task<string> ServerPropertyAsync(string property) =>
         ScalarOnServerAsync<string>($"SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('{property}'));");
 
@@ -475,28 +497,6 @@ public class MssqlRestoreTests
 
         private readonly List<Ending> _endings = [];
 
-        /// <summary>The planned restore left <c>RESTORING</c>, then a long wait the test interrupts while the database is restoring.</summary>
-        private static Func<MssqlRestorePlan, string, string> RestoringThenWaiting(string marker) =>
-            (plan, serverPath) =>
-                plan.RestoreStatement(serverPath)
-                    .Replace("STATS = 10;", "NORECOVERY, STATS = 10;", StringComparison.Ordinal)
-                + $"\nWAITFOR DELAY '00:02:00'; -- {marker}";
-
-        /// <summary>Waits until the operation's work session is in the <c>WAITFOR</c> that follows the restore; returns its id, or 0.</summary>
-        private static async Task<int> WaitForWaitingWorkSessionAsync(DmsOperationId operation)
-        {
-            int sessionId = 0;
-            bool waiting = await WaitUntilAsync(
-                async () =>
-                {
-                    sessionId = await SessionIdNamedAsync(operation.RestoreApplicationName);
-                    return sessionId != 0 && await WaitTypeOfAsync(sessionId) == "WAITFOR";
-                },
-                TimeSpan.FromSeconds(60)
-            );
-            return waiting ? sessionId : 0;
-        }
-
         private static async Task<Ending> EndAsync(
             Func<RestoreRun, Task<DmsCommandOutcome<DmsInstanceIdentity>>> restore,
             Func<RestoreRun, Task<bool>> interrupt
@@ -660,6 +660,119 @@ public class MssqlRestoreTests
             _endings
                 .Should()
                 .OnlyContain(ending => ShapedBackup.StagedFilesOf(ending.Run.Operation).Length == 0);
+    }
+
+    /// <summary>
+    /// The caller cancels while the database is restoring and the kill that should end the work session fails (the
+    /// guarded batch's <c>KILL</c> replaced by <c>PRINT</c>, so the session stays listed until the termination bound):
+    /// the restore returns within that bound instead of waiting for the statement, with an unknown outcome that names
+    /// the work session and is not quiescent, and nothing is dropped. Teardown kills the surviving session.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_kill_fails_after_the_caller_cancels
+    {
+        private static readonly TimeSpan _terminationBound = TimeSpan.FromSeconds(3);
+
+        private RestoreRun? _run;
+        private int _sessionId;
+        private bool _completed;
+        private TimeSpan _elapsed;
+        private DmsCommandOutcome<DmsInstanceIdentity>? _outcome;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            _run = new RestoreRun();
+            string marker =
+                "dms1438_restore_unkillable_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+            MssqlDmsTargetEngine engine = new(
+                AdminConnection(),
+                Settings(sessionTerminationTimeout: _terminationBound),
+                TimeProvider.System,
+                NullLogger.Instance
+            )
+            {
+                RestoreStatement = RestoringThenWaiting(marker),
+                GuardedKillStatement = sessionId =>
+                {
+                    string batch = MssqlSessionQueries.GuardedKill(sessionId);
+                    string kill = $"KILL {sessionId};";
+                    return batch.Contains(kill, StringComparison.Ordinal)
+                        ? batch.Replace(kill, $"PRINT {sessionId};", StringComparison.Ordinal)
+                        : throw new InvalidOperationException(
+                            "The guarded batch no longer carries the KILL to disable."
+                        );
+                },
+            };
+
+            using CancellationTokenSource cancellation = new();
+            Task<DmsCommandOutcome<DmsInstanceIdentity>> restoring = _run.RestoreAsync(
+                engine,
+                await ShapedBackup.CreateAsync(),
+                cancellation.Token
+            );
+            _sessionId = await WaitForWaitingWorkSessionAsync(_run.Operation);
+            System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+            await cancellation.CancelAsync();
+
+            // Never waits for the two-minute statement: a protocol that does fails here rather than hanging.
+            _completed = await Task.WhenAny(restoring, Task.Delay(TimeSpan.FromSeconds(90))) == restoring;
+            _elapsed = clock.Elapsed;
+            if (_completed)
+            {
+                _outcome = await restoring;
+            }
+
+            _stagingAfter = await Engine().InspectAsync(_run.Stage, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_sessionId != 0)
+            {
+                await KillAsync(_sessionId);
+                await WaitUntilAsync(
+                    async () => await SessionCountNamedAsync(_run!.Operation.RestoreApplicationName) == 0,
+                    TimeSpan.FromSeconds(30)
+                );
+            }
+
+            if (_run is not null)
+            {
+                await _run.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_cancelled_while_the_database_was_restoring() => _sessionId.Should().NotBe(0);
+
+        [Test]
+        public void It_returns_within_the_termination_budget_not_the_statements_wait()
+        {
+            _completed.Should().BeTrue();
+            _elapsed.Should().BeLessThan(TimeSpan.FromSeconds(30));
+        }
+
+        [Test]
+        public void It_reports_an_unknown_outcome_naming_the_work_session_not_quiescent() =>
+            _outcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Unknown>()
+                .Which.Should()
+                .Match<DmsCommandOutcome<DmsInstanceIdentity>.Unknown>(unknown =>
+                    unknown.Session != null && unknown.Session.Value.Id == _sessionId && !unknown.Quiescent
+                );
+
+        [Test]
+        public void It_drops_nothing() =>
+            _stagingAfter
+                .Should()
+                .BeOfType<DmsLiveTargetState.Fenced>()
+                .Which.Instance.Should()
+                .Match<DmsInstanceIdentity>(instance => _run!.Reservation.IsRealizedBy(instance));
     }
 
     [TestFixture]
