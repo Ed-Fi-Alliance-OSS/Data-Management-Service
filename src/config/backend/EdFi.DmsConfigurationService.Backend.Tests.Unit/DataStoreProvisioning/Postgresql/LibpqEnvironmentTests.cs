@@ -46,6 +46,9 @@ public class LibpqEnvironmentTests
                     _inheritedVariable,
                     "the start info inherits this process's environment before Apply"
                 );
+            _startInfo.Environment["PGPASSWORD"] = Password;
+            _startInfo.Environment["PGSERVICE"] = "operator-service";
+            _startInfo.Environment["PSQLRC"] = "/tmp/operator-psqlrc";
 
             LibpqConnectionSettings connection = LibpqConnectionSettings.From(
                 new NpgsqlConnectionStringBuilder(ConnectionString)
@@ -63,6 +66,25 @@ public class LibpqEnvironmentTests
         [Test]
         public void It_drops_the_inherited_environment() =>
             _startInfo.Environment.Should().NotContainKey(_inheritedVariable);
+
+        [Test]
+        public void It_drops_password_and_service_variables_set_before_apply() =>
+            _startInfo.Environment.Keys.Should().NotContain(["PGPASSWORD", "PGSERVICE", "PSQLRC"]);
+
+        [Test]
+        public void It_copies_the_system_root_on_windows_only()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                string? systemRoot = Environment.GetEnvironmentVariable("SystemRoot");
+                systemRoot.Should().NotBeNullOrEmpty("a Windows process always has SystemRoot");
+                _startInfo.Environment["SystemRoot"].Should().Be(systemRoot);
+            }
+            else
+            {
+                _startInfo.Environment.Should().NotContainKey("SystemRoot");
+            }
+        }
 
         [Test]
         public void It_copies_the_path_of_this_process() =>
@@ -152,7 +174,13 @@ public class LibpqEnvironmentTests
 
         [Test]
         public void It_sets_only_the_fixed_variables() =>
-            _startInfo.Environment.Keys.Should().BeEquivalentTo("PATH", "LC_ALL", "PGCLIENTENCODING");
+            _startInfo
+                .Environment.Keys.Should()
+                .BeEquivalentTo(
+                    OperatingSystem.IsWindows()
+                        ? ["PATH", "LC_ALL", "PGCLIENTENCODING", "SystemRoot"]
+                        : ["PATH", "LC_ALL", "PGCLIENTENCODING"]
+                );
     }
 
     [TestFixture]
@@ -325,5 +353,72 @@ public class LibpqEnvironmentTests
             _withoutUser!.Message.Should().NotContain("x");
             _refusals.Values.Should().AllSatisfy(exception => exception!.Message.Should().NotContain("db"));
         }
+    }
+
+    /// <summary>
+    /// Server-certificate trust through the administrative connection, which both clients read: a relative
+    /// <c>Root Certificate</c> reaches Npgsql and <c>psql</c> as the same full path, resolved where Npgsql would
+    /// resolve it, because <c>psql</c> runs in the operation's directory; and a verifying mode without one is
+    /// refused, because Npgsql would then trust sources the replay does not see. Modes that do not verify are
+    /// unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_server_certificate_trust_of_the_admin_connection
+    {
+        private const string Base = "Host=db;Username=dms_admin;Password=" + Password + ";";
+
+        private string _expectedRoot = string.Empty;
+        private string? _libpqRoot;
+        private string? _npgsqlRoot;
+        private Dictionary<string, Exception?> _verifyingWithoutRoot = [];
+        private Exception? _requireWithoutRoot;
+
+        [SetUp]
+        public void Setup()
+        {
+            string relative = Path.Combine("certs", "root.crt");
+            _expectedRoot = Path.GetFullPath(relative);
+            PostgresqlAdminConnection connection = new(
+                Base + "SSL Mode=VerifyFull;Root Certificate=" + relative,
+                TimeSpan.FromSeconds(30)
+            );
+            _libpqRoot = connection.ToLibpqSettings().RootCertificate;
+            _npgsqlRoot = new NpgsqlConnectionStringBuilder(
+                connection.ConnectionStringFor("postgres", "dmsprov-session")
+            ).RootCertificate;
+
+            _verifyingWithoutRoot = new[] { "VerifyCA", "VerifyFull" }.ToDictionary(
+                mode => mode,
+                mode =>
+                    Packaging.Record.Exception(() =>
+                        new PostgresqlAdminConnection(Base + "SSL Mode=" + mode, TimeSpan.FromSeconds(30))
+                    )
+            );
+            _requireWithoutRoot = Packaging.Record.Exception(() =>
+                new PostgresqlAdminConnection(Base + "SSL Mode=Require", TimeSpan.FromSeconds(30))
+            );
+        }
+
+        [Test]
+        public void It_hands_both_clients_the_same_full_root_certificate_path()
+        {
+            _libpqRoot.Should().Be(_expectedRoot);
+            _npgsqlRoot.Should().Be(_expectedRoot);
+        }
+
+        [Test]
+        public void It_refuses_a_verifying_mode_without_a_root_certificate() =>
+            _verifyingWithoutRoot
+                .Values.Should()
+                .AllSatisfy(exception =>
+                    exception
+                        .Should()
+                        .BeOfType<InvalidOperationException>()
+                        .Which.Message.Should()
+                        .NotContain(Password)
+                );
+
+        [Test]
+        public void It_leaves_a_mode_that_does_not_verify_alone() => _requireWithoutRoot.Should().BeNull();
     }
 }

@@ -36,6 +36,9 @@ internal abstract record PsqlRunResult
     public sealed record Killed(int ProcessId, PsqlKillReason Reason) : PsqlRunResult;
 
     public sealed record Unconfirmed(int ProcessId, PsqlKillReason? Reason) : PsqlRunResult;
+
+    /// <summary>The run failed before any process was started (the settings, the password file, the start info), so nothing reached the server.</summary>
+    public sealed record NotStarted(Exception Cause) : PsqlRunResult;
 }
 
 /// <summary>
@@ -127,7 +130,8 @@ internal sealed class PsqlRestoreRunner
     /// <paramref name="adminConnection"/>, keeping the password file inside <paramref name="directory"/>.
     /// Cancellation does not propagate as an exception: a cancelled run returns
     /// <see cref="PsqlRunResult.Killed"/> or <see cref="PsqlRunResult.Unconfirmed"/>, so the engine can run
-    /// the outcome protocol before the orchestrator surfaces the cancellation (6.10).
+    /// the outcome protocol before the orchestrator surfaces the cancellation (6.10). A failure before the
+    /// process is started, cancellation included, returns <see cref="PsqlRunResult.NotStarted"/>.
     /// </summary>
     public async Task<PsqlRunResult> RunAsync(
         PostgresqlAdminConnection adminConnection,
@@ -149,24 +153,43 @@ internal sealed class PsqlRestoreRunner
             );
         }
 
-        LibpqConnectionSettings connection = adminConnection.ToLibpqSettings();
-        string passwordFilePath = await PgPassFile.WriteAsync(
-            directory,
-            connection,
-            database.Value,
-            cancellationToken
-        );
+        LibpqConnectionSettings connection;
+        string passwordFilePath;
         try
         {
-            ProcessStartInfo startInfo = CreateStartInfo(
-                _psqlPath,
+            connection = adminConnection.ToLibpqSettings();
+            passwordFilePath = await PgPassFile.WriteAsync(
+                directory,
                 connection,
                 database.Value,
-                artifact.FilePath,
-                passwordFilePath,
-                directory.Path,
-                operation
+                cancellationToken
             );
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return new PsqlRunResult.NotStarted(exception);
+        }
+
+        try
+        {
+            ProcessStartInfo startInfo;
+            try
+            {
+                startInfo = CreateStartInfo(
+                    _psqlPath,
+                    connection,
+                    database.Value,
+                    artifact.FilePath,
+                    passwordFilePath,
+                    directory.Path,
+                    operation
+                );
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                return new PsqlRunResult.NotStarted(exception);
+            }
+
             return await RunAsync(startInfo, operation, cancellationToken);
         }
         finally

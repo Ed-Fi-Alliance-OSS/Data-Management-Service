@@ -173,6 +173,26 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
         {
             failures.Add($"{key} Database must be absent or postgres for PostgreSQL.");
         }
+
+        // psql verifies the server only against the Root Certificate file, while Npgsql without one falls back to
+        // other trust sources, so a verifying mode without one would pass readiness and fail every replay.
+        if (
+            builder.TryGetValue("SSL Mode", out object? sslMode)
+            && (sslMode as string)?.Replace("-", string.Empty, StringComparison.Ordinal) is { } mode
+            && (
+                string.Equals(mode, "VerifyCA", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(mode, "VerifyFull", StringComparison.OrdinalIgnoreCase)
+            )
+            && !(
+                builder.TryGetValue("Root Certificate", out object? root)
+                && !string.IsNullOrWhiteSpace(root as string)
+            )
+        )
+        {
+            failures.Add(
+                $"{key} must name a Root Certificate when SSL Mode is VerifyCA or VerifyFull for PostgreSQL, because psql verifies the server only against that file."
+            );
+        }
     }
 
     private static void ValidateProtectedNames(List<string> failures, string[]? names)

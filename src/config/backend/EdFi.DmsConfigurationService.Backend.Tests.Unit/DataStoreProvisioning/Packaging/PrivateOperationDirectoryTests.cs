@@ -3,6 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
+using System.Text;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using FluentAssertions;
@@ -295,5 +299,105 @@ public class PrivateOperationDirectoryTests
         [Test]
         public void It_creates_files_with_mode_0600() =>
             _fileMode.Should().Be(PrivateOperationDirectory.PrivateFileMode);
+    }
+
+    /// <summary>
+    /// Windows: the operations root grants Everyone inheritable read, as a shared root may. The claimed directory
+    /// is protected from that inheritance and lists only the current user, and the password file written into it
+    /// inherits only that entry, so the sentinel credential is readable by no other account.
+    /// </summary>
+    [TestFixture]
+    [Platform(Include = "Win")]
+    public class Given_an_operations_root_that_grants_everyone_read_on_windows
+    {
+        private const string Sentinel = "db:5432:*:dms_admin:SENTINEL-PASSWORD-4be9";
+
+        private StagerWorkspace? _workspace;
+        private string _user = string.Empty;
+        private string _everyone = string.Empty;
+        private string[] _rootIdentities = [];
+        private bool _directoryProtected;
+        private string[] _directoryIdentities = [];
+        private string[] _fileIdentities = [];
+        private string _readBack = string.Empty;
+
+        [SupportedOSPlatform("windows")]
+        private static string[] IdentitiesOf(FileSystemSecurity security) =>
+            [
+                .. security
+                    .GetAccessRules(includeExplicit: true, includeInherited: true, typeof(SecurityIdentifier))
+                    .Cast<FileSystemAccessRule>()
+                    .Select(rule => rule.IdentityReference.Value)
+                    .Distinct(),
+            ];
+
+        [SetUp]
+        public void Setup()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                Assert.Ignore("Access control lists are read on Windows only.");
+                return;
+            }
+
+            _workspace = new StagerWorkspace();
+            using (WindowsIdentity identity = WindowsIdentity.GetCurrent())
+            {
+                _user = identity.User!.Value;
+            }
+
+            SecurityIdentifier everyone = new(WellKnownSidType.WorldSid, null);
+            _everyone = everyone.Value;
+            DirectoryInfo root = new(_workspace.OperationsRoot);
+            DirectorySecurity rootSecurity = root.GetAccessControl();
+            rootSecurity.AddAccessRule(
+                new FileSystemAccessRule(
+                    everyone,
+                    FileSystemRights.ReadAndExecute,
+                    InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                    PropagationFlags.None,
+                    AccessControlType.Allow
+                )
+            );
+            root.SetAccessControl(rootSecurity);
+            _rootIdentities = IdentitiesOf(root.GetAccessControl());
+
+            using PrivateOperationDirectory directory = PrivateOperationDirectory.Create(
+                _workspace.OperationsRoot,
+                _workspace.OperationId
+            );
+            string credential = directory.PathOf(PrivateOperationDirectory.CredentialFileName);
+            using (FileStream stream = directory.CreateFile(PrivateOperationDirectory.CredentialFileName))
+            {
+                stream.Write(Encoding.UTF8.GetBytes(Sentinel));
+            }
+
+            _readBack = File.ReadAllText(credential);
+            DirectorySecurity directorySecurity = new DirectoryInfo(directory.Path).GetAccessControl();
+            _directoryProtected = directorySecurity.AreAccessRulesProtected;
+            _directoryIdentities = IdentitiesOf(directorySecurity);
+            _fileIdentities = IdentitiesOf(new FileInfo(credential).GetAccessControl());
+        }
+
+        [TearDown]
+        public void TearDown() => _workspace?.Dispose();
+
+        [Test]
+        public void It_starts_from_a_root_that_grants_everyone() =>
+            _rootIdentities.Should().Contain(_everyone);
+
+        [Test]
+        public void It_protects_the_directory_and_lists_only_the_current_user()
+        {
+            _directoryProtected.Should().BeTrue();
+            _directoryIdentities.Should().Equal(_user);
+        }
+
+        [Test]
+        public void It_gives_the_password_file_to_the_current_user_only()
+        {
+            _fileIdentities.Should().Equal(_user);
+            _readBack.Should().Be(Sentinel);
+        }
     }
 }

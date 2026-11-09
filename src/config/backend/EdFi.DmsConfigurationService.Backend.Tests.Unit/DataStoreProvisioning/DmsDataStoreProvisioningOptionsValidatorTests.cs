@@ -733,6 +733,9 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                     "Host=db;Username=u;Password=p;SSL Mode=Require;Root Certificate=/etc/ca.crt;Timeout=15;Minimum Pool Size=0;Maximum Pool Size=5;Application Name=cms",
                     "host=db;username=u;password=p;database=postgres",
                     "Host=db;Username=u;Password=p;Database=edfi_configurationservice",
+                    "Host=db;Username=u;Password=p;SSL Mode=VerifyFull",
+                    "Host=db;Username=u;Password=p;SSL Mode=verify-ca",
+                    "Host=db;Username=u;Password=p;SSL Mode=VerifyFull;Root Certificate=certs/root.crt",
                     "=;;=",
                     ";",
                 }
@@ -804,6 +807,29 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 .ContainSingle()
                 .Which.Should()
                 .Contain("Database must be absent or postgres");
+
+        [Test]
+        public void It_requires_a_root_certificate_for_a_verifying_postgresql_ssl_mode()
+        {
+            foreach (
+                string value in new[]
+                {
+                    "Host=db;Username=u;Password=p;SSL Mode=VerifyFull",
+                    "Host=db;Username=u;Password=p;SSL Mode=verify-ca",
+                }
+            )
+            {
+                _postgresql[value]
+                    .Should()
+                    .ContainSingle()
+                    .Which.Should()
+                    .Contain("must name a Root Certificate when SSL Mode is VerifyCA or VerifyFull");
+            }
+
+            _postgresql["Host=db;Username=u;Password=p;SSL Mode=VerifyFull;Root Certificate=certs/root.crt"]
+                .Should()
+                .BeEmpty();
+        }
 
         [Test]
         public void It_rejects_unparseable_text() =>

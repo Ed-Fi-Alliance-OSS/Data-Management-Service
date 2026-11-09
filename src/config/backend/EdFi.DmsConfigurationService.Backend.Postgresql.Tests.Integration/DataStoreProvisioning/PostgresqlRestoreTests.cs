@@ -501,6 +501,111 @@ public class PostgresqlRestoreTests
             _stagingAfterTheRun.Should().BeOfType<DmsLiveTargetState.Present>();
     }
 
+    /// <summary>
+    /// The caller cancels after the replay process exited 0 and before the engine reads the staging instance (6.10).
+    /// The admin connection's source is read at every open, and it cancels the caller's token at the first open after
+    /// the fake's exit signal, which is the instance read, so the timing is fixed without a delay. The exit already
+    /// proved the outcome, so the engine still returns the staging instance instead of losing it to the cancellation.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_after_the_replay_exited_successfully
+    {
+        private DmsOperationId _operation;
+        private string _root = string.Empty;
+        private FakePsql? _fake;
+        private bool _cancelledBeforeTheRead;
+        private DmsInstanceIdentity _created = null!;
+        private DmsCommandOutcome<DmsInstanceIdentity> _outcome = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _operation = DmsOperationId.New();
+            DmsDatabaseName stage = _operation.StagingDatabaseName;
+            await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(stage.Value)};");
+            _root = Path.Combine(Path.GetTempPath(), "dms1438-exited-" + _operation.Value);
+            Directory.CreateDirectory(_root);
+            PrivateOperationDirectory directory = PrivateOperationDirectory.Create(_root, _operation);
+            string artifactPath = directory.PathOf("artifact.sql");
+            await File.WriteAllTextAsync(artifactPath, "SELECT 1;\n");
+
+            string exited = Path.Combine(_root, "exited");
+            _fake = FakePsql.ExitingSuccessfully(exited);
+            using CancellationTokenSource caller = new();
+            PostgresqlAdminConnection admin = new(
+                () =>
+                {
+                    if (File.Exists(exited) && !caller.IsCancellationRequested)
+                    {
+                        caller.Cancel();
+                        _cancelledBeforeTheRead = true;
+                    }
+
+                    return AdminConnectionString!;
+                },
+                TimeSpan.FromSeconds(30)
+            );
+            PostgresqlDmsTargetEngine engine = new(
+                admin,
+                Settings(),
+                TimeProvider.System,
+                NullLogger.Instance,
+                new PsqlRestoreRunner(
+                    _fake.ExecutablePath,
+                    TimeSpan.FromMinutes(1),
+                    TimeProvider.System,
+                    NullLogger.Instance
+                )
+            );
+            _created = (await engine.InspectAsync(stage, default))
+                .Should()
+                .BeOfType<DmsLiveTargetState.Present>()
+                .Subject.Instance;
+            _outcome = await engine.RestoreIntoStagingAsync(
+                stage,
+                Replay.TargetName("replay"),
+                new StagedArtifact(artifactPath, new string('0', 64), DmsArtifactKind.PostgresqlSqlDump),
+                _operation,
+                caller.Token
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_fake is not null)
+            {
+                await _fake.DisposeAsync();
+            }
+
+            await ExecuteOnServerAsync(
+                $"DROP DATABASE IF EXISTS {PostgresqlIdentifiers.Quote(_operation.StagingDatabaseName.Value)} WITH (FORCE);"
+            );
+            try
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+            catch (IOException)
+            {
+                // Left for the operating system; nothing under test depends on it.
+            }
+        }
+
+        [Test]
+        public void It_cancels_the_caller_only_after_the_replay_exited() =>
+            _cancelledBeforeTheRead.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_staging_instance_the_exit_proved() =>
+            _outcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Succeeded>()
+                .Which.Value.IsSameStableInstance(_created)
+                .Should()
+                .BeTrue();
+    }
+
     [TestFixture]
     public class Given_the_enqueue_owner_role_is_not_locked_down
     {

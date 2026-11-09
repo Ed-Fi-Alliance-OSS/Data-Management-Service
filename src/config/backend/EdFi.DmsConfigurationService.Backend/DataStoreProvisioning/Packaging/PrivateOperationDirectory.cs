@@ -4,6 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Runtime.InteropServices;
+using System.Runtime.Versioning;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 
@@ -15,8 +18,10 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 /// created: a losing creator never writes into, changes the mode of, or deletes an entry it did not create.
 /// <see cref="System.IO.Directory.CreateDirectory(string)"/> is not used because it succeeds over an existing
 /// directory. File names are chosen by the callers from fixed constants, never from a package or a request, so no
-/// path inside the directory is attacker-chosen. On Windows the directory inherits the root's access control;
-/// the mode calls are Unix-only. Disposal deletes the directory and everything in it on a best-effort basis;
+/// path inside the directory is attacker-chosen. On Windows the native create carries a protected access control
+/// list that allows only the current user and is inherited by every file created inside, so the root's
+/// permissions never reach the directory or a password file in it; the mode calls are Unix-only. Disposal
+/// deletes the directory and everything in it on a best-effort basis;
 /// <see cref="TryDelete"/> reports whether the deletion succeeded so bounded cleanup (D-19) can record
 /// <c>OperationDirectory</c> residue.
 /// </summary>
@@ -217,14 +222,37 @@ public sealed class PrivateOperationDirectory : IDisposable
         }
     }
 
+    /// <summary>
+    /// The claim on Windows: the create itself applies <see cref="PrivateDirectorySecurity"/>, so there is no moment
+    /// at which the directory, or a file later created in it, carries the root's inheritable permissions. An
+    /// existing entry fails the create and is never touched.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
     private static void ClaimOnWindows(string path)
     {
-        if (CreateDirectoryW(path, IntPtr.Zero))
+        byte[] descriptor = PrivateDirectorySecurity().GetSecurityDescriptorBinaryForm();
+        GCHandle pinned = GCHandle.Alloc(descriptor, GCHandleType.Pinned);
+        int error;
+        try
         {
-            return;
+            SecurityAttributes attributes = new()
+            {
+                Length = Marshal.SizeOf<SecurityAttributes>(),
+                SecurityDescriptor = pinned.AddrOfPinnedObject(),
+                InheritHandle = 0,
+            };
+            if (CreateDirectoryW(path, ref attributes))
+            {
+                return;
+            }
+
+            error = Marshal.GetLastPInvokeError();
+        }
+        finally
+        {
+            pinned.Free();
         }
 
-        int error = Marshal.GetLastPInvokeError();
         throw error switch
         {
             Win32ErrorAlreadyExists => AlreadyExists(),
@@ -236,6 +264,38 @@ public sealed class PrivateOperationDirectory : IDisposable
             ),
             _ => new IOException($"Creating the operation directory failed with Win32 error {error}."),
         };
+    }
+
+    /// <summary>
+    /// A protected list (nothing inherited from the root) with one entry: full control for the current user,
+    /// inherited by the files and directories created inside. The Windows counterpart of modes 0700 and 0600.
+    /// </summary>
+    [SupportedOSPlatform("windows")]
+    internal static DirectorySecurity PrivateDirectorySecurity()
+    {
+        using WindowsIdentity identity = WindowsIdentity.GetCurrent();
+        SecurityIdentifier user =
+            identity.User ?? throw new InvalidOperationException("The current Windows user has no SID.");
+        DirectorySecurity security = new();
+        security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        security.AddAccessRule(
+            new FileSystemAccessRule(
+                user,
+                FileSystemRights.FullControl,
+                InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow
+            )
+        );
+        return security;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct SecurityAttributes
+    {
+        public int Length;
+        public IntPtr SecurityDescriptor;
+        public int InheritHandle;
     }
 
     private static void ClaimOnUnix(string path)
@@ -265,7 +325,10 @@ public sealed class PrivateOperationDirectory : IDisposable
 #pragma warning disable SYSLIB1054 // Two small calls; do not enable unsafe compilation for the library.
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, ExactSpelling = true, SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool CreateDirectoryW(string lpPathName, IntPtr lpSecurityAttributes);
+    private static extern bool CreateDirectoryW(
+        string lpPathName,
+        ref SecurityAttributes lpSecurityAttributes
+    );
 
     [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)]
     private static extern int MakeDirectory([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);

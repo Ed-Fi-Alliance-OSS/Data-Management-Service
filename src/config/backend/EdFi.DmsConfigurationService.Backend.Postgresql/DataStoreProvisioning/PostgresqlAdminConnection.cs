@@ -64,7 +64,8 @@ public sealed class PostgresqlAdminConnection
 
     /// <summary>
     /// The current value parsed by the driver with the provisioning overrides applied. A value the driver
-    /// cannot read throws the driver's exception, whose message is never logged.
+    /// cannot read throws the driver's exception, whose message is never logged. The server-certificate
+    /// trust is made the same for both clients here (D-10): see <see cref="AlignTrust"/>.
     /// </summary>
     private NpgsqlConnectionStringBuilder Template
     {
@@ -88,9 +89,31 @@ public sealed class PostgresqlAdminConnection
                     TcpKeepAliveTime = TcpKeepAliveTimeSeconds,
                     TcpKeepAliveInterval = TcpKeepAliveIntervalSeconds,
                 };
+                AlignTrust(template);
                 _parsed = (current, template);
                 return template;
             }
+        }
+    }
+
+    /// <summary>
+    /// Makes Npgsql and <c>psql</c> trust the same roots. A <c>Root Certificate</c> is made a full path against
+    /// this process's working directory, where Npgsql resolves it, because <c>psql</c> runs in the operation's
+    /// directory and would resolve a relative path there. A verifying mode without one is refused: Npgsql
+    /// would then fall back to <c>PGSSLROOTCERT</c>, a default file, or the machine store, none of which the
+    /// replay's environment carries the same way, so readiness could pass while every replay fails.
+    /// </summary>
+    private static void AlignTrust(NpgsqlConnectionStringBuilder template)
+    {
+        if (!string.IsNullOrEmpty(template.RootCertificate))
+        {
+            template.RootCertificate = Path.GetFullPath(template.RootCertificate);
+        }
+        else if (template.SslMode is SslMode.VerifyCA or SslMode.VerifyFull)
+        {
+            throw new InvalidOperationException(
+                "The administrative connection string verifies the server certificate without a Root Certificate."
+            );
         }
     }
 

@@ -164,7 +164,9 @@ internal sealed record LibpqConnectionSettings(
 /// exactly the allowlisted variables are set, so neither a password-carrying variable nor an operator's
 /// <c>PGSERVICE</c>, <c>PGOPTIONS</c>, or <c>PSQLRC</c> can reach the replay. <c>PATH</c> is copied from
 /// this process so the executable's own dependencies resolve; <c>LC_ALL=C</c> fixes the message language
-/// the SQLSTATE extraction relies on; <c>PGCLIENTENCODING=UTF8</c> fixes the replay encoding.
+/// the SQLSTATE extraction relies on; <c>PGCLIENTENCODING=UTF8</c> fixes the replay encoding. On Windows
+/// <c>SystemRoot</c> is copied too, because the system's socket and name resolution libraries cannot load
+/// without it (host names then fail with Winsock error 11003); it carries no credential.
 /// </summary>
 internal static class LibpqEnvironment
 {
@@ -176,11 +178,12 @@ internal static class LibpqEnvironment
     public const string ClientEncodingVariable = "PGCLIENTENCODING";
     public const string LocaleVariable = "LC_ALL";
     public const string PathVariable = "PATH";
+    public const string SystemRootVariable = "SystemRoot";
 
     public const string ClientEncoding = "UTF8";
     public const string Locale = "C";
 
-    /// <summary>The only variable names a <c>psql</c> process may receive, in the order D-10 lists them.</summary>
+    /// <summary>The only variable names a <c>psql</c> process may receive, in the order D-10 lists them, then <c>SystemRoot</c> on Windows.</summary>
     public static IReadOnlyList<string> AllowedVariables { get; } =
     [
         PasswordFileVariable,
@@ -191,6 +194,7 @@ internal static class LibpqEnvironment
         ClientEncodingVariable,
         LocaleVariable,
         PathVariable,
+        .. OperatingSystem.IsWindows() ? [SystemRootVariable] : Array.Empty<string>(),
     ];
 
     /// <summary>
@@ -214,6 +218,14 @@ internal static class LibpqEnvironment
         if (!string.IsNullOrEmpty(path))
         {
             environment[PathVariable] = path;
+        }
+
+        string? systemRoot = OperatingSystem.IsWindows()
+            ? Environment.GetEnvironmentVariable(SystemRootVariable)
+            : null;
+        if (!string.IsNullOrEmpty(systemRoot))
+        {
+            environment[SystemRootVariable] = systemRoot;
         }
 
         environment[LocaleVariable] = Locale;

@@ -91,6 +91,13 @@ internal sealed class FakePsql : IDisposable, IAsyncDisposable
         });
     }
 
+    /// <summary>A fake that never connects, writes <paramref name="signalPath"/> as its last act, and exits 0, as a committed replay ends.</summary>
+    public static FakePsql ExitingSuccessfully(string signalPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(signalPath);
+        return Create(_ => [.. SignalLines(signalPath, "exited"), ExitLine(0)]);
+    }
+
     /// <summary>A fake that writes <paramref name="lines"/> to standard error and exits with <paramref name="exitCode"/>.</summary>
     public static FakePsql WritingStandardError(IReadOnlyList<string> lines, int exitCode) =>
         Create(directory =>

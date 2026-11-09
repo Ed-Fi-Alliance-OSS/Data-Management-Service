@@ -82,25 +82,32 @@ public sealed partial class PostgresqlDmsTargetEngine
             operation
         );
 
-        // D-16 before the replay: the dump's ownership statements name the role.
-        await using (
-            NpgsqlConnection maintenance = await _adminConnection.OpenMaintenanceAsync(cancellationToken)
-        )
+        // D-16 before the replay: the dump's ownership statements name the role. A failure here, before any
+        // process exists, leaves the staging database as created, so it is a definite outcome.
+        DmsCommandOutcome<DmsInstanceIdentity>? refused;
+        try
         {
+            await using NpgsqlConnection maintenance = await _adminConnection.OpenMaintenanceAsync(
+                cancellationToken
+            );
             DmsServerSessionId maintenanceSession = await PostgresqlSessionQueries.ReadOwnSessionAsync(
                 maintenance,
                 cancellationToken
             );
-            DmsCommandOutcome<DmsInstanceIdentity>? refused =
-                await PostgresqlStagingQueries.EnsureEnqueueOwnerAsync(
-                    maintenance,
-                    maintenanceSession,
-                    cancellationToken
-                );
-            if (refused is not null)
-            {
-                return refused;
-            }
+            refused = await PostgresqlStagingQueries.EnsureEnqueueOwnerAsync(
+                maintenance,
+                maintenanceSession,
+                cancellationToken
+            );
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return NotStarted(exception, cancellationToken);
+        }
+
+        if (refused is not null)
+        {
+            return refused;
         }
 
         PsqlRunResult run;
@@ -128,8 +135,10 @@ public sealed partial class PostgresqlDmsTargetEngine
 
         switch (run)
         {
+            case PsqlRunResult.NotStarted notStarted:
+                return NotStarted(notStarted.Cause, cancellationToken);
             case PsqlRunResult.Exited { ExitCode: 0 }:
-                return await ReadStagingInstanceAsync(staging, RestoreInstanceStep, cancellationToken);
+                return await ReadCommittedInstanceAsync(staging, operation);
             case PsqlRunResult.Exited { SqlState: { } sqlState } exited
                 when PostgresqlErrorClassifier.FailureClassOf(sqlState) is { } failureClass:
                 // ON_ERROR_STOP ended the replay on a server-reported rejection: the single transaction
@@ -165,6 +174,57 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>The residue id of a replay process: the replay's application name and the process id, never a path or an argument.</summary>
     internal static string ReplayProcessResourceId(DmsOperationId operation, int processId) =>
         $"{operation.RestoreApplicationName}/{processId.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// A replay that never started, because something it needs failed before any process existed: a definite
+    /// failure, so cleanup may drop the staging database. A cancelled token is named as a cancellation, whatever
+    /// form the driver gave it, so the orchestrator tells the caller's from the deadline's; anything else is
+    /// <c>RestoreNotStarted</c> with its type chain only.
+    /// </summary>
+    private static DmsCommandOutcome<DmsInstanceIdentity> NotStarted(
+        Exception exception,
+        CancellationToken cancellationToken
+    ) =>
+        new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+            new DmsCommandFailure(
+                DmsCommandFailureClass.Rejected,
+                cancellationToken.IsCancellationRequested
+                    ? DmsProvisioningDiagnostic.ForOperation(RestoreCancelledStep)
+                    : DmsProvisioningDiagnostic.From(exception, DmsEngineOperations.RestoreNotStarted)
+            )
+        );
+
+    /// <summary>
+    /// The staging instance after <c>psql</c> exited 0, which proves the single transaction committed and leaves
+    /// nothing of the replay running. The read runs on a <c>CommandTimeout</c> bound of its own, so a cancellation
+    /// or deadline arriving after the replay cannot discard that outcome (6.10); a read that still fails is
+    /// <c>Unknown</c> and quiescent, so the orchestrator's reads decide the state and cleanup may drop the database.
+    /// </summary>
+    private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ReadCommittedInstanceAsync(
+        DmsDatabaseName staging,
+        DmsOperationId operation
+    )
+    {
+        using CancellationTokenSource bound = new(_adminConnection.CommandTimeout, _timeProvider);
+        string failure;
+        try
+        {
+            return await ReadStagingInstanceAsync(staging, RestoreInstanceStep, bound.Token);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Only the type chain leaves the catch: a driver error may quote the connection.
+            failure = DmsProvisioningDiagnostic.TypeChain(exception);
+        }
+
+        _logger.LogWarning(
+            ReplayResolutionFailed,
+            "The replay outcome of operation {Operation} could not be resolved: {ExceptionTypeChain}",
+            operation.Value,
+            failure
+        );
+        return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true };
+    }
 
     public async Task<DmsCommandOutcome> DropStagingAsync(
         DmsDatabaseName staging,
