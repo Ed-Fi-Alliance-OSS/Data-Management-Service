@@ -180,6 +180,53 @@ public class MssqlEnvironmentValidationTests
                 );
     }
 
+    /// <summary>
+    /// D-18 ownership: the file system root, owned by root with no group or other write, stands for a staging
+    /// directory another user owns (the SQL Server identity in the finding). Run as a non-root user, as CI does;
+    /// a root process owns every candidate, so the case is ignored there and left to the rule tests.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_staging_directory_another_user_owns
+    {
+        private IReadOnlyList<DmsReadinessReason> _reasons = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.Ignore("The staging directory owner is read on Unix only.");
+                return;
+            }
+
+            if (Environment.UserName == "root")
+            {
+                Assert.Ignore("A root process owns the file system root.");
+            }
+
+            ((File.GetUnixFileMode("/") & MssqlStagingSettings.ForbiddenFileModeBits) == 0)
+                .Should()
+                .BeTrue("the case isolates the owner rule from the mode rule");
+            _reasons = ReasonsOf(await EngineWithStagingAt("/").ValidateEnvironmentAsync(default));
+        }
+
+        [Test]
+        public void It_refuses_the_directory_as_not_owned_by_the_process() =>
+            _reasons
+                .Should()
+                .ContainSingle(reason => reason.Probe == MssqlEnvironment.StagingDirectoryProbe)
+                .Which.Should()
+                .Be(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        MssqlEnvironment.StagingDirectoryProbe,
+                        DmsProvisioningDiagnostic.ForOperation(
+                            MssqlEnvironment.StagingDirectoryNotOwnedOperation
+                        )
+                    )
+                );
+    }
+
     [TestFixture]
     public class Given_a_token_cancelled_before_the_call
     {

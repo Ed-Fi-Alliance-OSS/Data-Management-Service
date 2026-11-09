@@ -206,7 +206,7 @@ public class MssqlEnvironmentRulesTests
         [Test]
         public void It_refuses_a_missing_directory() =>
             MssqlEnvironment
-                .EvaluateStagingDirectory(exists: false, mode: null)
+                .EvaluateStagingDirectory(exists: false, mode: null, ownedByProcess: null)
                 .Should()
                 .Be(
                     Reason(
@@ -217,24 +217,51 @@ public class MssqlEnvironmentRulesTests
                 );
 
         [Test]
-        public void It_accepts_the_documented_2750() =>
-            MssqlEnvironment.EvaluateStagingDirectory(exists: true, Setgid2750).Should().BeNull();
+        public void It_accepts_the_documented_2750_owned_by_the_process() =>
+            MssqlEnvironment
+                .EvaluateStagingDirectory(exists: true, Setgid2750, ownedByProcess: true)
+                .Should()
+                .BeNull();
 
         [Test]
-        public void It_accepts_a_directory_whose_mode_is_not_read_on_windows() =>
-            MssqlEnvironment.EvaluateStagingDirectory(exists: true, mode: null).Should().BeNull();
+        public void It_refuses_the_documented_2750_owned_by_another_user() =>
+            MssqlEnvironment
+                .EvaluateStagingDirectory(exists: true, Setgid2750, ownedByProcess: false)
+                .Should()
+                .Be(
+                    Reason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        MssqlEnvironment.StagingDirectoryProbe,
+                        MssqlEnvironment.StagingDirectoryNotOwnedOperation
+                    )
+                );
+
+        [Test]
+        public void It_accepts_a_directory_whose_mode_and_owner_are_not_read_on_windows() =>
+            MssqlEnvironment
+                .EvaluateStagingDirectory(exists: true, mode: null, ownedByProcess: null)
+                .Should()
+                .BeNull();
 
         [Test]
         public void It_refuses_group_write() =>
             MssqlEnvironment
-                .EvaluateStagingDirectory(exists: true, Setgid2750 | UnixFileMode.GroupWrite)
+                .EvaluateStagingDirectory(
+                    exists: true,
+                    Setgid2750 | UnixFileMode.GroupWrite,
+                    ownedByProcess: true
+                )
                 .Should()
                 .Be(_writable);
 
         [Test]
         public void It_refuses_other_write() =>
             MssqlEnvironment
-                .EvaluateStagingDirectory(exists: true, Setgid2750 | UnixFileMode.OtherWrite)
+                .EvaluateStagingDirectory(
+                    exists: true,
+                    Setgid2750 | UnixFileMode.OtherWrite,
+                    ownedByProcess: true
+                )
                 .Should()
                 .Be(_writable);
     }

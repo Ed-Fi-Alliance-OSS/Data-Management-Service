@@ -117,14 +117,16 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// D-18 on the CMS host: the directory exists and, on Unix, its mode grants no group or other write. False when
-    /// the directory does not exist, so the visibility probe is not attempted in it.
+    /// D-18 on the CMS host: the directory exists and, on Unix, is owned by this process's user and its mode grants
+    /// no group or other write. False when the directory does not exist, so the visibility probe is not attempted
+    /// in it.
     /// </summary>
     private bool ValidateStagingDirectory(List<DmsReadinessReason> reasons)
     {
         string path = _settings.Staging.StagingPath;
         bool exists = Directory.Exists(path);
         UnixFileMode? mode = null;
+        bool? ownedByProcess = null;
         if (exists && !OperatingSystem.IsWindows())
         {
             try
@@ -145,9 +147,28 @@ public sealed partial class MssqlDmsTargetEngine
                 );
                 return true;
             }
+
+            try
+            {
+                ownedByProcess = UnixFileOwnership.IsOwnedByEffectiveUser(path);
+            }
+            catch (IOException exception)
+            {
+                reasons.Add(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        MssqlEnvironment.StagingDirectoryProbe,
+                        DmsProvisioningDiagnostic.From(
+                            exception,
+                            MssqlEnvironment.StagingDirectoryOwnerOperation
+                        )
+                    )
+                );
+                return true;
+            }
         }
 
-        if (MssqlEnvironment.EvaluateStagingDirectory(exists, mode) is { } reason)
+        if (MssqlEnvironment.EvaluateStagingDirectory(exists, mode, ownedByProcess) is { } reason)
         {
             reasons.Add(reason);
         }

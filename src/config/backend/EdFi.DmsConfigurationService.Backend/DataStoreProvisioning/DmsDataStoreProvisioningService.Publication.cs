@@ -373,7 +373,8 @@ public sealed partial class DmsDataStoreProvisioningService
     /// 6.9b resolution of a marker in doubt, on tokens of its own: the marker's session is proven gone, then
     /// the identity is read on a new session bound to the renamed instance. The expected value is
     /// <see cref="MarkerVerdict.Committed"/>; the package value is <see cref="MarkerVerdict.Uncommitted"/>;
-    /// an unproven termination, a refused open, or any other read is <see cref="MarkerVerdict.Unresolved"/>.
+    /// an unproven termination, a refused open, any other read, or a read that failed on every attempt is
+    /// <see cref="MarkerVerdict.Unresolved"/>.
     /// </summary>
     private async Task<MarkerVerdict> ResolveMarkerAsync(Publication publication, DmsOperationId operation)
     {
@@ -382,42 +383,38 @@ public sealed partial class DmsDataStoreProvisioningService
             return MarkerVerdict.Unresolved;
         }
 
-        using CancellationTokenSource bound = new(options.Value.CommandTimeout, timeProvider);
-        string failure;
-        try
-        {
-            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
-                publication.Target,
-                publication.TargetInstance!,
-                bound.Token
-            );
-            if (opened is not DmsSessionOpenResult.Opened { Session: { } session })
+        return await ReadForRecoveryAsync(
+            operation,
+            ResolveMarkerStep,
+            async token =>
             {
-                return MarkerVerdict.Unresolved;
-            }
-
-            await using (session)
-            {
-                DmsIdentityRead identity = await engine.ReadIdentityAsync(session, bound.Token);
-                return identity switch
+                DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                    publication.Target,
+                    publication.TargetInstance!,
+                    token
+                );
+                if (opened is not DmsSessionOpenResult.Opened { Session: { } session })
                 {
-                    DmsIdentityRead.Found found
-                        when found.SourceIdentity == publication.ExpectedSourceIdentity =>
-                        MarkerVerdict.Committed,
-                    DmsIdentityRead.Found found when found.SourceIdentity == publication.PackageIdentity =>
-                        MarkerVerdict.Uncommitted,
-                    _ => MarkerVerdict.Unresolved,
-                };
-            }
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            // Only the type chain leaves the catch: a driver error may quote the connection.
-            failure = DmsProvisioningDiagnostic.TypeChain(exception);
-        }
+                    return MarkerVerdict.Unresolved;
+                }
 
-        LogRecoveryUnproven(operation, ResolveMarkerStep, failure);
-        return MarkerVerdict.Unresolved;
+                await using (session)
+                {
+                    DmsIdentityRead identity = await engine.ReadIdentityAsync(session, token);
+                    return identity switch
+                    {
+                        DmsIdentityRead.Found found
+                            when found.SourceIdentity == publication.ExpectedSourceIdentity =>
+                            MarkerVerdict.Committed,
+                        DmsIdentityRead.Found found
+                            when found.SourceIdentity == publication.PackageIdentity =>
+                            MarkerVerdict.Uncommitted,
+                        _ => MarkerVerdict.Unresolved,
+                    };
+                }
+            },
+            MarkerVerdict.Unresolved
+        );
     }
 
     /// <summary>
@@ -539,8 +536,8 @@ public sealed partial class DmsDataStoreProvisioningService
     /// <summary>
     /// 6.3 step 8 for a rename in doubt: the holder session is proven gone, then the operation's instance is
     /// looked for under both names. Under the target name it was renamed (unmarked); under the staging name
-    /// it was not. True when either was found; false when the holder could not be proven gone, a read
-    /// failed, or the instance is under neither name.
+    /// it was not. True when either was found; false when the holder could not be proven gone, the reads
+    /// failed on every attempt, or the instance is under neither name.
     /// </summary>
     private async Task<bool> ResolveRenameAsync(Publication publication, DmsOperationId operation)
     {
@@ -549,42 +546,41 @@ public sealed partial class DmsDataStoreProvisioningService
             return false;
         }
 
-        using CancellationTokenSource bound = new(options.Value.CommandTimeout, timeProvider);
-        string failure;
-        try
-        {
-            DmsLiveTargetState target = await engine.InspectAsync(publication.Target, bound.Token);
-            if (
-                InstanceUnder(target) is { } renamed
-                && renamed.IsSameStableInstance(publication.StagingInstance!)
-            )
+        return await ReadForRecoveryAsync(
+            operation,
+            ResolveRenameStep,
+            async token =>
             {
-                publication.RenameResolvedRenamed(renamed);
-                return true;
-            }
+                DmsLiveTargetState target = await engine.InspectAsync(publication.Target, token);
+                if (
+                    InstanceUnder(target) is { } renamed
+                    && renamed.IsSameStableInstance(publication.StagingInstance!)
+                )
+                {
+                    publication.RenameResolvedRenamed(renamed);
+                    return true;
+                }
 
-            DmsLiveTargetState staging = await engine.InspectAsync(publication.Staging, bound.Token);
-            if (InstanceUnder(staging) is { } kept && kept.IsSameStableInstance(publication.StagingInstance!))
-            {
-                publication.RenameResolvedNotRenamed();
-                return true;
-            }
+                DmsLiveTargetState staging = await engine.InspectAsync(publication.Staging, token);
+                if (
+                    InstanceUnder(staging) is { } kept
+                    && kept.IsSameStableInstance(publication.StagingInstance!)
+                )
+                {
+                    publication.RenameResolvedNotRenamed();
+                    return true;
+                }
 
-            return false;
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            failure = DmsProvisioningDiagnostic.TypeChain(exception);
-        }
-
-        LogRecoveryUnproven(operation, ResolveRenameStep, failure);
-        return false;
+                return false;
+            },
+            false
+        );
     }
 
     /// <summary>
     /// A compensation drop in doubt: once the holder is proven gone, the target name is read; the instance
-    /// still there is reported. Without that proof, or when the read fails, the target is reported too,
-    /// because nothing shows it gone.
+    /// still there is reported. Without that proof, or when the read fails on every attempt, the target is
+    /// reported too, because nothing shows it gone.
     /// </summary>
     private async Task ResolveCompensationAsync(Publication publication, DmsOperationId operation)
     {
@@ -594,30 +590,25 @@ public sealed partial class DmsDataStoreProvisioningService
             return;
         }
 
-        using CancellationTokenSource bound = new(options.Value.CommandTimeout, timeProvider);
-        try
-        {
-            DmsLiveTargetState target = await engine.InspectAsync(publication.Target, bound.Token);
-            if (
+        DmsLiveTargetState? target = await ReadForRecoveryAsync<DmsLiveTargetState?>(
+            operation,
+            ResolveCompensationStep,
+            async token => await engine.InspectAsync(publication.Target, token),
+            null
+        );
+        if (
+            target is null
+            || (
                 InstanceUnder(target) is { } present
                 && present.IsSameStableInstance(publication.TargetInstance!)
             )
-            {
-                publication.CompensationResolvedPresent();
-            }
-            else
-            {
-                publication.Displaced();
-            }
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
+        )
         {
-            LogRecoveryUnproven(
-                operation,
-                ResolveCompensationStep,
-                DmsProvisioningDiagnostic.TypeChain(exception)
-            );
             publication.CompensationResolvedPresent();
+        }
+        else
+        {
+            publication.Displaced();
         }
     }
 

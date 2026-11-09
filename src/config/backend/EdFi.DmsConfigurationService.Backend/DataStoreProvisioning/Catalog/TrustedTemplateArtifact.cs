@@ -57,7 +57,8 @@ public sealed class TrustedTemplateArtifact : IDisposable
     /// <summary>
     /// Extracts the declared artifact once into the operation directory while verifying its hash (6.2 step 8).
     /// A refusal is raised as <see cref="DmsProvisioningFailedException"/> carrying <c>ArtifactTampered</c> or
-    /// <c>ManifestInvalid</c> for the operation boundary; cancellation and file system failures pass through.
+    /// <c>ManifestInvalid</c> for the operation boundary, and a file system failure writing the artifact (a full
+    /// disk, a refused write) as <c>StagingFailed</c> with only its type chain; cancellation passes through.
     /// </summary>
     public async Task<StagedArtifact> ExtractArtifactAsync(CancellationToken cancellationToken)
     {
@@ -69,6 +70,16 @@ public sealed class TrustedTemplateArtifact : IDisposable
         {
             throw new DmsProvisioningFailedException(
                 TemplateArtifactCatalog.FailureFor(exception),
+                exception
+            );
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            throw new DmsProvisioningFailedException(
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.StagingFailed,
+                    DmsProvisioningDiagnostic.From(exception, TemplateArtifactCatalog.ExtractArtifactStep)
+                ),
                 exception
             );
         }

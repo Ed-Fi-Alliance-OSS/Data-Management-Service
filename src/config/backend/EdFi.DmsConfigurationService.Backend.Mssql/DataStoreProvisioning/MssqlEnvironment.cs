@@ -73,7 +73,7 @@ internal static class MssqlEnvironment
     /// </summary>
     public const string FileCatalogVisibilityProbe = "FileCatalogVisibility";
 
-    /// <summary>7.3 item 6: the CMS-side staging directory exists and grants no group or other write (D-18).</summary>
+    /// <summary>7.3 item 6: the CMS-side staging directory exists, is owned by the CMS user, and grants no group or other write (D-18).</summary>
     public const string StagingDirectoryProbe = "StagingDirectory";
 
     /// <summary>7.3 item 6 and D-21: the real staging routine writes, re-reads, and deletes a probe the server can open.</summary>
@@ -94,6 +94,8 @@ internal static class MssqlEnvironment
     public const string StagingDirectoryMissingOperation = StagingDirectoryProbe + ".Missing";
     public const string StagingDirectoryWritableOperation = StagingDirectoryProbe + ".GroupOrOtherWritable";
     public const string StagingDirectoryModeOperation = StagingDirectoryProbe + ".ReadMode";
+    public const string StagingDirectoryNotOwnedOperation = StagingDirectoryProbe + ".NotOwnedByProcess";
+    public const string StagingDirectoryOwnerOperation = StagingDirectoryProbe + ".ReadOwner";
     public const string StagingProbeDeleteOperation = StagingVisibilityProbe + ".Delete";
     public const string StagingProbeServerOperation = StagingVisibilityProbe + ".Server";
     public const string LockHeartbeatOperation = TargetLockProbe + ".Heartbeat";
@@ -198,11 +200,18 @@ internal static class MssqlEnvironment
     }
 
     /// <summary>
-    /// D-18: a missing directory, or one whose mode grants group or other write, is not ready. The mode is read on
-    /// Unix only (<paramref name="mode"/> null on Windows, where the share and NTFS permissions of 7.4 are the
-    /// operator's and are not inspected).
+    /// D-18: a missing directory, one whose mode grants group or other write, or one another user owns is not
+    /// ready. The owner matters as much as the mode: the owner of a <c>2750</c> directory may unlink or replace
+    /// the staged backups in it, so a directory owned by the SQL Server identity passes the mode rule and the
+    /// visibility probe (a root CMS can still write there) while giving the reader the writer's power. Mode and
+    /// owner are read on Unix only (<paramref name="mode"/> and <paramref name="ownedByProcess"/> null on Windows,
+    /// where the share and NTFS permissions of 7.4 are the operator's and are not inspected).
     /// </summary>
-    public static DmsReadinessReason? EvaluateStagingDirectory(bool exists, UnixFileMode? mode)
+    public static DmsReadinessReason? EvaluateStagingDirectory(
+        bool exists,
+        UnixFileMode? mode,
+        bool? ownedByProcess
+    )
     {
         if (!exists)
         {
@@ -213,11 +222,20 @@ internal static class MssqlEnvironment
             );
         }
 
-        return mode is { } unixMode && (unixMode & MssqlStagingSettings.ForbiddenFileModeBits) != 0
-            ? Reason(
+        if (mode is { } unixMode && (unixMode & MssqlStagingSettings.ForbiddenFileModeBits) != 0)
+        {
+            return Reason(
                 DmsProvisioningFailureCode.StartupValidationFailed,
                 StagingDirectoryProbe,
                 StagingDirectoryWritableOperation
+            );
+        }
+
+        return ownedByProcess is false
+            ? Reason(
+                DmsProvisioningFailureCode.StartupValidationFailed,
+                StagingDirectoryProbe,
+                StagingDirectoryNotOwnedOperation
             )
             : null;
     }

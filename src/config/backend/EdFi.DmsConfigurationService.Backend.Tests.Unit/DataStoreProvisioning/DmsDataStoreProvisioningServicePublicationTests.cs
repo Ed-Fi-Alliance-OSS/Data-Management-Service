@@ -101,10 +101,11 @@ public class DmsDataStoreProvisioningServicePublicationTests
     private static Harness Scripted(
         RecordingHooks? hooks = null,
         Func<int, DmsLiveTargetState>? targetInspection = null,
-        Func<int, DmsLiveTargetState>? stagingInspection = null
+        Func<int, DmsLiveTargetState>? stagingInspection = null,
+        Action<DmsDataStoreProvisioningOptions>? configure = null
     )
     {
-        Harness harness = new(hooks: hooks);
+        Harness harness = new(hooks: hooks, configure: configure);
         SpyDmsTargetEngine engine = harness.Engine;
         int targetInspections = 0;
         int stagingInspections = 0;
@@ -719,6 +720,83 @@ public class DmsDataStoreProvisioningServicePublicationTests
             Verdict(_sessionUnprovenResult).Item1.Should().Be(DmsProvisioningFailureCode.OutcomeUnknown);
             CountOf(_sessionUnproven, SpyDmsTargetEngine.OpenSession).Should().Be(2);
             CountOf(_sessionUnproven, SpyDmsTargetEngine.DropInstance).Should().Be(0);
+        }
+    }
+
+    /// <summary>
+    /// 6.9 <c>OutcomeResolutionAttempts</c>: the marker is in doubt and its session proven gone, but the re-read
+    /// on a new session throws. With the default of three, one transient failure is followed by a re-read that
+    /// finds the committed marker; with a limit of two and every re-read failing, exactly two are made and the
+    /// outcome stays unresolved, never compensated.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_marker_re_read_fails
+    {
+        private Harness _transient = null!;
+        private Harness _persistent = null!;
+        private DmsDataStoreCreateResult _transientResult = null!;
+        private DmsDataStoreCreateResult _persistentResult = null!;
+
+        /// <summary>Identity reads on target sessions after the 6.3 step 9 re-check throw <paramref name="failures"/> times, then find the expected value.</summary>
+        private static Harness InDoubt(
+            int failures,
+            Action<DmsDataStoreProvisioningOptions>? configure = null
+        )
+        {
+            Harness harness = Scripted(configure: configure);
+            harness.Engine.OnAssignMarker = (session, _, _) =>
+                Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Unknown(session.ServerSession));
+            int targetReads = 0;
+            harness.Engine.OnReadIdentity = (session, _) =>
+            {
+                if (session.ServerSession != _markerSession || ++targetReads == 1)
+                {
+                    return Task.FromResult<DmsIdentityRead>(TargetFactsSample.Identity());
+                }
+
+                return targetReads - 1 <= failures
+                    ? throw new TestConnectionException()
+                    : Task.FromResult(Identity(_expected));
+            };
+            return harness;
+        }
+
+        /// <summary>Identity reads after the marker: every read on a target session but the re-check.</summary>
+        private static int RecoveryReads(Harness harness) =>
+            AfterTheRename(harness).Count(call => call.Member == SpyDmsTargetEngine.ReadIdentity) - 1;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _transient = InDoubt(failures: 1);
+            _transientResult = await CreateAsync(_transient);
+
+            _persistent = InDoubt(failures: int.MaxValue, options => options.OutcomeResolutionAttempts = 2);
+            _persistentResult = await CreateAsync(_persistent);
+        }
+
+        [Test]
+        public void It_returns_created_after_one_transient_failure()
+        {
+            _transientResult.Should().BeOfType<DmsDataStoreCreateResult.Created>();
+            RecoveryReads(_transient).Should().Be(2);
+        }
+
+        [Test]
+        public void It_stops_at_the_configured_limit_unresolved_and_uncompensated()
+        {
+            Verdict(_persistentResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.OutcomeUnknown,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ResolveMarkerStep
+                    )
+                );
+            (RecoveryReads(_persistent), CountOf(_persistent, SpyDmsTargetEngine.DropInstance))
+                .Should()
+                .Be((2, 0));
         }
     }
 

@@ -234,10 +234,24 @@ internal static class PostgresqlStagingQueries
         }
     }
 
-    /// <summary>D-16 on any session: null when the role is in place, else the classified refusal (<c>55000</c> for an unsafe role, <c>42501</c> without <c>CREATEROLE</c>).</summary>
-    public static async Task<DmsCommandOutcome<DmsInstanceIdentity>?> EnsureEnqueueOwnerAsync(
+    /// <summary>
+    /// D-16 on any session: null when the role is in place, else the classified refusal (<c>55000</c> for an
+    /// unsafe role, <c>42501</c> without <c>CREATEROLE</c>). The role is cluster-wide while target locks are
+    /// per name, so creates for two targets can both find it missing on a fresh cluster and both send
+    /// <c>CREATE ROLE</c>; the one that loses fails with <c>23505</c> or <c>42710</c> only once the winner's role
+    /// is committed. That collision runs the block once more, in a new transaction that sees the committed
+    /// role, so every attribute and membership check applies to it as to any existing role.
+    /// </summary>
+    public static Task<DmsCommandOutcome<DmsInstanceIdentity>?> EnsureEnqueueOwnerAsync(
         NpgsqlConnection connection,
         DmsServerSessionId session,
+        CancellationToken cancellationToken
+    ) => EnsureEnqueueOwnerAsync(connection, session, afterCollision: false, cancellationToken);
+
+    private static async Task<DmsCommandOutcome<DmsInstanceIdentity>?> EnsureEnqueueOwnerAsync(
+        NpgsqlConnection connection,
+        DmsServerSessionId session,
+        bool afterCollision,
         CancellationToken cancellationToken
     )
     {
@@ -248,6 +262,15 @@ internal static class PostgresqlStagingQueries
             return null;
         }
         catch (Exception exception)
+            when (!afterCollision
+                && PostgresqlErrorClassifier.SqlStateOf(exception)
+                    is PostgresErrorCodes.UniqueViolation
+                        or PostgresErrorCodes.DuplicateObject
+            )
+        {
+            // A concurrent operation created the role first; its state is checked by the second run below.
+        }
+        catch (Exception exception)
             when (exception is not OperationCanceledException || IsAfterSend(exception))
         {
             string step =
@@ -256,6 +279,8 @@ internal static class PostgresqlStagingQueries
                     : EnsureEnqueueOwnerStep;
             return Classify<DmsInstanceIdentity>(exception, session, step);
         }
+
+        return await EnsureEnqueueOwnerAsync(connection, session, afterCollision: true, cancellationToken);
     }
 
     /// <summary>The <c>oid</c> and claim comment under <paramref name="name"/>, or null when no database has the name.</summary>

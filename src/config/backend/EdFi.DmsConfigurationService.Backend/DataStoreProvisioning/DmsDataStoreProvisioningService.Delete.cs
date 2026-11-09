@@ -557,7 +557,7 @@ public sealed partial class DmsDataStoreProvisioningService
 
     /// <summary>
     /// The state under the target name once the holder session is proven gone, on tokens of its own; null when
-    /// the holder cannot be proven gone or the name cannot be read, because nothing is then known.
+    /// the holder cannot be proven gone or the name cannot be read on any attempt, because nothing is then known.
     /// </summary>
     private async Task<DmsLiveTargetState?> ReadSettledTargetAsync(
         Deletion deletion,
@@ -569,20 +569,12 @@ public sealed partial class DmsDataStoreProvisioningService
             return null;
         }
 
-        using CancellationTokenSource bound = new(options.Value.CommandTimeout, timeProvider);
-        try
-        {
-            return await engine.InspectAsync(deletion.Target, bound.Token);
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
-        {
-            LogRecoveryUnproven(
-                operation,
-                ResolveDeletionStep,
-                DmsProvisioningDiagnostic.TypeChain(exception)
-            );
-            return null;
-        }
+        return await ReadForRecoveryAsync<DmsLiveTargetState?>(
+            operation,
+            ResolveDeletionStep,
+            async token => await engine.InspectAsync(deletion.Target, token),
+            null
+        );
     }
 
     /// <summary>

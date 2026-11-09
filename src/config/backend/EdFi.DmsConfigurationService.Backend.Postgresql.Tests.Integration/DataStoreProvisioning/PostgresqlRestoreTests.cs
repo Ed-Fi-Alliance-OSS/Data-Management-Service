@@ -550,4 +550,138 @@ public class PostgresqlRestoreTests
                     }
                 );
     }
+
+    /// <summary>
+    /// D-16 on a fresh cluster, two operations at once: the role is cluster-wide but target locks are per name,
+    /// so both can find it missing. The first runs the D-16 block in an open transaction, so its role is not yet
+    /// visible; the second runs it through the engine's query, finds the role missing, and waits in
+    /// <c>CREATE ROLE</c> on the first's uncommitted row, which the server reports before the first commits.
+    /// A locked-down role committed by the first is then accepted, and one the first leaves unsafe is still
+    /// refused as <c>RoleStateUnsafe</c>. The lane's existing role is renamed aside for the fixture and restored.
+    /// </summary>
+    [TestFixture]
+    public class Given_two_operations_initialize_the_enqueue_owner_role_at_once
+    {
+        private static readonly string _role = PostgresqlIdentifiers.Quote(
+            DmsTargetValidator.EnqueueOwnerRoleName
+        );
+
+        private string? _parked;
+        private DmsCommandOutcome<DmsInstanceIdentity>? _lockedDownOutcome;
+        private DmsCommandOutcome<DmsInstanceIdentity>? _unsafeOutcome;
+
+        private static async Task ExecuteAsync(NpgsqlConnection connection, string sql)
+        {
+            await using NpgsqlCommand command = new(sql, connection);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        /// <summary>
+        /// The first session creates the role in an open transaction and runs <paramref name="beforeCommit"/>
+        /// there; once the second session waits on it, the first commits, and the second's outcome is returned.
+        /// The role is dropped afterwards; it owns nothing.
+        /// </summary>
+        private static async Task<DmsCommandOutcome<DmsInstanceIdentity>?> RaceAsync(string? beforeCommit)
+        {
+            try
+            {
+                await using NpgsqlConnection first = await AdminConnection().OpenMaintenanceAsync(default);
+                await using NpgsqlConnection second = await AdminConnection().OpenMaintenanceAsync(default);
+                await using NpgsqlTransaction transaction = await first.BeginTransactionAsync();
+                await ExecuteAsync(first, PostgresqlStagingQueries.EnsureEnqueueOwner);
+                if (beforeCommit is not null)
+                {
+                    await ExecuteAsync(first, beforeCommit);
+                }
+
+                Task<DmsCommandOutcome<DmsInstanceIdentity>?> racing =
+                    PostgresqlStagingQueries.EnsureEnqueueOwnerAsync(
+                        second,
+                        await OwnSessionAsync(second),
+                        CancellationToken.None
+                    );
+                await WaitUntilBlockedByAsync(first.ProcessID, second.ProcessID, racing);
+                await transaction.CommitAsync();
+                return await racing.WaitAsync(_bound);
+            }
+            finally
+            {
+                await ExecuteOnServerAsync($"DROP ROLE IF EXISTS {_role};");
+            }
+        }
+
+        /// <summary>Returns once <paramref name="waiting"/> waits on <paramref name="blocking"/>; the bound only turns a call that never waits into a failure instead of a hang.</summary>
+        private static async Task WaitUntilBlockedByAsync(int blocking, int waiting, Task call)
+        {
+            using CancellationTokenSource bound = new(_bound);
+            while (
+                !await ScalarOnServerAsync<bool>(
+                    "SELECT @blocking = ANY(pg_catalog.pg_blocking_pids(@waiting));",
+                    ("blocking", blocking),
+                    ("waiting", waiting)
+                )
+            )
+            {
+                call.IsCompleted.Should().BeFalse("the second session must wait on the uncommitted role");
+                await Task.Delay(TimeSpan.FromMilliseconds(20), bound.Token);
+            }
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            await RequireSuperuserOrSkipAsync();
+            if (
+                await ScalarOnServerAsync<bool>(
+                    "SELECT pg_catalog.to_regrole(@role) IS NOT NULL;",
+                    ("role", DmsTargetValidator.EnqueueOwnerRoleName)
+                )
+            )
+            {
+                _parked =
+                    "dms1438_parked_owner_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+                await ExecuteOnServerAsync(
+                    $"ALTER ROLE {_role} RENAME TO {PostgresqlIdentifiers.Quote(_parked)};"
+                );
+            }
+
+            _lockedDownOutcome = await RaceAsync(beforeCommit: null);
+            _unsafeOutcome = await RaceAsync($"ALTER ROLE {_role} INHERIT;");
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_parked is not null)
+            {
+                await ExecuteOnServerAsync($"DROP ROLE IF EXISTS {_role};");
+                await ExecuteOnServerAsync(
+                    $"ALTER ROLE {PostgresqlIdentifiers.Quote(_parked)} RENAME TO {_role};"
+                );
+            }
+        }
+
+        [Test]
+        public void It_accepts_the_locked_down_role_the_other_operation_created() =>
+            _lockedDownOutcome.Should().BeNull();
+
+        [Test]
+        public void It_still_refuses_a_role_the_other_operation_left_unsafe() =>
+            _unsafeOutcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Which.Failure.Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Class = DmsCommandFailureClass.Rejected,
+                        Diagnostic = new
+                        {
+                            ProviderErrorCode = PostgresqlStagingQueries.RoleStateUnsafeSqlState,
+                            Operation = DmsEngineOperations.RoleStateUnsafe,
+                        },
+                    }
+                );
+    }
 }

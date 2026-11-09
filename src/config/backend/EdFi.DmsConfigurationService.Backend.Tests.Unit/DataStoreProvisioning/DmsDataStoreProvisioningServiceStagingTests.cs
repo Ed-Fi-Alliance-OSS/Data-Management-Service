@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
@@ -507,6 +508,211 @@ public class DmsDataStoreProvisioningServiceStagingTests
             )
                 .Should()
                 .Be((1, 1, true));
+    }
+
+    /// <summary>
+    /// Only the scope's deadline for the restore expires: the fake clock passes it while the engine holds the
+    /// call, and the engine reports the cancellation of its token as a normal result, as both engines do. The
+    /// caller never cancelled and the holder was not lost, so the create ends <c>TimedOut</c>, not with an
+    /// <see cref="OperationCanceledException"/>.
+    /// </summary>
+    [TestFixture]
+    public class Given_only_the_restore_deadline_expires_and_the_engine_reports_cancellation
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+        private bool _engineTokenCancelled;
+        private bool _directoryReleased;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = Scripted();
+            _harness.Engine.OnRestoreIntoStaging = (_, _, token) =>
+            {
+                _harness.Time.Advance(
+                    TimeSpan.FromMinutes(1)
+                        + TimeSpan.FromSeconds(30)
+                        + CommandTimeout
+                        + TimeSpan.FromSeconds(1)
+                );
+                _engineTokenCancelled = token.IsCancellationRequested;
+                return Task.FromResult(
+                    RestoreFailed(DmsCommandFailureClass.Rejected, DmsEngineOperations.RestoreCancelled)
+                );
+            };
+            _result = await CreateAsync(_harness);
+            _directoryReleased = SharedTemplateCatalog.Workspace.OperationEntries.Length == 0;
+        }
+
+        [Test]
+        public void It_cancels_the_engine_token_by_the_deadline_alone() =>
+            (_engineTokenCancelled, _harness.OnlyHolder.LostToken.IsCancellationRequested)
+                .Should()
+                .Be((true, false));
+
+        [Test]
+        public void It_ends_timed_out_at_the_restore() =>
+            FailureOf(_result)
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Code = DmsProvisioningFailureCode.TimedOut,
+                        Diagnostic = new
+                        {
+                            Operation = DmsDataStoreProvisioningService.RestoreIntoStagingStep,
+                        },
+                    }
+                );
+
+        [Test]
+        public void It_cleans_up() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.DropStaging),
+                _harness.OnlyHolder.ReleaseCount,
+                _directoryReleased
+            )
+                .Should()
+                .Be((1, 1, true));
+    }
+
+    /// <summary>
+    /// The artifact cannot be written into the operation directory (6.2 step 8) for a file system reason, not
+    /// a package defect: the create returns <c>StagingFailed</c> with only the exception's type chain instead
+    /// of throwing, before the lock and with nothing sent to the server. An entry already holding the
+    /// artifact's name raises <see cref="IOException"/> and the directory is released; a directory that refuses
+    /// new entries raises <see cref="UnauthorizedAccessException"/> (Unix), and the same refusal stops the
+    /// release, whose residue the failure reports.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_artifact_cannot_be_written_into_the_operation_directory
+    {
+        private Harness _occupied = null!;
+        private DmsDataStoreCreateResult _occupiedResult = null!;
+        private bool _occupiedDirectoryReleased;
+        private Harness _refusing = null!;
+        private DmsDataStoreCreateResult? _refusingResult;
+        private Catalog.DeletionTrap? _trap;
+        private string _refusingDirectory = string.Empty;
+
+        private static Harness Staging(Action<TrustedTemplateArtifact> afterStaging)
+        {
+            Harness harness = Scripted();
+            harness.Catalog.OnStage = async (template, operation, token) =>
+            {
+                TemplateArtifactStaging staging = await SharedTemplateCatalog.Catalog.StageAsync(
+                    template,
+                    operation,
+                    token
+                );
+                afterStaging(((TemplateArtifactStaging.Staged)staging).Artifact);
+                return staging;
+            };
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _occupied = Staging(artifact =>
+                File.WriteAllBytes(
+                    Path.Combine(
+                        artifact.OperationDirectoryPath,
+                        StagedTemplatePackage.ArtifactBaseName
+                            + RestoreManifest.ArtifactExtensionFor(artifact.Manifest.DatabaseEngine)
+                    ),
+                    []
+                )
+            );
+            _occupiedResult = await CreateAsync(_occupied);
+            _occupiedDirectoryReleased = SharedTemplateCatalog.Workspace.OperationEntries.Length == 0;
+
+            if (!OperatingSystem.IsWindows())
+            {
+                _refusing = Staging(artifact =>
+                {
+                    _refusingDirectory = artifact.OperationDirectoryPath;
+                    _trap = new Catalog.DeletionTrap(_refusingDirectory);
+                });
+                _refusingResult = await CreateAsync(_refusing);
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _trap?.Dispose();
+            _trap = null;
+            if (_refusingDirectory.Length > 0 && Directory.Exists(_refusingDirectory))
+            {
+                Directory.Delete(_refusingDirectory, recursive: true);
+            }
+        }
+
+        private DmsDataStoreCreateResult RefusingResult()
+        {
+            if (_refusingResult is null)
+            {
+                Assert.Ignore("A directory that refuses new entries is made with Unix modes.");
+            }
+
+            return _refusingResult!;
+        }
+
+        [Test]
+        public void It_returns_staging_failed_for_an_io_failure() =>
+            FailureOf(_occupiedResult)
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Code = DmsProvisioningFailureCode.StagingFailed,
+                        Diagnostic = new
+                        {
+                            ExceptionTypeChain = "System.IO.IOException",
+                            Operation = TemplateArtifactCatalog.ExtractArtifactStep,
+                        },
+                    }
+                );
+
+        [Test]
+        public void It_sends_nothing_to_the_server_and_releases_the_directory() =>
+            (_occupied.Engine.Calls.Count, CleanupOf(_occupiedResult).HasResidue, _occupiedDirectoryReleased)
+                .Should()
+                .Be((0, false, true));
+
+        [Test]
+        public void It_returns_staging_failed_for_a_refused_write()
+        {
+            DmsProvisioningFailure failure = FailureOf(RefusingResult());
+            (failure.Code, failure.Diagnostic.Operation, failure.Diagnostic.ExceptionTypeChain.Split('/')[0])
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.StagingFailed,
+                        TemplateArtifactCatalog.ExtractArtifactStep,
+                        "System.UnauthorizedAccessException"
+                    )
+                );
+        }
+
+        [Test]
+        public void It_sends_nothing_to_the_server_and_reports_what_the_refusal_kept()
+        {
+            DmsDataStoreCreateResult result = RefusingResult();
+            string directoryName = Path.GetFileName(_refusingDirectory);
+            _refusing.Engine.Calls.Should().BeEmpty();
+            CleanupOf(result)
+                .Residue.Should()
+                .Equal(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.PackageCopy,
+                        directoryName + "/" + StagedTemplatePackage.PackageCopyFileName
+                    ),
+                    new DmsCleanupResidue(DmsResidueKind.OperationDirectory, directoryName)
+                );
+        }
     }
 
     [TestFixture]

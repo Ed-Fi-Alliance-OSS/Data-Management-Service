@@ -1568,7 +1568,7 @@ DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <pr
 | `Superuser`, `CreateDatabasePrivilege`, `SignalBackendPrivilege`, `ReadAllStatsPrivilege`, `EnqueueOwnerRole` | PostgreSQL privileges; see [PostgreSQL](#postgresql). | Grant them to the administrative login. |
 | `CreateDatabasePrivilege`, `AlterAnyDatabasePrivilege`, `AlterAnyConnectionPrivilege`, `ViewServerStatePrivilege`, `FileCatalogVisibility`, `DefaultDataPath`, `DefaultLogPath` | SQL Server privileges and default file locations; see [SQL Server](#sql-server). | Grant them, or set the instance default paths. |
 | `PsqlVersion` | `Postgresql:PsqlPath` runs and reports major version 18 or later. | Install `psql` 18, or correct the path. |
-| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists, is not group- or other-writable, and SQL Server can read a probe file written into it. | See [SQL Server](#sql-server). |
+| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists, is owned by the Configuration Service user (on Linux), is not group- or other-writable, and SQL Server can read a probe file written into it. | See [SQL Server](#sql-server). |
 | `TargetLock` | A lock can be taken and released on the server. | Usually a server or privilege problem an earlier probe also reports. |
 
 ### Template package trust

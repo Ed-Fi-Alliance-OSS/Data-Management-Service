@@ -746,6 +746,41 @@ public sealed partial class DmsDataStoreProvisioningService(
         return false;
     }
 
+    /// <summary>
+    /// A re-read after an unknown outcome (6.9), once its session is proven gone: up to
+    /// <c>OutcomeResolutionAttempts</c> attempts, each on a token of its own bounded by <c>CommandTimeout</c>, so
+    /// neither the caller's cancellation nor the holder's loss can cut it short. Only an exception is retried,
+    /// because it shows nothing about the state; whatever an attempt returns is the answer. When every attempt
+    /// throws, <paramref name="unread"/> is returned and only the last exception's type chain is logged.
+    /// </summary>
+    private async Task<T> ReadForRecoveryAsync<T>(
+        DmsOperationId operation,
+        string step,
+        Func<CancellationToken, Task<T>> read,
+        T unread
+    )
+    {
+        DmsDataStoreProvisioningOptions settings = options.Value;
+        int attempts = Math.Max(1, settings.OutcomeResolutionAttempts);
+        string failure = string.Empty;
+        for (int attempt = 1; attempt <= attempts; attempt++)
+        {
+            using CancellationTokenSource bound = new(settings.CommandTimeout, timeProvider);
+            try
+            {
+                return await read(bound.Token);
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                // Only the type chain leaves the catch: a driver error may quote the connection.
+                failure = DmsProvisioningDiagnostic.TypeChain(exception);
+            }
+        }
+
+        LogRecoveryUnproven(operation, step, failure);
+        return unread;
+    }
+
     private static DmsProvisioningFailureCode CreateStagingFailureCodeOf(DmsCommandFailure failure) =>
         failure.Class switch
         {
@@ -757,17 +792,22 @@ public sealed partial class DmsDataStoreProvisioningService(
     /// <summary>
     /// 6.3 step 5 and 6.4 steps 4 to 7 for a definite restore failure: the engine's fixed operation names what
     /// ended the replay, or, by its prefix, the SQL Server staging routine or backup rule that refused it.
+    /// The engine reports a cancellation of the token it was given, which links the caller's token, the
+    /// holder's loss, and the scope's deadline; loss was already checked when the call returned, so a
+    /// cancellation the caller did not request is the deadline's, and is <c>TimedOut</c>.
     /// </summary>
     private static void ThrowRestoreFailure(DmsCommandFailure failure, CancellationToken callerToken)
     {
         string operation = failure.Diagnostic.Operation;
         switch (operation)
         {
-            case DmsEngineOperations.RestoreCancelled:
+            case DmsEngineOperations.RestoreCancelled when callerToken.IsCancellationRequested:
                 throw new OperationCanceledException(
                     "The replay was cancelled and rolled back.",
                     callerToken
                 );
+            case DmsEngineOperations.RestoreCancelled:
+                throw StepFailed(DmsProvisioningFailureCode.TimedOut, RestoreIntoStagingStep);
             case DmsEngineOperations.RestoreTimedOut:
                 throw StepFailed(DmsProvisioningFailureCode.TimedOut, failure.Diagnostic);
             case DmsEngineOperations.RestoreRolledBack or DmsEngineOperations.RestoreNotStarted:
