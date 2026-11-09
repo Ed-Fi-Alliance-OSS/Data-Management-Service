@@ -126,6 +126,27 @@ internal static class PostgresqlErrorClassifier
     public static DmsProvisioningDiagnostic Diagnostic(Exception exception, string operation) =>
         DmsProvisioningDiagnostic.From(exception, operation, SqlStateOf(exception));
 
+    /// <summary>
+    /// Whether a definite rejection names a condition that clears without any change to the request, the
+    /// artifact, or the server's configuration, so the same request can succeed later: a serialization failure
+    /// (<c>40001</c>), a detected deadlock (<c>40P01</c>), a lock not available (<c>55P03</c>), or temporary
+    /// resource exhaustion (<c>53000</c>, <c>53100</c> disk full, <c>53200</c> out of memory, <c>53300</c> too
+    /// many connections). This answers only whether a retry can succeed; whether the command committed is
+    /// <see cref="FailureClassOf"/>'s question, and every state here is a definite failure there.
+    /// </summary>
+    public static bool IsRetryableRejection(string sqlState)
+    {
+        ArgumentNullException.ThrowIfNull(sqlState);
+        return sqlState
+            is PostgresErrorCodes.SerializationFailure
+                or PostgresErrorCodes.DeadlockDetected
+                or PostgresErrorCodes.LockNotAvailable
+                or PostgresErrorCodes.InsufficientResources
+                or PostgresErrorCodes.DiskFull
+                or PostgresErrorCodes.OutOfMemory
+                or PostgresErrorCodes.TooManyConnections;
+    }
+
     /// <summary>A SQLSTATE is five ASCII digits or upper-case letters; any other text is not kept, whether it came from the driver or from <c>psql</c> output.</summary>
     public static bool IsSqlState(string? sqlState) =>
         sqlState is { Length: 5 }

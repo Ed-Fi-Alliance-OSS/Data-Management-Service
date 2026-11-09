@@ -611,10 +611,11 @@ public class PostgresqlRestoreTests
     /// exits as it does, against an empty staging database, so whatever reaches resolution is found rolled back. A
     /// German server's refusal (exit 3) is the definite privilege failure, not a rollback; a connection attempt that
     /// failed (exit 2, no SQLSTATE: verbose reporting starts only once connected) is the retryable rollback; a script
-    /// error psql reports without a SQLSTATE (exit 3) is the replay's own, permanent, failure; and a process ended
-    /// from outside (exit 137) after a notice of an error class is not read as that notice's definite rejection
-    /// (the notice carries <c>42P04</c> because its definite class, <c>DuplicateName</c>, differs from the
-    /// rollback's <c>Rejected</c>).
+    /// error psql reports without a SQLSTATE (exit 3) is the replay's own, permanent, failure; a server rejection
+    /// (exit 3) is definite either way, retryable for a deadlock and the replay's own for any other; and a process
+    /// ended from outside (exit 137) after a notice of an error class is not read as that notice's definite
+    /// rejection (the notice carries <c>42P04</c> because its definite class, <c>DuplicateName</c>, differs from
+    /// the rollback's <c>Rejected</c>).
     /// </summary>
     [TestFixture]
     public class Given_replays_that_fail_in_ways_only_the_exit_code_and_last_message_distinguish
@@ -707,6 +708,14 @@ public class PostgresqlRestoreTests
                 ["psql:/tmp/artifact.sql:2: NOTICE:  42P04: database already exists, skipping"],
                 137
             );
+            _outcomes["deadlock"] = await ReplayAsync(
+                ["psql:/tmp/artifact.sql:4: ERROR:  40P01: deadlock detected"],
+                3
+            );
+            _outcomes["duplicate object"] = await ReplayAsync(
+                ["psql:/tmp/artifact.sql:4: ERROR:  42710: extension \"plpgsql\" already exists"],
+                3
+            );
         }
 
         [Test]
@@ -728,6 +737,20 @@ public class PostgresqlRestoreTests
             _outcomes["script error without a sqlstate"]
                 .Should()
                 .Be(Rejected(DmsCommandFailureClass.Rejected, null, PsqlRestoreRunner.RestoreStep));
+
+        [Test]
+        public void It_reports_a_deadlock_as_a_definite_but_retryable_rollback() =>
+            _outcomes["deadlock"]
+                .Should()
+                .Be(
+                    Rejected(DmsCommandFailureClass.Rejected, "40P01", DmsEngineOperations.RestoreRolledBack)
+                );
+
+        [Test]
+        public void It_reports_any_other_server_rejection_as_the_replays_own_failure() =>
+            _outcomes["duplicate object"]
+                .Should()
+                .Be(Rejected(DmsCommandFailureClass.Rejected, "42710", PsqlRestoreRunner.RestoreStep));
 
         [Test]
         public void It_does_not_read_an_earlier_notice_as_the_definite_rejection_after_another_exit() =>

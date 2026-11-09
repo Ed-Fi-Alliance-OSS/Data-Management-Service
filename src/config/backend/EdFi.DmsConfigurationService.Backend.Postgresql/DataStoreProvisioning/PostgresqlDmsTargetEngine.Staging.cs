@@ -29,7 +29,7 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>The <c>Diagnostic.Operation</c> of a replay the process could not even start.</summary>
     public const string RestoreStartStep = "RestoreIntoStaging.Start";
 
-    /// <summary>The <c>Diagnostic.Operation</c> of a replay whose session ended in doubt and whose transaction was found rolled back.</summary>
+    /// <summary>The <c>Diagnostic.Operation</c> of a replay whose transaction rolled back for a reason a retry can outlive: its session ended in doubt and it was found rolled back, or the server rejected it with a retryable SQLSTATE.</summary>
     public const string RestoreRolledBackStep = DmsEngineOperations.RestoreRolledBack;
 
     /// <summary>The <c>Diagnostic.Operation</c> of a replay the restore bound ended, found rolled back.</summary>
@@ -158,20 +158,11 @@ public sealed partial class PostgresqlDmsTargetEngine
             {
                 ExitCode: PsqlRestoreRunner.ScriptErrorExitCode,
                 SqlState: { } sqlState
-            } exited when PostgresqlErrorClassifier.FailureClassOf(sqlState) is { } failureClass:
+            } when PostgresqlErrorClassifier.FailureClassOf(sqlState) is { } failureClass:
                 // ON_ERROR_STOP ended the replay on a server-reported rejection: the single transaction
                 // never committed (6.9a). Only exit 3 says the last message is the error that stopped the
                 // script; after any other exit it may be an earlier notice.
-                return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
-                    new DmsCommandFailure(
-                        failureClass,
-                        new DmsProvisioningDiagnostic(
-                            string.Empty,
-                            exited.SqlState,
-                            PsqlRestoreRunner.RestoreStep
-                        )
-                    )
-                );
+                return ScriptStopped(failureClass, sqlState);
             case PsqlRunResult.Unconfirmed unconfirmed:
                 // No lookup proves anything while the process may still run: it can connect after the
                 // enumeration, so the outcome stays unknown and the process is the operator's (7.6).
@@ -193,6 +184,30 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>The residue id of a replay process: the replay's application name and the process id, never a path or an argument.</summary>
     internal static string ReplayProcessResourceId(DmsOperationId operation, int processId) =>
         $"{operation.RestoreApplicationName}/{processId.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// The definite failure of a replay that <c>ON_ERROR_STOP</c> ended on the server's rejection
+    /// <paramref name="sqlState"/>, whose class <paramref name="failureClass"/> already proves nothing committed.
+    /// Whether a retry can succeed is a separate question: a rejection that clears on its own
+    /// (<see cref="PostgresqlErrorClassifier.IsRetryableRejection"/>) is named <c>RestoreRolledBack</c>, which the
+    /// orchestrator reports as a transient <c>RestoreFailed</c>; any other is the replay's own step, permanent.
+    /// </summary>
+    internal static DmsCommandOutcome<DmsInstanceIdentity> ScriptStopped(
+        DmsCommandFailureClass failureClass,
+        string sqlState
+    ) =>
+        new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+            new DmsCommandFailure(
+                failureClass,
+                new DmsProvisioningDiagnostic(
+                    string.Empty,
+                    sqlState,
+                    PostgresqlErrorClassifier.IsRetryableRejection(sqlState)
+                        ? RestoreRolledBackStep
+                        : PsqlRestoreRunner.RestoreStep
+                )
+            )
+        );
 
     /// <summary>
     /// Whether the server authenticates the administrative login to <paramref name="staging"/> through GSSAPI, asked on

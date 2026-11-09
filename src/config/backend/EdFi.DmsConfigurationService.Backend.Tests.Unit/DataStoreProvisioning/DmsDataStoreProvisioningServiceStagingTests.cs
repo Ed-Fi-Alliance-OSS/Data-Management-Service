@@ -484,6 +484,61 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 );
     }
 
+    /// <summary>
+    /// AC 11: <c>psql</c> exit 3 with a SQLSTATE is a definite rollback, and whether a retry can succeed is a
+    /// separate question. The PostgreSQL engine's own classification of that exit feeds the real orchestrator: a
+    /// serialization failure, a deadlock, a lock not available, or temporary resource exhaustion ends as a
+    /// transient <c>RestoreFailed</c>; any other server rejection stays permanent. Either way the staging
+    /// database is dropped without validation, as for every definite restore failure.
+    /// </summary>
+    [TestFixture("40001", DmsProvisioningFailureCategory.Transient)]
+    [TestFixture("40P01", DmsProvisioningFailureCategory.Transient)]
+    [TestFixture("55P03", DmsProvisioningFailureCategory.Transient)]
+    [TestFixture("53100", DmsProvisioningFailureCategory.Transient)]
+    [TestFixture("53200", DmsProvisioningFailureCategory.Transient)]
+    [TestFixture("42710", DmsProvisioningFailureCategory.Permanent)]
+    [TestFixture("22012", DmsProvisioningFailureCategory.Permanent)]
+    public class Given_psql_stopped_the_replay_on_a_server_rejection(
+        string sqlState,
+        DmsProvisioningFailureCategory category
+    )
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DmsCommandOutcome<DmsInstanceIdentity> stopped = PostgresqlDmsTargetEngine.ScriptStopped(
+                PostgresqlErrorClassifier.FailureClassOf(sqlState)
+                    ?? throw new InvalidOperationException("The SQLSTATE must be a definite failure."),
+                sqlState
+            );
+            _harness = Scripted();
+            _harness.Engine.OnRestoreIntoStaging = (_, _, _) => Task.FromResult(stopped);
+            _result = await CreateAsync(_harness);
+        }
+
+        [Test]
+        public void It_reports_restore_failed_in_the_category_the_sqlstate_allows() =>
+            (FailureOf(_result).Code, FailureOf(_result).Category)
+                .Should()
+                .Be((DmsProvisioningFailureCode.RestoreFailed, category));
+
+        [Test]
+        public void It_keeps_the_sqlstate_in_the_diagnostic() =>
+            FailureOf(_result).Diagnostic.ProviderErrorCode.Should().Be(sqlState);
+
+        [Test]
+        public void It_drops_the_staging_database_without_validating() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.DropStaging),
+                _harness.Engine.Members.Contains(SpyDmsTargetEngine.OpenSession)
+            )
+                .Should()
+                .Be((1, false));
+    }
+
     [TestFixture]
     public class Given_the_restore_is_cancelled_by_the_caller
     {

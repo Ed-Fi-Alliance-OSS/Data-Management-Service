@@ -15,7 +15,11 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// </summary>
 public static class DmsEngineOperations
 {
-    /// <summary>The replay's session ended in doubt (a connection-class error) and its transaction was found rolled back: <c>RestoreFailed</c>, transient.</summary>
+    /// <summary>
+    /// The replay's transaction rolled back for a reason a retry can outlive: its session ended in doubt (a
+    /// connection-class error) and it was found rolled back, or the server rejected it with a condition that
+    /// clears on its own, such as a deadlock or temporary resource exhaustion: <c>RestoreFailed</c>, transient.
+    /// </summary>
     public const string RestoreRolledBack = "RestoreIntoStaging.RolledBack";
 
     /// <summary>The restore bound ended the replay and its transaction was found rolled back: <c>TimedOut</c>.</summary>
