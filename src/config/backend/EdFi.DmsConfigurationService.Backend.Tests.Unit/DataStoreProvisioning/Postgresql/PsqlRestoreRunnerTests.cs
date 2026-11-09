@@ -18,9 +18,13 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// One replay's artifact, operation directory, administrative connection (two endpoints, a sentinel
-/// password), and capturing logger, so each fixture asserts on the same secrets.
+/// password), and capturing logger, so each fixture asserts on the same secrets. Disposal removes the
+/// workspace and waits for the removal to succeed: on Windows a fake that outlived the runner (a child that
+/// keeps the pipes, a kill that failed) ends only on its stop file, and its last poll child, whose working
+/// directory is the operation directory, can outlive the fake's own exit; a directory that is a running
+/// process's working directory cannot be removed. Past the bound the leftover is raised, not left behind.
 /// </summary>
-internal sealed class ReplayWorkspace : IDisposable
+internal sealed class ReplayWorkspace : IAsyncDisposable
 {
     public const string Password = "SENTINEL-PASSWORD-7f3a";
 
@@ -28,6 +32,9 @@ internal sealed class ReplayWorkspace : IDisposable
         "Host=primary.example.test:5433,standby.example.test;Port=5432;Username=dms_admin;Password="
         + Password
         + ";Timeout=20";
+
+    private static readonly TimeSpan _removalBound = TimeSpan.FromSeconds(15);
+    private static readonly TimeSpan _removalRetryInterval = TimeSpan.FromMilliseconds(200);
 
     public ReplayWorkspace()
     {
@@ -112,16 +119,28 @@ internal sealed class ReplayWorkspace : IDisposable
         }
     }
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         OperationDirectory.Dispose();
-        try
+        long started = Stopwatch.GetTimestamp();
+        while (true)
         {
-            Directory.Delete(Root, recursive: true);
-        }
-        catch (IOException)
-        {
-            // The temp path is reclaimed later.
+            try
+            {
+                if (Directory.Exists(Root))
+                {
+                    Directory.Delete(Root, recursive: true);
+                }
+
+                return;
+            }
+            catch (Exception exception)
+                when (exception is IOException or UnauthorizedAccessException
+                    && Stopwatch.GetElapsedTime(started) < _removalBound
+                )
+            {
+                await Task.Delay(_removalRetryInterval);
+            }
         }
     }
 }
@@ -164,7 +183,7 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown() => _workspace.Dispose();
+        public async Task TearDown() => await _workspace.DisposeAsync();
 
         [Test]
         public void It_starts_the_configured_executable_without_a_shell_or_a_window()
@@ -272,7 +291,7 @@ public class PsqlRestoreRunnerTests
         public async Task TearDown()
         {
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -344,7 +363,7 @@ public class PsqlRestoreRunnerTests
         public async Task TearDown()
         {
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -396,7 +415,7 @@ public class PsqlRestoreRunnerTests
         public async Task TearDown()
         {
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -491,7 +510,7 @@ public class PsqlRestoreRunnerTests
         {
             _trap?.Dispose();
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -550,7 +569,7 @@ public class PsqlRestoreRunnerTests
         public async Task TearDown()
         {
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -600,7 +619,7 @@ public class PsqlRestoreRunnerTests
         public async Task TearDown()
         {
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -662,7 +681,7 @@ public class PsqlRestoreRunnerTests
         public async Task TearDown()
         {
             await _fake.DisposeAsync();
-            _workspace.Dispose();
+            await _workspace.DisposeAsync();
         }
 
         [Test]
@@ -711,7 +730,7 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown() => _workspace.Dispose();
+        public async Task TearDown() => await _workspace.DisposeAsync();
 
         [Test]
         public void It_propagates_the_runtime_start_failure() =>
@@ -757,7 +776,7 @@ public class PsqlRestoreRunnerTests
         }
 
         [TearDown]
-        public void TearDown() => _workspace.Dispose();
+        public async Task TearDown() => await _workspace.DisposeAsync();
 
         [Test]
         public void It_refuses_a_relative_psql_path() => _relativePath.Should().BeOfType<ArgumentException>();
