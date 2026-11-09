@@ -13,11 +13,13 @@ using EdFi.DmsConfigurationService.Backend.Mssql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -389,8 +391,17 @@ public class ClaimSetTests : DatabaseTest
     public class Given_a_rename_of_a_claim_set_in_use : ClaimSetTests
     {
         private static readonly DateTime _earlierPendingSince = new(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
-        private DateTime _renameStartedAt;
-        private DateTime _renameFinishedAt;
+
+        // Deliberately not representable by SQL datetime's 1/300-second precision.
+        private static readonly DateTime _renameTimestamp = new DateTime(
+            2026,
+            11,
+            9,
+            2,
+            5,
+            2,
+            DateTimeKind.Utc
+        ).AddTicks(1972605);
         private Dictionary<string, DateTime?> _pendingSince = null!;
 
         [SetUp]
@@ -457,11 +468,25 @@ public class ClaimSetTests : DatabaseTest
             var insertResult = await _repository.InsertClaimSet(new() { Name = "Renamed-ClaimSet" });
             int claimSetId = insertResult.Should().BeOfType<ClaimSetInsertResult.Success>().Subject.Id;
 
-            _renameStartedAt = DateTime.UtcNow;
-            (await _repository.UpdateClaimSet(new() { Id = claimSetId, Name = "Renamed-ClaimSet-New" }))
+            var auditContext = A.Fake<IAuditContext>();
+            A.CallTo(() => auditContext.GetCurrentTimestamp()).Returns(_renameTimestamp);
+            A.CallTo(() => auditContext.GetCurrentUser()).Returns("test-user");
+            var renameRepository = new ClaimSetRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ClaimSetRepository>.Instance,
+                new ClaimsHierarchyRepository(
+                    MssqlTestConfiguration.DatabaseOptions,
+                    NullLogger<ClaimsHierarchyRepository>.Instance,
+                    auditContext
+                ),
+                new ClaimsHierarchyManager(),
+                auditContext,
+                new TenantContextProvider()
+            );
+
+            (await renameRepository.UpdateClaimSet(new() { Id = claimSetId, Name = "Renamed-ClaimSet-New" }))
                 .Should()
                 .BeOfType<ClaimSetUpdateResult.Success>();
-            _renameFinishedAt = DateTime.UtcNow;
 
             _pendingSince = (
                 await Connection!.QueryAsync<(string ApplicationName, DateTime? PendingSince)>(
@@ -476,10 +501,7 @@ public class ClaimSetTests : DatabaseTest
 
         [Test]
         public void It_marks_the_client_of_an_Application_using_the_claim_set() =>
-            _pendingSince["Renamed"]
-                .Should()
-                .BeOnOrAfter(_renameStartedAt)
-                .And.BeOnOrBefore(_renameFinishedAt);
+            _pendingSince["Renamed"].Should().Be(_renameTimestamp);
 
         [Test]
         public void It_keeps_the_original_time_of_an_already_pending_client() =>
