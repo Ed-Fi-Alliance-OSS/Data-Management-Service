@@ -37,6 +37,11 @@ public sealed partial class PostgresqlDmsTargetEngine
             reasons.Add(psqlReason);
         }
 
+        if (ClientCertificateReason() is { } certificateReason)
+        {
+            reasons.Add(certificateReason);
+        }
+
         if (serverReachable && await ProbeTargetLockAsync(cancellationToken) is { } lockReason)
         {
             reasons.Add(lockReason);
@@ -45,6 +50,31 @@ public sealed partial class PostgresqlDmsTargetEngine
         return reasons.Count == 0
             ? new DmsEngineEnvironment.Ready() { ServerMajorVersion = serverMajorVersion }
             : new DmsEngineEnvironment.NotReady(reasons) { ServerMajorVersion = serverMajorVersion };
+    }
+
+    /// <summary>
+    /// <see cref="PostgresqlEnvironment.EvaluateClientCertificate"/> over this process's environment, read as Npgsql
+    /// reads it. A connection string that cannot be read adds nothing here: the server probe opens the same one and
+    /// reports it.
+    /// </summary>
+    private DmsReadinessReason? ClientCertificateReason()
+    {
+        string sslMode;
+        try
+        {
+            sslMode = _adminConnection.ToLibpqSettings().SslMode;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return null;
+        }
+
+        return PostgresqlEnvironment.EvaluateClientCertificate(
+            sslMode,
+            Environment.GetEnvironmentVariable("PGSSLCERT"),
+            Environment.GetEnvironmentVariable(OperatingSystem.IsWindows() ? "APPDATA" : "HOME"),
+            File.Exists
+        );
     }
 
     /// <summary>

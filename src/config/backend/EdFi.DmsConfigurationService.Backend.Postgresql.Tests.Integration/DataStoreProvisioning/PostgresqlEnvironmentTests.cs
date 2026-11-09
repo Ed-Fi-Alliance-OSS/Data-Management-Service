@@ -98,6 +98,47 @@ public class PostgresqlEnvironmentTests
             _environment.ServerMajorVersion.Should().Be(_serverMajorVersion);
     }
 
+    /// <summary>
+    /// Review P2: this process names a client certificate in <c>PGSSLCERT</c>, which Npgsql would send and the replay
+    /// cannot, so the lane admin, otherwise passing every server probe, is <c>NotReady</c> under <c>ClientCertificate</c>.
+    /// The variable is process-wide, so the fixture runs alone and restores it.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_this_process_names_a_client_certificate
+    {
+        private const string Variable = "PGSSLCERT";
+
+        private DmsEngineEnvironment _environment = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            string? previous = Environment.GetEnvironmentVariable(Variable);
+            Environment.SetEnvironmentVariable(
+                Variable,
+                Path.Combine(AppContext.BaseDirectory, "dms1438-client.crt")
+            );
+            try
+            {
+                _environment = await Engine().ValidateEnvironmentAsync(default);
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable(Variable, previous);
+            }
+        }
+
+        [Test]
+        public void It_is_not_ready_naming_the_client_certificate() =>
+            ReasonsOf(_environment)
+                .Should()
+                .ContainSingle(reason => reason.Probe == PostgresqlEnvironment.ClientCertificateProbe)
+                .Which.Code.Should()
+                .Be(DmsProvisioningFailureCode.StartupValidationFailed);
+    }
+
     [TestFixture]
     public class Given_roles_missing_one_privilege_each
     {

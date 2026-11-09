@@ -606,6 +606,136 @@ public class PostgresqlRestoreTests
                 .BeTrue();
     }
 
+    /// <summary>
+    /// Review finding 1, through the engine's real path: a fake <c>psql</c> writes what the real one writes and
+    /// exits as it does, against an empty staging database, so whatever reaches resolution is found rolled back. A
+    /// German server's refusal (exit 3) is the definite privilege failure, not a rollback; a connection attempt that
+    /// failed (exit 2, no SQLSTATE: verbose reporting starts only once connected) is the retryable rollback; a script
+    /// error psql reports without a SQLSTATE (exit 3) is the replay's own, permanent, failure; and a process ended
+    /// from outside (exit 137) after a notice of an error class is not read as that notice's definite rejection
+    /// (the notice carries <c>42P04</c> because its definite class, <c>DuplicateName</c>, differs from the
+    /// rollback's <c>Rejected</c>).
+    /// </summary>
+    [TestFixture]
+    public class Given_replays_that_fail_in_ways_only_the_exit_code_and_last_message_distinguish
+    {
+        private readonly Dictionary<string, DmsCommandOutcome<DmsInstanceIdentity>> _outcomes = [];
+
+        private static DmsCommandOutcome<DmsInstanceIdentity> Rejected(
+            DmsCommandFailureClass failureClass,
+            string? sqlState,
+            string step
+        ) =>
+            new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                new DmsCommandFailure(
+                    failureClass,
+                    new DmsProvisioningDiagnostic(string.Empty, sqlState, step)
+                )
+            );
+
+        private static async Task<DmsCommandOutcome<DmsInstanceIdentity>> ReplayAsync(
+            IReadOnlyList<string> standardError,
+            int exitCode
+        )
+        {
+            DmsOperationId operation = DmsOperationId.New();
+            DmsDatabaseName stage = operation.StagingDatabaseName;
+            string root = Path.Combine(Path.GetTempPath(), "dms1438-exit-" + operation.Value);
+            await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(stage.Value)};");
+            await using FakePsql fake = FakePsql.WritingStandardError(standardError, exitCode);
+            try
+            {
+                Directory.CreateDirectory(root);
+                PrivateOperationDirectory directory = PrivateOperationDirectory.Create(root, operation);
+                string artifactPath = directory.PathOf("artifact.sql");
+                await File.WriteAllTextAsync(artifactPath, "SELECT 1;\n");
+                PostgresqlDmsTargetEngine engine = new(
+                    AdminConnection(),
+                    Settings(),
+                    TimeProvider.System,
+                    NullLogger.Instance,
+                    new PsqlRestoreRunner(
+                        fake.ExecutablePath,
+                        TimeSpan.FromMinutes(1),
+                        TimeProvider.System,
+                        NullLogger.Instance
+                    )
+                );
+                return await engine.RestoreIntoStagingAsync(
+                    stage,
+                    Replay.TargetName("replay"),
+                    new StagedArtifact(artifactPath, new string('0', 64), DmsArtifactKind.PostgresqlSqlDump),
+                    operation,
+                    default
+                );
+            }
+            finally
+            {
+                await ExecuteOnServerAsync(
+                    $"DROP DATABASE IF EXISTS {PostgresqlIdentifiers.Quote(stage.Value)} WITH (FORCE);"
+                );
+                try
+                {
+                    Directory.Delete(root, recursive: true);
+                }
+                catch (IOException)
+                {
+                    // Left for the operating system; nothing under test depends on it.
+                }
+            }
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _outcomes["localized refusal"] = await ReplayAsync(
+                ["psql:/tmp/artifact.sql:3: FEHLER:  42501: keine Berechtigung fuer Schema public"],
+                3
+            );
+            _outcomes["failed connection attempt"] = await ReplayAsync(
+                [
+                    "psql: error: connection to server at \"db\" (10.0.0.5), port 5432 failed: FATAL:  password authentication failed for user \"dms\"",
+                ],
+                2
+            );
+            _outcomes["script error without a sqlstate"] = await ReplayAsync(
+                ["psql:/tmp/artifact.sql:1: error: invalid command \\restrict"],
+                3
+            );
+            _outcomes["ended from outside after a notice"] = await ReplayAsync(
+                ["psql:/tmp/artifact.sql:2: NOTICE:  42P04: database already exists, skipping"],
+                137
+            );
+        }
+
+        [Test]
+        public void It_reads_a_localized_refusal_as_the_definite_privilege_failure() =>
+            _outcomes["localized refusal"]
+                .Should()
+                .Be(
+                    Rejected(DmsCommandFailureClass.PrivilegeMissing, "42501", PsqlRestoreRunner.RestoreStep)
+                );
+
+        [Test]
+        public void It_reports_a_failed_connection_attempt_as_a_retryable_rollback() =>
+            _outcomes["failed connection attempt"]
+                .Should()
+                .Be(Rejected(DmsCommandFailureClass.Rejected, null, DmsEngineOperations.RestoreRolledBack));
+
+        [Test]
+        public void It_reports_a_script_error_without_a_sqlstate_as_the_replays_own_failure() =>
+            _outcomes["script error without a sqlstate"]
+                .Should()
+                .Be(Rejected(DmsCommandFailureClass.Rejected, null, PsqlRestoreRunner.RestoreStep));
+
+        [Test]
+        public void It_does_not_read_an_earlier_notice_as_the_definite_rejection_after_another_exit() =>
+            _outcomes["ended from outside after a notice"]
+                .Should()
+                .Be(Rejected(DmsCommandFailureClass.Rejected, "42P04", PsqlRestoreRunner.RestoreStep));
+    }
+
     [TestFixture]
     public class Given_the_enqueue_owner_role_is_not_locked_down
     {

@@ -58,6 +58,12 @@ internal sealed class PsqlRestoreRunner
     /// <summary>The <c>Diagnostic.Operation</c> of the replay.</summary>
     public const string RestoreStep = "RestoreIntoStaging";
 
+    /// <summary><c>psql</c>'s exit status when the connection to the server could not be made or went bad.</summary>
+    public const int ConnectionFailedExitCode = 2;
+
+    /// <summary><c>psql</c>'s exit status when <c>ON_ERROR_STOP</c> stopped the script on an error.</summary>
+    public const int ScriptErrorExitCode = 3;
+
     internal static readonly EventId ReplayStarted = new(1438_30, nameof(ReplayStarted));
     internal static readonly EventId ReplayExited = new(1438_31, nameof(ReplayExited));
     internal static readonly EventId ReplayKilled = new(1438_32, nameof(ReplayKilled));

@@ -344,4 +344,66 @@ public class PostgresqlEnvironmentRulesTests
                     )
                 );
     }
+
+    /// <summary>
+    /// Review P2: <c>psql</c> sends no client certificate, so a configuration in which Npgsql would send one is
+    /// refused before readiness. The rule reproduces Npgsql 8's selection: <c>PGSSLCERT</c> when set, even empty, else
+    /// <c>postgresql.crt</c> under the home directory when it exists, and only when TLS can be negotiated.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_client_certificate_npgsql_would_send
+    {
+        private const string Home = "/home/cms";
+
+        private static readonly DmsReadinessReason _refused = Reason(
+            DmsProvisioningFailureCode.StartupValidationFailed,
+            PostgresqlEnvironment.ClientCertificateProbe
+        );
+
+        private static readonly string _defaultCertificate = Path.Combine(
+            Home,
+            OperatingSystem.IsWindows() ? "postgresql" : ".postgresql",
+            "postgresql.crt"
+        );
+
+        private static DmsReadinessReason? Evaluate(
+            string sslMode,
+            string? sslCertificateVariable,
+            string? home,
+            bool defaultCertificateExists
+        ) =>
+            PostgresqlEnvironment.EvaluateClientCertificate(
+                sslMode,
+                sslCertificateVariable,
+                home,
+                path => defaultCertificateExists && path == _defaultCertificate
+            );
+
+        [Test]
+        public void It_refuses_a_certificate_named_by_pgsslcert_in_every_mode_that_can_negotiate_tls() =>
+            new[] { "allow", "prefer", "require", "verify-ca", "verify-full" }
+                .Select(mode => Evaluate(mode, "/etc/cms/client.crt", null, false))
+                .Should()
+                .AllBeEquivalentTo(_refused);
+
+        [Test]
+        public void It_refuses_an_empty_pgsslcert_which_npgsql_still_tries_to_load() =>
+            Evaluate("prefer", string.Empty, null, false).Should().Be(_refused);
+
+        [Test]
+        public void It_refuses_the_default_certificate_in_the_home_directory() =>
+            Evaluate("require", null, Home, true).Should().Be(_refused);
+
+        [Test]
+        public void It_accepts_a_home_directory_without_the_default_certificate() =>
+            Evaluate("require", null, Home, false).Should().BeNull();
+
+        [Test]
+        public void It_accepts_no_home_directory_and_no_variable() =>
+            Evaluate("verify-full", null, null, false).Should().BeNull();
+
+        [Test]
+        public void It_accepts_any_certificate_when_ssl_is_disabled() =>
+            Evaluate("disable", "/etc/cms/client.crt", Home, true).Should().BeNull();
+    }
 }

@@ -9,10 +9,11 @@ using FluentAssertions;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql;
 
 /// <summary>
-/// The stderr ring buffer of D-10b: the SQLSTATE of the first retained <c>ERROR:  XXXXX:</c> line, with or
-/// without the <c>psql:&lt;file&gt;:&lt;line&gt;:</c> prefix (whose file may itself contain colons), invalid
-/// tokens discarded, retention bounded at 8 KiB with the oldest text overwritten, and the buffer cleared by
-/// extraction.
+/// The stderr ring buffer of D-10b: the SQLSTATE of the last retained message when it is shaped
+/// <c>&lt;severity&gt;:  XXXXX:</c> in any server language, with or without the
+/// <c>psql:&lt;file&gt;:&lt;line&gt;:</c> prefix (whose file may itself contain colons); a last message that is
+/// <c>psql</c>'s own, a notice or warning class, or an invalid token yields nothing; retention is bounded at
+/// 8 KiB with the oldest text overwritten, and extraction clears the buffer.
 /// </summary>
 public class PsqlStderrSqlStateTests
 {
@@ -28,6 +29,12 @@ public class PsqlStderrSqlStateTests
         return buffer.ExtractAndClear();
     }
 
+    /// <summary>
+    /// An earlier notice of an error class (<c>CREATE EXTENSION IF NOT EXISTS</c> reports <c>42710</c>) is
+    /// followed by the error that stopped the replay and the server's detail lines, which start with neither
+    /// <c>psql:</c> nor a code: the error's code is the one kept, which the English-only rule found by spelling
+    /// and this rule finds by position.
+    /// </summary>
     [TestFixture]
     public class Given_the_verbose_output_of_a_stopped_replay
     {
@@ -38,18 +45,80 @@ public class PsqlStderrSqlStateTests
         public void Setup()
         {
             PsqlStderrSqlState buffer = new();
+            buffer.Append(
+                "psql:/tmp/dms-provision-0123456789ab/artifact.sql:2: NOTICE:  42710: extension \"plpgsql\" already exists, skipping\n"
+            );
             buffer.Append(PrefixedErrorLine + "\n");
+            buffer.Append("DETAIL:  Key (id)=(1) already exists.\r\n");
             buffer.Append("LOCATION:  parserOpenTable, parse_relation.c:1449\n");
-            buffer.Append(BareErrorLine + "\r\n");
             _first = buffer.ExtractAndClear();
             _second = buffer.ExtractAndClear();
         }
 
         [Test]
-        public void It_extracts_the_first_sqlstate() => _first.Should().Be("42P01");
+        public void It_extracts_the_stopping_error_not_the_earlier_notice() => _first.Should().Be("42P01");
 
         [Test]
         public void It_is_empty_after_extraction() => _second.Should().BeNull();
+    }
+
+    /// <summary>
+    /// Review finding 1: the severity word is the server's, in its <c>lc_messages</c> language, so a German,
+    /// French, Russian, or Japanese server still yields the code; <c>FATAL</c> is a severity like any other.
+    /// </summary>
+    [TestFixture]
+    public class Given_server_messages_in_other_languages
+    {
+        private Dictionary<string, string?> _extracted = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            string[] lines =
+            [
+                "psql:/tmp/a.sql:12: FEHLER:  42501: keine Berechtigung für Schema dms",
+                "psql:/tmp/a.sql:12: ERREUR:  42P01: la relation « edfi.student » n'existe pas",
+                "psql:/tmp/a.sql:12: ОШИБКА:  23505: повторяющееся значение ключа",
+                "psql:/tmp/a.sql:12: エラー:  42601: 構文エラー",
+                "psql:/tmp/a.sql:12: FATAL:  57P01: terminating connection due to administrator command",
+            ];
+            _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
+        }
+
+        [Test]
+        public void It_extracts_each_code_whatever_the_severity_word() =>
+            _extracted.Values.Should().Equal("42501", "42P01", "23505", "42601", "57P01");
+    }
+
+    /// <summary>
+    /// The last message is <c>psql</c>'s own, which carries no SQLSTATE: a connection lost after an earlier
+    /// notice, or a connection that could not be made (its server text has no code, because <c>psql</c> sets
+    /// verbose reporting only once connected). Nothing is extracted, rather than the earlier notice's code.
+    /// </summary>
+    [TestFixture]
+    public class Given_psql_reports_a_connection_failure_last
+    {
+        private string? _lostAfterNotice;
+        private string? _neverConnected;
+
+        [SetUp]
+        public void Setup()
+        {
+            _lostAfterNotice = Extract(
+                "psql:/tmp/a.sql:2: NOTICE:  42710: extension \"plpgsql\" already exists, skipping\n"
+                    + "psql:/tmp/a.sql:9: error: connection to server was lost\n"
+            );
+            _neverConnected = Extract(
+                "psql: error: connection to server at \"db\" (10.0.0.5), port 5432 failed: FEHLER:  Passwort-Authentifizierung für Benutzer »dms« fehlgeschlagen\n"
+            );
+        }
+
+        [Test]
+        public void It_extracts_nothing_after_a_lost_connection() => _lostAfterNotice.Should().BeNull();
+
+        [Test]
+        public void It_extracts_nothing_from_a_failed_connection_attempt() =>
+            _neverConnected.Should().BeNull();
     }
 
     [TestFixture]
@@ -116,12 +185,13 @@ public class PsqlStderrSqlStateTests
                 "ERROR:  4260: four characters",
                 "ERROR:  42p01: lower case",
                 "ERROR:  42P011: six characters",
-                "WARNING:  42P01: not an error",
+                "WARNING:  01000: a warning class",
+                "HINWEIS:  00000: a notice class in German",
+                "psql:/tmp/a.sql:4: NOTICE:  02000: a no-data class",
                 "ERROR: 42P01: one space",
                 "  ERROR:  42P01: indented",
                 "psql:artifact.sql:12: ERROR:  42P01 no trailing colon",
                 "psql:artifact.sql: ERROR:  42P01: no line number",
-                "FATAL:  28P01: password authentication failed",
             ];
             _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
         }

@@ -94,6 +94,12 @@ internal static class PostgresqlEnvironment
     /// <summary>7.3 item 7: the probe lock is acquired, holds through one heartbeat, and is released.</summary>
     public const string TargetLockProbe = "TargetLock";
 
+    /// <summary>
+    /// Neither client authenticates with a client certificate: <c>psql</c> is given <c>sslcertmode=disable</c>, so a
+    /// configuration in which Npgsql would send one is refused (<see cref="EvaluateClientCertificate"/>).
+    /// </summary>
+    public const string ClientCertificateProbe = "ClientCertificate";
+
     /// <summary>The lowest <c>server_version_num</c> accepted (D-9).</summary>
     public const int MinimumServerVersionNum = 180000;
 
@@ -314,6 +320,46 @@ internal static class PostgresqlEnvironment
             _ => throw new ArgumentOutOfRangeException(nameof(result), "Unknown psql probe result."),
         };
     }
+
+    /// <summary>
+    /// The client-certificate rule: Npgsql 8 sends a client certificate whenever it negotiates TLS (any SSL mode but
+    /// <c>disable</c>) and finds <c>PGSSLCERT</c> set, even empty, or, without it, <c>postgresql.crt</c> in
+    /// <c>$HOME/.postgresql</c> (<c>%APPDATA%\postgresql</c> on Windows). The administrative connection string admits no
+    /// certificate key, and <c>psql</c> runs with a cleared environment that cannot reproduce that choice, so the replay
+    /// sends none; a server that accepted Npgsql's certificate would refuse every replay. Such a configuration is
+    /// <c>StartupValidationFailed</c> instead of being <c>Ready</c>.
+    /// </summary>
+    /// <param name="libpqSslMode">The SSL mode in <c>libpq</c> spelling.</param>
+    /// <param name="sslCertificateVariable">This process's <c>PGSSLCERT</c>, or null when unset.</param>
+    /// <param name="homeDirectory">This process's <c>HOME</c> (<c>APPDATA</c> on Windows), or null when unset.</param>
+    /// <param name="fileExists">Whether a file exists at a path.</param>
+    public static DmsReadinessReason? EvaluateClientCertificate(
+        string libpqSslMode,
+        string? sslCertificateVariable,
+        string? homeDirectory,
+        Func<string, bool> fileExists
+    )
+    {
+        ArgumentNullException.ThrowIfNull(libpqSslMode);
+        ArgumentNullException.ThrowIfNull(fileExists);
+        bool npgsqlSendsOne =
+            libpqSslMode != "disable"
+            && (
+                sslCertificateVariable is not null
+                || (homeDirectory is not null && fileExists(DefaultClientCertificatePath(homeDirectory)))
+            );
+        return npgsqlSendsOne
+            ? Reason(DmsProvisioningFailureCode.StartupValidationFailed, ClientCertificateProbe)
+            : null;
+    }
+
+    /// <summary>Npgsql's default client certificate under <paramref name="homeDirectory"/>.</summary>
+    public static string DefaultClientCertificatePath(string homeDirectory) =>
+        Path.Combine(
+            homeDirectory,
+            OperatingSystem.IsWindows() ? "postgresql" : ".postgresql",
+            "postgresql.crt"
+        );
 
     private static DmsReadinessReason Reason(
         DmsProvisioningFailureCode code,

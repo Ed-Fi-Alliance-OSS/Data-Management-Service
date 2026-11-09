@@ -136,10 +136,14 @@ public sealed partial class PostgresqlDmsTargetEngine
                 return NotStarted(notStarted.Cause, cancellationToken);
             case PsqlRunResult.Exited { ExitCode: 0 }:
                 return await ReadCommittedInstanceAsync(staging, operation);
-            case PsqlRunResult.Exited { SqlState: { } sqlState } exited
-                when PostgresqlErrorClassifier.FailureClassOf(sqlState) is { } failureClass:
+            case PsqlRunResult.Exited
+            {
+                ExitCode: PsqlRestoreRunner.ScriptErrorExitCode,
+                SqlState: { } sqlState
+            } exited when PostgresqlErrorClassifier.FailureClassOf(sqlState) is { } failureClass:
                 // ON_ERROR_STOP ended the replay on a server-reported rejection: the single transaction
-                // never committed (6.9a).
+                // never committed (6.9a). Only exit 3 says the last message is the error that stopped the
+                // script; after any other exit it may be an earlier notice.
                 return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
                     new DmsCommandFailure(
                         failureClass,
@@ -286,11 +290,13 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// without a verdict: on a token of its own, bounded by <c>SessionTerminationTimeout</c> so the caller's
     /// cancellation cannot skip it (6.10), every session carrying the replay's application name on the
     /// staging database is terminated with verification; one that cannot be proven gone is the
-    /// <c>Unknown</c> session. With the process and every session gone, the staging database's singleton
-    /// tables decide: both existing means the transaction committed and the staging instance is returned;
-    /// neither means it rolled back, a definite failure named after what ended the replay; anything else is
-    /// <c>Unknown</c> and <see cref="DmsCommandOutcome{T}.Unknown.Quiescent"/>, since nothing of the
-    /// command remains to change the state.
+    /// <c>Unknown</c> session, and a lookup or termination that fails proves nothing, so the outcome stays
+    /// <c>Unknown</c>, names no session and is not quiescent. With the process and every session gone, nothing
+    /// of the command remains to change the state, so the singleton tables are read on a <c>CommandTimeout</c>
+    /// bound of their own, which the terminations cannot have spent: both existing means the transaction
+    /// committed and the staging instance is returned; neither means it rolled back, a definite failure named
+    /// by <see cref="RolledBackStepOf"/>; anything else, or a read that fails, is <c>Unknown</c> and
+    /// <see cref="DmsCommandOutcome{T}.Unknown.Quiescent"/>, so the orchestrator's reads decide the state.
     /// </summary>
     internal async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveReplayAsync(
         DmsDatabaseName staging,
@@ -298,32 +304,55 @@ public sealed partial class PostgresqlDmsTargetEngine
         PsqlRunResult run
     )
     {
-        // A resolution that fails proves nothing: the lookup, a termination, or the bounded wait may stop it
-        // anywhere, so the outcome stays unknown, names no session and is not quiescent (D-7b).
-        string failure;
         try
         {
-            return await ResolveProvenReplayAsync(staging, operation, run);
+            if (await EndReplaySessionsAsync(staging, operation) is { } unproven)
+            {
+                return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(unproven);
+            }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            // Only the type chain leaves the catch: a driver error may quote the connection.
-            failure = DmsProvisioningDiagnostic.TypeChain(exception);
+            // The lookup, a termination, or the bounded wait stopped before every session was proven gone.
+            LogReplayResolutionFailed(operation, exception);
+            return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
         }
 
-        _logger.LogWarning(
-            ReplayResolutionFailed,
-            "The replay outcome of operation {Operation} could not be resolved: {ExceptionTypeChain}",
-            operation.Value,
-            failure
-        );
-        return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
+        using CancellationTokenSource bound = new(_adminConnection.CommandTimeout, _timeProvider);
+        try
+        {
+            ReplayState state = await ReadReplayStateAsync(staging, bound.Token);
+            return state switch
+            {
+                ReplayState.Committed => await ReadStagingInstanceAsync(
+                    staging,
+                    RestoreInstanceStep,
+                    bound.Token
+                ),
+                ReplayState.RolledBack => new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                    new DmsCommandFailure(
+                        DmsCommandFailureClass.Rejected,
+                        new DmsProvisioningDiagnostic(string.Empty, SqlStateOf(run), RolledBackStepOf(run))
+                    )
+                ),
+                _ => new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true },
+            };
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            // Every session is proven gone, so the quiescence proof stands though the outcome was not read.
+            LogReplayResolutionFailed(operation, exception);
+            return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true };
+        }
     }
 
-    private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveProvenReplayAsync(
+    /// <summary>
+    /// Terminates every session carrying the replay's application name on <paramref name="staging"/> within
+    /// <c>SessionTerminationTimeout</c>; the first one that cannot be proven gone, or null when none remains.
+    /// </summary>
+    private async Task<DmsServerSessionId?> EndReplaySessionsAsync(
         DmsDatabaseName staging,
-        DmsOperationId operation,
-        PsqlRunResult run
+        DmsOperationId operation
     )
     {
         using CancellationTokenSource bound = new(_settings.SessionTerminationTimeout, _timeProvider);
@@ -341,27 +370,21 @@ public sealed partial class PostgresqlDmsTargetEngine
             );
             if (verdict is DmsSessionTermination.NotTerminated)
             {
-                return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(session);
+                return session;
             }
         }
 
-        ReplayState state = await ReadReplayStateAsync(staging, bound.Token);
-        return state switch
-        {
-            ReplayState.Committed => await ReadStagingInstanceAsync(
-                staging,
-                RestoreInstanceStep,
-                bound.Token
-            ),
-            ReplayState.RolledBack => new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
-                new DmsCommandFailure(
-                    DmsCommandFailureClass.Rejected,
-                    new DmsProvisioningDiagnostic(string.Empty, SqlStateOf(run), RolledBackStepOf(run))
-                )
-            ),
-            _ => new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true },
-        };
+        return null;
     }
+
+    private void LogReplayResolutionFailed(DmsOperationId operation, Exception exception) =>
+        // Only the type chain leaves the catch: a driver error may quote the connection.
+        _logger.LogWarning(
+            ReplayResolutionFailed,
+            "The replay outcome of operation {Operation} could not be resolved: {ExceptionTypeChain}",
+            operation.Value,
+            DmsProvisioningDiagnostic.TypeChain(exception)
+        );
 
     /// <summary>What the singleton tables say about the replay's single transaction.</summary>
     internal enum ReplayState
@@ -490,14 +513,28 @@ public sealed partial class PostgresqlDmsTargetEngine
     private static string? SqlStateOf(PsqlRunResult run) =>
         run is PsqlRunResult.Exited { SqlState: { } sqlState } ? sqlState : null;
 
-    private static string RolledBackStepOf(PsqlRunResult run) =>
+    /// <summary>
+    /// What a replay found rolled back is named by, which decides its retry category in the orchestrator: the
+    /// restore bound and the caller's cancellation name themselves. <c>RestoreRolledBack</c>, which is transient,
+    /// needs evidence that the connection, not the script, ended the replay: a SQLSTATE that leaves the outcome in
+    /// doubt (connection class, cancellation, shutdown), or <c>psql</c>'s exit code 2, which it gives only for a
+    /// connection that could not be made or went bad. Any other end (exit 3 with no readable SQLSTATE: the script
+    /// stopped on an error; exit 1: a fatal error of <c>psql</c>'s own; a process ended from outside) proves that
+    /// nothing committed, not that a retry can succeed, so it is the replay's own step, a permanent
+    /// <c>RestoreFailed</c>.
+    /// </summary>
+    internal static string RolledBackStepOf(PsqlRunResult run) =>
         run switch
         {
             PsqlRunResult.Killed { Reason: PsqlKillReason.TimedOut } => RestoreTimedOutStep,
             PsqlRunResult.Unconfirmed { Reason: PsqlKillReason.TimedOut } => RestoreTimedOutStep,
             PsqlRunResult.Killed { Reason: PsqlKillReason.Cancelled } => RestoreCancelledStep,
             PsqlRunResult.Unconfirmed { Reason: PsqlKillReason.Cancelled } => RestoreCancelledStep,
-            _ => RestoreRolledBackStep,
+            PsqlRunResult.Exited { SqlState: { } sqlState }
+                when PostgresqlErrorClassifier.FailureClassOf(sqlState) is null => RestoreRolledBackStep,
+            PsqlRunResult.Exited { ExitCode: PsqlRestoreRunner.ConnectionFailedExitCode } =>
+                RestoreRolledBackStep,
+            _ => PsqlRestoreRunner.RestoreStep,
         };
 
     private static PostgresqlTargetLockSession RequireHolder(IDmsTargetLockHolder holder)

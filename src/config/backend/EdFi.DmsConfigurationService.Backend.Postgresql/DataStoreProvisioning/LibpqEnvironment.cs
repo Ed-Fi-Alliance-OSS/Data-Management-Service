@@ -164,10 +164,23 @@ internal sealed record LibpqConnectionSettings(
 /// The environment every <c>psql</c> process receives (D-10): the inherited environment is discarded and
 /// exactly the allowlisted variables are set, so neither a password-carrying variable nor an operator's
 /// <c>PGSERVICE</c>, <c>PGOPTIONS</c>, or <c>PSQLRC</c> can reach the replay. <c>PATH</c> is copied from
-/// this process so the executable's own dependencies resolve; <c>LC_ALL=C</c> fixes the message language
-/// the SQLSTATE extraction relies on; <c>PGCLIENTENCODING=UTF8</c> fixes the replay encoding. On Windows
+/// this process so the executable's own dependencies resolve; <c>LC_ALL=C</c> fixes the language of
+/// <c>psql</c>'s own messages (the server's are in its <c>lc_messages</c>); <c>PGCLIENTENCODING=UTF8</c> fixes
+/// the replay encoding. On Windows
 /// <c>SystemRoot</c> is copied too, because the system's socket and name resolution libraries cannot load
 /// without it (host names then fail with Winsock error 11003); it carries no credential.
+/// <para>
+/// Clearing the environment does not stop <c>libpq</c> from reading the TLS files of the user's home
+/// directory: it finds that directory through <c>getpwuid</c> when <c>HOME</c> is unset (<c>%APPDATA%</c> on
+/// Windows), and an empty variable counts as unset. The two defaults Npgsql never reads are therefore set
+/// explicitly: the root certificate is the configured one or <see cref="AbsentFilePath"/>, so an unrelated
+/// <c>root.crt</c> cannot turn <c>require</c> into <c>verify-ca</c> (Npgsql verifies nothing in that mode and
+/// reads only the configured file in the verifying ones); the revocation list is always
+/// <see cref="AbsentFilePath"/>, as Npgsql loads none. No client certificate is sent
+/// (<c>sslcertmode=disable</c>, so no key is read either): Npgsql's choice depends on this process's
+/// <c>PGSSLCERT</c> and <c>HOME</c>, which the cleared environment cannot reproduce, so readiness refuses any
+/// configuration in which Npgsql would send one (<see cref="PostgresqlEnvironment.ClientCertificateProbe"/>).
+/// </para>
 /// </summary>
 internal static class LibpqEnvironment
 {
@@ -175,6 +188,8 @@ internal static class LibpqEnvironment
     public const string ApplicationNameVariable = "PGAPPNAME";
     public const string SslModeVariable = "PGSSLMODE";
     public const string SslRootCertificateVariable = "PGSSLROOTCERT";
+    public const string SslRevocationListVariable = "PGSSLCRL";
+    public const string SslCertificateModeVariable = "PGSSLCERTMODE";
     public const string ConnectTimeoutVariable = "PGCONNECT_TIMEOUT";
     public const string ClientEncodingVariable = "PGCLIENTENCODING";
     public const string LocaleVariable = "LC_ALL";
@@ -183,8 +198,9 @@ internal static class LibpqEnvironment
 
     public const string ClientEncoding = "UTF8";
     public const string Locale = "C";
+    public const string SslCertificateModeDisable = "disable";
 
-    /// <summary>The only variable names a <c>psql</c> process may receive, in the order D-10 lists them, then <c>SystemRoot</c> on Windows.</summary>
+    /// <summary>The only variable names a <c>psql</c> process may receive, in the order D-10 lists them, then the revocation list and certificate mode, then <c>SystemRoot</c> on Windows.</summary>
     public static IReadOnlyList<string> AllowedVariables { get; } =
     [
         PasswordFileVariable,
@@ -195,14 +211,23 @@ internal static class LibpqEnvironment
         ClientEncodingVariable,
         LocaleVariable,
         PathVariable,
+        SslRevocationListVariable,
+        SslCertificateModeVariable,
         .. OperatingSystem.IsWindows() ? [SystemRootVariable] : Array.Empty<string>(),
     ];
 
     /// <summary>
+    /// A path no file can occupy while the replay runs: beneath the password file, which is a regular file for
+    /// the whole run. <c>libpq</c> treats a root certificate it cannot <c>stat</c> as absent and ignores a
+    /// revocation list it cannot load.
+    /// </summary>
+    public static string AbsentFilePath(string passwordFilePath) => Path.Combine(passwordFilePath, "absent");
+
+    /// <summary>
     /// Replaces the environment of <paramref name="startInfo"/> with the allowlist. The connection-derived
-    /// variables are set only when <paramref name="connection"/> is given (the version probe needs none),
-    /// <see cref="SslRootCertificateVariable"/> only when a certificate is configured, and the password file
-    /// and application name only when supplied. No value is ever the password.
+    /// variables, the root certificate, revocation list and certificate mode among them, are set only when
+    /// <paramref name="connection"/> is given (the version probe needs none), which requires
+    /// <paramref name="passwordFilePath"/>; the application name only when supplied. No value is ever the password.
     /// </summary>
     public static void Apply(
         ProcessStartInfo startInfo,
@@ -234,12 +259,12 @@ internal static class LibpqEnvironment
 
         if (connection is not null)
         {
+            ArgumentNullException.ThrowIfNull(passwordFilePath);
             environment[SslModeVariable] = connection.SslMode;
-            if (connection.RootCertificate is not null)
-            {
-                environment[SslRootCertificateVariable] = connection.RootCertificate;
-            }
-
+            environment[SslRootCertificateVariable] =
+                connection.RootCertificate ?? AbsentFilePath(passwordFilePath);
+            environment[SslRevocationListVariable] = AbsentFilePath(passwordFilePath);
+            environment[SslCertificateModeVariable] = SslCertificateModeDisable;
             environment[ConnectTimeoutVariable] = connection.ConnectTimeoutSeconds.ToString(
                 CultureInfo.InvariantCulture
             );

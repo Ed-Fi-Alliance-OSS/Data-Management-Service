@@ -238,10 +238,16 @@ public class PsqlRestoreRunnerTests
         }
 
         [Test]
-        public void It_sets_exactly_the_allowlisted_environment_without_a_root_certificate() =>
-            _startInfo
-                .Environment.Keys.Should()
-                .BeEquivalentTo(LibpqEnvironment.AllowedVariables.Where(name => name != "PGSSLROOTCERT"));
+        public void It_sets_exactly_the_allowlisted_environment() =>
+            _startInfo.Environment.Keys.Should().BeEquivalentTo(LibpqEnvironment.AllowedVariables);
+
+        [Test]
+        public void It_points_the_unconfigured_root_certificate_and_the_revocation_list_beneath_the_password_file()
+        {
+            string absent = Path.Combine(_workspace.PasswordFilePath, "absent");
+            _startInfo.Environment["PGSSLROOTCERT"].Should().Be(absent);
+            _startInfo.Environment["PGSSLCRL"].Should().Be(absent);
+        }
 
         [Test]
         public void It_names_the_password_file_and_the_operation_in_the_environment()
@@ -274,11 +280,13 @@ public class PsqlRestoreRunnerTests
                 [
                     "psql:"
                         + _workspace.Artifact.FilePath
+                        + ":2: NOTICE:  42710: an earlier notice that is not kept",
+                    "psql:"
+                        + _workspace.Artifact.FilePath
                         + ":3: ERROR:  42P01: relation \"edfi.student\" does not exist",
                     "DETAIL:  the leaked password is " + ReplayWorkspace.Password,
                     "HINT:  the leaked connection string is " + ReplayWorkspace.ConnectionString,
                     "LOCATION:  parserOpenTable, parse_relation.c:1449",
-                    "psql:/tmp/dms-provision-0123456789ab/artifact.sql:9: ERROR:  22P02: a later error that is not kept",
                 ],
                 exitCode: 3
             );
@@ -298,7 +306,7 @@ public class PsqlRestoreRunnerTests
         public void It_does_not_throw() => _exception.Should().BeNull();
 
         [Test]
-        public void It_reports_the_exit_code_and_the_first_sqlstate_through_the_artifact_path()
+        public void It_reports_the_exit_code_and_the_stopping_errors_sqlstate_through_the_artifact_path()
         {
             PsqlRunResult.Exited exited = _result.Should().BeOfType<PsqlRunResult.Exited>().Subject;
             exited.ExitCode.Should().Be(3);
@@ -442,9 +450,7 @@ public class PsqlRestoreRunnerTests
                     LibpqEnvironment.AllowedVariables.Contains(name, StringComparer.OrdinalIgnoreCase)
                     || FakePsql.ShellInjectedVariables.Contains(name, StringComparer.OrdinalIgnoreCase)
                 );
-            _environmentSeen
-                .Keys.Should()
-                .Contain(LibpqEnvironment.AllowedVariables.Where(name => name != "PGSSLROOTCERT"));
+            _environmentSeen.Keys.Should().Contain(LibpqEnvironment.AllowedVariables);
         }
 
         [Test]

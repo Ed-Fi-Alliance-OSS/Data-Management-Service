@@ -107,6 +107,14 @@ public class LibpqEnvironmentTests
             _startInfo.Environment["PGSSLROOTCERT"].Should().Be("/etc/ssl/certs/root.crt");
 
         [Test]
+        public void It_names_a_revocation_list_beneath_the_password_file_so_no_home_directory_list_is_loaded() =>
+            _startInfo.Environment["PGSSLCRL"].Should().Be(Path.Combine(PasswordFilePath, "absent"));
+
+        [Test]
+        public void It_sends_no_client_certificate() =>
+            _startInfo.Environment["PGSSLCERTMODE"].Should().Be("disable");
+
+        [Test]
         public void It_passes_the_connect_timeout_in_seconds() =>
             _startInfo.Environment["PGCONNECT_TIMEOUT"].Should().Be("20");
 
@@ -125,6 +133,8 @@ public class LibpqEnvironmentTests
     [TestFixture]
     public class Given_a_connection_without_a_root_certificate
     {
+        private const string PasswordFilePath = "/tmp/pgpass";
+
         private ProcessStartInfo _startInfo = null!;
 
         [SetUp]
@@ -134,18 +144,18 @@ public class LibpqEnvironmentTests
             LibpqConnectionSettings connection = LibpqConnectionSettings.From(
                 new NpgsqlConnectionStringBuilder("Host=db.example.test;Username=dms_admin;Password=x")
             );
-            LibpqEnvironment.Apply(_startInfo, connection, "/tmp/pgpass", "dms-provision:0123456789ab");
+            LibpqEnvironment.Apply(_startInfo, connection, PasswordFilePath, "dms-provision:0123456789ab");
         }
 
+        // libpq treats an unset or empty PGSSLROOTCERT alike and falls back to the home directory's root.crt,
+        // so only an explicit path keeps an unrelated file from turning prefer or require into verification.
         [Test]
-        public void It_omits_the_root_certificate_variable() =>
-            _startInfo.Environment.Should().NotContainKey("PGSSLROOTCERT");
+        public void It_points_the_root_certificate_beneath_the_password_file() =>
+            _startInfo.Environment["PGSSLROOTCERT"].Should().Be(Path.Combine(PasswordFilePath, "absent"));
 
         [Test]
-        public void It_sets_every_other_allowlisted_variable() =>
-            _startInfo
-                .Environment.Keys.Should()
-                .BeEquivalentTo(LibpqEnvironment.AllowedVariables.Where(name => name != "PGSSLROOTCERT"));
+        public void It_sets_exactly_the_allowlisted_variables() =>
+            _startInfo.Environment.Keys.Should().BeEquivalentTo(LibpqEnvironment.AllowedVariables);
 
         [Test]
         public void It_uses_the_npgsql_defaults_for_the_mode_and_the_timeout()
@@ -153,6 +163,36 @@ public class LibpqEnvironmentTests
             _startInfo.Environment["PGSSLMODE"].Should().Be("prefer");
             _startInfo.Environment["PGCONNECT_TIMEOUT"].Should().Be("15");
         }
+    }
+
+    /// <summary>The path the root certificate and revocation list default to cannot hold a file while the password file exists.</summary>
+    [TestFixture]
+    public class Given_the_absent_file_path_beneath_an_existing_password_file
+    {
+        private bool _exists;
+        private Exception? _creation;
+
+        [SetUp]
+        public void Setup()
+        {
+            string passwordFile = Path.GetTempFileName();
+            try
+            {
+                string absent = LibpqEnvironment.AbsentFilePath(passwordFile);
+                _exists = File.Exists(absent) || Directory.Exists(absent);
+                _creation = Packaging.Record.Exception(() => File.WriteAllText(absent, "unrelated root"));
+            }
+            finally
+            {
+                File.Delete(passwordFile);
+            }
+        }
+
+        [Test]
+        public void It_does_not_exist() => _exists.Should().BeFalse();
+
+        [Test]
+        public void It_cannot_be_created() => _creation.Should().BeAssignableTo<IOException>();
     }
 
     [TestFixture]
