@@ -741,6 +741,9 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                     "Host=db;Username=u;Password=p;SSL Mode=prefer;Root Certificate=/etc/ca.crt",
                     "Host=db;Username=u;Password=p;Root Certificate=/etc/ca.crt",
                     "Host=db;Username=u;Password=p;SSL Mode=Require",
+                    "Host=db-a,db-b;Username=u;Password=p",
+                    "Host=db-a:5432, db-b:5433;Username=u;Password=p",
+                    "Host=/var/run/postgresql;Username=u;Password=p",
                     "=;;=",
                     ";",
                 }
@@ -869,6 +872,33 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             _secretSslModeWithRoot.Should().BeEmpty();
         }
 
+        /// <summary>
+        /// Every session of an operation (the lock holder, the inspection and work sessions, <c>psql</c>, and outcome
+        /// resolution) must reach the server the lock was taken on, while Npgsql and <c>libpq</c> each fall over to
+        /// the next host of a list on their own, per connection. A literal host list is refused at startup; one that
+        /// arrives through a secret reference is refused by the administrative connection once resolved.
+        /// </summary>
+        [Test]
+        public void It_refuses_more_than_one_postgresql_host()
+        {
+            foreach (
+                string value in new[]
+                {
+                    "Host=db-a,db-b;Username=u;Password=p",
+                    "Host=db-a:5432, db-b:5433;Username=u;Password=p",
+                }
+            )
+            {
+                _postgresql[value]
+                    .Should()
+                    .ContainSingle(value)
+                    .Which.Should()
+                    .Be($"{Section}:AdminConnectionString must name exactly one Host for PostgreSQL.");
+            }
+
+            _postgresql["Host=/var/run/postgresql;Username=u;Password=p"].Should().BeEmpty();
+        }
+
         [Test]
         public void It_rejects_unparseable_text() =>
             _postgresql["=;;="]
@@ -941,6 +971,8 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 ["blank operation directory"] = o => o.OperationDirectory = "",
                 ["host qualified operation directory"] = o => o.OperationDirectory = LocalPath("operations"),
                 ["psql major below one"] = o => o.Postgresql!.MinimumPsqlMajorVersion = 0,
+                ["psql major below the replay's floor"] = o => o.Postgresql!.MinimumPsqlMajorVersion = 15,
+                ["psql major above the replay's floor"] = o => o.Postgresql!.MinimumPsqlMajorVersion = 19,
                 ["blank protected name"] = o => o.AdditionalProtectedDatabaseNames = ["EdFi_Admin", ""],
             };
 
@@ -1057,7 +1089,24 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 .Should()
                 .ContainSingle()
                 .Which.Should()
-                .Be($"{Section}:Postgresql:MinimumPsqlMajorVersion must be at least 1.");
+                .Be($"{Section}:Postgresql:MinimumPsqlMajorVersion must be at least 18.");
+
+        /// <summary>
+        /// The replay depends on <c>libpq</c> options older clients ignore without an error (<c>sslcertmode</c>
+        /// arrived in 16), and D-9 and the readiness documentation name <c>psql</c> 18; a lower setting would admit a
+        /// <c>psql</c> 15 that sends the home directory's client certificate Npgsql does not. The setting may only
+        /// raise the floor.
+        /// </summary>
+        [Test]
+        public void It_refuses_a_psql_major_floor_below_what_the_replay_requires_and_admits_a_higher_one()
+        {
+            _failures["psql major below the replay's floor"]
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be($"{Section}:Postgresql:MinimumPsqlMajorVersion must be at least 18.");
+            _failures["psql major above the replay's floor"].Should().BeEmpty();
+        }
 
         [Test]
         public void It_rejects_blank_protected_names() =>

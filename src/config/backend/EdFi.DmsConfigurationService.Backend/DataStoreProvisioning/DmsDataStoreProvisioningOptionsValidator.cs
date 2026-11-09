@@ -38,6 +38,13 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
     public const int MaximumPackageIdLength = 100;
 
     /// <summary>
+    /// The lowest <c>psql</c> major the replay works with, which <c>Postgresql:MinimumPsqlMajorVersion</c> may raise but
+    /// not lower: the replay relies on <c>libpq</c> options an older client ignores without an error
+    /// (<c>sslcertmode</c> arrived in 16), and D-9 and the readiness documentation require <c>psql</c> 18.
+    /// </summary>
+    public const int LowestSupportedPsqlMajorVersion = 18;
+
+    /// <summary>
     /// The only keys a PostgreSQL administrative connection string may carry (D-10): the <c>psql</c>
     /// handoff reproduces exactly these, so anything else would silently not apply to the restore.
     /// </summary>
@@ -172,6 +179,17 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
         )
         {
             failures.Add($"{key} Database must be absent or postgres for PostgreSQL.");
+        }
+
+        // Every session of an operation must reach the server its lock was taken on, while Npgsql and libpq each fall
+        // over to the next host of a list per connection. A secret name cannot contain a comma, so any comma here
+        // separates hosts; a list that arrives through a secret is refused by the administrative connection.
+        if (
+            builder.TryGetValue("Host", out object? host)
+            && (host as string)?.Contains(',', StringComparison.Ordinal) == true
+        )
+        {
+            failures.Add($"{key} must name exactly one Host for PostgreSQL.");
         }
 
         // psql verifies the server only against the Root Certificate file, while Npgsql without one falls back to
@@ -446,9 +464,14 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
         }
 
         RequireLocalPath(failures, $"Postgresql:{nameof(postgresql.PsqlPath)}", postgresql.PsqlPath);
-        if (postgresql.MinimumPsqlMajorVersion < 1)
+        if (postgresql.MinimumPsqlMajorVersion < LowestSupportedPsqlMajorVersion)
         {
-            failures.Add($"{Section}:Postgresql:MinimumPsqlMajorVersion must be at least 1.");
+            failures.Add(
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{Section}:Postgresql:MinimumPsqlMajorVersion must be at least {LowestSupportedPsqlMajorVersion}."
+                )
+            );
         }
     }
 

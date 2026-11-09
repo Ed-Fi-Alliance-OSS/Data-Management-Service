@@ -17,7 +17,7 @@ using Microsoft.Extensions.Time.Testing;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql;
 
 /// <summary>
-/// One replay's artifact, operation directory, administrative connection (two endpoints, a sentinel
+/// One replay's artifact, operation directory, administrative connection (one endpoint with its own port, a sentinel
 /// password), and capturing logger, so each fixture asserts on the same secrets. Disposal removes the
 /// workspace and waits for the removal to succeed: on Windows a fake that outlived the runner (a child that
 /// keeps the pipes, a kill that failed) ends only on its stop file, and its last poll child, whose working
@@ -29,9 +29,7 @@ internal sealed class ReplayWorkspace : IAsyncDisposable
     public const string Password = "SENTINEL-PASSWORD-7f3a";
 
     public const string ConnectionString =
-        "Host=primary.example.test:5433,standby.example.test;Port=5432;Username=dms_admin;Password="
-        + Password
-        + ";Timeout=20";
+        "Host=primary.example.test:5433;Port=5432;Username=dms_admin;Password=" + Password + ";Timeout=20";
 
     private static readonly TimeSpan _removalBound = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan _removalRetryInterval = TimeSpan.FromMilliseconds(200);
@@ -218,9 +216,9 @@ public class PsqlRestoreRunnerTests
                     "--file",
                     _workspace.Artifact.FilePath,
                     "--host",
-                    "primary.example.test,standby.example.test",
+                    "primary.example.test",
                     "--port",
-                    "5433,5432",
+                    "5433",
                     "--username",
                     "dms_admin",
                     "--dbname",

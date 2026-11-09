@@ -30,11 +30,21 @@ internal sealed class FakePostgresqlServer : IAsyncDisposable
     private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
     private readonly Task _session;
 
-    public FakePostgresqlServer(X509Certificate2? serverCertificate, bool requestPassword)
+    /// <param name="serverCertificate">The certificate to answer TLS with, or null to refuse TLS.</param>
+    /// <param name="requestPassword">Whether to ask for a cleartext password.</param>
+    /// <param name="intermediates">
+    /// Null to let the TLS layer choose what to send; otherwise exactly the certificates sent after the server
+    /// certificate (none when empty), without downloading any.
+    /// </param>
+    public FakePostgresqlServer(
+        X509Certificate2? serverCertificate,
+        bool requestPassword,
+        X509Certificate2Collection? intermediates = null
+    )
     {
         _listener.Start();
         Port = ((IPEndPoint)_listener.LocalEndpoint).Port;
-        _session = Task.Run(() => ServeAsync(serverCertificate, requestPassword));
+        _session = Task.Run(() => ServeAsync(serverCertificate, requestPassword, intermediates));
     }
 
     public int Port { get; }
@@ -48,7 +58,11 @@ internal sealed class FakePostgresqlServer : IAsyncDisposable
     /// <summary>Waits until the session has ended, so the recorded facts are final.</summary>
     public Task Completion => _session.WaitAsync(TimeSpan.FromSeconds(30));
 
-    private async Task ServeAsync(X509Certificate2? serverCertificate, bool requestPassword)
+    private async Task ServeAsync(
+        X509Certificate2? serverCertificate,
+        bool requestPassword,
+        X509Certificate2Collection? intermediates
+    )
     {
         try
         {
@@ -65,7 +79,24 @@ internal sealed class FakePostgresqlServer : IAsyncDisposable
                 {
                     await WriteAsync(stream, "S"u8.ToArray());
                     SslStream tls = new(stream, leaveInnerStreamOpen: false);
-                    await tls.AuthenticateAsServerAsync(serverCertificate);
+                    if (intermediates is null)
+                    {
+                        await tls.AuthenticateAsServerAsync(serverCertificate);
+                    }
+                    else
+                    {
+                        await tls.AuthenticateAsServerAsync(
+                            new SslServerAuthenticationOptions
+                            {
+                                ServerCertificateContext = SslStreamCertificateContext.Create(
+                                    serverCertificate,
+                                    intermediates,
+                                    offline: true
+                                ),
+                            }
+                        );
+                    }
+
                     stream = tls;
                 }
 
@@ -157,8 +188,39 @@ internal static class TestCertificates
         return request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddDays(30));
     }
 
-    /// <summary>A server certificate for <paramref name="name"/> (a host name or an IP address) issued by <paramref name="issuer"/>, with its key.</summary>
-    public static X509Certificate2 CreateServer(X509Certificate2 issuer, string name)
+    /// <summary>An intermediate authority issued by <paramref name="issuer"/>, with its key, inside the issuer's validity.</summary>
+    public static X509Certificate2 CreateIntermediate(X509Certificate2 issuer, string name)
+    {
+        using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+        CertificateRequest request = new($"CN={name}", key, HashAlgorithmName.SHA256);
+        request.CertificateExtensions.Add(new X509BasicConstraintsExtension(true, true, 0, true));
+        request.CertificateExtensions.Add(
+            new X509KeyUsageExtension(X509KeyUsageFlags.KeyCertSign | X509KeyUsageFlags.CrlSign, true)
+        );
+        request.CertificateExtensions.Add(new X509SubjectKeyIdentifierExtension(request.PublicKey, false));
+        request.CertificateExtensions.Add(
+            X509AuthorityKeyIdentifierExtension.CreateFromCertificate(issuer, true, false)
+        );
+        using X509Certificate2 issued = request.Create(
+            issuer,
+            new DateTimeOffset(issuer.NotBefore).AddHours(1),
+            new DateTimeOffset(issuer.NotAfter).AddDays(-1),
+            Serial()
+        );
+        using X509Certificate2 withKey = issued.CopyWithPrivateKey(key);
+        return X509CertificateLoader.LoadPkcs12(withKey.Export(X509ContentType.Pkcs12), null);
+    }
+
+    /// <summary>
+    /// A server certificate for <paramref name="name"/> (a host name or an IP address) issued by <paramref name="issuer"/>,
+    /// with its key; with <paramref name="issuerDownloadUri"/>, it names where its issuer can be downloaded
+    /// (Authority Information Access, <c>caIssuers</c>), as public certificates do.
+    /// </summary>
+    public static X509Certificate2 CreateServer(
+        X509Certificate2 issuer,
+        string name,
+        string? issuerDownloadUri = null
+    )
     {
         using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
         CertificateRequest request = new($"CN={name}", key, HashAlgorithmName.SHA256);
@@ -180,19 +242,114 @@ internal static class TestCertificates
         request.CertificateExtensions.Add(
             X509AuthorityKeyIdentifierExtension.CreateFromCertificate(issuer, true, false)
         );
-        byte[] serial = RandomNumberGenerator.GetBytes(8);
-        serial[0] &= 0x7f;
+        if (issuerDownloadUri is not null)
+        {
+            request.CertificateExtensions.Add(
+                new X509AuthorityInformationAccessExtension(null, [issuerDownloadUri])
+            );
+        }
 
         // Derived from the issuer's own window, never from the clock again, so the leaf always lies inside it.
         using X509Certificate2 issued = request.Create(
             issuer,
             new DateTimeOffset(issuer.NotBefore).AddHours(1),
             new DateTimeOffset(issuer.NotAfter).AddDays(-1),
-            serial
+            Serial()
         );
         using X509Certificate2 withKey = issued.CopyWithPrivateKey(key);
 
         // Windows TLS cannot use an ephemeral key; a PKCS#12 round trip gives it one it can.
         return X509CertificateLoader.LoadPkcs12(withKey.Export(X509ContentType.Pkcs12), null);
+    }
+
+    private static byte[] Serial()
+    {
+        byte[] serial = RandomNumberGenerator.GetBytes(8);
+        serial[0] &= 0x7f;
+        return serial;
+    }
+}
+
+/// <summary>
+/// A loopback HTTP server that answers every request with one certificate, as the <c>caIssuers</c> location of a
+/// public certificate does, and counts the requests, so a test can show that a client fetched it.
+/// </summary>
+internal sealed class CertificateDownloadServer : IAsyncDisposable
+{
+    private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+    private readonly byte[] _certificate;
+    private readonly CancellationTokenSource _stop = new();
+    private readonly Task _serving;
+    private int _requests;
+
+    public CertificateDownloadServer(X509Certificate2 certificate)
+    {
+        _certificate = certificate.RawData;
+        _listener.Start();
+        Uri = $"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/issuer.cer";
+        _serving = Task.Run(ServeAsync);
+    }
+
+    public string Uri { get; }
+
+    /// <summary>The number of requests answered so far.</summary>
+    public int Requests => Volatile.Read(ref _requests);
+
+    private async Task ServeAsync()
+    {
+        while (!_stop.IsCancellationRequested)
+        {
+            TcpClient client;
+            try
+            {
+                client = await _listener.AcceptTcpClientAsync(_stop.Token);
+            }
+            catch (Exception)
+            {
+                return;
+            }
+
+            using (client)
+            {
+                try
+                {
+                    NetworkStream stream = client.GetStream();
+                    byte[] buffer = new byte[4096];
+                    StringBuilder request = new();
+                    while (!request.ToString().Contains("\r\n\r\n", StringComparison.Ordinal))
+                    {
+                        int read = await stream.ReadAsync(buffer, _stop.Token);
+                        if (read == 0)
+                        {
+                            break;
+                        }
+
+                        request.Append(Encoding.ASCII.GetString(buffer, 0, read));
+                    }
+
+                    Interlocked.Increment(ref _requests);
+                    await stream.WriteAsync(
+                        Encoding.ASCII.GetBytes(
+                            $"HTTP/1.1 200 OK\r\nContent-Type: application/pkix-cert\r\nContent-Length: {_certificate.Length}\r\nConnection: close\r\n\r\n"
+                        ),
+                        _stop.Token
+                    );
+                    await stream.WriteAsync(_certificate, _stop.Token);
+                    await stream.FlushAsync(_stop.Token);
+                }
+                catch (Exception)
+                {
+                    // The client gave up; the count stands.
+                }
+            }
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        await _stop.CancelAsync();
+        _listener.Stop();
+        await _serving.WaitAsync(TimeSpan.FromSeconds(30));
+        _stop.Dispose();
     }
 }

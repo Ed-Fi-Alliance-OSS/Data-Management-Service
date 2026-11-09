@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
@@ -66,13 +68,19 @@ public sealed record PostgresqlDmsEngineSettings
     /// <summary><c>Postgresql:PsqlPath</c>, fully qualified.</summary>
     public string PsqlPath { get; }
 
-    /// <summary><c>Postgresql:MinimumPsqlMajorVersion</c>: the lowest <c>psql</c> major readiness accepts (D-9).</summary>
+    /// <summary>
+    /// <c>Postgresql:MinimumPsqlMajorVersion</c>: the lowest <c>psql</c> major readiness accepts (D-9), never below
+    /// <see cref="DmsDataStoreProvisioningOptionsValidator.LowestSupportedPsqlMajorVersion"/>.
+    /// </summary>
     public int MinimumPsqlMajorVersion
     {
         get => _minimumPsqlMajorVersion;
         init
         {
-            ArgumentOutOfRangeException.ThrowIfLessThan(value, 1);
+            ArgumentOutOfRangeException.ThrowIfLessThan(
+                value,
+                DmsDataStoreProvisioningOptionsValidator.LowestSupportedPsqlMajorVersion
+            );
             _minimumPsqlMajorVersion = value;
         }
     }

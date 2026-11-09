@@ -166,9 +166,23 @@ public sealed class PostgresqlAdminConnection
     /// operating-system user, none of which the replay's cleared environment carries. The password's ambient
     /// sources are a readiness rule instead (<see cref="PostgresqlEnvironment.AmbientPasswordProbe"/>), because
     /// Npgsql cannot be told to ignore them through the connection string.
+    /// <para>
+    /// A <c>Host</c> naming more than one server is refused too. Each connection of an operation (the lock holder,
+    /// the inspection and work sessions, <c>psql</c>, and outcome resolution) is opened separately, and Npgsql and
+    /// <c>libpq</c> each move to the next host of a list whenever one cannot be reached, so the sessions of one
+    /// operation could reach different servers: an inspection could find the target absent on one while the lock
+    /// and the database are on another.
+    /// </para>
     /// </summary>
-    private static void RefuseWhatPsqlCannotReceive(NpgsqlConnectionStringBuilder template) =>
-        _ = LibpqConnectionSettings.From(template);
+    private static void RefuseWhatPsqlCannotReceive(NpgsqlConnectionStringBuilder template)
+    {
+        if (LibpqConnectionSettings.From(template).Endpoints.Count != 1)
+        {
+            throw new InvalidOperationException(
+                "The administrative connection string names more than one host; every session of an operation must reach the same server."
+            );
+        }
+    }
 
     private static bool IsVerifying(SslMode mode) => mode is SslMode.VerifyCA or SslMode.VerifyFull;
 
@@ -267,6 +281,14 @@ public sealed class PostgresqlAdminConnection
     /// <c>libpq</c> reads it (a file holding no PEM certificate trusts nothing), without a revocation check, as
     /// neither client is given a revocation list. <c>VerifyFull</c> also requires the host name the TLS layer
     /// checked against the host dialled; <c>VerifyCA</c>, as in <c>libpq</c>, does not.
+    /// <para>
+    /// The chain must also be made only of what <c>libpq</c> can build it from: the certificates the server sent,
+    /// which the TLS layer places in the chain's <c>ExtraStore</c>, and those of the file. .NET completes a chain
+    /// from more: the issuer download location a certificate names (Authority Information Access), fetched by the
+    /// TLS layer's own build before this check runs and kept in the platform's URL cache, and the user and system
+    /// intermediate stores. Downloads are disabled for the rebuild, and a chain holding any other certificate is
+    /// refused, so a server that omits an intermediate fails here as it fails in <c>psql</c>.
+    /// </para>
     /// </summary>
     internal static bool IsTrustedServerCertificate(
         X509Certificate? certificate,
@@ -295,12 +317,14 @@ public sealed class PostgresqlAdminConnection
                 return false;
             }
 
+            X509Certificate2Collection sent = [.. chain.ChainPolicy.ExtraStore];
             chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
             chain.ChainPolicy.CustomTrustStore.Clear();
             chain.ChainPolicy.CustomTrustStore.AddRange(roots);
             chain.ChainPolicy.ExtraStore.AddRange(roots);
             chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
-            return chain.Build(serverCertificate);
+            chain.ChainPolicy.DisableCertificateDownloads = true;
+            return chain.Build(serverCertificate) && IsBuiltOnlyFrom(chain, sent, roots);
         }
         catch (Exception exception)
             when (exception is IOException or UnauthorizedAccessException or CryptographicException)
@@ -315,4 +339,26 @@ public sealed class PostgresqlAdminConnection
             }
         }
     }
+
+    /// <summary>Whether every certificate of the built chain above the server's own is one of <paramref name="sent"/> or <paramref name="roots"/>, compared byte for byte.</summary>
+    private static bool IsBuiltOnlyFrom(
+        X509Chain chain,
+        X509Certificate2Collection sent,
+        X509Certificate2Collection roots
+    )
+    {
+        for (int index = 1; index < chain.ChainElements.Count; index++)
+        {
+            ReadOnlyMemory<byte> element = chain.ChainElements[index].Certificate.RawDataMemory;
+            if (!IsAmong(element, sent) && !IsAmong(element, roots))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private static bool IsAmong(ReadOnlyMemory<byte> certificate, X509Certificate2Collection candidates) =>
+        candidates.Any(candidate => certificate.Span.SequenceEqual(candidate.RawDataMemory.Span));
 }

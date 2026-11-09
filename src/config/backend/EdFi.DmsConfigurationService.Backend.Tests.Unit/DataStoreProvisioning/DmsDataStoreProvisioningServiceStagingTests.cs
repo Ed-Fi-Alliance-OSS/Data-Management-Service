@@ -7,6 +7,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
@@ -439,6 +440,15 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 "privilege",
                 RestoreFailed(DmsCommandFailureClass.PrivilegeMissing, "EnsureEnqueueOwner"),
                 DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                DmsProvisioningFailureCategory.Permanent
+            ),
+            new(
+                "gssapi authentication to the staging database",
+                RestoreFailed(
+                    DmsCommandFailureClass.Rejected,
+                    PostgresqlDmsTargetEngine.RestoreGssAuthenticationStep
+                ),
+                DmsProvisioningFailureCode.RestoreFailed,
                 DmsProvisioningFailureCategory.Permanent
             ),
         ];

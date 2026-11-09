@@ -184,7 +184,12 @@ internal sealed record LibpqConnectionSettings(
 /// <para>
 /// GSS encryption is disabled (<c>gssencmode=disable</c>): <c>libpq</c> prefers it to TLS whenever usable
 /// Kerberos credentials exist, regardless of <c>sslmode</c>, which would bypass the configured TLS
-/// verification; Npgsql 8 never negotiates it.
+/// verification; Npgsql 8 never negotiates it. GSSAPI authentication is not carried either: the Kerberos
+/// variables it reads (<c>KRB5CCNAME</c>, <c>KRB5_CONFIG</c>, a client keytab) are not on the allowlist, because
+/// they are a login source outside the connection string. Readiness refuses a server that authenticates the
+/// administrative login to the maintenance database through GSSAPI
+/// (<see cref="PostgresqlEnvironment.GssAuthenticationProbe"/>), and each replay refuses a staging database the server
+/// authenticates that way before <c>psql</c> starts (<see cref="PostgresqlDmsTargetEngine.RestoreGssAuthenticationStep"/>).
 /// </para>
 /// </summary>
 internal static class LibpqEnvironment

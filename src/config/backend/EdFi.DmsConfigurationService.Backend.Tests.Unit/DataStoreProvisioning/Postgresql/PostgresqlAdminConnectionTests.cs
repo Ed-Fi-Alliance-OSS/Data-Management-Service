@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net.Security;
+using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
@@ -578,13 +579,18 @@ public class PostgresqlAdminConnectionTests
         private string _directory = null!;
         private readonly Dictionary<string, (bool Accepted, Exception? Failure)> _attempts = [];
 
-        private static async Task<(bool Accepted, Exception? Failure)> AttemptAsync(
+        internal static async Task<(bool Accepted, Exception? Failure)> AttemptAsync(
             X509Certificate2 serverCertificate,
             string mode,
-            string rootCertificate
+            string rootCertificate,
+            X509Certificate2Collection? intermediates = null
         )
         {
-            await using FakePostgresqlServer server = new(serverCertificate, requestPassword: false);
+            await using FakePostgresqlServer server = new(
+                serverCertificate,
+                requestPassword: false,
+                intermediates
+            );
             PostgresqlAdminConnection admin = new(
                 $"Host=127.0.0.1;Port={server.Port};Username=dms_admin;Password=x;SSL Mode={mode};Root Certificate={rootCertificate};Timeout=10",
                 TimeSpan.FromSeconds(30)
@@ -750,5 +756,342 @@ public class PostgresqlAdminConnectionTests
         [Test]
         public void It_refuses_a_name_mismatch_with_VerifyFull_even_from_the_configured_root() =>
             _nameMismatchVerifyFull.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// <c>libpq</c> builds the server's chain only from what the server sent and the certificates of the
+    /// <c>Root Certificate</c> file. .NET also takes intermediates from the certificate's download location
+    /// (Authority Information Access), from its URL cache, and from the user and system intermediate stores, and the
+    /// TLS layer has already built the chain once, downloading, before the check runs. A server that sends only its
+    /// own certificate, whose intermediate is reachable for download, is therefore refused as <c>psql</c> refuses it;
+    /// the same intermediate sent by the server, or present in the file, is accepted as <c>psql</c> accepts it.
+    /// The check is called as the TLS layer calls it; the handshakes are in <see cref="Given_the_chain_a_server_sends"/>.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_server_certificate_whose_intermediate_only_a_download_provides
+    {
+        private string _directory = null!;
+        private int _downloads;
+        private int _downloadsByTheCheck;
+        private bool _afterTheTlsLayerDownloaded;
+        private bool _sentByTheServer;
+        private bool _inTheRootFile;
+
+        private static bool IsTrusted(X509Certificate2 leaf, X509Chain chain, string rootFile) =>
+            PostgresqlAdminConnection.IsTrustedServerCertificate(
+                leaf,
+                chain,
+                SslPolicyErrors.None,
+                rootFile,
+                verifyHostName: true
+            );
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _directory = Directory.CreateTempSubdirectory("dms1438-aia-").FullName;
+            using X509Certificate2 root = TestCertificates.CreateRoot("Configured Root");
+            using X509Certificate2 intermediate = TestCertificates.CreateIntermediate(
+                root,
+                "Downloadable Intermediate"
+            );
+            await using CertificateDownloadServer download = new(intermediate);
+            using X509Certificate2 leaf = TestCertificates.CreateServer(
+                intermediate,
+                "127.0.0.1",
+                download.Uri
+            );
+            string rootOnly = Path.Combine(_directory, "root.crt");
+            await File.WriteAllTextAsync(rootOnly, root.ExportCertificatePem());
+            string rootAndIntermediate = Path.Combine(_directory, "root-and-intermediate.crt");
+            await File.WriteAllTextAsync(
+                rootAndIntermediate,
+                root.ExportCertificatePem() + "\n" + intermediate.ExportCertificatePem()
+            );
+
+            // The TLS layer's own build under the default policy, which downloads, precedes the check.
+            using (X509Chain chain = new())
+            {
+                chain.ChainPolicy.ApplicationPolicy.Add(new Oid("1.3.6.1.5.5.7.3.1"));
+                chain.Build(leaf);
+                _downloads = download.Requests;
+                _afterTheTlsLayerDownloaded = PostgresqlAdminConnection.IsTrustedServerCertificate(
+                    leaf,
+                    chain,
+                    SslPolicyErrors.RemoteCertificateChainErrors,
+                    rootOnly,
+                    verifyHostName: true
+                );
+                _downloadsByTheCheck = download.Requests - _downloads;
+            }
+
+            using (X509Chain chain = new())
+            {
+                chain.ChainPolicy.ExtraStore.Add(intermediate);
+                _sentByTheServer = IsTrusted(leaf, chain, rootOnly);
+            }
+
+            using (X509Chain chain = new())
+            {
+                _inTheRootFile = IsTrusted(leaf, chain, rootAndIntermediate);
+            }
+        }
+
+        [OneTimeTearDown]
+        public void TearDown() => Directory.Delete(_directory, recursive: true);
+
+        [Test]
+        public void It_shows_the_platform_downloads_the_missing_intermediate() =>
+            _downloads.Should().BeGreaterThan(0);
+
+        [Test]
+        public void It_refuses_a_chain_completed_by_a_download_or_a_cache() =>
+            _afterTheTlsLayerDownloaded.Should().BeFalse();
+
+        [Test]
+        public void It_downloads_nothing_itself() => _downloadsByTheCheck.Should().Be(0);
+
+        [Test]
+        public void It_accepts_the_intermediate_when_the_server_sent_it() =>
+            _sentByTheServer.Should().BeTrue();
+
+        [Test]
+        public void It_accepts_the_intermediate_when_the_root_file_holds_it() =>
+            _inTheRootFile.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The user's intermediate store is another source .NET completes a chain from, with downloads disabled and in
+    /// <c>CustomRootTrust</c> mode alike, and <c>libpq</c> never reads it: an intermediate found only there is refused.
+    /// Not run on Windows, where that store is the user's real certificate store. The store's contents are cached
+    /// by the runtime and re-read when its directory changes, so the fixture waits until a chain built as the check
+    /// builds it, without the check's last rule, finds the intermediate.
+    /// </summary>
+    [TestFixture]
+    [Platform(Exclude = "Win")]
+    [NonParallelizable]
+    public class Given_an_intermediate_only_the_user_intermediate_store_holds
+    {
+        private string _directory = null!;
+        private X509Certificate2 _stored = null!;
+        private bool _platformCompletesTheChain;
+        private bool _trusted;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _directory = Directory.CreateTempSubdirectory("dms1438-user-store-").FullName;
+            using X509Certificate2 root = TestCertificates.CreateRoot("Configured Root");
+            using X509Certificate2 intermediate = TestCertificates.CreateIntermediate(
+                root,
+                "Stored Intermediate"
+            );
+            using X509Certificate2 leaf = TestCertificates.CreateServer(intermediate, "127.0.0.1");
+            string rootOnly = Path.Combine(_directory, "root.crt");
+            await File.WriteAllTextAsync(rootOnly, root.ExportCertificatePem());
+
+            _stored = X509CertificateLoader.LoadCertificate(intermediate.RawData);
+            using (X509Store store = new(StoreName.CertificateAuthority, StoreLocation.CurrentUser))
+            {
+                store.Open(OpenFlags.ReadWrite);
+                store.Add(_stored);
+            }
+
+            DateTime deadline = DateTime.UtcNow.AddSeconds(30);
+            while (!_platformCompletesTheChain && DateTime.UtcNow < deadline)
+            {
+                using X509Chain chain = new();
+                chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+                chain.ChainPolicy.CustomTrustStore.Add(root);
+                chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+                chain.ChainPolicy.DisableCertificateDownloads = true;
+                _platformCompletesTheChain = chain.Build(leaf);
+                if (!_platformCompletesTheChain)
+                {
+                    await Task.Delay(TimeSpan.FromMilliseconds(250));
+                }
+            }
+
+            using (X509Chain chain = new())
+            {
+                _trusted = PostgresqlAdminConnection.IsTrustedServerCertificate(
+                    leaf,
+                    chain,
+                    SslPolicyErrors.RemoteCertificateChainErrors,
+                    rootOnly,
+                    verifyHostName: true
+                );
+            }
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            using (X509Store store = new(StoreName.CertificateAuthority, StoreLocation.CurrentUser))
+            {
+                store.Open(OpenFlags.ReadWrite);
+                store.Remove(_stored);
+            }
+
+            _stored.Dispose();
+            Directory.Delete(_directory, recursive: true);
+        }
+
+        [Test]
+        public void It_shows_the_platform_completes_the_chain_from_the_store() =>
+            _platformCompletesTheChain.Should().BeTrue();
+
+        [Test]
+        public void It_refuses_a_chain_completed_from_the_store() => _trusted.Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Handshakes of the real driver with a server that sends exactly the certificates it is given: with its
+    /// intermediate the chain is accepted, so the driver hands the check what the server sent; with only its own
+    /// certificate, the client's TLS layer downloads the intermediate before the check runs and the check still
+    /// refuses it, as <c>psql</c> does. Not run on Windows, whose TLS server completes the chain it sends from the
+    /// machine's caches and copies given intermediates into a certificate store of the machine or the user.
+    /// </summary>
+    [TestFixture]
+    [Platform(Exclude = "Win")]
+    public class Given_the_chain_a_server_sends
+    {
+        private string _directory = null!;
+        private (bool Accepted, Exception? Failure) _withIntermediate;
+        private (bool Accepted, Exception? Failure) _leafOnly;
+        private int _downloads;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _directory = Directory.CreateTempSubdirectory("dms1438-sent-chain-").FullName;
+            using X509Certificate2 root = TestCertificates.CreateRoot("Configured Root");
+            using X509Certificate2 intermediate = TestCertificates.CreateIntermediate(
+                root,
+                "Sent Intermediate"
+            );
+            await using CertificateDownloadServer download = new(intermediate);
+            using X509Certificate2 leaf = TestCertificates.CreateServer(
+                intermediate,
+                "127.0.0.1",
+                download.Uri
+            );
+            string rootOnly = Path.Combine(_directory, "root.crt");
+            await File.WriteAllTextAsync(rootOnly, root.ExportCertificatePem());
+            _withIntermediate =
+                await Given_a_verifying_connection_to_a_server_presenting_a_certificate.AttemptAsync(
+                    leaf,
+                    "VerifyFull",
+                    rootOnly,
+                    [intermediate]
+                );
+            _leafOnly = await Given_a_verifying_connection_to_a_server_presenting_a_certificate.AttemptAsync(
+                leaf,
+                "VerifyFull",
+                rootOnly,
+                []
+            );
+            _downloads = download.Requests;
+        }
+
+        [OneTimeTearDown]
+        public void TearDown() => Directory.Delete(_directory, recursive: true);
+
+        [Test]
+        public void It_accepts_the_chain_the_server_sent()
+        {
+            _withIntermediate.Accepted.Should().BeTrue();
+            _withIntermediate
+                .Failure.Should()
+                .BeOfType<PostgresException>()
+                .Which.SqlState.Should()
+                .Be(FakePostgresqlServer.FinalSqlState);
+        }
+
+        [Test]
+        public void It_refuses_a_server_that_omits_the_intermediate_although_the_client_downloaded_it()
+        {
+            _downloads.Should().BeGreaterThan(0);
+            _leafOnly.Accepted.Should().BeFalse();
+            _leafOnly.Failure.Should().BeOfType<NpgsqlException>();
+        }
+    }
+
+    /// <summary>
+    /// Every session of an operation must reach the server its lock was taken on, but Npgsql and <c>libpq</c> each
+    /// fall over to the next host of a list on their own, per connection: here the first host refuses and the driver
+    /// reaches the second. A value naming more than one host, configured or rotated in by a secret, is refused wherever
+    /// it is read, before anything dials, and readiness reports it as a startup validation failure. The refusal names
+    /// no host.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_value_naming_more_than_one_host
+    {
+        private Exception? _configured;
+        private Exception? _rotated;
+        private bool _secondHostReached;
+        private Exception? _handoff;
+        private DmsEngineEnvironment _readiness = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            FakePostgresqlServer second = new(serverCertificate: null, requestPassword: false);
+            string twoHosts =
+                $"Host=127.0.0.1:1,127.0.0.1:{second.Port};Username=dms_admin;Password=x;Timeout=5";
+            _configured = Packaging.Record.Exception(() =>
+                new PostgresqlAdminConnection(twoHosts, TimeSpan.FromSeconds(30))
+            );
+
+            string current = "Host=127.0.0.1;Port=1;Username=dms_admin;Password=x;Timeout=5";
+            PostgresqlAdminConnection rotating = new(() => current, TimeSpan.FromSeconds(30));
+            _ = rotating.ConnectionStringFor("postgres", "dmsprov-session");
+            current = twoHosts;
+            _rotated = await Packaging.Record.ExceptionAsync(async () =>
+                await (await rotating.OpenMaintenanceAsync(CancellationToken.None)).DisposeAsync()
+            );
+            await second.DisposeAsync();
+            _secondHostReached = second.StartupReceived;
+
+            PostgresqlAdminConnection broken = new(() => twoHosts, TimeSpan.FromSeconds(30));
+            _handoff = Packaging.Record.Exception(() => broken.ToLibpqSettings());
+            _readiness = await EngineOver(broken).ValidateEnvironmentAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_refuses_a_configured_value_at_construction() =>
+            _configured
+                .Should()
+                .BeOfType<InvalidOperationException>()
+                .Which.Message.Should()
+                .NotContain("127.0.0.1");
+
+        [Test]
+        public void It_refuses_a_rotated_value_before_dialing_either_host()
+        {
+            _rotated.Should().BeOfType<InvalidOperationException>();
+            _secondHostReached.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_refuses_the_psql_handoff() => _handoff.Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_reports_readiness_as_a_startup_validation_failure_of_the_server_probe() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsEngineEnvironment.NotReady>()
+                .Which.Reasons.Should()
+                .ContainEquivalentOf(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        PostgresqlEnvironment.TargetServerProbe,
+                        new DmsProvisioningDiagnostic(
+                            "System.InvalidOperationException",
+                            null,
+                            PostgresqlEnvironment.ConnectOperation
+                        )
+                    )
+                );
     }
 }

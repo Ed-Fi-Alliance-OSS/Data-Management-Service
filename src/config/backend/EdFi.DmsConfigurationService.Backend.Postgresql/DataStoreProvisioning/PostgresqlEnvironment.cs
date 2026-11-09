@@ -28,10 +28,12 @@ internal enum PostgresqlEnqueueOwnerState
 /// <param name="ServerVersionNum"><c>server_version_num</c>.</param>
 /// <param name="Template1Encoding">The encoding of <c>template1</c>, or null when it does not exist.</param>
 /// <param name="Privileges">The admin role's attributes and predefined-role privileges, or null when the server is below the floor and they were not read.</param>
+/// <param name="GssAuthenticated">Whether the server authenticated the reading session through GSSAPI (<c>pg_stat_gssapi</c>).</param>
 internal sealed record PostgresqlEnvironmentFacts(
     int ServerVersionNum,
     string? Template1Encoding,
-    PostgresqlAdminPrivileges? Privileges
+    PostgresqlAdminPrivileges? Privileges,
+    bool GssAuthenticated = false
 );
 
 /// <summary>
@@ -107,6 +109,16 @@ internal static class PostgresqlEnvironment
     /// </summary>
     public const string AmbientPasswordProbe = "AmbientPassword";
 
+    /// <summary>
+    /// The server did not authenticate the readiness session to the maintenance database through GSSAPI: that login
+    /// comes from this process's Kerberos credentials (<c>KRB5CCNAME</c>, <c>KRB5_CONFIG</c>, a client keytab), not
+    /// from the connection string, and <c>psql</c> runs with a cleared environment that does not carry them.
+    /// <c>pg_hba.conf</c> is matched per database, so this proves nothing about the staging database <c>psql</c>
+    /// connects to; every replay checks that database itself first
+    /// (<see cref="PostgresqlDmsTargetEngine.RestoreGssAuthenticationStep"/>).
+    /// </summary>
+    public const string GssAuthenticationProbe = "GssAuthentication";
+
     /// <summary>The lowest <c>server_version_num</c> accepted (D-9).</summary>
     public const int MinimumServerVersionNum = 180000;
 
@@ -122,8 +134,16 @@ internal static class PostgresqlEnvironment
     public const string PsqlBelowFloorOperation = PsqlVersionProbe.ProbeStep + ".BelowFloor";
     public const string LockHeartbeatOperation = TargetLockProbe + ".Heartbeat";
 
+    /// <summary>Whether the server authenticated the reading session itself through GSSAPI.</summary>
+    private const string GssAuthenticatedExpression =
+        "COALESCE((SELECT g.gss_authenticated FROM pg_catalog.pg_stat_gssapi g WHERE g.pid = pg_catalog.pg_backend_pid()), false)";
+
     private const string ServerQuery =
-        "SELECT pg_catalog.current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(d.encoding) FROM pg_catalog.pg_database d WHERE d.datname = 'template1');";
+        "SELECT pg_catalog.current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(d.encoding) FROM pg_catalog.pg_database d WHERE d.datname = 'template1'), "
+        + GssAuthenticatedExpression
+        + ";";
+
+    private const string GssAuthenticatedQuery = "SELECT " + GssAuthenticatedExpression + ";";
 
     /// <summary>
     /// The admin role and the enqueue owner in one read. The owner predicates are the delivered DO block's
@@ -164,6 +184,7 @@ internal static class PostgresqlEnvironment
     {
         int serverVersionNum;
         string? template1Encoding;
+        bool gssAuthenticated;
         await using (NpgsqlCommand command = new(ServerQuery, connection))
         await using (NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken))
         {
@@ -176,11 +197,17 @@ internal static class PostgresqlEnvironment
             template1Encoding = await reader.IsDBNullAsync(1, cancellationToken)
                 ? null
                 : await reader.GetFieldValueAsync<string>(1, cancellationToken);
+            gssAuthenticated = await reader.GetFieldValueAsync<bool>(2, cancellationToken);
         }
 
         if (serverVersionNum < MinimumServerVersionNum)
         {
-            return new PostgresqlEnvironmentFacts(serverVersionNum, template1Encoding, null);
+            return new PostgresqlEnvironmentFacts(
+                serverVersionNum,
+                template1Encoding,
+                null,
+                gssAuthenticated
+            );
         }
 
         await using NpgsqlCommand privilegeCommand = new(PrivilegeQuery, connection);
@@ -212,8 +239,19 @@ internal static class PostgresqlEnvironment
                 await privileges.GetFieldValueAsync<bool>(3, cancellationToken),
                 await privileges.GetFieldValueAsync<bool>(4, cancellationToken),
                 owner
-            )
+            ),
+            gssAuthenticated
         );
+    }
+
+    /// <summary>Whether the server authenticated <paramref name="connection"/>'s own session through GSSAPI.</summary>
+    public static async Task<bool> IsGssAuthenticatedAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlCommand command = new(GssAuthenticatedQuery, connection);
+        return (bool)(await command.ExecuteScalarAsync(cancellationToken))!;
     }
 
     /// <summary>
@@ -223,7 +261,8 @@ internal static class PostgresqlEnvironment
     /// <c>AdminPrivilegeMissing</c>, each satisfied by superuser and still named, so each operation's own need
     /// is visible; the enqueue owner missing without <c>CREATEROLE</c> as <c>AdminPrivilegeMissing</c>, present
     /// but not locked down as <c>RoleStateUnsafe</c> (D-16, which superuser does not excuse, as the DO block
-    /// does not).
+    /// does not); a session authenticated through GSSAPI as <c>StartupValidationFailed</c>
+    /// (<see cref="GssAuthenticationProbe"/>).
     /// </summary>
     public static IReadOnlyList<DmsReadinessReason> Evaluate(PostgresqlEnvironmentFacts facts)
     {
@@ -237,6 +276,11 @@ internal static class PostgresqlEnvironment
         if (!string.Equals(facts.Template1Encoding, RequiredEncoding, StringComparison.Ordinal))
         {
             reasons.Add(Reason(DmsProvisioningFailureCode.EngineIncompatible, Template1EncodingProbe));
+        }
+
+        if (facts.GssAuthenticated)
+        {
+            reasons.Add(Reason(DmsProvisioningFailureCode.StartupValidationFailed, GssAuthenticationProbe));
         }
 
         if (facts.Privileges is not { } privileges)

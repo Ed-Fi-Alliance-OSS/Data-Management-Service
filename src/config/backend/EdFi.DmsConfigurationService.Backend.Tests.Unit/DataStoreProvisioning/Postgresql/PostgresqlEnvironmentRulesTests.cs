@@ -205,6 +205,90 @@ public class PostgresqlEnvironmentRulesTests
                 .Equal(PostgresqlEnvironment.ServerVersionProbe);
     }
 
+    /// <summary>
+    /// GSSAPI authentication takes the login from the process's Kerberos credentials (<c>KRB5CCNAME</c>,
+    /// <c>KRB5_CONFIG</c>, a client keytab), not from the connection string, and the replay's cleared environment
+    /// does not carry them, so a readiness session the server authenticated through GSSAPI is refused rather than
+    /// passing while every replay fails. Any other authentication is unaffected, whatever else is wrong.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_authentication_of_the_readiness_session
+    {
+        private IReadOnlyList<DmsReadinessReason> _gss = null!;
+        private IReadOnlyList<DmsReadinessReason> _gssBelowFloor = null!;
+        private IReadOnlyList<DmsReadinessReason> _other = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _gss = PostgresqlEnvironment.Evaluate(
+                new PostgresqlEnvironmentFacts(
+                    180006,
+                    "UTF8",
+                    Privileges(superuser: true),
+                    GssAuthenticated: true
+                )
+            );
+            _gssBelowFloor = PostgresqlEnvironment.Evaluate(
+                new PostgresqlEnvironmentFacts(170000, "UTF8", null, GssAuthenticated: true)
+            );
+            _other = PostgresqlEnvironment.Evaluate(Facts(Privileges(superuser: true)));
+        }
+
+        [Test]
+        public void It_refuses_a_session_authenticated_through_gssapi() =>
+            _gss.Should()
+                .Equal(
+                    Reason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        PostgresqlEnvironment.GssAuthenticationProbe
+                    )
+                );
+
+        [Test]
+        public void It_refuses_it_on_a_server_below_the_floor_too() =>
+            _gssBelowFloor
+                .Select(reason => reason.Probe)
+                .Should()
+                .Equal(
+                    PostgresqlEnvironment.ServerVersionProbe,
+                    PostgresqlEnvironment.GssAuthenticationProbe
+                );
+
+        [Test]
+        public void It_accepts_any_other_authentication() => _other.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The engine's own backstop for the floor the options validator enforces: settings that would let readiness
+    /// admit a <c>psql</c> older than the replay requires cannot be built.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_psql_floor_for_the_engine_settings
+    {
+        private static PostgresqlDmsEngineSettings WithFloor(int floor) =>
+            new(
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(30),
+                TimeSpan.FromMinutes(5),
+                Path.Combine(AppContext.BaseDirectory, "psql")
+            )
+            {
+                MinimumPsqlMajorVersion = floor,
+            };
+
+        [Test]
+        public void It_refuses_one_below_what_the_replay_requires() =>
+            FluentActions.Invoking(() => WithFloor(15)).Should().Throw<ArgumentOutOfRangeException>();
+
+        [Test]
+        public void It_accepts_the_supported_floor_and_above() =>
+            (WithFloor(18).MinimumPsqlMajorVersion, WithFloor(19).MinimumPsqlMajorVersion)
+                .Should()
+                .Be((18, 19));
+    }
+
     [TestFixture]
     public class Given_the_enqueue_owner_role
     {

@@ -230,7 +230,8 @@ public class PsqlStderrSqlStateTests
         public void It_keeps_the_error_that_came_last() => _errorLast.Should().Be("42P01");
 
         [Test]
-        public void It_loses_an_error_that_later_output_overwrote() => _errorPushedOut.Should().BeNull();
+        public void It_reports_nothing_when_later_notices_are_the_last_message() =>
+            _errorPushedOut.Should().BeNull();
 
         [Test]
         public void It_keeps_the_tail_of_one_append_larger_than_the_buffer() =>
@@ -262,6 +263,95 @@ public class PsqlStderrSqlStateTests
 
         [Test]
         public void It_reassembles_the_line_across_the_wrap() => _sqlState.Should().Be("42P01");
+    }
+
+    [TestFixture]
+    public class Given_a_stopping_error_followed_by_more_detail_than_one_line_may_hold
+    {
+        private const string Header =
+            "psql:/tmp/dms-provision-0123456789ab/artifact.sql:4120: ERROR:  42501: permission denied for schema dms";
+
+        private string? _longDetail;
+        private string? _longDetailInPieces;
+        private string? _longHeader;
+        private string? _longDetailThenLostConnection;
+        private string? _longDetailThenNotice;
+
+        /// <summary>
+        /// What <c>VERBOSITY=verbose</c> prints after the first line of an error raised inside a PL/pgSQL body: the
+        /// field lines and the statement's own text, here more than <see cref="PsqlStderrSqlState.Capacity"/>.
+        /// </summary>
+        private static string Fields()
+        {
+            string query = string.Concat(
+                Enumerable.Repeat(
+                    "    INSERT INTO dms.Document (DocumentUuid) VALUES (gen_random_uuid());\n",
+                    200
+                )
+            );
+            return "DETAIL:  The role lacks USAGE on the schema.\n"
+                + "HINT:  Grant USAGE on the schema to the role.\n"
+                + "QUERY:  DO $$\nBEGIN\n"
+                + query
+                + "END $$\n"
+                + "CONTEXT:  PL/pgSQL function inline_code_block line 3 at SQL statement\n"
+                + "LOCATION:  aclcheck_error, aclchk.c:2822\n";
+        }
+
+        private static string? ExtractFrom(IEnumerable<string> chunks)
+        {
+            PsqlStderrSqlState buffer = new();
+            foreach (string chunk in chunks)
+            {
+                buffer.Append(chunk);
+            }
+
+            return buffer.ExtractAndClear();
+        }
+
+        private static IEnumerable<string> Pieces(string text, int size)
+        {
+            for (int start = 0; start < text.Length; start += size)
+            {
+                yield return text.Substring(start, Math.Min(size, text.Length - start));
+            }
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            Fields().Length.Should().BeGreaterThan(PsqlStderrSqlState.Capacity);
+            string output = Header + "\n" + Fields();
+            _longDetail = ExtractFrom([output]);
+            _longDetailInPieces = ExtractFrom(Pieces(output, 1021));
+            _longHeader = ExtractFrom([
+                Header + new string('x', 3 * PsqlStderrSqlState.Capacity) + "\n" + "DETAIL:  more\n",
+            ]);
+            _longDetailThenLostConnection = ExtractFrom([
+                output + "psql:/tmp/a.sql:4120: error: connection to server was lost\n",
+            ]);
+            _longDetailThenNotice = ExtractFrom([
+                output + "psql:/tmp/a.sql:4121: NOTICE:  00000: a later notice\n",
+            ]);
+        }
+
+        [Test]
+        public void It_keeps_the_code_of_the_stopping_error() => _longDetail.Should().Be("42501");
+
+        [Test]
+        public void It_keeps_it_whatever_the_chunk_boundaries() => _longDetailInPieces.Should().Be("42501");
+
+        [Test]
+        public void It_keeps_it_when_the_first_line_itself_is_longer_than_the_capacity() =>
+            _longHeader.Should().Be("42501");
+
+        [Test]
+        public void It_still_reports_nothing_when_a_later_message_is_psqls_own() =>
+            _longDetailThenLostConnection.Should().BeNull();
+
+        [Test]
+        public void It_still_reports_nothing_when_a_later_message_is_a_notice() =>
+            _longDetailThenNotice.Should().BeNull();
     }
 
     [TestFixture]

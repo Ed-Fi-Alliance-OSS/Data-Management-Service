@@ -41,6 +41,14 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>The <c>Diagnostic.Operation</c> of a completed replay whose staging database is no longer under its name.</summary>
     public const string RestoreInstanceStep = "RestoreIntoStaging.Instance";
 
+    /// <summary>
+    /// The <c>Diagnostic.Operation</c> of a replay refused before <c>psql</c> started because the server authenticates
+    /// the administrative login to the staging database through GSSAPI, which <c>psql</c> cannot do: its login would
+    /// come from this process's Kerberos credentials, which the replay's cleared environment does not carry. The
+    /// orchestrator reports it as a permanent <c>RestoreFailed</c> and drops the staging database.
+    /// </summary>
+    public const string RestoreGssAuthenticationStep = "RestoreIntoStaging.GssAuthentication";
+
     internal static readonly EventId ReplayResolutionFailed = new(1438_35, nameof(ReplayResolutionFailed));
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
@@ -77,9 +85,9 @@ public sealed partial class PostgresqlDmsTargetEngine
         // The target is not consulted: a dump records no database name to compare with (D-11 is SQL Server's).
         ArgumentNullException.ThrowIfNull(artifact);
 
-        // The operation directory, then D-16 before the replay: the dump's ownership statements name the role.
-        // A failure here, before any process exists, leaves the staging database as created, so it is a definite
-        // outcome (a directory removed while the operation waited included).
+        // The operation directory, the staging database's authentication, then D-16 before the replay: the dump's
+        // ownership statements name the role. A failure here, before any process exists, leaves the staging database
+        // as created, so it is a definite outcome (a directory removed while the operation waited included).
         PrivateOperationDirectory directory;
         DmsCommandOutcome<DmsInstanceIdentity>? refused;
         try
@@ -89,6 +97,16 @@ public sealed partial class PostgresqlDmsTargetEngine
                     ?? throw new ArgumentException("The artifact has no directory.", nameof(artifact)),
                 operation
             );
+            if (await IsStagingAuthenticatedThroughGssAsync(staging, cancellationToken))
+            {
+                return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                    new DmsCommandFailure(
+                        DmsCommandFailureClass.Rejected,
+                        DmsProvisioningDiagnostic.ForOperation(RestoreGssAuthenticationStep)
+                    )
+                );
+            }
+
             await using NpgsqlConnection maintenance = await _adminConnection.OpenMaintenanceAsync(
                 cancellationToken
             );
@@ -175,6 +193,26 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>The residue id of a replay process: the replay's application name and the process id, never a path or an argument.</summary>
     internal static string ReplayProcessResourceId(DmsOperationId operation, int processId) =>
         $"{operation.RestoreApplicationName}/{processId.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// Whether the server authenticates the administrative login to <paramref name="staging"/> through GSSAPI, asked on
+    /// a session to that database itself: <c>pg_hba.conf</c> is matched per database, so how a session to the
+    /// maintenance database was authenticated (readiness, the lock, the role preparation) proves nothing here. The
+    /// session reaches the one configured server with the user and TLS settings <c>psql</c> receives, so the server
+    /// applies the rule it will apply to <c>psql</c>. It is closed before <c>psql</c> starts.
+    /// </summary>
+    private async Task<bool> IsStagingAuthenticatedThroughGssAsync(
+        DmsDatabaseName staging,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlConnection connection = await _adminConnection.OpenAsync(
+            staging.Value,
+            PostgresqlAdminConnection.SessionApplicationName,
+            cancellationToken
+        );
+        return await PostgresqlEnvironment.IsGssAuthenticatedAsync(connection, cancellationToken);
+    }
 
     /// <summary>
     /// A <c>psql</c> process the system could not create. Exhausted process, memory, or file-descriptor resources
