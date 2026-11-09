@@ -266,6 +266,53 @@ Describe 'build-sdk-package.yml publishing credentials' {
     }
 }
 
+Describe 'backfill-document-cache-admin.yml publishing credentials' {
+    # The one-time 8.1.0 backfill. The credential steps are named 'Verify and Push DocumentCacheAdmin
+    # Backfill Package' (in publish) and 'Promote DocumentCacheAdmin Backfill Package' (in promote).
+    BeforeAll {
+        $script:content = Get-Content (Join-Path $script:workflowRoot 'backfill-document-cache-admin.yml') -Raw
+        $script:jobs = Get-WorkflowJobTable $script:content
+        $script:jobs.Count | Should -BeGreaterThan 0
+        $script:gated = @('publish', 'promote', 'attach')
+    }
+
+    It 'keeps every secret out of the workflow-wide env' {
+        Get-WorkflowEnv $script:content | Should -Not -Match 'secrets\.'
+    }
+
+    It 'binds only the publish and promote jobs to the publishing environment' {
+        $bound = @($script:jobs.Keys | Where-Object { $script:jobs[$_] -match '(?m)^    environment: publishing\r?$' })
+        $bound | Sort-Object | Should -Be @('promote', 'publish')
+    }
+
+    It 'reads the Azure token only in the push and promote steps, and the user name only in the promote step' {
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^(Verify and Push DocumentCacheAdmin Backfill Package|Promote DocumentCacheAdmin Backfill Package)$' -ExpectedCount 2
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_USER_NAME' -StepPattern '^Promote DocumentCacheAdmin Backfill Package$' -ExpectedCount 1
+        $script:jobs['publish'] | Should -Match 'name: Verify and Push DocumentCacheAdmin Backfill Package'
+        $script:jobs['promote'] | Should -Match 'name: Promote DocumentCacheAdmin Backfill Package'
+    }
+
+    It 'states the publish switch in the condition of <Id>' -ForEach @(
+        @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }
+    ) {
+        Get-JobCondition $script:jobs[$Id] | Should -Match '^inputs\.publish_package &&'
+    }
+
+    It 'runs <Id> only from <Case>: <Publishes>' -ForEach @(
+        @{ Case = 'a manual run on main'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/main'; RefType = 'branch'; Publishes = $true }
+        @{ Case = 'a manual run on a feature branch, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/DMS-1685'; RefType = 'branch'; Publishes = $false }
+        @{ Case = 'a manual run on a branch named like a v tag, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/v8.1.0'; RefType = 'branch'; Publishes = $false }
+        @{ Case = 'a manual run on a tag ref, never'; EventName = 'workflow_dispatch'; Ref = 'refs/tags/v8.1.0'; RefType = 'tag'; Publishes = $false }
+    ) {
+        # inputs.publish_package is the caller's opt-in, held true here; the ref gate is what is tested.
+        foreach ($id in $script:gated) {
+            $condition = (Get-JobCondition $script:jobs[$id]).Replace('inputs.publish_package && ', '')
+            Test-RefCondition -Expression $condition -EventName $EventName -Ref $Ref -RefType $RefType |
+                Should -Be $Publishes -Because $id
+        }
+    }
+}
+
 Describe 'every workflow keeps the publishing tokens behind the publishing environment' {
     # The repository-wide rule the per-workflow tests above apply in detail. A publishing token is
     # read either by a step of a job bound to the 'publishing' environment, or passed by name from a
