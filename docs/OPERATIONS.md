@@ -1664,8 +1664,8 @@ server message, or `psql` output. The category tells the caller whether to retry
 | --- | --- | --- |
 | `InvalidRequest` | The request itself was rejected: unknown template, invalid name, empty identity, missing pin. | No |
 | `NotReady` | Provisioning is disabled or failed its startup checks. | Not until a restart |
-| `Transient` | Nothing was left behind, or the outcome was settled; the same request may succeed later. | Yes |
-| `Permanent` | The same inputs fail again; nothing was left behind. | No |
+| `Transient` | The target was left as it was, or the outcome was settled; the same request may succeed later. The cleanup report may still list leftovers. | Yes |
+| `Permanent` | The same inputs fail again. No target was left behind, but the cleanup report may still list leftovers. | No |
 | `OperatorInspectionRequired` | A database, package, or server state needs a person to look at it. | No |
 
 | Code | Category |
@@ -1681,13 +1681,21 @@ server message, or `psql` output. The category tells the caller whether to retry
 
 ### Recovery
 
-- **`TargetUnowned`**: a database holds the requested name but carries another identity. Find out whose it
-  is. If it is an orphan, rename or drop it by hand, then retry.
+Never drop a database by hand unless you have shown which data store record it belongs to. A database that
+no `dmscs.DataStore` row points at is not proven to be an orphan, and an identity that cannot be read may
+only mean the login lacks a privilege. **If ownership remains uncertain, stop and do not delete.**
+
+- **`TargetUnowned`**: a database holds the requested name but carries another identity. Find out which
+  record or deployment owns it. Rename or drop it only once it is shown to belong to no one, then retry.
 - **`TargetUnverifiable`**, or an operation interrupted between the rename and the identity marker: the
-  database records where it came from. On PostgreSQL, `shobj_description(oid, 'pg_database')` reads
+  database records which operation created it. On PostgreSQL, `shobj_description(oid, 'pg_database')` reads
   `edfi-dms-provision:v1:<operation id>:<expected identity>`. On SQL Server, the primary file's
-  `physical_name` ends in `__<operation id>.mdf`. Confirm that no data store row in the Configuration Service
-  database (`dmscs.DataStore`) points at it, drop it by hand, then retry.
+  `physical_name` ends in `__<operation id>.mdf`. Drop it by hand, then retry, only when all of these hold:
+  - the database holds this record's target name;
+  - its operation id is the one in this record's failed create (the `1438_10` `OperationFailed` log line
+    names the operation id and the code);
+  - on PostgreSQL, the expected identity in the comment equals the identity this record persisted;
+  - no `dmscs.DataStore` row points at the database.
 - **`TargetFenced`**: an interrupted delete left the database closed to connections. After confirming that
   no session holds its lock, reopen it: PostgreSQL `ALTER DATABASE "<name>" ALLOW_CONNECTIONS true`;
   SQL Server `ALTER DATABASE [<name>] SET MULTI_USER`.
@@ -1705,11 +1713,13 @@ idle, find the holder by the lock, never by session name or age alone. Confirm t
 logs that operation id, and only then end the session. The operation that owned it, if still running, then
 fails safely with `LockLost`.
 
-PostgreSQL, connected to the `postgres` database (replace `<target name>`):
+PostgreSQL, connected to the `postgres` database (replace `<target name>`). Target names are ASCII, and
+`COLLATE "C"` makes `lower()` change only `A`–`Z`, as the service does; under the database's own locale
+(Turkish, for example) `lower()` can derive a different key and miss the holder:
 
 ```sql
 WITH k AS (
-    SELECT encode(sha256(convert_to('dms-provision-target:v1:' || lower('<target name>'), 'UTF8')), 'hex') AS h
+    SELECT encode(sha256(convert_to('dms-provision-target:v1:' || lower('<target name>' COLLATE "C"), 'UTF8')), 'hex') AS h
 )
 SELECT a.pid, a.application_name, a.backend_start
 FROM k, pg_locks l
@@ -1756,16 +1766,20 @@ stopped, run `KILL <session id>`. Then wait until no row in `sys.dm_exec_session
 
 ### Leftovers after a crash
 
-A failed operation removes what it created, with `CleanupAttempts` tries. Anything it could not remove is
-reported in the result and logged by generated name only (at Error, except `1438_34` at Warning):
+A failed or cancelled operation tries to remove what it created, with `CleanupAttempts` bounded attempts;
+removal is not guaranteed. What a call could not remove is listed in its result's cleanup report, whatever
+the outcome or failure category, and logged by generated name. A cancelled call returns no result, so its
+leftovers are reported only in the log. A process that crashed reports nothing.
 
-| Event | Leftover |
-| --- | --- |
-| `1438_12` `StagingResidue` | A staging database |
-| `1438_14` `TargetResidue` | A target left closed to connections by a delete, or renamed but not marked by a create, for inspection |
-| `1438_21` `ResidueLeft`, `1438_22` `CredentialResidue` | An operation directory, or a credential file in it |
-| `1438_34` `PasswordFileRetained` | The password file of a `psql` replay (the operation directory's cleanup then reports it) |
-| `1438_40` `StagedFileResidue`, `1438_41` `ProbeFileResidue` | A staged SQL Server backup, or a readiness probe file |
+| Event | Level | Leftover |
+| --- | --- | --- |
+| `1438_12` `StagingResidue` | Error | A staging database |
+| `1438_14` `TargetResidue` | Error | A target left closed to connections by a delete, or renamed but not marked by a create, for inspection |
+| `1438_21` `ResidueLeft` | Error | An operation directory or a file in it |
+| `1438_22` `CredentialResidue` | Critical | A credential file in an operation directory |
+| `1438_34` `PasswordFileRetained` | Warning | The password file of a `psql` replay (the operation directory's cleanup then reports it) |
+| `1438_40` `StagedFileResidue` | Error | A staged SQL Server backup |
+| `1438_41` `ProbeFileResidue` | Error | A readiness probe file |
 
 Nothing is swept automatically on a later start: a process that crashed leaves its leftovers until an
 operator removes them. To find them:

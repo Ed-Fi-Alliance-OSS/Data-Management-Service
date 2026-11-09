@@ -397,15 +397,18 @@ lifecycle maps the value itself.
   permanently and record the code. The codes and their categories are listed in
   [Failure codes](./OPERATIONS.md#failure-codes). A failure carries no connection string, secret, or
   server message, so its code and diagnostic may be recorded as they are.
-- **Cancellation.** A cancelled call throws `OperationCanceledException` only after the provisioner has
-  settled the outcome and cleaned up. If the identity marker was found committed, the call reports success
-  even though it was cancelled. Pass the handler's cancellation token to every call.
+- **Cancellation.** Pass the handler's cancellation token to every call. When it is cancelled, the call
+  settles the outcome and makes its bounded cleanup attempts, then throws `OperationCanceledException`. If
+  the identity marker is found committed, the call reports success instead. A cancelled call returns no
+  cleanup report: anything its cleanup could not remove is reported only in the log.
 - **Duration.** A restore may take up to `DmsDataStoreProvisioning:RestoreTimeout` (default 30 minutes),
   so a create holds its job for much longer than a typical handler. Lease renewal keeps the job owned
   meanwhile.
-- **Cleanup report.** Every result carries a cleanup report. A leftover the provisioner could not remove
-  never changes the outcome. It is logged by generated name, and operators remove it as described under
-  [Leftovers after a crash](./OPERATIONS.md#leftovers-after-a-crash).
+- **Cleanup report.** Every result except `AlreadyAbsent` carries a cleanup report, whatever its outcome
+  or failure category, `Transient` and `Permanent` included. Cleanup is a bounded number of attempts
+  (`DmsDataStoreProvisioning:CleanupAttempts`), not guaranteed removal. A leftover it could not remove is
+  listed in the report and logged by generated name, and never changes the outcome. Record it; operators
+  remove it as described under [Leftovers after a crash](./OPERATIONS.md#leftovers-after-a-crash).
 
 ## Deployment
 
