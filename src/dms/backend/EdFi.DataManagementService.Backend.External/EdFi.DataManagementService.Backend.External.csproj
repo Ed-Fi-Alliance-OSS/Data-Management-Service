@@ -11,5 +11,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend" />
         <InternalsVisibleTo Include="EdFi.DataManagementService.Backend.Plans" />
+        <!-- Cross-layer numeric identity properties compare both canonicalizers with one independent oracle. -->
+        <InternalsVisibleTo Include="EdFi.DataManagementService.Core.Tests.Unit" />
     </ItemGroup>
 </Project>
