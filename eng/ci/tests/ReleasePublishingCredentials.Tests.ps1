@@ -122,7 +122,7 @@ Describe 'on-prerelease.yml publishing credentials' {
         $script:content = Get-Content (Join-Path $script:workflowRoot 'on-prerelease.yml') -Raw
         $script:jobs = Get-WorkflowJobTable $script:content
         $script:jobs.Count | Should -BeGreaterThan 0
-        $script:dmsPublishers = @('publish-package-dms', 'publish-package-schema-tools', 'publish-package-plugins', 'publish-package-custom-validation', 'publish-package-identity', 'docker-publish-dms')
+        $script:dmsPublishers = @('publish-package-dms', 'publish-package-schema-tools', 'publish-package-plugins', 'publish-package-custom-validation', 'publish-package-identity', 'publish-package-document-cache-admin', 'docker-publish-dms')
         $script:csPublishers = @('publish-package-secrets', 'publish-package-cs', 'publish-package-security-metadata-tools', 'docker-publish-cs')
     }
 
@@ -138,7 +138,7 @@ Describe 'on-prerelease.yml publishing credentials' {
 
     It 'reads the Azure publishing token only in the push steps' {
         # Each push step binds it twice: the NuGet API key and the credential provider's endpoint.
-        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^Push .+ Package to Azure Artifacts$' -ExpectedCount 16
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^Push .+ Package to Azure Artifacts$' -ExpectedCount 18
         $script:content | Should -Not -Match 'secrets\.AZURE_ARTIFACTS_USER_NAME'
     }
 
@@ -210,9 +210,9 @@ Describe 'on-release.yml publishing credentials' {
     }
 
     It 'reads the Azure publishing credentials only in the promote steps' {
-        # Eight promote steps, each binding the user name and the token.
-        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^Promote .+ Package$' -ExpectedCount 8
-        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_USER_NAME' -StepPattern '^Promote .+ Package$' -ExpectedCount 8
+        # Nine promote steps, each binding the user name and the token.
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^Promote .+ Package$' -ExpectedCount 9
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_USER_NAME' -StepPattern '^Promote .+ Package$' -ExpectedCount 9
     }
 
     It 'reads the Docker Hub publishing token only in the Docker Hub logins' {

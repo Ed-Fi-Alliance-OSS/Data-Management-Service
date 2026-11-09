@@ -212,3 +212,230 @@ Describe "DocumentCacheAdmin package target" {
         }
     }
 }
+
+# Set DOCUMENT_CACHE_ADMIN_WORKFLOWS_DIRECTORY to a directory holding copies of on-prerelease.yml and
+# on-release.yml to point the wiring assertions at them, for example to prove the prohibition on
+# downstream needs fails when a job lists one of the DocumentCacheAdmin jobs.
+Describe "DocumentCacheAdmin release workflow wiring" {
+    BeforeAll {
+        $repoRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../.."))
+        $workflows = $env:DOCUMENT_CACHE_ADMIN_WORKFLOWS_DIRECTORY
+        if ([string]::IsNullOrWhiteSpace($workflows)) {
+            $workflows = Join-Path $repoRoot ".github/workflows"
+        }
+
+        $script:prerelease = Get-Content -LiteralPath (Join-Path $workflows "on-prerelease.yml") -Raw
+        $script:release = Get-Content -LiteralPath (Join-Path $workflows "on-release.yml") -Raw
+        $script:documentCacheAdminJobs = @(
+            "pack-document-cache-admin",
+            "sbom-create-document-cache-admin",
+            "provenance-create-document-cache-admin",
+            "publish-package-document-cache-admin",
+            "attach-document-cache-admin-artifacts-to-release"
+        )
+
+        function Get-WorkflowJob {
+            param([Parameter(Mandatory)][string] $Workflow, [Parameter(Mandatory)][string] $Name)
+
+            $job = [regex]::Match($Workflow, "(?ms)^  $([regex]::Escape($Name)):\r?\n.*?(?=^  \S|\z)").Value
+            if ([string]::IsNullOrEmpty($job)) {
+                throw "Job $Name was not found."
+            }
+            return $job
+        }
+
+        function Get-WorkflowStep {
+            param([Parameter(Mandatory)][string] $Workflow, [Parameter(Mandatory)][string] $Name)
+
+            $step = [regex]::Match(
+                $Workflow,
+                "(?ms)^      - name: $([regex]::Escape($Name))\r?\n.*?(?=^      - name: |^      # |^  \S|\z)"
+            ).Value
+            if ([string]::IsNullOrEmpty($step)) {
+                throw "Step $Name was not found."
+            }
+            return $step
+        }
+
+        function Get-JobIf {
+            param([Parameter(Mandatory)][string] $Job)
+
+            $match = [regex]::Match($Job, '(?m)^    if: (.+?)\s*$')
+            if (-not $match.Success) { return $null }
+            return $match.Groups[1].Value
+        }
+
+        # Both the inline form (needs: a) and the list form, ignoring comment lines.
+        function Get-JobNeed {
+            param([Parameter(Mandatory)][string] $Job)
+
+            $inline = [regex]::Match($Job, '(?m)^    needs:[ \t]+(\S.*?)\s*$')
+            if ($inline.Success) { return @($inline.Groups[1].Value) }
+
+            $list = [regex]::Match($Job, '(?m)^    needs:[ \t]*\r?\n((?:      - .+\r?\n?|\s*#.*\r?\n?)+)')
+            if (-not $list.Success) { return @() }
+            return @(
+                $list.Groups[1].Value -split '\r?\n' |
+                    Where-Object { $_ -match '^      - (\S+)' } |
+                    ForEach-Object { $Matches[1] }
+            )
+        }
+
+        function Get-JobName {
+            param([Parameter(Mandatory)][string] $Workflow)
+
+            $jobsKey = [regex]::Match($Workflow, '(?m)^jobs:[ \t]*\r?$')
+            if (-not $jobsKey.Success) { throw "No jobs: key was found." }
+            return @(
+                [regex]::Matches($Workflow.Substring($jobsKey.Index), '(?m)^  (?<id>[A-Za-z_][A-Za-z0-9_-]*):[ \t]*\r?$') |
+                    ForEach-Object { $_.Groups['id'].Value }
+            )
+        }
+    }
+
+    Context "Release workflow wiring" {
+        It "defines the DocumentCacheAdmin package name in the prerelease workflow env" {
+            $script:prerelease | Should -Match '(?m)^  DOCUMENT_CACHE_ADMIN_PACKAGE_NAME: "EdFi\.Api\.DocumentCacheAdmin"\s*$'
+        }
+
+        It "gates pack-document-cache-admin exactly as pack-schema-tools is gated" {
+            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-schema-tools"
+
+            @(Get-JobNeed -Job $sibling) | Should -Not -BeNullOrEmpty
+            @(Get-JobNeed -Job $pack) | Sort-Object | Should -Be (@(Get-JobNeed -Job $sibling) | Sort-Object)
+            Get-JobIf -Job $sibling | Should -Not -BeNullOrEmpty
+            Get-JobIf -Job $pack | Should -BeExactly (Get-JobIf -Job $sibling)
+        }
+
+        It "checks out the full history in pack-document-cache-admin" {
+            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+
+            $pack | Should -Match '(?ms)uses: actions/checkout@\S+[^\r\n]*\r?\n\s+with:\r?\n\s+fetch-depth: 0'
+        }
+
+        It "derives the version in pack-document-cache-admin from the dms prefix" {
+            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+
+            $pack | Should -Match 'Get-VersionNumber -projectPrefix "dms"'
+        }
+
+        It "outputs the hash and the DMS version from pack-document-cache-admin" {
+            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+
+            $pack | Should -Match '(?m)^      hash-code: \S'
+            $pack | Should -Match '(?m)^      dms-version: \S'
+        }
+
+        It "builds, smokes, hashes and uploads in that order in pack-document-cache-admin" {
+            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $build = $pack.IndexOf("./build-dms.ps1 -Command BuildAndPublish")
+            $smoke = $pack.IndexOf("eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1")
+            $hash = $pack.IndexOf("id: hash-code")
+            $upload = $pack.IndexOf('name: "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-NuGet"')
+
+            $build | Should -BeGreaterThan -1
+            $smoke | Should -BeGreaterThan $build
+            $hash | Should -BeGreaterThan $smoke
+            $upload | Should -BeGreaterThan $hash
+
+            $buildText = $pack.Substring($build, $smoke - $build)
+            $buildText | Should -Match '-DMSVersion\b'
+            $buildText | Should -Match '-LockedMode\b'
+
+            $smokeText = $pack.Substring($smoke, $hash - $smoke)
+            $smokeText | Should -Match '-DMSVersion\b'
+            $smokeText | Should -Match '-Configuration Release\b'
+
+            $pack.Substring($upload) | Should -Match 'if-no-files-found: error'
+            $pack.Substring($hash, $upload - $hash) | Should -Match 'uses: actions/upload-artifact@'
+        }
+
+        It "creates the SBOM after pack-document-cache-admin and uploads it" {
+            $sbom = Get-WorkflowJob -Workflow $script:prerelease -Name "sbom-create-document-cache-admin"
+
+            @(Get-JobNeed -Job $sbom) | Should -Contain "pack-document-cache-admin"
+            $sbom | Should -Match '\$\{\{ env\.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME \}\}-SBOM'
+            $sbom | Should -Match 'uses: actions/upload-artifact@'
+        }
+
+        It "creates provenance for the hash pack-document-cache-admin outputs" {
+            $provenance = Get-WorkflowJob -Workflow $script:prerelease -Name "provenance-create-document-cache-admin"
+
+            $provenance | Should -Match 'uses: Ed-Fi-Alliance-OSS/slsa-github-generator/\.github/workflows/generator_generic_slsa3\.yml@v2\.0\.0'
+            $provenance | Should -Match 'base64-subjects: \$\{\{ needs\.pack-document-cache-admin\.outputs\.hash-code \}\}'
+            $provenance | Should -Match 'provenance-name: edfiApiDocumentCacheAdmin\.intoto\.jsonl'
+        }
+
+        It "orders and gates publish-package-document-cache-admin as publish-package-schema-tools is" {
+            $publish = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-document-cache-admin"
+            $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-schema-tools"
+            $expected = @(Get-JobNeed -Job $sibling) | ForEach-Object { $_ -replace '^pack-schema-tools$', 'pack-document-cache-admin' }
+
+            $expected | Should -Not -BeNullOrEmpty
+            @(Get-JobNeed -Job $publish) | Sort-Object | Should -Be ($expected | Sort-Object)
+            Get-JobIf -Job $sibling | Should -Not -BeNullOrEmpty
+            Get-JobIf -Job $publish | Should -BeExactly (Get-JobIf -Job $sibling)
+            $publish | Should -Match '(?m)^    environment: publishing\r?$'
+        }
+
+        It "pushes the package with build-dms.ps1 Push in publish-package-document-cache-admin" {
+            $publish = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-document-cache-admin"
+            $step = Get-WorkflowStep -Workflow $publish -Name "Push DocumentCacheAdmin Package to Azure Artifacts"
+
+            $step | Should -Match '\./build-dms\.ps1 Push'
+        }
+
+        It "attaches the DocumentCacheAdmin artifacts once the release is classified" {
+            $attach = Get-WorkflowJob -Workflow $script:prerelease -Name "attach-document-cache-admin-artifacts-to-release"
+            $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "attach-dms-artifacts-to-release"
+
+            @(Get-JobNeed -Job $attach) | Sort-Object | Should -Be @(
+                "classify-release",
+                "pack-document-cache-admin",
+                "provenance-create-document-cache-admin",
+                "publish-package-document-cache-admin",
+                "sbom-create-document-cache-admin"
+            )
+            Get-JobIf -Job $sibling | Should -Not -BeNullOrEmpty
+            Get-JobIf -Job $attach | Should -BeExactly (Get-JobIf -Job $sibling)
+            $attach | Should -Match 'EdFi\.Api\.DocumentCacheAdmin-SBOM\.zip'
+            $attach | Should -Match 'edfiApiDocumentCacheAdmin\.intoto\.jsonl'
+        }
+
+        It "lets no other prerelease job wait on a DocumentCacheAdmin job" {
+            $jobNames = @(Get-JobName -Workflow $script:prerelease)
+
+            $jobNames | Should -Contain "attach-dms-artifacts-to-release"
+            $jobNames | Should -Contain "publish-package-dms"
+            $jobNames | Should -Contain "docker-publish-dms"
+            foreach ($name in $jobNames | Where-Object { $_ -notin $script:documentCacheAdminJobs }) {
+                $job = Get-WorkflowJob -Workflow $script:prerelease -Name $name
+                @(Get-JobNeed -Job $job) | Where-Object { $_ -in $script:documentCacheAdminJobs } |
+                    Should -BeNullOrEmpty -Because "$name must not wait on a DocumentCacheAdmin job"
+            }
+        }
+
+        It "promotes EdFi.Api.DocumentCacheAdmin to the release view" {
+            $step = Get-WorkflowStep -Workflow $script:release -Name "Promote EdFi.Api.DocumentCacheAdmin Package"
+
+            $step | Should -Match 'Invoke-Promote'
+            $step | Should -Match '(?m)^\s+PackageName\s*=\s*"EdFi\.Api\.DocumentCacheAdmin"\s*$'
+            $step | Should -Match '(?m)^\s+ViewId\s*=\s*"release"\s*$'
+            $step | Should -Match '(?m)^\s+ReleaseRef\s*=\s*\$env:RELEASE_REF\s*$'
+        }
+
+        It "promotes DocumentCacheAdmin last among the promote steps" {
+            $promoteJob = Get-WorkflowJob -Workflow $script:release -Name "promote-azure-artifact"
+            $ours = $promoteJob.IndexOf("- name: Promote EdFi.Api.DocumentCacheAdmin Package")
+            $others = @(
+                [regex]::Matches($promoteJob, '(?m)^      - name: Promote (?!EdFi\.Api\.DocumentCacheAdmin Package\s*$).+$') |
+                    ForEach-Object { $_.Index }
+            )
+
+            $ours | Should -BeGreaterThan -1
+            $others | Should -Not -BeNullOrEmpty
+            $ours | Should -BeGreaterThan ($others | Measure-Object -Maximum).Maximum
+        }
+    }
+}
