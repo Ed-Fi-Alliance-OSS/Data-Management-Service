@@ -61,7 +61,7 @@ jobs:
           }
 
           $visualStudio = $visualStudioInstallations[0]
-          $msbuildPath = Join-Path $visualStudio.installationPath "MSBuild\Current\Bin\MSBuild.exe"
+          $msbuildPath = Join-Path $visualStudio.installationPath "MSBuild\Current\Bin\amd64\MSBuild.exe"
           if (-not (Test-Path -LiteralPath $msbuildPath)) {
               throw "MSBuild.exe was not found at '$msbuildPath'."
           }
