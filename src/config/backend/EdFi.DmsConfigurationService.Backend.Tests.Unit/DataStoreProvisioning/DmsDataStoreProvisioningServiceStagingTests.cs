@@ -192,7 +192,8 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 .Equal(
                     DmsProvisioningHookPoint.AfterRestoreStarted,
                     DmsProvisioningHookPoint.BeforeRename,
-                    DmsProvisioningHookPoint.BeforeMarker
+                    DmsProvisioningHookPoint.BeforeMarker,
+                    DmsProvisioningHookPoint.BeforeMarkerDispatch
                 );
 
         [Test]
@@ -596,12 +597,15 @@ public class DmsDataStoreProvisioningServiceStagingTests
 
     /// <summary>
     /// AC 11: SQL Server rejected the <c>RESTORE</c> in its own response, which proves nothing committed. The
-    /// engine's own classification feeds the real orchestrator: a deadlock victim (<c>1205</c>) is a transient
-    /// <c>RestoreFailed</c>; any other rejection, such as a logical file the backup does not hold (<c>3234</c>),
-    /// stays permanent. Either way the staging database is dropped without validation.
+    /// engine's own classification feeds the real orchestrator: a deadlock victim (<c>1205</c>) or a temporary
+    /// memory shortage (<c>701</c>) is a transient <c>RestoreFailed</c>; any other rejection, such as a logical file
+    /// the backup does not hold (<c>3234</c>) or a full filegroup (<c>1105</c>), stays permanent. Either way the
+    /// staging database is dropped without validation.
     /// </summary>
     [TestFixture(1205, DmsProvisioningFailureCategory.Transient)]
+    [TestFixture(701, DmsProvisioningFailureCategory.Transient)]
     [TestFixture(3234, DmsProvisioningFailureCategory.Permanent)]
+    [TestFixture(1105, DmsProvisioningFailureCategory.Permanent)]
     public class Given_sql_server_rejected_the_restore_in_its_own_response(
         int number,
         DmsProvisioningFailureCategory category
@@ -726,6 +730,75 @@ public class DmsDataStoreProvisioningServiceStagingTests
 
         [Test]
         public void It_drops_the_created_staging_database() => _dropped.Should().Equal(_stagingInstance);
+
+        [Test]
+        public void It_releases_the_holder() => _harness.OnlyHolder.ReleaseCount.Should().Be(1);
+    }
+
+    /// <summary>
+    /// The caller cancels during the inspection of the staging name, which completes normally, so the scope stops
+    /// the staging CREATE before dispatch. Recovery is unavailable (the holder session cannot be proven gone), so a
+    /// create wrongly recorded as pending would leave cleanup reporting a staging database this operation never
+    /// created. Nothing is pending: cleanup neither inspects the name again nor reports it.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_before_the_staging_create_is_dispatched
+    {
+        private Harness _harness = null!;
+        private Exception? _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using CancellationTokenSource cancellation = new();
+            _harness = Scripted();
+            _harness.Engine.OnInspectByName = async (name, _) =>
+            {
+                if (name.Value.StartsWith(DmsOperationId.StagingDatabaseNamePrefix, StringComparison.Ordinal))
+                {
+                    await cancellation.CancelAsync();
+                }
+
+                return new DmsLiveTargetState.Absent();
+            };
+            _harness.Engine.OnTerminateSession = (session, _, _) =>
+                Task.FromResult<DmsSessionTermination>(
+                    session == Session
+                        ? new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+                        : new DmsSessionTermination.Terminated()
+                );
+            _outcome = await Record.ExceptionAsync(() => CreateAsync(_harness, cancellation.Token));
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _outcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_never_dispatches_the_create() =>
+            Members(_harness).Should().NotContain(SpyDmsTargetEngine.CreateStaging);
+
+        [Test]
+        public void It_neither_recovers_nor_re_inspects_a_create_that_was_not_sent() =>
+            (
+                _harness.Engine.TerminatedSessions.Contains(Session),
+                _harness.Engine.Calls.Count(call =>
+                    call.Member == SpyDmsTargetEngine.Inspect
+                    && call.DatabaseName is not null
+                    && call.DatabaseName.StartsWith(
+                        DmsOperationId.StagingDatabaseNamePrefix,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+                .Should()
+                .Be((false, 1));
+
+        [Test]
+        public void It_reports_no_staging_residue() =>
+            _harness
+                .Logger.Entries.Should()
+                .NotContain(entry => entry.EventId == DmsDataStoreProvisioningService.StagingResidue);
 
         [Test]
         public void It_releases_the_holder() => _harness.OnlyHolder.ReleaseCount.Should().Be(1);

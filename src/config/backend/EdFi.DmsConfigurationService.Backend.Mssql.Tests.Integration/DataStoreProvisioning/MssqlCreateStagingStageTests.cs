@@ -165,7 +165,8 @@ public class MssqlCreateStagingStageTests
                 .Equal(
                     DmsProvisioningHookPoint.AfterRestoreStarted,
                     DmsProvisioningHookPoint.BeforeRename,
-                    DmsProvisioningHookPoint.BeforeMarker
+                    DmsProvisioningHookPoint.BeforeMarker,
+                    DmsProvisioningHookPoint.BeforeMarkerDispatch
                 );
 
         [Test]

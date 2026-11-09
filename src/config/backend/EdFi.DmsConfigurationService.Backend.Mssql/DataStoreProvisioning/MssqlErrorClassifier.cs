@@ -31,6 +31,10 @@ internal static class MssqlErrorClassifier
     public const int DatabasePermissionDenied = 262;
     public const int NoPermissionForAction = 297;
     public const int ServerPermissionDenied = 300;
+
+    /// <summary>There is insufficient system memory in a resource pool to run the query; short-lived memory pressure clears on its own.</summary>
+    public const int InsufficientMemory = 701;
+
     public const int DatabaseDoesNotExist = 911;
     public const int PrincipalCannotAccessDatabase = 916;
 
@@ -186,13 +190,15 @@ internal static class MssqlErrorClassifier
     /// <summary>
     /// Whether a definite rejection names a condition that clears without any change to the request, the artifact, or
     /// the server's configuration, so the same request can succeed later: the session was a deadlock victim
-    /// (<c>1205</c>) among <paramref name="errorNumbers"/>. This answers only whether a retry can succeed; whether the
-    /// command committed is <see cref="FailureClassOf(int, byte)"/>'s question, and <c>1205</c> is definite there.
+    /// (<c>1205</c>), or the server was short of memory (<c>701</c>, which Microsoft documents as able to come from
+    /// short-lived memory pressure that resolves without intervention), among <paramref name="errorNumbers"/>. This
+    /// answers only whether a retry can succeed; whether the command committed is
+    /// <see cref="FailureClassOf(int, byte)"/>'s question, and both are definite there at a nonfatal severity.
     /// </summary>
     public static bool IsRetryableRejection(IReadOnlyList<int> errorNumbers)
     {
         ArgumentNullException.ThrowIfNull(errorNumbers);
-        return errorNumbers.Contains(DeadlockVictim);
+        return errorNumbers.Contains(DeadlockVictim) || errorNumbers.Contains(InsufficientMemory);
     }
 
     /// <summary>

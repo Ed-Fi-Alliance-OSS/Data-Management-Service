@@ -1056,6 +1056,132 @@ public class DmsDataStoreProvisioningServicePublicationTests
             _committedResult.Should().BeOfType<DmsDataStoreCreateResult.Created>();
     }
 
+    /// <summary>
+    /// The rename succeeded and the re-check passed, then loss is declared before the marker call: the scope
+    /// refuses the call, so the marker never reaches the engine. Recovery is unavailable (the marker's
+    /// session cannot be proven gone), so a marker wrongly recorded as in doubt would end
+    /// <c>OutcomeUnknown</c> with a clean report; the target is a known renamed but unmarked one instead.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_before_the_marker_is_dispatched
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RecordingHooks hooks = new();
+            _harness = Scripted(hooks);
+            hooks.OnPoint = point =>
+            {
+                if (point == DmsProvisioningHookPoint.BeforeMarkerDispatch)
+                {
+                    _harness.OnlyHolder.Lose();
+                }
+            };
+            _harness.Engine.OnTerminateSession = (session, _, _) =>
+                Task.FromResult<DmsSessionTermination>(
+                    session == _markerSession
+                        ? new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+                        : new DmsSessionTermination.Terminated()
+                );
+            _result = await CreateAsync(_harness);
+        }
+
+        [Test]
+        public void It_ends_as_lock_lost_for_inspection_at_the_marker() =>
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.AssignMarkerStep
+                    )
+                );
+
+        [Test]
+        public void It_never_sends_the_marker_or_compensates() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.AssignMarker),
+                CountOf(_harness, SpyDmsTargetEngine.DropInstance)
+            )
+                .Should()
+                .Be((0, 0));
+
+        [Test]
+        public void It_never_tries_to_resolve_a_marker_that_was_not_sent() =>
+            _harness.Engine.TerminatedSessions.Should().NotContain(_markerSession);
+
+        [Test]
+        public void It_reports_the_unmarked_target() =>
+            CleanupOf(_result)
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
+    }
+
+    /// <summary>
+    /// The caller cancels during the last read of the re-check, which completes normally, so the scope stops the
+    /// marker call before dispatch. There is no marker outcome to resolve: the cancellation propagates without a
+    /// termination of the marker's session, a recovery read, or compensation, and the target is reported as
+    /// renamed but unmarked.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_before_the_marker_is_dispatched
+    {
+        private Harness _harness = null!;
+        private Exception? _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using CancellationTokenSource cancellation = new();
+            _harness = Scripted();
+            _harness.Engine.OnReadTargetFacts = async (session, _) =>
+            {
+                if (session.ServerSession == _markerSession)
+                {
+                    await cancellation.CancelAsync();
+                }
+
+                return TargetFactsSample.PostgresqlFacts();
+            };
+            _outcome = await Record.ExceptionAsync(() => CreateAsync(_harness, cancellation.Token));
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _outcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_never_sends_the_marker_or_compensates() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.AssignMarker),
+                CountOf(_harness, SpyDmsTargetEngine.DropInstance)
+            )
+                .Should()
+                .Be((0, 0));
+
+        [Test]
+        public void It_never_tries_to_resolve_a_marker_that_was_not_sent() =>
+            (
+                _harness.Engine.TerminatedSessions.Contains(_markerSession),
+                CountOf(_harness, SpyDmsTargetEngine.OpenSession)
+            )
+                .Should()
+                .Be((false, 2));
+
+        [Test]
+        public void It_reports_the_unmarked_target_and_releases_the_holder()
+        {
+            _harness
+                .Logger.Entries.Should()
+                .ContainSingle(entry => entry.EventId == DmsDataStoreProvisioningService.TargetResidue);
+            _harness.OnlyHolder.ReleaseCount.Should().Be(1);
+        }
+    }
+
     [TestFixture]
     public class Given_the_holder_is_lost_around_the_marker
     {

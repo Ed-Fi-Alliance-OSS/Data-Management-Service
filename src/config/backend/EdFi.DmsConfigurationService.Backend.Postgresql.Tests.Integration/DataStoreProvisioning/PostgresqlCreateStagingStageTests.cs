@@ -170,7 +170,8 @@ public class PostgresqlCreateStagingStageTests
                 .Equal(
                     DmsProvisioningHookPoint.AfterRestoreStarted,
                     DmsProvisioningHookPoint.BeforeRename,
-                    DmsProvisioningHookPoint.BeforeMarker
+                    DmsProvisioningHookPoint.BeforeMarker,
+                    DmsProvisioningHookPoint.BeforeMarkerDispatch
                 );
     }
 

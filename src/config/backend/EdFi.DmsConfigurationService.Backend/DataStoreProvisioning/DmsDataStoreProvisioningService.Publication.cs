@@ -217,8 +217,16 @@ public sealed partial class DmsDataStoreProvisioningService
         {
             await VerifyRenamedTargetAsync(scope, artifact.Manifest, session, candidate.PackageIdentity);
 
-            // 6.3 step 10 on the instance-bound session; the marker is in doubt from the moment it is sent.
-            publication.MarkerDispatched(session.ServerSession);
+            // D-23: the last await point before the marker is dispatched; no read follows it.
+            await TestHooks.AtAsync(
+                DmsProvisioningHookPoint.BeforeMarkerDispatch,
+                operation,
+                scope.CallerToken
+            );
+
+            // 6.3 step 10 on the instance-bound session; the marker is in doubt from the moment it is sent. It is
+            // recorded as the engine is handed the call, after the scope's cancellation and loss checks, so a
+            // marker those checks stop is never in doubt and the target stays a known unmarked one.
             try
             {
                 marked = await scope.CallAsync(
@@ -226,6 +234,7 @@ public sealed partial class DmsDataStoreProvisioningService
                     settings.CommandTimeout,
                     async token =>
                     {
+                        publication.MarkerDispatched(session.ServerSession);
                         DmsCommandOutcome outcome = await engine.AssignMarkerAsync(
                             session,
                             request.ExpectedSourceIdentity,
@@ -248,9 +257,12 @@ public sealed partial class DmsDataStoreProvisioningService
             catch (OperationCanceledException)
                 when (scope.CallerToken.IsCancellationRequested
                     && !scope.Holder.LostToken.IsCancellationRequested
+                    && publication.State == PublicationState.MarkerInDoubt
                 )
             {
-                // The caller's cancellation leaves the marker in doubt; it is resolved, never skipped (6.10).
+                // The caller's cancellation leaves a dispatched marker in doubt; it is resolved, never skipped
+                // (6.10). A cancellation that stopped the marker before dispatch propagates instead, and the
+                // settlement reports the target as renamed but unmarked.
                 marked = new DmsCommandOutcome.Unknown(session.ServerSession);
             }
         }

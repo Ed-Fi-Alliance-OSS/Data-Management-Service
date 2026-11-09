@@ -11,6 +11,7 @@ internal enum DmsProvisioningHookPoint
     AfterRestoreStarted,
     BeforeRename,
     BeforeMarker,
+    BeforeMarkerDispatch,
     BeforeFence,
     BeforeDrop,
 }

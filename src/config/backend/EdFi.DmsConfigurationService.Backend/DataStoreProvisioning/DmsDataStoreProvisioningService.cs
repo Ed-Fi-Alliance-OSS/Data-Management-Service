@@ -380,12 +380,17 @@ public sealed partial class DmsDataStoreProvisioningService(
     {
         // The create is this operation's, and unproven, from the moment it is sent: whatever ends the step,
         // cleanup accounts for the name, and only a returned definite outcome or a verified termination of
-        // the holder session it ran on settles it (6.7, 6.11, D-7b).
-        cleanup.Pending(claim, scope.Holder.Session);
+        // the holder session it ran on settles it (6.7, 6.11, D-7b). It is recorded as the engine is handed
+        // the call, after the scope's cancellation and loss checks, so a create those checks stop leaves
+        // nothing for cleanup to account for.
         DmsCommandOutcome<DmsInstanceIdentity> created = await scope.CallAsync(
             CreateStagingStep,
             options.Value.CommandTimeout,
-            token => engine.CreateStagingAsync(scope.Holder, stage, claim, token),
+            token =>
+            {
+                cleanup.Pending(claim, scope.Holder.Session);
+                return engine.CreateStagingAsync(scope.Holder, stage, claim, token);
+            },
             cleanup.ObserveCreate
         );
         switch (created)

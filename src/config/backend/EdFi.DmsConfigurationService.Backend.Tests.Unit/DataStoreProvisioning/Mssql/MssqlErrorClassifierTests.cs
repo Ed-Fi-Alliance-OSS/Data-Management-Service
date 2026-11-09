@@ -233,7 +233,8 @@ public class MssqlErrorClassifierTests
 
     /// <summary>
     /// AC 11: the error numbers of a <c>RESTORE</c> rejected in its own response (the specific error, then
-    /// <c>3013</c>). A deadlock victim can succeed on retry; every other rejection stays permanent.
+    /// <c>3013</c>). A deadlock victim or a temporary memory shortage (<c>701</c>) can succeed on retry; every other
+    /// rejection, out-of-space ones (<c>1105</c>, <c>3257</c>) included, stays permanent.
     /// </summary>
     [TestFixture]
     public class Given_the_error_numbers_of_a_rejected_restore
@@ -243,10 +244,20 @@ public class MssqlErrorClassifierTests
             MssqlErrorClassifier.IsRetryableRejection([1205, 3013]).Should().BeTrue();
 
         [Test]
+        public void It_treats_a_memory_shortage_as_retryable() =>
+            MssqlErrorClassifier.IsRetryableRejection([701, 3013]).Should().BeTrue();
+
+        [Test]
         public void It_keeps_every_other_rejection_permanent() =>
-            new int[][] { [3234, 3013], [3110, 3013], [3013], [1801] }
+            new int[][] { [3234, 3013], [3110, 3013], [3013], [1801], [1105, 3013], [3257, 3013] }
                 .Select(numbers => MssqlErrorClassifier.IsRetryableRejection(numbers))
                 .Should()
                 .AllBeEquivalentTo(false);
+
+        [Test]
+        public void It_keeps_a_memory_shortage_definite_only_below_the_fatal_severity() =>
+            (MssqlErrorClassifier.FailureClassOf(701, 17), MssqlErrorClassifier.FailureClassOf(701, 20))
+                .Should()
+                .Be((DmsCommandFailureClass.Rejected, (DmsCommandFailureClass?)null));
     }
 }
