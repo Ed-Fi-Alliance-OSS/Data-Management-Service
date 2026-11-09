@@ -24,8 +24,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// </summary>
 public abstract class DmsTargetLockHolder : IDmsTargetLockHolder
 {
-    internal static readonly EventId ReleaseFailed = new(1438_20, nameof(ReleaseFailed));
-    internal static readonly EventId ProbeFailed = new(1438_21, nameof(ProbeFailed));
+    // Beside the orchestrator's LockLost (1438_11); 1438_20 to 1438_22 belong to the artifact catalog.
+    internal static readonly EventId ReleaseFailed = new(1438_15, nameof(ReleaseFailed));
+    internal static readonly EventId ProbeFailed = new(1438_16, nameof(ProbeFailed));
 
     // The gate is never disposed: a late waiter woken by the final release must find it usable, and it
     // holds no OS handle. The loss source is disposed last, after the lock is released; its token is cached

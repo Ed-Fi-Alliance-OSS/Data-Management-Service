@@ -126,9 +126,8 @@ These were raised during review and accepted. They are reflected in the code and
 - **Runtime package acquisition.** Packages are placed in `ArtifactDirectory` by the deployment; a feed
   download behind the catalog seam is a possible follow-up.
 - **Non-superuser PostgreSQL administrator** needs a template-production change (Section 5).
-- **Log event IDs `1438_20` and `1438_21`** are each defined twice with different names
-  (`TemplateArtifactCatalog`: `ArtifactRefused`, `ResidueLeft`; `DmsTargetLockHolder`: `ReleaseFailed`,
-  `ProbeFailed`). Event names are distinct, but a filter on the numeric ID alone matches both. To be
-  renumbered in a reviewed code change.
+- **Log event IDs** were once duplicated: `1438_20` and `1438_21` named events of both the artifact catalog
+  and the target lock holder. The lock holder's `ReleaseFailed` and `ProbeFailed` are now `1438_15` and
+  `1438_16`, and a Frontend unit test fails when any two provisioning events share an id.
 - **DMS-1439** owns the job handlers, persistence of the pin and expected identity, the mapping to the
   ordinary data store row, and suppressing its job types while the feature is off.
