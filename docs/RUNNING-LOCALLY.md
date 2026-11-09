@@ -277,6 +277,33 @@ Keep the non-timeout fixture excluded from this probe command. The pinned NUnit
 adapter skips explicit probes when the filter also selects non-explicit tests.
 The non-timeout failure fixture runs in `MssqlCiShard4`.
 
+## CMS DMS-template provisioning integration tests
+
+The Configuration Service's provisioning tests against real servers are in
+category `DmsProvisioning` of
+`backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration` and
+`backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration` (under
+`src/config`). The regular integration run excludes the category; CI runs it in
+the `run-dms-provisioning-integration-tests` job. Each lane reads its settings
+from these variables:
+
+| Variable | Lane | Purpose |
+| --- | --- | --- |
+| `ConnectionStrings__PostgresqlDmsAdmin` | PostgreSQL | Superuser connection to a PostgreSQL 18 server, database `postgres` |
+| `DMS_PROVISIONING_PSQL_PATH` | PostgreSQL | `psql` 18 executable |
+| `ConnectionStrings__MssqlDmsAdmin` | SQL Server | `sysadmin` connection to SQL Server 2022 or later (CI uses 2025, which the real packages need) |
+| `DMS_PROVISIONING_MSSQL_STAGING_PATH`, `DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH` | SQL Server | A directory the server also sees, as the tests see it and as the server sees it |
+| `DMS_TEMPLATE_PACKAGE_DIRECTORY` | Both | The four `EdFi.Api.{Minimal,Populated}.Template.{PostgreSql,MsSql}` packages, for the real-package tests |
+| `DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH` | Both | Optional: the hash those packages must declare |
+
+Locally a test whose settings are missing is skipped. Under GitHub Actions
+(`GITHUB_ACTIONS=true`) it fails instead, so set that variable to check that a
+run skipped nothing. The PostgreSQL tests that replay a template need `psql`
+and a POSIX shell and skip on Windows, so run the whole PostgreSQL lane on
+Linux. The job in
+`.github/workflows/on-config-pullrequest.yml` shows a complete setup, including
+the package download pinned by SHA-256.
+
 ## CMS DMS-template provisioning: SQL Server staging with separate identities
 
 The Configuration Service stages a SQL Server template backup in a directory

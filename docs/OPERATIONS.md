@@ -1527,3 +1527,257 @@ type and non-spacing marks are ignored (for example `cms-client` and `CMS-Client
 or `cms-client` with a trailing space), every client without an API client row is
 refused with the `NoApiClientRowRoleConfiguration` Warning. Clients with an API
 client row are unaffected.
+
+## Configuration Service: DMS data store provisioning
+
+The Configuration Service can create and delete DMS data store databases from signed template packages
+(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. It is off by default and configured in the
+`DmsDataStoreProvisioning` section; see [DmsDataStoreProvisioning](./CONFIGURATION.md#dmsdatastoreprovisioning)
+for every setting. This release adds the provisioner as a service for the Configuration Service's own
+background jobs (see
+[Configuration Service Background Jobs](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md#dms-data-store-provisioning)).
+It adds no endpoint and does not change `/health`.
+
+How a create works, in short: the allowlisted package is copied into a private operation directory, its
+attestation is checked against the trust policy, and its manifest is checked against the `Compatibility`
+settings. The database is then restored under a generated staging name
+(`edfi_dms_provision_stage_<operation id>`, an id of 12 hex characters) and validated there: content
+profile, schema and inventory, and security state. Only then is it renamed to the requested name and marked
+with the data store's identity (`dms.DataStoreIdentity.SourceIdentity`), which is the last change. A
+database that already holds the requested name is never restored over: it is accepted only when it carries
+the expected identity and passes the same validation. A delete drops a database only when it carries the
+expected identity, after closing every other session on it.
+
+### Readiness
+
+At startup, an enabled provisioner checks its environment once. A failure does not stop the service: it
+marks provisioning `NotReady`, logs each failed check at Critical, and refuses every provisioning call until
+the service restarts. Fix the cause, then restart. Each Critical line has this form:
+
+```text
+DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <provider>: probe <Probe> failed at <Operation> (exception types <types>, provider error <code>)
+```
+
+| Probe | What it checks | Usual fix |
+| --- | --- | --- |
+| `SecretResolution` | `${secret:...}` references in `AdminConnectionString` resolve. | Fix the secret provider or the reference. |
+| `TrustPolicy` | The trust policy file is readable, valid, and lists at least one `detached-attestation` producer with a valid P-256 key. | See [Trust](#template-package-trust). |
+| `Catalog.Minimal`, `Catalog.Sample` | Each allowlisted package and its attestation are present, the attestation verifies, and the manifest matches `Compatibility`. | Place the exact package and attestation in `ArtifactDirectory`, or correct the allowlist or `Compatibility`. |
+| `TargetServer` | The server can be reached and its facts read. | Network, credentials, TLS settings. |
+| `ServerVersion`, `EngineCompatibility.<template>` | PostgreSQL 18 or later; SQL Server 2022 (16) or later; and the server's major version is at least the one each package was built on. | Upgrade the server, or use packages built for it. |
+| `Superuser`, `CreateDatabasePrivilege`, `SignalBackendPrivilege`, `ReadAllStatsPrivilege`, `EnqueueOwnerRole` | PostgreSQL privileges; see [PostgreSQL](#postgresql). | Grant them to the administrative login. |
+| `CreateDatabasePrivilege`, `AlterAnyDatabasePrivilege`, `AlterAnyConnectionPrivilege`, `ViewServerStatePrivilege`, `FileCatalogVisibility`, `DefaultDataPath`, `DefaultLogPath` | SQL Server privileges and default file locations; see [SQL Server](#sql-server). | Grant them, or set the instance default paths. |
+| `PsqlVersion` | `Postgresql:PsqlPath` runs and reports major version 18 or later. | Install `psql` 18, or correct the path. |
+| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists, is not group- or other-writable, and SQL Server can read a probe file written into it. | See [SQL Server](#sql-server). |
+| `TargetLock` | A lock can be taken and released on the server. | Usually a server or privilege problem an earlier probe also reports. |
+
+### Template package trust
+
+Every package is authenticated before anything is extracted. `TrustPolicyPath` names one trust policy file
+in the template trust-policy format (`eng/docker-compose/template-trust-policy.json` is the tracked, empty
+example). The Configuration Service reads that one file; it does not merge the git-ignored
+`template-trust-policy.local.json` overlay the bootstrap scripts use. A policy with no
+`detached-attestation` producer makes provisioning `NotReady`. There is no unsigned mode.
+
+Until a CI-signed release publishes its producer key, sign the packages you deploy with your own key:
+
+1. Create a P-256 signer with `eng/DatabaseTemplates/new-template-dev-trust.ps1 -Purpose Dev`, or keep an
+   equivalent key under your own key management.
+2. Attest each package's exact bytes with `Write-TemplatePackageAttestation` from
+   `eng/DatabaseTemplates/Template-Management.psm1`, and place the attestation next to the package as
+   `<PackageId>.<Version>.nupkg.attestation.json` in `ArtifactDirectory`.
+3. List that producer and its public key in the file `TrustPolicyPath` names.
+
+Any change to a package's bytes after signing makes it `ArtifactUntrusted`.
+
+### PostgreSQL
+
+| Topology | Supported |
+| --- | --- |
+| The Configuration Service (container or host) with `psql` 18 or later, reaching the server over TCP. The published Configuration Service image includes `psql` 18 at `/usr/bin/psql`. | Yes |
+| No `psql` in the Configuration Service runtime | No (`NotReady`, `PsqlVersion`) |
+| A non-superuser administrative login | No (`NotReady`, `Superuser`) |
+
+The administrative login must be a **superuser**. The PostgreSQL template ends by making
+`edfi_dms_enqueue_owner` the owner of its enqueue functions. PostgreSQL allows that for a non-superuser only
+when the new owner may create objects in the `dms` schema, which the template's own security rules forbid.
+The narrower privileges are still checked and named individually, so one startup shows all of them:
+
+- `CREATEDB` (`CreateDatabasePrivilege`) to create, rename, and drop databases;
+- the privileges of `pg_signal_backend` (`SignalBackendPrivilege`) to end other sessions on a target;
+- the privileges of `pg_read_all_stats` (`ReadAllStatsPrivilege`) to identify those sessions;
+- `CREATEROLE` while `edfi_dms_enqueue_owner` does not exist yet (`EnqueueOwnerRole`). Once it exists it
+  must be `NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS`, with no
+  membership that carries the admin, inherit, or set option; otherwise operations fail with
+  `RoleStateUnsafe`.
+
+`template1` must use `UTF8` encoding.
+
+### SQL Server
+
+`RESTORE` reads its backup from a file the server opens, so the Configuration Service copies each backup into
+a staging directory the server also sees. The directory separates the two identities: the Configuration
+Service owns it and writes into it, and SQL Server can only read it. The service refuses a group- or
+other-writable directory. It re-hashes the staged file after the restore and fails with
+`StagingIntegrityViolation` if the file changed.
+
+| Topology | Setup | Supported |
+| --- | --- | --- |
+| Same host | `groupadd dms-staging`; `usermod -aG dms-staging mssql` (the SQL Server service account); `mkdir -p /var/opt/dms-staging`; `chown <cms user>:dms-staging /var/opt/dms-staging`; `chmod 2750 /var/opt/dms-staging`. `Mssql:StagingPath` and `Mssql:StagingServerPath` are the same path. | Yes |
+| Configuration Service and SQL Server containers sharing a volume | On the volume: `chown <cms uid>:<gid>` and `chmod 2750`. Run SQL Server with `--group-add <gid>` and the Configuration Service as the owning uid (the published image runs as root). `StagingPath` and `StagingServerPath` are each container's mount point. On Docker Desktop, use a named volume: a bind mount from Windows shows every file as `0777`. | Yes |
+| An SMB or NFS share mapped into both | The Configuration Service identity has Modify; the SQL Server service SID has Read & Execute only. `StagingServerPath` is the server's view of the share. | Yes |
+| No staging path SQL Server can see | — | No (`NotReady`, `StagingVisibility`) |
+| Platforms without `RESTORE ... FROM DISK` | — | No |
+
+A local, runnable version of the container topology with separate Linux identities is in
+[RUNNING-LOCALLY.md](./RUNNING-LOCALLY.md#cms-dms-template-provisioning-sql-server-staging-with-separate-identities).
+
+The administrative login needs:
+
+- membership in `dbcreator` or `sysadmin` (`CreateDatabasePrivilege`);
+- `ALTER ANY DATABASE` (`AlterAnyDatabasePrivilege`);
+- `ALTER ANY CONNECTION` (`AlterAnyConnectionPrivilege`), to end other sessions on a target;
+- `VIEW SERVER STATE`, or `VIEW SERVER PERFORMANCE STATE` where the server has it
+  (`ViewServerStatePrivilege`);
+- visibility of `sys.master_files` (`FileCatalogVisibility`).
+
+The instance default data and log paths must be set (`DefaultDataPath`, `DefaultLogPath`). Restored files
+go there under generated names, never to the paths recorded in the backup.
+
+### Operational rule
+
+While provisioning is enabled, do not run DDL by hand (create, rename, drop, or `ALTER DATABASE` state or
+permissions) against a managed data store's database or any `edfi_dms_provision_*` database, except as
+described under [Recovery](#recovery), while the data store's record is in a failed state and no session
+holds its lock (see [A lock that is never released](#a-lock-that-is-never-released)). The provisioner
+detects a database it cannot verify and refuses it, but a change made by hand at the moment of a step
+cannot always be detected. On SQL Server, for example, a delete checks the database's identity and drops it
+in one batch, and a rename made between the two by another session can have the wrong database dropped.
+
+### Failure codes
+
+Every failure carries a code, a category, and a diagnostic with only the step that failed, the exception
+type names, and the provider's error number or SQLSTATE. It never carries a connection string, secret,
+server message, or `psql` output. The category tells the caller whether to retry:
+
+| Category | Meaning | Retry |
+| --- | --- | --- |
+| `InvalidRequest` | The request itself was rejected: unknown template, invalid name, empty identity, missing pin. | No |
+| `NotReady` | Provisioning is disabled or failed its startup checks. | Not until a restart |
+| `Transient` | Nothing was left behind, or the outcome was settled; the same request may succeed later. | Yes |
+| `Permanent` | The same inputs fail again; nothing was left behind. | No |
+| `OperatorInspectionRequired` | A database, package, or server state needs a person to look at it. | No |
+
+| Code | Category |
+| --- | --- |
+| `FeatureDisabled`, `StartupValidationFailed`, `AdapterUnavailable` | `NotReady` |
+| `TemplateNotAllowlisted`, `InvalidTargetName`, `EmptySourceIdentity`, `ArtifactPinMissing` | `InvalidRequest` |
+| `ProtectedTarget`, `AdminPrivilegeMissing`, `RoleStateUnsafe`, `EngineIncompatible`, `StagingNotVisible`, `ServerRejected` | `Permanent` |
+| `SecretResolutionFailed`, `ServerUnavailable`, `LockTimeout`, `LockUnavailable`, `TimedOut`, `StagingFailed`, `StagingNameCollision`, `Unknown` | `Transient` |
+| `RestoreFailed` | `Permanent`; `Transient` when a lost connection ended the restore and it is known to have rolled back |
+| `ExclusiveAccessNotEstablished`, `LockLost`, `DropFailed` | `Transient` before anything on the target changed; `OperatorInspectionRequired` after |
+| `ArtifactMissing`, `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
+| `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
+
+### Recovery
+
+- **`TargetUnowned`**: a database holds the requested name but carries another identity. Find out whose it
+  is. If it is an orphan, rename or drop it by hand, then retry.
+- **`TargetUnverifiable`**, or an operation interrupted between the rename and the identity marker: the
+  database records where it came from. On PostgreSQL, `shobj_description(oid, 'pg_database')` reads
+  `edfi-dms-provision:v1:<operation id>:<expected identity>`. On SQL Server, the primary file's
+  `physical_name` ends in `__<operation id>.mdf`. Confirm that no data store row in the Configuration Service
+  database (`dmscs.DataStore`) points at it, drop it by hand, then retry.
+- **`TargetFenced`**: an interrupted delete left the database closed to connections. After confirming that
+  no session holds its lock, reopen it: PostgreSQL `ALTER DATABASE "<name>" ALLOW_CONNECTIONS true`;
+  SQL Server `ALTER DATABASE [<name>] SET MULTI_USER`.
+- **`ArtifactChangedSinceCreate`**: the package now in `ArtifactDirectory` is not the one the data store was
+  first created from. Put the original package back, or create a new data store.
+- **`CompensationFailed`, `OutcomeUnknown`, `InstanceChanged`, `ExclusiveAccessNotEstablished`,
+  `StagingIntegrityViolation`, `LockLost`**: inspect the database the failure names, confirm that no session
+  holds its lock, then apply the matching step above.
+
+### A lock that is never released
+
+Each operation holds a per-name lock on the target server, in a session named `dmsprov:<operation id>`. If
+`LockTimeout` persists after every Configuration Service instance that could hold the lock is stopped or
+idle, find the holder by the lock, never by session name or age alone. Confirm that no running instance
+logs that operation id, and only then end the session. The operation that owned it, if still running, then
+fails safely with `LockLost`.
+
+PostgreSQL, connected to the `postgres` database (replace `<target name>`):
+
+```sql
+WITH k AS (
+    SELECT encode(sha256(convert_to('dms-provision-target:v1:' || lower('<target name>'), 'UTF8')), 'hex') AS h
+)
+SELECT a.pid, a.application_name, a.backend_start
+FROM k, pg_locks l
+JOIN pg_stat_activity a ON a.pid = l.pid
+WHERE l.locktype = 'advisory'
+  AND l.database = (SELECT oid FROM pg_database WHERE datname = 'postgres')
+  AND l.classid::bigint = ('x' || lpad(substr(k.h, 1, 8), 16, '0'))::bit(64)::bigint
+  AND l.objid::bigint = ('x' || lpad(substr(k.h, 9, 8), 16, '0'))::bit(64)::bigint
+  AND l.objsubid = 1
+  AND l.granted;
+```
+
+After confirming that `application_name` is `dmsprov:<operation id>` and its instance is stopped, run
+`SELECT pg_terminate_backend(<pid>, 10000);`.
+
+SQL Server shows an application lock only by a truncated resource name, so request the same lock and see
+which session blocks it. In one session on `master`:
+
+```sql
+EXEC sp_getapplock @Resource = N'dms-provision-target:v1:<lowercase target name>',
+    @LockMode = 'Exclusive', @LockOwner = 'Session', @LockTimeout = 30000;
+```
+
+While it waits, from a second session (replace `<first session id>`):
+
+```sql
+SELECT g.request_session_id, s.program_name, s.login_time
+FROM sys.dm_tran_locks w
+JOIN sys.dm_tran_locks g
+    ON g.resource_type = w.resource_type
+    AND g.resource_database_id = w.resource_database_id
+    AND g.resource_description = w.resource_description
+    AND g.request_status = 'GRANT'
+JOIN sys.dm_exec_sessions s ON s.session_id = g.request_session_id
+WHERE w.request_session_id = <first session id>
+  AND w.resource_type = 'APPLICATION'
+  AND w.request_status = 'WAIT';
+```
+
+End the first session's request: cancel it, or run `sp_releaseapplock` if it was granted because nothing
+held the lock. After confirming that `program_name` is `dmsprov:<operation id>` and its instance is
+stopped, run `KILL <session id>`. Then wait until no row in `sys.dm_exec_sessions` has both that
+`session_id` and that `login_time`; SQL Server reuses a freed `session_id` immediately.
+
+### Leftovers after a crash
+
+A failed operation removes what it created, with `CleanupAttempts` tries. Anything it could not remove is
+reported in the result and logged by generated name only (at Error, except `1438_34` at Warning):
+
+| Event | Leftover |
+| --- | --- |
+| `1438_12` `StagingResidue` | A staging database |
+| `1438_14` `TargetResidue` | A target left closed to connections by a delete, or renamed but not marked by a create, for inspection |
+| `1438_21` `ResidueLeft`, `1438_22` `CredentialResidue` | An operation directory, or a credential file in it |
+| `1438_34` `PasswordFileRetained` | The password file of a `psql` replay (the operation directory's cleanup then reports it) |
+| `1438_40` `StagedFileResidue`, `1438_41` `ProbeFileResidue` | A staged SQL Server backup, or a readiness probe file |
+
+Nothing is swept automatically on a later start: a process that crashed leaves its leftovers until an
+operator removes them. To find them:
+
+- operation directories `dms-provision-*` under `OperationDirectory` (the process temp directory when it is
+  not set) and staged backups `dms-provision-*.bak` under `Mssql:StagingPath`. Remove credential files
+  first;
+- PostgreSQL staging databases:
+  `SELECT datname, shobj_description(oid, 'pg_database') FROM pg_database WHERE datname LIKE 'edfi\_dms\_provision\_stage\_%';`
+- SQL Server staging databases:
+  `SELECT d.name, d.state_desc, f.physical_name FROM sys.databases d JOIN sys.master_files f ON f.database_id = d.database_id AND f.file_id = 1 WHERE d.name LIKE 'edfi[_]dms[_]provision[_]stage[_]%';`
+
+The 12 hex characters after `edfi_dms_provision_stage_`, and in each file name, are the operation id.
+Confirm that no session belongs to that operation (`application_name` or `program_name`
+`dmsprov:<operation id>` or `dms-provision:<operation id>`), then remove the leftover.
