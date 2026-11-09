@@ -385,7 +385,7 @@ public class PsqlRestoreRunnerTests
 
             await FakePsql.WaitForFileAsync(_signal, _bound);
             _passwordFileExistedWhileRunning = File.Exists(_workspace.PasswordFilePath);
-            _environmentSeen = FakePsql.ParseEnvironmentDump(await File.ReadAllTextAsync(_signal));
+            _environmentSeen = FakePsql.ParseEnvironmentDump(await FakePsql.ReadSignalAsync(_signal, _bound));
             run.IsCompleted.Should().BeFalse("the fake blocks until it is killed");
 
             await cancellation.CancelAsync();

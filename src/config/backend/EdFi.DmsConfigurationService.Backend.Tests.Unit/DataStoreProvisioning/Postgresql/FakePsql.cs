@@ -41,6 +41,10 @@ internal sealed class FakePsql : IDisposable, IAsyncDisposable
     private static readonly TimeSpan _exitEvidenceBound = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _deleteBound = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan _pollInterval = TimeSpan.FromMilliseconds(200);
+    private static readonly TimeSpan _signalReadRetryInterval = TimeSpan.FromMilliseconds(20);
+
+    /// <summary>The <see cref="Exception.HResult"/> of a Windows sharing violation (<c>ERROR_SHARING_VIOLATION</c>).</summary>
+    private const int SharingViolationHResult = unchecked((int)0x80070020);
 
     private FakePsql(string directory, string executablePath)
     {
@@ -134,6 +138,38 @@ internal sealed class FakePsql : IDisposable, IAsyncDisposable
         if (first != arrived.Task)
         {
             throw new TimeoutException("The fake psql did not signal its start within the bound.");
+        }
+    }
+
+    /// <summary>
+    /// Reads a signal file once <see cref="WaitForFileAsync"/> has seen it. On Windows the watcher reports
+    /// the rename while <c>move</c> can still hold the renamed file open, so the read shares everything and
+    /// retries a sharing violation until that handle is gone; any other failure is raised at once, and the
+    /// bound only guards against a hang.
+    /// </summary>
+    public static async Task<string> ReadSignalAsync(string path, TimeSpan bound)
+    {
+        long started = Stopwatch.GetTimestamp();
+        while (true)
+        {
+            try
+            {
+                await using FileStream stream = new(
+                    path,
+                    FileMode.Open,
+                    FileAccess.Read,
+                    FileShare.ReadWrite | FileShare.Delete
+                );
+                using StreamReader reader = new(stream);
+                return await reader.ReadToEndAsync();
+            }
+            catch (IOException exception)
+                when (exception.HResult == SharingViolationHResult
+                    && Stopwatch.GetElapsedTime(started) < bound
+                )
+            {
+                await Task.Delay(_signalReadRetryInterval);
+            }
         }
     }
 
