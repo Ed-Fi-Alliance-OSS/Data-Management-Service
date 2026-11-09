@@ -53,6 +53,8 @@ public class MssqlErrorClassifierTests
                 6106,
                 102,
                 2627,
+                18456,
+                18470,
             ];
             _classes = numbers.ToDictionary(
                 number => number,
@@ -111,6 +113,12 @@ public class MssqlErrorClassifierTests
         [Test]
         public void It_classifies_permission_denials_as_privilege_missing() =>
             new[] { _classes[229], _classes[262], _classes[6102] }
+                .Should()
+                .AllBeEquivalentTo(DmsCommandFailureClass.PrivilegeMissing);
+
+        [Test]
+        public void It_classifies_a_failed_or_disabled_login_as_privilege_missing() =>
+            new[] { _classes[18456], _classes[18470] }
                 .Should()
                 .AllBeEquivalentTo(DmsCommandFailureClass.PrivilegeMissing);
 
@@ -210,7 +218,7 @@ public class MssqlErrorClassifierTests
 
         [Test]
         public void It_treats_denials_and_failed_logins_as_access_refusals() =>
-            new[] { 229, 230, 262, 297, 300, 916, 3110, 5011, 6102, 15247, 18456 }
+            new[] { 229, 230, 262, 297, 300, 916, 3110, 5011, 6102, 15247, 18456, 18470 }
                 .Should()
                 .OnlyContain(number => MssqlErrorClassifier.IsAccessRefusal(number));
 

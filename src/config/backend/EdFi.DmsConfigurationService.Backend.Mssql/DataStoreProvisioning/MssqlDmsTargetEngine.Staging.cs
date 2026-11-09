@@ -35,6 +35,12 @@ public sealed partial class MssqlDmsTargetEngine
     /// <summary>The <c>Diagnostic.Operation</c> of a backup read the server refused for lack of a privilege.</summary>
     public const string ReadBackupStep = "RestoreIntoStaging.ReadBackup";
 
+    /// <summary>
+    /// The <c>Diagnostic.Operation</c> of a known access refusal before the <c>RESTORE</c>, such as a failed login on the
+    /// work session; the same operation name the PostgreSQL engine reports for its pre-replay refusals.
+    /// </summary>
+    public const string RestoreAccessRefusedStep = "RestoreIntoStaging.AccessRefused";
+
     /// <summary>The <c>Diagnostic.Operation</c> of a server that reports no default data or log directory.</summary>
     public const string DefaultPathsStep = "RestoreIntoStaging.DefaultPaths";
 
@@ -768,19 +774,34 @@ public sealed partial class MssqlDmsTargetEngine
             ? DmsEngineOperations.RestoreRolledBack
             : RestoreStep;
 
-    /// <summary>A request before the restore failed without a server verdict: nothing was restored.</summary>
+    /// <summary>
+    /// A request before the restore failed: nothing was restored. A known access refusal under an uncancelled token,
+    /// such as a failed login (<c>18456</c>) or a principal that cannot open the database (<c>916</c>), is the admin's
+    /// <see cref="DmsCommandFailureClass.PrivilegeMissing"/> under <see cref="RestoreAccessRefusedStep"/>, which the
+    /// orchestrator reports as a permanent <c>AdminPrivilegeMissing</c>; anything else, a transport failure included,
+    /// is <c>RestoreNotStarted</c> (transient), or <c>RestoreCancelled</c> once the token is cancelled.
+    /// </summary>
     private static DmsCommandOutcome<DmsInstanceIdentity> NotStarted(
         Exception exception,
         CancellationToken cancellationToken
-    ) =>
-        NotRestored(
-            MssqlErrorClassifier.Diagnostic(
-                exception,
-                cancellationToken.IsCancellationRequested
-                    ? DmsEngineOperations.RestoreCancelled
-                    : DmsEngineOperations.RestoreNotStarted
+    )
+    {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return NotRestored(
+                MssqlErrorClassifier.Diagnostic(exception, DmsEngineOperations.RestoreCancelled)
+            );
+        }
+
+        return MssqlErrorClassifier.FailureClassOf(exception) is DmsCommandFailureClass.PrivilegeMissing
+            ? new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                new DmsCommandFailure(
+                    DmsCommandFailureClass.PrivilegeMissing,
+                    MssqlErrorClassifier.Diagnostic(exception, RestoreAccessRefusedStep)
+                )
             )
-        );
+            : NotRestored(MssqlErrorClassifier.Diagnostic(exception, DmsEngineOperations.RestoreNotStarted));
+    }
 
     /// <summary>
     /// The server refused to read the staged backup: a file it cannot open is not visible to it (a staging

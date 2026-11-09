@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
@@ -368,6 +369,64 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
         {
             await CreateRefusedAsync(operation);
             (_lane.Opened.Count, _lane.Renamed.Count).Should().Be((0, 0));
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_server_refuses_access_before_the_restore
+    {
+        private MssqlLane _lane = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // What the engine returns when the work session's login fails (18456) before any RESTORE is sent.
+            _lane = new MssqlLane();
+            _lane.Engine.OnRestoreIntoStaging = (_, _, _) =>
+                Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.PrivilegeMissing,
+                            new DmsProvisioningDiagnostic(
+                                "Microsoft.Data.SqlClient.SqlException",
+                                "18456",
+                                MssqlDmsTargetEngine.RestoreAccessRefusedStep
+                            )
+                        )
+                    )
+                );
+            _result = await _lane.CreateAsync();
+        }
+
+        [Test]
+        public void It_reports_a_permanent_missing_admin_privilege_with_the_error_number()
+        {
+            DmsProvisioningFailure failure = FailureOf(_result);
+            (
+                failure.Code,
+                failure.Category,
+                failure.Diagnostic.Operation,
+                failure.Diagnostic.ProviderErrorCode
+            )
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent,
+                        MssqlDmsTargetEngine.RestoreAccessRefusedStep,
+                        "18456"
+                    )
+                );
+        }
+
+        [Test]
+        public void It_drops_the_staging_name_by_the_reservation_without_validating()
+        {
+            _lane
+                .Dropped.Should()
+                .Equal(new DmsInstanceIdentity.MssqlReservation(ReservedFileOf(_lane.Staging)));
+            _lane.Opened.Should().BeEmpty();
         }
     }
 

@@ -686,6 +686,52 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     /// <summary>
+    /// The PostgreSQL engine finishes claiming a created staging database after cancellation, so the create returns a
+    /// confirmed success with the caller's cancellation already requested. The restore's scope then stops before
+    /// dispatch, so nothing withholds the drop: the owned staging database is dropped, not left as residue.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_as_the_staging_create_succeeds
+    {
+        private readonly List<DmsInstanceIdentity> _dropped = [];
+        private Harness _harness = null!;
+        private Exception? _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _dropped.Clear();
+            using CancellationTokenSource cancellation = new();
+            _harness = Scripted();
+            _harness.Engine.OnCreateStaging = async (_, _, _) =>
+            {
+                await cancellation.CancelAsync();
+                return Staged();
+            };
+            _harness.Engine.OnDropStaging = (_, instance, _) =>
+            {
+                _dropped.Add(instance);
+                return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Succeeded());
+            };
+            _outcome = await Record.ExceptionAsync(() => CreateAsync(_harness, cancellation.Token));
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _outcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_never_dispatches_the_restore() =>
+            Members(_harness).Should().NotContain(SpyDmsTargetEngine.RestoreIntoStaging);
+
+        [Test]
+        public void It_drops_the_created_staging_database() => _dropped.Should().Equal(_stagingInstance);
+
+        [Test]
+        public void It_releases_the_holder() => _harness.OnlyHolder.ReleaseCount.Should().Be(1);
+    }
+
+    /// <summary>
     /// Only the scope's deadline for the restore expires: the fake clock passes it while the engine holds the
     /// call, and the engine reports the cancellation of its token as a normal result, as both engines do. The
     /// caller never cancelled and the holder was not lost, so the create ends <c>TimedOut</c>, not with an

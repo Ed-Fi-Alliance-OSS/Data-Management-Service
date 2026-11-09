@@ -398,6 +398,78 @@ public class MssqlRestoreTests
         }
     }
 
+    /// <summary>
+    /// The admin login is refused after the holder connected, so the work session's login fails before any
+    /// <c>RESTORE</c> is sent: a changed password is reported as <c>18456</c>, a disabled login as <c>18470</c>. Either
+    /// refusal stays the admin's missing privilege, which the
+    /// orchestrator reports as a permanent <c>AdminPrivilegeMissing</c>, not a transient <c>RestoreNotStarted</c>;
+    /// nothing is created and the staged file is deleted. The server never reads the staged file, so the fixture does
+    /// not need a staging directory shared with it.
+    /// </summary>
+    [TestFixture("WITH PASSWORD = N'changed-after-create-1438'", "18456")]
+    [TestFixture("DISABLE", "18470")]
+    public class Given_the_admin_login_is_refused_before_the_restore(string loginChange, string errorNumber)
+    {
+        private RestoreRun? _run;
+        private string? _login;
+        private DmsCommandOutcome<DmsInstanceIdentity> _outcome = null!;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            Directory.CreateDirectory(StagingSettings().StagingPath);
+            _login = await CreateLoginAsync("refused");
+            await ExecuteOnServerAsync($"ALTER LOGIN {MssqlIdentifiers.Quote(_login)} {loginChange};");
+            _run = new RestoreRun();
+            _outcome = await _run.RestoreAsync(EngineAs(_login), await ShapedBackup.CreateAsync());
+            _stagingAfter = await Engine().InspectAsync(_run.Stage, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_run is not null)
+            {
+                await _run.DisposeAsync();
+            }
+
+            if (_login is not null)
+            {
+                await DropLoginAsync(_login);
+            }
+        }
+
+        [Test]
+        public void It_reports_a_missing_privilege_with_the_login_failure_number()
+        {
+            DmsCommandFailure failure = _outcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Which.Failure;
+            (failure.Class, failure.Diagnostic.Operation, failure.Diagnostic.ProviderErrorCode)
+                .Should()
+                .Be(
+                    (
+                        DmsCommandFailureClass.PrivilegeMissing,
+                        MssqlDmsTargetEngine.RestoreAccessRefusedStep,
+                        errorNumber
+                    )
+                );
+        }
+
+        [Test]
+        public void It_creates_nothing_and_deletes_the_staged_file()
+        {
+            _stagingAfter.Should().Be(new DmsLiveTargetState.Absent());
+            Directory
+                .GetFiles(StagingSettings().StagingPath, MssqlBackupStager.FileNameFor(_run!.Operation))
+                .Should()
+                .BeEmpty();
+        }
+    }
+
     [TestFixture]
     public class Given_the_server_cannot_see_the_staged_file
     {

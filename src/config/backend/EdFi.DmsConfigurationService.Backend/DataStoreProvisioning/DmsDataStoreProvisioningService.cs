@@ -425,16 +425,21 @@ public sealed partial class DmsDataStoreProvisioningService(
         DmsInstanceIdentity.MssqlReservation? reservation =
             stagingInstance as DmsInstanceIdentity.MssqlReservation;
 
-        // The replay's fate is open from the moment it is dispatched: the drop is withheld first, and only
-        // a returned definite or quiescent outcome, or a later proven termination, lifts it. An exception,
-        // a cancellation, or a loss before any outcome returns therefore leaves the staging database as
-        // residue, never dropped without proof (D-7b). A restored SQL Server instance becomes cleanup's
-        // instance before any loss check can discard the result.
-        cleanup.Withhold();
+        // The replay's fate is open from the moment it is dispatched: the drop is withheld as the engine is
+        // handed the restore, after the scope's cancellation and loss checks, so a call those checks stop
+        // leaves the confirmed staging database to the normal drop. Once dispatched, only a returned definite
+        // or quiescent outcome, or a later proven termination, lifts it. An exception, a cancellation, or a
+        // loss before any outcome returns therefore leaves the staging database as residue, never dropped
+        // without proof (D-7b). A restored SQL Server instance becomes cleanup's instance before any loss
+        // check can discard the result.
         DmsCommandOutcome<DmsInstanceIdentity> restored = await scope.CallAsync(
             RestoreIntoStagingStep,
             settings.RestoreTimeout + settings.SessionTerminationTimeout + settings.CommandTimeout,
-            token => engine.RestoreIntoStagingAsync(stage, target, stagedArtifact, operation, token),
+            token =>
+            {
+                cleanup.Withhold();
+                return engine.RestoreIntoStagingAsync(stage, target, stagedArtifact, operation, token);
+            },
             outcome =>
             {
                 cleanup.Observe(outcome.WithoutValue());

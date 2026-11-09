@@ -68,6 +68,9 @@ internal static class MssqlErrorClassifier
     public const int ActionNoPermission = 15247;
     public const int LoginFailed = 18456;
 
+    /// <summary>A login refused because the account is disabled; the client sees this number, not <see cref="LoginFailed"/>.</summary>
+    public const int LoginAccountDisabled = 18470;
+
     /// <summary>The lowest severity at which SQL Server ends the session: the connection is gone.</summary>
     public const byte FatalSeverity = 20;
 
@@ -160,7 +163,8 @@ internal static class MssqlErrorClassifier
 
     /// <summary>
     /// A definite refusal for lack of a privilege or of access: a denied permission on an object, column,
-    /// database, or server; a principal that cannot access the database; a failed login. Nothing was read or
+    /// database, or server; a principal that cannot access the database; a failed login or a disabled login
+    /// account. Nothing was read or
     /// opened, and retrying without an operator changing a grant cannot succeed. <c>4060</c> is not here: it
     /// also reports a database that does not exist, so a caller resolves it by inspection.
     /// </summary>
@@ -176,7 +180,8 @@ internal static class MssqlErrorClassifier
                 or AlterDatabaseNoPermission
                 or KillNoPermission
                 or ActionNoPermission
-                or LoginFailed;
+                or LoginFailed
+                or LoginAccountDisabled;
 
     /// <summary>
     /// Whether a definite rejection names a condition that clears without any change to the request, the artifact, or
