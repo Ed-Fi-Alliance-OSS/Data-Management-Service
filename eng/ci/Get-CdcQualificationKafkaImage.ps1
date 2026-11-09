@@ -7,20 +7,11 @@
 
 [CmdletBinding()]
 param(
-    [switch] $UpgradeSource,
-    [string] $UpgradeSourceFile = (Join-Path $PSScriptRoot '../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/CdcControllerFixtureComposeKafka.cs'),
     [string] $ComposeFile = (Join-Path $PSScriptRoot '../docker-compose/kafka-broker.compose.yml'),
     [string] $BrokerSourceFile = (Join-Path $PSScriptRoot '../../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcComposeBrokerSizeDeployment.cs')
 )
 
 $ErrorActionPreference = 'Stop'
-# The upgrade source is historical; resolve the fixture authority rather than copying its pin.
-if ($UpgradeSource) {
-    $source = Get-Content -LiteralPath $UpgradeSourceFile -Raw
-    $image = [regex]::Match($source, 'internal const string PreviousKafkaImage\s*=\s*"(apache/kafka:3\.9\.0@sha256:[a-f0-9]{64})";').Groups[1].Value
-    if (-not $image) { throw 'CDC upgrade qualification requires a digest-pinned Apache Kafka 3.9.0 source image.' }
-    return $image
-}
 # Qualification uses the branch's shipped broker, independently of environment overrides.
 $compose = Get-Content -LiteralPath $ComposeFile -Raw
 $source = Get-Content -LiteralPath $BrokerSourceFile -Raw

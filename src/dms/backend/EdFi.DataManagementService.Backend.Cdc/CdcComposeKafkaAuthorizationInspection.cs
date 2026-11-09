@@ -11,7 +11,6 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 /// <summary>Live authority for the pinned, authorization-disabled local Apache Kafka deployment only.</summary>
 public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizationInspection
 {
-    private readonly string _brokerImage;
     private readonly string _project;
     private readonly string _adminBootstrapServers;
     private readonly string _workerBootstrapServers;
@@ -28,13 +27,9 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
         string project,
         string adminBootstrapServers,
         string workerBootstrapServers,
-        ICdcWorkerDockerCommand docker,
-        string brokerImage = CdcComposeBrokerSizeDeployment.BrokerImage
+        ICdcWorkerDockerCommand docker
     )
     {
-        // Public construction always requires the shipped pin. Historical upgrade fixtures
-        // can inspect their exact source image through this internal test seam.
-        _brokerImage = brokerImage;
         _project = project;
         _adminBootstrapServers = adminBootstrapServers;
         _workerBootstrapServers = workerBootstrapServers;
@@ -77,7 +72,7 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
             );
             var config = container.GetProperty("Config");
             Require(
-                config.GetProperty("Image").GetString() == _brokerImage
+                config.GetProperty("Image").GetString() == CdcComposeBrokerSizeDeployment.BrokerImage
                     && config.GetProperty("Labels").GetProperty("com.docker.compose.project").GetString()
                         == _project
                     && config.GetProperty("Labels").GetProperty("com.docker.compose.service").GetString()
@@ -85,7 +80,10 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
             );
             // Read the file actually passed to Kafka's JVM, not requested Compose environment values.
             using var image = JsonDocument.Parse(
-                await _docker.RunAsync(["image", "inspect", _brokerImage], cancellationToken)
+                await _docker.RunAsync(
+                    ["image", "inspect", CdcComposeBrokerSizeDeployment.BrokerImage],
+                    cancellationToken
+                )
             );
             var imageInfo = image.RootElement.EnumerateArray().Single();
             Require(imageInfo.GetProperty("Id").GetString() == container.GetProperty("Image").GetString());
@@ -95,7 +93,12 @@ public sealed class CdcComposeKafkaAuthorizationInspection : ICdcKafkaAuthorizat
                     .EnumerateArray()
                     .Any(d =>
                         d.GetString()!
-                            .EndsWith(_brokerImage[_brokerImage.IndexOf('@')..], StringComparison.Ordinal)
+                            .EndsWith(
+                                CdcComposeBrokerSizeDeployment.BrokerImage[
+                                    CdcComposeBrokerSizeDeployment.BrokerImage.IndexOf('@')..
+                                ],
+                                StringComparison.Ordinal
+                            )
                     )
             );
             string properties = await _docker.RunAsync(

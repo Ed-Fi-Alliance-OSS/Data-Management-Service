@@ -109,8 +109,7 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
         CancellationToken token,
         Func<CdcControllerFixture, CancellationToken, Task> beforeWorker = null!,
         bool composeKafka = false,
-        bool offlineKafka = false,
-        bool upgradeKafka = false
+        bool offlineKafka = false
     )
     {
         var settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(provider);
@@ -134,8 +133,7 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                 },
                 exposeBroker: true,
                 composeKafka: composeKafka,
-                offlineKafka: offlineKafka,
-                upgradeKafka: upgradeKafka
+                offlineKafka: offlineKafka
             );
             if (!offlineKafka)
             {

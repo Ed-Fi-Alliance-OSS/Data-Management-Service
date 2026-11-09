@@ -179,8 +179,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         CancellationToken cancellationToken,
         bool composeKafka = false,
         bool offlineKafka = false,
-        IReadOnlyList<string> schemaFiles = null!,
-        bool upgradeKafka = false
+        IReadOnlyList<string> schemaFiles = null!
     )
     {
         var suite = new CdcProviderAdmissionFixture(provider);
@@ -213,8 +212,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                     }
                 },
                 composeKafka: composeKafka,
-                offlineKafka: offlineKafka,
-                upgradeKafka: upgradeKafka
+                offlineKafka: offlineKafka
             );
             return suite;
         }

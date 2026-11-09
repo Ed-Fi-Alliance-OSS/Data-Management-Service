@@ -11,13 +11,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
-    // Historical release input, deliberately independent of the current shipped pin.
-    internal const string PreviousKafkaImage =
-        "apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f";
-    private bool _upgradeKafka;
     private bool _controllerComposeKafka;
-    private string ControllerUpgradeOverride =>
-        Path.Combine(_controllerComposeDirectory, "upgrade-source.json");
     private string _controllerComposeDirectory = "";
     private readonly HashSet<string> _controllerComposeVolumes = [];
     internal string ControllerComposeFile => Path.Combine(_controllerComposeDirectory, "compose.json");
@@ -60,16 +54,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 await File.ReadAllTextAsync(
                     Path.Combine(directory.FullName, "eng", "docker-compose", file),
                     token
-                ),
-                token
-            );
-        }
-        if (_upgradeKafka)
-        {
-            await File.WriteAllTextAsync(
-                ControllerUpgradeOverride,
-                JsonSerializer.Serialize(
-                    new { services = new { kafka = new { image = PreviousKafkaImage } } }
                 ),
                 token
             );
@@ -160,7 +144,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 ControllerComposeEnvironment,
                 "-p",
                 ControllerProject,
-                .. (File.Exists(ControllerUpgradeOverride) ? new[] { "-f", ControllerUpgradeOverride } : []),
                 .. (File.Exists(ControllerSizeOverride) ? new[] { "-f", ControllerSizeOverride } : []),
                 .. command,
             ],
@@ -200,37 +183,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
     }
 
     internal ICdcKafkaAuthorizationInspection CreateControllerKafkaAuthorizationInspection() =>
-        _upgradeKafka
-            ? new UpgradeKafkaAuthorizationInspection(this)
-            : new CdcComposeKafkaAuthorizationInspection(
-                ControllerProject,
-                ControllerKafkaBootstrapServers,
-                KafkaBootstrapServers
-            );
-
-    // Reuse the live inspector's image-ID, process, listener and authorization checks on
-    // both sides of the upgrade. Only the expected historical image differs before replacement.
-    private sealed class UpgradeKafkaAuthorizationInspection(CdcConnectorTemplatePinnedImageFixture fixture)
-        : ICdcKafkaAuthorizationInspection
-    {
-        public Task<CdcTransportResult<CdcKafkaAuthorizationDeploymentEvidence>> InspectAsync(
-            IReadOnlyList<int> brokerIds,
-            CancellationToken cancellationToken
-        ) =>
-            new CdcComposeKafkaAuthorizationInspection(
-                fixture.ControllerProject,
-                fixture.ControllerKafkaBootstrapServers,
-                fixture.KafkaBootstrapServers,
-                new CdcWorkerDockerCommand(),
-                fixture._upgradeKafka ? PreviousKafkaImage : CdcComposeBrokerSizeDeployment.BrokerImage
-            ).InspectAsync(brokerIds, cancellationToken);
-    }
-
-    internal void SelectShippedKafkaImage()
-    {
-        File.Delete(ControllerUpgradeOverride);
-        _upgradeKafka = false;
-    }
+        new CdcComposeKafkaAuthorizationInspection(
+            ControllerProject,
+            ControllerKafkaBootstrapServers,
+            KafkaBootstrapServers
+        );
 
     internal async Task<string> ComposeKafkaFeaturesAsync(CancellationToken token) =>
         (

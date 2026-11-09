@@ -1281,9 +1281,8 @@ is a separate procedure.
 | Postcondition | Stop: fresh verified shutdown for all bindings, complete STOPPED/no-task worker inventory, durable deployment `Phase: "Stopped"`, then successful infrastructure stop with containers/volumes retained. Start: retained stopped state read back, original provenance/history/offset evidence validated, every eligible connector ready, `Phase: "Active"`, then DMS launched unless local `-InfraOnly`. |
 | Rejection/timeout action | Preserve the original files and reachable infrastructure. A failed peer or incomplete inventory forbids worker shutdown; failed startup forbids DMS launch. Inspect and reconcile with a fresh managed stop before retrying startup. Use [incomplete-shutdown handling](#native-recovery) and [unsupported provenance](#unsupported-provenance) when applicable. |
 
-For the 3.9.0-to-4.3.2 broker transition, see
-[Kafka upgrade compatibility and restrictions](../../docs/KAFKA-UPGRADE.md).
-Storage-level upgrade tests do not qualify changing a retained wrapper's Compose
+See [Kafka startup and persistence](../../docs/KAFKA-UPGRADE.md) for the shipped
+broker checks. Retained startup requires the wrapper's original Compose
 fingerprint. Keep the original inputs for existing deployments; do not edit hashes
 or bypass these lifecycle checks to accept a new image.
 

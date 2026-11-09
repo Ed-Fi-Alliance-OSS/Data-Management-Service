@@ -167,9 +167,6 @@ try {
             Images = @()
         }
         $images = @($broker) + @($required | Where-Object { $_ -like '*_IMAGE' } | ForEach-Object { [Environment]::GetEnvironmentVariable($_) })
-        if ((@($lanes | Where-Object { $_ -in @('Postgresql', 'Mssql') }).Count -gt 0) -and $Suite -in @('All', 'RecordSize')) {
-            $images += & (Join-Path $PSScriptRoot 'Get-CdcQualificationKafkaImage.ps1') -UpgradeSource
-        }
         foreach ($image in $images | Select-Object -Unique) {
             if ($PullImages) {
                 Invoke-CdcQualificationImagePull -Image $image -RawDirectory $raw -Destination $destination

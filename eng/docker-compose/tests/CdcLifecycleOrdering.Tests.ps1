@@ -344,11 +344,11 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             $script:inputChecks | Should -Be 5
         }
 
-        It 'rejects a broker image upgrade before retained startup effects and preserves stopped inventory' {
+        It 'rejects a broker image change before retained startup effects and preserves stopped inventory' {
             $broker = Join-Path $script:root 'kafka-broker.compose.yml'
             $current = Get-Content $broker -Raw
-            $previousImage = & (Join-Path $PSScriptRoot '../../ci/Get-CdcQualificationKafkaImage.ps1') -UpgradeSource
-            [regex]::Replace($current, '(?m)^(    image:).*$', ('$1 ' + $previousImage)) | Set-Content $broker
+            $differentImage = 'apache/kafka:other@sha256:' + ('b' * 64)
+            [regex]::Replace($current, '(?m)^(    image:).*$', ('$1 ' + $differentImage)) | Set-Content $broker
             Register-CdcDeploymentHandoff (New-TestHandoff 42) (Join-Path $script:root 'state')
             $script:live = @('connector-42')
             Invoke-TestLifecycle @{ d = $true }

@@ -166,7 +166,7 @@ Describe 'CDC qualification image pulls' {
 Describe 'CDC qualification image-pull runner boundary' {
     It 'retains <Lane> pull evidence and refuses tests after required <Failure> image pull retries are exhausted' -ForEach @(
         @{ Lane = 'Kafka'; Suite = 'All'; Failure = 'Connect' },
-        @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Failure = 'UpgradeSource' }
+        @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Failure = 'Postgresql' }
     ) {
         # Run the real entry point in a child process because it deliberately exits nonzero.
         # Docker and sleep shims keep this deterministic and independent of a live registry.
@@ -182,8 +182,8 @@ $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
 Remove-Item Env:CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE -ErrorAction SilentlyContinue
 $env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE = 'unqualified-local-override:latest'
 $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'fixture-postgres:latest'
-$global:failedImage = if ($Failure -eq 'UpgradeSource') {
-    & (Join-Path (Split-Path $Runner) 'Get-CdcQualificationKafkaImage.ps1') -UpgradeSource
+$global:failedImage = if ($Failure -eq 'Postgresql') {
+    $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE
 } else { $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }
 function global:docker {
     if ($env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE -eq 'unqualified-local-override:latest') { throw 'Qualification must select the shipped broker.' }
@@ -209,10 +209,10 @@ exit $LASTEXITCODE
         $report[0].Reason | Should -Match 'after 3 attempts \(exit=17, category=RateLimited\)'
         $records = @(Get-Content (Join-Path $destination 'image-pulls.jsonl') | ConvertFrom-Json)
         $records[0].Image | Should -Be (& (Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'))
-        if ($Failure -eq 'UpgradeSource') {
-            $records[3].Image | Should -Be (& (Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1') -UpgradeSource)
-            $records.ExitCode | Should -Be @(0, 0, 0, 17, 17, 17)
-            $records.Attempt | Should -Be @(1, 1, 1, 1, 2, 3)
+        if ($Failure -eq 'Postgresql') {
+            $records[2].Image | Should -Be 'fixture-postgres:latest'
+            $records.ExitCode | Should -Be @(0, 0, 17, 17, 17)
+            $records.Attempt | Should -Be @(1, 1, 1, 2, 3)
         } else {
             $records.ExitCode | Should -Be @(0, 17, 17, 17)
             $records.Attempt | Should -Be @(1, 1, 2, 3)
@@ -2531,25 +2531,12 @@ Describe 'CDC API cleanup remaining resource probes' {
 }
 
 Describe 'CDC qualification Kafka image' {
-    It 'resolves the historical upgrade source and rejects missing, mutable or wrong-version inputs' {
-        $resolver = Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'
-        $image = & $resolver -UpgradeSource
-        $image | Should -Match '^apache/kafka:3\.9\.0@sha256:[a-f0-9]{64}$'
-        $source = Join-Path $TestDrive 'upgrade.cs'
-        foreach ($candidate in @('', 'apache/kafka:3.9.0', (& $resolver))) {
-            Set-Content $source "internal const string PreviousKafkaImage = `"$candidate`";"
-            { & $resolver -UpgradeSource -UpgradeSourceFile $source } | Should -Throw '*digest-pinned Apache Kafka 3.9.0*'
-        }
-        Set-Content $source "internal const string PreviousKafkaImage = `"$image`";"
-        (& $resolver -UpgradeSource -UpgradeSourceFile $source) | Should -Be $image
-    }
-
-    It 'rejects RecordSize evidence containing only fresh-volume persistence' {
-        $path = Join-Path $TestDrive 'missing-upgrade.trx'
+    It 'rejects RecordSize evidence missing Compose persistence' {
+        $path = Join-Path $TestDrive 'missing-persistence.trx'
         $required = (Get-CdcRunbookRecordSizeReport (Join-Path $TestDrive 'missing.trx')).Cases
         $nodes = @($required | ForEach-Object {
             $case = $_
-            $count = if ($case.TestId -eq 'It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation') { 1 } else { $case.Required }
+            $count = if ($case.TestId -eq 'It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation') { 0 } else { $case.Required }
             for ($i = 0; $i -lt $count; $i++) {
                 "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
             }

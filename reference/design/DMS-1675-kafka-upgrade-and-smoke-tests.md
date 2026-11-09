@@ -1,6 +1,6 @@
 ---
 jira: DMS-1675
-status: Upgrade compatibility and security assessment complete; image remediation remains open
+status: Kafka qualification and security assessment complete; image remediation remains open
 ---
 
 # DMS-1675: Upgrade Kafka and qualify CDC against Apache Kafka
@@ -9,9 +9,9 @@ Jira: https://edfi.atlassian.net/browse/DMS-1675
 
 ## Problem
 
-The Kafka update originally proposed by Dependabot #1426 (3.9.0 to 4.3.1) was included in dependency consolidation PR #1436 and subsequently raised to 4.3.2 to address broker vulnerabilities reported against 4.3.1. Kafka qualification and test-fixture changes exceed the scope of that dependency bundle and need a separate PR.
+The Kafka update originally proposed by Dependabot #1426 (targeting 4.3.1) was included in dependency consolidation PR #1436 and subsequently raised to 4.3.2 to address broker vulnerabilities reported against 4.3.1. Kafka qualification and test-fixture changes exceed the scope of that dependency bundle and need a separate PR.
 
-At the initial split, Compose selected the new broker while CdcComposeBrokerSizeDeployment.BrokerImage still pinned 3.9.0 and checked the deployed image for exact equality. Native Kafka fixtures consumed that stale constant. The Backend CDC Connector Template Smoke Tests used Redpanda startup and rpk commands, so they did not qualify Apache Kafka 4.3.2. Normal PR checks skip this manually dispatched smoke lane and do not establish that the live RecordSize qualification suites pass.
+At the initial split, Compose selected the new broker while CdcComposeBrokerSizeDeployment.BrokerImage still pinned a different broker image and checked the deployed image for exact equality. Native Kafka fixtures consumed that stale constant. The Backend CDC Connector Template Smoke Tests used Redpanda startup and rpk commands, so they did not qualify Apache Kafka 4.3.2. Normal PR checks skip this manually dispatched smoke lane and do not establish that the live RecordSize qualification suites pass.
 
 ## Intended outcome
 
@@ -24,7 +24,7 @@ Use the same digest-pinned Apache Kafka 4.3.2 broker in the DMS deployment and p
 3. Migrate the primary connector-template smoke lane from Redpanda to Apache Kafka, reusing existing native Kafka fixture support where appropriate. Replace Redpanda-specific startup and rpk operations; preserve connector validation/registration, classloading, partitioner, heartbeat, offset progress, and restart assertions.
 4. Audit shared fixture callers, workflow variables, configuration, and documentation. Remove obsolete Redpanda requirements from migrated paths. Retain a separate Redpanda compatibility lane only if an explicit supported-deployment requirement is established; do not break other callers by removing shared behavior blindly.
 5. Run connector-template smoke tests and live PostgreSQL and MSSQL RecordSize qualification suites against the new PR head. Verify Compose-backed broker-size changes and restart persistence use the intended Kafka image. Run relevant unit/contract tests and other affected live Kafka suites. Record actual results and failures; a skipped test or offline contract result is not live qualification.
-6. Assess the 3.9.0 to 4.3.2 major-version transition, including startup and existing-data compatibility; document any required upgrade steps or restrictions.
+6. Validate fresh startup and retained-volume persistence with the shipped broker, including the startup script, KRaft configuration, volume ownership, cluster/topic identity and offsets.
 7. Refresh the pinned-image vulnerability assessment and record remaining findings and their disposition. The prior 2026-11-03 Linux/amd64 Trivy scan found 9 package findings: 1 critical, 3 high, 2 medium, and 3 unknown. Critical: CVE-2026-111497 (brotli-libs); high: CVE-2026-117610, CVE-2026-118370, CVE-2026-77214 (libexpat). These package findings do not establish exploitability. Do not describe 4.3.2 as security-cleared without resolving or assessing them.
 
 ## Implementation status
@@ -40,8 +40,10 @@ Redpanda support requirement was found, so no compatibility lane is retained.
 Live smoke, both providers' RecordSize and Compose persistence, Kafka policy,
 telemetry, message contracts, and relevant unit/contract qualification passed as
 recorded below. Live qualification found and corrected the runbook's obsolete JMX
-tool class name. The 3.9.0 upgrade compatibility assessment and refreshed security
-scan/disposition are recorded below.
+tool class name. The refreshed security scan and disposition are recorded below.
+Qualification now targets only the shipped broker; historical-image fixtures and
+prerequisites have been removed. The dated results below record their original
+run scope and do not represent a new live run after this cleanup.
 
 ## Live qualification — 2026-11-08
 
@@ -151,82 +153,15 @@ and raw logs are not committed. These are local results, not GitHub Actions
 results or a published CI archive. Fixture-owned containers were cleaned up;
 the two pre-existing containers were left unchanged.
 
-The preceding selection used newly provisioned Compose volumes. The additional
-cross-version tests and security assessment below address the remaining work;
-functional tests do not resolve image vulnerabilities.
+## Image security — 2026-11-08
 
-## Upgrade compatibility and image security — 2026-11-08
+The [security assessment](../../docs/KAFKA-IMAGE-SECURITY.md) records the refreshed
+scan and remaining remediation. The [startup and persistence guide](../../docs/KAFKA-UPGRADE.md)
+describes current-image checks and the retained Compose fingerprint restriction.
 
-The [upgrade assessment](../../docs/KAFKA-UPGRADE.md) and
-[security assessment](../../docs/KAFKA-IMAGE-SECURITY.md) complete the remaining
-assessment work. They retain two explicit restrictions: managed wrapper upgrades
-across a changed Compose fingerprint are not supported by this change, and the
-pinned image still requires security remediation.
-
-Tested implementation: base `1a55a5a613f344f73ed84f6a5b4f54e3845edcc4` plus the
-code/script blobs recorded in the evidence archive's `summary.json`. These are the
-changes in this commit; the prior section remains the record of the full live
-qualification before these additions. No broker image change or package update
-was made during this assessment. Runtime/tool/provider inputs match the earlier
-2026-11-08 qualification, with this additional historical broker:
-
-`apache/kafka:3.9.0@sha256:fbc7d7c428e3755cf36518d4976596002477e4c052d1f80b5b9eafd06d0fff2f`.
-
-| Selection | Passed | Failed | Skipped |
-| --- | ---: | ---: | ---: |
-| Fresh 4.3.2 Compose startup/persistence, PostgreSQL and SQL Server | 2 | 0 | 0 |
-| 3.9.0 to 4.3.2 Compose upgrade/persistence, PostgreSQL and SQL Server | 2 | 0 | 0 |
-| Authorization/broker unit tests | 38 | 0 | 0 |
-| Offline CDC integration | 577 | 0 | 0 |
-| Qualification script contracts | 328 | 0 | 0 |
-| Lifecycle wrapper contracts | 268 | 0 | 0 |
-| Runbook command/link tests | 55 | 0 | 0 |
-
-The four live cases use `Given_Cdc_Compose_Persistence` in Release, selected by
-fully qualified fixture name with fail-fast enabled and container retention
-disabled. The complete provider RecordSize selections now contain 21 cases each;
-this follow-up reran the four affected persistence cases, not all 42 RecordSize
-cases or all previously qualified suites. The runner resolves/pulls the historical
-image for RecordSize and its required-case guard now requires both persistence
-cases per provider. Contract tests reject missing legacy image prerequisites and
-fresh-only persistence evidence.
-
-The upgrade cases first create real connector configuration, streaming source
-offsets, topic data and a sentinel on 3.9.0. After verified shutdown they replace
-the broker with 4.3.2 using the same named volume and shipped startup command.
-Both providers retain exact `meta.properties`, cluster/topic IDs, stopped source
-offsets, source partition identity and connector configuration. The sentinel is
-read at its original partition/offset. Restart resumes without deleting offsets
-or rerunning initial provider setup. Both then pass the acknowledged broker-size
-recreation and fresh readiness checks on the upgraded volume.
-
-Both images use `appuser` UID/GID 1000. Tests check mount/metadata ownership,
-unprivileged Kafka PID 1, `node.id=1`, combined broker/controller roles and the
-static quorum. Existing volumes retain `metadata.version=3.9-IV0`; fresh volumes
-use `4.3-IV0`. Captured feature reports retain `kraft.version=0`. Startup does not
-finalize the new feature levels. Feature finalization, downgrade, multi-node
-rolling upgrade and restoring CDC state from backups are not qualified here.
-
-The ordinary authorization inspector continues to require the current image. An
-internal test seam lets the historical phase require the exact old pin, including
-its actual image ID, generated configuration, running process and listener checks;
-it does not fake authorization evidence or relax public construction. Unit tests
-verify rejection of changed image references, image IDs and authorizers.
-
-The managed lifecycle wrapper separately rejects a broker pin change because it
-hashes the original Compose inputs. A new contract test performs verified stop,
-changes the broker pin, and verifies startup fails before effects while retaining
-the stopped inventory. The live storage tests exercise the controller/Compose
-boundary; they do not establish an end-to-end wrapper upgrade. The linked guide
-records this restriction and forbids editing retained hashes to bypass it.
-
-The first exploratory run passed the SQL Server fresh-volume case and failed the
-two legacy cases at the current-image authorization guard, corrected by the
-historical fixture seam. It also reported one PostgreSQL fresh-volume retained
-worker-startup `Unavailable` result; its underlying cause was not established.
-The final four-case rerun passed without retries inside the tests. Startup assertion
-diagnostics now include the sanitized transport result. The initial failed run is
-retained in the evidence summary rather than counted as qualification success.
+No broker image change or package update was made during the assessment.
+Runtime/tool/provider inputs match the earlier qualification. Functional tests
+do not resolve image vulnerabilities.
 
 Trivy 0.76.2 rescanned the exact target digest on Linux/amd64 with newly downloaded
 vulnerability and Java databases, no severity filtering and no ignore file.
@@ -240,8 +175,9 @@ recorded risk acceptance. No exploit testing was performed.
 
 Local evidence: `/home/brad/work/dms-root/qualification-results/DMS-1675-20261108-upgrade-security/`.
 It contains the full image scan, DB timestamps, scanner checksum list, exact image
-identities, startup/package inspection, four persistence attachments and a summary
-of every final result plus the initial exploratory failures. `SHA256SUMS` has
+identities, startup/package inspection and the original test reports, including
+exploratory failures. The archived test scope predates removal of the historical
+image lane; its reports are preserved as recorded. `SHA256SUMS` has
 fingerprint
 `734b35a746a4787d6ae9c4c2b2bc638f414083c7d7b19c838606d41122bed0f7`.
 This is a local evidence archive, not a published CI artifact. Private TRX, console output and container diagnostics remain under
