@@ -12,16 +12,19 @@ For the relational backend runbook context, see
 
 ## Installation
 
-Install the published .NET tool package from the Ed-Fi NuGet feed:
+Install the published .NET tool package from the Release view of the Ed-Fi Azure Artifacts
+feed. Install the tool version that matches the deployed Ed-Fi API version. The tool is
+published starting with Ed-Fi API 8.1.0, and its version always matches the Ed-Fi API
+version. This example installs tool 8.1.0 for Ed-Fi API 8.1.0:
 
 ```bash
-feed="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
-version="<published-version>"
+feed="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
+version="8.1.0"
 dotnet tool install --global EdFi.Api.DocumentCacheAdmin --source "$feed" --version "$version"
 ```
 
-Use a published package version from the feed. To install the latest stable package, omit
-`--version "$version"`.
+Always pin `--version`. Do not use a tool version newer or older than the Ed-Fi API you
+are administering.
 
 The installed command is `dms-document-cache`.
 
