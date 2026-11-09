@@ -406,4 +406,69 @@ public class PostgresqlEnvironmentRulesTests
         public void It_accepts_any_certificate_when_ssl_is_disabled() =>
             Evaluate("disable", "/etc/cms/client.crt", Home, true).Should().BeNull();
     }
+
+    /// <summary>
+    /// Review finding 2: <c>psql</c> receives only the configured password, so without one a configuration in which
+    /// Npgsql 8 would find a password is refused before readiness. The rule reproduces Npgsql's lookup: a set
+    /// <c>PGPASSWORD</c> ends it (an empty one is sent as the replay sends it), otherwise <c>PGPASSFILE</c>, or the
+    /// default file under the home directory, is read when it exists. The driver's own behaviour for each source is
+    /// observed in <see cref="PostgresqlAdminConnectionTests.Given_each_ambient_password_source_the_driver_consults"/>.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_password_npgsql_would_find_without_a_configured_one
+    {
+        private const string Home = "/home/cms";
+        private const string NamedFile = "/etc/cms/pgpass";
+
+        private static readonly DmsReadinessReason _refused = Reason(
+            DmsProvisioningFailureCode.StartupValidationFailed,
+            PostgresqlEnvironment.AmbientPasswordProbe
+        );
+
+        private static DmsReadinessReason? Evaluate(
+            string? configured,
+            string? passwordVariable,
+            string? passwordFileVariable,
+            params string[] existingFiles
+        ) =>
+            PostgresqlEnvironment.EvaluateAmbientPassword(
+                configured,
+                passwordVariable,
+                passwordFileVariable,
+                Home,
+                path => existingFiles.Contains(path)
+            );
+
+        [Test]
+        public void It_refuses_a_non_empty_pgpassword() =>
+            Evaluate(null, "ambient", null).Should().Be(_refused);
+
+        [Test]
+        public void It_accepts_an_empty_pgpassword_which_ends_the_lookup_as_the_replay_sends_none() =>
+            Evaluate(null, string.Empty, NamedFile, NamedFile).Should().BeNull();
+
+        [Test]
+        public void It_refuses_an_existing_file_named_by_pgpassfile() =>
+            Evaluate(null, null, NamedFile, NamedFile).Should().Be(_refused);
+
+        [Test]
+        public void It_refuses_the_default_file_in_the_home_directory() =>
+            Evaluate(null, null, null, PostgresqlEnvironment.DefaultPasswordFilePath(Home))
+                .Should()
+                .Be(_refused);
+
+        [Test]
+        public void It_accepts_a_pgpassfile_naming_no_file_even_when_the_default_exists() =>
+            Evaluate(null, null, NamedFile, PostgresqlEnvironment.DefaultPasswordFilePath(Home))
+                .Should()
+                .BeNull();
+
+        [Test]
+        public void It_accepts_passwordless_login_without_an_ambient_source() =>
+            Evaluate(string.Empty, null, null).Should().BeNull();
+
+        [Test]
+        public void It_accepts_any_ambient_source_when_a_password_is_configured() =>
+            Evaluate("configured", "ambient", NamedFile, NamedFile).Should().BeNull();
+    }
 }

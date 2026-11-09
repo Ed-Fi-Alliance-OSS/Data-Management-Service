@@ -114,6 +114,12 @@ public class LibpqEnvironmentTests
         public void It_sends_no_client_certificate() =>
             _startInfo.Environment["PGSSLCERTMODE"].Should().Be("disable");
 
+        // libpq prefers GSS encryption to TLS whenever Kerberos credentials are usable, regardless of sslmode
+        // (verify-full included); Npgsql 8 never negotiates it.
+        [Test]
+        public void It_disables_gss_encryption_so_the_configured_tls_verification_applies() =>
+            _startInfo.Environment["PGGSSENCMODE"].Should().Be("disable");
+
         [Test]
         public void It_passes_the_connect_timeout_in_seconds() =>
             _startInfo.Environment["PGCONNECT_TIMEOUT"].Should().Be("20");
@@ -397,11 +403,13 @@ public class LibpqEnvironmentTests
 
     /// <summary>
     /// Server-certificate trust through the administrative connection, which both clients read: a relative
-    /// <c>Root Certificate</c> reaches Npgsql and <c>psql</c> as the same full path, resolved where Npgsql would
-    /// resolve it, because <c>psql</c> runs in the operation's directory; and a verifying mode without one is
+    /// <c>Root Certificate</c> reaches <c>psql</c> as the full path Npgsql's certificate check reads, resolved in
+    /// this process's working directory, because <c>psql</c> runs in the operation's directory; and a verifying mode without one is
     /// refused, because Npgsql would then trust sources the replay does not see. A mode that does not verify is
     /// unchanged without one, and refused with one (review finding 2): <c>libpq</c> would verify against the file
     /// where Npgsql verifies nothing, so an unrelated server certificate would pass readiness and fail every replay.
+    /// That both clients then trust the same certificates is shown by handshakes in
+    /// <see cref="PostgresqlAdminConnectionTests.Given_a_verifying_connection_to_a_server_presenting_a_certificate"/>.
     /// </summary>
     [TestFixture]
     public class Given_the_server_certificate_trust_of_the_admin_connection
@@ -410,7 +418,6 @@ public class LibpqEnvironmentTests
 
         private string _expectedRoot = string.Empty;
         private string? _libpqRoot;
-        private string? _npgsqlRoot;
         private Dictionary<string, Exception?> _verifyingWithoutRoot = [];
         private Exception? _requireWithoutRoot;
         private Dictionary<string, Exception?> _rootWithoutVerifying = [];
@@ -425,9 +432,6 @@ public class LibpqEnvironmentTests
                 TimeSpan.FromSeconds(30)
             );
             _libpqRoot = connection.ToLibpqSettings().RootCertificate;
-            _npgsqlRoot = new NpgsqlConnectionStringBuilder(
-                connection.ConnectionStringFor("postgres", "dmsprov-session")
-            ).RootCertificate;
 
             _verifyingWithoutRoot = new[] { "VerifyCA", "VerifyFull" }.ToDictionary(
                 mode => mode,
@@ -458,11 +462,7 @@ public class LibpqEnvironmentTests
         }
 
         [Test]
-        public void It_hands_both_clients_the_same_full_root_certificate_path()
-        {
-            _libpqRoot.Should().Be(_expectedRoot);
-            _npgsqlRoot.Should().Be(_expectedRoot);
-        }
+        public void It_hands_psql_the_full_root_certificate_path() => _libpqRoot.Should().Be(_expectedRoot);
 
         [Test]
         public void It_refuses_a_verifying_mode_without_a_root_certificate() =>

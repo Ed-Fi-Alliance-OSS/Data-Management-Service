@@ -100,6 +100,13 @@ internal static class PostgresqlEnvironment
     /// </summary>
     public const string ClientCertificateProbe = "ClientCertificate";
 
+    /// <summary>
+    /// Without a configured <c>Password</c>, Npgsql would not find one in this process's environment either: <c>psql</c>
+    /// receives only the configured password, so a password Npgsql found elsewhere is refused
+    /// (<see cref="EvaluateAmbientPassword"/>).
+    /// </summary>
+    public const string AmbientPasswordProbe = "AmbientPassword";
+
     /// <summary>The lowest <c>server_version_num</c> accepted (D-9).</summary>
     public const int MinimumServerVersionNum = 180000;
 
@@ -360,6 +367,50 @@ internal static class PostgresqlEnvironment
             OperatingSystem.IsWindows() ? "postgresql" : ".postgresql",
             "postgresql.crt"
         );
+
+    /// <summary>
+    /// The ambient-password rule. Without a configured password Npgsql 8 uses <c>PGPASSWORD</c> when it is set, and
+    /// otherwise the matching entry of the password file <c>PGPASSFILE</c> names, or of the default one
+    /// (<c>$HOME/.pgpass</c>, <c>%APPDATA%\postgresql\pgpass.conf</c> on Windows) when it exists. <c>psql</c> runs with
+    /// a cleared environment and a password file holding only the configured password, empty here, so a server that
+    /// accepted Npgsql's password would refuse every replay. A configuration in which Npgsql would find a non-empty
+    /// <c>PGPASSWORD</c> or an existing password file is <c>StartupValidationFailed</c>; passwordless
+    /// authentication without those sources is unaffected. Nothing read is reported.
+    /// </summary>
+    /// <param name="configuredPassword">The connection string's password; null or empty when none is configured.</param>
+    /// <param name="passwordVariable">This process's <c>PGPASSWORD</c>, or null when unset.</param>
+    /// <param name="passwordFileVariable">This process's <c>PGPASSFILE</c>, or null when unset.</param>
+    /// <param name="homeDirectory">This process's <c>HOME</c> (<c>APPDATA</c> on Windows), or null when unset.</param>
+    /// <param name="fileExists">Whether a file exists at a path.</param>
+    public static DmsReadinessReason? EvaluateAmbientPassword(
+        string? configuredPassword,
+        string? passwordVariable,
+        string? passwordFileVariable,
+        string? homeDirectory,
+        Func<string, bool> fileExists
+    )
+    {
+        ArgumentNullException.ThrowIfNull(fileExists);
+        if (!string.IsNullOrEmpty(configuredPassword))
+        {
+            return null;
+        }
+
+        string? passwordFile =
+            passwordFileVariable ?? (homeDirectory is null ? null : DefaultPasswordFilePath(homeDirectory));
+        bool npgsqlFindsOne = passwordVariable is not null
+            ? passwordVariable.Length > 0
+            : passwordFile is not null && fileExists(passwordFile);
+        return npgsqlFindsOne
+            ? Reason(DmsProvisioningFailureCode.StartupValidationFailed, AmbientPasswordProbe)
+            : null;
+    }
+
+    /// <summary>Npgsql's default password file under <paramref name="homeDirectory"/>.</summary>
+    public static string DefaultPasswordFilePath(string homeDirectory) =>
+        OperatingSystem.IsWindows()
+            ? Path.Combine(homeDirectory, "postgresql", "pgpass.conf")
+            : Path.Combine(homeDirectory, ".pgpass");
 
     private static DmsReadinessReason Reason(
         DmsProvisioningFailureCode code,

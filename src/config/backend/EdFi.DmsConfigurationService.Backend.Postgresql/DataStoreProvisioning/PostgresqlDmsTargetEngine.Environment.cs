@@ -42,6 +42,11 @@ public sealed partial class PostgresqlDmsTargetEngine
             reasons.Add(certificateReason);
         }
 
+        if (AmbientPasswordReason() is { } passwordReason)
+        {
+            reasons.Add(passwordReason);
+        }
+
         if (serverReachable && await ProbeTargetLockAsync(cancellationToken) is { } lockReason)
         {
             reasons.Add(lockReason);
@@ -72,6 +77,31 @@ public sealed partial class PostgresqlDmsTargetEngine
         return PostgresqlEnvironment.EvaluateClientCertificate(
             sslMode,
             Environment.GetEnvironmentVariable("PGSSLCERT"),
+            Environment.GetEnvironmentVariable(OperatingSystem.IsWindows() ? "APPDATA" : "HOME"),
+            File.Exists
+        );
+    }
+
+    /// <summary>
+    /// <see cref="PostgresqlEnvironment.EvaluateAmbientPassword"/> over this process's environment, read as Npgsql
+    /// reads it. A connection string that cannot be read adds nothing here, as in <see cref="ClientCertificateReason"/>.
+    /// </summary>
+    private DmsReadinessReason? AmbientPasswordReason()
+    {
+        string configuredPassword;
+        try
+        {
+            configuredPassword = _adminConnection.ToLibpqSettings().Password;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return null;
+        }
+
+        return PostgresqlEnvironment.EvaluateAmbientPassword(
+            configuredPassword,
+            Environment.GetEnvironmentVariable("PGPASSWORD"),
+            Environment.GetEnvironmentVariable("PGPASSFILE"),
             Environment.GetEnvironmentVariable(OperatingSystem.IsWindows() ? "APPDATA" : "HOME"),
             File.Exists
         );

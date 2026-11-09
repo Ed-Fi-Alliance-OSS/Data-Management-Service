@@ -3,6 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Net.Security;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
@@ -67,7 +70,7 @@ public sealed class PostgresqlAdminConnection
     /// cannot read throws the driver's exception, whose message is never logged. Every open, the
     /// <c>psql</c> handoff, and readiness pass through here, so a value the handoff cannot carry is refused
     /// before anything connects, whether it was configured or arrived by a rotated secret (D-10): see
-    /// <see cref="RefuseLineBreaks"/> and <see cref="AlignTrust"/>.
+    /// <see cref="RefuseLineBreaks"/>, <see cref="AlignTrust"/> and <see cref="RefuseWhatPsqlCannotReceive"/>.
     /// </summary>
     private NpgsqlConnectionStringBuilder Template
     {
@@ -93,6 +96,7 @@ public sealed class PostgresqlAdminConnection
                 };
                 RefuseLineBreaks(template);
                 AlignTrust(template);
+                RefuseWhatPsqlCannotReceive(template);
                 _parsed = (current, template);
                 return template;
             }
@@ -119,7 +123,8 @@ public sealed class PostgresqlAdminConnection
     }
 
     /// <summary>
-    /// Makes Npgsql and <c>psql</c> trust the same roots. A <c>Root Certificate</c> is made a full path against
+    /// Makes Npgsql and <c>psql</c> trust the same roots; the trust itself is enforced for Npgsql by
+    /// <see cref="IsTrustedServerCertificate"/>. A <c>Root Certificate</c> is made a full path against
     /// this process's working directory, where Npgsql resolves it, because <c>psql</c> runs in the operation's
     /// directory and would resolve a relative path there. A verifying mode without one is refused: Npgsql
     /// would then fall back to <c>PGSSLROOTCERT</c>, a default file, or the machine store, none of which the
@@ -154,6 +159,19 @@ public sealed class PostgresqlAdminConnection
         template.RootCertificate = Path.GetFullPath(template.RootCertificate);
     }
 
+    /// <summary>
+    /// Refuses a value the <c>psql</c> handoff (<see cref="LibpqConnectionSettings.From"/>) cannot carry, so every
+    /// open refuses it too and readiness reports it rather than passing while every replay fails. In particular a
+    /// missing <c>Username</c>: Npgsql 8 would take the user from <c>PGUSER</c>, the Kerberos principal, or the
+    /// operating-system user, none of which the replay's cleared environment carries. The password's ambient
+    /// sources are a readiness rule instead (<see cref="PostgresqlEnvironment.AmbientPasswordProbe"/>), because
+    /// Npgsql cannot be told to ignore them through the connection string.
+    /// </summary>
+    private static void RefuseWhatPsqlCannotReceive(NpgsqlConnectionStringBuilder template) =>
+        _ = LibpqConnectionSettings.From(template);
+
+    private static bool IsVerifying(SslMode mode) => mode is SslMode.VerifyCA or SslMode.VerifyFull;
+
     public TimeSpan CommandTimeout { get; }
 
     /// <summary>Opens a dedicated connection to <paramref name="database"/>; nothing is kept open when opening fails.</summary>
@@ -165,7 +183,11 @@ public sealed class PostgresqlAdminConnection
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(database);
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
-        NpgsqlConnection connection = new(ConnectionStringFor(database, applicationName));
+        NpgsqlConnectionStringBuilder template = Template;
+        NpgsqlConnection connection = new(DriverConnectionString(template, database, applicationName))
+        {
+            UserCertificateValidationCallback = ServerCertificateValidation(template),
+        };
         try
         {
             await connection.OpenAsync(cancellationToken);
@@ -192,10 +214,105 @@ public sealed class PostgresqlAdminConnection
     /// <summary>The connection as <c>libpq</c> receives it (D-10), for the replay runner only; never logged.</summary>
     internal LibpqConnectionSettings ToLibpqSettings() => LibpqConnectionSettings.From(Template);
 
+    /// <summary>The value <see cref="OpenAsync"/> hands to Npgsql, which it pairs with <see cref="ServerCertificateValidation"/>.</summary>
     internal string ConnectionStringFor(string database, string applicationName) =>
-        new NpgsqlConnectionStringBuilder(Template.ConnectionString)
+        DriverConnectionString(Template, database, applicationName);
+
+    /// <summary>
+    /// A verifying mode reaches Npgsql as <c>Require</c> without the <c>Root Certificate</c>, because Npgsql 8 takes
+    /// a validation callback only in that form; it sends the same SSL request and refuses a server without TLS the
+    /// same way in all three modes, so only the certificate check, <see cref="ServerCertificateValidation"/>, changes.
+    /// </summary>
+    private static string DriverConnectionString(
+        NpgsqlConnectionStringBuilder template,
+        string database,
+        string applicationName
+    )
+    {
+        NpgsqlConnectionStringBuilder builder = new(template.ConnectionString)
         {
             Database = database,
             ApplicationName = applicationName,
-        }.ConnectionString;
+        };
+        if (IsVerifying(template.SslMode))
+        {
+            builder.SslMode = SslMode.Require;
+            builder.RootCertificate = null;
+        }
+
+        return builder.ConnectionString;
+    }
+
+    /// <summary>The certificate check of a verifying mode, over the full <c>Root Certificate</c> path; null for any other mode.</summary>
+    private static RemoteCertificateValidationCallback? ServerCertificateValidation(
+        NpgsqlConnectionStringBuilder template
+    )
+    {
+        if (!IsVerifying(template.SslMode))
+        {
+            return null;
+        }
+
+        string rootCertificatePath = template.RootCertificate!;
+        bool verifyHostName = template.SslMode == SslMode.VerifyFull;
+        return (_, certificate, chain, errors) =>
+            IsTrustedServerCertificate(certificate, chain, errors, rootCertificatePath, verifyHostName);
+    }
+
+    /// <summary>
+    /// The server-certificate check <c>libpq</c> makes with <c>sslrootcert</c> naming the file, so readiness and
+    /// every Npgsql session trust exactly what the replay trusts. Npgsql 8's own check accepts a certificate the
+    /// machine store trusts before it reads the file, so a server trusted through another root would pass
+    /// readiness and fail every replay. Here the chain must end at a certificate of the file, read as PEM as
+    /// <c>libpq</c> reads it (a file holding no PEM certificate trusts nothing), without a revocation check, as
+    /// neither client is given a revocation list. <c>VerifyFull</c> also requires the host name the TLS layer
+    /// checked against the host dialled; <c>VerifyCA</c>, as in <c>libpq</c>, does not.
+    /// </summary>
+    internal static bool IsTrustedServerCertificate(
+        X509Certificate? certificate,
+        X509Chain? chain,
+        SslPolicyErrors errors,
+        string rootCertificatePath,
+        bool verifyHostName
+    )
+    {
+        if (
+            certificate is not X509Certificate2 serverCertificate
+            || chain is null
+            || errors.HasFlag(SslPolicyErrors.RemoteCertificateNotAvailable)
+            || (verifyHostName && errors.HasFlag(SslPolicyErrors.RemoteCertificateNameMismatch))
+        )
+        {
+            return false;
+        }
+
+        X509Certificate2Collection roots = new();
+        try
+        {
+            roots.ImportFromPemFile(rootCertificatePath);
+            if (roots.Count == 0)
+            {
+                return false;
+            }
+
+            chain.ChainPolicy.TrustMode = X509ChainTrustMode.CustomRootTrust;
+            chain.ChainPolicy.CustomTrustStore.Clear();
+            chain.ChainPolicy.CustomTrustStore.AddRange(roots);
+            chain.ChainPolicy.ExtraStore.AddRange(roots);
+            chain.ChainPolicy.RevocationMode = X509RevocationMode.NoCheck;
+            return chain.Build(serverCertificate);
+        }
+        catch (Exception exception)
+            when (exception is IOException or UnauthorizedAccessException or CryptographicException)
+        {
+            return false;
+        }
+        finally
+        {
+            foreach (X509Certificate2 root in roots)
+            {
+                root.Dispose();
+            }
+        }
+    }
 }

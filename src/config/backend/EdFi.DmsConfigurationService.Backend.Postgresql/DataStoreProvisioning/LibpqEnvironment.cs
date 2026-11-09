@@ -181,6 +181,11 @@ internal sealed record LibpqConnectionSettings(
 /// <c>PGSSLCERT</c> and <c>HOME</c>, which the cleared environment cannot reproduce, so readiness refuses any
 /// configuration in which Npgsql would send one (<see cref="PostgresqlEnvironment.ClientCertificateProbe"/>).
 /// </para>
+/// <para>
+/// GSS encryption is disabled (<c>gssencmode=disable</c>): <c>libpq</c> prefers it to TLS whenever usable
+/// Kerberos credentials exist, regardless of <c>sslmode</c>, which would bypass the configured TLS
+/// verification; Npgsql 8 never negotiates it.
+/// </para>
 /// </summary>
 internal static class LibpqEnvironment
 {
@@ -190,6 +195,7 @@ internal static class LibpqEnvironment
     public const string SslRootCertificateVariable = "PGSSLROOTCERT";
     public const string SslRevocationListVariable = "PGSSLCRL";
     public const string SslCertificateModeVariable = "PGSSLCERTMODE";
+    public const string GssEncryptionModeVariable = "PGGSSENCMODE";
     public const string ConnectTimeoutVariable = "PGCONNECT_TIMEOUT";
     public const string ClientEncodingVariable = "PGCLIENTENCODING";
     public const string LocaleVariable = "LC_ALL";
@@ -199,8 +205,9 @@ internal static class LibpqEnvironment
     public const string ClientEncoding = "UTF8";
     public const string Locale = "C";
     public const string SslCertificateModeDisable = "disable";
+    public const string GssEncryptionModeDisable = "disable";
 
-    /// <summary>The only variable names a <c>psql</c> process may receive, in the order D-10 lists them, then the revocation list and certificate mode, then <c>SystemRoot</c> on Windows.</summary>
+    /// <summary>The only variable names a <c>psql</c> process may receive, in the order D-10 lists them, then the revocation list, certificate mode and GSS encryption mode, then <c>SystemRoot</c> on Windows.</summary>
     public static IReadOnlyList<string> AllowedVariables { get; } =
     [
         PasswordFileVariable,
@@ -213,6 +220,7 @@ internal static class LibpqEnvironment
         PathVariable,
         SslRevocationListVariable,
         SslCertificateModeVariable,
+        GssEncryptionModeVariable,
         .. OperatingSystem.IsWindows() ? [SystemRootVariable] : Array.Empty<string>(),
     ];
 
@@ -225,7 +233,7 @@ internal static class LibpqEnvironment
 
     /// <summary>
     /// Replaces the environment of <paramref name="startInfo"/> with the allowlist. The connection-derived
-    /// variables, the root certificate, revocation list and certificate mode among them, are set only when
+    /// variables, the root certificate, revocation list, certificate mode and GSS encryption mode among them, are set only when
     /// <paramref name="connection"/> is given (the version probe needs none), which requires
     /// <paramref name="passwordFilePath"/>; the application name only when supplied. No value is ever the password.
     /// </summary>
@@ -265,6 +273,7 @@ internal static class LibpqEnvironment
                 connection.RootCertificate ?? AbsentFilePath(passwordFilePath);
             environment[SslRevocationListVariable] = AbsentFilePath(passwordFilePath);
             environment[SslCertificateModeVariable] = SslCertificateModeDisable;
+            environment[GssEncryptionModeVariable] = GssEncryptionModeDisable;
             environment[ConnectTimeoutVariable] = connection.ConnectTimeoutSeconds.ToString(
                 CultureInfo.InvariantCulture
             );
