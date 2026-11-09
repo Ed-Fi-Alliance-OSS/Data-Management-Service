@@ -13,9 +13,10 @@ For the relational backend runbook context, see
 ## Installation
 
 Install the published .NET tool package from the Release view of the Ed-Fi Azure Artifacts
-feed. Install the tool version that matches the deployed Ed-Fi API version. The tool is
-published starting with Ed-Fi API 8.1.0, and its version always matches the Ed-Fi API
-version. This example installs tool 8.1.0 for Ed-Fi API 8.1.0:
+feed. Install the tool version that matches the deployed Ed-Fi API version. A tool package
+is published with each Ed-Fi API release at the same version, and Ed-Fi API versions
+before 8.1.0 have none. Installing requires the .NET 10 SDK. This example installs tool
+8.1.0 for Ed-Fi API 8.1.0:
 
 ```bash
 feed="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
