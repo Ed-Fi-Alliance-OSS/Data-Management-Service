@@ -281,26 +281,28 @@ jobs:
             -PackageName "EdFi.Api.Secrets" `
             -Version (Get-SecretsContractVersion)
 
-      # Last on purpose: the promote steps run in sequence in this one job and Invoke-Promote throws
-      # on an error response. The tool is app-versioned like SchemaTools, so a DocumentCacheAdmin
-      # version missing from the feed fails the run loudly without stopping the other eight promotions.
+      # Last on purpose: the promote steps run in sequence in this one job, so a release whose tool
+      # chain failed fails here, loudly, after the other eight promotions ran. Invoke-ContractPromotion
+      # does nothing when the version is already in the Release view, promotes it when it is on the
+      # feed, and refuses a version that is on neither.
       - name: Promote EdFi.Api.DocumentCacheAdmin Package
         shell: pwsh
         env:
           ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
           ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
-          $arguments = @{
-            PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = $env:ARTIFACTS_USERNAME
-            ViewId      = "release"
-            ReleaseRef  = $env:RELEASE_REF
-            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
-            PackageName = "EdFi.Api.DocumentCacheAdmin"
-          }
+          $ErrorActionPreference = "Stop"
 
           Import-Module ./package-helpers.psm1
-          Invoke-Promote @arguments
+
+          Invoke-ContractPromotion `
+            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
+            -PackageName "EdFi.Api.DocumentCacheAdmin" `
+            -Version ($env:RELEASE_REF -replace '^v', '')
 
   tag-dms-image:
     name: Release Tag DMS Image

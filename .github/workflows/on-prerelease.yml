@@ -434,9 +434,10 @@ jobs:
       run:
         shell: pwsh
     needs: pack-document-cache-admin
+    # Only downloads and uploads workflow artifacts, so it needs no write access to the repository.
     permissions:
       actions: read
-      contents: write
+      contents: read
     outputs:
       sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
     steps:
@@ -458,6 +459,9 @@ jobs:
           (Resolve-Path $packageFile).Path > buildfilelist.txt
 
           dotnet tool install --global Microsoft.Sbom.DotNetTool
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installing Microsoft.Sbom.DotNetTool failed with exit code $LASTEXITCODE."
+          }
 
           sbom-tool generate `
               -b ./ `
@@ -468,6 +472,9 @@ jobs:
               -nsb https://ed-fi.org `
               -m ./ `
               -ps "Ed-Fi Alliance"
+          if ($LASTEXITCODE -ne 0) {
+            throw "sbom-tool generate failed with exit code $LASTEXITCODE."
+          }
 
           cp _manifest/spdx_2.2/manifest.spdx.* .
 
@@ -627,9 +634,12 @@ jobs:
   publish-package-document-cache-admin:
     name: Publish DocumentCacheAdmin NuGet Package
     # The tool package bundles the contract assemblies through its Core reference, so it waits on the
-    # contract pushes for the reason publish-package-dms records.
+    # contract pushes for the reason publish-package-dms records. It also waits on the SBOM and
+    # provenance jobs, so a package is never pushed when either attestation failed.
     needs:
       - pack-document-cache-admin
+      - sbom-create-document-cache-admin
+      - provenance-create-document-cache-admin
       - publish-package-plugins
       - publish-package-custom-validation
       - publish-package-identity

@@ -265,9 +265,19 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             return $match.Groups[1].Value
         }
 
-        # Both the inline form (needs: a) and the list form, ignoring comment lines.
+        # The inline form (needs: a), the one-line bracket form (needs: [a, b]) and the list form,
+        # ignoring comment lines.
         function Get-JobNeed {
             param([Parameter(Mandatory)][string] $Job)
+
+            $bracket = [regex]::Match($Job, '(?m)^    needs:[ \t]*\[(.*?)\][ \t]*$')
+            if ($bracket.Success) {
+                return @(
+                    $bracket.Groups[1].Value -split ',' |
+                        ForEach-Object { $_.Trim() } |
+                        Where-Object { $_ }
+                )
+            }
 
             $inline = [regex]::Match($Job, '(?m)^    needs:[ \t]+(\S.*?)\s*$')
             if ($inline.Success) { return @($inline.Groups[1].Value) }
@@ -351,12 +361,31 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             $pack.Substring($hash, $upload - $hash) | Should -Match 'uses: actions/upload-artifact@'
         }
 
+        It "passes the package target and skips the rebuild in the smoke in pack-document-cache-admin" {
+            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $create = Get-WorkflowStep -Workflow $pack -Name "Create DocumentCacheAdmin NuGet Package"
+            $smoke = Get-WorkflowStep -Workflow $pack -Name "Verify Installed DocumentCacheAdmin Package"
+
+            $create | Should -Match '\./build-dms\.ps1(?:[^\r\n]|`\r?\n)*?-PackageTarget DocumentCacheAdmin(?![\w-])'
+            $smoke | Should -Match 'Invoke-DocumentCacheAdminPackageSmoke\.ps1(?:[^\r\n]|`\r?\n)*?-SkipPackageBuild(?![\w-])'
+        }
+
         It "creates the SBOM after pack-document-cache-admin and uploads it" {
             $sbom = Get-WorkflowJob -Workflow $script:prerelease -Name "sbom-create-document-cache-admin"
 
             @(Get-JobNeed -Job $sbom) | Should -Contain "pack-document-cache-admin"
             $sbom | Should -Match '\$\{\{ env\.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME \}\}-SBOM'
             $sbom | Should -Match 'uses: actions/upload-artifact@'
+        }
+
+        It "gives the SBOM job read-only contents and checks each tool exit code" {
+            $sbom = Get-WorkflowJob -Workflow $script:prerelease -Name "sbom-create-document-cache-admin"
+
+            $sbom | Should -Not -Match '(?m)^\s+contents:\s*write\b'
+            $sbom | Should -Match '(?m)^      contents: read\s*$'
+            $sbom | Should -Match '(?m)^      actions: read\s*$'
+            $sbom | Should -Match '(?s)dotnet tool install --global Microsoft\.Sbom\.DotNetTool\r?\n\s*if \(\$LASTEXITCODE -ne 0\) \{\s*throw '
+            $sbom | Should -Match '(?s)sbom-tool generate(?:[^\r\n]|`\r?\n)*\r?\n\s*if \(\$LASTEXITCODE -ne 0\) \{\s*throw '
         }
 
         It "creates provenance for the hash pack-document-cache-admin outputs" {
@@ -367,10 +396,15 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             $provenance | Should -Match 'provenance-name: edfiApiDocumentCacheAdmin\.intoto\.jsonl'
         }
 
-        It "orders and gates publish-package-document-cache-admin as publish-package-schema-tools is" {
+        It "orders and gates publish-package-document-cache-admin as publish-package-schema-tools is, plus the SBOM and provenance jobs" {
             $publish = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-document-cache-admin"
             $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-schema-tools"
-            $expected = @(Get-JobNeed -Job $sibling) | ForEach-Object { $_ -replace '^pack-schema-tools$', 'pack-document-cache-admin' }
+            # Stricter than the sibling: the package is never pushed when either attestation failed.
+            $expected = @(
+                @(Get-JobNeed -Job $sibling) | ForEach-Object { $_ -replace '^pack-schema-tools$', 'pack-document-cache-admin' }
+                "sbom-create-document-cache-admin"
+                "provenance-create-document-cache-admin"
+            )
 
             $expected | Should -Not -BeNullOrEmpty
             @(Get-JobNeed -Job $publish) | Sort-Object | Should -Be ($expected | Sort-Object)
@@ -416,13 +450,17 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             }
         }
 
-        It "promotes EdFi.Api.DocumentCacheAdmin to the release view" {
+        It "promotes EdFi.Api.DocumentCacheAdmin with Invoke-ContractPromotion at the release version" {
             $step = Get-WorkflowStep -Workflow $script:release -Name "Promote EdFi.Api.DocumentCacheAdmin Package"
 
-            $step | Should -Match 'Invoke-Promote'
-            $step | Should -Match '(?m)^\s+PackageName\s*=\s*"EdFi\.Api\.DocumentCacheAdmin"\s*$'
-            $step | Should -Match '(?m)^\s+ViewId\s*=\s*"release"\s*$'
-            $step | Should -Match '(?m)^\s+ReleaseRef\s*=\s*\$env:RELEASE_REF\s*$'
+            $step | Should -Match 'Invoke-ContractPromotion'
+            $step | Should -Not -Match 'Invoke-Promote\b'
+            $step | Should -Match '-PackageName "EdFi\.Api\.DocumentCacheAdmin"'
+            $step | Should -Match '-Version \(\$env:RELEASE_REF -replace ''\^v'', ''''\)'
+            $step | Should -Match '-ServiceIndexUrl "\$\{\{ env\.ARTIFACTS_FEED_URL \}\}"'
+            $step | Should -Match '-ApiKey \$env:ARTIFACTS_API_KEY'
+            ([regex]::Matches($step, '(?m)^\s+ARTIFACTS_USERNAME:')).Count | Should -Be 1
+            ([regex]::Matches($step, '(?m)^\s+ARTIFACTS_API_KEY:')).Count | Should -Be 1
         }
 
         It "promotes DocumentCacheAdmin last among the promote steps" {
