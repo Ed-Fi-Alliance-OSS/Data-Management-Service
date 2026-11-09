@@ -144,19 +144,22 @@ public sealed partial class DmsDataStoreProvisioningService
         DmsTargetDatabaseName target = request.TargetName;
 
         // 6.3 step 8: the rename is this operation's selected-target mutation, in doubt from the moment it is
-        // sent until a definite outcome settles it (D-7b, D-12).
-        publication.RenameDispatched(candidate, scope.Holder.Session);
+        // sent until a definite outcome settles it (D-7b, D-12). It is recorded as the engine is handed the
+        // call, after the scope's cancellation and loss checks, so a rename those checks stop is never in doubt.
         DmsCommandOutcome<DmsInstanceIdentity> renamed = await scope.CallAsync(
             RenameIntoTargetStep,
             settings.CommandTimeout,
             token =>
-                engine.RenameIntoTargetAsync(
+            {
+                publication.RenameDispatched(candidate, scope.Holder.Session);
+                return engine.RenameIntoTargetAsync(
                     scope.Holder,
                     operation.StagingDatabaseName,
                     candidate.Instance,
                     target,
                     token
-                ),
+                );
+            },
             publication.ObserveRename
         );
         switch (renamed)

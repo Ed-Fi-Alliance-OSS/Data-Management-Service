@@ -475,6 +475,56 @@ public class DmsDataStoreProvisioningServicePublicationTests
     }
 
     [TestFixture]
+    public class Given_the_holder_is_lost_before_the_rename_is_dispatched
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RecordingHooks hooks = new();
+            _harness = Scripted(hooks);
+            hooks.OnPoint = point =>
+            {
+                if (point == DmsProvisioningHookPoint.BeforeRename)
+                {
+                    _harness.OnlyHolder.Lose();
+                }
+            };
+            _result = await CreateAsync(_harness);
+        }
+
+        [Test]
+        public void It_ends_as_transient_lock_lost_at_the_rename() =>
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+
+        [Test]
+        public void It_sends_neither_the_rename_nor_the_marker() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.RenameIntoTarget),
+                CountOf(_harness, SpyDmsTargetEngine.AssignMarker)
+            )
+                .Should()
+                .Be((0, 0));
+
+        [Test]
+        public void It_drops_the_staging_database_and_leaves_no_residue()
+        {
+            CountOf(_harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            CleanupOf(_result).Residue.Should().BeEmpty();
+        }
+    }
+
+    [TestFixture]
     public class Given_the_holder_is_lost_as_the_rename_returns
     {
         private Harness _harness = null!;
