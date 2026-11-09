@@ -3,14 +3,74 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-# One-time support for the EdFi.Api.DocumentCacheAdmin release backfill. Deleted together with
-# .github/workflows/backfill-document-cache-admin.yml once 8.1.0 has been backfilled.
+# One-time support for .github/workflows/backfill-document-cache-admin.yml, which backfills
+# EdFi.Api.DocumentCacheAdmin for releases cut before the DocumentCacheAdmin release chain existed.
+# The workflow is dispatched from main only and builds the dispatch commit, as
+# Pkg EdFi.Api.SecurityMetadataTools.yml does, so the SBOM and the provenance describe the commit
+# actually built. The version comes from the named stable release tag, and
+# Assert-DocumentCacheAdminBackfillSource refuses the run unless the dispatch commit's build inputs
+# equal the tag's, the tool README excepted so the package carries the current install guidance. Run
+# the backfill soon after merge, because a later change to those inputs on main blocks it.
+#
+# Once 8.1.0 is backfilled, delete .github/workflows/backfill-document-cache-admin.yml, this module,
+# eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1, the 'backfill-document-cache-admin.yml publishing
+# credentials' Describe in eng/ci/tests/ReleasePublishingCredentials.Tests.ps1, the
+# DocumentCacheAdminBackfill.Tests.ps1 entry in the Pester allowlist in
+# .github/workflows/on-dms-pullrequest.yml, and the backfill lines in docs/CI-PUBLISHING-CREDENTIALS.md.
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 Import-Module (Join-Path $repoRoot 'eng/verification/ContractPackageComparison.psm1')
+Import-Module (Join-Path $repoRoot 'eng/verification/ContractFeed.psm1')
 Import-Module (Join-Path $repoRoot 'package-helpers.psm1')
 Import-Module (Join-Path $PSScriptRoot 'release-classification.psm1')
+
+$script:packageName = 'EdFi.Api.DocumentCacheAdmin'
+$script:sbomAssetName = 'EdFi.Api.DocumentCacheAdmin-SBOM.zip'
+$script:provenanceAssetName = 'edfiApiDocumentCacheAdmin.intoto.jsonl'
+
+<#
+.SYNOPSIS
+Throws unless the tag is a stable vMAJOR.MINOR.PATCH tag.
+#>
+function Assert-StableReleaseTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $ReleaseTag
+    )
+
+    Assert-ReleaseRef -ReleaseRef $ReleaseTag -Prefix v
+    if ($ReleaseTag -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+\z') {
+        # Assert-ReleaseRef admitted only printable ASCII, so the value is safe to log.
+        throw "Release tag '$ReleaseTag' is not a stable vMAJOR.MINOR.PATCH tag. Only a stable release can be backfilled."
+    }
+}
+
+<#
+.SYNOPSIS
+Returns the GitHub release for a tag of this repository, or $null when there is none.
+#>
+function Get-GitHubReleaseByTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Tag
+    )
+
+    $headers = @{
+        Accept = 'application/vnd.github+json'
+        Authorization = "Bearer $env:GITHUB_TOKEN"
+    }
+    try {
+        return Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$Tag" -Headers $headers
+    }
+    catch {
+        if ($_.Exception.Response.StatusCode -eq 404) { return $null }
+        throw
+    }
+}
 
 <#
 .SYNOPSIS
@@ -24,64 +84,173 @@ function Assert-DocumentCacheAdminBackfillTag {
         [string] $ReleaseTag,
 
         # Returns the GitHub release for a tag, or $null when there is none.
-        [scriptblock] $GetRelease = {
-            param($Tag)
-            $headers = @{
-                Accept = 'application/vnd.github+json'
-                Authorization = "Bearer $env:GITHUB_TOKEN"
-            }
-            try {
-                return Invoke-RestMethod -Uri "https://api.github.com/repos/$env:GITHUB_REPOSITORY/releases/tags/$Tag" -Headers $headers
-            }
-            catch {
-                if ($_.Exception.Response.StatusCode -eq 404) { return $null }
-                throw
-            }
-        }
+        [scriptblock] $GetRelease = { param($Tag) Get-GitHubReleaseByTag -Tag $Tag }
     )
 
-    Assert-ReleaseRef -ReleaseRef $ReleaseTag -Prefix v
-    # Only printable ASCII reaches the log, so the refused value cannot start a workflow command.
-    $shown = [regex]::Replace($ReleaseTag, '[^\x20-\x7E]', '?')
-    if ($ReleaseTag -cnotmatch '\Av[0-9]+\.[0-9]+\.[0-9]+\z') {
-        throw "Release tag '$shown' is not a stable vMAJOR.MINOR.PATCH tag. Only a stable release can be backfilled."
-    }
+    Assert-StableReleaseTag -ReleaseTag $ReleaseTag
 
     $release = & $GetRelease $ReleaseTag
     if ($null -eq $release) {
-        throw "Release tag '$shown' has no GitHub release."
+        throw "Release tag '$ReleaseTag' has no GitHub release."
     }
     if ($release.draft -ne $false) {
-        throw "The GitHub release for '$shown' is a draft. Only a published release can be backfilled."
+        throw "The GitHub release for '$ReleaseTag' is a draft. Only a published release can be backfilled."
     }
     if ($release.prerelease -ne $false) {
-        throw "The GitHub release for '$shown' is a prerelease. Only a stable release can be backfilled."
+        throw "The GitHub release for '$ReleaseTag' is a prerelease. Only a stable release can be backfilled."
     }
 }
 
 <#
 .SYNOPSIS
-Refuses a build version that is not exactly the release tag without its v.
+Returns the package version a stable release tag names: the tag without its v.
+.DESCRIPTION
+The backfill stamps this version on what it builds. It never reads MinVer, which versions the
+dispatch commit by its height above the tag, and never takes a version from an input.
 #>
-function Assert-DocumentCacheAdminBackfillVersion {
+function Get-DocumentCacheAdminBackfillVersion {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $ReleaseTag
+    )
+
+    Assert-StableReleaseTag -ReleaseTag $ReleaseTag
+    return $ReleaseTag.Substring(1)
+}
+
+<#
+.SYNOPSIS
+The git pathspecs of the inputs that decide what the backfill build produces.
+.DESCRIPTION
+Everything the build job's build-dms.ps1 BuildAndPublish and Package commands load or compile, so a
+dispatch commit whose inputs equal a release tag's builds what that tag builds. The tool README is the
+one exception: it is packed into the tool, and shipping the current install guidance is intended.
+#>
+function Get-DocumentCacheAdminBackfillSourceInput {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    # Every project, props, targets, lock and source file the solution build and the pack compile.
+    'src'
+    # The build script, the modules it imports at startup, and the modules those import in turn.
+    'build-dms.ps1'
+    'eng/build-helpers.psm1'
+    'eng/docker-compose/effective-schema-hash.psm1'
+    'package-helpers.psm1'
+    'eng/verification/ContractPackageComparison.psm1'
+    'eng/docker-compose/dms-schema-environment.psm1'
+    'eng/docker-compose/database-safety.psm1'
+    'eng/schema-package-utility.psm1'
+    # Repository-wide settings: local tools, analyzer settings, and the line endings git checks
+    # every other input out with.
+    '.config'
+    '.editorconfig'
+    '.gitattributes'
+    # Read by the SDK and by MSBuild at the repository root when present. Neither exists today.
+    'global.json'
+    'Directory.Build.rsp'
+    # Packed into the tool, and allowed to differ so the package carries the current install guidance.
+    ':(exclude)src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md'
+}
+
+<#
+.SYNOPSIS
+Refuses a dispatch commit whose build inputs differ from those of the release tag.
+.DESCRIPTION
+Compares HEAD of the repository holding the current directory with the commit the tag names, over
+Get-DocumentCacheAdminBackfillSourceInput. Equal inputs pass. Different inputs throw, naming the tag
+and listing every differing input path. A tag that does not resolve, or a comparison git cannot make,
+throws too.
+#>
+function Assert-DocumentCacheAdminBackfillSource {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]
-        [string] $ReleaseTag,
+        [AllowEmptyString()]
+        [string] $ReleaseTag
+    )
+
+    Assert-StableReleaseTag -ReleaseTag $ReleaseTag
+
+    # The pathspecs are relative to the repository root, so git runs there wherever this is called.
+    $top = & git rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($top)) {
+        throw "Cannot compare build inputs with '$ReleaseTag': the current directory is not in a git work tree."
+    }
+
+    $tagCommit = & git -C $top rev-parse --verify --quiet "refs/tags/$ReleaseTag^{commit}"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tagCommit)) {
+        throw "Release tag '$ReleaseTag' does not resolve to a commit in this checkout. The tag must exist, and the checkout must fetch tags."
+    }
+
+    $inputs = Get-DocumentCacheAdminBackfillSourceInput
+    & git -C $top diff --quiet $tagCommit HEAD -- @inputs
+    $exitCode = $LASTEXITCODE
+    if ($exitCode -eq 0) {
+        Write-Information "The build inputs of this commit equal those of $ReleaseTag ($tagCommit)."
+        return
+    }
+    if ($exitCode -ne 1) {
+        throw "git diff could not compare the build inputs with release tag '$ReleaseTag' ($tagCommit): exit $exitCode."
+    }
+
+    $changed = @(& git -C $top diff --name-only $tagCommit HEAD -- @inputs)
+    if ($LASTEXITCODE -ne 0) {
+        throw "git diff could not list the build inputs that differ from release tag '$ReleaseTag' ($tagCommit): exit $LASTEXITCODE."
+    }
+    throw "The build inputs of this commit differ from those of release tag '$ReleaseTag' ($tagCommit), so it would not build that release. Differing inputs: $($changed -join ', ')."
+}
+
+<#
+.SYNOPSIS
+Returns the SHA256 of the copy of a package version on the feed's Local view.
+.DESCRIPTION
+The feed is public, so the copy is read anonymously from the Local view's flat container, through the
+feed seams the contract publish check uses. A copy that cannot be read throws.
+#>
+function Get-PublishedPackageSha256 {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ServiceIndexUrl,
+
+        [Parameter(Mandatory)]
+        [string] $PackageName,
 
         [Parameter(Mandatory)]
         [string] $Version
     )
 
-    if ($ReleaseTag.Length -eq 0 -or $Version -cne $ReleaseTag.Substring(1)) {
-        throw "Version '$Version' is not the version of release tag '$ReleaseTag'."
+    $viewIndexUrl = Get-ViewScopedServiceIndexUrl -ServiceIndexUrl $ServiceIndexUrl -ViewName Local
+    $baseAddress = & (Get-DefaultResolvePackageBaseAddress) $viewIndexUrl ''
+    [uri] $baseUri = $null
+    if (-not [uri]::TryCreate($baseAddress, [UriKind]::Absolute, [ref] $baseUri) -or $baseUri.Scheme -notin 'http', 'https') {
+        throw "The Local view's service index resolved to '$baseAddress', which is not an absolute http or https address."
+    }
+
+    $download = Join-Path ([IO.Path]::GetTempPath()) "$([guid]::NewGuid()).nupkg"
+    try {
+        & (Get-DefaultSavePublishedPackage) $baseAddress.TrimEnd('/') (ConvertTo-NormalizedPackageId -PackageId $PackageName) `
+            (ConvertTo-NormalizedPackageVersion -Version $Version) $download ''
+        return (Get-FileHash -LiteralPath $download -Algorithm SHA256).Hash.ToLowerInvariant()
+    }
+    finally {
+        if (Test-Path -LiteralPath $download) { Remove-Item -LiteralPath $download -Force }
     }
 }
 
 <#
 .SYNOPSIS
 Publishes the exact, verified DocumentCacheAdmin artifact from a completed backfill build.
-No skip-duplicate option is used: a version already in the Local view is refused.
+.DESCRIPTION
+No skip-duplicate option is used. A version already in the Local view is downloaded and compared
+with this build: the same bytes mean an earlier run's push landed, so nothing is pushed and the run
+continues to promotion and the release assets; different bytes are refused.
 #>
 function Publish-DocumentCacheAdminBackfill {
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
@@ -103,7 +272,7 @@ function Publish-DocumentCacheAdminBackfill {
         [string] $ApiKey
     )
 
-    $packageName = 'EdFi.Api.DocumentCacheAdmin'
+    $packageName = $script:packageName
     if ((Get-FileHash -LiteralPath $PackageFile -Algorithm SHA256).Hash -ine $Sha256) {
         throw "DocumentCacheAdmin package hash differs from the build artifact: $PackageFile"
     }
@@ -124,7 +293,12 @@ function Publish-DocumentCacheAdminBackfill {
 
     if (Test-PackageInView -ServiceIndexUrl $ServiceIndexUrl -ViewName Local `
         -PackageName $packageName -Version $Version -ApiKey $ApiKey) {
-        throw "$packageName $Version is already published. The backfill never overwrites or re-pushes a published version."
+        $publishedSha256 = Get-PublishedPackageSha256 -ServiceIndexUrl $ServiceIndexUrl -PackageName $packageName -Version $Version
+        if ($publishedSha256 -ine $Sha256) {
+            throw "$packageName $Version is already published with different bytes (feed SHA256 $publishedSha256, this build $($Sha256.ToLowerInvariant())). The backfill never overwrites or re-pushes a published version."
+        }
+        Write-Information "$packageName $Version is already published with these exact bytes, so it is not pushed again."
+        return
     }
 
     if ($PSCmdlet.ShouldProcess("$packageName $Version", "Publish to $ServiceIndexUrl")) {
@@ -135,4 +309,135 @@ function Publish-DocumentCacheAdminBackfill {
     }
 }
 
-Export-ModuleMember -Function Assert-DocumentCacheAdminBackfillTag, Assert-DocumentCacheAdminBackfillVersion, Publish-DocumentCacheAdminBackfill
+<#
+.SYNOPSIS
+Returns the SHA256 of a zip's only entry when it has exactly one, with the given name, else $null.
+#>
+function Get-SingleZipEntrySha256 {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ZipFile,
+
+        [Parameter(Mandatory)]
+        [string] $EntryName
+    )
+
+    try {
+        $archive = [IO.Compression.ZipFile]::OpenRead($ZipFile)
+    }
+    catch [IO.InvalidDataException] {
+        return $null
+    }
+    try {
+        if ($archive.Entries.Count -ne 1 -or $archive.Entries[0].FullName -cne $EntryName) { return $null }
+        $stream = $archive.Entries[0].Open()
+        try { return (Get-FileHash -InputStream $stream -Algorithm SHA256).Hash }
+        finally { $stream.Dispose() }
+    }
+    finally { $archive.Dispose() }
+}
+
+<#
+.SYNOPSIS
+Attaches the DocumentCacheAdmin SBOM and provenance to the GitHub release for a tag.
+.DESCRIPTION
+Every asset is checked before any is uploaded. An asset the release lacks is uploaded. An asset it
+already has is downloaded and compared: the provenance byte for byte, and the SBOM zip by its
+manifest entry, because Compress-Archive does not write the same zip bytes twice. An equal asset is
+left as it is, so a re-run completes a partial attach; a different one is refused, because the
+backfill never replaces a release asset.
+#>
+function Publish-DocumentCacheAdminBackfillReleaseAsset {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ReleaseTag,
+
+        # The SPDX manifest, zipped as EdFi.Api.DocumentCacheAdmin-SBOM.zip.
+        [Parameter(Mandatory)]
+        [string] $ManifestFile,
+
+        # The SLSA provenance, attached as edfiApiDocumentCacheAdmin.intoto.jsonl.
+        [Parameter(Mandatory)]
+        [string] $ProvenanceFile,
+
+        # Returns the GitHub release for a tag, or $null when there is none.
+        [scriptblock] $GetRelease = { param($Tag) Get-GitHubReleaseByTag -Tag $Tag },
+
+        # Downloads one existing release asset to a path.
+        [scriptblock] $DownloadAsset = {
+            param($Asset, $Destination)
+            $headers = @{
+                Accept = 'application/octet-stream'
+                Authorization = "Bearer $env:GITHUB_TOKEN"
+            }
+            Invoke-WebRequest -Uri $Asset.url -Headers $headers -OutFile $Destination
+        },
+
+        # Uploads a file to a release as an asset with the given name.
+        [scriptblock] $UploadAsset = {
+            param($Release, $Name, $Path)
+            $headers = @{
+                Accept = 'application/vnd.github+json'
+                Authorization = "Bearer $env:GITHUB_TOKEN"
+            }
+            $uri = "https://uploads.github.com/repos/$env:GITHUB_REPOSITORY/releases/$($Release.id)/assets?name=$([uri]::EscapeDataString($Name))"
+            Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/octet-stream' -InFile $Path | Out-Null
+        }
+    )
+
+    Assert-StableReleaseTag -ReleaseTag $ReleaseTag
+    $release = & $GetRelease $ReleaseTag
+    if ($null -eq $release) {
+        throw "Release tag '$ReleaseTag' has no GitHub release to attach the DocumentCacheAdmin SBOM and provenance to."
+    }
+
+    $work = Join-Path ([IO.Path]::GetTempPath()) ([guid]::NewGuid())
+    New-Item -ItemType Directory -Path $work | Out-Null
+    try {
+        $sbomZip = Join-Path $work $script:sbomAssetName
+        Compress-Archive -LiteralPath $ManifestFile -DestinationPath $sbomZip
+        $manifestEntry = [IO.Path]::GetFileName($ManifestFile)
+        $manifestSha256 = (Get-FileHash -LiteralPath $ManifestFile -Algorithm SHA256).Hash
+        $provenanceSha256 = (Get-FileHash -LiteralPath $ProvenanceFile -Algorithm SHA256).Hash
+
+        $toUpload = [Collections.Generic.List[object]]::new()
+        foreach ($asset in @(
+                [pscustomobject]@{ Name = $script:sbomAssetName; Path = $sbomZip }
+                [pscustomobject]@{ Name = $script:provenanceAssetName; Path = $ProvenanceFile }
+            )) {
+            $existing = @($release.assets | Where-Object { $_.name -ceq $asset.Name })
+            if ($existing.Count -eq 0) {
+                $toUpload.Add($asset)
+                continue
+            }
+
+            $downloaded = Join-Path $work "existing-$($asset.Name)"
+            & $DownloadAsset $existing[0] $downloaded
+            $same = if ($asset.Name -ceq $script:sbomAssetName) {
+                (Get-SingleZipEntrySha256 -ZipFile $downloaded -EntryName $manifestEntry) -ceq $manifestSha256
+            }
+            else {
+                (Get-FileHash -LiteralPath $downloaded -Algorithm SHA256).Hash -ceq $provenanceSha256
+            }
+            if (-not $same) {
+                throw "Release $ReleaseTag already has an asset named $($asset.Name) with different content. The backfill never replaces a release asset."
+            }
+            Write-Information "Release $ReleaseTag already has $($asset.Name) with this content; it is left as it is."
+        }
+
+        foreach ($asset in $toUpload) {
+            if ($PSCmdlet.ShouldProcess("$($asset.Name) on release $ReleaseTag", 'Upload')) {
+                Write-Information "Uploading $($asset.Name) to release $ReleaseTag."
+                & $UploadAsset $release $asset.Name $asset.Path
+            }
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $work -Recurse -Force
+    }
+}
+
+Export-ModuleMember -Function Assert-DocumentCacheAdminBackfillTag, Get-DocumentCacheAdminBackfillVersion, Get-DocumentCacheAdminBackfillSourceInput, Assert-DocumentCacheAdminBackfillSource, Publish-DocumentCacheAdminBackfill, Publish-DocumentCacheAdminBackfillReleaseAsset

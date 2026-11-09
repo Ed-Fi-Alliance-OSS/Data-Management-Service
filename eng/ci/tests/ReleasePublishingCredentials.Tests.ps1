@@ -267,8 +267,9 @@ Describe 'build-sdk-package.yml publishing credentials' {
 }
 
 Describe 'backfill-document-cache-admin.yml publishing credentials' {
-    # The one-time 8.1.0 backfill. The credential steps are named 'Verify and Push DocumentCacheAdmin
-    # Backfill Package' (in publish) and 'Promote DocumentCacheAdmin Backfill Package' (in promote).
+    # The one-time 8.1.0 backfill, deleted with backfill-document-cache-admin.yml. The credential steps
+    # are named 'Verify and Push DocumentCacheAdmin Backfill Package' (in publish) and 'Promote
+    # DocumentCacheAdmin Backfill Package' (in promote).
     BeforeAll {
         $script:content = Get-Content (Join-Path $script:workflowRoot 'backfill-document-cache-admin.yml') -Raw
         $script:jobs = Get-WorkflowJobTable $script:content
@@ -286,7 +287,9 @@ Describe 'backfill-document-cache-admin.yml publishing credentials' {
     }
 
     It 'reads the Azure token only in the push and promote steps, and the user name only in the promote step' {
-        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^(Verify and Push DocumentCacheAdmin Backfill Package|Promote DocumentCacheAdmin Backfill Package)$' -ExpectedCount 2
+        # Three reads: the push step binds the token twice, as the NuGet API key and as the credential
+        # provider's endpoint password, as the on-prerelease.yml push steps do, and the promote step once.
+        Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN' -StepPattern '^(Verify and Push DocumentCacheAdmin Backfill Package|Promote DocumentCacheAdmin Backfill Package)$' -ExpectedCount 3
         Assert-SecretReferenceInStep -Jobs $script:jobs -Secret 'AZURE_ARTIFACTS_USER_NAME' -StepPattern '^Promote DocumentCacheAdmin Backfill Package$' -ExpectedCount 1
         $script:jobs['publish'] | Should -Match 'name: Verify and Push DocumentCacheAdmin Backfill Package'
         $script:jobs['promote'] | Should -Match 'name: Promote DocumentCacheAdmin Backfill Package'
