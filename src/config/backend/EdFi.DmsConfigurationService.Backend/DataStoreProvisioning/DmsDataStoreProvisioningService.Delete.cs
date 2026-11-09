@@ -86,9 +86,11 @@ public sealed partial class DmsDataStoreProvisioningService
                 cancellationToken
             );
         }
-        catch (OperationCanceledException canceled) when (deletion.TargetMutationIssued)
+        catch (OperationCanceledException canceled)
+            when (deletion.TargetMutationIssued || deletion.State == DeletionState.Dropped)
         {
-            // A selected-target mutation may stand: its outcome is settled before the cancellation propagates.
+            // A selected-target mutation may stand, or the drop was confirmed before loss discarded its result: its
+            // outcome is settled before the cancellation propagates.
             cancellation = canceled;
         }
 
@@ -471,6 +473,8 @@ public sealed partial class DmsDataStoreProvisioningService
 
     /// <summary>
     /// After the lock is released (6.10, D-12): settles what the ledger left in doubt by reading state only. A
+    /// drop the engine confirmed is <c>Dropped</c> even when loss or the caller's cancellation discarded its
+    /// result, because the ledger observed it first. A
     /// drop in doubt is resolved by the name once the holder is proven gone: empty is <c>Dropped</c> whatever
     /// ended the stage, our instance is <c>DropFailed</c>, another is <c>InstanceChanged</c>, and an unreadable
     /// name is <c>OutcomeUnknown</c>. A fence that may stand is read the same way and, unless the name shows
@@ -483,6 +487,11 @@ public sealed partial class DmsDataStoreProvisioningService
         DmsDataStoreDeleteResult? result
     )
     {
+        if (deletion.State == DeletionState.Dropped)
+        {
+            return new DmsDataStoreDeleteResult.Dropped(DmsCleanupReport.Clean);
+        }
+
         if (
             deletion.State
             is not (

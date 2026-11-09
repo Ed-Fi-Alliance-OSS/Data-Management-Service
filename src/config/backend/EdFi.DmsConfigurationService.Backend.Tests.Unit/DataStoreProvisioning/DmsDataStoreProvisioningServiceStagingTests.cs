@@ -7,10 +7,12 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
+using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
@@ -528,6 +530,114 @@ public class DmsDataStoreProvisioningServiceStagingTests
         [Test]
         public void It_keeps_the_sqlstate_in_the_diagnostic() =>
             FailureOf(_result).Diagnostic.ProviderErrorCode.Should().Be(sqlState);
+
+        [Test]
+        public void It_drops_the_staging_database_without_validating() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.DropStaging),
+                _harness.Engine.Members.Contains(SpyDmsTargetEngine.OpenSession)
+            )
+                .Should()
+                .Be((1, false));
+    }
+
+    /// <summary>
+    /// AC 11: the server refuses a session the PostgreSQL replay needs before <c>psql</c> starts. The engine's own
+    /// classification feeds the real orchestrator: an access refusal (a per-database <c>pg_hba.conf</c> rule, a
+    /// refused privilege) is a permanent <c>AdminPrivilegeMissing</c> with its SQLSTATE, while a server shortage
+    /// stays a transient <c>RestoreFailed</c>. Either way nothing committed and the staging database is dropped
+    /// without validation.
+    /// </summary>
+    [TestFixture(
+        "28000",
+        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+        DmsProvisioningFailureCategory.Permanent
+    )]
+    [TestFixture(
+        "42501",
+        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+        DmsProvisioningFailureCategory.Permanent
+    )]
+    [TestFixture("53300", DmsProvisioningFailureCode.RestoreFailed, DmsProvisioningFailureCategory.Transient)]
+    public class Given_the_server_refuses_a_session_before_the_replay(
+        string sqlState,
+        DmsProvisioningFailureCode code,
+        DmsProvisioningFailureCategory category
+    )
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DmsCommandOutcome<DmsInstanceIdentity> refused = PostgresqlDmsTargetEngine.PreReplayFailed(
+                new PostgresException("refused", "FATAL", "FATAL", sqlState),
+                CancellationToken.None
+            );
+            _harness = Scripted();
+            _harness.Engine.OnRestoreIntoStaging = (_, _, _) => Task.FromResult(refused);
+            _result = await CreateAsync(_harness);
+        }
+
+        [Test]
+        public void It_reports_the_code_and_category_the_refusal_allows() =>
+            (FailureOf(_result).Code, FailureOf(_result).Category).Should().Be((code, category));
+
+        [Test]
+        public void It_drops_the_staging_database_without_validating() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.DropStaging),
+                _harness.Engine.Members.Contains(SpyDmsTargetEngine.OpenSession)
+            )
+                .Should()
+                .Be((1, false));
+    }
+
+    /// <summary>
+    /// AC 11: SQL Server rejected the <c>RESTORE</c> in its own response, which proves nothing committed. The
+    /// engine's own classification feeds the real orchestrator: a deadlock victim (<c>1205</c>) is a transient
+    /// <c>RestoreFailed</c>; any other rejection, such as a logical file the backup does not hold (<c>3234</c>),
+    /// stays permanent. Either way the staging database is dropped without validation.
+    /// </summary>
+    [TestFixture(1205, DmsProvisioningFailureCategory.Transient)]
+    [TestFixture(3234, DmsProvisioningFailureCategory.Permanent)]
+    public class Given_sql_server_rejected_the_restore_in_its_own_response(
+        int number,
+        DmsProvisioningFailureCategory category
+    )
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DmsCommandOutcome<DmsInstanceIdentity> rejected =
+                new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                    new DmsCommandFailure(
+                        MssqlErrorClassifier.FailureClassOf(number, 16)
+                            ?? throw new InvalidOperationException("The number must be a definite failure."),
+                        new DmsProvisioningDiagnostic(
+                            "Microsoft.Data.SqlClient.SqlException",
+                            number.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                            MssqlDmsTargetEngine.RejectedRestoreStep([
+                                number,
+                                MssqlErrorClassifier.RestoreTerminatedAbnormally,
+                            ])
+                        )
+                    )
+                );
+            _harness = Scripted();
+            _harness.Engine.OnRestoreIntoStaging = (_, _, _) => Task.FromResult(rejected);
+            _result = await CreateAsync(_harness);
+        }
+
+        [Test]
+        public void It_reports_restore_failed_in_the_category_the_error_allows() =>
+            (FailureOf(_result).Code, FailureOf(_result).Category)
+                .Should()
+                .Be((DmsProvisioningFailureCode.RestoreFailed, category));
 
         [Test]
         public void It_drops_the_staging_database_without_validating() =>

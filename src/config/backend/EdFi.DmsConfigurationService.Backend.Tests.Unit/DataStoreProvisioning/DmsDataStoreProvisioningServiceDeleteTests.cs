@@ -1225,6 +1225,44 @@ public class DmsDataStoreProvisioningServiceDeleteTests
     }
 
     /// <summary>
+    /// AC 10: the drop returned a confirmed success while the holder's loss was declared, alone or together with the
+    /// caller's cancellation. The ledger observed the success before the loss check discarded the result, so the
+    /// target is known dropped: the delete reports <c>Dropped</c> instead of a retryable <c>LockLost</c> or the
+    /// cancellation, and settlement has nothing in doubt to read.
+    /// </summary>
+    [TestFixture]
+    public class Given_loss_accompanies_a_confirmed_drop
+    {
+        private static async Task<(OwnedTarget, DmsDataStoreDeleteResult)> DropAsync(bool callerCancels)
+        {
+            OwnedTarget target = new();
+            using CancellationTokenSource caller = new();
+            target.Harness.Engine.OnDropInstance = async (_, _, _, _) =>
+            {
+                target.State = new DmsLiveTargetState.Absent();
+                target.Harness.OnlyHolder.Lose();
+                if (callerCancels)
+                {
+                    await caller.CancelAsync();
+                }
+
+                return new DmsCommandOutcome.Succeeded();
+            };
+            return (target, await target.DeleteAsync(caller.Token));
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_reports_the_target_dropped_without_settlement_reads(bool callerCancels)
+        {
+            (OwnedTarget target, DmsDataStoreDeleteResult result) = await DropAsync(callerCancels);
+            result.Should().Be(new DmsDataStoreDeleteResult.Dropped(DmsCleanupReport.Clean));
+            target.Members.Should().Equal(Seq([.. _released, SpyDmsTargetEngine.DropInstance]));
+            (target.SessionDisposals, target.Releases).Should().Be((1, 1));
+        }
+    }
+
+    /// <summary>
     /// Round-1 review finding 2: a re-check under the fence that times out or fails unexpectedly, after which the
     /// fence cannot be reversed. Settlement confirms the target fenced, so the failure must require inspection
     /// even though its own code is transient-only; the diagnostic and the residue are kept.

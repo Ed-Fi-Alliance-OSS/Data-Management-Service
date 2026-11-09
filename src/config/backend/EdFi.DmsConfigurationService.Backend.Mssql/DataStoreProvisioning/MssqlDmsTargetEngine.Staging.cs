@@ -474,7 +474,13 @@ public sealed partial class MssqlDmsTargetEngine
             )
         {
             return new RestoreEnding.Rejected(
-                new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, RestoreStep))
+                new DmsCommandFailure(
+                    failureClass,
+                    MssqlErrorClassifier.Diagnostic(
+                        exception,
+                        RejectedRestoreStep(MssqlErrorClassifier.ErrorNumbersOf(exception))
+                    )
+                )
             );
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -751,6 +757,16 @@ public sealed partial class MssqlDmsTargetEngine
             ? DmsEngineOperations.RestoreTimedOut
             : DmsEngineOperations.RestoreRolledBack;
     }
+
+    /// <summary>
+    /// The operation of a <c>RESTORE</c> rejected in its own response, which proves nothing committed: a rejection a
+    /// retry can outlive (<see cref="MssqlErrorClassifier.IsRetryableRejection"/>) is <c>RestoreRolledBack</c>, which
+    /// the orchestrator reports as a transient <c>RestoreFailed</c>; any other is <see cref="RestoreStep"/>, permanent.
+    /// </summary>
+    internal static string RejectedRestoreStep(IReadOnlyList<int> errorNumbers) =>
+        MssqlErrorClassifier.IsRetryableRejection(errorNumbers)
+            ? DmsEngineOperations.RestoreRolledBack
+            : RestoreStep;
 
     /// <summary>A request before the restore failed without a server verdict: nothing was restored.</summary>
     private static DmsCommandOutcome<DmsInstanceIdentity> NotStarted(

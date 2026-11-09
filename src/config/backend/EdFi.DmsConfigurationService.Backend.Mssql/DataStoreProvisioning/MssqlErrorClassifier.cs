@@ -34,6 +34,9 @@ internal static class MssqlErrorClassifier
     public const int DatabaseDoesNotExist = 911;
     public const int PrincipalCannotAccessDatabase = 916;
 
+    /// <summary>The session was chosen as a deadlock victim and its transaction rolled back.</summary>
+    public const int DeadlockVictim = 1205;
+
     /// <summary>A database in single-user mode whose one slot another session holds refuses this use of it.</summary>
     public const int DatabaseSingleUserOpen = 924;
 
@@ -174,6 +177,18 @@ internal static class MssqlErrorClassifier
                 or KillNoPermission
                 or ActionNoPermission
                 or LoginFailed;
+
+    /// <summary>
+    /// Whether a definite rejection names a condition that clears without any change to the request, the artifact, or
+    /// the server's configuration, so the same request can succeed later: the session was a deadlock victim
+    /// (<c>1205</c>) among <paramref name="errorNumbers"/>. This answers only whether a retry can succeed; whether the
+    /// command committed is <see cref="FailureClassOf(int, byte)"/>'s question, and <c>1205</c> is definite there.
+    /// </summary>
+    public static bool IsRetryableRejection(IReadOnlyList<int> errorNumbers)
+    {
+        ArgumentNullException.ThrowIfNull(errorNumbers);
+        return errorNumbers.Contains(DeadlockVictim);
+    }
 
     /// <summary>
     /// The failure class an error proves (6.9a), or null when the outcome is in doubt: a connection-class

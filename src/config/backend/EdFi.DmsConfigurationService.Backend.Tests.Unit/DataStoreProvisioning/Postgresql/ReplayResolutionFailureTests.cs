@@ -325,6 +325,65 @@ public class ReplayResolutionFailureTests
     }
 
     /// <summary>
+    /// AC 11: the server refuses a session the replay needs before <c>psql</c> starts, such as a <c>pg_hba.conf</c>
+    /// rule that admits the maintenance database but not the staging database (class <c>28</c>), or a refused
+    /// privilege (<c>42501</c>). No retry outlives that without an operator, so the refusal keeps its SQLSTATE as
+    /// <c>PrivilegeMissing</c> under <c>RestoreIntoStaging.AccessRefused</c>; a server shortage or a lost connection
+    /// stays the retryable <c>RestoreNotStarted</c>, and a cancelled token is named as a cancellation.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_server_refuses_a_session_before_the_replay
+    {
+        private static PostgresException ServerError(string sqlState) =>
+            new("SENTINEL-MESSAGE-4be1", "FATAL", "FATAL", sqlState);
+
+        private static DmsCommandFailure FailureOf(Exception exception, CancellationToken token) =>
+            PostgresqlDmsTargetEngine
+                .PreReplayFailed(exception, token)
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Subject.Failure;
+
+        [TestCase("28000")]
+        [TestCase("28P01")]
+        [TestCase("42501")]
+        public void It_reports_an_access_refusal_as_a_missing_privilege_with_its_sqlstate(string sqlState) =>
+            FailureOf(ServerError(sqlState), CancellationToken.None)
+                .Should()
+                .Be(
+                    new DmsCommandFailure(
+                        DmsCommandFailureClass.PrivilegeMissing,
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            sqlState,
+                            PostgresqlDmsTargetEngine.RestoreAccessRefusedStep
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_keeps_a_server_shortage_or_a_lost_connection_retryable_as_not_started() =>
+            new Exception[] { ServerError("53300"), new NpgsqlException("reset", new IOException()) }
+                .Select(exception => FailureOf(exception, CancellationToken.None))
+                .Should()
+                .AllSatisfy(failure =>
+                    (failure.Class, failure.Diagnostic.Operation)
+                        .Should()
+                        .Be((DmsCommandFailureClass.Rejected, DmsEngineOperations.RestoreNotStarted))
+                );
+
+        [Test]
+        public void It_names_a_refusal_under_a_cancelled_token_as_a_cancellation()
+        {
+            using CancellationTokenSource cancellation = new();
+            cancellation.Cancel();
+            FailureOf(ServerError("28000"), cancellation.Token)
+                .Diagnostic.Operation.Should()
+                .Be(DmsEngineOperations.RestoreCancelled);
+        }
+    }
+
+    /// <summary>
     /// The runner cannot prepare the password file (a password with a line break, rotated in after the admin
     /// connection was built and refused by it): no process is started, so the run returns
     /// <see cref="PsqlRunResult.NotStarted"/> with the cause instead of throwing, and no password file is left.

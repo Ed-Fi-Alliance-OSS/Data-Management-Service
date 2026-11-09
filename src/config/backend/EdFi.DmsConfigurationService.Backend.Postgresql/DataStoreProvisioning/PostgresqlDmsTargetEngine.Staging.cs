@@ -49,6 +49,15 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// </summary>
     public const string RestoreGssAuthenticationStep = "RestoreIntoStaging.GssAuthentication";
 
+    /// <summary>
+    /// The <c>Diagnostic.Operation</c> of a replay refused before <c>psql</c> started because the server refused the
+    /// administrative login or a privilege it needs (<see cref="PostgresqlErrorClassifier.IsAccessRefusal"/>), such as a
+    /// <c>pg_hba.conf</c> rule that matches the maintenance database but not the staging database. Its class is
+    /// <see cref="DmsCommandFailureClass.PrivilegeMissing"/>, which the orchestrator reports as a permanent
+    /// <c>AdminPrivilegeMissing</c>, and it drops the staging database.
+    /// </summary>
+    public const string RestoreAccessRefusedStep = "RestoreIntoStaging.AccessRefused";
+
     internal static readonly EventId ReplayResolutionFailed = new(1438_35, nameof(ReplayResolutionFailed));
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
@@ -122,7 +131,7 @@ public sealed partial class PostgresqlDmsTargetEngine
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            return NotStarted(exception, cancellationToken);
+            return PreReplayFailed(exception, cancellationToken);
         }
 
         if (refused is not null)
@@ -228,6 +237,27 @@ public sealed partial class PostgresqlDmsTargetEngine
         );
         return await PostgresqlEnvironment.IsGssAuthenticatedAsync(connection, cancellationToken);
     }
+
+    /// <summary>
+    /// A step before the replay failed, so no process exists and the outcome is definite. A server refusal of the
+    /// login or a privilege (<see cref="PostgresqlErrorClassifier.IsAccessRefusal"/>) needs an operator, so it keeps
+    /// its SQLSTATE under <see cref="RestoreAccessRefusedStep"/> as <see cref="DmsCommandFailureClass.PrivilegeMissing"/>;
+    /// anything else, or any failure under a cancelled token, is <see cref="NotStarted"/>.
+    /// </summary>
+    internal static DmsCommandOutcome<DmsInstanceIdentity> PreReplayFailed(
+        Exception exception,
+        CancellationToken cancellationToken
+    ) =>
+        !cancellationToken.IsCancellationRequested
+        && exception is PostgresException postgres
+        && PostgresqlErrorClassifier.IsAccessRefusal(postgres.SqlState)
+            ? new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                new DmsCommandFailure(
+                    DmsCommandFailureClass.PrivilegeMissing,
+                    PostgresqlErrorClassifier.Diagnostic(exception, RestoreAccessRefusedStep)
+                )
+            )
+            : NotStarted(exception, cancellationToken);
 
     /// <summary>
     /// A <c>psql</c> process the system could not create. Exhausted process, memory, or file-descriptor resources

@@ -222,4 +222,23 @@ public class MssqlErrorClassifierTests
         public void It_reports_no_error_number_without_a_server_error() =>
             MssqlErrorClassifier.ErrorNumberOf(new InvalidOperationException()).Should().BeNull();
     }
+
+    /// <summary>
+    /// AC 11: the error numbers of a <c>RESTORE</c> rejected in its own response (the specific error, then
+    /// <c>3013</c>). A deadlock victim can succeed on retry; every other rejection stays permanent.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_error_numbers_of_a_rejected_restore
+    {
+        [Test]
+        public void It_treats_a_deadlock_victim_as_retryable() =>
+            MssqlErrorClassifier.IsRetryableRejection([1205, 3013]).Should().BeTrue();
+
+        [Test]
+        public void It_keeps_every_other_rejection_permanent() =>
+            new int[][] { [3234, 3013], [3110, 3013], [3013], [1801] }
+                .Select(numbers => MssqlErrorClassifier.IsRetryableRejection(numbers))
+                .Should()
+                .AllBeEquivalentTo(false);
+    }
 }
