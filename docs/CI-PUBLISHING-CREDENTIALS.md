@@ -36,6 +36,11 @@ token unless a read actually fails without one.
   environment. Its `if:` also limits it to the refs that may publish: `main` or a `v*` tag for the
   template, SDK and SecurityMetadataTools packages; only a `v*` tag for stable-release promotion and
   image tagging; and the release's own `dms-pre-*` or `cs-pre-*` tag for prerelease publishing.
+- The `EdFi.Api.DocumentCacheAdmin` tool is published by `on-prerelease.yml` on the release's own
+  `dms-pre-*` tag and promoted by `on-release.yml` on a `v*` tag, in the same `publishing` jobs.
+  `backfill-document-cache-admin.yml` is a one-time, dispatch-only workflow whose `publish` and
+  `promote` jobs run in `publishing` only from `main` with `publish_package=true`. It is removed
+  after the 8.1.0 backfill.
 - Inside those jobs, only the step that pushes, promotes or logs in reads the token. No workflow
   puts a publishing token in workflow-wide or job-wide `env`.
 - `EDFI_BUILD_AGENT_PAT` creates the prerelease tags, and the tag ruleset will let its identity
@@ -260,6 +265,7 @@ Each check starts a workflow, so run it only once you are authorized to.
    gh workflow run on-prerelease.yml --ref <scratch-branch>
    gh workflow run "Pkg EdFi.Api.SecurityMetadataTools.yml" --ref <scratch-branch> -f publish_package=true
    gh workflow run "Pkg EdFi.Api.Sdk.yml" --ref <scratch-branch> -f publish_package=true
+   gh workflow run backfill-document-cache-admin.yml --ref <scratch-branch> -f release_tag=v8.1.0 -f publish_package=true
    gh workflow run EdFi.Api.Minimal.Template.PostgreSQL.yml --ref <scratch-branch> -f publish_package=true
    gh workflow run scheduled-merge-queue-enqueue.yml --ref <scratch-branch>
    ```
