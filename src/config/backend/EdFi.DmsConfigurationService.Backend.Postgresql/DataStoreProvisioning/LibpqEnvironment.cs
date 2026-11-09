@@ -153,7 +153,8 @@ internal sealed record LibpqConnectionSettings(
         return false;
     }
 
-    private static bool IsUnixSocket(string entry) => entry[0] is '/' or '@';
+    /// <summary>Whether a host names a Unix socket directory (rooted, or <c>@</c>-abstract) rather than a network host.</summary>
+    internal static bool IsUnixSocket(string entry) => entry[0] is '/' or '@';
 
     private static string StripBrackets(string host) =>
         host.Length >= 2 && host[0] == '[' && host[^1] == ']' ? host[1..^1] : host;

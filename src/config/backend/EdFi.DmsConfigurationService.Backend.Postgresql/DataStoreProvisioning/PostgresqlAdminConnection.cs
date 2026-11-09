@@ -64,8 +64,10 @@ public sealed class PostgresqlAdminConnection
 
     /// <summary>
     /// The current value parsed by the driver with the provisioning overrides applied. A value the driver
-    /// cannot read throws the driver's exception, whose message is never logged. The server-certificate
-    /// trust is made the same for both clients here (D-10): see <see cref="AlignTrust"/>.
+    /// cannot read throws the driver's exception, whose message is never logged. Every open, the
+    /// <c>psql</c> handoff, and readiness pass through here, so a value the handoff cannot carry is refused
+    /// before anything connects, whether it was configured or arrived by a rotated secret (D-10): see
+    /// <see cref="RefuseLineBreaks"/> and <see cref="AlignTrust"/>.
     /// </summary>
     private NpgsqlConnectionStringBuilder Template
     {
@@ -89,6 +91,7 @@ public sealed class PostgresqlAdminConnection
                     TcpKeepAliveTime = TcpKeepAliveTimeSeconds,
                     TcpKeepAliveInterval = TcpKeepAliveIntervalSeconds,
                 };
+                RefuseLineBreaks(template);
                 AlignTrust(template);
                 _parsed = (current, template);
                 return template;
@@ -97,24 +100,58 @@ public sealed class PostgresqlAdminConnection
     }
 
     /// <summary>
+    /// The <c>libpq</c> password file has no way to represent a line break, so a host, user, or password
+    /// carrying one would let Npgsql connect while every replay failed. The refusal names no value.
+    /// </summary>
+    private static void RefuseLineBreaks(NpgsqlConnectionStringBuilder template)
+    {
+        if (
+            Array.Exists(
+                [template.Host, template.Username, template.Password],
+                value => value is not null && value.AsSpan().ContainsAny('\r', '\n')
+            )
+        )
+        {
+            throw new InvalidOperationException(
+                "The administrative connection string has a line break in its Host, Username, or Password, which the psql password file cannot represent."
+            );
+        }
+    }
+
+    /// <summary>
     /// Makes Npgsql and <c>psql</c> trust the same roots. A <c>Root Certificate</c> is made a full path against
     /// this process's working directory, where Npgsql resolves it, because <c>psql</c> runs in the operation's
     /// directory and would resolve a relative path there. A verifying mode without one is refused: Npgsql
     /// would then fall back to <c>PGSSLROOTCERT</c>, a default file, or the machine store, none of which the
-    /// replay's environment carries the same way, so readiness could pass while every replay fails.
+    /// replay's environment carries the same way, so readiness could pass while every replay fails. A
+    /// <c>Root Certificate</c> with a mode that does not verify is refused too: Npgsql then validates nothing,
+    /// while <c>libpq</c> verifies the server against any root certificate file it is given (with
+    /// <c>require</c>, as <c>verify-ca</c> does), so an unrelated server certificate would pass readiness and
+    /// fail every replay. The operator chooses <c>VerifyCA</c> or <c>VerifyFull</c>, or removes the file.
     /// </summary>
     private static void AlignTrust(NpgsqlConnectionStringBuilder template)
     {
-        if (!string.IsNullOrEmpty(template.RootCertificate))
+        bool verifying = template.SslMode is SslMode.VerifyCA or SslMode.VerifyFull;
+        if (string.IsNullOrEmpty(template.RootCertificate))
         {
-            template.RootCertificate = Path.GetFullPath(template.RootCertificate);
+            if (verifying)
+            {
+                throw new InvalidOperationException(
+                    "The administrative connection string verifies the server certificate without a Root Certificate."
+                );
+            }
+
+            return;
         }
-        else if (template.SslMode is SslMode.VerifyCA or SslMode.VerifyFull)
+
+        if (!verifying)
         {
             throw new InvalidOperationException(
-                "The administrative connection string verifies the server certificate without a Root Certificate."
+                "The administrative connection string names a Root Certificate with an SSL Mode that does not verify the server certificate; use VerifyCA or VerifyFull."
             );
         }
+
+        template.RootCertificate = Path.GetFullPath(template.RootCertificate);
     }
 
     public TimeSpan CommandTimeout { get; }

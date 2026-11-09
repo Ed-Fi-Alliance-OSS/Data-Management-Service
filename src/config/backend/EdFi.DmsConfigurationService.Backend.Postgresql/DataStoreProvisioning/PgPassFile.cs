@@ -13,7 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// The credential handoff of D-10: a <c>libpq</c> password file written inside the operation's private
 /// directory with mode <c>0600</c> (<see cref="PrivateOperationDirectory.CreateFile"/>), named through
 /// <c>PGPASSFILE</c>, so the password is never an argument or an environment value. One line per endpoint
-/// of the administrative connection, each <c>host:port:database:user:password</c> with <c>:</c> and
+/// of the administrative connection (two for a Unix socket, see <see cref="Content"/>), each
+/// <c>host:port:database:user:password</c> with <c>:</c> and
 /// <c>\</c> escaped by a backslash as <c>libpq</c> requires. A write that fails after the file was created
 /// deletes it before the failure propagates; an existing entry of that name is refused untouched. The
 /// runner deletes the file as soon as the replay ends and the directory's disposal removes it in any case.
@@ -21,6 +22,9 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 internal static class PgPassFile
 {
     public const string FileName = PrivateOperationDirectory.CredentialFileName;
+
+    /// <summary>The host <c>libpq</c> looks up for a connection through its default socket directory.</summary>
+    public const string LibpqDefaultHost = "localhost";
 
     private static readonly UTF8Encoding _utf8 = new(encoderShouldEmitUTF8Identifier: false);
 
@@ -51,21 +55,7 @@ internal static class PgPassFile
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentException.ThrowIfNullOrWhiteSpace(database);
 
-        StringBuilder content = new();
-        foreach (LibpqEndpoint endpoint in connection.Endpoints)
-        {
-            content
-                .Append(
-                    FormatLine(
-                        endpoint.Host,
-                        endpoint.Port,
-                        database,
-                        connection.Username,
-                        connection.Password
-                    )
-                )
-                .Append('\n');
-        }
+        string content = Content(connection, database);
 
         // CreateFile refuses an existing entry before anything is created, so a failure there deletes nothing.
         FileStream stream = directory.CreateFile(FileName);
@@ -75,7 +65,7 @@ internal static class PgPassFile
             await using (stream)
             {
                 beforeWrite?.Invoke(stream);
-                await stream.WriteAsync(_utf8.GetBytes(content.ToString()), cancellationToken);
+                await stream.WriteAsync(_utf8.GetBytes(content), cancellationToken);
                 await stream.FlushAsync(cancellationToken);
             }
         }
@@ -86,6 +76,34 @@ internal static class PgPassFile
         }
 
         return path;
+    }
+
+    /// <summary>
+    /// The file's lines: one per endpoint, under the host as given. A Unix socket directory also gets a line under
+    /// <c>localhost</c> with the same port, because <c>libpq</c> looks a socket up as <c>localhost</c> when the
+    /// directory is its compiled-in default, which differs between builds; the literal line serves every other
+    /// directory. Both lines carry the one configured user and password, so nothing is wildcarded.
+    /// </summary>
+    internal static string Content(LibpqConnectionSettings connection, string database)
+    {
+        ArgumentNullException.ThrowIfNull(connection);
+        StringBuilder content = new();
+        foreach (LibpqEndpoint endpoint in connection.Endpoints)
+        {
+            IEnumerable<string> hosts = LibpqConnectionSettings.IsUnixSocket(endpoint.Host)
+                ? [endpoint.Host, LibpqDefaultHost]
+                : [endpoint.Host];
+            foreach (string host in hosts)
+            {
+                content
+                    .Append(
+                        FormatLine(host, endpoint.Port, database, connection.Username, connection.Password)
+                    )
+                    .Append('\n');
+            }
+        }
+
+        return content.ToString();
     }
 
     /// <summary>One <c>libpq</c> password file line; every text field is escaped, the port is decimal.</summary>

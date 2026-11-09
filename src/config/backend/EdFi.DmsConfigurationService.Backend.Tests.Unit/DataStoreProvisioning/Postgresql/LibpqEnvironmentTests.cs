@@ -359,8 +359,9 @@ public class LibpqEnvironmentTests
     /// Server-certificate trust through the administrative connection, which both clients read: a relative
     /// <c>Root Certificate</c> reaches Npgsql and <c>psql</c> as the same full path, resolved where Npgsql would
     /// resolve it, because <c>psql</c> runs in the operation's directory; and a verifying mode without one is
-    /// refused, because Npgsql would then trust sources the replay does not see. Modes that do not verify are
-    /// unchanged.
+    /// refused, because Npgsql would then trust sources the replay does not see. A mode that does not verify is
+    /// unchanged without one, and refused with one (review finding 2): <c>libpq</c> would verify against the file
+    /// where Npgsql verifies nothing, so an unrelated server certificate would pass readiness and fail every replay.
     /// </summary>
     [TestFixture]
     public class Given_the_server_certificate_trust_of_the_admin_connection
@@ -372,6 +373,7 @@ public class LibpqEnvironmentTests
         private string? _npgsqlRoot;
         private Dictionary<string, Exception?> _verifyingWithoutRoot = [];
         private Exception? _requireWithoutRoot;
+        private Dictionary<string, Exception?> _rootWithoutVerifying = [];
 
         [SetUp]
         public void Setup()
@@ -397,6 +399,22 @@ public class LibpqEnvironmentTests
             _requireWithoutRoot = Packaging.Record.Exception(() =>
                 new PostgresqlAdminConnection(Base + "SSL Mode=Require", TimeSpan.FromSeconds(30))
             );
+
+            // Rotated in after a first use, so the rule holds for every value the source returns, not only the first.
+            _rootWithoutVerifying = new[] { "Require", "Prefer", "Allow", "Disable", null }.ToDictionary(
+                mode => mode ?? "(absent)",
+                mode =>
+                {
+                    string current = Base + "SSL Mode=VerifyCA;Root Certificate=/etc/ca.crt";
+                    PostgresqlAdminConnection rotating = new(() => current, TimeSpan.FromSeconds(30));
+                    _ = rotating.ToLibpqSettings();
+                    current =
+                        Base
+                        + (mode is null ? string.Empty : "SSL Mode=" + mode + ";")
+                        + "Root Certificate=/etc/ca.crt";
+                    return Packaging.Record.Exception(() => rotating.ToLibpqSettings());
+                }
+            );
         }
 
         [Test]
@@ -420,5 +438,21 @@ public class LibpqEnvironmentTests
 
         [Test]
         public void It_leaves_a_mode_that_does_not_verify_alone() => _requireWithoutRoot.Should().BeNull();
+
+        [Test]
+        public void It_refuses_a_root_certificate_with_a_mode_that_does_not_verify()
+        {
+            _rootWithoutVerifying.Should().HaveCount(5);
+            _rootWithoutVerifying
+                .Values.Should()
+                .AllSatisfy(exception =>
+                    exception
+                        .Should()
+                        .BeOfType<InvalidOperationException>()
+                        .Which.Message.Should()
+                        .Contain("VerifyCA or VerifyFull")
+                        .And.NotContain(Password)
+                );
+        }
     }
 }

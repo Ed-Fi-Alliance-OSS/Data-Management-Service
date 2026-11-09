@@ -131,7 +131,9 @@ internal sealed class PsqlRestoreRunner
     /// Cancellation does not propagate as an exception: a cancelled run returns
     /// <see cref="PsqlRunResult.Killed"/> or <see cref="PsqlRunResult.Unconfirmed"/>, so the engine can run
     /// the outcome protocol before the orchestrator surfaces the cancellation (6.10). A failure before the
-    /// process is started, cancellation included, returns <see cref="PsqlRunResult.NotStarted"/>.
+    /// process is started, cancellation included, returns <see cref="PsqlRunResult.NotStarted"/>; the system's
+    /// refusal to create the process itself propagates as its <see cref="System.ComponentModel.Win32Exception"/>,
+    /// whose code the engine classifies.
     /// </summary>
     public async Task<PsqlRunResult> RunAsync(
         PostgresqlAdminConnection adminConnection,

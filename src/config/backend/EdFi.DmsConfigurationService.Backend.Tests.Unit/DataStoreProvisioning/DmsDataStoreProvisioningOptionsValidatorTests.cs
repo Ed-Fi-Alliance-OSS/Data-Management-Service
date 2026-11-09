@@ -721,6 +721,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         private string[] _secretsWithoutResolver = [];
         private string[] _malformedSecret = [];
         private string[] _unterminatedSecret = [];
+        private string[] _secretSslModeWithRoot = [];
 
         [SetUp]
         public void Setup()
@@ -730,12 +731,16 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 {
                     "Host=db;Username=u;Password=p;Passfile=/root/.pgpass",
                     "Server=db;Username=u;Password=p",
-                    "Host=db;Username=u;Password=p;SSL Mode=Require;Root Certificate=/etc/ca.crt;Timeout=15;Minimum Pool Size=0;Maximum Pool Size=5;Application Name=cms",
+                    "Host=db;Username=u;Password=p;SSL Mode=VerifyCA;Root Certificate=/etc/ca.crt;Timeout=15;Minimum Pool Size=0;Maximum Pool Size=5;Application Name=cms",
                     "host=db;username=u;password=p;database=postgres",
                     "Host=db;Username=u;Password=p;Database=edfi_configurationservice",
                     "Host=db;Username=u;Password=p;SSL Mode=VerifyFull",
                     "Host=db;Username=u;Password=p;SSL Mode=verify-ca",
                     "Host=db;Username=u;Password=p;SSL Mode=VerifyFull;Root Certificate=certs/root.crt",
+                    "Host=db;Username=u;Password=p;SSL Mode=Require;Root Certificate=/etc/ca.crt",
+                    "Host=db;Username=u;Password=p;SSL Mode=prefer;Root Certificate=/etc/ca.crt",
+                    "Host=db;Username=u;Password=p;Root Certificate=/etc/ca.crt",
+                    "Host=db;Username=u;Password=p;SSL Mode=Require",
                     "=;;=",
                     ";",
                 }
@@ -770,6 +775,11 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             DmsDataStoreProvisioningOptions unterminated = ValidPostgresql();
             unterminated.AdminConnectionString = "Host=db;Username=u;Password=${secret:dms/admin-pw";
             _unterminatedSecret = Failures(unterminated, A.Fake<ISecretResolver>());
+
+            DmsDataStoreProvisioningOptions secretMode = ValidPostgresql();
+            secretMode.AdminConnectionString =
+                "Host=db;Username=u;Password=p;SSL Mode=${secret:dms/ssl-mode};Root Certificate=/etc/ca.crt";
+            _secretSslModeWithRoot = Failures(secretMode, A.Fake<ISecretResolver>());
         }
 
         [Test]
@@ -791,7 +801,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
         [Test]
         public void It_accepts_the_whole_postgresql_key_subset() =>
             _postgresql[
-                "Host=db;Username=u;Password=p;SSL Mode=Require;Root Certificate=/etc/ca.crt;Timeout=15;Minimum Pool Size=0;Maximum Pool Size=5;Application Name=cms"
+                "Host=db;Username=u;Password=p;SSL Mode=VerifyCA;Root Certificate=/etc/ca.crt;Timeout=15;Minimum Pool Size=0;Maximum Pool Size=5;Application Name=cms"
             ]
                 .Should()
                 .BeEmpty();
@@ -829,6 +839,34 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
             _postgresql["Host=db;Username=u;Password=p;SSL Mode=VerifyFull;Root Certificate=certs/root.crt"]
                 .Should()
                 .BeEmpty();
+        }
+
+        /// <summary>
+        /// Review finding 2: libpq verifies the server against a Root Certificate in a mode Npgsql does not verify
+        /// in (an absent mode is Prefer), so the pair is refused; a mode that does not verify stays accepted without
+        /// one, and a mode given by a secret reference is left to the resolved value's check.
+        /// </summary>
+        [Test]
+        public void It_refuses_a_root_certificate_with_a_postgresql_ssl_mode_that_does_not_verify()
+        {
+            foreach (
+                string value in new[]
+                {
+                    "Host=db;Username=u;Password=p;SSL Mode=Require;Root Certificate=/etc/ca.crt",
+                    "Host=db;Username=u;Password=p;SSL Mode=prefer;Root Certificate=/etc/ca.crt",
+                    "Host=db;Username=u;Password=p;Root Certificate=/etc/ca.crt",
+                }
+            )
+            {
+                _postgresql[value]
+                    .Should()
+                    .ContainSingle(value)
+                    .Which.Should()
+                    .Contain("may name a Root Certificate only when SSL Mode is VerifyCA or VerifyFull");
+            }
+
+            _postgresql["Host=db;Username=u;Password=p;SSL Mode=Require"].Should().BeEmpty();
+            _secretSslModeWithRoot.Should().BeEmpty();
         }
 
         [Test]

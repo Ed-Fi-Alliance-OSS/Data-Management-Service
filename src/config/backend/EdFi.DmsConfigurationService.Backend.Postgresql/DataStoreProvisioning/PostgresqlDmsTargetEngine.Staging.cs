@@ -76,17 +76,19 @@ public sealed partial class PostgresqlDmsTargetEngine
     {
         // The target is not consulted: a dump records no database name to compare with (D-11 is SQL Server's).
         ArgumentNullException.ThrowIfNull(artifact);
-        PrivateOperationDirectory directory = PrivateOperationDirectory.Attach(
-            Path.GetDirectoryName(artifact.FilePath)
-                ?? throw new ArgumentException("The artifact has no directory.", nameof(artifact)),
-            operation
-        );
 
-        // D-16 before the replay: the dump's ownership statements name the role. A failure here, before any
-        // process exists, leaves the staging database as created, so it is a definite outcome.
+        // The operation directory, then D-16 before the replay: the dump's ownership statements name the role.
+        // A failure here, before any process exists, leaves the staging database as created, so it is a definite
+        // outcome (a directory removed while the operation waited included).
+        PrivateOperationDirectory directory;
         DmsCommandOutcome<DmsInstanceIdentity>? refused;
         try
         {
+            directory = PrivateOperationDirectory.Attach(
+                Path.GetDirectoryName(artifact.FilePath)
+                    ?? throw new ArgumentException("The artifact has no directory.", nameof(artifact)),
+                operation
+            );
             await using NpgsqlConnection maintenance = await _adminConnection.OpenMaintenanceAsync(
                 cancellationToken
             );
@@ -125,12 +127,7 @@ public sealed partial class PostgresqlDmsTargetEngine
         catch (Win32Exception exception)
         {
             // The process never started, so nothing reached the server.
-            return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
-                new DmsCommandFailure(
-                    DmsCommandFailureClass.Rejected,
-                    DmsProvisioningDiagnostic.From(exception, RestoreStartStep)
-                )
-            );
+            return StartFailed(exception, cancellationToken);
         }
 
         switch (run)
@@ -174,6 +171,41 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>The residue id of a replay process: the replay's application name and the process id, never a path or an argument.</summary>
     internal static string ReplayProcessResourceId(DmsOperationId operation, int processId) =>
         $"{operation.RestoreApplicationName}/{processId.ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// A <c>psql</c> process the system could not create. Exhausted process, memory, or file-descriptor resources
+    /// can clear without any change, so they are <see cref="NotStarted"/> and retryable; anything else (a missing
+    /// or non-executable file, a refused permission) needs the operator and stays <see cref="RestoreStartStep"/>.
+    /// </summary>
+    internal static DmsCommandOutcome<DmsInstanceIdentity> StartFailed(
+        Win32Exception exception,
+        CancellationToken cancellationToken
+    ) =>
+        IsResourceExhaustion(exception.NativeErrorCode)
+            ? NotStarted(exception, cancellationToken)
+            : new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                new DmsCommandFailure(
+                    DmsCommandFailureClass.Rejected,
+                    DmsProvisioningDiagnostic.From(exception, RestoreStartStep)
+                )
+            );
+
+    /// <summary>
+    /// The process-creation failure codes that mean a temporary shortage. On Linux, .NET reports the
+    /// <c>fork</c>/<c>exec</c> <c>errno</c>: EAGAIN (11, the process limit), ENOMEM (12), ENFILE (23), EMFILE (24).
+    /// On Windows, <c>CreateProcess</c> reports ERROR_NOT_ENOUGH_MEMORY (8), ERROR_OUTOFMEMORY (14),
+    /// ERROR_NO_SYSTEM_RESOURCES (1450), ERROR_COMMITMENT_LIMIT (1455). Other platforms number <c>errno</c>
+    /// differently, so nothing there is judged temporary.
+    /// </summary>
+    internal static bool IsResourceExhaustion(int nativeErrorCode)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            return nativeErrorCode is 8 or 14 or 1450 or 1455;
+        }
+
+        return OperatingSystem.IsLinux() && nativeErrorCode is 11 or 12 or 23 or 24;
+    }
 
     /// <summary>
     /// A replay that never started, because something it needs failed before any process existed: a definite

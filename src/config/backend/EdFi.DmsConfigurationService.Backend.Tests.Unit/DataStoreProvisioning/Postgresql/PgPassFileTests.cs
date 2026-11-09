@@ -57,6 +57,86 @@ public class PgPassFileTests
             _lineBreak.Should().BeOfType<ArgumentException>();
     }
 
+    /// <summary>
+    /// Review finding 3: <c>libpq</c> looks a socket in its compiled-in default directory up as <c>localhost</c>,
+    /// and any other directory under its own path. A socket endpoint therefore gets both lines, with its own port
+    /// and the one configured user and password; a network endpoint keeps exactly its one line.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_lines_for_unix_socket_and_network_endpoints
+    {
+        private string _directorySocket = null!;
+        private string _abstractSocket = null!;
+        private string _network = null!;
+
+        private static string ContentFor(string connectionString) =>
+            PgPassFile.Content(
+                LibpqConnectionSettings.From(new NpgsqlConnectionStringBuilder(connectionString)),
+                Database
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            _directorySocket = ContentFor(
+                "Host=/var/run/postgresql;Port=5433;Username=dms_admin;Password=" + Password
+            );
+            _abstractSocket = ContentFor("Host=@pgsocket;Username=dms_admin;Password=" + Password);
+            _network = PgPassFile.Content(TwoEndpoints(), Database);
+        }
+
+        [Test]
+        public void It_writes_the_directory_line_then_a_localhost_line_with_the_same_port() =>
+            _directorySocket
+                .Should()
+                .Be(
+                    "/var/run/postgresql:5433:"
+                        + Database
+                        + ":dms_admin:"
+                        + Password
+                        + "\n"
+                        + "localhost:5433:"
+                        + Database
+                        + ":dms_admin:"
+                        + Password
+                        + "\n"
+                );
+
+        [Test]
+        public void It_treats_an_abstract_socket_the_same_way() =>
+            _abstractSocket
+                .Should()
+                .Be(
+                    "@pgsocket:5432:"
+                        + Database
+                        + ":dms_admin:"
+                        + Password
+                        + "\n"
+                        + "localhost:5432:"
+                        + Database
+                        + ":dms_admin:"
+                        + Password
+                        + "\n"
+                );
+
+        [Test]
+        public void It_adds_nothing_for_network_endpoints() =>
+            _network
+                .Should()
+                .Be(
+                    "primary.example.test:5433:"
+                        + Database
+                        + ":dms_admin:"
+                        + Password
+                        + "\n"
+                        + @"\:\:1:5434:"
+                        + Database
+                        + ":dms_admin:"
+                        + Password
+                        + "\n"
+                );
+    }
+
     [TestFixture]
     public class Given_a_password_file_written_for_two_endpoints
     {

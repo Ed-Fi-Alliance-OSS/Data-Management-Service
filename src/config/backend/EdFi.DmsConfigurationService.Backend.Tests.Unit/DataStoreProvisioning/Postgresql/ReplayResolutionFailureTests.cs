@@ -195,8 +195,139 @@ public class ReplayResolutionFailureTests
     }
 
     /// <summary>
-    /// The runner cannot write the password file (a password with a line break): no process is started, so the run
-    /// returns <see cref="PsqlRunResult.NotStarted"/> with the cause instead of throwing, and no password file is left.
+    /// Review finding 4: the operation directory is gone when the replay is about to start (a temporary-file
+    /// reaper, an operator). Nothing was launched and nothing connected, so the engine returns the definite
+    /// <c>RestoreNotStarted</c>, or <c>RestoreCancelled</c> for a cancelled token, which lets cleanup drop the
+    /// staging database, instead of throwing past the orchestrator into an unresolved outcome.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_operation_directory_is_gone_before_the_replay
+    {
+        private DmsCommandOutcome<DmsInstanceIdentity> _missing = null!;
+        private DmsCommandOutcome<DmsInstanceIdentity> _cancelled = null!;
+
+        private static DmsProvisioningDiagnostic RejectedDiagnosticOf(
+            DmsCommandOutcome<DmsInstanceIdentity> outcome
+        )
+        {
+            DmsCommandFailure failure = outcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Subject.Failure;
+            failure.Class.Should().Be(DmsCommandFailureClass.Rejected);
+            return failure.Diagnostic;
+        }
+
+        private static async Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreWithoutDirectoryAsync(
+            CancellationToken cancellationToken
+        )
+        {
+            PostgresqlDmsTargetEngine engine = new(
+                new PostgresqlAdminConnection(UnreachableAdmin, TimeSpan.FromSeconds(30)),
+                new PostgresqlDmsEngineSettings(
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromSeconds(5),
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromMinutes(5),
+                    Path.Combine(AppContext.BaseDirectory, "psql-not-available")
+                ),
+                TimeProvider.System,
+                NullLogger.Instance
+            );
+            using StagedReplay replay = new();
+            Directory.Delete(replay.OperationDirectory.Path, recursive: true);
+            return await engine.RestoreIntoStagingAsync(
+                replay.Operation.StagingDatabaseName,
+                ProvisioningTestValues.CreateRequest().TargetName,
+                replay.Artifact,
+                replay.Operation,
+                cancellationToken
+            );
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _missing = await RestoreWithoutDirectoryAsync(CancellationToken.None);
+            using CancellationTokenSource cancellation = new();
+            await cancellation.CancelAsync();
+            _cancelled = await RestoreWithoutDirectoryAsync(cancellation.Token);
+        }
+
+        [Test]
+        public void It_returns_a_definite_not_started_failure_naming_the_missing_directory()
+        {
+            DmsProvisioningDiagnostic diagnostic = RejectedDiagnosticOf(_missing);
+            diagnostic.Operation.Should().Be(DmsEngineOperations.RestoreNotStarted);
+            diagnostic.ExceptionTypeChain.Should().Be("System.IO.DirectoryNotFoundException");
+        }
+
+        [Test]
+        public void It_names_a_cancelled_token_as_a_cancellation() =>
+            RejectedDiagnosticOf(_cancelled).Operation.Should().Be(DmsEngineOperations.RestoreCancelled);
+    }
+
+    /// <summary>
+    /// Review finding 5: a <c>psql</c> process the system could not create. A temporary shortage of processes,
+    /// memory, or file descriptors can clear with no change, so it is the definite and retryable
+    /// <c>RestoreNotStarted</c> (<c>RestoreCancelled</c> for a cancelled token); a missing or non-executable file
+    /// or a refused permission keeps the deliberate <c>RestoreIntoStaging.Start</c>, which needs the operator.
+    /// The codes are the ones .NET reports for process creation on each platform.
+    /// </summary>
+    [TestFixture]
+    [Platform("Win,Linux")]
+    public class Given_a_psql_process_the_system_could_not_create
+    {
+        // Windows: ERROR_NO_SYSTEM_RESOURCES, ERROR_NOT_ENOUGH_MEMORY. Linux: EAGAIN (process limit), ENOMEM.
+        private static readonly int[] _shortages = OperatingSystem.IsWindows() ? [1450, 8] : [11, 12];
+
+        // Windows: ERROR_FILE_NOT_FOUND, ERROR_ACCESS_DENIED. Linux: ENOENT, EACCES.
+        private static readonly int[] _needsOperator = OperatingSystem.IsWindows() ? [2, 5] : [2, 13];
+
+        private static DmsProvisioningDiagnostic RejectedDiagnosticOf(int code, CancellationToken token)
+        {
+            DmsCommandFailure failure = PostgresqlDmsTargetEngine
+                .StartFailed(new System.ComponentModel.Win32Exception(code), token)
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Subject.Failure;
+            failure.Class.Should().Be(DmsCommandFailureClass.Rejected);
+            return failure.Diagnostic;
+        }
+
+        [Test]
+        public void It_reports_a_resource_shortage_as_a_retryable_not_started_replay() =>
+            _shortages
+                .Select(code => RejectedDiagnosticOf(code, CancellationToken.None))
+                .Should()
+                .AllSatisfy(diagnostic =>
+                {
+                    diagnostic.Operation.Should().Be(DmsEngineOperations.RestoreNotStarted);
+                    diagnostic.ExceptionTypeChain.Should().Be("System.ComponentModel.Win32Exception");
+                });
+
+        [Test]
+        public void It_names_a_resource_shortage_under_a_cancelled_token_as_a_cancellation()
+        {
+            using CancellationTokenSource cancellation = new();
+            cancellation.Cancel();
+            RejectedDiagnosticOf(_shortages[0], cancellation.Token)
+                .Operation.Should()
+                .Be(DmsEngineOperations.RestoreCancelled);
+        }
+
+        [Test]
+        public void It_keeps_a_missing_or_refused_executable_for_the_operator() =>
+            _needsOperator
+                .Select(code => RejectedDiagnosticOf(code, CancellationToken.None).Operation)
+                .Should()
+                .AllBe(PostgresqlDmsTargetEngine.RestoreStartStep);
+    }
+
+    /// <summary>
+    /// The runner cannot prepare the password file (a password with a line break, rotated in after the admin
+    /// connection was built and refused by it): no process is started, so the run returns
+    /// <see cref="PsqlRunResult.NotStarted"/> with the cause instead of throwing, and no password file is left.
     /// </summary>
     [TestFixture]
     public class Given_the_runner_cannot_write_the_password_file
@@ -216,12 +347,13 @@ public class ReplayResolutionFailureTests
             using StagedReplay replay = new();
             _result = await runner.RunAsync(
                 new PostgresqlAdminConnection(
-                    new NpgsqlConnectionStringBuilder
-                    {
-                        Host = "db",
-                        Username = "dms",
-                        Password = "line\nbreak",
-                    }.ConnectionString,
+                    () =>
+                        new NpgsqlConnectionStringBuilder
+                        {
+                            Host = "db",
+                            Username = "dms",
+                            Password = "line\nbreak",
+                        }.ConnectionString,
                     TimeSpan.FromSeconds(30)
                 ),
                 replay.Operation.StagingDatabaseName,
@@ -244,7 +376,7 @@ public class ReplayResolutionFailureTests
                 .Should()
                 .BeOfType<PsqlRunResult.NotStarted>()
                 .Which.Cause.Should()
-                .BeOfType<ArgumentException>();
+                .BeOfType<InvalidOperationException>();
 
         [Test]
         public void It_leaves_no_password_file() => _entriesAfterTheRun.Should().Equal("artifact.sql");

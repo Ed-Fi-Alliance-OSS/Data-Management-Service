@@ -176,21 +176,32 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
 
         // psql verifies the server only against the Root Certificate file, while Npgsql without one falls back to
         // other trust sources, so a verifying mode without one would pass readiness and fail every replay.
-        if (
-            builder.TryGetValue("SSL Mode", out object? sslMode)
-            && (sslMode as string)?.Replace("-", string.Empty, StringComparison.Ordinal) is { } mode
-            && (
-                string.Equals(mode, "VerifyCA", StringComparison.OrdinalIgnoreCase)
-                || string.Equals(mode, "VerifyFull", StringComparison.OrdinalIgnoreCase)
-            )
-            && !(
-                builder.TryGetValue("Root Certificate", out object? root)
-                && !string.IsNullOrWhiteSpace(root as string)
-            )
-        )
+        // Conversely, a Root Certificate with a mode that does not verify (an absent mode is Prefer) makes libpq
+        // verify against it while Npgsql validates nothing. A mode given by a secret reference is judged by the
+        // administrative connection once resolved.
+        string? mode = builder.TryGetValue("SSL Mode", out object? sslMode)
+            ? (sslMode as string)?.Replace("-", string.Empty, StringComparison.Ordinal)
+            : null;
+        bool verifying =
+            string.Equals(mode, "VerifyCA", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(mode, "VerifyFull", StringComparison.OrdinalIgnoreCase);
+        bool hasRoot =
+            builder.TryGetValue("Root Certificate", out object? root)
+            && !string.IsNullOrWhiteSpace(root as string);
+        if (verifying && !hasRoot)
         {
             failures.Add(
                 $"{key} must name a Root Certificate when SSL Mode is VerifyCA or VerifyFull for PostgreSQL, because psql verifies the server only against that file."
+            );
+        }
+        else if (
+            !verifying
+            && hasRoot
+            && mode?.Contains(SecretReferenceOpening, StringComparison.Ordinal) != true
+        )
+        {
+            failures.Add(
+                $"{key} may name a Root Certificate only when SSL Mode is VerifyCA or VerifyFull for PostgreSQL, because psql would verify the server against that file where Npgsql verifies nothing."
             );
         }
     }
