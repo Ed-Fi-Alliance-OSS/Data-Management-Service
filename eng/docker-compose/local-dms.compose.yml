@@ -64,7 +64,6 @@ services:
       AppSettings__ManagementEndpoints__RequiredRole: ${DMS_MANAGEMENT_REQUIRED_ROLE:-}
       CacheSettings__ClaimSetsCacheExpirationSeconds: ${DMS_CLAIMSETS_CACHE_EXPIRATION_SECONDS:-600}
       CacheSettings__ApplicationContextCacheExpirationSeconds: ${DMS_APPLICATION_CONTEXT_CACHE_EXPIRATION_SECONDS:-600}
-      CacheSettings__TokenCacheExpirationSeconds: ${DMS_TOKEN_CACHE_EXPIRATION_SECONDS:-1500}
       CacheSettings__ProfileCacheExpirationSeconds: ${DMS_PROFILE_CACHE_EXPIRATION_SECONDS:-1800}
       CacheSettings__DataStoreCacheExpirationSeconds: ${DMS_DATASTORE_CACHE_EXPIRATION_SECONDS:-600}
       CacheSettings__DataStoreCacheRefreshEnabled: ${DMS_DATASTORE_CACHE_REFRESH_ENABLED:-true}

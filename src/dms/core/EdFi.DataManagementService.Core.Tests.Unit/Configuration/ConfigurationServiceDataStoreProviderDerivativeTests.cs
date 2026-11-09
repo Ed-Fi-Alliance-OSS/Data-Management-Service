@@ -115,7 +115,7 @@ public class ConfigurationServiceDataStoreProviderDerivativeTests
         A.CallTo(() =>
                 tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
             )
-            .Returns("valid-token");
+            .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
         handler ??= new DerivativeTestHttpMessageHandler();
         handler.SetResponse("v3/dataStores/", dataStoresResponse);
