@@ -194,7 +194,7 @@ public sealed class Given_PinnedImageFixtureKafkaSettings
     public void It_defaults_to_the_shipped_kafka_image_without_a_redpanda_prerequisite()
     {
         const string variable = "CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE";
-        string original = Environment.GetEnvironmentVariable(variable) ?? string.Empty;
+        string? original = Environment.GetEnvironmentVariable(variable);
         try
         {
             Environment.SetEnvironmentVariable(variable, null);
