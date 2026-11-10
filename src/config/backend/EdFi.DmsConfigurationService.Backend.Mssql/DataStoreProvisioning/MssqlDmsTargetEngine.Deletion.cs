@@ -119,8 +119,9 @@ public sealed partial class MssqlDmsTargetEngine
 
     /// <summary>
     /// On the holder session, under its fence: the identity read through a three-part name, because the holder holds the
-    /// single-user slot and no other session can open the target (6.6 SQL Server step 4). A missing table and a refusal
-    /// for lack of a privilege are typed reads, as in <see cref="ReadIdentityAsync"/>; anything else propagates.
+    /// single-user slot and no other session can open the target (6.6 SQL Server step 4). A missing table, a missing or
+    /// unconvertible identity column, and a refusal for lack of a privilege are typed reads, as in
+    /// <see cref="ReadIdentityAsync"/>; anything else propagates.
     /// </summary>
     public async Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
         IDmsTargetLockHolder holder,
@@ -145,6 +146,15 @@ public sealed partial class MssqlDmsTargetEngine
                 catch (SqlException exception) when (MssqlErrorClassifier.IsMissingRelation(exception.Number))
                 {
                     return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.TableMissing);
+                }
+                catch (SqlException exception) when (MssqlErrorClassifier.IsMissingColumn(exception.Number))
+                {
+                    return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing);
+                }
+                catch (SqlException exception)
+                    when (MssqlErrorClassifier.IsConversionRefused(exception.Number))
+                {
+                    return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnTypeInvalid);
                 }
                 catch (SqlException exception) when (MssqlErrorClassifier.IsAccessRefusal(exception.Number))
                 {

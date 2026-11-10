@@ -172,6 +172,14 @@ public class MssqlDeleteTests
         private (bool Exists, int DatabaseId, string UserAccess) _unreadableBefore;
         private (bool Exists, int DatabaseId, string UserAccess) _unreadableAfter;
         private Guid _unownedIdentityAfter;
+        private Lane? _columnMissing;
+        private DmsDataStoreDeleteResult _columnMissingResult = null!;
+        private (bool Exists, int DatabaseId, string UserAccess) _columnMissingBefore;
+        private (bool Exists, int DatabaseId, string UserAccess) _columnMissingAfter;
+        private Lane? _fencedColumnMissing;
+        private DmsDataStoreDeleteResult _fencedColumnMissingResult = null!;
+        private (bool Exists, int DatabaseId, string UserAccess) _fencedColumnMissingBefore;
+        private (bool Exists, int DatabaseId, string UserAccess) _fencedColumnMissingAfter;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -194,12 +202,44 @@ public class MssqlDeleteTests
             _unreadableBefore = await _unreadable.TargetCatalogAsync();
             _unreadableResult = await _unreadable.DeleteAsync();
             _unreadableAfter = await _unreadable.TargetCatalogAsync();
+
+            // F-01: the record's own identity once seeded, then the identity column dropped before the first read.
+            _columnMissing = await DeleteOnlyLaneAsync();
+            await _columnMissing.SeedTargetAsync();
+            await new TestDatabase(_columnMissing.Target.Value).ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity];"
+            );
+            await WaitForNoSessionsOnAsync(_columnMissing.Target.Value);
+            _columnMissingBefore = await _columnMissing.TargetCatalogAsync();
+            _columnMissingResult = await _columnMissing.DeleteAsync();
+            _columnMissingAfter = await _columnMissing.TargetCatalogAsync();
+
+            // F-01 on the holder: the first read finds the record's identity; the column is dropped just before
+            // the fence, so only the fenced re-read on the holder session meets the missing column.
+            LaneHooks fencedHooks = new();
+            _fencedColumnMissing = await DeleteOnlyLaneAsync(fencedHooks);
+            await _fencedColumnMissing.SeedTargetAsync();
+            string fencedTarget = _fencedColumnMissing.Target.Value;
+            fencedHooks.Probe = async (point, _) =>
+            {
+                if (point == DmsProvisioningHookPoint.BeforeFence)
+                {
+                    await new TestDatabase(fencedTarget).ExecuteAsync(
+                        "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity];"
+                    );
+                }
+            };
+            _fencedColumnMissingBefore = await _fencedColumnMissing.TargetCatalogAsync();
+            _fencedColumnMissingResult = await _fencedColumnMissing.DeleteAsync();
+            _fencedColumnMissingAfter = await _fencedColumnMissing.TargetCatalogAsync();
         }
 
         [OneTimeTearDown]
         public async Task Teardown()
         {
-            foreach (Lane? lane in new[] { _absent, _unowned, _unreadable })
+            foreach (
+                Lane? lane in new[] { _absent, _unowned, _unreadable, _columnMissing, _fencedColumnMissing }
+            )
             {
                 if (lane is not null)
                 {
@@ -236,15 +276,81 @@ public class MssqlDeleteTests
         }
 
         [Test]
+        public void It_reports_a_target_without_the_identity_column_as_unverifiable_and_leaves_it_untouched()
+        {
+            FailureOf(_columnMissingResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.DeleteIdentityStep
+                    )
+                );
+            (_columnMissingAfter, _columnMissingBefore.UserAccess)
+                .Should()
+                .Be((_columnMissingBefore, "MULTI_USER"));
+        }
+
+        [Test]
+        public void It_reports_a_column_missing_under_the_fence_as_unverifiable_and_reverses_the_fence()
+        {
+            FailureOf(_fencedColumnMissingResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.VerifyFencedStep
+                    )
+                );
+            _fencedColumnMissingResult
+                .Should()
+                .BeOfType<DmsDataStoreDeleteResult.Failure>()
+                .Which.Cleanup.HasResidue.Should()
+                .BeFalse();
+            (_fencedColumnMissingAfter, _fencedColumnMissingBefore.UserAccess)
+                .Should()
+                .Be((_fencedColumnMissingBefore, "MULTI_USER"));
+        }
+
+        [Test]
+        public void It_read_the_fenced_identity_on_the_holder_and_reversed_the_fence() =>
+            MembersOf(_fencedColumnMissing!.Engine)
+                .Should()
+                .ContainInOrder(
+                    nameof(IDmsTargetEngine.FenceAsync),
+                    nameof(IDmsTargetEngine.ReadIdentityOnHolderAsync),
+                    nameof(IDmsTargetEngine.UnfenceAsync)
+                );
+
+        [Test]
         public void It_never_fences_or_drops()
         {
-            foreach (Lane lane in new[] { _absent!, _unowned!, _unreadable! })
+            foreach (Lane lane in new[] { _absent!, _unowned!, _unreadable!, _columnMissing! })
             {
                 MembersOf(lane.Engine)
                     .Should()
                     .NotContain(nameof(IDmsTargetEngine.FenceAsync))
                     .And.NotContain(nameof(IDmsTargetEngine.DropInstanceAsync));
             }
+        }
+
+        [Test]
+        public void It_never_drops_the_target_whose_column_went_missing_under_the_fence() =>
+            MembersOf(_fencedColumnMissing!.Engine)
+                .Should()
+                .NotContain(nameof(IDmsTargetEngine.DropInstanceAsync));
+
+        private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) FailureOf(
+            DmsDataStoreDeleteResult result
+        )
+        {
+            DmsProvisioningFailure failure = result
+                .Should()
+                .BeOfType<DmsDataStoreDeleteResult.Failure>()
+                .Subject.Detail;
+            return (failure.Code, failure.Category, failure.Diagnostic.Operation);
         }
     }
 

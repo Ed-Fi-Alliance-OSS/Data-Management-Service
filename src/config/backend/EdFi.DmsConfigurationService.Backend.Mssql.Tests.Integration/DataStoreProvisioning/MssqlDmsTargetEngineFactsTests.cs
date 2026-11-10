@@ -258,6 +258,107 @@ public class MssqlDmsTargetEngineFactsTests
             _populatedAfterDocument.Should().Be(new DmsTargetValidation.Valid());
     }
 
+    /// <summary>
+    /// F-01: a <c>dms.EffectiveSchema</c> whose row holds a NULL, whose column has another type, or which lacks a
+    /// column is a typed invalid read, never a driver exception; the rest of the facts are still read, and a
+    /// well-formed row is still found.
+    /// </summary>
+    [TestFixture]
+    public class Given_effective_schema_tables_of_every_shape
+    {
+        private const string Table = "[dms].[EffectiveSchema]";
+
+        private readonly List<TestDatabase> _databases = [];
+        private DmsTargetFacts _wellFormed = null!;
+        private DmsTargetFacts _nullHash = null!;
+        private DmsTargetFacts _integerCount = null!;
+        private DmsTargetFacts _textSeedHash = null!;
+        private DmsTargetFacts _seedHashMissing = null!;
+
+        private async Task<DmsTargetFacts> FactsAfterAsync(string purpose, params string[] alterations)
+        {
+            TestDatabase database = await CreateDmsShapedDatabaseAsync(purpose);
+            _databases.Add(database);
+            foreach (string alteration in alterations)
+            {
+                await database.ExecuteAsync(alteration);
+            }
+
+            return (await ReadAsync(database)).Facts;
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _wellFormed = await FactsAfterAsync("esform");
+            _nullHash = await FactsAfterAsync(
+                "esnull",
+                $"ALTER TABLE {Table} DROP CONSTRAINT [UX_EffectiveSchema_EffectiveSchemaHash];",
+                $"ALTER TABLE {Table} ALTER COLUMN [EffectiveSchemaHash] nvarchar(64) NULL;",
+                $"UPDATE {Table} SET [EffectiveSchemaHash] = NULL;"
+            );
+            _integerCount = await FactsAfterAsync(
+                "esint",
+                $"ALTER TABLE {Table} ALTER COLUMN [ResourceKeyCount] int NOT NULL;"
+            );
+            _textSeedHash = await FactsAfterAsync(
+                "estext",
+                $"ALTER TABLE {Table} ADD [SeedHashText] nvarchar(64) NULL;",
+                $"UPDATE {Table} SET [SeedHashText] = CONVERT(nvarchar(64), [ResourceKeySeedHash], 2);",
+                $"ALTER TABLE {Table} DROP COLUMN [ResourceKeySeedHash];",
+                "EXEC sp_rename N'[dms].[EffectiveSchema].[SeedHashText]', N'ResourceKeySeedHash', N'COLUMN';"
+            );
+            _seedHashMissing = await FactsAfterAsync(
+                "esdrop",
+                $"ALTER TABLE {Table} DROP COLUMN [ResourceKeySeedHash];"
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (TestDatabase database in _databases)
+            {
+                await database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_finds_the_well_formed_row() =>
+            _wellFormed.EffectiveSchema.Should().BeOfType<DmsEffectiveSchemaRead.Found>();
+
+        [Test]
+        public void It_reports_a_null_value_as_invalid() =>
+            _nullHash
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid));
+
+        [Test]
+        public void It_reports_a_count_of_another_type_as_invalid() =>
+            _integerCount
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid));
+
+        [Test]
+        public void It_reports_a_seed_hash_of_another_type_as_invalid() =>
+            _textSeedHash
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid));
+
+        [Test]
+        public void It_reports_a_missing_column_as_column_missing() =>
+            _seedHashMissing
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ColumnMissing));
+
+        [Test]
+        public void It_still_reads_the_rest_of_the_facts() =>
+            new[] { _nullHash, _integerCount, _textSeedHash, _seedHashMissing }
+                .Should()
+                .AllSatisfy(facts => facts.SchemaNames.Should().Equal(_wellFormed.SchemaNames));
+    }
+
     [TestFixture]
     public class Given_permission_drift_on_the_dms_shaped_database
     {

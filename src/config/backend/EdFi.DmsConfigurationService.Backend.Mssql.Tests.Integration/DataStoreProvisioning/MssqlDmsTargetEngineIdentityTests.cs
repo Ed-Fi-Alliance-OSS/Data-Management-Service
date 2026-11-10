@@ -35,6 +35,9 @@ public class MssqlDmsTargetEngineIdentityTests
         private DmsIdentityRead _empty = null!;
         private DmsIdentityRead _found = null!;
         private DmsIdentityRead _foundTyped = null!;
+        private DmsIdentityRead _columnMissing = null!;
+        private DmsIdentityRead _imageColumn = null!;
+        private DmsIdentityRead _rowversionColumn = null!;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -72,6 +75,22 @@ public class MssqlDmsTargetEngineIdentityTests
                 $"DROP TABLE [dms].[DataStoreIdentity]; CREATE TABLE [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId] smallint NOT NULL, [SourceIdentity] uniqueidentifier NOT NULL); INSERT INTO [dms].[DataStoreIdentity] VALUES (1, '{_valid:D}');"
             );
             _foundTyped = await ReadAsync();
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity];"
+            );
+            _columnMissing = await ReadAsync();
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] ADD [SourceIdentity] image NULL;"
+            );
+            await _database.ExecuteAsync("UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = 0x01;");
+            _imageColumn = await ReadAsync();
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity];"
+            );
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] ADD [SourceIdentity] rowversion NOT NULL;"
+            );
+            _rowversionColumn = await ReadAsync();
         }
 
         [OneTimeTearDown]
@@ -119,6 +138,20 @@ public class MssqlDmsTargetEngineIdentityTests
         public void It_finds_a_single_valid_identity_held_as_a_uniqueidentifier() =>
             _foundTyped.Should().Be(new DmsIdentityRead.Found(_valid));
 
+        [Test]
+        public void It_reports_a_table_without_the_identity_column_as_column_missing() =>
+            _columnMissing.Should().Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing));
+
+        [Test]
+        public void It_reports_an_image_identity_column_as_column_type_invalid() =>
+            _imageColumn.Should().Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnTypeInvalid));
+
+        [Test]
+        public void It_reports_a_rowversion_identity_column_as_column_type_invalid() =>
+            _rowversionColumn
+                .Should()
+                .Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnTypeInvalid));
+
         private async Task<DmsIdentityRead> ReadAsync()
         {
             MssqlDmsTargetEngine engine = Engine();
@@ -129,6 +162,116 @@ public class MssqlDmsTargetEngineIdentityTests
             );
             await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
             return await engine.ReadIdentityAsync(session, default);
+        }
+    }
+
+    /// <summary>
+    /// A lost connection is never read as malformed metadata: on a database whose identity column and an
+    /// effective-schema column are both missing, the identity and facts reads on a killed work session, and the
+    /// identity read on a killed holder session, raise the connection failure, which the orchestrator classifies as
+    /// loss or an unknown outcome, never as a typed invalid read.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_session_is_killed_before_malformed_metadata_is_read
+    {
+        private TestDatabase? _database;
+        private Exception? _identityRead;
+        private Exception? _factsRead;
+        private Exception? _holderRead;
+        private bool _holderLost;
+        private bool _sessionsGone = true;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("lost");
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity]; ALTER TABLE [dms].[EffectiveSchema] DROP COLUMN [ResourceKeySeedHash];"
+            );
+            await WaitForNoSessionsOnAsync(_database.Name);
+
+            MssqlDmsTargetEngine engine = Engine();
+            _identityRead = await ReadOnKilledSessionAsync(
+                engine,
+                session => engine.ReadIdentityAsync(session, default)
+            );
+            _factsRead = await ReadOnKilledSessionAsync(
+                engine,
+                session => engine.ReadTargetFactsAsync(session, default)
+            );
+
+            DmsTargetDatabaseName target = MssqlDeletionTests.TargetNameOf(_database.Name);
+            DmsTargetLockResult acquired = await engine.AcquireTargetLockAsync(
+                target,
+                DmsOperationId.New(),
+                default
+            );
+            await using IDmsTargetLockHolder holder = ((DmsTargetLockResult.Acquired)acquired).Holder;
+            await KillAsync((int)holder.Session.Id);
+            _sessionsGone &= await WaitUntilAsync(
+                async () => !await SessionExistsAsync(holder.Session),
+                TimeSpan.FromSeconds(30)
+            );
+            _holderRead = await Record.ExceptionAsync(() =>
+                engine.ReadIdentityOnHolderAsync(holder, target, default)
+            );
+            _holderLost = holder.LostToken.IsCancellationRequested;
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_killed_each_session_before_reading() => _sessionsGone.Should().BeTrue();
+
+        [Test]
+        public void It_raises_the_connection_failure_from_the_identity_read() =>
+            _identityRead
+                .Should()
+                .NotBeNull()
+                .And.Match<Exception>(exception => MssqlErrorClassifier.IsConnectionFailure(exception));
+
+        [Test]
+        public void It_raises_the_connection_failure_from_the_facts_read() =>
+            _factsRead
+                .Should()
+                .NotBeNull()
+                .And.Match<Exception>(exception => MssqlErrorClassifier.IsConnectionFailure(exception));
+
+        [Test]
+        public void It_raises_the_connection_failure_from_the_holder_read_and_declares_the_holder_lost()
+        {
+            _holderRead
+                .Should()
+                .NotBeNull()
+                .And.Match<Exception>(exception => MssqlErrorClassifier.IsConnectionFailure(exception));
+            _holderLost.Should().BeTrue();
+        }
+
+        private async Task<Exception?> ReadOnKilledSessionAsync(
+            MssqlDmsTargetEngine engine,
+            Func<DmsSession, Task> read
+        )
+        {
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                _database!.DatabaseName,
+                await _database.CatalogInstanceAsync(),
+                default
+            );
+            await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
+            await KillAsync((int)session.ServerSession.Id);
+            _sessionsGone &= await WaitUntilAsync(
+                async () => !await SessionExistsAsync(session.ServerSession),
+                TimeSpan.FromSeconds(30)
+            );
+            return await Record.ExceptionAsync(() => read(session));
         }
     }
 

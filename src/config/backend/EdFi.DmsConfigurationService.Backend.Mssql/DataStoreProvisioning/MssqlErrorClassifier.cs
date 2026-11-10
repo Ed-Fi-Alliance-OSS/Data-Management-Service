@@ -25,12 +25,18 @@ internal static class MssqlErrorClassifier
     /// <summary>SqlClient's number for a request it cancelled after sending (<c>Operation cancelled by user</c>).</summary>
     public const int ClientCancelled = 0;
 
+    /// <summary>Invalid column name: a table the query names lacks a column it selects.</summary>
+    public const int InvalidColumnName = 207;
+
     public const int InvalidObjectName = 208;
     public const int ObjectPermissionDenied = 229;
     public const int ColumnPermissionDenied = 230;
     public const int DatabasePermissionDenied = 262;
     public const int NoPermissionForAction = 297;
     public const int ServerPermissionDenied = 300;
+
+    /// <summary>Explicit conversion from one data type to another is not allowed (for example <c>image</c> or <c>rowversion</c> to <c>nvarchar</c>).</summary>
+    public const int ExplicitConversionNotAllowed = 529;
 
     /// <summary>There is insufficient system memory in a resource pool to run the query; short-lived memory pressure clears on its own.</summary>
     public const int InsufficientMemory = 701;
@@ -164,6 +170,19 @@ internal static class MssqlErrorClassifier
 
     /// <summary>The missing-object error a catalog read maps to "table missing": an invalid object name, which covers a missing schema too.</summary>
     public static bool IsMissingRelation(int number) => number == InvalidObjectName;
+
+    /// <summary>
+    /// The error a read of a table that exists maps to "column missing": an invalid column name (<c>207</c>), raised
+    /// when the query is compiled, in its own response. It says nothing about the connection, so it is never loss.
+    /// </summary>
+    public static bool IsMissingColumn(int number) => number == InvalidColumnName;
+
+    /// <summary>
+    /// The error a read maps to "column type invalid": the column's type cannot be converted as the query converts it
+    /// (<c>529</c>), raised when the query is compiled and for any row content, so the column's type, not its data,
+    /// is the defect.
+    /// </summary>
+    public static bool IsConversionRefused(int number) => number == ExplicitConversionNotAllowed;
 
     /// <summary>
     /// A definite refusal for lack of a privilege or of access: a denied permission on an object, column,

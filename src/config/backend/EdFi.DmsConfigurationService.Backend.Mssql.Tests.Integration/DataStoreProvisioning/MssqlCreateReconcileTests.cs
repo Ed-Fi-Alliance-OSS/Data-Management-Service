@@ -439,6 +439,135 @@ public class MssqlCreateReconcileTests
         }
     }
 
+    /// <summary>
+    /// F-01 over the real catalog and engine, without a restore: an owned target seeded under the target name
+    /// reconciles when intact; with its identity column dropped it is <c>TargetUnverifiable</c>, and with a NULL or
+    /// a missing <c>dms.EffectiveSchema</c> value it is <c>TargetIncompatible</c>, both for inspection, never
+    /// <c>Unknown</c>. Each retry only reads, and the target keeps its instance and stays open to connections.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_owned_target_with_malformed_metadata
+    {
+        private readonly List<Lane> _lanes = [];
+        private Run _intact = null!;
+        private Run _identityColumnMissing = null!;
+        private Run _nullHash = null!;
+        private Run _seedHashMissing = null!;
+
+        private sealed record Run(
+            DmsDataStoreCreateResult Result,
+            string[] Members,
+            (bool Exists, int DatabaseId, string UserAccess) Before,
+            (bool Exists, int DatabaseId, string UserAccess) After
+        );
+
+        private async Task<Run> RetryOnSeededAsync(byte[] artifact, params string[] alterations)
+        {
+            Lane lane = await Lane.BuildAsync(artifact, new LaneHooks());
+            _lanes.Add(lane);
+            await lane.SeedTargetAsync();
+            TestDatabase target = new(lane.Target.Value);
+            foreach (string alteration in alterations)
+            {
+                await target.ExecuteAsync(alteration);
+            }
+
+            await WaitForNoSessionsOnAsync(lane.Target.Value);
+            (bool, int, string) before = await lane.TargetCatalogAsync();
+            (DmsDataStoreCreateResult result, string[] members) = await RetryAsync(
+                lane.Engine,
+                () => lane.Service.CreateAsync(lane.Request, default)
+            );
+            return new Run(result, members, before, await lane.TargetCatalogAsync());
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            byte[] artifact = await ShapedBackup.CreateAsync();
+            _intact = await RetryOnSeededAsync(artifact);
+            _identityColumnMissing = await RetryOnSeededAsync(
+                artifact,
+                "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity];"
+            );
+            _nullHash = await RetryOnSeededAsync(
+                artifact,
+                "ALTER TABLE [dms].[EffectiveSchema] DROP CONSTRAINT [UX_EffectiveSchema_EffectiveSchemaHash];",
+                "ALTER TABLE [dms].[EffectiveSchema] ALTER COLUMN [EffectiveSchemaHash] nvarchar(64) NULL;",
+                "UPDATE [dms].[EffectiveSchema] SET [EffectiveSchemaHash] = NULL;"
+            );
+            _seedHashMissing = await RetryOnSeededAsync(
+                artifact,
+                "ALTER TABLE [dms].[EffectiveSchema] DROP COLUMN [ResourceKeySeedHash];"
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (Lane lane in _lanes)
+            {
+                await lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reconciles_the_intact_seeded_target() =>
+            _intact.Result.Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
+
+        [Test]
+        public void It_reports_a_missing_identity_column_as_unverifiable_for_inspection() =>
+            Verdict(_identityColumnMissing.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ReconcileIdentityStep
+                    )
+                );
+
+        [Test]
+        public void It_reports_a_null_effective_schema_value_as_incompatible_for_inspection() =>
+            Verdict(_nullHash.Result).Should().Be(EffectiveSchemaIncompatible);
+
+        [Test]
+        public void It_reports_a_missing_effective_schema_column_as_incompatible_for_inspection() =>
+            Verdict(_seedHashMissing.Result).Should().Be(EffectiveSchemaIncompatible);
+
+        [Test]
+        public void It_only_read_during_each_retry()
+        {
+            _identityColumnMissing.Members.Should().Equal(_readMembers[..^1]);
+            _nullHash.Members.Should().Equal(_readMembers);
+            _seedHashMissing.Members.Should().Equal(_readMembers);
+        }
+
+        [Test]
+        public void It_left_each_target_in_place_and_open() =>
+            new[] { _intact, _identityColumnMissing, _nullHash, _seedHashMissing }
+                .Should()
+                .AllSatisfy(run =>
+                {
+                    run.After.Should().Be(run.Before);
+                    run.After.UserAccess.Should().Be("MULTI_USER");
+                });
+
+        private static (
+            DmsProvisioningFailureCode,
+            DmsProvisioningFailureCategory,
+            string
+        ) EffectiveSchemaIncompatible =>
+            (
+                DmsProvisioningFailureCode.TargetIncompatible,
+                DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                DmsDataStoreProvisioningService.ReconcileValidateStep
+                    + "."
+                    + DmsTargetValidator.EffectiveSchemaCheck
+            );
+    }
+
     [TestFixture]
     public class Given_the_admin_login_is_refused_access_to_a_created_target
     {

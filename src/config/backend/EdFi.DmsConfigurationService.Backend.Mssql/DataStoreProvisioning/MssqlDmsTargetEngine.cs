@@ -73,6 +73,15 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         "RESTRICTED_USER",
     };
 
+    /// <summary>The field types of <see cref="MssqlInventoryQueries.EffectiveSchemaRows"/> the contract allows: two texts, a <c>smallint</c>, a <c>binary</c>.</summary>
+    private static readonly Type[] _effectiveSchemaColumnTypes =
+    [
+        typeof(string),
+        typeof(string),
+        typeof(short),
+        typeof(byte[]),
+    ];
+
     private readonly MssqlAdminConnection _adminConnection;
     private readonly MssqlDmsEngineSettings _settings;
     private readonly TimeProvider _timeProvider;
@@ -293,6 +302,14 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         {
             return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.TableMissing);
         }
+        catch (SqlException exception) when (MssqlErrorClassifier.IsMissingColumn(exception.Number))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing);
+        }
+        catch (SqlException exception) when (MssqlErrorClassifier.IsConversionRefused(exception.Number))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnTypeInvalid);
+        }
         catch (SqlException exception) when (MssqlErrorClassifier.IsAccessRefusal(exception.Number))
         {
             return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied)
@@ -312,8 +329,9 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>
     /// The facts every 6.9c check needs, read on the instance-bound session. A query the server definitely
     /// refuses for lack of a privilege raises <see cref="DmsAccessDeniedException"/> with the error number
-    /// only; a missing singleton table is a typed read, and every other error, including cancellation and a
-    /// lost connection, propagates unchanged.
+    /// only; a missing singleton table, a missing effective-schema column, and an effective-schema row with a NULL or
+    /// a value of another type are typed reads, and every other error, including cancellation and a lost
+    /// connection, propagates unchanged.
     /// </summary>
     public async Task<DmsTargetFacts> ReadTargetFactsAsync(
         DmsSession session,
@@ -491,18 +509,13 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     )
     {
-        List<DmsEffectiveSchemaRead.Found> rows;
+        List<DmsEffectiveSchemaRead.Found?> rows;
         try
         {
             rows = await ReadRowsAsync(
                 connection,
                 MssqlInventoryQueries.EffectiveSchemaRows,
-                reader => new DmsEffectiveSchemaRead.Found(
-                    reader.GetString(0),
-                    reader.GetString(1),
-                    reader.GetInt16(2),
-                    Convert.ToBase64String(reader.GetFieldValue<byte[]>(3))
-                ),
+                EffectiveSchemaRowOf,
                 cancellationToken
             );
         }
@@ -510,13 +523,48 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         {
             return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.TableMissing);
         }
+        catch (SqlException exception) when (MssqlErrorClassifier.IsMissingColumn(exception.Number))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ColumnMissing);
+        }
+
+        if (rows.Exists(row => row is null))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid);
+        }
 
         return rows.Count switch
         {
             0 => new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.NoRows),
-            1 => rows[0],
+            1 => rows[0]!,
             _ => new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.MultipleRows),
         };
+    }
+
+    /// <summary>
+    /// One <c>dms.EffectiveSchema</c> row in the contract's types, or null when a value is NULL or a column's type
+    /// is not the contract's. The shape is checked before any typed getter runs, so a malformed row raises nothing,
+    /// and a failure of the connection while the row is read still surfaces as the driver's own exception.
+    /// </summary>
+    private static DmsEffectiveSchemaRead.Found? EffectiveSchemaRowOf(SqlDataReader reader)
+    {
+        for (int ordinal = 0; ordinal < _effectiveSchemaColumnTypes.Length; ordinal++)
+        {
+            if (
+                reader.GetFieldType(ordinal) != _effectiveSchemaColumnTypes[ordinal]
+                || reader.IsDBNull(ordinal)
+            )
+            {
+                return null;
+            }
+        }
+
+        return new DmsEffectiveSchemaRead.Found(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetInt16(2),
+            Convert.ToBase64String(reader.GetFieldValue<byte[]>(3))
+        );
     }
 
     /// <summary>The permission and membership rows; a row that does not split as the delivered gate requires is a content-profile violation.</summary>

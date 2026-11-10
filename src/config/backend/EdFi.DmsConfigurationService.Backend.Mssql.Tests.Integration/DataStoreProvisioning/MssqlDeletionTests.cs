@@ -359,6 +359,89 @@ public class MssqlDeletionTests
                 );
     }
 
+    /// <summary>
+    /// F-01 on the holder session: under the fence, the identity read through the three-part name reports a missing
+    /// identity column and an identity column that cannot be converted to text as typed reads. The error leaves the
+    /// holder's single-user slot in place, and the fence is then reversed on the same holder.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_reads_an_identity_column_that_is_missing_or_unconvertible
+    {
+        private TestDatabase? _database;
+        private DmsCommandOutcome _firstFence = null!;
+        private DmsIdentityRead _columnMissing = null!;
+        private string _accessAfterMissingRead = "";
+        private DmsCommandOutcome _firstUnfence = null!;
+        private DmsCommandOutcome _secondFence = null!;
+        private DmsIdentityRead _imageColumn = null!;
+        private string _accessAfterImageRead = "";
+        private DmsCommandOutcome _secondUnfence = null!;
+        private string _accessAfterUnfence = "";
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("holderid");
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] DROP COLUMN [SourceIdentity];"
+            );
+            DmsTargetDatabaseName target = TargetNameOf(_database.Name);
+            DmsInstanceIdentity.Mssql instance = await _database.CatalogInstanceAsync();
+            MssqlDmsTargetEngine engine = Engine();
+            await using IDmsTargetLockHolder holder = await AcquireAsync(engine, target);
+
+            _firstFence = await engine.FenceAsync(holder, target, instance, null, default);
+            _columnMissing = await engine.ReadIdentityOnHolderAsync(holder, target, default);
+            _accessAfterMissingRead = await UserAccessOfAsync(_database.Name);
+            _firstUnfence = await engine.UnfenceAsync(holder, target, instance, default);
+
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] ADD [SourceIdentity] image NULL;"
+            );
+            await _database.ExecuteAsync("UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = 0x01;");
+            await WaitForNoSessionsOnAsync(_database.Name);
+            _secondFence = await engine.FenceAsync(holder, target, instance, null, default);
+            _imageColumn = await engine.ReadIdentityOnHolderAsync(holder, target, default);
+            _accessAfterImageRead = await UserAccessOfAsync(_database.Name);
+            _secondUnfence = await engine.UnfenceAsync(holder, target, instance, default);
+            _accessAfterUnfence = await UserAccessOfAsync(_database.Name);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_fenced_the_target_for_each_read() =>
+            (_firstFence, _secondFence)
+                .Should()
+                .Be((new DmsCommandOutcome.Succeeded(), new DmsCommandOutcome.Succeeded()));
+
+        [Test]
+        public void It_reports_a_missing_identity_column_as_column_missing() =>
+            _columnMissing.Should().Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing));
+
+        [Test]
+        public void It_reports_an_unconvertible_identity_column_as_column_type_invalid() =>
+            _imageColumn.Should().Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnTypeInvalid));
+
+        [Test]
+        public void It_keeps_the_fence_standing_after_each_read() =>
+            (_accessAfterMissingRead, _accessAfterImageRead).Should().Be(("SINGLE_USER", "SINGLE_USER"));
+
+        [Test]
+        public void It_reverses_the_fence_on_the_same_holder() =>
+            (_firstUnfence, _secondUnfence, _accessAfterUnfence)
+                .Should()
+                .Be((new DmsCommandOutcome.Succeeded(), new DmsCommandOutcome.Succeeded(), "MULTI_USER"));
+    }
+
     [TestFixture]
     public class Given_the_fence_still_observes_a_session_at_the_bound
     {

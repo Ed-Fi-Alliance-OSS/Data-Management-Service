@@ -217,6 +217,25 @@ public class MssqlErrorClassifierTests
                 .Be((true, false));
 
         [Test]
+        public void It_maps_only_an_invalid_column_name_to_a_missing_column() =>
+            (
+                MssqlErrorClassifier.IsMissingColumn(207),
+                Array.Exists([208, 529, 229, 230, 245, 0, -2, 10054], MssqlErrorClassifier.IsMissingColumn),
+                MssqlErrorClassifier.IsMissingRelation(207)
+            )
+                .Should()
+                .Be((true, false, false));
+
+        [Test]
+        public void It_maps_only_a_refused_explicit_conversion_to_a_refused_conversion() =>
+            (
+                MssqlErrorClassifier.IsConversionRefused(529),
+                Array.Exists([207, 208, 245, 8114, 0, -2, 10054], MssqlErrorClassifier.IsConversionRefused)
+            )
+                .Should()
+                .Be((true, false));
+
+        [Test]
         public void It_treats_denials_and_failed_logins_as_access_refusals() =>
             new[] { 229, 230, 262, 297, 300, 916, 3110, 5011, 6102, 15247, 18456, 18470 }
                 .Should()
