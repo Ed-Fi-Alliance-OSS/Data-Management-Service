@@ -168,7 +168,11 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
             cancellationToken
         );
 
-    /// <summary>The acquisition for an already built resource.</summary>
+    /// <summary>
+    /// The acquisition for an already built resource. The readiness probe passes <paramref name="openBound"/>, so its
+    /// connection open ends at that bound (<see cref="DmsBoundedConnectionOpen"/>) and a stalled login is a
+    /// <see cref="DmsTargetLockResult.Failure"/>.
+    /// </summary>
     internal static async Task<DmsTargetLockResult> AcquireResourceAsync(
         MssqlAdminConnection adminConnection,
         string resource,
@@ -178,7 +182,8 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
         TimeProvider timeProvider,
         ILogger logger,
         Action<SqlConnection>? connectionOpened,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TimeSpan? openBound = null
     )
     {
         ArgumentNullException.ThrowIfNull(adminConnection);
@@ -196,11 +201,23 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
         SqlConnection connection;
         try
         {
-            connection = await adminConnection.OpenAsync(
-                MssqlAdminConnection.MaintenanceDatabaseName,
-                operation.HolderApplicationName,
-                cancellationToken
-            );
+            connection = openBound is { } bound
+                ? await DmsBoundedConnectionOpen.OpenAsync(
+                    token =>
+                        adminConnection.OpenAsync(
+                            MssqlAdminConnection.MaintenanceDatabaseName,
+                            operation.HolderApplicationName,
+                            token
+                        ),
+                    bound,
+                    timeProvider,
+                    cancellationToken
+                )
+                : await adminConnection.OpenAsync(
+                    MssqlAdminConnection.MaintenanceDatabaseName,
+                    operation.HolderApplicationName,
+                    cancellationToken
+                );
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

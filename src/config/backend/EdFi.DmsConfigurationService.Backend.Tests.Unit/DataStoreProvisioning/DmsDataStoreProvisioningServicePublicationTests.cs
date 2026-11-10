@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
@@ -600,6 +601,184 @@ public class DmsDataStoreProvisioningServicePublicationTests
         [Test]
         public void It_drops_the_staging_database_and_leaves_no_residue() =>
             CleanupOf(_result).Residue.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The heartbeat probe takes the holder gate and keeps it until <paramref name="probe"/> completes, as it would
+    /// when a heartbeat falls due just before the next holder command.
+    /// </summary>
+    private static void HoldGateWithProbe(Harness harness, TaskCompletionSource<bool> probe)
+    {
+        harness.OnlyHolder.Probe = _ => probe.Task;
+        harness.OnlyHolder.StartHeartbeat();
+        harness.Time.Advance(TimeSpan.FromSeconds(5));
+    }
+
+    /// <summary>
+    /// The rename's deadline starts before the engine waits for the holder gate. The heartbeat probe holds the gate
+    /// for its whole bound (one <c>CommandTimeout</c>) when the rename asks for it, and the rename then runs under the
+    /// PostgreSQL holder bound (<see cref="PostgresqlDmsTargetEngine.RenameDeadline"/>) to its last second. The
+    /// orchestrator's allowance covers the gate wait, so nothing cancels the rename before the provider's bound;
+    /// the rename still ends at that bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_rename_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TimeSpan bound = PostgresqlDmsTargetEngine.RenameDeadline(CommandTimeout);
+            RecordingHooks hooks = new();
+            Harness harness = Scripted(hooks);
+            TaskCompletionSource<bool> probe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken renameToken = default;
+            hooks.OnPoint = point =>
+            {
+                if (point == DmsProvisioningHookPoint.BeforeRename)
+                {
+                    HoldGateWithProbe(harness, probe);
+                }
+            };
+            harness.Engine.OnRenameIntoTarget = (_, instance, _, token) =>
+            {
+                waiting.SetResult();
+                return harness.OnlyHolder.RunAsync<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    async holderToken =>
+                    {
+                        renameToken = holderToken;
+                        running.SetResult();
+                        await finish.Task;
+                        return new DmsCommandOutcome<DmsInstanceIdentity>.Succeeded(instance);
+                    },
+                    bound,
+                    token
+                );
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(harness);
+            await ReadStartedAsync(waiting, create);
+
+            harness.Time.Advance(CommandTimeout);
+            probe.SetResult(true);
+            await ReadStartedAsync(running, create);
+
+            harness.Time.Advance(bound - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = renameToken.IsCancellationRequested;
+            harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = renameToken.IsCancellationRequested;
+
+            finish.SetResult();
+            _result = await create;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_rename_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_rename_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
+
+        [Test]
+        public void It_publishes_the_renamed_target() =>
+            _result.Should().BeOfType<DmsDataStoreCreateResult.Created>();
+    }
+
+    /// <summary>
+    /// The compensation sibling: the marker fails definitely and the heartbeat probe takes the holder gate as it
+    /// returns. The compensation drop then waits for the gate for the probe's whole bound and runs under the
+    /// PostgreSQL holder bound (<see cref="PostgresqlDmsTargetEngine.DropDeadline"/> for a compensation) to its last
+    /// second. The recovery allowance covers the gate wait, so the probe cannot leave the unmarked target behind; the
+    /// drop still ends at the provider's bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_compensation_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TimeSpan bound = PostgresqlDmsTargetEngine.DropDeadline(
+                DmsDropReason.Compensation,
+                CommandTimeout
+            );
+            Harness harness = Scripted();
+            TaskCompletionSource<bool> probe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken dropToken = default;
+            harness.Engine.OnAssignMarker = (_, _, _) =>
+            {
+                HoldGateWithProbe(harness, probe);
+                return Task.FromResult<DmsCommandOutcome>(
+                    new DmsCommandOutcome.Failed(
+                        new DmsCommandFailure(
+                            DmsCommandFailureClass.Rejected,
+                            DmsProvisioningDiagnostic.ForOperation("AssignMarker.NoRow")
+                        )
+                    )
+                );
+            };
+            harness.Engine.OnDropInstance = (_, _, _, token) =>
+            {
+                waiting.SetResult();
+                return harness.OnlyHolder.RunAsync<DmsCommandOutcome>(
+                    async holderToken =>
+                    {
+                        dropToken = holderToken;
+                        running.SetResult();
+                        await finish.Task;
+                        return new DmsCommandOutcome.Succeeded();
+                    },
+                    bound,
+                    token
+                );
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(harness);
+            await ReadStartedAsync(waiting, create);
+
+            harness.Time.Advance(CommandTimeout);
+            probe.SetResult(true);
+            await ReadStartedAsync(running, create);
+
+            harness.Time.Advance(bound - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = dropToken.IsCancellationRequested;
+            harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = dropToken.IsCancellationRequested;
+
+            finish.SetResult();
+            _result = await create;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_compensation_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_compensation_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
+
+        [Test]
+        public void It_compensates_and_reports_the_marker_failure() =>
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        "AssignMarker.NoRow"
+                    )
+                );
     }
 
     [TestFixture]

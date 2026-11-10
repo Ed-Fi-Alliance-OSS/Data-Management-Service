@@ -53,6 +53,9 @@ public sealed class MssqlStagingProbe
     /// <summary>Test seam: the statement sent for the probe file's server path; production sends <c>RESTORE HEADERONLY</c>.</summary>
     internal Func<string, string> HeaderStatement { get; init; } = MssqlRestorePlanner.HeaderOnlyStatement;
 
+    /// <summary>The clock the connection open's readiness bound (<c>CommandTimeout</c>) runs on.</summary>
+    internal TimeProvider TimeProvider { get; init; } = TimeProvider.System;
+
     /// <summary>
     /// Writes, probes, and deletes one probe file. A failure to reach the server propagates for readiness to
     /// classify after the deletion is attempted; so does cancellation, as <see cref="OperationCanceledException"/>.
@@ -176,7 +179,12 @@ public sealed class MssqlStagingProbe
         CancellationToken cancellationToken
     )
     {
-        await using SqlConnection connection = await _adminConnection.OpenMaintenanceAsync(cancellationToken);
+        await using SqlConnection connection = await DmsBoundedConnectionOpen.OpenAsync(
+            _adminConnection.OpenMaintenanceAsync,
+            _adminConnection.CommandTimeout,
+            TimeProvider,
+            cancellationToken
+        );
         await using SqlCommand command = HeaderCommand(serverPath, connection);
         try
         {

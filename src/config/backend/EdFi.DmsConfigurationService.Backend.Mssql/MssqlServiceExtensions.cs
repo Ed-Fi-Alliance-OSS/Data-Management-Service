@@ -72,7 +72,11 @@ public static class MssqlServiceExtensions
                     "DmsDataStoreProvisioning:Mssql is missing; static validation should have refused it."
                 );
             return new MssqlDmsTargetEngine(
-                new MssqlAdminConnection(() => source.Current, options.CommandTimeout),
+                new MssqlAdminConnection(
+                    () => source.Current,
+                    options.CommandTimeout,
+                    provider.GetRequiredService<TimeProvider>()
+                ),
                 new MssqlDmsEngineSettings(
                     options.LockAcquireTimeout,
                     options.LockHeartbeatInterval,

@@ -14,7 +14,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// alone is skipped when the server could not be reached, because it would only repeat that failure.
 /// Nothing is created, altered, or signalled on the server: the probes read catalogs, take and release one
 /// advisory lock no target can use, and run <c>psql --version</c>. Caller cancellation propagates; every
-/// other failure is a reason.
+/// other failure is a reason. Every connection the probes open is bounded by <c>CommandTimeout</c>
+/// (<see cref="DmsBoundedConnectionOpen"/>), so a stalled login is a reason instead of a startup that never ends.
 /// </summary>
 public sealed partial class PostgresqlDmsTargetEngine
 {
@@ -120,7 +121,12 @@ public sealed partial class PostgresqlDmsTargetEngine
         NpgsqlConnection connection;
         try
         {
-            connection = await _adminConnection.OpenMaintenanceAsync(cancellationToken);
+            connection = await DmsBoundedConnectionOpen.OpenAsync(
+                _adminConnection.OpenMaintenanceAsync,
+                _adminConnection.CommandTimeout,
+                _timeProvider,
+                cancellationToken
+            );
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -148,13 +154,14 @@ public sealed partial class PostgresqlDmsTargetEngine
     }
 
     /// <summary>
-    /// A connection-class failure is <c>ServerUnavailable</c>; anything else the server or the driver raised
-    /// (an authentication refusal, a value the driver cannot parse) is <c>StartupValidationFailed</c>. Only
-    /// the type chain and the SQLSTATE are kept.
+    /// A connection-class failure, or a connection not opened within the readiness bound, is
+    /// <c>ServerUnavailable</c>; anything else the server or the driver raised (an authentication refusal, a
+    /// value the driver cannot parse) is <c>StartupValidationFailed</c>. Only the type chain and the SQLSTATE
+    /// are kept.
     /// </summary>
     private static DmsReadinessReason ServerFailure(Exception exception, string operation) =>
         new(
-            PostgresqlErrorClassifier.IsConnectionFailure(exception)
+            exception is TimeoutException || PostgresqlErrorClassifier.IsConnectionFailure(exception)
                 ? DmsProvisioningFailureCode.ServerUnavailable
                 : DmsProvisioningFailureCode.StartupValidationFailed,
             PostgresqlEnvironment.TargetServerProbe,
@@ -182,7 +189,8 @@ public sealed partial class PostgresqlDmsTargetEngine
             _timeProvider,
             _logger,
             connectionOpened: null,
-            cancellationToken
+            cancellationToken,
+            openBound: _adminConnection.CommandTimeout
         );
         switch (result)
         {

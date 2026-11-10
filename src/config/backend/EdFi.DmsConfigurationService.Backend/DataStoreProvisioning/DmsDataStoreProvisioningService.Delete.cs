@@ -351,6 +351,9 @@ public sealed partial class DmsDataStoreProvisioningService
     /// another instance under the name is <c>InstanceChanged</c> and touched nothing; any other definite failure
     /// reverses the fence first and is <c>ExclusiveAccessNotEstablished</c>, <c>AdminPrivilegeMissing</c>, or
     /// <c>DropFailed</c>; an outcome in doubt is <c>LockLost</c> and settled after the lock is released.
+    /// The step's deadline covers the wait for the holder's gate (one <c>CommandTimeout</c>, a heartbeat probe's
+    /// bound) and the largest provider bound once the gate is held (PostgreSQL's instance check, session count,
+    /// and drop, one <c>CommandTimeout</c> each).
     /// </summary>
     private async Task<DmsDataStoreDeleteResult> DropAsync(
         LockScope scope,
@@ -364,7 +367,7 @@ public sealed partial class DmsDataStoreProvisioningService
         {
             dropped = await scope.CallAsync(
                 DropTargetStep,
-                options.Value.CommandTimeout,
+                options.Value.CommandTimeout * 4,
                 token =>
                     DispatchAsync(
                         deletion.DropDispatched,
@@ -469,6 +472,9 @@ public sealed partial class DmsDataStoreProvisioningService
     /// Reverses a standing fence on the holder session, on a bounded token of its own so the caller's
     /// cancellation cannot skip it (6.10). A refused or unresolved reversal leaves the ledger fenced (or in
     /// doubt) for settlement, which reports the target; loss propagates.
+    /// The bound covers the wait for the holder's gate (one <c>CommandTimeout</c>, a heartbeat probe's bound) and
+    /// the largest provider bound once the gate is held (PostgreSQL's instance check and reversal, one
+    /// <c>CommandTimeout</c> each), so a probe holding the gate cannot leave an owned target fenced.
     /// </summary>
     private async Task UnfenceIfFencedAsync(LockScope scope, Deletion deletion)
     {
@@ -481,7 +487,7 @@ public sealed partial class DmsDataStoreProvisioningService
         {
             await scope.RecoveryCallAsync(
                 UnfenceStep,
-                options.Value.CommandTimeout,
+                options.Value.CommandTimeout * 3,
                 token =>
                 {
                     deletion.UnfenceDispatched();

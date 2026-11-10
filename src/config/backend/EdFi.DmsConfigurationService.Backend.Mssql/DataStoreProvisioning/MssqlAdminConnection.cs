@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
@@ -17,6 +18,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// keepalive (D-12). The connection string is never exposed or logged. Built over a source, it reads the
 /// source at every open, so each operation connects with the resolution it bound (6.1 step 3) and a secret
 /// rotated between operations reaches the next one; the parsed form is reused while the value is unchanged.
+/// Every open ends within <c>CommandTimeout</c> on <see cref="TimeProvider"/>, whatever <c>Connect Timeout</c>
+/// the value carries (<see cref="OpenAsync"/>).
 /// </summary>
 public sealed class MssqlAdminConnection
 {
@@ -27,11 +30,16 @@ public sealed class MssqlAdminConnection
     public const string SessionApplicationName = "dmsprov-session";
 
     private readonly Func<string> _resolvedConnectionString;
+    private readonly TimeProvider _timeProvider;
     private readonly Lock _gate = new();
     private (string Source, SqlConnectionStringBuilder Template)? _parsed;
 
-    public MssqlAdminConnection(string resolvedConnectionString, TimeSpan commandTimeout)
-        : this(ConstantOf(resolvedConnectionString), commandTimeout)
+    public MssqlAdminConnection(
+        string resolvedConnectionString,
+        TimeSpan commandTimeout,
+        TimeProvider? timeProvider = null
+    )
+        : this(ConstantOf(resolvedConnectionString), commandTimeout, timeProvider)
     {
         // Parsed now, so a value the driver cannot read fails construction.
         _ = Template;
@@ -39,7 +47,12 @@ public sealed class MssqlAdminConnection
 
     /// <param name="resolvedConnectionString">Returns the value for the calling operation; read at every open and never logged.</param>
     /// <param name="commandTimeout">The 4.3 <c>CommandTimeout</c>.</param>
-    public MssqlAdminConnection(Func<string> resolvedConnectionString, TimeSpan commandTimeout)
+    /// <param name="timeProvider">The clock that bounds every open; the system clock when omitted.</param>
+    public MssqlAdminConnection(
+        Func<string> resolvedConnectionString,
+        TimeSpan commandTimeout,
+        TimeProvider? timeProvider = null
+    )
     {
         ArgumentNullException.ThrowIfNull(resolvedConnectionString);
         if (commandTimeout <= TimeSpan.Zero || commandTimeout > TimeSpan.FromHours(1))
@@ -52,6 +65,7 @@ public sealed class MssqlAdminConnection
 
         CommandTimeout = commandTimeout;
         _resolvedConnectionString = resolvedConnectionString;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     private static Func<string> ConstantOf(string resolvedConnectionString)
@@ -95,7 +109,14 @@ public sealed class MssqlAdminConnection
     /// <summary>The command timeout in whole seconds, for a <see cref="SqlCommand"/> the engine creates.</summary>
     public int CommandTimeoutSeconds => DriverTimeoutSeconds(CommandTimeout);
 
-    /// <summary>Opens a dedicated connection to <paramref name="database"/>; nothing is kept open when opening fails.</summary>
+    /// <summary>
+    /// Opens a dedicated connection to <paramref name="database"/>; nothing is kept open when opening fails. The
+    /// wait ends at <c>CommandTimeout</c>, or at the caller's cancellation, even when the driver ignores both:
+    /// with <c>Connect Timeout=0</c> SqlClient waits for a stalled login forever and does not honour cancellation
+    /// there (<see cref="DmsBoundedConnectionOpen"/>). A shorter <c>Connect Timeout</c> still ends the open first.
+    /// An expired bound is a <see cref="TimeoutException"/>, raised before anything was sent on a connection, and
+    /// a connection the abandoned open still produces is disposed unused.
+    /// </summary>
     public async Task<SqlConnection> OpenAsync(
         string database,
         string applicationName,
@@ -104,7 +125,23 @@ public sealed class MssqlAdminConnection
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(database);
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
-        SqlConnection connection = new(ConnectionStringFor(database, applicationName));
+
+        // Read now, so the open connects with the resolution the calling operation bound.
+        string connectionString = ConnectionStringFor(database, applicationName);
+        return await DmsBoundedConnectionOpen.OpenAsync(
+            token => OpenDriverAsync(connectionString, token),
+            CommandTimeout,
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    private static async Task<SqlConnection> OpenDriverAsync(
+        string connectionString,
+        CancellationToken cancellationToken
+    )
+    {
+        SqlConnection connection = new(connectionString);
         try
         {
             await connection.OpenAsync(cancellationToken);

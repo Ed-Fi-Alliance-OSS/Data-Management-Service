@@ -132,7 +132,10 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// <summary>
     /// The acquisition with a test seam: <paramref name="connectionOpened"/> receives the holder connection as
     /// soon as it is open, before the lock is attempted, so a test can keep a reference and prove the
-    /// connection closed on every path that returns without the lock.
+    /// connection closed on every path that returns without the lock. The open is bounded by
+    /// <c>CommandTimeout</c>: <c>lock_timeout</c> and the orchestrator's step deadlines start only once the
+    /// connection is open, and with <c>Timeout=0</c> a caller that never cancels would otherwise wait for a
+    /// stalled login forever.
     /// </summary>
     internal static Task<DmsTargetLockResult> AcquireAsync(
         PostgresqlAdminConnection adminConnection,
@@ -154,12 +157,15 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
             timeProvider,
             logger,
             connectionOpened,
-            cancellationToken
+            cancellationToken,
+            openBound: adminConnection.CommandTimeout
         );
 
     /// <summary>
     /// The acquisition for an already derived key: a target's (<see cref="LockKeyFor"/>) or the readiness
-    /// probe's (<see cref="ProbeLockKey"/>), which no target name can reach.
+    /// probe's (<see cref="ProbeLockKey"/>), which no target name can reach. The target acquisition and the
+    /// readiness probe pass <paramref name="openBound"/>, so the connection open ends at that bound
+    /// (<see cref="DmsBoundedConnectionOpen"/>) and a stalled login is a <see cref="DmsTargetLockResult.Failure"/>.
     /// </summary>
     internal static async Task<DmsTargetLockResult> AcquireKeyAsync(
         PostgresqlAdminConnection adminConnection,
@@ -170,7 +176,8 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         TimeProvider timeProvider,
         ILogger logger,
         Action<NpgsqlConnection>? connectionOpened,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        TimeSpan? openBound = null
     )
     {
         ArgumentNullException.ThrowIfNull(adminConnection);
@@ -182,11 +189,23 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         NpgsqlConnection connection;
         try
         {
-            connection = await adminConnection.OpenAsync(
-                PostgresqlAdminConnection.MaintenanceDatabaseName,
-                operation.HolderApplicationName,
-                cancellationToken
-            );
+            connection = openBound is { } bound
+                ? await DmsBoundedConnectionOpen.OpenAsync(
+                    token =>
+                        adminConnection.OpenAsync(
+                            PostgresqlAdminConnection.MaintenanceDatabaseName,
+                            operation.HolderApplicationName,
+                            token
+                        ),
+                    bound,
+                    timeProvider,
+                    cancellationToken
+                )
+                : await adminConnection.OpenAsync(
+                    PostgresqlAdminConnection.MaintenanceDatabaseName,
+                    operation.HolderApplicationName,
+                    cancellationToken
+                );
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

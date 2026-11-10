@@ -763,6 +763,205 @@ public class PostgresqlDeleteTests
     }
 
     /// <summary>
+    /// The checks a holder command sends before its mutation, through the engine on an idle held target lock: the
+    /// unfence and the compensation drop read the instance, the owned drop also counts the client sessions, and the
+    /// rename reads the staging instance. The clock advances a whole <c>CommandTimeout</c> as each of those reads
+    /// completes, as though it had used its driver's whole allowance. The mutation is still sent and takes effect,
+    /// because the holder bound counts one <c>CommandTimeout</c> for every statement the command sends
+    /// (<see cref="PostgresqlDmsTargetEngine.UnfenceDeadline"/>, <see cref="PostgresqlDmsTargetEngine.DropDeadline"/>,
+    /// <see cref="PostgresqlDmsTargetEngine.RenameDeadline"/>), instead of one for the whole command. No command
+    /// waits for the holder gate here; that allowance is the orchestrator's.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_checks_before_a_holder_mutation_use_their_whole_allowance
+    {
+        // Each command's outcome, or what it threw, so a bound that starves one mutation fails only its own test.
+        private object _unfence = null!;
+        private bool _allowsConnectionsAfterUnfence;
+        private object _drop = null!;
+        private bool _existsAfterDrop;
+        private object _compensation = null!;
+        private bool _existsAfterCompensation;
+        private object _rename = null!;
+        private (bool StagingExists, bool TargetExists) _afterRename;
+
+        private static async Task<object> OutcomeOf<T>(Func<Task<T>> command)
+            where T : notnull
+        {
+            try
+            {
+                return await command();
+            }
+            catch (Exception exception)
+            {
+                return exception;
+            }
+        }
+
+        /// <summary>Advances the clock a whole command allowance as each check before a mutation completes.</summary>
+        private sealed class CheckClock : IDisposable
+        {
+            private readonly ActivityListener _listener;
+
+            public CheckClock(FakeTimeProvider time, TimeSpan commandTimeout)
+            {
+                _listener = new ActivityListener
+                {
+                    ShouldListenTo = activitySource => activitySource.Name == "Npgsql",
+                    Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                        ActivitySamplingResult.AllDataAndRecorded,
+                    ActivityStopped = activity =>
+                    {
+                        if (
+                            activity.GetTagItem("db.statement") is string text
+                            && (
+                                text == PostgresqlDeletionQueries.TargetByName
+                                || text == PostgresqlDeletionQueries.SessionCount
+                                || text == PostgresqlStagingQueries.InstanceByName
+                            )
+                        )
+                        {
+                            time.Advance(commandTimeout);
+                        }
+                    },
+                };
+                ActivitySource.AddActivityListener(_listener);
+            }
+
+            public void Dispose() => _listener.Dispose();
+        }
+
+        private static async Task<IDmsTargetLockHolder> HoldAsync(
+            PostgresqlDmsTargetEngine engine,
+            DmsTargetDatabaseName target
+        ) =>
+            await engine.AcquireTargetLockAsync(target, DmsOperationId.New(), default)
+                is DmsTargetLockResult.Acquired acquired
+                ? acquired.Holder
+                : throw new InvalidOperationException("The target lock was not acquired.");
+
+        private static Task<bool> ExistsAsync(string name) =>
+            ScalarOnServerAsync<bool>(
+                "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database d WHERE d.datname = @name);",
+                ("name", name)
+            );
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            TimeSpan command = AdminConnection().CommandTimeout;
+            FakeTimeProvider time = new();
+            PostgresqlDmsTargetEngine engine = Engine(
+                lockHeartbeatInterval: _quietHeartbeat,
+                timeProvider: time
+            );
+
+            // The unfence and then the owned drop, each on our fenced instance with no session on it.
+            await using (TestDatabase deleted = await CreateDmsShapedDatabaseAsync("checks"))
+            {
+                DmsTargetDatabaseName target = TargetNameOf(deleted.Name);
+                DmsInstanceIdentity.Postgresql instance = await deleted.CatalogInstanceAsync();
+                await using IDmsTargetLockHolder holder = await HoldAsync(engine, target);
+                (await engine.FenceAsync(holder, target, instance, null, default))
+                    .Should()
+                    .BeOfType<DmsCommandOutcome.Succeeded>();
+                using (new CheckClock(time, command))
+                {
+                    _unfence = await OutcomeOf(() => engine.UnfenceAsync(holder, target, instance, default));
+                }
+
+                _allowsConnectionsAfterUnfence = await ScalarOnServerAsync<bool>(
+                    "SELECT d.datallowconn FROM pg_catalog.pg_database d WHERE d.datname = @name;",
+                    ("name", deleted.Name)
+                );
+                (await engine.FenceAsync(holder, target, instance, null, default))
+                    .Should()
+                    .BeOfType<DmsCommandOutcome.Succeeded>();
+                using (new CheckClock(time, command))
+                {
+                    _drop = await OutcomeOf(() =>
+                        engine.DropInstanceAsync(holder, target, instance, DmsDropReason.Delete, default)
+                    );
+                }
+
+                _existsAfterDrop = await ExistsAsync(deleted.Name);
+            }
+
+            await using (TestDatabase compensated = await CreateDatabaseAsync("compensate"))
+            {
+                DmsTargetDatabaseName target = TargetNameOf(compensated.Name);
+                DmsInstanceIdentity.Postgresql instance = await compensated.CatalogInstanceAsync();
+                await using IDmsTargetLockHolder holder = await HoldAsync(engine, target);
+                using (new CheckClock(time, command))
+                {
+                    _compensation = await OutcomeOf(() =>
+                        engine.DropInstanceAsync(
+                            holder,
+                            target,
+                            instance,
+                            DmsDropReason.Compensation,
+                            default
+                        )
+                    );
+                }
+
+                _existsAfterCompensation = await ExistsAsync(compensated.Name);
+            }
+
+            await using TestDatabase staging = await CreateDatabaseAsync("rename");
+            await using TestDatabase renamed = new(
+                $"dms1438_renamed_{Convert.ToHexStringLower(System.Security.Cryptography.RandomNumberGenerator.GetBytes(6))}"
+            );
+            DmsTargetDatabaseName renamedTarget = TargetNameOf(renamed.Name);
+            DmsInstanceIdentity.Postgresql stagingInstance = await staging.CatalogInstanceAsync();
+            await using (IDmsTargetLockHolder holder = await HoldAsync(engine, renamedTarget))
+            using (new CheckClock(time, command))
+            {
+                _rename = await OutcomeOf(() =>
+                    engine.RenameIntoTargetAsync(
+                        holder,
+                        staging.DatabaseName,
+                        stagingInstance,
+                        renamedTarget,
+                        default
+                    )
+                );
+            }
+
+            _afterRename = (await ExistsAsync(staging.Name), await ExistsAsync(renamed.Name));
+        }
+
+        [Test]
+        public void It_reverses_the_fence_after_a_check_used_its_whole_allowance()
+        {
+            _unfence.Should().Be(new DmsCommandOutcome.Succeeded());
+            _allowsConnectionsAfterUnfence.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_drops_the_owned_target_after_both_checks_used_their_whole_allowance()
+        {
+            _drop.Should().Be(new DmsCommandOutcome.Succeeded());
+            _existsAfterDrop.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_compensates_after_the_check_used_its_whole_allowance()
+        {
+            _compensation.Should().Be(new DmsCommandOutcome.Succeeded());
+            _existsAfterCompensation.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_renames_after_the_check_used_its_whole_allowance()
+        {
+            _rename.Should().BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Succeeded>();
+            _afterRename.Should().Be((false, true));
+        }
+    }
+
+    /// <summary>
     /// The dispatch boundary against a live server, on our fenced instance so that a drop that ran would remove it:
     /// a drop the holder's gate refuses (another command holds the gate, as a heartbeat probe would, when the caller
     /// cancels) and a drop whose instance read is cancelled before anything is sent both end as not dispatched, and

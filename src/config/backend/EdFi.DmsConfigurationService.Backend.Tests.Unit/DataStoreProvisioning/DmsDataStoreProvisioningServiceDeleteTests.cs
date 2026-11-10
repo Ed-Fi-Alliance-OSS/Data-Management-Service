@@ -1353,7 +1353,9 @@ public class DmsDataStoreProvisioningServiceDeleteTests
             _gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeDrop);
             Task<DmsDataStoreDeleteResult> delete = _gated.Target.DeleteAsync();
             await ReadStartedAsync(_gated.Waiting, delete);
-            _gated.Target.Harness.Time.Advance(CommandTimeout);
+
+            // The drop step's whole allowance: the gate wait plus PostgreSQL's three statements.
+            _gated.Target.Harness.Time.Advance(CommandTimeout * 4);
             _gated.Probe.SetResult(true);
             _result = await delete;
         }
@@ -1547,6 +1549,184 @@ public class DmsDataStoreProvisioningServiceDeleteTests
         [Test]
         public void It_still_ends_the_fence_at_the_provider_bound() =>
             _cancelledPastTheBound.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// Records the token a holder command runs under, and lets the test hold it running until <see cref="Finish"/>.
+    /// </summary>
+    private sealed class HeldCommand
+    {
+        public TaskCompletionSource Running { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource Finish { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationToken Token { get; private set; }
+
+        /// <summary>Runs on <paramref name="holder"/>'s gate under <paramref name="bound"/>, as the PostgreSQL engine does.</summary>
+        public Task<DmsCommandOutcome> RunAsync(
+            FakeDmsTargetLockHolder holder,
+            TimeSpan bound,
+            Action applied,
+            CancellationToken cancellationToken
+        ) =>
+            holder.RunAsync(
+                async holderToken =>
+                {
+                    Token = holderToken;
+                    Running.SetResult();
+                    await Finish.Task;
+                    applied();
+                    return (DmsCommandOutcome)new DmsCommandOutcome.Succeeded();
+                },
+                bound,
+                cancellationToken
+            );
+    }
+
+    /// <summary>
+    /// The drop's deadline starts before the engine waits for the holder gate. The heartbeat probe holds the gate
+    /// for its whole bound (one <c>CommandTimeout</c>) when the drop asks for it, and the drop then runs under the
+    /// PostgreSQL holder bound (<see cref="PostgresqlDmsTargetEngine.DropDeadline"/>) to its last second. The
+    /// orchestrator's allowance covers the gate wait, so nothing cancels the drop before the provider's bound,
+    /// which no longer starves the <c>DROP DATABASE</c>; the drop still ends at that bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_drop_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TimeSpan bound = PostgresqlDmsTargetEngine.DropDeadline(DmsDropReason.Delete, CommandTimeout);
+            GatedTarget gated = new(SpyDmsTargetEngine.DropInstance);
+            HeldCommand drop = new();
+            gated.Target.Harness.Engine.OnDropInstance = (_, _, _, token) =>
+            {
+                gated.Waiting.TrySetResult();
+                return drop.RunAsync(
+                    gated.Target.Harness.OnlyHolder,
+                    bound,
+                    () => gated.Target.State = new DmsLiveTargetState.Absent(),
+                    token
+                );
+            };
+            gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeDrop);
+            Task<DmsDataStoreDeleteResult> delete = gated.Target.DeleteAsync();
+            await ReadStartedAsync(gated.Waiting, delete);
+
+            gated.Target.Harness.Time.Advance(CommandTimeout);
+            gated.Probe.SetResult(true);
+            await ReadStartedAsync(drop.Running, delete);
+
+            gated.Target.Harness.Time.Advance(bound - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = drop.Token.IsCancellationRequested;
+            gated.Target.Harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = drop.Token.IsCancellationRequested;
+
+            drop.Finish.SetResult();
+            await delete;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_drop_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_drop_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The reversal sibling: a drop refused because a session is still listed leaves our fence standing, and the
+    /// heartbeat probe takes the holder gate as the drop returns. The unfence then waits for the gate for the probe's
+    /// whole bound and runs under the PostgreSQL holder bound (<see cref="PostgresqlDmsTargetEngine.UnfenceDeadline"/>)
+    /// to its last second. The recovery allowance covers the gate wait, so the probe cannot leave the owned target
+    /// fenced; the unfence still ends at the provider's bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_unfence_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+        private DmsDataStoreDeleteResult _result = null!;
+        private GatedTarget _gated = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TimeSpan bound = PostgresqlDmsTargetEngine.UnfenceDeadline(CommandTimeout);
+            _gated = new GatedTarget(SpyDmsTargetEngine.Unfence);
+            HeldCommand unfence = new();
+            _gated.Target.Harness.Engine.OnDropInstance = (_, _, _, _) =>
+            {
+                // The heartbeat probe takes the gate as the refused drop returns, and keeps it.
+                FakeDmsTargetLockHolder holder = _gated.Target.Harness.OnlyHolder;
+                holder.Probe = _ => _gated.Probe.Task;
+                holder.StartHeartbeat();
+                _gated.Target.Harness.Time.Advance(TimeSpan.FromSeconds(5));
+                return Task.FromResult(
+                    Failed(
+                        DmsCommandFailureClass.ObjectInUse,
+                        PostgresqlDeletionQueries.DropTargetSessionsStep
+                    )
+                );
+            };
+            _gated.Target.Harness.Engine.OnUnfence = (_, _, token) =>
+            {
+                _gated.Waiting.TrySetResult();
+                return unfence.RunAsync(
+                    _gated.Target.Harness.OnlyHolder,
+                    bound,
+                    () =>
+                        _gated.Target.State = new DmsLiveTargetState.Present(
+                            _instance,
+                            DmsDatabaseState.Online
+                        ),
+                    token
+                );
+            };
+            Task<DmsDataStoreDeleteResult> delete = _gated.Target.DeleteAsync();
+            await ReadStartedAsync(_gated.Waiting, delete);
+
+            _gated.Target.Harness.Time.Advance(CommandTimeout);
+            _gated.Probe.SetResult(true);
+            await ReadStartedAsync(unfence.Running, delete);
+
+            _gated.Target.Harness.Time.Advance(bound - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = unfence.Token.IsCancellationRequested;
+            _gated.Target.Harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = unfence.Token.IsCancellationRequested;
+
+            unfence.Finish.SetResult();
+            _result = await delete;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_unfence_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_unfence_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
+
+        [Test]
+        public void It_reverses_the_fence_and_reports_the_refused_drop_without_residue()
+        {
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                        DmsProvisioningFailureCategory.Transient,
+                        PostgresqlDeletionQueries.DropTargetSessionsStep
+                    )
+                );
+            _gated.Target.State.Should().BeOfType<DmsLiveTargetState.Present>();
+            ResidueOf(_result).Should().BeEmpty();
+        }
     }
 
     /// <summary>

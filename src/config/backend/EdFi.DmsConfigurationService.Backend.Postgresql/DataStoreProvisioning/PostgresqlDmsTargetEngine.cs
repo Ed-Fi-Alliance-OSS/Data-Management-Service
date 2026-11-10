@@ -382,10 +382,19 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
                     session.Session,
                     token
                 ),
-            _adminConnection.CommandTimeout,
+            RenameDeadline(_adminConnection.CommandTimeout),
             cancellationToken
         );
     }
+
+    /// <summary>
+    /// The rename's bound on the holder, started once the gate is held: the staging instance check and the
+    /// <c>ALTER DATABASE … RENAME TO</c> one command each, so a slow check cannot take the rename's own allowance.
+    /// The read-back after the rename has returned runs on no token, under its driver's command timeout, and is
+    /// not counted. The orchestrator's allowance, counted from its request, is this bound plus one
+    /// <c>CommandTimeout</c> for the gate wait.
+    /// </summary>
+    internal static TimeSpan RenameDeadline(TimeSpan commandTimeout) => commandTimeout * 2;
 
     public async Task<DmsCommandOutcome> AssignMarkerAsync(
         DmsSession session,
@@ -474,10 +483,17 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
                     session.Session,
                     token
                 ),
-            _adminConnection.CommandTimeout,
+            UnfenceDeadline(_adminConnection.CommandTimeout),
             cancellationToken
         );
     }
+
+    /// <summary>
+    /// The unfence's bound on the holder, started once the gate is held: the instance check and the
+    /// <c>ALTER DATABASE … ALLOW_CONNECTIONS true</c> one command each, so a slow check cannot take the reversal's
+    /// own allowance. The orchestrator's allowance is this bound plus one <c>CommandTimeout</c> for the gate wait.
+    /// </summary>
+    internal static TimeSpan UnfenceDeadline(TimeSpan commandTimeout) => commandTimeout * 2;
 
     /// <summary>Not used on PostgreSQL: the fence keeps the delete's own session, which reads the identity (6.6 step 4).</summary>
     public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
@@ -525,10 +541,19 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
                         session.Session,
                         token
                     ),
-            _adminConnection.CommandTimeout,
+            DropDeadline(reason, _adminConnection.CommandTimeout),
             cancellationToken
         );
     }
+
+    /// <summary>
+    /// The drop's bound on the holder, started once the gate is held, one command for each statement it sends, so
+    /// slow checks cannot take the <c>DROP DATABASE</c>'s own allowance: the owned delete reads the instance, counts
+    /// the client sessions, and drops (three); the compensation drop reads the instance and drops (two). The
+    /// orchestrator's allowance is this bound plus one <c>CommandTimeout</c> for the gate wait.
+    /// </summary>
+    internal static TimeSpan DropDeadline(DmsDropReason reason, TimeSpan commandTimeout) =>
+        reason == DmsDropReason.Delete ? commandTimeout * 3 : commandTimeout * 2;
 
     public async Task<DmsSessionTermination> TerminateSessionAsync(
         DmsServerSessionId session,

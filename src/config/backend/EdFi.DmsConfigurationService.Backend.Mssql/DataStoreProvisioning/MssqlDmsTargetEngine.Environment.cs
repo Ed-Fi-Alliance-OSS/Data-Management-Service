@@ -17,6 +17,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// for the header of a zero-byte probe file the real staging routine wrote (and deleted afterwards), and take and
 /// release one application lock no target can use. Caller cancellation propagates as
 /// <see cref="OperationCanceledException"/>, whatever form the driver gave it; every other failure is a reason.
+/// Every connection the probes open is bounded by <c>CommandTimeout</c> (<see cref="DmsBoundedConnectionOpen"/>), so a
+/// stalled login is a reason instead of a startup that never ends.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine
 {
@@ -76,7 +78,12 @@ public sealed partial class MssqlDmsTargetEngine
         SqlConnection connection;
         try
         {
-            connection = await _adminConnection.OpenMaintenanceAsync(cancellationToken);
+            connection = await DmsBoundedConnectionOpen.OpenAsync(
+                _adminConnection.OpenMaintenanceAsync,
+                _adminConnection.CommandTimeout,
+                _timeProvider,
+                cancellationToken
+            );
         }
         catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
         {
@@ -188,7 +195,10 @@ public sealed partial class MssqlDmsTargetEngine
             new MssqlBackupStager(_settings.Staging, _timeProvider, _logger),
             _adminConnection,
             _logger
-        );
+        )
+        {
+            TimeProvider = _timeProvider,
+        };
         try
         {
             return MssqlEnvironment.EvaluateStagingProbe(await probe.RunAsync(cancellationToken));
@@ -208,13 +218,13 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// A connection-class failure is <c>ServerUnavailable</c>; anything else the server or the driver raised (a
-    /// login refusal, a value the driver cannot parse) is <c>StartupValidationFailed</c>. Only the type chain and
-    /// the first error number are kept.
+    /// A connection-class failure, or a connection not opened within the readiness bound, is <c>ServerUnavailable</c>;
+    /// anything else the server or the driver raised (a login refusal, a value the driver cannot parse) is
+    /// <c>StartupValidationFailed</c>. Only the type chain and the first error number are kept.
     /// </summary>
     private static DmsReadinessReason ServerFailure(Exception exception, string probe, string operation) =>
         new(
-            MssqlErrorClassifier.IsConnectionFailure(exception)
+            exception is TimeoutException || MssqlErrorClassifier.IsConnectionFailure(exception)
                 ? DmsProvisioningFailureCode.ServerUnavailable
                 : DmsProvisioningFailureCode.StartupValidationFailed,
             probe,
@@ -238,7 +248,8 @@ public sealed partial class MssqlDmsTargetEngine
             _timeProvider,
             _logger,
             connectionOpened: null,
-            cancellationToken
+            cancellationToken,
+            openBound: _adminConnection.CommandTimeout
         );
         switch (result)
         {

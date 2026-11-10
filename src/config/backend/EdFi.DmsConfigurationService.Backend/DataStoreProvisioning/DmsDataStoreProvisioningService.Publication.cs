@@ -148,9 +148,13 @@ public sealed partial class DmsDataStoreProvisioningService
         // call, after the scope's cancellation and loss checks, and withdrawn when the holder's gate or the
         // provider's check before sending reports it never reached the driver, so a rename stopped before
         // dispatch is never in doubt.
+        //
+        // The deadline bounds the step from the request, the wait for the holder's gate included: the largest
+        // bound a provider sets once it holds the gate (PostgreSQL's: the staging instance check and the rename,
+        // one CommandTimeout each) plus one CommandTimeout, the bound of a heartbeat probe that may hold the gate.
         DmsCommandOutcome<DmsInstanceIdentity> renamed = await scope.CallAsync(
             RenameIntoTargetStep,
-            settings.CommandTimeout,
+            settings.CommandTimeout * 3,
             token =>
                 DispatchAsync(
                     () => publication.RenameDispatched(candidate, scope.Holder.Session),
@@ -351,6 +355,9 @@ public sealed partial class DmsDataStoreProvisioningService
     /// cannot skip it (6.10); it is never issued after loss, which the holder refuses. A completed
     /// compensation ends <c>IdentityAssignmentFailed</c>, or the caller's cancellation when that is what
     /// ended the marker; a refused or failed one ends <c>CompensationFailed</c> with the target reported.
+    /// The bound covers the wait for the holder's gate (one <c>CommandTimeout</c>, a heartbeat probe's bound)
+    /// and the largest provider bound once the gate is held (PostgreSQL's instance check and drop, one
+    /// <c>CommandTimeout</c> each).
     /// </summary>
     private async Task<DmsDataStoreCreateResult> CompensateAsync(
         LockScope scope,
@@ -362,7 +369,7 @@ public sealed partial class DmsDataStoreProvisioningService
         publication.CompensationDispatched();
         DmsCommandOutcome dropped = await scope.RecoveryCallAsync(
             CompensateStep,
-            options.Value.CommandTimeout,
+            options.Value.CommandTimeout * 3,
             token =>
                 engine.DropInstanceAsync(
                     scope.Holder,
