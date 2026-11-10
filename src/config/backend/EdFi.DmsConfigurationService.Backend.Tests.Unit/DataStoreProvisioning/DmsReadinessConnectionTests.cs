@@ -28,12 +28,16 @@ public class DmsReadinessConnectionTests
     // Guards a hang only: on the fixed code the validation ends as soon as the clock is advanced.
     private static readonly TimeSpan _hangGuard = TimeSpan.FromMinutes(2);
 
-    /// <summary>Accepts every connection and never sends a byte; disposal closes them all.</summary>
+    /// <summary>
+    /// Accepts every connection, reads what the client sends and never sends a byte; only disposal closes them, so
+    /// <see cref="ClientClosed"/> completes only when a client ends its own connection.
+    /// </summary>
     internal sealed class StalledLoginServer : IAsyncDisposable
     {
         private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
         private readonly List<TcpClient> _clients = [];
         private readonly Task _accepting;
+        private volatile bool _disposing;
 
         public StalledLoginServer()
         {
@@ -45,6 +49,9 @@ public class DmsReadinessConnectionTests
         public int Port { get; }
 
         public TaskCompletionSource Accepted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource ClientClosed { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         private async Task AcceptAsync()
@@ -60,6 +67,7 @@ public class DmsReadinessConnectionTests
                     }
 
                     Accepted.TrySetResult();
+                    _ = DrainAsync(client);
                 }
             }
             catch (Exception exception) when (exception is SocketException or ObjectDisposedException)
@@ -68,8 +76,33 @@ public class DmsReadinessConnectionTests
             }
         }
 
+        /// <summary>Reads until the client closes or resets the connection.</summary>
+        private async Task DrainAsync(TcpClient client)
+        {
+            byte[] buffer = new byte[4096];
+            try
+            {
+                NetworkStream stream = client.GetStream();
+                int read;
+                do
+                {
+                    read = await stream.ReadAsync(buffer);
+                } while (read > 0);
+            }
+            catch (Exception exception) when (exception is IOException or ObjectDisposedException)
+            {
+                // A reset by the client, or this server's own disposal.
+            }
+
+            if (!_disposing)
+            {
+                ClientClosed.TrySetResult();
+            }
+        }
+
         public async ValueTask DisposeAsync()
         {
+            _disposing = true;
             _listener.Stop();
             await _accepting;
             lock (_clients)

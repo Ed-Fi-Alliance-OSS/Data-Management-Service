@@ -18,8 +18,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// keepalive (D-12). The connection string is never exposed or logged. Built over a source, it reads the
 /// source at every open, so each operation connects with the resolution it bound (6.1 step 3) and a secret
 /// rotated between operations reaches the next one; the parsed form is reused while the value is unchanged.
-/// Every open ends within <c>CommandTimeout</c> on <see cref="TimeProvider"/>, whatever <c>Connect Timeout</c>
-/// the value carries (<see cref="OpenAsync"/>).
+/// Every open's wait ends within <c>CommandTimeout</c> on <see cref="TimeProvider"/>, and the driver's own login
+/// ends within <c>Connect Timeout</c>, which is never zero or longer than <c>CommandTimeout</c>
+/// (<see cref="OpenAsync"/>).
 /// </summary>
 public sealed class MssqlAdminConnection
 {
@@ -98,6 +99,17 @@ public sealed class MssqlAdminConnection
                     MultipleActiveResultSets = false,
                     CommandTimeout = DriverTimeoutSeconds(CommandTimeout),
                 };
+
+                // Only Connect Timeout ends SqlClient's physical login: cancelling OpenAsync, or abandoning it,
+                // ends the caller's wait, while the login keeps its worker thread, its socket and one of
+                // SqlClient's process-wide nonpooled-open slots until it ends. Zero means never, so the login is
+                // bounded by CommandTimeout as well; a shorter positive value is kept.
+                int loginBound = DriverTimeoutSeconds(CommandTimeout);
+                if (template.ConnectTimeout == 0 || template.ConnectTimeout > loginBound)
+                {
+                    template.ConnectTimeout = loginBound;
+                }
+
                 _parsed = (current, template);
                 return template;
             }
@@ -111,9 +123,10 @@ public sealed class MssqlAdminConnection
 
     /// <summary>
     /// Opens a dedicated connection to <paramref name="database"/>; nothing is kept open when opening fails. The
-    /// wait ends at <c>CommandTimeout</c>, or at the caller's cancellation, even when the driver ignores both:
-    /// with <c>Connect Timeout=0</c> SqlClient waits for a stalled login forever and does not honour cancellation
-    /// there (<see cref="DmsBoundedConnectionOpen"/>). A shorter <c>Connect Timeout</c> still ends the open first.
+    /// wait ends at <c>CommandTimeout</c> on <see cref="TimeProvider"/>, or at the caller's cancellation, even
+    /// when the driver ignores both: SqlClient does not honour cancellation while a login stalls
+    /// (<see cref="DmsBoundedConnectionOpen"/>). Abandoning the wait does not end the driver's physical login;
+    /// its <c>Connect Timeout</c>, at most <c>CommandTimeout</c>, does, and a shorter one ends the open first.
     /// An expired bound is a <see cref="TimeoutException"/>, raised before anything was sent on a connection, and
     /// a connection the abandoned open still produces is disposed unused.
     /// </summary>

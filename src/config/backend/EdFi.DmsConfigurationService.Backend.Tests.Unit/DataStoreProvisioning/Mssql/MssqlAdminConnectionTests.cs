@@ -6,6 +6,8 @@
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Time.Testing;
+using StalledLoginServer = EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.DmsReadinessConnectionTests.StalledLoginServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Mssql;
 
@@ -75,6 +77,75 @@ public class MssqlAdminConnectionTests
         [Test]
         public void It_applies_the_overrides_to_the_rotated_value_rounding_the_timeout_up() =>
             (_after.Pooling, _after.ConnectRetryCount, _after.CommandTimeout).Should().Be((false, 0, 2));
+    }
+
+    [TestFixture]
+    public class Given_a_configured_connect_timeout
+    {
+        [TestCase("Connect Timeout=0", 30, TestName = "It_bounds_a_login_that_would_wait_forever")]
+        [TestCase("Connect Timeout=5", 5, TestName = "It_keeps_a_shorter_positive_timeout")]
+        [TestCase("Connect Timeout=120", 30, TestName = "It_bounds_a_longer_timeout")]
+        public void It_ends_the_physical_login_within_the_command_timeout(
+            string connectTimeout,
+            int expected
+        ) =>
+            new SqlConnectionStringBuilder(
+                new MssqlAdminConnection(
+                    $"Server=db.example;User Id=dms_admin;Password=secret;{connectTimeout}",
+                    TimeSpan.FromSeconds(30)
+                ).ConnectionStringFor("master", "dmsprov-session")
+            )
+                .ConnectTimeout.Should()
+                .Be(expected);
+    }
+
+    /// <summary>
+    /// A server that accepts the TCP connection and never answers the login, with <c>Connect Timeout=0</c>. Ending
+    /// the caller's wait does not end SqlClient's physical nonpooled login, which keeps a worker thread, the socket
+    /// and a process-wide nonpooled-open slot until it ends. The server stays open and never closes a connection
+    /// before disposal, so only the driver ending its login can close the socket.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_open_abandoned_while_its_login_never_answers
+    {
+        // Guards a hang only: on the fixed code the driver ends the login one second after it starts.
+        private static readonly TimeSpan _hangGuard = TimeSpan.FromMinutes(2);
+        private bool _waitEnded;
+        private bool _loginEnded;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using StalledLoginServer server = new();
+
+            // The wait's own bound never expires on this clock, so the caller's cancellation abandons the open.
+            MssqlAdminConnection connection = new(
+                $"Server=127.0.0.1,{server.Port};User Id=dms_admin;Password=x;Connect Timeout=0;Encrypt=false;TrustServerCertificate=true",
+                TimeSpan.FromSeconds(1),
+                new FakeTimeProvider()
+            );
+            using CancellationTokenSource caller = new();
+            Task<SqlConnection> opening = connection.OpenMaintenanceAsync(caller.Token);
+            await Task.WhenAny(server.Accepted.Task, opening, Task.Delay(_hangGuard));
+            server
+                .Accepted.Task.IsCompleted.Should()
+                .BeTrue("the open must connect to the stalled server instead of ending earlier");
+
+            await caller.CancelAsync();
+            _waitEnded = await Task.WhenAny(opening, Task.Delay(_hangGuard)) == opening;
+            _ = opening.Exception;
+
+            // Observed before the server's disposal, which would close the socket from its side.
+            _loginEnded =
+                await Task.WhenAny(server.ClientClosed.Task, Task.Delay(_hangGuard))
+                == server.ClientClosed.Task;
+        }
+
+        [Test]
+        public void It_ends_the_callers_wait() => _waitEnded.Should().BeTrue();
+
+        [Test]
+        public void It_ends_the_physical_login_and_closes_its_socket() => _loginEnded.Should().BeTrue();
     }
 
     [TestFixture]
