@@ -149,6 +149,7 @@ public class PostgresqlTargetLockSessionTests
     public class Given_the_admin_login_is_refused_after_it_was_accepted
     {
         private readonly CapturingLogger _logs = new();
+        private readonly CapturingLogger _serviceLogs = new();
         private string? _role;
         private Lane? _lane;
         private DmsTargetLockResult _accepted = null!;
@@ -197,7 +198,7 @@ public class PostgresqlTargetLockSessionTests
             );
 
             _lane = await Lane.BuildAsync(Lane.ShapedSql(), new LaneHooks());
-            Lane.Deployment refusing = _lane.WithEngine(engine);
+            Lane.Deployment refusing = _lane.WithEngine(engine, _serviceLogs);
             _create = await refusing.Service.CreateAsync(_lane.Request, default);
             _delete = await refusing.Service.DeleteAsync(_lane.DeleteRequest, default);
             _members = [.. refusing.Engine.Calls.Select(call => call.Member)];
@@ -309,7 +310,7 @@ public class PostgresqlTargetLockSessionTests
                     }
                 ),
             ];
-            string[] logged = [.. _logs.Entries];
+            string[] logged = [.. _logs.Entries.Concat(_serviceLogs.Entries).Select(entry => entry.Text)];
             diagnostics
                 .Concat(logged)
                 .Should()
@@ -317,6 +318,41 @@ public class PostgresqlTargetLockSessionTests
                     text.Should()
                         .NotContain(LoginRolePassword)
                         .And.NotContain("Password=", "a connection string must not be quoted")
+                );
+        }
+
+        [Test]
+        public void It_logs_one_failure_warning_for_each_refused_operation_with_the_code_and_step_only()
+        {
+            CapturingLogger.Entry[] warnings =
+            [
+                .. _serviceLogs.Entries.Where(entry =>
+                    entry.Id == DmsDataStoreProvisioningService.OperationFailed
+                ),
+            ];
+            warnings.Select(entry => entry.Level).Should().Equal(LogLevel.Warning, LogLevel.Warning);
+            warnings
+                .Select(entry => entry.Text)
+                .Should()
+                .SatisfyRespectively(
+                    create =>
+                        create
+                            .Should()
+                            .StartWith(
+                                $"DMS data store provisioning {DmsDataStoreProvisioningService.CreateOperationName} "
+                            )
+                            .And.EndWith(
+                                $" failed at {DmsDataStoreProvisioningService.AcquireTargetLockStep} with AdminPrivilegeMissing (Permanent)"
+                            ),
+                    delete =>
+                        delete
+                            .Should()
+                            .StartWith(
+                                $"DMS data store provisioning {DmsDataStoreProvisioningService.DeleteOperationName} "
+                            )
+                            .And.EndWith(
+                                $" failed at {DmsDataStoreProvisioningService.AcquireTargetLockStep} with AdminPrivilegeMissing (Permanent)"
+                            )
                 );
         }
 
@@ -338,12 +374,14 @@ public class PostgresqlTargetLockSessionTests
         private static DmsProvisioningFailure Failure(DmsDataStoreDeleteResult result) =>
             result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
 
-        /// <summary>Every log line the engine and its lock sessions write, formatted, with any exception's full text.</summary>
-        private sealed class CapturingLogger : ILogger
+        /// <summary>Every log line written to it (the engine and its lock sessions, or the orchestrator), formatted, with any exception's full text.</summary>
+        private sealed class CapturingLogger : ILogger<DmsDataStoreProvisioningService>
         {
-            private readonly System.Collections.Concurrent.ConcurrentQueue<string> _entries = new();
+            private readonly System.Collections.Concurrent.ConcurrentQueue<Entry> _entries = new();
 
-            public IEnumerable<string> Entries => _entries;
+            public sealed record Entry(EventId Id, LogLevel Level, string Text);
+
+            public IEnumerable<Entry> Entries => _entries;
 
             public IDisposable? BeginScope<TState>(TState state)
                 where TState : notnull => null;
@@ -356,7 +394,14 @@ public class PostgresqlTargetLockSessionTests
                 TState state,
                 Exception? exception,
                 Func<TState, Exception?, string> formatter
-            ) => _entries.Enqueue(formatter(state, exception) + (exception?.ToString() ?? string.Empty));
+            ) =>
+                _entries.Enqueue(
+                    new Entry(
+                        eventId,
+                        logLevel,
+                        formatter(state, exception) + (exception?.ToString() ?? string.Empty)
+                    )
+                );
         }
     }
 

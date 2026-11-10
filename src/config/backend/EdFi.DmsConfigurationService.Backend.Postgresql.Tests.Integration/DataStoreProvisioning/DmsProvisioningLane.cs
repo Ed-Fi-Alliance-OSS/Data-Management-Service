@@ -13,6 +13,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Trust;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -474,15 +475,19 @@ internal sealed class Lane : IAsyncDisposable
 
     /// <summary>
     /// The lane's own deployment (same options, catalog, allowlisted package and hooks, so the lane's request
-    /// and pin apply) over <paramref name="inner"/> instead of the superuser engine, behind a fresh recorder.
+    /// and pin apply) over <paramref name="inner"/> instead of the superuser engine, behind a fresh recorder, with
+    /// the orchestrator logging to <paramref name="logger"/> when one is given.
     /// </summary>
-    public Deployment WithEngine(IDmsTargetEngine inner)
+    public Deployment WithEngine(
+        IDmsTargetEngine inner,
+        ILogger<DmsDataStoreProvisioningService>? logger = null
+    )
     {
         RecordingEngine engine = new(inner);
         return _deployment with
         {
             Engine = engine,
-            Service = ServiceFor(engine, _deployment.Catalog, _deployment.Options, _hooks),
+            Service = ServiceFor(engine, _deployment.Catalog, _deployment.Options, _hooks, logger),
         };
     }
 
@@ -692,7 +697,8 @@ internal sealed class Lane : IAsyncDisposable
         RecordingEngine engine,
         TemplateArtifactCatalog catalog,
         DmsDataStoreProvisioningOptions options,
-        LaneHooks hooks
+        LaneHooks hooks,
+        ILogger<DmsDataStoreProvisioningService>? logger = null
     ) =>
         new(
             new Ready(),
@@ -702,7 +708,7 @@ internal sealed class Lane : IAsyncDisposable
             _protectedNames,
             DmsProvisioningTestServer.AdminConnectionSource(),
             TimeProvider.System,
-            NullLogger<DmsDataStoreProvisioningService>.Instance
+            logger ?? NullLogger<DmsDataStoreProvisioningService>.Instance
         )
         {
             TestHooks = hooks,
