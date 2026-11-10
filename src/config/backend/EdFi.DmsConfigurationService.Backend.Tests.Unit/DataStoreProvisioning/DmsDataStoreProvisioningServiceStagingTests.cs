@@ -1049,6 +1049,141 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     /// <summary>
+    /// The engine prepares (SQL Server stages, re-hashes and plans the backup) for longer than
+    /// <c>SessionTerminationTimeout</c> plus <c>CommandTimeout</c>, then reports the restore starting and uses
+    /// its whole allowance. The step deadline restarts at that report, so the preparation does not consume
+    /// <c>RestoreTimeout</c>: nothing cancels the restore before the allowance has passed from its start, and
+    /// the deadline still ends it, as <c>TimedOut</c>, once it has. The preparation's own bound, the deadline
+    /// from the call, is <see cref="Given_only_the_restore_deadline_expires_and_the_engine_reports_cancellation"/>.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_engine_prepares_and_then_the_restore_uses_its_whole_allowance
+    {
+        private static readonly TimeSpan _preparation = TimeSpan.FromSeconds(90);
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+        private bool _cancelledDuringPreparation;
+        private bool _cancelledWithinTheAllowance;
+        private bool _cancelledPastTheAllowance;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = Scripted();
+            TimeSpan allowance = TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(30) + CommandTimeout;
+            TaskCompletionSource preparing = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource prepared = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken restoreToken = default;
+            _harness.Engine.OnRestoreIntoStaging = async (_, _, token) =>
+            {
+                restoreToken = token;
+                Action restoreStarting = _harness.Engine.RestoreStarting!;
+                preparing.SetResult();
+                await prepared.Task;
+                restoreStarting();
+                started.SetResult();
+                await finish.Task;
+                return RestoreFailed(DmsCommandFailureClass.Rejected, DmsEngineOperations.RestoreCancelled);
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(_harness);
+            await ReadStartedAsync(preparing, create);
+
+            _harness.Time.Advance(_preparation);
+            _cancelledDuringPreparation = restoreToken.IsCancellationRequested;
+            prepared.SetResult();
+            await ReadStartedAsync(started, create);
+
+            _harness.Time.Advance(allowance - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheAllowance = restoreToken.IsCancellationRequested;
+            _harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheAllowance = restoreToken.IsCancellationRequested;
+
+            finish.SetResult();
+            _result = await create;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_preparation_within_the_allowance() =>
+            _cancelledDuringPreparation.Should().BeFalse();
+
+        [Test]
+        public void It_does_not_cancel_the_restore_within_the_allowance_from_its_start() =>
+            _cancelledWithinTheAllowance.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_restore_once_the_allowance_has_passed() =>
+            (_cancelledPastTheAllowance, _harness.OnlyHolder.LostToken.IsCancellationRequested)
+                .Should()
+                .Be((true, false));
+
+        [Test]
+        public void It_ends_timed_out_at_the_restore() =>
+            FailureOf(_result)
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Code = DmsProvisioningFailureCode.TimedOut,
+                        Diagnostic = new
+                        {
+                            Operation = DmsDataStoreProvisioningService.RestoreIntoStagingStep,
+                        },
+                    }
+                );
+    }
+
+    /// <summary>
+    /// The restarted deadline does not detach the restore from the caller: once the engine has reported the
+    /// restore starting, the caller's cancellation still reaches the engine's token at once, and the create
+    /// propagates it after cleanup.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_after_the_restore_started
+    {
+        private Harness _harness = null!;
+        private Exception? _outcome;
+        private bool _cancelledBeforeTheCaller;
+        private bool _cancelledByTheCaller;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using CancellationTokenSource cancellation = new();
+            _harness = Scripted();
+            TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken restoreToken = default;
+            _harness.Engine.OnRestoreIntoStaging = async (_, _, token) =>
+            {
+                restoreToken = token;
+                _harness.Engine.RestoreStarting!();
+                started.SetResult();
+                await finish.Task;
+                return RestoreFailed(DmsCommandFailureClass.Rejected, DmsEngineOperations.RestoreCancelled);
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(_harness, cancellation.Token);
+            await ReadStartedAsync(started, create);
+
+            _cancelledBeforeTheCaller = restoreToken.IsCancellationRequested;
+            await cancellation.CancelAsync();
+            _cancelledByTheCaller = restoreToken.IsCancellationRequested;
+
+            finish.SetResult();
+            _outcome = await Record.ExceptionAsync(() => create);
+        }
+
+        [Test]
+        public void It_cancels_the_restore_with_the_caller() =>
+            (_cancelledBeforeTheCaller, _cancelledByTheCaller).Should().Be((false, true));
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _outcome.Should().BeAssignableTo<OperationCanceledException>();
+    }
+
+    /// <summary>
     /// The artifact cannot be written into the operation directory (6.2 step 8) for a file system reason, not
     /// a package defect: the create returns <c>StagingFailed</c> with only the exception's type chain instead
     /// of throwing, before the lock and with nothing sent to the server. An entry already holding the

@@ -124,10 +124,15 @@ public class PostgresqlRestoreTests
                 ? name
                 : throw new InvalidOperationException("The target name does not satisfy the rules.");
 
-        public static async Task<Replay> StartAsync(byte[] sql, TimeSpan? restoreTimeout = null)
+        public static async Task<Replay> StartAsync(
+            byte[] sql,
+            TimeSpan? restoreTimeout = null,
+            TimeProvider? timeProvider = null
+        )
         {
             PostgresqlDmsTargetEngine engine = DmsProvisioningTestServer.Engine(
-                restoreTimeout: restoreTimeout
+                restoreTimeout: restoreTimeout,
+                timeProvider: timeProvider
             );
             DmsOperationId operation = DmsOperationId.New();
             IDmsTargetLockHolder holder = await engine.AcquireTargetLockAsync(
@@ -152,14 +157,16 @@ public class PostgresqlRestoreTests
         }
 
         public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreAsync(
-            CancellationToken cancellationToken = default
+            CancellationToken cancellationToken = default,
+            Action? restoreStarting = null
         ) =>
             Engine.RestoreIntoStagingAsync(
                 Stage,
                 TargetName("replay"),
                 _artifact.Artifact,
                 Operation,
-                cancellationToken
+                cancellationToken,
+                restoreStarting
             );
 
         public Task<bool> SchemaExistsAsync(string schemaName) =>
@@ -199,6 +206,75 @@ public class PostgresqlRestoreTests
 
             return (T)(await command.ExecuteScalarAsync())!;
         }
+    }
+
+    /// <summary>
+    /// The engine reports the replay starting once, after its directory, authentication and role checks on the
+    /// real server and before the runner arms its <c>RestoreTimeout</c> bound, so the orchestrator's restarted
+    /// step deadline covers the replay alone. The order is recorded, not timed. Without a configured
+    /// <c>psql</c> the replay then fails to start, which leaves the order unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_engine_reports_the_replay_starting
+    {
+        private const string Started = "restore starting";
+        private const string Armed = "replay bound armed";
+        private static readonly TimeSpan _restoreTimeout = TimeSpan.FromMinutes(17) + TimeSpan.FromSeconds(3);
+        private readonly List<string> _events = [];
+        private Replay? _replay;
+
+        /// <summary>The system clock, recording when a timer is armed for exactly the replay bound.</summary>
+        private sealed class RecordingReplayBound(List<string> events) : TimeProvider
+        {
+            public override ITimer CreateTimer(
+                TimerCallback callback,
+                object? state,
+                TimeSpan dueTime,
+                TimeSpan period
+            )
+            {
+                if (dueTime == _restoreTimeout)
+                {
+                    lock (events)
+                    {
+                        events.Add(Armed);
+                    }
+                }
+
+                return base.CreateTimer(callback, state, dueTime, period);
+            }
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _replay = await Replay.StartAsync(
+                ShapedSql(),
+                _restoreTimeout,
+                new RecordingReplayBound(_events)
+            );
+            await _replay.RestoreAsync(restoreStarting: () =>
+            {
+                lock (_events)
+                {
+                    _events.Add(Started);
+                }
+            });
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_replay is not null)
+            {
+                await _replay.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reports_the_start_once_before_the_replay_bound_is_armed() =>
+            _events.Should().Equal(Started, Armed);
     }
 
     [TestFixture]

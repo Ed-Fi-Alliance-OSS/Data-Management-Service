@@ -98,7 +98,8 @@ public sealed partial class MssqlDmsTargetEngine
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? restoreStarting = null
     )
     {
         ArgumentNullException.ThrowIfNull(artifact);
@@ -130,7 +131,14 @@ public sealed partial class MssqlDmsTargetEngine
         DmsCommandOutcome<DmsInstanceIdentity> outcome;
         try
         {
-            outcome = await RestoreStagedAsync(staging, target, backup, operation, cancellationToken);
+            outcome = await RestoreStagedAsync(
+                staging,
+                target,
+                backup,
+                operation,
+                restoreStarting,
+                cancellationToken
+            );
         }
         catch
         {
@@ -258,6 +266,7 @@ public sealed partial class MssqlDmsTargetEngine
         DmsTargetDatabaseName target,
         MssqlStagedBackup backup,
         DmsOperationId operation,
+        Action? restoreStarting,
         CancellationToken cancellationToken
     )
     {
@@ -288,7 +297,9 @@ public sealed partial class MssqlDmsTargetEngine
                 return refused!;
             }
 
-            // 6.4 step 6.
+            // 6.4 step 6. The staging copy, the work session and the plan are done: the caller's step deadline
+            // restarts here, so RestoreTimeout bounds the RESTORE alone, as the engine's own bound does.
+            restoreStarting?.Invoke();
             switch (
                 await RunRestoreAsync(
                     work,

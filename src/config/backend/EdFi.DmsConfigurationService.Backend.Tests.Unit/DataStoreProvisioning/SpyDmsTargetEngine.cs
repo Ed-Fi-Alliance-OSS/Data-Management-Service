@@ -160,6 +160,9 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public RestoreScript OnRestoreIntoStaging { get; set; } =
         (_, _, _) => throw NotExpected(RestoreIntoStaging);
 
+    /// <summary>The <c>restoreStarting</c> action the orchestrator handed the latest restore, for a script to report.</summary>
+    public Action? RestoreStarting { get; private set; }
+
     public DropStagingScript OnDropStaging { get; set; } = (_, _, _) => throw NotExpected(DropStaging);
 
     public OpenSessionScript OnOpenSession { get; set; } = (_, _, _) => throw NotExpected(OpenSession);
@@ -269,7 +272,8 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? restoreStarting = null
     )
     {
         Record(RestoreIntoStaging, staging.Value);
@@ -278,6 +282,7 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
             _restoreTargets.Add(target.Value);
         }
 
+        RestoreStarting = restoreStarting;
         return OnRestoreIntoStaging(staging, artifact, cancellationToken);
     }
 

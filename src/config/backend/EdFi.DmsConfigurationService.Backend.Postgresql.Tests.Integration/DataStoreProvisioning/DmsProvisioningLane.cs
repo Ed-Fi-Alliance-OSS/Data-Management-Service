@@ -178,7 +178,8 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? restoreStarting = null
     )
     {
         Calls.Add((nameof(RestoreIntoStagingAsync), staging.Value));
@@ -187,7 +188,8 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
             target,
             artifact,
             operation,
-            cancellationToken
+            cancellationToken,
+            restoreStarting
         );
         RestoreOutcomes.Add(outcome);
         return outcome;

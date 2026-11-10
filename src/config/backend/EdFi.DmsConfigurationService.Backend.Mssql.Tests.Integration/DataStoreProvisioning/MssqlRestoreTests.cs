@@ -89,14 +89,16 @@ public class MssqlRestoreTests
         public Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreAsync(
             MssqlDmsTargetEngine engine,
             byte[] artifact,
-            CancellationToken cancellationToken = default
+            CancellationToken cancellationToken = default,
+            Action? restoreStarting = null
         ) =>
             engine.RestoreIntoStagingAsync(
                 Stage,
                 Target,
                 ShapedBackup.Extracted(_directory, artifact),
                 Operation,
-                cancellationToken
+                cancellationToken,
+                restoreStarting
             );
 
         public async ValueTask DisposeAsync()
@@ -236,6 +238,85 @@ public class MssqlRestoreTests
             (_dropped, _stagingAfterDrop)
                 .Should()
                 .Be((new DmsCommandOutcome.Succeeded(), new DmsLiveTargetState.Absent()));
+    }
+
+    /// <summary>
+    /// The engine reports the restore starting once, after the backup is staged and planned and before the
+    /// <c>RESTORE</c> statement is formed and sent, so the orchestrator's restarted step deadline covers the
+    /// <c>RESTORE</c> alone. A backup the planner refuses never reaches it.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_engine_reports_the_restore_starting
+    {
+        private readonly List<string> _events = [];
+        private RestoreRun? _run;
+        private RestoreRun? _refusedRun;
+        private DmsCommandOutcome<DmsInstanceIdentity> _outcome = null!;
+        private int _refusedReports;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            RestoreRun run = new();
+            _run = run;
+            MssqlDmsTargetEngine engine = new(
+                AdminConnection(),
+                Settings(),
+                TimeProvider.System,
+                NullLogger.Instance
+            )
+            {
+                RestoreStatement = (plan, serverPath) =>
+                {
+                    _events.Add("statement");
+                    return plan.RestoreStatement(serverPath);
+                },
+            };
+            _outcome = await run.RestoreAsync(
+                engine,
+                await ShapedBackup.CreateAsync(),
+                restoreStarting: () =>
+                    _events.Add(
+                        ShapedBackup.StagedFilesOf(run.Operation).Length == 1
+                            ? "started with the backup staged"
+                            : "started without a staged backup"
+                    )
+            );
+
+            _refusedRun = new RestoreRun();
+            await _refusedRun.RestoreAsync(
+                Engine(),
+                await ShapedBackup.CreateAsync(appendSecondSet: true),
+                restoreStarting: () => _refusedReports++
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_run is not null)
+            {
+                await _run.DisposeAsync();
+            }
+
+            if (_refusedRun is not null)
+            {
+                await _refusedRun.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reports_the_start_once_after_staging_and_before_the_statement() =>
+            _events.Should().Equal("started with the backup staged", "statement");
+
+        [Test]
+        public void It_restores() =>
+            _outcome.Should().BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Succeeded>();
+
+        [Test]
+        public void It_does_not_report_a_start_for_a_backup_the_planner_refuses() =>
+            _refusedReports.Should().Be(0);
     }
 
     [TestFixture]

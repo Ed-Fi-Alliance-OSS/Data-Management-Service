@@ -78,12 +78,20 @@ public interface IDmsTargetEngine
     /// first captured here). <paramref name="target"/> is never addressed: SQL Server refuses a backup whose
     /// recorded database name equals it (D-11 hygiene).
     /// </summary>
+    /// <param name="restoreStarting">
+    /// Invoked once, after the engine's preparation and immediately before the restore itself is dispatched, so
+    /// the caller can restart the step's deadline there and the preparation does not consume
+    /// <c>RestoreTimeout</c>. SQL Server reports it before the <c>RESTORE</c>, after staging and planning the
+    /// backup; PostgreSQL before the <c>psql</c> replay, after its directory, authentication and role checks. A
+    /// call that fails before then does not report it.
+    /// </param>
     Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreIntoStagingAsync(
         DmsDatabaseName staging,
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? restoreStarting = null
     );
 
     /// <summary>

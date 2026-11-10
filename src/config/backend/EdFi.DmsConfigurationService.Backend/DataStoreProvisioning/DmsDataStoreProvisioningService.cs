@@ -443,13 +443,24 @@ public sealed partial class DmsDataStoreProvisioningService(
         // loss before any outcome returns therefore leaves the staging database as residue, never dropped
         // without proof (D-7b). A restored SQL Server instance becomes cleanup's instance before any loss
         // check can discard the result.
-        DmsCommandOutcome<DmsInstanceIdentity> restored = await scope.CallAsync(
+        // The deadline is RestoreTimeout plus the engine's budget for ending a restore it cancelled (STT + CT).
+        // It restarts when the engine reports the restore itself starting, so the engine's preparation (SQL
+        // Server stages, re-hashes and plans the backup; PostgreSQL checks the staging authentication and the
+        // enqueue owner) is bounded by that allowance without consuming the restore's.
+        DmsCommandOutcome<DmsInstanceIdentity> restored = await scope.CallRestartingAsync(
             RestoreIntoStagingStep,
             settings.RestoreTimeout + settings.SessionTerminationTimeout + settings.CommandTimeout,
-            token =>
+            (token, restoreStarting) =>
             {
                 cleanup.Withhold();
-                return engine.RestoreIntoStagingAsync(stage, target, stagedArtifact, operation, token);
+                return engine.RestoreIntoStagingAsync(
+                    stage,
+                    target,
+                    stagedArtifact,
+                    operation,
+                    token,
+                    restoreStarting
+                );
             },
             outcome =>
             {
@@ -1324,6 +1335,18 @@ public sealed partial class DmsDataStoreProvisioningService(
             TimeSpan deadline,
             Func<CancellationToken, Task<T>> call,
             Action<T>? observe
+        ) => CallCoreAsync(step, deadline, (token, _) => call(token), observe, callerToken);
+
+        /// <summary>
+        /// A <see cref="CallAsync{T}"/> whose <paramref name="deadline"/> starts over once, when the call invokes
+        /// the action it is handed: the work before it is bounded by the first deadline, the work after it by
+        /// the second. Caller cancellation and loss stop it throughout.
+        /// </summary>
+        public Task<T> CallRestartingAsync<T>(
+            string step,
+            TimeSpan deadline,
+            Func<CancellationToken, Action, Task<T>> call,
+            Action<T>? observe
         ) => CallCoreAsync(step, deadline, call, observe, callerToken);
 
         /// <summary>
@@ -1335,12 +1358,12 @@ public sealed partial class DmsDataStoreProvisioningService(
             TimeSpan deadline,
             Func<CancellationToken, Task<T>> call,
             Action<T>? observe
-        ) => CallCoreAsync(step, deadline, call, observe, CancellationToken.None);
+        ) => CallCoreAsync(step, deadline, (token, _) => call(token), observe, CancellationToken.None);
 
         private async Task<T> CallCoreAsync<T>(
             string step,
             TimeSpan deadline,
-            Func<CancellationToken, Task<T>> call,
+            Func<CancellationToken, Action, Task<T>> call,
             Action<T>? observe,
             CancellationToken caller
         )
@@ -1361,7 +1384,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             T result;
             try
             {
-                result = await call(linked.Token);
+                result = await call(linked.Token, () => deadlineSource.CancelAfter(deadline));
             }
             catch (Exception exception) when (holder.LostToken.IsCancellationRequested)
             {

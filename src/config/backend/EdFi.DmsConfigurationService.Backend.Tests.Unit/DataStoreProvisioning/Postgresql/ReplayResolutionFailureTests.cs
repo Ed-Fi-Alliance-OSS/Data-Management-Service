@@ -145,6 +145,7 @@ public class ReplayResolutionFailureTests
 
         private DmsCommandOutcome<DmsInstanceIdentity> _unreachable = null!;
         private DmsCommandOutcome<DmsInstanceIdentity> _cancelled = null!;
+        private int _restoreStarts;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -162,7 +163,8 @@ public class ReplayResolutionFailureTests
                     ProvisioningTestValues.CreateRequest().TargetName,
                     replay.Artifact,
                     replay.Operation,
-                    default
+                    default,
+                    () => _restoreStarts++
                 );
             }
 
@@ -175,10 +177,14 @@ public class ReplayResolutionFailureTests
                     ProvisioningTestValues.CreateRequest().TargetName,
                     replay.Artifact,
                     replay.Operation,
-                    cancellation.Token
+                    cancellation.Token,
+                    () => _restoreStarts++
                 );
             }
         }
+
+        [Test]
+        public void It_reports_no_restore_start() => _restoreStarts.Should().Be(0);
 
         [Test]
         public void It_returns_a_definite_not_started_failure_with_only_the_type_chain()

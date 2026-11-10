@@ -70,7 +70,8 @@ public sealed class UnavailableDmsTargetEngine : IDmsTargetEngine
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? restoreStarting = null
     ) => throw Unavailable();
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(

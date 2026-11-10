@@ -88,7 +88,8 @@ public sealed partial class PostgresqlDmsTargetEngine
         DmsTargetDatabaseName target,
         StagedArtifact artifact,
         DmsOperationId operation,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Action? restoreStarting = null
     )
     {
         // The target is not consulted: a dump records no database name to compare with (D-11 is SQL Server's).
@@ -139,6 +140,9 @@ public sealed partial class PostgresqlDmsTargetEngine
             return refused;
         }
 
+        // The directory, authentication and role checks are done: the caller's step deadline restarts here,
+        // so RestoreTimeout bounds the replay alone, as the runner's own bound does.
+        restoreStarting?.Invoke();
         PsqlRunResult run;
         try
         {
