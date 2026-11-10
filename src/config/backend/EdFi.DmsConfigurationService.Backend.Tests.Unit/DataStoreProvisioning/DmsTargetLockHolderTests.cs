@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -566,5 +567,106 @@ public class DmsTargetLockHolderTests
             await _dispose.Should().NotThrowAsync();
             _holder.ReleaseCount.Should().Be(1);
         }
+    }
+
+    /// <summary>
+    /// The dispatch boundary: a command refused before it is invoked, for the caller's cancellation or for loss
+    /// while the heartbeat probe holds the gate, is reported as not dispatched and never runs; a command that
+    /// was invoked and is then cancelled is a plain cancellation, because it may have reached the connection.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_command_is_stopped_before_or_after_it_is_invoked
+    {
+        private readonly List<FakeDmsTargetLockHolder> _holders = [];
+        private Exception? _cancelledAtTheGate;
+        private Exception? _lostAtTheGate;
+        private Exception? _cancelledWhileRunning;
+        private int _refusedCommandsInvoked;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TaskCompletionSource<bool> cancelledProbe = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            FakeDmsTargetLockHolder cancelled = GateHeldByProbe(cancelledProbe.Task);
+            using CancellationTokenSource caller = new();
+            Task<int> cancelledCommand = cancelled.RunAsync(Refused, _commandDeadline, caller.Token);
+            await caller.CancelAsync();
+            _cancelledAtTheGate = await Record.ExceptionAsync(() => cancelledCommand);
+            cancelledProbe.SetResult(true);
+
+            // The probe finds the lock no longer held while the command waits behind it.
+            TaskCompletionSource<bool> losingProbe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            FakeDmsTargetLockHolder lost = GateHeldByProbe(losingProbe.Task);
+            Task<int> lostCommand = lost.RunAsync(Refused, _commandDeadline, CancellationToken.None);
+            losingProbe.SetResult(false);
+            _lostAtTheGate = await Record.ExceptionAsync(() => lostCommand);
+
+            FakeDmsTargetLockHolder running = Holder(Clock());
+            _holders.Add(running);
+            TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            using CancellationTokenSource runningCaller = new();
+            Task<int> runningCommand = running.RunAsync(
+                async token =>
+                {
+                    started.SetResult();
+                    await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                    return 1;
+                },
+                _commandDeadline,
+                runningCaller.Token
+            );
+            await started.Task;
+            await runningCaller.CancelAsync();
+            _cancelledWhileRunning = await Record.ExceptionAsync(() => runningCommand);
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            foreach (FakeDmsTargetLockHolder holder in _holders)
+            {
+                await holder.DisposeAsync();
+            }
+        }
+
+        private Task<int> Refused(CancellationToken _)
+        {
+            Interlocked.Increment(ref _refusedCommandsInvoked);
+            return Task.FromResult(1);
+        }
+
+        private FakeDmsTargetLockHolder GateHeldByProbe(Task<bool> probe)
+        {
+            FakeTimeProvider clock = Clock();
+            FakeDmsTargetLockHolder holder = Holder(clock);
+            _holders.Add(holder);
+            holder.Probe = _ => probe;
+            holder.StartHeartbeat();
+            clock.Advance(_interval);
+            return holder;
+        }
+
+        [Test]
+        public void It_reports_a_cancellation_at_the_gate_as_not_dispatched() =>
+            _cancelledAtTheGate.Should().BeOfType<DmsCommandNotDispatchedException>();
+
+        [Test]
+        public void It_reports_loss_at_the_gate_as_not_dispatched()
+        {
+            _lostAtTheGate.Should().BeOfType<DmsCommandNotDispatchedException>();
+            _holders[1].IsLost.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_never_invokes_a_refused_command() => _refusedCommandsInvoked.Should().Be(0);
+
+        [Test]
+        public void It_keeps_an_invoked_command_cancellation_in_doubt() =>
+            _cancelledWhileRunning
+                .Should()
+                .BeAssignableTo<OperationCanceledException>()
+                .And.NotBeOfType<DmsCommandNotDispatchedException>();
     }
 }

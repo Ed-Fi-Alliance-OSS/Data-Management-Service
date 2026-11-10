@@ -17,10 +17,11 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// finding the lock no longer held by this session, or by the engine's own broken-state notification
 /// through <see cref="DeclareLost"/>; a command whose deadline expires, and a heartbeat skipped because a
 /// command is active, are never loss. The physical connection is never replaced: after loss every command
-/// is refused with <see cref="OperationCanceledException"/> on <see cref="LostToken"/>, and a new lock
-/// requires a fresh <see cref="IDmsTargetEngine.AcquireTargetLockAsync"/>. Disposal stops the heartbeat,
-/// waits for the active command, releases through the gate exactly once, never throws, and is safe after
-/// loss and when called more than once.
+/// is refused with <see cref="DmsCommandNotDispatchedException"/> on <see cref="LostToken"/>, and a new lock
+/// requires a fresh <see cref="IDmsTargetEngine.AcquireTargetLockAsync"/>. Every refusal before a command is
+/// invoked, including a cancellation while it waits for the gate, is that exception: nothing was sent.
+/// Disposal stops the heartbeat, waits for the active command, releases through the gate exactly once, never
+/// throws, and is safe after loss and when called more than once.
 /// </summary>
 public abstract class DmsTargetLockHolder : IDmsTargetLockHolder
 {
@@ -89,10 +90,22 @@ public abstract class DmsTargetLockHolder : IDmsTargetLockHolder
             cancellationToken,
             LostToken
         );
-        await _gate.WaitAsync(waiting.Token);
+        try
+        {
+            await _gate.WaitAsync(waiting.Token);
+        }
+        catch (OperationCanceledException canceled)
+        {
+            // The command was never invoked: a cancellation, deadline or loss while it waited for the gate.
+            throw new DmsCommandNotDispatchedException(canceled);
+        }
+
         try
         {
             ThrowIfUnusable();
+
+            // The gate can be granted to a waiter as its token is cancelled; the command is still refused.
+            DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
             using CancellationTokenSource deadlineSource = new(deadline, _timeProvider);
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
@@ -257,9 +270,14 @@ public abstract class DmsTargetLockHolder : IDmsTargetLockHolder
         }
     }
 
+    /// <summary>Refuses a command before it is invoked: after loss nothing is sent; after release it is a misuse.</summary>
     private void ThrowIfUnusable()
     {
-        LostToken.ThrowIfCancellationRequested();
+        if (IsLost)
+        {
+            throw new DmsCommandNotDispatchedException(LostToken);
+        }
+
         ObjectDisposedException.ThrowIf(_released, this);
     }
 

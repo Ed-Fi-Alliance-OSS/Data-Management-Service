@@ -238,7 +238,7 @@ internal static class PostgresqlPublicationQueries
     /// <summary>
     /// D-13 before a mutation: null when <paramref name="name"/> still holds <paramref name="expected"/>;
     /// otherwise the definite failure to return. A read that fails proves only that the mutation was not
-    /// sent; a cancellation before anything was sent propagates.
+    /// sent; a cancellation before anything was sent propagates as <see cref="DmsCommandNotDispatchedException"/>.
     /// </summary>
     private static async Task<DmsCommandOutcome?> VerifyAsync(
         NpgsqlConnection connection,
@@ -265,6 +265,10 @@ internal static class PostgresqlPublicationQueries
                     PostgresqlErrorClassifier.Diagnostic(exception, verifyStep)
                 )
             );
+        }
+        catch (OperationCanceledException canceled)
+        {
+            throw new DmsCommandNotDispatchedException(canceled);
         }
 
         return current is not null && current.IsSameStableInstance(expected)

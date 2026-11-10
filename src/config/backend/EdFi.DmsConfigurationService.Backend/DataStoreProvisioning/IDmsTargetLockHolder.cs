@@ -33,7 +33,9 @@ public interface IDmsTargetLockHolder : IAsyncDisposable
     /// engine that created the holder runs <paramref name="command"/> against its private connection while
     /// the gate is held, under a token linked to <paramref name="deadline"/>, <paramref name="cancellationToken"/>,
     /// and <see cref="LostToken"/>. A command whose deadline expires is cancelled; the holder stays usable
-    /// and no loss is declared unless the connection itself failed.
+    /// and no loss is declared unless the connection itself failed. A command refused before it is invoked
+    /// (after loss, or cancelled while it waits for the gate) throws
+    /// <see cref="DmsCommandNotDispatchedException"/>: it never reached the connection.
     /// </summary>
     Task<T> RunAsync<T>(
         Func<CancellationToken, Task<T>> command,

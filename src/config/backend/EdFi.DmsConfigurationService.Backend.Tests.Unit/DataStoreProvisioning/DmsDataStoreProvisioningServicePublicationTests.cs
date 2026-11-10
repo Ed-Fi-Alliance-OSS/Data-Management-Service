@@ -524,6 +524,84 @@ public class DmsDataStoreProvisioningServicePublicationTests
         }
     }
 
+    /// <summary>
+    /// The rename sibling of the dispatch boundary: the engine runs the rename on the real holder's execution gate,
+    /// the heartbeat probe holds the gate when the rename is handed to the engine, and the probe then finds the lock
+    /// gone. The gate refuses the rename before it is invoked, so nothing is in doubt: the loss is transient, nothing
+    /// is resolved after the lock, and cleanup drops the staging database, as for loss before the rename.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_while_the_rename_waits_for_the_holder_gate
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+        private int _renamesSent;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            RecordingHooks hooks = new();
+            _harness = Scripted(hooks);
+            TaskCompletionSource<bool> probe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            hooks.OnPoint = point =>
+            {
+                if (point == DmsProvisioningHookPoint.BeforeRename)
+                {
+                    // The heartbeat probe takes the gate and keeps it until the test completes it.
+                    _harness.OnlyHolder.Probe = probeToken => probe.Task;
+                    _harness.OnlyHolder.StartHeartbeat();
+                    _harness.Time.Advance(TimeSpan.FromSeconds(5));
+                }
+            };
+            _harness.Engine.OnRenameIntoTarget = (_, instance, _, token) =>
+            {
+                waiting.SetResult();
+                return _harness.OnlyHolder.RunAsync<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    _ =>
+                    {
+                        _renamesSent++;
+                        return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                            new DmsCommandOutcome<DmsInstanceIdentity>.Succeeded(instance)
+                        );
+                    },
+                    CommandTimeout,
+                    token
+                );
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(_harness);
+            await ReadStartedAsync(waiting, create);
+            probe.SetResult(false);
+            _result = await create;
+        }
+
+        [Test]
+        public void It_ends_as_transient_lock_lost_at_the_rename() =>
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+
+        [Test]
+        public void It_never_sends_the_rename_and_resolves_nothing_after_the_lock()
+        {
+            _renamesSent.Should().Be(0);
+            AfterTheRename(_harness)
+                .Select(call => call.Member)
+                .Should()
+                .Equal(SpyDmsTargetEngine.DropStaging);
+        }
+
+        [Test]
+        public void It_drops_the_staging_database_and_leaves_no_residue() =>
+            CleanupOf(_result).Residue.Should().BeEmpty();
+    }
+
     [TestFixture]
     public class Given_the_holder_is_lost_as_the_rename_returns
     {

@@ -118,7 +118,7 @@ internal static class MssqlDeletionQueries
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(timeProvider);
-        cancellationToken.ThrowIfCancellationRequested();
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         int? guard;
         try
         {
@@ -224,7 +224,7 @@ internal static class MssqlDeletionQueries
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(instance);
-        cancellationToken.ThrowIfCancellationRequested();
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         int? guard;
         try
         {

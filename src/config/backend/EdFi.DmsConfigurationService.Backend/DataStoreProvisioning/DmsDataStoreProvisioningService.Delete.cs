@@ -296,18 +296,20 @@ public sealed partial class DmsDataStoreProvisioningService
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
 
-        // Recorded as it is handed to the engine, and in doubt from then on: only a refusal before this point
-        // (the scope's own caller or loss check) proves nothing was sent. Whatever ends the call afterwards
-        // without a definite outcome (an unknown outcome or an exception raised alongside loss, a deadline,
-        // the caller's cancellation) leaves the fence in doubt for settlement after the lock is released.
+        // Recorded as it is handed to the engine, and in doubt from then on: only a refusal by the scope's own
+        // caller or loss check, or a DmsCommandNotDispatchedException from the holder's gate or the provider's
+        // check before sending, proves nothing was sent. Whatever else ends the call without a definite outcome
+        // (an unknown outcome or an exception raised alongside loss, a deadline, the caller's cancellation)
+        // leaves the fence in doubt for settlement after the lock is released.
         DmsCommandOutcome fenced = await scope.CallAsync(
             FenceStep,
             settings.SessionTerminationTimeout + settings.CommandTimeout + settings.CommandTimeout,
             token =>
-            {
-                deletion.FenceDispatched(instance, scope.Holder.Session);
-                return engine.FenceAsync(scope.Holder, target, instance, keep, token);
-            },
+                DispatchAsync(
+                    () => deletion.FenceDispatched(instance, scope.Holder.Session),
+                    deletion.NotDispatched,
+                    () => engine.FenceAsync(scope.Holder, target, instance, keep, token)
+                ),
             deletion.ObserveFence
         );
 
@@ -355,16 +357,18 @@ public sealed partial class DmsDataStoreProvisioningService
                 DropTargetStep,
                 options.Value.CommandTimeout,
                 token =>
-                {
-                    deletion.DropDispatched();
-                    return engine.DropInstanceAsync(
-                        scope.Holder,
-                        target,
-                        instance,
-                        DmsDropReason.Delete,
-                        token
-                    );
-                },
+                    DispatchAsync(
+                        deletion.DropDispatched,
+                        deletion.NotDispatched,
+                        () =>
+                            engine.DropInstanceAsync(
+                                scope.Holder,
+                                target,
+                                instance,
+                                DmsDropReason.Delete,
+                                token
+                            )
+                    ),
                 deletion.ObserveDrop
             );
         }
@@ -374,9 +378,21 @@ public sealed partial class DmsDataStoreProvisioningService
                 && !scope.Holder.LostToken.IsCancellationRequested
             )
         {
-            // The drop was never handed to the engine (the ledger still shows the fence, not a drop in doubt):
-            // the scope refused it for the caller's cancellation, so the fence is reversed first. A drop that was
-            // handed over stays in doubt whatever ended it, and is settled after the lock is released.
+            // The drop never reached the driver (the ledger still shows the fence, not a drop in doubt): the
+            // scope, the holder's gate or the provider's check before sending refused it for the caller's
+            // cancellation, so the fence is reversed first while the holder still owns the lock. A drop that may
+            // have reached the driver stays in doubt whatever ended it, and is settled after the lock is released.
+            await UnfenceIfFencedAsync(scope, deletion);
+            throw;
+        }
+        catch (DmsProvisioningFailedException timedOut)
+            when (timedOut.Failure.Code == DmsProvisioningFailureCode.TimedOut
+                && deletion.State == DeletionState.Fenced
+                && !scope.Holder.LostToken.IsCancellationRequested
+            )
+        {
+            // The drop's deadline expired before it reached the driver (the ledger still shows the fence): the
+            // fence is reversed the same way while the holder still owns the lock, and the timeout is reported.
             await UnfenceIfFencedAsync(scope, deletion);
             throw;
         }
@@ -645,6 +661,9 @@ public sealed partial class DmsDataStoreProvisioningService
     /// </summary>
     private sealed class Deletion(DmsTargetDatabaseName target) : ITargetMutationLedger
     {
+        /// <summary>The state before the mutation now in flight was recorded as dispatched.</summary>
+        private DeletionState _beforeDispatch = DeletionState.None;
+
         public DmsTargetDatabaseName Target => target;
 
         public DeletionState State { get; private set; } = DeletionState.None;
@@ -666,7 +685,7 @@ public sealed partial class DmsDataStoreProvisioningService
         {
             Instance = instance;
             HolderSession = holderSession;
-            State = DeletionState.FenceInDoubt;
+            Dispatch(DeletionState.FenceInDoubt);
         }
 
         /// <summary>A definite failure leaves the fence standing only when the engine reports it as residue.</summary>
@@ -707,7 +726,10 @@ public sealed partial class DmsDataStoreProvisioningService
             }
         }
 
-        public void DropDispatched() => State = DeletionState.DropInDoubt;
+        public void DropDispatched() => Dispatch(DeletionState.DropInDoubt);
+
+        /// <summary>The mutation recorded last never reached the driver: the state before it stands.</summary>
+        public void NotDispatched() => State = _beforeDispatch;
 
         public void ObserveDrop(DmsCommandOutcome outcome)
         {
@@ -726,5 +748,11 @@ public sealed partial class DmsDataStoreProvisioningService
         }
 
         public void Displaced() => State = DeletionState.Displaced;
+
+        private void Dispatch(DeletionState inDoubt)
+        {
+            _beforeDispatch = State;
+            State = inDoubt;
+        }
     }
 }

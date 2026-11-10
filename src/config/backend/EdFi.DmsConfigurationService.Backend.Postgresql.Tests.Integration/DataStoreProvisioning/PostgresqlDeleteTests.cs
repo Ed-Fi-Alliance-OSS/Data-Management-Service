@@ -364,6 +364,124 @@ public class PostgresqlDeleteTests
                 );
     }
 
+    /// <summary>
+    /// The dispatch boundary against a live server, on our fenced instance so that a drop that ran would remove it:
+    /// a drop the holder's gate refuses (another command holds the gate, as a heartbeat probe would, when the caller
+    /// cancels) and a drop whose instance read is cancelled before anything is sent both end as not dispatched, and
+    /// the instance is still there and still fenced, ready for the fence to be reversed under the same lock.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_drop_is_stopped_before_it_reaches_the_driver
+    {
+        private TestDatabase? _database;
+        private Exception? _refusedAtTheGate;
+        private Exception? _stoppedBeforeSending;
+        private (bool Exists, bool AllowsConnections) _afterBoth;
+        private DmsCommandOutcome _unfence = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("dispatch");
+            DmsTargetDatabaseName target = TargetNameOf(_database.Name);
+            DmsInstanceIdentity.Postgresql instance = await _database.CatalogInstanceAsync();
+            PostgresqlDmsTargetEngine engine = Engine();
+            await using IDmsTargetLockHolder holder = await engine.AcquireTargetLockAsync(
+                target,
+                DmsOperationId.New(),
+                default
+            )
+                is DmsTargetLockResult.Acquired acquired
+                ? acquired.Holder
+                : throw new InvalidOperationException("The target lock was not acquired.");
+            (await engine.FenceAsync(holder, target, instance, null, default))
+                .Should()
+                .BeOfType<DmsCommandOutcome.Succeeded>();
+
+            TaskCompletionSource held = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            Task<int> blocker = holder.RunAsync(
+                async _ =>
+                {
+                    held.SetResult();
+                    await release.Task;
+                    return 0;
+                },
+                _bound,
+                default
+            );
+            await held.Task;
+            using (CancellationTokenSource caller = new())
+            {
+                Task<DmsCommandOutcome> drop = engine.DropInstanceAsync(
+                    holder,
+                    target,
+                    instance,
+                    DmsDropReason.Delete,
+                    caller.Token
+                );
+                await caller.CancelAsync();
+                _refusedAtTheGate = await Record.ExceptionAsync(() => drop);
+            }
+
+            release.SetResult();
+            await blocker;
+
+            await using (
+                NpgsqlConnection connection = await AdminConnection()
+                    .OpenAsync("postgres", "dms1438-dispatch", default)
+            )
+            {
+                using CancellationTokenSource cancelled = new();
+                await cancelled.CancelAsync();
+                _stoppedBeforeSending = await Record.ExceptionAsync(() =>
+                    PostgresqlDeletionQueries.DropTargetAsync(
+                        connection,
+                        target,
+                        instance,
+                        holder.Session,
+                        cancelled.Token
+                    )
+                );
+            }
+
+            _afterBoth = (
+                await ScalarOnServerAsync<bool>(
+                    "SELECT EXISTS (SELECT 1 FROM pg_catalog.pg_database d WHERE d.datname = @name);",
+                    ("name", _database.Name)
+                ),
+                await ScalarOnServerAsync<bool>(
+                    "SELECT COALESCE((SELECT d.datallowconn FROM pg_catalog.pg_database d WHERE d.datname = @name), true);",
+                    ("name", _database.Name)
+                )
+            );
+            _unfence = await engine.UnfenceAsync(holder, target, instance, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reports_both_drops_as_not_dispatched() =>
+            new[] { _refusedAtTheGate, _stoppedBeforeSending }
+                .Should()
+                .AllBeOfType<DmsCommandNotDispatchedException>();
+
+        [Test]
+        public void It_leaves_our_instance_in_place_and_fenced() => _afterBoth.Should().Be((true, false));
+
+        [Test]
+        public void It_lets_the_same_holder_reverse_the_fence() =>
+            _unfence.Should().BeOfType<DmsCommandOutcome.Succeeded>();
+    }
+
     [TestFixture]
     public class Given_an_owned_target_with_a_busy_session_is_deleted
     {

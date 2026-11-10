@@ -145,21 +145,25 @@ public sealed partial class DmsDataStoreProvisioningService
 
         // 6.3 step 8: the rename is this operation's selected-target mutation, in doubt from the moment it is
         // sent until a definite outcome settles it (D-7b, D-12). It is recorded as the engine is handed the
-        // call, after the scope's cancellation and loss checks, so a rename those checks stop is never in doubt.
+        // call, after the scope's cancellation and loss checks, and withdrawn when the holder's gate or the
+        // provider's check before sending reports it never reached the driver, so a rename stopped before
+        // dispatch is never in doubt.
         DmsCommandOutcome<DmsInstanceIdentity> renamed = await scope.CallAsync(
             RenameIntoTargetStep,
             settings.CommandTimeout,
             token =>
-            {
-                publication.RenameDispatched(candidate, scope.Holder.Session);
-                return engine.RenameIntoTargetAsync(
-                    scope.Holder,
-                    operation.StagingDatabaseName,
-                    candidate.Instance,
-                    target,
-                    token
-                );
-            },
+                DispatchAsync(
+                    () => publication.RenameDispatched(candidate, scope.Holder.Session),
+                    publication.RenameNotDispatched,
+                    () =>
+                        engine.RenameIntoTargetAsync(
+                            scope.Holder,
+                            operation.StagingDatabaseName,
+                            candidate.Instance,
+                            target,
+                            token
+                        )
+                ),
             publication.ObserveRename
         );
         switch (renamed)
@@ -752,6 +756,9 @@ public sealed partial class DmsDataStoreProvisioningService
         }
 
         public void RenameResolvedNotRenamed() => State = PublicationState.NotRenamed;
+
+        /// <summary>The rename never reached the driver: nothing was sent, as before it was recorded.</summary>
+        public void RenameNotDispatched() => State = PublicationState.None;
 
         public void MarkerDispatched(DmsServerSessionId session)
         {

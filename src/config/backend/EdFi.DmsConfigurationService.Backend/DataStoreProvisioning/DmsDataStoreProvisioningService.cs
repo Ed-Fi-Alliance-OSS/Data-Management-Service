@@ -1031,6 +1031,27 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
+    /// Hands one selected-target mutation to the engine with its ledger entry made first
+    /// (<paramref name="dispatched"/>), so whatever ends the call leaves the mutation in doubt, except a
+    /// <see cref="DmsCommandNotDispatchedException"/>: the holder's gate or the provider's check before sending
+    /// proved it never reached the driver, and <paramref name="notDispatched"/> restores the last known state
+    /// before the refusal propagates.
+    /// </summary>
+    private static async Task<T> DispatchAsync<T>(Action dispatched, Action notDispatched, Func<Task<T>> send)
+    {
+        dispatched();
+        try
+        {
+            return await send();
+        }
+        catch (DmsCommandNotDispatchedException)
+        {
+            notDispatched();
+            throw;
+        }
+    }
+
+    /// <summary>
     /// The staging database this create owns (6.7): dropped on every exit with bounded attempts (D-19)
     /// unless the drop was withheld because the replay's fate is open (D-7b); what cannot be dropped, or
     /// is deliberately left, is residue (6.11) alongside what the artifact release could not remove.

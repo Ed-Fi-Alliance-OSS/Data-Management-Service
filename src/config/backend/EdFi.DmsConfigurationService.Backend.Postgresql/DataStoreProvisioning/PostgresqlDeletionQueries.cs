@@ -256,6 +256,10 @@ internal static class PostgresqlDeletionQueries
                 )
             );
         }
+        catch (OperationCanceledException canceled)
+        {
+            throw new DmsCommandNotDispatchedException(canceled);
+        }
 
         if (sessions > 0)
         {
@@ -403,7 +407,8 @@ internal static class PostgresqlDeletionQueries
     /// <summary>
     /// D-13 before a command: null when <paramref name="name"/> still holds <paramref name="expected"/>, with the
     /// current instance and whether it accepts connections; otherwise the definite failure to return. A read that
-    /// fails proves only that nothing was sent; a cancellation before anything was sent propagates.
+    /// fails proves only that nothing was sent; a cancellation before anything was sent propagates as
+    /// <see cref="DmsCommandNotDispatchedException"/>, because the command that follows was never handed to the driver.
     /// </summary>
     private static async Task<(
         DmsCommandOutcome? Refused,
@@ -439,6 +444,10 @@ internal static class PostgresqlDeletionQueries
                 null,
                 false
             );
+        }
+        catch (OperationCanceledException canceled)
+        {
+            throw new DmsCommandNotDispatchedException(canceled);
         }
 
         return current is not null && current.IsSameStableInstance(expected)

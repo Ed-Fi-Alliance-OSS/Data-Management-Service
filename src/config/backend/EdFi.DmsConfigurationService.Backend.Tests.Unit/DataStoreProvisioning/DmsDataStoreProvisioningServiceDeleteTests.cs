@@ -1156,6 +1156,332 @@ public class DmsDataStoreProvisioningServiceDeleteTests
     }
 
     /// <summary>
+    /// The engine side of the holder gate, as the provider engines run it: the fence, the drop and the unfence
+    /// are commands on the real holder's execution gate, and <see cref="Sent"/> lists the ones that ran under it.
+    /// <see cref="HoldGateWithProbe"/> starts the heartbeat with a probe that keeps the gate until its task
+    /// completes; <see cref="Waiting"/> is signalled as the command named at construction asks for the gate.
+    /// </summary>
+    private sealed class GatedTarget
+    {
+        public GatedTarget(string waitingCommand)
+        {
+            Target = new OwnedTarget();
+            SpyDmsTargetEngine engine = Target.Harness.Engine;
+            engine.OnFence = (_, _, _, token) =>
+                RunGated(
+                    SpyDmsTargetEngine.Fence,
+                    waitingCommand,
+                    new DmsLiveTargetState.Fenced(_instance),
+                    token
+                );
+            engine.OnDropInstance = (_, _, _, token) =>
+                RunGated(
+                    SpyDmsTargetEngine.DropInstance,
+                    waitingCommand,
+                    new DmsLiveTargetState.Absent(),
+                    token
+                );
+            engine.OnUnfence = (_, _, token) =>
+                RunGated(
+                    SpyDmsTargetEngine.Unfence,
+                    waitingCommand,
+                    new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online),
+                    token
+                );
+        }
+
+        public OwnedTarget Target { get; }
+
+        public TaskCompletionSource Waiting { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> Probe { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        /// <summary>The commands that ran under the gate, with the holder's release count when each ran.</summary>
+        public List<(string Command, int Releases)> Sent { get; } = [];
+
+        /// <summary>At <paramref name="point"/>, the heartbeat probe takes the gate and keeps it until <see cref="Probe"/> completes.</summary>
+        public void HoldGateWithProbe(DmsProvisioningHookPoint point) =>
+            Target.Hooks.Probe = (reached, _) =>
+            {
+                if (reached == point)
+                {
+                    FakeDmsTargetLockHolder holder = Target.Harness.OnlyHolder;
+                    holder.Probe = probeToken => Probe.Task;
+                    holder.StartHeartbeat();
+                    Target.Harness.Time.Advance(TimeSpan.FromSeconds(5));
+                }
+
+                return Task.CompletedTask;
+            };
+
+        private Task<DmsCommandOutcome> RunGated(
+            string command,
+            string waitingCommand,
+            DmsLiveTargetState after,
+            CancellationToken token
+        )
+        {
+            if (command == waitingCommand)
+            {
+                Waiting.TrySetResult();
+            }
+
+            return Target.Harness.OnlyHolder.RunAsync(
+                _ =>
+                {
+                    Sent.Add((command, Target.Releases));
+                    Target.State = after;
+                    return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Succeeded());
+                },
+                CommandTimeout,
+                token
+            );
+        }
+    }
+
+    /// <summary>
+    /// The confirmed dispatch defect: the heartbeat probe holds the holder's execution gate when the drop is handed to
+    /// the engine, and the caller cancels while the drop waits for it. The gate refuses the drop before it is invoked, so
+    /// the ledger keeps the fence (not a drop in doubt) and the fence is reversed on the healthy holder before the lock
+    /// is released, instead of leaving the target fenced for an operator.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_while_the_drop_waits_for_the_holder_gate
+    {
+        private GatedTarget _gated = null!;
+        private Exception? _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _gated = new GatedTarget(SpyDmsTargetEngine.DropInstance);
+            _gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeDrop);
+            using CancellationTokenSource caller = new();
+            Task<DmsDataStoreDeleteResult> delete = _gated.Target.DeleteAsync(caller.Token);
+            await ReadStartedAsync(_gated.Waiting, delete);
+            await caller.CancelAsync();
+            _gated.Probe.SetResult(true);
+            _outcome = await Record.ExceptionAsync(() => delete);
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _outcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_never_sends_the_drop_and_reverses_the_fence_before_the_lock_is_released() =>
+            _gated.Sent.Should().Equal((SpyDmsTargetEngine.Fence, 0), (SpyDmsTargetEngine.Unfence, 0));
+
+        [Test]
+        public void It_leaves_the_target_accepting_connections_without_settlement_reads()
+        {
+            _gated.Target.State.Should().BeOfType<DmsLiveTargetState.Present>();
+            _gated
+                .Target.Members.Should()
+                .Equal(Seq([.. _released, SpyDmsTargetEngine.DropInstance, SpyDmsTargetEngine.Unfence]));
+            _gated.Target.Releases.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// The conservative side of the same boundary: once the drop ran under the gate, a cancellation that ends it proves
+    /// nothing. The drop stays in doubt, the fence is not reversed, and the outcome is read after the lock is released.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_once_the_drop_was_handed_to_the_driver
+    {
+        private OwnedTarget _target = null!;
+        private Exception? _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _target = new OwnedTarget();
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _target.Harness.Engine.OnDropInstance = (_, _, _, token) =>
+                _target.Harness.OnlyHolder.RunAsync<DmsCommandOutcome>(
+                    async driverToken =>
+                    {
+                        running.SetResult();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, driverToken);
+                        return new DmsCommandOutcome.Succeeded();
+                    },
+                    CommandTimeout,
+                    token
+                );
+            using CancellationTokenSource caller = new();
+            Task<DmsDataStoreDeleteResult> delete = _target.DeleteAsync(caller.Token);
+            await ReadStartedAsync(running, delete);
+            await caller.CancelAsync();
+            _outcome = await Record.ExceptionAsync(() => delete);
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _outcome.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_settles_the_drop_by_reading_state_and_never_reverses_the_fence()
+        {
+            _target
+                .Members.Should()
+                .Equal(Seq([.. _released, SpyDmsTargetEngine.DropInstance, .. _settlementReads]));
+            _target.Harness.Engine.TerminatedSessions.Should().Equal(_targetSession, Session);
+            _target.State.Should().BeOfType<DmsLiveTargetState.Fenced>();
+        }
+    }
+
+    /// <summary>
+    /// The deadline exit of the same boundary: the heartbeat probe holds the gate and the drop's <c>CommandTimeout</c>
+    /// expires while it waits, with the caller never cancelling. The gate refuses the drop before it is invoked, so the
+    /// fence is reversed on the healthy holder before the lock is released and the delete reports the timeout itself,
+    /// instead of leaving the target fenced for an operator.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_drop_deadline_expires_while_it_waits_for_the_holder_gate
+    {
+        private GatedTarget _gated = null!;
+        private DmsDataStoreDeleteResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _gated = new GatedTarget(SpyDmsTargetEngine.DropInstance);
+            _gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeDrop);
+            Task<DmsDataStoreDeleteResult> delete = _gated.Target.DeleteAsync();
+            await ReadStartedAsync(_gated.Waiting, delete);
+            _gated.Target.Harness.Time.Advance(CommandTimeout);
+            _gated.Probe.SetResult(true);
+            _result = await delete;
+        }
+
+        [Test]
+        public void It_reports_the_timeout_at_the_drop() =>
+            FailureOf(_result)
+                .Should()
+                .Be(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.TimedOut,
+                        DmsProvisioningDiagnostic.ForOperation(DmsDataStoreProvisioningService.DropTargetStep)
+                    )
+                );
+
+        [Test]
+        public void It_never_sends_the_drop_and_reverses_the_fence_before_the_lock_is_released() =>
+            _gated.Sent.Should().Equal((SpyDmsTargetEngine.Fence, 0), (SpyDmsTargetEngine.Unfence, 0));
+
+        [Test]
+        public void It_leaves_the_target_accepting_connections_without_residue_or_settlement_reads()
+        {
+            _gated.Target.State.Should().BeOfType<DmsLiveTargetState.Present>();
+            ResidueOf(_result).Should().BeEmpty();
+            _gated
+                .Target.Members.Should()
+                .Equal(Seq([.. _released, SpyDmsTargetEngine.DropInstance, SpyDmsTargetEngine.Unfence]));
+            _gated.Target.Releases.Should().Be(1);
+        }
+    }
+
+    /// <summary>
+    /// The conservative side of the deadline exit: once the drop ran under the gate, its expired deadline proves
+    /// nothing. The fence is not reversed; the drop is settled by reading state after the lock is released, and our
+    /// instance found still fenced is a drop failure for inspection with the fenced target reported.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_drop_deadline_expires_once_the_drop_was_handed_to_the_driver
+    {
+        private OwnedTarget _target = null!;
+        private DmsDataStoreDeleteResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _target = new OwnedTarget();
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _target.Harness.Engine.OnDropInstance = (_, _, _, token) =>
+                _target.Harness.OnlyHolder.RunAsync<DmsCommandOutcome>(
+                    async driverToken =>
+                    {
+                        running.SetResult();
+                        await Task.Delay(Timeout.InfiniteTimeSpan, driverToken);
+                        return new DmsCommandOutcome.Succeeded();
+                    },
+                    CommandTimeout,
+                    token
+                );
+            Task<DmsDataStoreDeleteResult> delete = _target.DeleteAsync();
+            await ReadStartedAsync(running, delete);
+            _target.Harness.Time.Advance(CommandTimeout);
+            _result = await delete;
+        }
+
+        [Test]
+        public void It_reports_our_fenced_instance_as_drop_failed_for_inspection_with_the_fenced_target()
+        {
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.DropFailed,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ResolveDeletionStep
+                    )
+                );
+            ResidueOf(_result).Should().Equal(_fencedResidue);
+        }
+
+        [Test]
+        public void It_settles_by_reading_state_and_never_reverses_the_fence() =>
+            _target
+                .Members.Should()
+                .Equal(Seq([.. _released, SpyDmsTargetEngine.DropInstance, .. _settlementReads]));
+    }
+
+    /// <summary>
+    /// The fence sibling: the heartbeat probe finds the lock gone while the fence waits for the gate. The fence was
+    /// never sent, so the loss is transient and nothing is read after the lock, as for loss before the fence.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_while_the_fence_waits_for_the_holder_gate
+    {
+        private GatedTarget _gated = null!;
+        private DmsDataStoreDeleteResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _gated = new GatedTarget(SpyDmsTargetEngine.Fence);
+            _gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeFence);
+            Task<DmsDataStoreDeleteResult> delete = _gated.Target.DeleteAsync();
+            await ReadStartedAsync(_gated.Waiting, delete);
+            _gated.Probe.SetResult(false);
+            _result = await delete;
+        }
+
+        [Test]
+        public void It_is_transient_lock_lost_at_the_fence() =>
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.FenceStep
+                    )
+                );
+
+        [Test]
+        public void It_sends_nothing_and_reads_nothing_after_the_lock()
+        {
+            _gated.Sent.Should().BeEmpty();
+            _gated.Target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence]));
+            ResidueOf(_result).Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
     /// Round-1 review finding 1: loss declared while an engine call that was handed the fence or the drop
     /// returns an unknown outcome, or throws. The scope turns both into a loss cancellation; neither proves that
     /// nothing was sent, so the mutation stays in doubt and is settled by reading state after the lock.
