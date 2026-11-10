@@ -352,135 +352,14 @@ Describe 'DocumentCacheAdminBackfill module' {
         }
     }
 
-    Context 'Publish-DocumentCacheAdminBackfillReleaseAsset' {
-        BeforeAll {
-            $script:sbomName = 'EdFi.Api.DocumentCacheAdmin-SBOM.zip'
-            $script:provenanceName = 'edfiApiDocumentCacheAdmin.intoto.jsonl'
-
-            function New-SbomZip {
-                # Built with ZipFile rather than Compress-Archive, uncompressed, so its bytes differ from
-                # what the function would build from the same manifest.
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Writes only a disposable zip in Pester TestDrive.')]
-                param([string] $Content, [string] $EntryName = 'manifest.spdx.json')
-                $path = Join-Path $TestDrive "$([guid]::NewGuid()).zip"
-                $zip = [IO.Compression.ZipFile]::Open($path, [IO.Compression.ZipArchiveMode]::Create)
-                try {
-                    $entry = $zip.CreateEntry($EntryName, [IO.Compression.CompressionLevel]::NoCompression)
-                    $writer = [IO.StreamWriter]::new($entry.Open())
-                    try { $writer.Write($Content) }
-                    finally { $writer.Dispose() }
-                }
-                finally { $zip.Dispose() }
-                return $path
-            }
-
-            function New-AssetFile {
-                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Writes only a disposable file in Pester TestDrive.')]
-                param([string] $Content)
-                $path = Join-Path $TestDrive ([guid]::NewGuid())
-                [IO.File]::WriteAllText($path, $Content)
-                return $path
-            }
-
-            function Get-UploadedManifest([byte[]] $Zip) {
-                $archive = [IO.Compression.ZipArchive]::new([IO.MemoryStream]::new($Zip))
-                try {
-                    @($archive.Entries).Count | Should -Be 1
-                    $reader = [IO.StreamReader]::new($archive.GetEntry('manifest.spdx.json').Open())
-                    try { return $reader.ReadToEnd() }
-                    finally { $reader.Dispose() }
-                }
-                finally { $archive.Dispose() }
-            }
-
-            function Invoke-TestAttach {
-                Publish-DocumentCacheAdminBackfillReleaseAsset -ReleaseTag 'v8.1.0' `
-                    -ManifestFile $script:manifest -ProvenanceFile $script:provenance `
-                    -GetRelease $script:getRelease -DownloadAsset $script:downloadAsset -UploadAsset $script:uploadAsset
-            }
-        }
-
-        BeforeEach {
-            $script:manifestText = '{"spdxVersion":"SPDX-2.2","name":"EdFi.Api.DocumentCacheAdmin 8.1.0"}'
-            $script:provenanceText = '{"payloadType":"application/vnd.in-toto+json"}'
-            $directory = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid()))
-            $script:manifest = Join-Path $directory 'manifest.spdx.json'
-            [IO.File]::WriteAllText($script:manifest, $script:manifestText)
-            $script:provenance = Join-Path $directory $script:provenanceName
-            [IO.File]::WriteAllText($script:provenance, $script:provenanceText)
-
-            # Asset name to the file holding its bytes on the release.
-            $script:existing = [ordered]@{}
-            $script:lookups = [Collections.Generic.List[string]]::new()
-            $script:downloads = [Collections.Generic.List[string]]::new()
-            $script:uploads = [Collections.Generic.List[object]]::new()
-            $script:release = 'present'
-            $script:getRelease = {
-                param($Tag)
-                $script:lookups.Add($Tag)
-                if ($script:release -ne 'present') { return $null }
-                return [pscustomobject]@{
-                    id     = 42
-                    assets = @($script:existing.Keys | ForEach-Object { [pscustomobject]@{ name = $_; url = "https://api.invalid/assets/$_" } })
-                }
-            }
-            $script:downloadAsset = {
-                param($Asset, $Destination)
-                $script:downloads.Add($Asset.name)
-                Copy-Item -LiteralPath $script:existing[$Asset.name] -Destination $Destination
-            }
-            $script:uploadAsset = {
-                param($Release, $Name, $Path)
-                $script:uploads.Add([pscustomobject]@{ ReleaseId = $Release.id; Name = $Name; Bytes = [IO.File]::ReadAllBytes($Path) })
-            }
-        }
-
-        It 'uploads both assets when the release has neither' {
-            Invoke-TestAttach
-            $script:lookups | Should -Be @('v8.1.0')
-            @($script:uploads.Name) | Should -Be @($script:sbomName, $script:provenanceName)
-            @($script:uploads.ReleaseId) | Should -Be @(42, 42)
-            Get-UploadedManifest $script:uploads[0].Bytes | Should -BeExactly $script:manifestText
-            [Text.Encoding]::UTF8.GetString($script:uploads[1].Bytes) | Should -BeExactly $script:provenanceText
-        }
-
-        It 'uploads nothing when both assets already hold this content, though the SBOM zip bytes differ' {
-            $script:existing[$script:sbomName] = New-SbomZip $script:manifestText
-            $script:existing[$script:provenanceName] = New-AssetFile $script:provenanceText
-            { Invoke-TestAttach } | Should -Not -Throw
-            @($script:downloads) | Should -Be @($script:sbomName, $script:provenanceName)
-            $script:uploads.Count | Should -Be 0
-        }
-
-        It 'uploads only the provenance when the SBOM is already present with this content' {
-            $script:existing[$script:sbomName] = New-SbomZip $script:manifestText
-            Invoke-TestAttach
-            @($script:uploads.Name) | Should -Be @($script:provenanceName)
-        }
-
-        It 'refuses, uploading nothing, an SBOM whose manifest differs' {
-            $script:existing[$script:sbomName] = New-SbomZip '{"spdxVersion":"SPDX-2.2","name":"another build"}'
-            { Invoke-TestAttach } | Should -Throw "*$script:sbomName*different*"
-            $script:uploads.Count | Should -Be 0
-        }
-
-        It 'refuses, uploading nothing, an SBOM zip that does not hold exactly the manifest' {
-            $script:existing[$script:sbomName] = New-SbomZip $script:manifestText -EntryName 'other.json'
-            { Invoke-TestAttach } | Should -Throw "*$script:sbomName*different*"
-            $script:uploads.Count | Should -Be 0
-        }
-
-        It 'refuses, uploading nothing, a provenance whose bytes differ' {
-            $script:existing[$script:provenanceName] = New-AssetFile '{"payloadType":"another"}'
-            { Invoke-TestAttach } | Should -Throw "*$script:provenanceName*different*"
-            $script:uploads.Count | Should -Be 0
-        }
-
-        It 'refuses a tag with no GitHub release' {
-            $script:release = 'absent'
-            { Invoke-TestAttach } | Should -Throw '*v8.1.0*'
-            $script:uploads.Count | Should -Be 0
-        }
+    It 'exports only the backfill functions, and leaves release assets to eng/ci/release-assets.psm1' {
+        @((Get-Module DocumentCacheAdminBackfill).ExportedFunctions.Keys | Sort-Object) | Should -Be @(
+            'Assert-DocumentCacheAdminBackfillSource'
+            'Assert-DocumentCacheAdminBackfillTag'
+            'Get-DocumentCacheAdminBackfillSourceInput'
+            'Get-DocumentCacheAdminBackfillVersion'
+            'Publish-DocumentCacheAdminBackfill'
+        )
     }
 }
 
@@ -508,8 +387,75 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
             return @(Get-JobStep $Job | Where-Object { $_.Contains($Text) })
         }
 
+        function script:Get-StepRun([string] $Step) {
+            # The block scalar under the step's run: key, without its indentation.
+            $run = [Collections.Generic.List[string]]::new()
+            $inRun = $false
+            foreach ($line in $Step -split '\r?\n') {
+                if ($line -cmatch '^        run: \|[ \t]*$') { $inRun = $true; continue }
+                if (-not $inRun) { continue }
+                if ($line -match '^[ \t]*$') { $run.Add(''); continue }
+                if (-not $line.StartsWith('          ')) { break }
+                $run.Add($line.Substring(10))
+            }
+            return ($run -join "`n")
+        }
+
+        function script:Get-ScriptAst([string] $Script) {
+            # Read with the PowerShell parser, so line breaks and backtick continuations do not matter.
+            $errors = $null
+            $ast = [Management.Automation.Language.Parser]::ParseInput($Script, [ref] $null, [ref] $errors)
+            @($errors).Count | Should -Be 0 -Because 'the run script parses as PowerShell'
+            return $ast
+        }
+
+        function script:Get-ScriptCommand([Management.Automation.Language.Ast] $Ast, [string] $Name) {
+            return @($Ast.FindAll({
+                        param($node)
+                        $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq $Name
+                    }, $true))
+        }
+
+        function script:Get-CommandArgument([Management.Automation.Language.CommandAst] $Command) {
+            # Each named parameter of a call to the element that is its argument.
+            $arguments = @{}
+            $elements = $Command.CommandElements
+            for ($i = 1; $i -lt $elements.Count; $i++) {
+                $parameter = $elements[$i]
+                if ($parameter -isnot [Management.Automation.Language.CommandParameterAst]) { continue }
+                $value = $parameter.Argument
+                if ($null -eq $value -and $i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [Management.Automation.Language.CommandParameterAst]) {
+                    $i++
+                    $value = $elements[$i]
+                }
+                $arguments[$parameter.ParameterName] = $value
+            }
+            return $arguments
+        }
+
+        function script:ConvertTo-AssetText([Management.Automation.Language.Ast] $List) {
+            # Each hashtable in the -Asset argument as 'Name|Path|Comparison', with each value as written,
+            # less the quotes of a constant.
+            foreach ($table in $List.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true)) {
+                $values = @{}
+                foreach ($pair in $table.KeyValuePairs) {
+                    $expression = if ($pair.Item2 -is [Management.Automation.Language.PipelineAst]) { $pair.Item2.GetPureExpression() }
+                    $values[$pair.Item1.Extent.Text] = if ($expression -is [Management.Automation.Language.StringConstantExpressionAst]) { $expression.Value } else { $pair.Item2.Extent.Text }
+                }
+                @($values.Keys | Sort-Object) -join ',' | Should -BeExactly 'Comparison,Name,Path' -Because 'each asset names exactly its Name, Path and Comparison'
+                "$($values['Name'])|$($values['Path'])|$($values['Comparison'])"
+            }
+        }
+
+        function script:Get-VerifyRun {
+            $install = @(Find-Step (Get-Job 'verify') 'dotnet tool install')
+            $install.Count | Should -Be 1 -Because 'one step installs the promoted tool'
+            return Get-StepRun $install[0]
+        }
+
         $script:trustedGate = "if: `${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}"
         $script:feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
+        $script:releaseViewUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json'
     }
 
     It 'is dispatch-only with exactly the release_tag and publish_package inputs' {
@@ -519,10 +465,10 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $inputs = [regex]::Match($events, '(?ms)^    inputs:\r?\n(.*)').Groups[1].Value
         @([regex]::Matches($inputs, '(?m)^      (?<name>[A-Za-z_]\w*):') | ForEach-Object { $_.Groups['name'].Value }) |
             Should -Be @('release_tag', 'publish_package')
-        $tag = [regex]::Match($inputs, '(?ms)^      release_tag:\r?\n(?<body>(?:        .*\r?\n)+)').Groups['body'].Value
+        $tag = [regex]::Match($inputs, '(?m)^      release_tag:\r?\n(?<body>(?:        [^\r\n]*\r?\n)+)').Groups['body'].Value
         $tag | Should -Match '(?m)^        type: string\r?$'
         $tag | Should -Match '(?m)^        required: true\r?$'
-        $publish = [regex]::Match($inputs, '(?ms)^      publish_package:\r?\n(?<body>(?:        .*\r?\n?)+)').Groups['body'].Value
+        $publish = [regex]::Match($inputs, '(?m)^      publish_package:\r?\n(?<body>(?:        [^\r\n]*\r?\n?)+)').Groups['body'].Value
         $publish | Should -Match '(?m)^        type: boolean\r?$'
         $publish | Should -Match '(?m)^        default: false\r?$'
     }
@@ -680,7 +626,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $attach | Should -Match '(?m)^      contents: write\r?$'
     }
 
-    It 'attaches through the module, after checking out the dispatch commit and downloading both assets' {
+    It 'attaches with Publish-ReleaseAsset, after checking out the dispatch commit and downloading both assets' {
         $attach = Get-Job 'attach'
         $steps = @(Get-JobStep $attach)
         $steps[0] | Should -Match 'uses: actions/checkout@'
@@ -689,22 +635,126 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
             'uses: actions/checkout@'
             'secure-download-artifact@'
             'name: edfiApiDocumentCacheAdmin.intoto.jsonl'
-            'Publish-DocumentCacheAdminBackfillReleaseAsset'
+            'Publish-ReleaseAsset'
         ) | ForEach-Object { $attach.IndexOf($_, [StringComparison]::Ordinal) }
         $order | ForEach-Object { $_ | Should -BeGreaterThan -1 }
         for ($i = 1; $i -lt $order.Count; $i++) {
             $order[$i] | Should -BeGreaterThan $order[$i - 1] -Because "step $i must follow step $($i - 1)"
         }
-        $step = @(Find-Step $attach 'Publish-DocumentCacheAdminBackfillReleaseAsset')
+
+        $step = @(Find-Step $attach 'Publish-ReleaseAsset')
         $step.Count | Should -Be 1
         $step[0] | Should -Match '(?m)^          RELEASE_TAG: \$\{\{ inputs\.release_tag \}\}\r?$'
-        $step[0] | Should -Match '-ReleaseTag \$env:RELEASE_TAG\b'
-        $step[0] | Should -Match '-ManifestFile \$env:MANIFEST_FILE\b'
-        $step[0] | Should -Match '-ProvenanceFile edfiApiDocumentCacheAdmin\.intoto\.jsonl\b'
+        $step[0] | Should -Match '(?m)^          GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}\r?$'
+        $run = Get-StepRun $step[0]
+        $run | Should -Not -Match '\$\{\{'
+        $ast = Get-ScriptAst $run
+        # The permanent module, which outlives this workflow, never the backfill module.
+        @(Get-ScriptCommand $ast 'Import-Module' | ForEach-Object { $_.CommandElements[1].Extent.Text }) |
+            Should -Be @('./eng/ci/release-assets.psm1')
+        $calls = @(Get-ScriptCommand $ast 'Publish-ReleaseAsset')
+        $calls.Count | Should -Be 1
+        $arguments = Get-CommandArgument $calls[0]
+        $arguments['Repository'].Extent.Text | Should -BeExactly '$env:GITHUB_REPOSITORY'
+        $arguments['ReleaseTag'].Extent.Text | Should -BeExactly '$env:RELEASE_TAG'
+        $arguments['Token'].Extent.Text | Should -BeExactly '$env:GITHUB_TOKEN'
+        @(ConvertTo-AssetText $arguments['Asset']) | Should -Be @(
+            'EdFi.Api.DocumentCacheAdmin-SBOM.zip|$env:MANIFEST_FILE|ZipEntry'
+            'edfiApiDocumentCacheAdmin.intoto.jsonl|edfiApiDocumentCacheAdmin.intoto.jsonl|Bytes'
+        )
+    }
+
+    It 'verifies the promoted version after promote, with no environment, no secret and read-only contents' {
+        $verify = Get-Job 'verify'
+        $verify | Should -Not -BeNullOrEmpty
+        Get-JobNeed $verify | Should -Be @('build', 'promote')
+        $verify | Should -Not -Match '(?m)^\s*environment:'
+        $verify | Should -Not -Match 'secrets\.'
+        $permissions = [regex]::Match($verify, '(?m)^    permissions:\r?\n(?<body>(?:      [^\r\n]*\r?\n?)+)').Groups['body'].Value
+        @($permissions -split '\r?\n' | Where-Object { $_ }) | Should -Be @('      contents: read')
+        $setup = @(Find-Step $verify 'uses: actions/setup-dotnet@')
+        $setup.Count | Should -Be 1
+        $setup[0] | Should -Match "(?m)^          dotnet-version: '10\.0\.x'\r?$"
+    }
+
+    It 'installs the promoted version, read anonymously from the Release view the tool README documents, into a fresh tool path' {
+        $step = @(Find-Step (Get-Job 'verify') 'dotnet tool install')[0]
+        $step | Should -Match '(?m)^          TOOL_VERSION: \$\{\{ needs\.build\.outputs\.version \}\}\r?$'
+        [regex]::Match($step, '(?m)^          RELEASE_VIEW_URL: "(?<url>[^"\r\n]+)"\r?$').Groups['url'].Value | Should -BeExactly $script:releaseViewUrl
+        (Get-Content (Join-Path $script:repoRoot 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md') -Raw).Contains($script:releaseViewUrl) |
+            Should -BeTrue -Because 'the tool README documents this feed'
+
+        $run = Get-VerifyRun
+        $run | Should -Not -Match '\$\{\{'
+        $run | Should -Match "(?m)^\`$toolPath = Join-Path \`$env:RUNNER_TEMP '[^'\r\n]+'\r?$"
+        # A private global-packages folder, so the install cannot be served from a copy on the runner.
+        $run | Should -Match "(?m)^\`$env:NUGET_PACKAGES = Join-Path \`$env:RUNNER_TEMP '[^'\r\n]+'\r?$"
+        $installs = @(Get-ScriptCommand (Get-ScriptAst $run) 'dotnet')
+        $installs.Count | Should -Be 1
+        $elements = @($installs[0].CommandElements | ForEach-Object { $_.Extent.Text })
+        ($elements[0..3] -join ' ') | Should -BeExactly 'dotnet tool install EdFi.Api.DocumentCacheAdmin'
+        foreach ($option in ([ordered]@{ '--tool-path' = '$toolPath'; '--version' = '$env:TOOL_VERSION'; '--source' = '$env:RELEASE_VIEW_URL' }).GetEnumerator()) {
+            $at = [Array]::IndexOf($elements, $option.Key)
+            $at | Should -BeGreaterThan 3 -Because "the install passes $($option.Key)"
+            $elements[$at + 1] | Should -BeExactly $option.Value
+        }
+        # Each attempt reads the view again rather than a cached answer from the attempt before.
+        $elements | Should -Contain '--no-http-cache'
+        $elements | Should -Not -Contain '--global'
+        $elements | Should -Not -Contain '--add-source'
+    }
+
+    It 'retries the install up to 10 times, 30 seconds apart, and fails when the last attempt fails' {
+        $ast = Get-ScriptAst (Get-VerifyRun)
+        $loops = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.ForStatementAst] }, $true))
+        $loops.Count | Should -Be 1
+        $loop = $loops[0]
+        $loop.Initializer.Extent.Text | Should -BeExactly '$attempt = 1'
+        $loop.Condition.Extent.Text | Should -BeExactly '$attempt -le $attempts'
+        $loop.Iterator.Extent.Text | Should -BeExactly '$attempt++'
+        @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$attempts' }, $true) |
+                ForEach-Object { $_.Right.Extent.Text }) | Should -Be @('10')
+        @(Get-ScriptCommand $loop.Body 'dotnet').Count | Should -Be 1 -Because 'the install runs inside the loop'
+
+        $checks = @($loop.Body.FindAll({ param($node) $node -is [Management.Automation.Language.IfStatementAst] }, $true))
+        $success = @($checks | Where-Object { $_.Clauses[0].Item1.Extent.Text -ceq '$LASTEXITCODE -eq 0' })
+        $last = @($checks | Where-Object { $_.Clauses[0].Item1.Extent.Text -ceq '$attempt -eq $attempts' })
+        $success.Count | Should -Be 1
+        $success[0].Clauses[0].Item2.Extent.Text | Should -Match '\Abreak\z|\A\{\s*break\s*\}\z'
+        $last.Count | Should -Be 1
+        @($last[0].Clauses[0].Item2.FindAll({ param($node) $node -is [Management.Automation.Language.ThrowStatementAst] }, $true)).Count | Should -Be 1
+        # A success on the last attempt breaks before the last-attempt check can throw.
+        $success[0].Extent.StartOffset | Should -BeLessThan $last[0].Extent.StartOffset
+        $sleep = @(Get-ScriptCommand $loop.Body 'Start-Sleep')
+        $sleep.Count | Should -Be 1
+        $sleep[0].Extent.Text | Should -BeExactly 'Start-Sleep -Seconds 30'
+        $sleep[0].Extent.StartOffset | Should -BeGreaterThan $last[0].Extent.StartOffset
+    }
+
+    It 'runs dms-document-cache --help from the tool path and requires exit 0, Usage: and status' {
+        $run = Get-VerifyRun
+        $ast = Get-ScriptAst $run
+        $help = @($ast.FindAll({
+                    param($node)
+                    $node -is [Management.Automation.Language.CommandAst] -and
+                    $node.InvocationOperator -eq [Management.Automation.Language.TokenKind]::Ampersand -and
+                    $node.CommandElements[0].Extent.Text -ceq "(Join-Path `$toolPath 'dms-document-cache')"
+                }, $true))
+        $help.Count | Should -Be 1
+        @($help[0].CommandElements | Select-Object -Skip 1 | ForEach-Object { $_.Extent.Text }) | Should -Be @('--help')
+        # After the install loop.
+        $loop = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.ForStatementAst] }, $true))[0]
+        $help[0].Extent.StartOffset | Should -BeGreaterThan ($loop.Extent.EndOffset - 1)
+
+        $run | Should -Match "(?m)^\`$help = & \(Join-Path \`$toolPath 'dms-document-cache'\) --help \| Out-String\r?$"
+        $run | Should -Match '(?m)^\$helpExit = \$LASTEXITCODE\r?$'
+        $run | Should -Match '(?m)^if \(\$helpExit -ne 0\) \{ throw [^\r\n]+ \}\r?$'
+        $run | Should -Match "(?m)^foreach \(\`$expected in 'Usage:', 'status'\) \{\r?$"
+        $run | Should -Match '(?m)^    if \(-not \$help\.Contains\(\$expected\)\) \{ throw [^\r\n]+ \}\r?$'
     }
 
     It 'gates <Id> on the publish switch and the main branch only' -ForEach @(
-        @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }
+        @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }, @{ Id = 'verify' }
     ) {
         $job = Get-Job $Id
         $job | Should -Not -BeNullOrEmpty
@@ -712,19 +762,9 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'binds only publish and promote to the publishing environment' {
-        $bound = foreach ($id in 'build', 'sbom-create-document-cache-admin', 'provenance-create-document-cache-admin', 'publish', 'promote', 'attach') {
+        $bound = foreach ($id in 'build', 'sbom-create-document-cache-admin', 'provenance-create-document-cache-admin', 'publish', 'promote', 'attach', 'verify') {
             if ((Get-Job $id) -match '(?m)^    environment: publishing\r?$') { $id }
         }
         @($bound) | Sort-Object | Should -Be @('promote', 'publish')
-    }
-}
-
-Describe 'DocumentCacheAdmin backfill test file registration' {
-    BeforeAll {
-        $script:pullRequestWorkflow = Get-Content (Join-Path $script:repoRoot '.github/workflows/on-dms-pullrequest.yml') -Raw
-    }
-
-    It 'is listed in the Pester allowlist, because a file under eng/ci/tests runs in no lane otherwise' {
-        $script:pullRequestWorkflow | Should -Match '(?m)^\s+"eng/ci/tests/DocumentCacheAdminBackfill\.Tests\.ps1",?$'
     }
 }

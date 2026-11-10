@@ -274,7 +274,20 @@ Describe 'backfill-document-cache-admin.yml publishing credentials' {
         $script:content = Get-Content (Join-Path $script:workflowRoot 'backfill-document-cache-admin.yml') -Raw
         $script:jobs = Get-WorkflowJobTable $script:content
         $script:jobs.Count | Should -BeGreaterThan 0
-        $script:gated = @('publish', 'promote', 'attach')
+        $script:gated = @('publish', 'promote', 'attach', 'verify')
+    }
+
+    It 'has its own test file in the DMS pull request Pester allowlist' {
+        # This file always runs in that lane. eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1 runs only
+        # when it is listed, so it cannot report its own removal from the list.
+        $lines = (Get-Content (Join-Path $script:workflowRoot 'on-dms-pullrequest.yml') -Raw) -split '\r?\n'
+        $start = [Array]::FindIndex([string[]] $lines, [Predicate[string]] { param($line) $line -match '^[ \t]+\$paths = @\([ \t]*$' })
+        $start | Should -BeGreaterThan -1
+        $end = $start + 1
+        while ($end -lt $lines.Count -and $lines[$end] -notmatch '^[ \t]+\)[ \t]*$') { $end++ }
+        $lines[$end + 1] | Should -Match '^[ \t]+\$result = Invoke-Pester -Path \$paths\b' -Because 'the list is what the lane runs'
+        @($lines[($start + 1)..($end - 1)] | ForEach-Object { $_.Trim().TrimEnd(',').Trim('"') }) |
+            Should -Contain 'eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1'
     }
 
     It 'keeps every secret out of the workflow-wide env' {
@@ -296,7 +309,7 @@ Describe 'backfill-document-cache-admin.yml publishing credentials' {
     }
 
     It 'states the publish switch in the condition of <Id>' -ForEach @(
-        @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }
+        @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }, @{ Id = 'verify' }
     ) {
         Get-JobCondition $script:jobs[$Id] | Should -Match '^inputs\.publish_package &&'
     }

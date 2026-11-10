@@ -40,7 +40,8 @@ token unless a read actually fails without one.
   `dms-pre-*` tag and promoted by `on-release.yml` on a `v*` tag, in the same `publishing` jobs.
   `backfill-document-cache-admin.yml` is a one-time, dispatch-only workflow whose `publish` and
   `promote` jobs run in `publishing` only from `main` with `publish_package=true`. It is removed
-  after the 8.1.0 backfill.
+  after the 8.1.0 backfill; see
+  [The one-time DocumentCacheAdmin backfill](#the-one-time-documentcacheadmin-backfill).
 - Inside those jobs, only the step that pushes, promotes or logs in reads the token. No workflow
   puts a publishing token in workflow-wide or job-wide `env`.
 - `EDFI_BUILD_AGENT_PAT` creates the prerelease tags, and the tag ruleset will let its identity
@@ -215,6 +216,43 @@ keeps the original commit. What to do depends on whether that commit includes th
   - **A stable release.** A release maintainer tags the next version on a commit that includes this
     change.
 - **A run waiting for approval.** A reviewer approves it under **Deployments**, or rejects it.
+
+## The one-time DocumentCacheAdmin backfill
+
+`EdFi.Api.DocumentCacheAdmin` 8.1.0 was released before the tool's release jobs existed.
+`backfill-document-cache-admin.yml` publishes it once. A release maintainer runs it:
+
+1. Dispatch it from `main` soon after the change that adds it merges. It builds the dispatch
+   commit at version 8.1.0 and refuses unless that commit's build inputs equal those of `v8.1.0`,
+   so a later change on `main` to any build input it compares makes the run refuse.
+2. Start a dry run first:
+
+   ```shell
+   gh workflow run backfill-document-cache-admin.yml --ref main -f release_tag=v8.1.0 -f publish_package=false
+   ```
+
+   The build, SBOM and provenance jobs must pass. The build job's `Require the build inputs of the
+   release tag` step must log that the build inputs equal those of `v8.1.0` and name no differing
+   input; when inputs differ, it names each one and the run stops there. The `publish`, `promote`,
+   `attach` and `verify` jobs are skipped.
+3. Start the publishing run:
+
+   ```shell
+   gh workflow run backfill-document-cache-admin.yml --ref main -f release_tag=v8.1.0 -f publish_package=true
+   ```
+
+   The `publish` and `promote` jobs run in the `publishing` environment and wait for its approval
+   if the environment requires one. `attach` then adds the SBOM and provenance to the `v8.1.0`
+   release, and `verify` installs 8.1.0 from the Release view, as the tool README documents, and
+   runs its help.
+4. If a job fails, use **Re-run failed jobs** in the same run while GitHub still retains its
+   artifacts. A new dispatch builds new package bytes, so it refuses once the version is on the
+   feed.
+5. Once the publishing run passes, delete the workflow, `eng/ci/DocumentCacheAdminBackfill.psm1`,
+   `eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1`, the backfill `Describe` in
+   `eng/ci/tests/ReleasePublishingCredentials.Tests.ps1`, the test file's entry in the Pester
+   allowlist in `on-dms-pullrequest.yml`, the backfill lines elsewhere on this page, and this
+   section. Keep `eng/ci/release-assets.psm1`, which the release workflows also use.
 
 ## Read-only inspection
 

@@ -12,11 +12,15 @@
 # eng/ci/DocumentCacheAdminBackfill.psm1 lists the inputs). Run it soon after merge: a later change to
 # any of those inputs on main makes it refuse.
 #
+# docs/CI-PUBLISHING-CREDENTIALS.md describes how to run it: a dry run first, then the publishing run.
+#
 # Once 8.1.0 is backfilled, delete this workflow, eng/ci/DocumentCacheAdminBackfill.psm1,
 # eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1, the 'backfill-document-cache-admin.yml publishing
 # credentials' Describe in eng/ci/tests/ReleasePublishingCredentials.Tests.ps1, the
 # DocumentCacheAdminBackfill.Tests.ps1 entry in the Pester allowlist in
-# .github/workflows/on-dms-pullrequest.yml, and the backfill lines in docs/CI-PUBLISHING-CREDENTIALS.md.
+# .github/workflows/on-dms-pullrequest.yml, and from docs/CI-PUBLISHING-CREDENTIALS.md both the
+# backfill lines and the 'The one-time DocumentCacheAdmin backfill' section. Keep
+# eng/ci/release-assets.psm1, which the release workflows attach with too.
 
 name: Backfill EdFi.Api.DocumentCacheAdmin
 on:
@@ -249,8 +253,11 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: EdFi.Api.DocumentCacheAdmin-NuGet
-      # A version an earlier run already pushed with these exact bytes is not pushed again, so a
-      # re-run continues to promote and attach.
+      # Re-running the failed jobs of this same run reuses its artifact, so a push that landed before
+      # the job failed is recognized by its bytes and not pushed again, and promote and attach
+      # continue. A new dispatch builds new bytes, because the dispatch commit's SHA is stamped into
+      # the assemblies and the package archive is not reproducible, so it refuses once the version
+      # is on the feed.
       - name: Verify and Push DocumentCacheAdmin Backfill Package
         env:
           ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
@@ -328,8 +335,53 @@ jobs:
           RELEASE_TAG: ${{ inputs.release_tag }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1
-          Publish-DocumentCacheAdminBackfillReleaseAsset -ReleaseTag $env:RELEASE_TAG `
-              -ManifestFile $env:MANIFEST_FILE `
-              -ProvenanceFile edfiApiDocumentCacheAdmin.intoto.jsonl `
-              -InformationAction Continue
+          Import-Module ./eng/ci/release-assets.psm1
+          Publish-ReleaseAsset -Repository $env:GITHUB_REPOSITORY -ReleaseTag $env:RELEASE_TAG -Token $env:GITHUB_TOKEN -Asset @(
+              @{ Name = 'EdFi.Api.DocumentCacheAdmin-SBOM.zip'; Path = $env:MANIFEST_FILE; Comparison = 'ZipEntry' }
+              @{ Name = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Path = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Comparison = 'Bytes' }
+          ) -InformationAction Continue
+
+  verify:
+    name: Install the promoted DocumentCacheAdmin from the Release view
+    # Installs the promoted version as the tool README documents, reading the Release view
+    # anonymously, and runs its help. It binds no environment and reads no secret.
+    needs: [build, promote]
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install the promoted DocumentCacheAdmin and run its help
+        env:
+          TOOL_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_VIEW_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
+        run: |
+          $toolPath = Join-Path $env:RUNNER_TEMP 'dms-document-cache-release'
+          # A private global-packages folder, so nothing already on the runner can satisfy the install.
+          $env:NUGET_PACKAGES = Join-Path $env:RUNNER_TEMP 'nuget-packages-release'
+
+          # A version promoted moments ago can take a while to appear in the Release view. Each attempt
+          # skips the HTTP cache, so it reads the view again.
+          $attempts = 10
+          for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+              dotnet tool install EdFi.Api.DocumentCacheAdmin --tool-path $toolPath --version $env:TOOL_VERSION `
+                  --source $env:RELEASE_VIEW_URL --no-http-cache
+              if ($LASTEXITCODE -eq 0) { break }
+              if ($attempt -eq $attempts) {
+                  throw "Installing EdFi.Api.DocumentCacheAdmin $env:TOOL_VERSION from the Release view failed $attempts times (exit $LASTEXITCODE)."
+              }
+              Write-Output "Install attempt $attempt of $attempts failed (exit $LASTEXITCODE). Retrying in 30 seconds."
+              Start-Sleep -Seconds 30
+          }
+
+          $help = & (Join-Path $toolPath 'dms-document-cache') --help | Out-String
+          $helpExit = $LASTEXITCODE
+          Write-Output $help
+          if ($helpExit -ne 0) { throw "dms-document-cache --help exited $helpExit." }
+          foreach ($expected in 'Usage:', 'status') {
+              if (-not $help.Contains($expected)) { throw "dms-document-cache --help did not print '$expected'." }
+          }
