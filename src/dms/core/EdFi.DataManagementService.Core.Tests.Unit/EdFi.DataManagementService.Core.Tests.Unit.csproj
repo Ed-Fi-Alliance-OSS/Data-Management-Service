@@ -74,9 +74,7 @@
                 Include="@(PackageVersion)"
                 Condition="'%(Identity)' != '' and '@(SnapshotContractExtensionPackage)' != ''"
             />
-            <_SnapshotContractExtensionApiSchema
-                Include="$(NuGetPackageRoot)$([System.String]::Copy('%(_SnapshotContractExtensionPackageVersion.Identity)').ToLowerInvariant())/%(_SnapshotContractExtensionPackageVersion.Version)/contentFiles/any/any/ApiSchema/ApiSchema.json"
-            >
+            <_SnapshotContractExtensionApiSchema Include="$(NuGetPackageRoot)$([System.String]::Copy('%(_SnapshotContractExtensionPackageVersion.Identity)').ToLowerInvariant())/%(_SnapshotContractExtensionPackageVersion.Version)/contentFiles/any/any/ApiSchema/ApiSchema.json">
                 <PackageId>%(_SnapshotContractExtensionPackageVersion.Identity)</PackageId>
             </_SnapshotContractExtensionApiSchema>
         </ItemGroup>

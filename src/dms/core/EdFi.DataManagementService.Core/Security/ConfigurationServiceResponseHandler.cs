@@ -60,16 +60,26 @@ public class ConfigurationServiceResponseHandler(ILogger<ConfigurationServiceRes
         return response;
     }
 
-    private static string EndpointForLogging(HttpRequestMessage request) =>
-        request.RequestUri?.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries) switch
+    private static string EndpointForLogging(HttpRequestMessage request)
+    {
+        switch (request.RequestUri?.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            [.., "v3", "tenants"] => "v3/tenants",
-            [.., "v3", "dataStores"] => "v3/dataStores",
-            [.., "v3", "apiClients", _] => "v3/apiClients/{id}",
-            [.., "v3", "authorizationMetadata"] => "v3/authorizationMetadata",
-            [.., "v3", "applications", _] => "v3/applications/{id}",
-            [.., "v3", "profiles", _] => "v3/profiles/{id}",
-            [.., "v3", "profiles"] => "v3/profiles",
-            _ => "unrecognized",
-        };
+            case [.., "v3", "tenants"]:
+                return "v3/tenants";
+            case [.., "v3", "dataStores"]:
+                return "v3/dataStores";
+            case [.., "v3", "apiClients", _]:
+                return "v3/apiClients/{id}";
+            case [.., "v3", "authorizationMetadata"]:
+                return "v3/authorizationMetadata";
+            case [.., "v3", "applications", _]:
+                return "v3/applications/{id}";
+            case [.., "v3", "profiles", _]:
+                return "v3/profiles/{id}";
+            case [.., "v3", "profiles"]:
+                return "v3/profiles";
+            default:
+                return "unrecognized";
+        }
+    }
 }
