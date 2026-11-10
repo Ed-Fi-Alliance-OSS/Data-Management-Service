@@ -1814,6 +1814,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      # Supplies eng/ci/release-assets.psm1. It runs first, because a checkout cleans the workspace.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
       - name: Prepare release version
         id: prepare-version
         env:
@@ -1837,48 +1842,19 @@ jobs:
         with:
           name: edfiApiDocumentCacheAdmin.intoto.jsonl
 
+      # An asset the release already has is left as it is when its content matches and refused when
+      # it differs, so re-running this failed job after a partial upload completes the attach.
       - name: Attach DocumentCacheAdmin SBOM and Provenance to release
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = $env:RELEASE_VERSION
-          $repo = "${{ github.repository }}"
-          $token = $env:GITHUB_TOKEN
-
-          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
-          $gh_headers = @{
-              "Accept"        = "application/vnd.github+json"
-              "Authorization" = "Bearer $token"
-          }
-          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
-          $releaseId = $response.id
-
-          # Upload SBOM
-          $sbomFile = "${{ env.MANIFEST_FILE }}"
-          $sbomUploadName = "EdFi.Api.DocumentCacheAdmin-SBOM.zip"
-
-          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
-
-          $uploadUrl = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
-          $gh_headers["Content-Type"] = "application/octet-stream"
-
-          Write-Host "Uploading SBOM as $sbomUploadName"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($uploadUrl)?name=$($sbomUploadName)" `
-              -Headers $gh_headers `
-              -InFile $sbomUploadName
-
-          # Upload Provenance
-          $provenanceFile = "edfiApiDocumentCacheAdmin.intoto.jsonl"
-          $provenanceUploadName = "edfiApiDocumentCacheAdmin.intoto.jsonl"
-
-          Write-Host "Uploading Provenance as $provenanceUploadName"
-          Invoke-RestMethod -Method POST `
-              -Uri "$($uploadUrl)?name=$($provenanceUploadName)" `
-              -Headers $gh_headers `
-              -InFile $provenanceFile
+          Import-Module ./eng/ci/release-assets.psm1
+          Publish-ReleaseAsset -Repository $env:GITHUB_REPOSITORY -ReleaseTag $env:RELEASE_VERSION -Token $env:GITHUB_TOKEN -Asset @(
+              @{ Name = 'EdFi.Api.DocumentCacheAdmin-SBOM.zip'; Path = $env:MANIFEST_FILE; Comparison = 'ZipEntry' }
+              @{ Name = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Path = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Comparison = 'Bytes' }
+          ) -InformationAction Continue
 
   docker-publish-dms:
     name: Publish DMS to Docker Hub
