@@ -359,7 +359,10 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             PostgresqlSecurityQueries.TryParsePrivilegeRow,
             cancellationToken
         );
-        bool? hasPopulatedDocument = await ReadPopulatedPredicateAsync(connection, cancellationToken);
+        (bool? hasPopulatedDocument, bool predicateTablesMalformed) = await ReadPopulatedPredicateAsync(
+            connection,
+            cancellationToken
+        );
 
         return new DmsTargetFacts
         {
@@ -373,7 +376,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             DatabaseLevelObjects = databaseLevelObjects,
             Security = new DmsSecurityFacts.Postgresql(ownership, privileges),
             HasPopulatedDocument = hasPopulatedDocument,
-            PopulatedPredicateTablesMalformed = false,
+            PopulatedPredicateTablesMalformed = predicateTablesMalformed,
         };
     }
 
@@ -699,8 +702,13 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         );
     }
 
-    /// <summary>The Populated predicate, or null when either table it reads is missing.</summary>
-    private static async Task<bool?> ReadPopulatedPredicateAsync(
+    /// <summary>
+    /// The Populated predicate, or null when either table it reads is missing. When both exist but the server refuses
+    /// the predicate for their shape (<see cref="PostgresqlErrorClassifier.IsPredicateShapeRefusal"/>), the predicate is
+    /// null and the tables are reported malformed; every other error, cancellation and a lost connection included,
+    /// propagates unchanged.
+    /// </summary>
+    private static async Task<(bool? HasPopulatedDocument, bool TablesMalformed)> ReadPopulatedPredicateAsync(
         NpgsqlConnection connection,
         CancellationToken cancellationToken
     )
@@ -712,14 +720,25 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         );
         if (!tablesExist)
         {
-            return null;
+            return (null, false);
         }
 
-        return await ReadScalarAsync<bool>(
-            connection,
-            PostgresqlInventoryQueries.HasPopulatedDocument,
-            cancellationToken
-        );
+        try
+        {
+            return (
+                await ReadScalarAsync<bool>(
+                    connection,
+                    PostgresqlInventoryQueries.HasPopulatedDocument,
+                    cancellationToken
+                ),
+                false
+            );
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsPredicateShapeRefusal(exception.SqlState))
+        {
+            return (null, true);
+        }
     }
 
     private static DmsIdentityRead ParseIdentity(string? text)

@@ -7,6 +7,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
@@ -355,6 +356,253 @@ public class PostgresqlDmsTargetEngineFactsTests
             new[] { _nullHash, _integerCount, _textSeedHash, _seedHashMissing }
                 .Should()
                 .AllSatisfy(facts => facts.SchemaNames.Should().Equal(_wellFormed.SchemaNames));
+    }
+
+    /// <summary>
+    /// F-01 (R2-1): the Populated predicate over <c>dms.Document</c> and <c>dms.ResourceKey</c> whose shape the server
+    /// refuses (<c>42703</c>, <c>42883</c>) is reported as malformed predicate tables instead of a driver exception,
+    /// and the validator refuses those facts under both template kinds, with an invalid effective schema still
+    /// reported first. Missing tables keep the null predicate and are not malformed.
+    /// </summary>
+    [TestFixture]
+    public class Given_populated_predicate_tables_of_every_shape
+    {
+        private readonly List<TestDatabase> _databases = [];
+        private DmsTargetFacts _wellFormed = null!;
+        private DmsTargetFacts _keyColumnMissing = null!;
+        private DmsTargetFacts _nameColumnMissing = null!;
+        private DmsTargetFacts _textKey = null!;
+        private DmsTargetFacts _integerName = null!;
+        private DmsTargetFacts _tablesMissing = null!;
+        private DmsTargetValidation _minimalNameMissing = null!;
+        private DmsTargetValidation _populatedNameMissing = null!;
+        private DmsTargetValidation _combined = null!;
+
+        private async Task<(DmsTargetFacts Facts, DmsIdentityRead Identity)> ReadAfterAsync(
+            string purpose,
+            string? alteration
+        )
+        {
+            TestDatabase database = await CreateDmsShapedDatabaseAsync(purpose);
+            _databases.Add(database);
+            if (alteration is not null)
+            {
+                await database.ExecuteAsync(alteration);
+            }
+
+            return await ReadAsync(database);
+        }
+
+        private DmsTargetValidation Owned(
+            DmsTargetFacts facts,
+            DmsIdentityRead identity,
+            string templateKind
+        ) =>
+            DmsTargetValidator.Validate(
+                facts,
+                identity,
+                DmsShapedManifest.For(_wellFormed, templateKind, _projects),
+                _projects,
+                new DmsTargetValidationRule.Reconcile(DmsShapedManifest.SourceIdentity)
+            );
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            (_wellFormed, _) = await ReadAfterAsync("pdform", null);
+            (_keyColumnMissing, _) = await ReadAfterAsync(
+                "pdkey",
+                "ALTER TABLE \"dms\".\"Document\" DROP COLUMN \"ResourceKeyId\" CASCADE;"
+            );
+            (DmsTargetFacts nameMissing, DmsIdentityRead nameMissingIdentity) = await ReadAfterAsync(
+                "pdname",
+                "ALTER TABLE \"dms\".\"ResourceKey\" DROP COLUMN \"ResourceName\";"
+            );
+            _nameColumnMissing = nameMissing;
+            (_textKey, _) = await ReadAfterAsync(
+                "pdtext",
+                "ALTER TABLE \"dms\".\"Document\" DROP CONSTRAINT \"FK_Document_ResourceKey\", ALTER COLUMN \"ResourceKeyId\" TYPE text;"
+            );
+            (_integerName, _) = await ReadAfterAsync(
+                "pdint",
+                "ALTER TABLE \"dms\".\"ResourceKey\" ALTER COLUMN \"ResourceName\" TYPE integer USING \"ResourceKeyId\";"
+            );
+            (_tablesMissing, _) = await ReadAfterAsync("pdnone", "DROP TABLE \"dms\".\"Document\" CASCADE;");
+            (DmsTargetFacts combined, DmsIdentityRead combinedIdentity) = await ReadAfterAsync(
+                "pdboth",
+                "ALTER TABLE \"dms\".\"ResourceKey\" DROP COLUMN \"ResourceName\"; ALTER TABLE \"dms\".\"EffectiveSchema\" ALTER COLUMN \"EffectiveSchemaHash\" DROP NOT NULL; UPDATE \"dms\".\"EffectiveSchema\" SET \"EffectiveSchemaHash\" = NULL;"
+            );
+
+            _minimalNameMissing = Owned(
+                nameMissing,
+                nameMissingIdentity,
+                RestoreManifest.MinimalTemplateKind
+            );
+            _populatedNameMissing = Owned(
+                nameMissing,
+                nameMissingIdentity,
+                RestoreManifest.PopulatedTemplateKind
+            );
+            _combined = Owned(combined, combinedIdentity, RestoreManifest.MinimalTemplateKind);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (TestDatabase database in _databases)
+            {
+                await database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reads_the_predicate_of_well_formed_tables() =>
+            (_wellFormed.HasPopulatedDocument is not null, _wellFormed.PopulatedPredicateTablesMalformed)
+                .Should()
+                .Be((true, false));
+
+        [Test]
+        public void It_reports_a_missing_document_key_column_as_malformed() =>
+            Predicate(_keyColumnMissing).Should().Be((null, true));
+
+        [Test]
+        public void It_reports_a_missing_resource_name_column_as_malformed() =>
+            Predicate(_nameColumnMissing).Should().Be((null, true));
+
+        [Test]
+        public void It_reports_a_text_document_key_as_malformed() =>
+            Predicate(_textKey).Should().Be((null, true));
+
+        [Test]
+        public void It_reports_an_integer_resource_name_as_malformed() =>
+            Predicate(_integerName).Should().Be((null, true));
+
+        [Test]
+        public void It_reports_missing_tables_as_unknown_but_not_malformed() =>
+            Predicate(_tablesMissing).Should().Be((null, false));
+
+        [Test]
+        public void It_still_reads_the_rest_of_the_facts() =>
+            new[] { _keyColumnMissing, _nameColumnMissing, _textKey, _integerName }
+                .Should()
+                .AllSatisfy(facts => facts.EffectiveSchema.Should().Be(_wellFormed.EffectiveSchema));
+
+        [Test]
+        public void It_refuses_an_owned_minimal_target_with_malformed_predicate_tables() =>
+            _minimalNameMissing
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.PopulatedPredicateCheck
+                    )
+                );
+
+        [Test]
+        public void It_refuses_an_owned_populated_target_with_malformed_predicate_tables() =>
+            _populatedNameMissing
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.PopulatedPredicateCheck
+                    )
+                );
+
+        [Test]
+        public void It_reports_an_invalid_effective_schema_before_malformed_predicate_tables() =>
+            _combined
+                .Should()
+                .Be(
+                    new DmsTargetValidation.Invalid(
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsTargetValidator.EffectiveSchemaCheck
+                    )
+                );
+
+        private static (bool? Has, bool Malformed) Predicate(DmsTargetFacts facts) =>
+            (facts.HasPopulatedDocument, facts.PopulatedPredicateTablesMalformed);
+    }
+
+    /// <summary>
+    /// A lost connection during the Populated predicate is never read as malformed predicate tables: the predicate
+    /// query is held behind a lock on <c>dms.Document</c>, its backend is terminated while it waits, and the facts
+    /// read raises the connection failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_session_is_terminated_during_the_populated_predicate
+    {
+        private TestDatabase? _database;
+        private bool _predicateWaitedOnTheLock;
+        private string _waitingQuery = "";
+        private Exception? _factsRead;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("pdlost");
+            PostgresqlDmsTargetEngine engine = Engine();
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                _database.DatabaseName,
+                await _database.CatalogInstanceAsync(),
+                default
+            );
+            await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
+            long pid = session.ServerSession.Id;
+
+            await using NpgsqlConnection locker = await AdminConnection()
+                .OpenAsync(_database.Name, "dms1438-test-locker", default);
+            await using NpgsqlTransaction transaction = await locker.BeginTransactionAsync();
+            await using (
+                NpgsqlCommand lockDocument = new(
+                    "LOCK TABLE \"dms\".\"Document\" IN ACCESS EXCLUSIVE MODE;",
+                    locker,
+                    transaction
+                )
+            )
+            {
+                await lockDocument.ExecuteNonQueryAsync();
+            }
+
+            Task<DmsTargetFacts> read = engine.ReadTargetFactsAsync(session, default);
+            _predicateWaitedOnTheLock = await WaitUntilAsync(
+                async () => await WaitEventOfAsync(pid) == "Lock:relation",
+                TimeSpan.FromSeconds(30)
+            );
+            _waitingQuery = await ScalarOnServerAsync<string>(
+                "SELECT COALESCE((SELECT a.query FROM pg_catalog.pg_stat_activity a WHERE a.pid = @pid), '');",
+                ("pid", (int)pid)
+            );
+            await TerminateBackendAsync(pid);
+            _factsRead = await Record.ExceptionAsync(() => read);
+            await transaction.RollbackAsync();
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_held_the_predicate_query_on_the_lock()
+        {
+            _predicateWaitedOnTheLock.Should().BeTrue();
+            // Npgsql sends the statement without its terminating semicolon.
+            _waitingQuery.Should().Be(PostgresqlInventoryQueries.HasPopulatedDocument.TrimEnd(';'));
+        }
+
+        [Test]
+        public void It_raises_the_connection_failure_from_the_facts_read() =>
+            _factsRead
+                .Should()
+                .NotBeNull()
+                .And.Match<Exception>(exception => PostgresqlErrorClassifier.IsConnectionFailure(exception));
     }
 
     [TestFixture]

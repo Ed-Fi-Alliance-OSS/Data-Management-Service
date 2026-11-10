@@ -253,6 +253,47 @@ public class PostgresqlErrorClassifierTests
     }
 
     [TestFixture]
+    public class Given_states_the_populated_predicate_may_raise
+    {
+        // A missing table or schema, a datatype mismatch, connection loss, cancellation, and a refusal are not shape refusals.
+        private static readonly string[] _others =
+        [
+            "42P01",
+            "3F000",
+            "42804",
+            "08006",
+            "57P01",
+            "57014",
+            "42501",
+            "28000",
+            "53300",
+        ];
+
+        private bool _undefinedColumn;
+        private bool _undefinedFunction;
+        private bool[] _otherVerdicts = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            _undefinedColumn = PostgresqlErrorClassifier.IsPredicateShapeRefusal("42703");
+            _undefinedFunction = PostgresqlErrorClassifier.IsPredicateShapeRefusal("42883");
+            _otherVerdicts = [.. _others.Select(PostgresqlErrorClassifier.IsPredicateShapeRefusal)];
+        }
+
+        [Test]
+        public void It_treats_an_undefined_column_as_a_shape_refusal() => _undefinedColumn.Should().BeTrue();
+
+        [Test]
+        public void It_treats_a_missing_operator_for_the_column_types_as_a_shape_refusal() =>
+            _undefinedFunction.Should().BeTrue();
+
+        [Test]
+        public void It_treats_no_other_state_as_a_shape_refusal() =>
+            _otherVerdicts.Should().AllSatisfy(verdict => verdict.Should().BeFalse());
+    }
+
+    [TestFixture]
     public class Given_states_that_may_be_a_definite_access_refusal
     {
         private static readonly string[] _refusals = ["42501", "28000", "28P01"];

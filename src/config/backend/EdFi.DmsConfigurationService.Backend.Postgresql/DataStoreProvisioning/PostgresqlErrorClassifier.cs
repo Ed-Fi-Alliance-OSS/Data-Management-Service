@@ -63,6 +63,19 @@ internal static class PostgresqlErrorClassifier
     }
 
     /// <summary>
+    /// The states the Populated predicate maps to "its tables are malformed": an undefined column (<c>42703</c>), or no
+    /// operator for the column types the predicate compares (<c>42883</c>, a <c>text</c> key joined to a
+    /// <c>smallint</c> one, an <c>integer</c> name under <c>LIKE</c>). Both are raised at parse time in the query's own
+    /// response, whatever rows the tables hold, and say nothing about the connection. Only the predicate's fixed query
+    /// may use this: in another query <c>42883</c> could mean a missing function rather than a column's type.
+    /// </summary>
+    public static bool IsPredicateShapeRefusal(string sqlState)
+    {
+        ArgumentNullException.ThrowIfNull(sqlState);
+        return sqlState is PostgresErrorCodes.UndefinedColumn or PostgresErrorCodes.UndefinedFunction;
+    }
+
+    /// <summary>
     /// A definite refusal for lack of a privilege: <c>42501</c> (a denied read, or <c>CONNECT</c> denied on the
     /// database) or class <c>28</c> (the server's authentication rules reject this role for this database).
     /// Nothing was read or opened, and retrying without an operator changing a grant cannot succeed.
