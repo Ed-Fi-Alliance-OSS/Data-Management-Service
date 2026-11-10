@@ -192,20 +192,9 @@ public sealed partial class PostgresqlDmsTargetEngine
             cancellationToken,
             openBound: _adminConnection.CommandTimeout
         );
-        switch (result)
+        if (ProbeLockReasonOf(result) is { } refused)
         {
-            case DmsTargetLockResult.Timeout:
-                return new DmsReadinessReason(
-                    DmsProvisioningFailureCode.LockTimeout,
-                    PostgresqlEnvironment.TargetLockProbe,
-                    DmsProvisioningDiagnostic.ForOperation(PostgresqlTargetLockSession.AcquireStep)
-                );
-            case DmsTargetLockResult.Failure failure:
-                return new DmsReadinessReason(
-                    DmsProvisioningFailureCode.LockUnavailable,
-                    PostgresqlEnvironment.TargetLockProbe,
-                    failure.Diagnostic
-                );
+            return refused;
         }
 
         await using PostgresqlTargetLockSession holder = (PostgresqlTargetLockSession)
@@ -235,4 +224,33 @@ public sealed partial class PostgresqlDmsTargetEngine
             )
             : null;
     }
+
+    /// <summary>
+    /// The readiness reason for a probe-lock acquisition that held nothing, or null when the lock was acquired:
+    /// contention past the budget is <c>LockTimeout</c>; an infrastructure failure, or a definite refusal of the
+    /// login or the lock request, is <c>LockUnavailable</c> with the engine's diagnostic. At startup an
+    /// authentication refusal is already the <c>TargetServer</c> probe's <c>StartupValidationFailed</c>, so the lock
+    /// probe keeps one reason for every failed acquisition.
+    /// </summary>
+    internal static DmsReadinessReason? ProbeLockReasonOf(DmsTargetLockResult result) =>
+        result switch
+        {
+            DmsTargetLockResult.Acquired => null,
+            DmsTargetLockResult.Timeout => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockTimeout,
+                PostgresqlEnvironment.TargetLockProbe,
+                DmsProvisioningDiagnostic.ForOperation(PostgresqlTargetLockSession.AcquireStep)
+            ),
+            DmsTargetLockResult.Failure failure => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                PostgresqlEnvironment.TargetLockProbe,
+                failure.Diagnostic
+            ),
+            DmsTargetLockResult.AccessDenied refused => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                PostgresqlEnvironment.TargetLockProbe,
+                refused.Diagnostic
+            ),
+            _ => throw new InvalidOperationException("Unknown target lock result."),
+        };
 }

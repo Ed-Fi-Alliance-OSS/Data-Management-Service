@@ -621,6 +621,91 @@ public class DmsDataStoreProvisioningServiceShellTests
         }
     }
 
+    /// <summary>
+    /// F-02: a lock acquisition the server definitely refused for lack of access (the administrative login rejected or
+    /// disabled, or the lock request denied) is <c>AdminPrivilegeMissing</c>, permanent, at the lock step, with the
+    /// engine's type chain and provider code kept and nothing else read; a lock infrastructure failure stays
+    /// <c>LockUnavailable</c> (<see cref="Given_the_target_lock_cannot_be_acquired"/>).
+    /// </summary>
+    [TestFixture]
+    public class Given_the_lock_acquisition_is_refused_access
+    {
+        private static readonly DmsProvisioningDiagnostic _refusal = new(
+            "Npgsql.PostgresException",
+            "28000",
+            "OpenHolderSession"
+        );
+
+        private Harness _creating = null!;
+        private Harness _deleting = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+
+        private static Harness Refusing()
+        {
+            Harness harness = new();
+            harness.Engine.OnAcquireTargetLock = _ =>
+                Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.AccessDenied(_refusal));
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _creating = Refusing();
+            _create = await _creating.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            _deleting = Refusing();
+            _delete = await _deleting.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
+        }
+
+        [Test]
+        public void It_reports_a_refused_create_as_a_permanent_missing_privilege_at_the_lock_step() =>
+            Verdict(FailureOf(_create))
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent,
+                        DmsDataStoreProvisioningService.AcquireTargetLockStep
+                    )
+                );
+
+        [Test]
+        public void It_reports_a_refused_delete_as_a_permanent_missing_privilege_at_the_lock_step() =>
+            Verdict(FailureOf(_delete))
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent,
+                        DmsDataStoreProvisioningService.AcquireTargetLockStep
+                    )
+                );
+
+        [Test]
+        public void It_keeps_the_type_chain_and_provider_code_of_the_refusal() =>
+            new[] { FailureOf(_create).Diagnostic, FailureOf(_delete).Diagnostic }
+                .Should()
+                .AllSatisfy(diagnostic =>
+                    (diagnostic.ExceptionTypeChain, diagnostic.ProviderErrorCode)
+                        .Should()
+                        .Be((_refusal.ExceptionTypeChain, _refusal.ProviderErrorCode))
+                );
+
+        [Test]
+        public void It_reads_nothing_after_the_refused_acquisition()
+        {
+            _creating.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            _deleting.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            _creating.Holders.Should().BeEmpty();
+            _deleting.Holders.Should().BeEmpty();
+        }
+
+        private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) Verdict(
+            DmsProvisioningFailure failure
+        ) => (failure.Code, failure.Category, failure.Diagnostic.Operation);
+    }
+
     [TestFixture]
     public class Given_the_caller_cancels_during_lock_acquisition
     {

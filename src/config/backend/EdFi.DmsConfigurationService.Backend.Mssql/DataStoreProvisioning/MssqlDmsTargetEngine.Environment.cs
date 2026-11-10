@@ -251,20 +251,9 @@ public sealed partial class MssqlDmsTargetEngine
             cancellationToken,
             openBound: _adminConnection.CommandTimeout
         );
-        switch (result)
+        if (ProbeLockReasonOf(result) is { } refused)
         {
-            case DmsTargetLockResult.Timeout:
-                return new DmsReadinessReason(
-                    DmsProvisioningFailureCode.LockTimeout,
-                    MssqlEnvironment.TargetLockProbe,
-                    DmsProvisioningDiagnostic.ForOperation(MssqlTargetLockSession.AcquireStep)
-                );
-            case DmsTargetLockResult.Failure failure:
-                return new DmsReadinessReason(
-                    DmsProvisioningFailureCode.LockUnavailable,
-                    MssqlEnvironment.TargetLockProbe,
-                    failure.Diagnostic
-                );
+            return refused;
         }
 
         await using MssqlTargetLockSession holder = (MssqlTargetLockSession)
@@ -290,4 +279,33 @@ public sealed partial class MssqlDmsTargetEngine
             )
             : null;
     }
+
+    /// <summary>
+    /// The readiness reason for a probe-lock acquisition that held nothing, or null when the lock was acquired:
+    /// contention past the budget is <c>LockTimeout</c>; an infrastructure failure, or a definite refusal of the
+    /// login or the lock request, is <c>LockUnavailable</c> with the engine's diagnostic. At startup a login refusal
+    /// is already the <c>TargetServer</c> probe's <c>StartupValidationFailed</c>, so the lock probe keeps one reason
+    /// for every failed acquisition.
+    /// </summary>
+    internal static DmsReadinessReason? ProbeLockReasonOf(DmsTargetLockResult result) =>
+        result switch
+        {
+            DmsTargetLockResult.Acquired => null,
+            DmsTargetLockResult.Timeout => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockTimeout,
+                MssqlEnvironment.TargetLockProbe,
+                DmsProvisioningDiagnostic.ForOperation(MssqlTargetLockSession.AcquireStep)
+            ),
+            DmsTargetLockResult.Failure failure => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                MssqlEnvironment.TargetLockProbe,
+                failure.Diagnostic
+            ),
+            DmsTargetLockResult.AccessDenied refused => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                MssqlEnvironment.TargetLockProbe,
+                refused.Diagnostic
+            ),
+            _ => throw new InvalidOperationException("Unknown target lock result."),
+        };
 }

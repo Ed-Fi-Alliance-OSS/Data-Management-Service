@@ -935,6 +935,15 @@ public sealed partial class DmsDataStoreProvisioningService(
                         lockFailure.Diagnostic
                     )
                 );
+            case DmsTargetLockResult.AccessDenied refused:
+                // A definite refusal of the administrative login or the lock request: permanent until an operator
+                // changes the credentials or a grant, so not retried as lock infrastructure.
+                return Failed(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        AtStep(refused.Diagnostic, AcquireTargetLockStep)
+                    )
+                );
             default:
                 throw new InvalidOperationException("Unknown target lock result.");
         }

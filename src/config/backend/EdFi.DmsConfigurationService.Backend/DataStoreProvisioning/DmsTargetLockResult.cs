@@ -19,4 +19,12 @@ public abstract record DmsTargetLockResult
 
     /// <summary>Lock infrastructure failure (connection, command, or unexpected lock-service result).</summary>
     public sealed record Failure(DmsProvisioningDiagnostic Diagnostic) : DmsTargetLockResult;
+
+    /// <summary>
+    /// The server definitely refused the administrative login, or the lock request, for lack of access or a privilege
+    /// (PostgreSQL <c>42501</c> or class <c>28</c>; SQL Server's access-refusal numbers, a failed or disabled login
+    /// included). Nothing was acquired, and retrying cannot succeed until an operator changes the credentials or a
+    /// grant. The diagnostic carries the type chain and the provider code only.
+    /// </summary>
+    public sealed record AccessDenied(DmsProvisioningDiagnostic Diagnostic) : DmsTargetLockResult;
 }
