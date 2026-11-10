@@ -87,6 +87,7 @@ internal static class TargetFactsSample
                 ]
             ),
             HasPopulatedDocument = false,
+            PopulatedPredicateTablesMalformed = false,
         };
 
     /// <summary>The manifest describing <paramref name="facts"/>: inventory hash from the facts, every other field from the baseline unless overridden.</summary>
@@ -232,6 +233,7 @@ internal static class TargetFactsSample
                 [Member(MssqlDbOwner, MssqlDbo)]
             ),
             HasPopulatedDocument = false,
+            PopulatedPredicateTablesMalformed = false,
         };
 
     /// <summary>The SQL Server manifest describing <paramref name="facts"/>.</summary>

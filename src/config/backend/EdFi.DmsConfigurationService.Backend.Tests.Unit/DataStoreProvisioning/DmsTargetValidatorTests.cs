@@ -673,6 +673,78 @@ public class DmsTargetValidatorTests
         public void It_ignores_the_predicate_for_a_minimal_template() => _minimalWithout.Should().Be(_valid);
     }
 
+    /// <summary>
+    /// F-01 (R2-1): tables the Populated predicate reads but whose shape the server refused are malformed for every
+    /// template kind, because the inventory is object-level and a Minimal target with a dropped column would otherwise
+    /// pass; an earlier failing check is still reported first; and missing tables keep their Populated-only rule.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_populated_predicate_tables_are_malformed
+    {
+        private DmsTargetValidation _minimal = null!;
+        private DmsTargetValidation _populated = null!;
+        private DmsTargetValidation _mssqlMinimal = null!;
+        private DmsTargetValidation _withInvalidEffectiveSchema = null!;
+        private DmsTargetValidation _minimalTablesMissing = null!;
+        private DmsTargetValidation _populatedTablesMissing = null!;
+
+        private static DmsTargetFacts Malformed(DmsTargetFacts facts) =>
+            facts with
+            {
+                HasPopulatedDocument = null,
+                PopulatedPredicateTablesMalformed = true,
+            };
+
+        [SetUp]
+        public void Setup()
+        {
+            DmsTargetFacts facts = PostgresqlFacts();
+            RestoreManifest populated = ManifestFor(facts, RestoreManifest.PopulatedTemplateKind);
+            _minimal = Staging(Malformed(facts));
+            _populated = Staging(Malformed(facts), populated);
+
+            DmsTargetFacts mssql = MssqlFacts();
+            _mssqlMinimal = Staging(Malformed(mssql), MssqlManifestFor(mssql));
+
+            _withInvalidEffectiveSchema = Staging(
+                Malformed(facts) with
+                {
+                    EffectiveSchema = new DmsEffectiveSchemaRead.Invalid(
+                        DmsEffectiveSchemaReadProblem.ValueInvalid
+                    ),
+                }
+            );
+
+            DmsTargetFacts tablesMissing = facts with { HasPopulatedDocument = null };
+            _minimalTablesMissing = Staging(tablesMissing);
+            _populatedTablesMissing = Staging(tablesMissing, populated);
+        }
+
+        [Test]
+        public void It_rejects_a_minimal_template_with_malformed_predicate_tables() =>
+            _minimal.Should().Be(Invalid(TargetIncompatible, PopulatedPredicateCheck));
+
+        [Test]
+        public void It_rejects_a_populated_template_with_malformed_predicate_tables() =>
+            _populated.Should().Be(Invalid(TargetIncompatible, PopulatedPredicateCheck));
+
+        [Test]
+        public void It_rejects_malformed_predicate_tables_on_sql_server_too() =>
+            _mssqlMinimal.Should().Be(Invalid(TargetIncompatible, PopulatedPredicateCheck));
+
+        [Test]
+        public void It_reports_an_invalid_effective_schema_first() =>
+            _withInvalidEffectiveSchema.Should().Be(Invalid(TargetIncompatible, EffectiveSchemaCheck));
+
+        [Test]
+        public void It_still_ignores_missing_predicate_tables_for_a_minimal_template() =>
+            _minimalTablesMissing.Should().Be(_valid);
+
+        [Test]
+        public void It_still_rejects_missing_predicate_tables_for_a_populated_template() =>
+            _populatedTablesMissing.Should().Be(Invalid(TargetIncompatible, PopulatedPredicateCheck));
+    }
+
     [TestFixture]
     public class Given_several_failing_checks
     {

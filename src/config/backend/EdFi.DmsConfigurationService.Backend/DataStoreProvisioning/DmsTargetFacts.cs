@@ -62,4 +62,12 @@ public sealed record DmsTargetFacts
     /// predicate); null when <c>dms.Document</c> or <c>dms.ResourceKey</c> is missing.
     /// </summary>
     public required bool? HasPopulatedDocument { get; init; }
+
+    /// <summary>
+    /// True when <c>dms.Document</c> and <c>dms.ResourceKey</c> both exist but the server refused the Populated
+    /// predicate for their shape (a missing column, or a column type the query cannot compare): they are not the
+    /// DMS tables the predicate reads, and <see cref="HasPopulatedDocument"/> is then null. False otherwise. The
+    /// inventory is object-level and does not see a column, so this is refused for every template kind.
+    /// </summary>
+    public required bool PopulatedPredicateTablesMalformed { get; init; }
 }

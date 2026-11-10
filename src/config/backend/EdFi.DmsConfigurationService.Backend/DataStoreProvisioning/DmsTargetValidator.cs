@@ -455,10 +455,17 @@ public static class DmsTargetValidator
         };
     }
 
-    /// <summary>Item 8: a Populated template must carry at least one non-descriptor, non-school-year document.</summary>
+    /// <summary>
+    /// Item 8: a Populated template must carry at least one non-descriptor, non-school-year document; and for every
+    /// template kind, the tables the predicate reads must have the shape it reads, because a Minimal target with a
+    /// malformed <c>dms.Document</c> or <c>dms.ResourceKey</c> keeps the object-level inventory hash.
+    /// </summary>
     private static DmsTargetValidation? PopulatedVerdict(DmsTargetFacts facts, RestoreManifest manifest) =>
-        Same(manifest.TemplateKind, RestoreManifest.PopulatedTemplateKind)
-        && facts.HasPopulatedDocument != true
+        facts.PopulatedPredicateTablesMalformed
+        || (
+            Same(manifest.TemplateKind, RestoreManifest.PopulatedTemplateKind)
+            && facts.HasPopulatedDocument != true
+        )
             ? Invalid(DmsProvisioningFailureCode.TargetIncompatible, PopulatedPredicateCheck)
             : null;
 

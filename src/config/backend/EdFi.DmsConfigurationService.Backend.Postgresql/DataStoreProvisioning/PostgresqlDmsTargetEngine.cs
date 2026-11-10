@@ -373,6 +373,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             DatabaseLevelObjects = databaseLevelObjects,
             Security = new DmsSecurityFacts.Postgresql(ownership, privileges),
             HasPopulatedDocument = hasPopulatedDocument,
+            PopulatedPredicateTablesMalformed = false,
         };
     }
 

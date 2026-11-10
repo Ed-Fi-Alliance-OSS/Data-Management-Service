@@ -415,6 +415,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             DatabaseLevelObjects = databaseLevelObjects,
             Security = security,
             HasPopulatedDocument = hasPopulatedDocument,
+            PopulatedPredicateTablesMalformed = false,
         };
     }
 
