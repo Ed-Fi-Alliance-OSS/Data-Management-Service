@@ -157,4 +157,3 @@ These are planner and filtering unit contracts, not database persistence proofs.
 coverage can add provider-specific semantic identity equality, generated schema catalogs,
 extensions, multiple sibling parent scopes in one merge, and API/provider-backed checks
 that the persister applies the plans correctly. Existing example tests remain in place.
-Other recommended locations in DMS-1684 are outside this implementation's scope.
