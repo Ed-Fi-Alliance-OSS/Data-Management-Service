@@ -3,6 +3,7 @@
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
   </PropertyGroup>
   <ItemGroup>
+    <PackageVersion Include="CsCheck" Version="5.0.1" />
     <PackageVersion Include="Handlebars.Net" Version="2.1.6" />
     <PackageVersion Include="Microsoft.Data.SqlClient" Version="6.1.4" />
     <!-- Every Microsoft.Data.SqlClient release, through 7.1.1, depends on a System.Security.Cryptography.Pkcs

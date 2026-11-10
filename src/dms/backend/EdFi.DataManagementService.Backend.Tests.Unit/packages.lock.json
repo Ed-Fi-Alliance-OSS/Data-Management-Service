@@ -24,6 +24,12 @@
         "resolved": "6.0.2",
         "contentHash": "bJShQ6uWRTQ100ZeyiMqcFlhP7WJ+bCuabUs885dJiBEzMsJMSFr7BOyeCw4rgvQokteGi5rKQTlkhfQPUXg2A=="
       },
+      "CsCheck": {
+        "type": "Direct",
+        "requested": "[5.0.1, )",
+        "resolved": "5.0.1",
+        "contentHash": "dsWFbaTkF7SdDlKTbnZWeQbNRLVKubJmIRJ/xDPR/ydMTLL1iSHMna9JfJqyC22siT7Tq9tKiQZyfxUOl9RRzA=="
+      },
       "FakeItEasy": {
         "type": "Direct",
         "requested": "[8.3.0, )",
