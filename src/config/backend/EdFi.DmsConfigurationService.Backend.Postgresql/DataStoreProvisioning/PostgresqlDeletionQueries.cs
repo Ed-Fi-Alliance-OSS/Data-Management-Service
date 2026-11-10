@@ -295,7 +295,10 @@ internal static class PostgresqlDeletionQueries
 
     /// <summary>
     /// D-22 under the fence: terminates every other client session with proof until none is listed; the bound
-    /// is the whole <paramref name="terminationTimeout"/>, shared by every termination it issues.
+    /// is the whole <paramref name="terminationTimeout"/>, shared by every termination it issues. No termination
+    /// starts once the bound has passed, and only a listing read after the bound decides: a session proven gone
+    /// as the bound passes, or one that left on its own while an earlier listing was being worked through, is not
+    /// refused, and only a session still listed then is in use. One listing after the bound is the last.
     /// </summary>
     private static async Task<DmsCommandOutcome> EstablishExclusivityAsync(
         NpgsqlConnection connection,
@@ -311,6 +314,7 @@ internal static class PostgresqlDeletionQueries
         long started = timeProvider.GetTimestamp();
         while (true)
         {
+            bool spent = timeProvider.GetElapsedTime(started) >= terminationTimeout;
             IReadOnlyList<(int Pid, DateTimeOffset? StartedAt)> others = await OtherSessionsAsync(
                 connection,
                 oid,
@@ -337,11 +341,17 @@ internal static class PostgresqlDeletionQueries
                 TimeSpan remaining = terminationTimeout - timeProvider.GetElapsedTime(started);
                 if (remaining <= TimeSpan.Zero)
                 {
-                    return Fenced(
-                        target,
-                        DmsCommandFailureClass.ObjectInUse,
-                        DmsProvisioningDiagnostic.ForOperation(FenceExclusivityStep)
-                    );
+                    if (spent)
+                    {
+                        return Fenced(
+                            target,
+                            DmsCommandFailureClass.ObjectInUse,
+                            DmsProvisioningDiagnostic.ForOperation(FenceExclusivityStep)
+                        );
+                    }
+
+                    // This listing was read before the bound passed: the sessions are listed once more instead.
+                    break;
                 }
 
                 DmsSessionTermination verdict = await PostgresqlSessionQueries.TerminateAsync(
@@ -356,15 +366,6 @@ internal static class PostgresqlDeletionQueries
                 {
                     return await RefusedAsync(connection, target, refused, cancellationToken);
                 }
-            }
-
-            if (timeProvider.GetElapsedTime(started) >= terminationTimeout)
-            {
-                return Fenced(
-                    target,
-                    DmsCommandFailureClass.ObjectInUse,
-                    DmsProvisioningDiagnostic.ForOperation(FenceExclusivityStep)
-                );
             }
         }
     }

@@ -446,8 +446,9 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>
     /// The fence's bound on the holder, started once the gate is held: the instance check and the
     /// <c>ALTER DATABASE</c> take one command each before the termination loop starts, so neither can shorten
-    /// the loop's termination bound. The orchestrator's allowance adds the gate wait on top, so this bound
-    /// is the one that expires first.
+    /// the loop's termination bound. The orchestrator's allowance, counted from its request, is this bound plus
+    /// one <c>CommandTimeout</c> for the gate wait; a wait longer than that ends the allowance first, with the
+    /// same outcome.
     /// </summary>
     internal static TimeSpan FenceDeadline(TimeSpan sessionTerminationTimeout, TimeSpan commandTimeout) =>
         sessionTerminationTimeout + commandTimeout + commandTimeout;

@@ -1550,6 +1550,79 @@ public class DmsDataStoreProvisioningServiceDeleteTests
     }
 
     /// <summary>
+    /// The heartbeat probe's deadline passes while it holds the gate, and its driver keeps it two seconds longer
+    /// completing the acknowledged cancellation (Npgsql's default <c>CancellationTimeout</c>). The fence's
+    /// deadline counts from its request, gate wait included, so the overrun is spent from the step's allowance
+    /// (<c>SessionTerminationTimeout</c> + 3 x <c>CommandTimeout</c>), which is neither extended nor cut: the fence
+    /// runs to the end of that allowance and is ended there, a second before the provider's own bound would end it.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_cancelled_probe_holds_the_gate_past_its_command_timeout
+    {
+        // The harness's SessionTerminationTimeout.
+        private static readonly TimeSpan _sessionTermination = TimeSpan.FromSeconds(30);
+
+        // How long past its deadline an acknowledged cancellation keeps the probe running.
+        private static readonly TimeSpan _cancellationCompletion = TimeSpan.FromSeconds(2);
+
+        private bool _cancelledWithinTheAllowance;
+        private bool _cancelledPastTheAllowance;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TimeSpan allowance = _sessionTermination + CommandTimeout + CommandTimeout + CommandTimeout;
+            TimeSpan gateWait = CommandTimeout + _cancellationCompletion;
+            TimeSpan bound = PostgresqlDmsTargetEngine.FenceDeadline(_sessionTermination, CommandTimeout);
+            GatedTarget gated = new(SpyDmsTargetEngine.Fence);
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken fenceToken = default;
+            gated.Target.Harness.Engine.OnFence = (_, _, _, token) =>
+            {
+                gated.Waiting.TrySetResult();
+                return gated.Target.Harness.OnlyHolder.RunAsync(
+                    async holderToken =>
+                    {
+                        fenceToken = holderToken;
+                        running.SetResult();
+                        await finish.Task;
+                        gated.Target.State = new DmsLiveTargetState.Fenced(_instance);
+                        return (DmsCommandOutcome)new DmsCommandOutcome.Succeeded();
+                    },
+                    bound,
+                    token
+                );
+            };
+            gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeFence);
+            Task<DmsDataStoreDeleteResult> delete = gated.Target.DeleteAsync();
+            await ReadStartedAsync(gated.Waiting, delete);
+
+            gated.Target.Harness.Time.Advance(gateWait);
+            gated.Probe.SetResult(true);
+            await ReadStartedAsync(running, delete);
+
+            gated.Target.Harness.Time.Advance(allowance - gateWait - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheAllowance = fenceToken.IsCancellationRequested;
+
+            // A second past the allowance, and a second short of the provider's bound, which began at the gate.
+            gated.Target.Harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheAllowance = fenceToken.IsCancellationRequested;
+
+            finish.SetResult();
+            await delete;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_fence_within_the_step_allowance() =>
+            _cancelledWithinTheAllowance.Should().BeFalse();
+
+        [Test]
+        public void It_ends_the_fence_at_the_step_allowance_counted_from_the_request() =>
+            _cancelledPastTheAllowance.Should().BeTrue();
+    }
+
+    /// <summary>
     /// Round-1 review finding 1: loss declared while an engine call that was handed the fence or the drop
     /// returns an unknown outcome, or throws. The scope turns both into a loss cancellation; neither proves that
     /// nothing was sent, so the mutation stays in doubt and is settled by reading state after the lock.

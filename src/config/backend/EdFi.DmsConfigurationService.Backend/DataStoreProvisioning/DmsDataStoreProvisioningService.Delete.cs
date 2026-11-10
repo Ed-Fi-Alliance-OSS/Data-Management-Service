@@ -302,10 +302,14 @@ public sealed partial class DmsDataStoreProvisioningService
         // (an unknown outcome or an exception raised alongside loss, a deadline, the caller's cancellation)
         // leaves the fence in doubt for settlement after the lock is released.
         //
-        // The deadline starts before the engine waits for the holder's gate, which a heartbeat probe may hold for
-        // up to one CommandTimeout. It allows that wait on top of the largest bound a provider sets once it holds
-        // the gate (PostgreSQL's: SessionTerminationTimeout + 2 x CommandTimeout), so the provider's bound expires
-        // first and the termination loop keeps its whole SessionTerminationTimeout.
+        // The deadline bounds the whole step from the request, the wait for the holder's gate included: the largest
+        // bound a provider sets once it holds the gate (PostgreSQL's: SessionTerminationTimeout + 2 x
+        // CommandTimeout) plus one CommandTimeout, the bound of a heartbeat probe that may hold the gate. The
+        // termination loop keeps its whole SessionTerminationTimeout while the gate wait and the statements around
+        // the loop fit in those three CommandTimeouts. A probe that outlasts its own, because its driver is still
+        // completing a cancellation after the server left a trivial statement unanswered that long, spends that
+        // allowance as a slow statement would; this deadline then ends the fence with the outcome the provider's
+        // bound gives.
         DmsCommandOutcome fenced = await scope.CallAsync(
             FenceStep,
             settings.SessionTerminationTimeout

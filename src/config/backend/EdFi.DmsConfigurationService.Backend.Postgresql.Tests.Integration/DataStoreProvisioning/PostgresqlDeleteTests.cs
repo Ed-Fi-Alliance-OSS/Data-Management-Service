@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
 
@@ -362,6 +364,198 @@ public class PostgresqlDeleteTests
                         )
                     )
                 );
+    }
+
+    /// <summary>
+    /// The termination bound (D-22) at its edge: the clock reaches the whole <c>SessionTerminationTimeout</c> the
+    /// moment the driver reports the first termination complete, so the session it ended is proven gone as the
+    /// bound passes. The fence lists the sessions again before it decides, also when a second session is still
+    /// waiting in the list read before the bound passed: with no other session left, including when that second
+    /// session disconnected on its own during the first termination, it has established exclusivity; with the
+    /// second session still connected it starts no termination past the bound, and that session keeps the
+    /// target in use.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_last_termination_is_proven_as_the_termination_bound_passes
+    {
+        private static readonly TimeSpan _termination = TimeSpan.FromSeconds(30);
+
+        private FenceRun _alone = null!;
+        private FenceRun _secondLeft = null!;
+        private FenceRun _withSecond = null!;
+
+        private sealed record FenceRun(
+            DmsTargetDatabaseName Target,
+            DmsCommandOutcome Outcome,
+            int Terminations,
+            IReadOnlyList<bool> Present,
+            bool AllowsConnections,
+            bool SecondLeft
+        );
+
+        /// <summary>
+        /// Counts the fence's guarded terminations the driver completes; at the first it runs
+        /// <paramref name="atFirstTermination"/>, then advances the clock by the bound.
+        /// </summary>
+        private sealed class BoundPassesAtFirstTermination : IDisposable
+        {
+            private readonly ActivityListener _listener;
+            private int _terminations;
+
+            public BoundPassesAtFirstTermination(FakeTimeProvider time, Action atFirstTermination)
+            {
+                _listener = new ActivityListener
+                {
+                    ShouldListenTo = activitySource => activitySource.Name == "Npgsql",
+                    Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                        ActivitySamplingResult.AllDataAndRecorded,
+                    ActivityStopped = activity =>
+                    {
+                        if (
+                            activity.GetTagItem("db.statement") is string text
+                            && text.Contains("process_ended", StringComparison.Ordinal)
+                            && Interlocked.Increment(ref _terminations) == 1
+                        )
+                        {
+                            atFirstTermination();
+                            time.Advance(_termination);
+                        }
+                    },
+                };
+                ActivitySource.AddActivityListener(_listener);
+            }
+
+            public int Terminations => Volatile.Read(ref _terminations);
+
+            public void Dispose() => _listener.Dispose();
+        }
+
+        /// <param name="sessions">The other sessions on the target; the fence ends them in pid order.</param>
+        /// <param name="secondLeaves">Whether the second session disconnects on its own during the first termination.</param>
+        private static async Task<FenceRun> FenceAsync(int sessions, bool secondLeaves = false)
+        {
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("bound");
+            DmsTargetDatabaseName target = TargetNameOf(database.Name);
+            DmsInstanceIdentity.Postgresql instance = await database.CatalogInstanceAsync();
+            List<TargetSession> others = [];
+            try
+            {
+                for (int opened = 0; opened < sessions; opened++)
+                {
+                    others.Add(await TargetSession.OpenAsync(target));
+                }
+
+                // The listing is ordered by pid, so the second session is the one listed after the first.
+                others.Sort((left, right) => left.Session.Id.CompareTo(right.Session.Id));
+                bool secondLeft = false;
+
+                // Blocks the fence until the server no longer lists the second session.
+                void AtFirstTermination()
+                {
+                    if (secondLeaves)
+                    {
+                        others[1].DisposeAsync().AsTask().GetAwaiter().GetResult();
+                        secondLeft = SessionGoneAsync(others[1].Session).GetAwaiter().GetResult();
+                    }
+                }
+
+                FakeTimeProvider time = new();
+                DmsCommandOutcome outcome;
+                int terminations;
+                await using (
+                    NpgsqlConnection connection = await AdminConnection().OpenMaintenanceAsync(default)
+                )
+                {
+                    DmsServerSessionId holder = await OwnSessionAsync(connection);
+                    using BoundPassesAtFirstTermination clock = new(time, AtFirstTermination);
+                    outcome = await PostgresqlDeletionQueries.FenceAsync(
+                        connection,
+                        target,
+                        instance,
+                        null,
+                        holder,
+                        _termination,
+                        _bound,
+                        time,
+                        default
+                    );
+                    terminations = clock.Terminations;
+                }
+
+                List<bool> present = [];
+                foreach (TargetSession other in others)
+                {
+                    present.Add(await SessionPresentAsync(other.Session));
+                }
+
+                bool allowsConnections = await ScalarOnServerAsync<bool>(
+                    "SELECT d.datallowconn FROM pg_catalog.pg_database d WHERE d.datname = @name;",
+                    ("name", database.Name)
+                );
+                return new FenceRun(target, outcome, terminations, present, allowsConnections, secondLeft);
+            }
+            finally
+            {
+                foreach (TargetSession other in others)
+                {
+                    await other.DisposeAsync();
+                }
+            }
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _alone = await FenceAsync(1);
+            _secondLeft = await FenceAsync(2, secondLeaves: true);
+            _withSecond = await FenceAsync(2);
+        }
+
+        [Test]
+        public void It_establishes_exclusivity_when_no_session_is_listed_after_the_bound() =>
+            (_alone.Outcome, _alone.Terminations, _alone.Present.Single(), _alone.AllowsConnections)
+                .Should()
+                .Be((new DmsCommandOutcome.Succeeded(), 1, false, false));
+
+        [Test]
+        public void It_establishes_exclusivity_when_a_session_listed_before_the_bound_has_left_since() =>
+            (
+                _secondLeft.SecondLeft,
+                _secondLeft.Outcome,
+                _secondLeft.Terminations,
+                _secondLeft.Present.Count(present => present),
+                _secondLeft.AllowsConnections
+            )
+                .Should()
+                .Be((true, new DmsCommandOutcome.Succeeded(), 1, 0, false));
+
+        [Test]
+        public void It_refuses_a_session_still_listed_after_the_bound_without_ending_it()
+        {
+            DmsCommandOutcome.Failed failed = _withSecond
+                .Outcome.Should()
+                .BeOfType<DmsCommandOutcome.Failed>()
+                .Subject;
+            failed
+                .Failure.Should()
+                .Be(
+                    new DmsCommandFailure(
+                        DmsCommandFailureClass.ObjectInUse,
+                        DmsProvisioningDiagnostic.ForOperation(PostgresqlDeletionQueries.FenceExclusivityStep)
+                    )
+                );
+            failed
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.FencedTarget, _withSecond.Target.Value));
+            (
+                _withSecond.Terminations,
+                _withSecond.Present.Count(present => present),
+                _withSecond.AllowsConnections
+            )
+                .Should()
+                .Be((1, 1, false));
+        }
     }
 
     /// <summary>
