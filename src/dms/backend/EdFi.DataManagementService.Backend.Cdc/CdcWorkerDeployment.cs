@@ -334,8 +334,17 @@ internal interface ICdcWorkerDockerCommand
 
 internal sealed class CdcWorkerDockerCommand : ICdcWorkerDockerCommand
 {
+    private readonly Func<Process, CancellationToken, Task> _terminate;
+
+    public CdcWorkerDockerCommand()
+        : this(CdcWorkerProcessTree.TerminateAsync) { }
+
+    internal CdcWorkerDockerCommand(Func<Process, CancellationToken, Task> terminate) =>
+        _terminate = terminate;
+
     public async Task<string> RunAsync(IReadOnlyList<string> arguments, CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         using var process = new Process
         {
             StartInfo = new("docker")
@@ -350,16 +359,25 @@ internal sealed class CdcWorkerDockerCommand : ICdcWorkerDockerCommand
             process.StartInfo.ArgumentList.Add(argument);
         }
         process.Start();
-        TaskCompletionSource<Exception> readerFailure = new(
-            TaskCreationOptions.RunContinuationsAsynchronously
+        using var readers = CancellationTokenSource.CreateLinkedTokenSource(token);
+        using var exitWait = new CancellationTokenSource();
+        TaskCompletionSource<Exception> failure = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        using var registration = token.Register(() =>
+            failure.TrySetResult(new OperationCanceledException(token))
         );
-        using var registration = token.Register(TerminateProcess);
         Task<string> output = ReadOutputAsync(process.StandardOutput);
         Task<string> error = ReadOutputAsync(process.StandardError);
+        Task completion = Task.WhenAll(output, error, process.WaitForExitAsync(exitWait.Token));
         try
         {
-            // Cancellation terminates the child, but cleanup must still await its exit and both readers.
-            await Task.WhenAll(output, error, process.WaitForExitAsync(CancellationToken.None));
+            // A reader failure must reach cleanup before waiting for the process: an
+            // abandoned full pipe can otherwise prevent the process from exiting.
+            await Task.WhenAny(completion, failure.Task);
+            if (failure.Task.IsCompletedSuccessfully)
+            {
+                ExceptionDispatchInfo.Capture(failure.Task.Result).Throw();
+            }
+            await completion;
             token.ThrowIfCancellationRequested();
             if (process.ExitCode != 0)
             {
@@ -367,28 +385,34 @@ internal sealed class CdcWorkerDockerCommand : ICdcWorkerDockerCommand
             }
             return await output;
         }
-        catch when (readerFailure.Task.IsCompletedSuccessfully)
+        catch (Exception exception)
         {
-            // Preserve the first reader failure even if terminating the child disrupts the other reader.
-            ExceptionDispatchInfo.Capture(readerFailure.Task.Result).Throw();
+            // Only this path owns termination. Reader failures and caller cancellation
+            // signal it rather than racing multiple process-tree snapshots and kills.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await _terminate(process, cleanup.Token);
+            }
+            catch (Exception cleanupFailure)
+            {
+                // Keep the original cancellation/output error, with a sanitized indication
+                // that owned-process cleanup could not be confirmed.
+                exception.Data["CdcWorkerProcessCleanup"] =
+                    cleanupFailure is OperationCanceledException ? "TimedOut" : "Failed";
+            }
             throw;
         }
         finally
         {
-            TerminateProcess();
-        }
-
-        void TerminateProcess()
-        {
+            await readers.CancelAsync();
+            await exitWait.CancelAsync();
             try
             {
-                process.Kill(entireProcessTree: true);
+                await completion;
             }
-            catch (InvalidOperationException)
-            { /* Process exited before cancellation. */
-            }
-            catch (System.ComponentModel.Win32Exception)
-            { /* Best-effort termination must not replace the original reader failure. */
+            catch (Exception)
+            { /* All tasks are observed; preserve the original command/cleanup outcome. */
             }
         }
 
@@ -396,13 +420,15 @@ internal sealed class CdcWorkerDockerCommand : ICdcWorkerDockerCommand
         {
             try
             {
-                return await ReadBoundedAsync(reader, token);
+                return await ReadBoundedAsync(reader, readers.Token);
             }
             catch (Exception exception)
             {
-                readerFailure.TrySetResult(exception);
-                // Do this before WhenAll: an abandoned full pipe otherwise prevents child exit.
-                TerminateProcess();
+                failure.TrySetResult(
+                    exception is OperationCanceledException && token.IsCancellationRequested
+                        ? new OperationCanceledException(token)
+                        : exception
+                );
                 throw;
             }
         }
