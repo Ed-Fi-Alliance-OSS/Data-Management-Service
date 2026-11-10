@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
@@ -1479,6 +1480,73 @@ public class DmsDataStoreProvisioningServiceDeleteTests
             _gated.Target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence]));
             ResidueOf(_result).Should().BeEmpty();
         }
+    }
+
+    /// <summary>
+    /// The fence's deadline starts before the engine waits for the holder gate. The heartbeat probe holds the gate
+    /// for its whole bound (one <c>CommandTimeout</c>) when the fence asks for it, and the fence then runs under the
+    /// PostgreSQL holder bound (<see cref="PostgresqlDmsTargetEngine.FenceDeadline"/>) to its last second. The
+    /// orchestrator's allowance covers the gate wait, so nothing cancels the fence before the provider's bound,
+    /// which leaves the termination loop its whole <c>SessionTerminationTimeout</c>; the fence still ends at that
+    /// bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_fence_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        // The harness's SessionTerminationTimeout.
+        private static readonly TimeSpan _sessionTermination = TimeSpan.FromSeconds(30);
+
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            TimeSpan bound = PostgresqlDmsTargetEngine.FenceDeadline(_sessionTermination, CommandTimeout);
+            GatedTarget gated = new(SpyDmsTargetEngine.Fence);
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken fenceToken = default;
+            gated.Target.Harness.Engine.OnFence = (_, _, _, token) =>
+            {
+                gated.Waiting.TrySetResult();
+                return gated.Target.Harness.OnlyHolder.RunAsync(
+                    async holderToken =>
+                    {
+                        fenceToken = holderToken;
+                        running.SetResult();
+                        await finish.Task;
+                        gated.Target.State = new DmsLiveTargetState.Fenced(_instance);
+                        return (DmsCommandOutcome)new DmsCommandOutcome.Succeeded();
+                    },
+                    bound,
+                    token
+                );
+            };
+            gated.HoldGateWithProbe(DmsProvisioningHookPoint.BeforeFence);
+            Task<DmsDataStoreDeleteResult> delete = gated.Target.DeleteAsync();
+            await ReadStartedAsync(gated.Waiting, delete);
+
+            gated.Target.Harness.Time.Advance(CommandTimeout);
+            gated.Probe.SetResult(true);
+            await ReadStartedAsync(running, delete);
+
+            gated.Target.Harness.Time.Advance(bound - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = fenceToken.IsCancellationRequested;
+            gated.Target.Harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = fenceToken.IsCancellationRequested;
+
+            finish.SetResult();
+            await delete;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_fence_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_fence_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
     }
 
     /// <summary>

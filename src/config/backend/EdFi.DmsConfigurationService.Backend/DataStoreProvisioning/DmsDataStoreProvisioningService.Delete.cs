@@ -301,9 +301,17 @@ public sealed partial class DmsDataStoreProvisioningService
         // check before sending, proves nothing was sent. Whatever else ends the call without a definite outcome
         // (an unknown outcome or an exception raised alongside loss, a deadline, the caller's cancellation)
         // leaves the fence in doubt for settlement after the lock is released.
+        //
+        // The deadline starts before the engine waits for the holder's gate, which a heartbeat probe may hold for
+        // up to one CommandTimeout. It allows that wait on top of the largest bound a provider sets once it holds
+        // the gate (PostgreSQL's: SessionTerminationTimeout + 2 x CommandTimeout), so the provider's bound expires
+        // first and the termination loop keeps its whole SessionTerminationTimeout.
         DmsCommandOutcome fenced = await scope.CallAsync(
             FenceStep,
-            settings.SessionTerminationTimeout + settings.CommandTimeout + settings.CommandTimeout,
+            settings.SessionTerminationTimeout
+                + settings.CommandTimeout
+                + settings.CommandTimeout
+                + settings.CommandTimeout,
             token =>
                 DispatchAsync(
                     () => deletion.FenceDispatched(instance, scope.Holder.Session),

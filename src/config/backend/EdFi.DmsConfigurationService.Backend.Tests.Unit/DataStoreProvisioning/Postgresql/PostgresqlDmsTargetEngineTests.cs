@@ -3,8 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
+using Npgsql;
+using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql;
 
@@ -13,7 +17,7 @@ public class PostgresqlDmsTargetEngineTests
     /// <summary>
     /// The fence's bound on the holder session: the instance check and the <c>ALTER DATABASE</c> each run for up to
     /// one command allowance before the termination loop starts, and the loop then has the whole termination bound.
-    /// The bound covers all three, and is the orchestrator's allowance for the fence, never more.
+    /// The bound covers all three; the orchestrator's allowance adds the holder gate wait on top of it.
     /// </summary>
     [TestFixture]
     public class Given_the_fence_statements_use_their_whole_command_allowance
@@ -35,5 +39,37 @@ public class PostgresqlDmsTargetEngineTests
                 )
                 .Should()
                 .Equal(_settings.Select(setting => setting.Termination));
+    }
+
+    /// <summary>
+    /// The marker's dispatch boundary without a server: a cancellation found before the marker is handed to the
+    /// driver is reported as not dispatched, as on SQL Server, so the orchestrator keeps the target renamed and
+    /// unmarked instead of a marker in doubt. The connection is never opened, so nothing could have been sent.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_token_is_cancelled_before_the_marker_is_sent
+    {
+        private Exception? _outcome;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using CancellationTokenSource cancelled = new();
+            await cancelled.CancelAsync();
+            await using NpgsqlConnection connection = new();
+            _outcome = await Record.ExceptionAsync(() =>
+                PostgresqlPublicationQueries.AssignMarkerAsync(
+                    connection,
+                    16385,
+                    Guid.NewGuid(),
+                    Session,
+                    cancelled.Token
+                )
+            );
+        }
+
+        [Test]
+        public void It_reports_the_marker_as_not_dispatched() =>
+            _outcome.Should().BeOfType<DmsCommandNotDispatchedException>();
     }
 }

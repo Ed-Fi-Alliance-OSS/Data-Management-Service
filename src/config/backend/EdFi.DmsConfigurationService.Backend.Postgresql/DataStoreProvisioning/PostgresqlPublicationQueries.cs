@@ -133,6 +133,9 @@ internal static class PostgresqlPublicationQueries
     )
     {
         ArgumentNullException.ThrowIfNull(connection);
+
+        // The last check before the marker is handed to the driver: a cancellation from here on proves nothing.
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         int updated;
         try
         {
