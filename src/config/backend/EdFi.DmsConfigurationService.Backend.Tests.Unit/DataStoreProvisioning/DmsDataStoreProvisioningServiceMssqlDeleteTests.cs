@@ -380,4 +380,82 @@ public class DmsDataStoreProvisioningServiceMssqlDeleteTests
             _target.Members.Should().Equal(_refusedUnderTheFence);
         }
     }
+
+    /// <summary>
+    /// The fenced identity read's deadline starts before the engine waits for the holder gate. The heartbeat probe
+    /// takes the gate as the fence returns and holds it for its whole bound (one <c>CommandTimeout</c>), and the
+    /// three-part read then runs under the SQL Server holder bound (one <c>CommandTimeout</c>) to its last second.
+    /// The orchestrator's allowance covers the gate wait, so nothing cancels the read before the provider's bound,
+    /// which would fail the delete of an owned, fenced target and reverse its fence; the read still ends at that
+    /// bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_fenced_identity_read_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            OwnedTarget target = new();
+            SpyDmsTargetEngine engine = target.Harness.Engine;
+            TaskCompletionSource<bool> probe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken readToken = default;
+            SpyDmsTargetEngine.FenceScript fence = engine.OnFence;
+            engine.OnFence = async (fenced, instance, keep, token) =>
+            {
+                DmsCommandOutcome outcome = await fence(fenced, instance, keep, token);
+
+                // The heartbeat probe takes the gate as the fence returns, and keeps it.
+                FakeDmsTargetLockHolder holder = target.Harness.OnlyHolder;
+                holder.Probe = _ => probe.Task;
+                holder.StartHeartbeat();
+                target.Harness.Time.Advance(TimeSpan.FromSeconds(5));
+                return outcome;
+            };
+
+            // Runs on the holder's gate under CommandTimeout, as MssqlDmsTargetEngine.ReadIdentityOnHolderAsync does.
+            engine.OnReadIdentityOnHolder = (_, token) =>
+            {
+                waiting.TrySetResult();
+                return target.Harness.OnlyHolder.RunAsync(
+                    async holderToken =>
+                    {
+                        readToken = holderToken;
+                        running.SetResult();
+                        await finish.Task;
+                        return target.HolderIdentity;
+                    },
+                    CommandTimeout,
+                    token
+                );
+            };
+            Task<DmsDataStoreDeleteResult> delete = target.DeleteAsync();
+            await ReadStartedAsync(waiting, delete);
+
+            target.Harness.Time.Advance(CommandTimeout);
+            probe.SetResult(true);
+            await ReadStartedAsync(running, delete);
+
+            target.Harness.Time.Advance(CommandTimeout - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = readToken.IsCancellationRequested;
+            target.Harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = readToken.IsCancellationRequested;
+
+            finish.SetResult();
+            await delete;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_read_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_read_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
+    }
 }

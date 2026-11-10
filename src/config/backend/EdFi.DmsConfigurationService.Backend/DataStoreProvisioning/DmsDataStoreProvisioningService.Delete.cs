@@ -171,11 +171,14 @@ public sealed partial class DmsDataStoreProvisioningService
                 {
                     // 6.6 step 4: ownership and instance again, now that no other session can change them.
                     // SQL Server: the holder holds the single-user slot, so it reads the identity itself.
+                    // That read runs on the holder's gate: its deadline covers the gate wait (one CommandTimeout,
+                    // a heartbeat probe's bound) and SQL Server's holder bound (one CommandTimeout).
                     await VerifyOwnedAsync(
                         scope,
                         fenceKeepsNoSession
                             ? token => engine.ReadIdentityOnHolderAsync(scope.Holder, target, token)
                             : token => engine.ReadIdentityAsync(session, token),
+                        fenceKeepsNoSession ? options.Value.CommandTimeout * 2 : options.Value.CommandTimeout,
                         request.ExpectedSourceIdentity,
                         VerifyFencedStep
                     );
@@ -256,17 +259,27 @@ public sealed partial class DmsDataStoreProvisioningService
     /// <c>TargetUnverifiable</c> and another identity <c>TargetUnowned</c>, both under <paramref name="step"/>.
     /// </summary>
     private Task VerifyOwnedAsync(LockScope scope, DmsSession session, Guid expected, string step) =>
-        VerifyOwnedAsync(scope, token => engine.ReadIdentityAsync(session, token), expected, step);
+        VerifyOwnedAsync(
+            scope,
+            token => engine.ReadIdentityAsync(session, token),
+            options.Value.CommandTimeout,
+            expected,
+            step
+        );
 
-    /// <summary>The identity <paramref name="read"/> returns, judged as <see cref="VerifyOwnedAsync(LockScope, DmsSession, Guid, string)"/> does.</summary>
+    /// <summary>
+    /// The identity <paramref name="read"/> returns within <paramref name="deadline"/>, judged as
+    /// <see cref="VerifyOwnedAsync(LockScope, DmsSession, Guid, string)"/> does.
+    /// </summary>
     private static async Task VerifyOwnedAsync(
         LockScope scope,
         Func<CancellationToken, Task<DmsIdentityRead>> read,
+        TimeSpan deadline,
         Guid expected,
         string step
     )
     {
-        DmsIdentityRead identity = await scope.ReadAsync(step, read);
+        DmsIdentityRead identity = await scope.CallAsync(step, deadline, read, observe: null);
         ThrowIfAccessDenied(identity, DmsProvisioningFailureCode.TargetUnverifiable, step);
         if (identity is not DmsIdentityRead.Found found)
         {

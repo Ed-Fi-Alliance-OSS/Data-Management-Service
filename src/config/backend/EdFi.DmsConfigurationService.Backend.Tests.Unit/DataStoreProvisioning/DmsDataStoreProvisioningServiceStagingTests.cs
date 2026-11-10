@@ -906,6 +906,82 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     /// <summary>
+    /// The staging create's deadline starts before the engine waits for the holder gate. The heartbeat probe holds
+    /// the gate for its whole bound (one <c>CommandTimeout</c>) when the create asks for it, and the
+    /// <c>CREATE DATABASE</c> then runs under the PostgreSQL holder bound (one <c>CommandTimeout</c>) to its last
+    /// second. The orchestrator's allowance covers the gate wait, so nothing cancels the create before the
+    /// provider's bound; the create still ends at that bound.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_staging_create_waits_for_the_holder_gate_and_then_uses_its_whole_bound
+    {
+        private bool _cancelledWithinTheBound;
+        private bool _cancelledPastTheBound;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Harness harness = Scripted();
+            TaskCompletionSource<bool> probe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource running = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource finish = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            CancellationToken createToken = default;
+            harness.Engine.OnInspectByName = (name, _) =>
+            {
+                if (name.Value.StartsWith(DmsOperationId.StagingDatabaseNamePrefix, StringComparison.Ordinal))
+                {
+                    // The last read before the create: the heartbeat probe takes the gate and keeps it.
+                    harness.OnlyHolder.Probe = _ => probe.Task;
+                    harness.OnlyHolder.StartHeartbeat();
+                    harness.Time.Advance(TimeSpan.FromSeconds(5));
+                }
+
+                return Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
+            };
+
+            // Runs on the holder's gate under CommandTimeout, as PostgresqlDmsTargetEngine.CreateStagingAsync does.
+            harness.Engine.OnCreateStaging = (_, _, token) =>
+            {
+                waiting.TrySetResult();
+                return harness.OnlyHolder.RunAsync(
+                    async holderToken =>
+                    {
+                        createToken = holderToken;
+                        running.SetResult();
+                        await finish.Task;
+                        return Staged();
+                    },
+                    CommandTimeout,
+                    token
+                );
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(harness);
+            await ReadStartedAsync(waiting, create);
+
+            harness.Time.Advance(CommandTimeout);
+            probe.SetResult(true);
+            await ReadStartedAsync(running, create);
+
+            harness.Time.Advance(CommandTimeout - TimeSpan.FromSeconds(1));
+            _cancelledWithinTheBound = createToken.IsCancellationRequested;
+            harness.Time.Advance(TimeSpan.FromSeconds(2));
+            _cancelledPastTheBound = createToken.IsCancellationRequested;
+
+            finish.SetResult();
+            await create;
+        }
+
+        [Test]
+        public void It_does_not_cancel_the_create_within_the_provider_bound() =>
+            _cancelledWithinTheBound.Should().BeFalse();
+
+        [Test]
+        public void It_still_ends_the_create_at_the_provider_bound() =>
+            _cancelledPastTheBound.Should().BeTrue();
+    }
+
+    /// <summary>
     /// Only the scope's deadline for the restore expires: the fake clock passes it while the engine holds the
     /// call, and the engine reports the cancellation of its token as a normal result, as both engines do. The
     /// caller never cancelled and the holder was not lost, so the create ends <c>TimedOut</c>, not with an

@@ -384,9 +384,13 @@ public sealed partial class DmsDataStoreProvisioningService(
         // the call, after the scope's cancellation and loss checks, so a create those checks stop leaves
         // nothing for cleanup to account for, and withdrawn when the holder's gate refuses it before it is
         // sent (DmsCommandNotDispatchedException).
+        // The deadline bounds the step from the request, the wait for the holder's gate included: the largest
+        // bound a provider sets once it holds the gate (PostgreSQL's CREATE DATABASE, one CommandTimeout; SQL
+        // Server's reservation sends nothing) plus one CommandTimeout, the bound of a heartbeat probe that may
+        // hold the gate.
         DmsCommandOutcome<DmsInstanceIdentity> created = await scope.CallAsync(
             CreateStagingStep,
-            options.Value.CommandTimeout,
+            options.Value.CommandTimeout * 2,
             token =>
                 DispatchAsync(
                     () => cleanup.Pending(claim, scope.Holder.Session),
