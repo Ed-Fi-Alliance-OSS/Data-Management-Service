@@ -275,6 +275,14 @@ internal sealed class PsqlRestoreRunner
             operation.Value
         );
 
+        // The last check before the process exists: a stop observed here starts nothing, so the run stays the
+        // definite NotStarted the engine lets cleanup act on. A stop arriving after it finds a started process
+        // and follows the kill-and-resolve protocol below.
+        if (stop.IsCancellationRequested)
+        {
+            return new PsqlRunResult.NotStarted(new OperationCanceledException(stop.Token));
+        }
+
         PsqlProcess.Completion completion = await PsqlProcess.RunAsync(
             startInfo,
             consumeStandardOutput: null,

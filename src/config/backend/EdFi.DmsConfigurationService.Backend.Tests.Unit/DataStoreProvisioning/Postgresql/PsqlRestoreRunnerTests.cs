@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql;
@@ -474,6 +475,117 @@ public class PsqlRestoreRunnerTests
             killed.EventId.Should().Be(PsqlRestoreRunner.ReplayKilled);
             killed.Field("Reason").Should().Be(PsqlKillReason.Cancelled);
             _workspace.LoggedText().Should().NotContain(text => text.Contains(ReplayWorkspace.Password));
+        }
+    }
+
+    /// <summary>
+    /// The caller cancels after the password file is written and before the process is created (here, inside the
+    /// synchronous <c>ReplayStarted</c> entry): no process is started, so the run is the definite
+    /// <see cref="PsqlRunResult.NotStarted"/> carrying the cancellation, which the engine names
+    /// <c>RestoreCancelled</c> and cleanup may act on, not a started-then-killed replay left in doubt.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_after_the_password_file_is_written_and_before_the_process_starts
+    {
+        private ReplayWorkspace _workspace = null!;
+        private FakePsql _fake = null!;
+        private string _signal = null!;
+        private PsqlRunResult _result = null!;
+        private Exception? _exception;
+        private bool _passwordFileExistedAtCancellation;
+        private int _kills;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _kills = 0;
+            _workspace = new ReplayWorkspace();
+            _signal = Path.Combine(_workspace.Root, "started");
+            _fake = FakePsql.Blocking(_signal);
+            using CancellationTokenSource cancellation = new();
+            PsqlRestoreRunner runner = new(
+                _fake.ExecutablePath,
+                TimeSpan.FromMinutes(5),
+                PsqlProcess.DefaultTerminationBound,
+                TimeProvider.System,
+                new CancellingOnReplayStart(
+                    _workspace.Logger,
+                    () =>
+                    {
+                        _passwordFileExistedAtCancellation = File.Exists(_workspace.PasswordFilePath);
+                        cancellation.Cancel();
+                    }
+                ),
+                process =>
+                {
+                    Interlocked.Increment(ref _kills);
+                    process.Kill(entireProcessTree: true);
+                }
+            );
+            _exception = await Record.ExceptionAsync(async () =>
+                _result = await _workspace.RunAsync(runner, cancellation.Token).WaitAsync(_bound)
+            );
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            await _fake.DisposeAsync();
+            await _workspace.DisposeAsync();
+        }
+
+        [Test]
+        public void It_returns_a_definite_not_started_result_carrying_the_cancellation()
+        {
+            _exception.Should().BeNull();
+            _result
+                .Should()
+                .BeOfType<PsqlRunResult.NotStarted>()
+                .Which.Cause.Should()
+                .BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_cancelled_after_the_password_file_was_written() =>
+            _passwordFileExistedAtCancellation.Should().BeTrue();
+
+        [Test]
+        public void It_started_no_process()
+        {
+            _kills.Should().Be(0);
+            File.Exists(_signal).Should().BeFalse();
+            _workspace
+                .Logger.Entries.Select(entry => entry.EventId)
+                .Should()
+                .Equal(PsqlRestoreRunner.ReplayStarted);
+        }
+
+        [Test]
+        public void It_deletes_the_password_file() =>
+            File.Exists(_workspace.PasswordFilePath).Should().BeFalse();
+
+        /// <summary>Forwards every entry and runs the callback once the replay's start entry is written.</summary>
+        private sealed class CancellingOnReplayStart(ILogger inner, Action onReplayStarted) : ILogger
+        {
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => inner.BeginScope(state);
+
+            public bool IsEnabled(LogLevel logLevel) => inner.IsEnabled(logLevel);
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            )
+            {
+                inner.Log(logLevel, eventId, state, exception, formatter);
+                if (eventId == PsqlRestoreRunner.ReplayStarted)
+                {
+                    onReplayStarted();
+                }
+            }
         }
     }
 
