@@ -16,8 +16,10 @@ public class PostgresqlDmsTargetEngineTests
 {
     /// <summary>
     /// The fence's bound on the holder session: the instance check and the <c>ALTER DATABASE</c> each run for up to
-    /// one command allowance before the termination loop starts, and the loop then has the whole termination bound.
-    /// The bound covers all three; the orchestrator's allowance adds the holder gate wait on top of it.
+    /// one command allowance before the termination loop starts, the loop then has the whole termination bound, and
+    /// after it a termination's overrun, its verification read and the deciding read have one allowance each. The
+    /// live outcome is pinned by <c>PostgresqlDeleteTests</c>; the orchestrator's allowance adds the holder gate
+    /// wait on top of it.
     /// </summary>
     [TestFixture]
     public class Given_the_fence_statements_use_their_whole_command_allowance
@@ -34,8 +36,7 @@ public class PostgresqlDmsTargetEngineTests
             _settings
                 .Select(setting =>
                     PostgresqlDmsTargetEngine.FenceDeadline(setting.Termination, setting.Command)
-                    - setting.Command
-                    - setting.Command
+                    - (setting.Command * 5)
                 )
                 .Should()
                 .Equal(_settings.Select(setting => setting.Termination));

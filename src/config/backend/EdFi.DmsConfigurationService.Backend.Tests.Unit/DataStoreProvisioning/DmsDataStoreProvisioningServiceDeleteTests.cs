@@ -1553,7 +1553,7 @@ public class DmsDataStoreProvisioningServiceDeleteTests
     /// The heartbeat probe's deadline passes while it holds the gate, and its driver keeps it two seconds longer
     /// completing the acknowledged cancellation (Npgsql's default <c>CancellationTimeout</c>). The fence's
     /// deadline counts from its request, gate wait included, so the overrun is spent from the step's allowance
-    /// (<c>SessionTerminationTimeout</c> + 3 x <c>CommandTimeout</c>), which is neither extended nor cut: the fence
+    /// (<c>SessionTerminationTimeout</c> + 6 x <c>CommandTimeout</c>), which is neither extended nor cut: the fence
     /// runs to the end of that allowance and is ended there, a second before the provider's own bound would end it.
     /// </summary>
     [TestFixture]
@@ -1571,7 +1571,7 @@ public class DmsDataStoreProvisioningServiceDeleteTests
         [SetUp]
         public async Task Setup()
         {
-            TimeSpan allowance = _sessionTermination + CommandTimeout + CommandTimeout + CommandTimeout;
+            TimeSpan allowance = _sessionTermination + (CommandTimeout * 6);
             TimeSpan gateWait = CommandTimeout + _cancellationCompletion;
             TimeSpan bound = PostgresqlDmsTargetEngine.FenceDeadline(_sessionTermination, CommandTimeout);
             GatedTarget gated = new(SpyDmsTargetEngine.Fence);

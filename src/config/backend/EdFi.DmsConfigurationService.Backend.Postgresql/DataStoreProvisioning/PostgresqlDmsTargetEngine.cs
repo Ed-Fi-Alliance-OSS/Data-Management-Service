@@ -413,7 +413,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     /// <summary>
     /// 6.6 step 3 on the holder session, bounded by <see cref="FenceDeadline"/>: the termination loop has the
-    /// whole termination bound, and the statements around it one command each.
+    /// whole termination bound, and the statements before and after it one command each.
     /// </summary>
     public async Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
@@ -444,14 +444,17 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     }
 
     /// <summary>
-    /// The fence's bound on the holder, started once the gate is held: the instance check and the
+    /// The fence's bound on the holder, started once the gate is held. The instance check and the
     /// <c>ALTER DATABASE</c> take one command each before the termination loop starts, so neither can shorten
-    /// the loop's termination bound. The orchestrator's allowance, counted from its request, is this bound plus
-    /// one <c>CommandTimeout</c> for the gate wait; a wait longer than that ends the allowance first, with the
-    /// same outcome.
+    /// the loop's termination bound. Once the bound has passed, the loop may still need one command each for a
+    /// termination started inside it (its driver allows it one command past the bound), that termination's
+    /// verification read, and the read that decides: the session listing read after the bound (D-22), or the
+    /// privilege read of a refused termination. The orchestrator's allowance, counted from its request, is this
+    /// bound plus one <c>CommandTimeout</c> for the gate wait; a wait longer than that ends the allowance first,
+    /// with the same outcome.
     /// </summary>
     internal static TimeSpan FenceDeadline(TimeSpan sessionTerminationTimeout, TimeSpan commandTimeout) =>
-        sessionTerminationTimeout + commandTimeout + commandTimeout;
+        sessionTerminationTimeout + (commandTimeout * 5);
 
     public async Task<DmsCommandOutcome> UnfenceAsync(
         IDmsTargetLockHolder holder,

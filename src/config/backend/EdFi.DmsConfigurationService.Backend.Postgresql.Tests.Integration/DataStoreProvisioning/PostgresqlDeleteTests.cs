@@ -559,6 +559,210 @@ public class PostgresqlDeleteTests
     }
 
     /// <summary>
+    /// The fence's holder deadline (<see cref="PostgresqlDmsTargetEngine.FenceDeadline"/>), through the engine on a
+    /// held target lock. The clock advances as each fence statement completes, as though it had taken that long;
+    /// the time the final listing needs passes as the termination's verification read completes, so a deadline
+    /// that leaves that listing no room has passed before it is sent. The listing read after the termination
+    /// bound is the proof of exclusivity (D-22), and the deadline leaves it room even when every statement before
+    /// it used nearly its whole allowance: the instance check and the <c>ALTER DATABASE</c> nearly a
+    /// <c>CommandTimeout</c> each, the session proven gone as the bound passes, and a short final listing; or the
+    /// termination, its verification read and the final listing each nearly a <c>CommandTimeout</c> past the
+    /// bound. A final listing that outlasts its own allowance is still ended by the deadline, and the target stays
+    /// fenced for the delete to reverse.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_proof_after_the_termination_bound_runs_under_the_holder_deadline
+    {
+        private FenceRun _counterexample = null!;
+        private FenceRun _wholeAllowances = null!;
+        private FenceRun _listingOverruns = null!;
+        private Durations _counterexampleDurations = null!;
+        private Durations _wholeAllowanceDurations = null!;
+
+        /// <summary>How long each fence statement takes on the fake clock.</summary>
+        private sealed record Durations(
+            TimeSpan Verify,
+            TimeSpan Alter,
+            TimeSpan Terminate,
+            TimeSpan Observe,
+            TimeSpan FinalListing
+        )
+        {
+            public TimeSpan Total => Verify + Alter + Terminate + Observe + FinalListing;
+        }
+
+        private sealed record FenceRun(
+            DmsTargetDatabaseName Target,
+            DmsCommandOutcome Outcome,
+            TimeSpan Elapsed,
+            bool SessionGone,
+            bool AllowsConnections
+        );
+
+        /// <summary>Advances the clock as each of the fence's statements completes on the holder session.</summary>
+        private sealed class StatementClock : IDisposable
+        {
+            private readonly ActivityListener _listener;
+
+            public StatementClock(FakeTimeProvider time, Durations durations)
+            {
+                _listener = new ActivityListener
+                {
+                    ShouldListenTo = activitySource => activitySource.Name == "Npgsql",
+                    Sample = static (ref ActivityCreationOptions<ActivityContext> _) =>
+                        ActivitySamplingResult.AllDataAndRecorded,
+                    ActivityStopped = activity =>
+                    {
+                        if (activity.GetTagItem("db.statement") is not string text)
+                        {
+                            return;
+                        }
+
+                        if (Has(text, "pg_catalog.shobj_description(d.oid, 'pg_database'), d.datallowconn"))
+                        {
+                            time.Advance(durations.Verify);
+                        }
+                        else if (Has(text, "WITH ALLOW_CONNECTIONS false"))
+                        {
+                            time.Advance(durations.Alter);
+                        }
+                        else if (Has(text, "process_ended"))
+                        {
+                            time.Advance(durations.Terminate);
+                        }
+                        else if (Has(text, "AS matched FROM pg_catalog.pg_stat_activity"))
+                        {
+                            time.Advance(durations.Observe + durations.FinalListing);
+                        }
+                    },
+                };
+                ActivitySource.AddActivityListener(_listener);
+            }
+
+            private static bool Has(string text, string part) =>
+                text.Contains(part, StringComparison.Ordinal);
+
+            public void Dispose() => _listener.Dispose();
+        }
+
+        /// <summary>Fences a target with one other session on it, the fence's statements taking <paramref name="durations"/>.</summary>
+        private static async Task<FenceRun> FenceAsync(Durations durations)
+        {
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("deadline");
+            DmsTargetDatabaseName target = TargetNameOf(database.Name);
+            DmsInstanceIdentity.Postgresql instance = await database.CatalogInstanceAsync();
+            FakeTimeProvider time = new();
+            PostgresqlDmsTargetEngine engine = Engine(
+                lockHeartbeatInterval: _quietHeartbeat,
+                timeProvider: time
+            );
+            await using TargetSession other = await TargetSession.OpenAsync(target);
+            DmsCommandOutcome outcome;
+            TimeSpan elapsed;
+            await using (
+                IDmsTargetLockHolder holder = await engine.AcquireTargetLockAsync(
+                    target,
+                    DmsOperationId.New(),
+                    default
+                )
+                    is DmsTargetLockResult.Acquired acquired
+                    ? acquired.Holder
+                    : throw new InvalidOperationException("The target lock was not acquired.")
+            )
+            {
+                long started = time.GetTimestamp();
+                using (new StatementClock(time, durations))
+                {
+                    outcome = await engine.FenceAsync(holder, target, instance, null, default);
+                }
+
+                elapsed = time.GetElapsedTime(started);
+            }
+
+            bool sessionGone = await SessionGoneAsync(other.Session);
+            bool allowsConnections = await ScalarOnServerAsync<bool>(
+                "SELECT d.datallowconn FROM pg_catalog.pg_database d WHERE d.datname = @name;",
+                ("name", database.Name)
+            );
+            return new FenceRun(target, outcome, elapsed, sessionGone, allowsConnections);
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            TimeSpan command = AdminConnection().CommandTimeout;
+            TimeSpan termination = Settings().SessionTerminationTimeout;
+            TimeSpan nearlyCommand = command - TimeSpan.FromSeconds(1);
+
+            // The review counterexample: the session is proven gone as the termination bound passes, and the final
+            // listing needs three seconds more.
+            _counterexampleDurations = new Durations(
+                nearlyCommand,
+                nearlyCommand,
+                termination,
+                TimeSpan.Zero,
+                TimeSpan.FromSeconds(3)
+            );
+
+            // A termination started at the loop's start may run one command past the bound (its driver allowance).
+            _wholeAllowanceDurations = new Durations(
+                nearlyCommand,
+                nearlyCommand,
+                termination + nearlyCommand,
+                nearlyCommand,
+                nearlyCommand
+            );
+            _counterexample = await FenceAsync(_counterexampleDurations);
+            _wholeAllowances = await FenceAsync(_wholeAllowanceDurations);
+            _listingOverruns = await FenceAsync(
+                _wholeAllowanceDurations with
+                {
+                    FinalListing = command + command,
+                }
+            );
+        }
+
+        [Test]
+        public void It_establishes_exclusivity_when_the_final_listing_follows_slow_statements_before_the_loop() =>
+            (
+                _counterexample.Outcome,
+                _counterexample.Elapsed,
+                _counterexample.SessionGone,
+                _counterexample.AllowsConnections
+            )
+                .Should()
+                .Be((new DmsCommandOutcome.Succeeded(), _counterexampleDurations.Total, true, false));
+
+        [Test]
+        public void It_establishes_exclusivity_when_every_statement_uses_nearly_its_whole_allowance() =>
+            (
+                _wholeAllowances.Outcome,
+                _wholeAllowances.Elapsed,
+                _wholeAllowances.SessionGone,
+                _wholeAllowances.AllowsConnections
+            )
+                .Should()
+                .Be((new DmsCommandOutcome.Succeeded(), _wholeAllowanceDurations.Total, true, false));
+
+        [Test]
+        public void It_still_ends_a_final_listing_that_outlasts_its_allowance_and_keeps_the_target_fenced()
+        {
+            DmsCommandOutcome.Failed failed = _listingOverruns
+                .Outcome.Should()
+                .BeOfType<DmsCommandOutcome.Failed>()
+                .Subject;
+            (failed.Failure.Class, failed.Failure.Diagnostic.Operation)
+                .Should()
+                .Be((DmsCommandFailureClass.Rejected, PostgresqlDeletionQueries.FenceExclusivityStep));
+            failed
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.FencedTarget, _listingOverruns.Target.Value));
+            (_listingOverruns.SessionGone, _listingOverruns.AllowsConnections).Should().Be((true, false));
+        }
+    }
+
+    /// <summary>
     /// The dispatch boundary against a live server, on our fenced instance so that a drop that ran would remove it:
     /// a drop the holder's gate refuses (another command holds the gate, as a heartbeat probe would, when the caller
     /// cancels) and a drop whose instance read is cancelled before anything is sent both end as not dispatched, and

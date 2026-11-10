@@ -303,19 +303,16 @@ public sealed partial class DmsDataStoreProvisioningService
         // leaves the fence in doubt for settlement after the lock is released.
         //
         // The deadline bounds the whole step from the request, the wait for the holder's gate included: the largest
-        // bound a provider sets once it holds the gate (PostgreSQL's: SessionTerminationTimeout + 2 x
+        // bound a provider sets once it holds the gate (PostgreSQL's: SessionTerminationTimeout + 5 x
         // CommandTimeout) plus one CommandTimeout, the bound of a heartbeat probe that may hold the gate. The
-        // termination loop keeps its whole SessionTerminationTimeout while the gate wait and the statements around
-        // the loop fit in those three CommandTimeouts. A probe that outlasts its own, because its driver is still
-        // completing a cancellation after the server left a trivial statement unanswered that long, spends that
-        // allowance as a slow statement would; this deadline then ends the fence with the outcome the provider's
-        // bound gives.
+        // termination loop keeps its whole SessionTerminationTimeout, and the reads after it their own allowances,
+        // while the gate wait and the statements around the loop fit in those six CommandTimeouts. A probe that
+        // outlasts its own, because its driver is still completing a cancellation after the server left a trivial
+        // statement unanswered that long, spends that allowance as a slow statement would; this deadline then ends
+        // the fence with the outcome the provider's bound gives.
         DmsCommandOutcome fenced = await scope.CallAsync(
             FenceStep,
-            settings.SessionTerminationTimeout
-                + settings.CommandTimeout
-                + settings.CommandTimeout
-                + settings.CommandTimeout,
+            settings.SessionTerminationTimeout + (settings.CommandTimeout * 6),
             token =>
                 DispatchAsync(
                     () => deletion.FenceDispatched(instance, scope.Holder.Session),
