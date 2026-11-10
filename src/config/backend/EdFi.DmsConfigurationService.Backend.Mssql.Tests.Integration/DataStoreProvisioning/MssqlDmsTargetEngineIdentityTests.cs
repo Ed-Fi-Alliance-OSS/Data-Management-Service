@@ -7,6 +7,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Time.Testing;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
@@ -169,7 +170,8 @@ public class MssqlDmsTargetEngineIdentityTests
     /// A lost connection is never read as malformed metadata: on a database whose identity column and an
     /// effective-schema column are both missing, the identity and facts reads on a killed work session, and the
     /// identity read on a killed holder session, raise the connection failure, which the orchestrator classifies as
-    /// loss or an unknown outcome, never as a typed invalid read.
+    /// loss or an unknown outcome, never as a typed invalid read. The holder runs on a clock that is never advanced,
+    /// so its heartbeat cannot declare the loss first and the read itself reaches the killed connection.
     /// </summary>
     [TestFixture]
     public class Given_the_session_is_killed_before_malformed_metadata_is_read
@@ -178,6 +180,7 @@ public class MssqlDmsTargetEngineIdentityTests
         private Exception? _identityRead;
         private Exception? _factsRead;
         private Exception? _holderRead;
+        private bool _holderLostBeforeRead = true;
         private bool _holderLost;
         private bool _sessionsGone = true;
 
@@ -202,7 +205,8 @@ public class MssqlDmsTargetEngineIdentityTests
             );
 
             DmsTargetDatabaseName target = MssqlDeletionTests.TargetNameOf(_database.Name);
-            DmsTargetLockResult acquired = await engine.AcquireTargetLockAsync(
+            MssqlDmsTargetEngine holderEngine = Engine(timeProvider: new FakeTimeProvider());
+            DmsTargetLockResult acquired = await holderEngine.AcquireTargetLockAsync(
                 target,
                 DmsOperationId.New(),
                 default
@@ -213,8 +217,9 @@ public class MssqlDmsTargetEngineIdentityTests
                 async () => !await SessionExistsAsync(holder.Session),
                 TimeSpan.FromSeconds(30)
             );
+            _holderLostBeforeRead = holder.LostToken.IsCancellationRequested;
             _holderRead = await Record.ExceptionAsync(() =>
-                engine.ReadIdentityOnHolderAsync(holder, target, default)
+                holderEngine.ReadIdentityOnHolderAsync(holder, target, default)
             );
             _holderLost = holder.LostToken.IsCancellationRequested;
         }
@@ -248,6 +253,7 @@ public class MssqlDmsTargetEngineIdentityTests
         [Test]
         public void It_raises_the_connection_failure_from_the_holder_read_and_declares_the_holder_lost()
         {
+            _holderLostBeforeRead.Should().BeFalse("the frozen clock leaves the loss for the read to detect");
             _holderRead
                 .Should()
                 .NotBeNull()
