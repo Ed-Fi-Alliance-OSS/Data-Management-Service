@@ -490,6 +490,7 @@ public class DmsDataStoreProvisioningServiceShellTests
     public class Given_the_artifact_release_leaves_residue_and_the_create_fails_under_the_lock
     {
         private DmsDataStoreCreateResult _lockTimedOut = null!;
+        private DmsDataStoreCreateResult _lockRefused = null!;
         private DmsDataStoreCreateResult _protectedTarget = null!;
         private DmsDataStoreCreateResult _lockLost = null!;
 
@@ -523,6 +524,19 @@ public class DmsDataStoreProvisioningServiceShellTests
                 Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.Timeout());
             _lockTimedOut = await WithTrappedReleaseAsync(timeout);
 
+            Harness refused = new();
+            refused.Engine.OnAcquireTargetLock = _ =>
+                Task.FromResult<DmsTargetLockResult>(
+                    new DmsTargetLockResult.AccessDenied(
+                        new DmsProvisioningDiagnostic(
+                            "Npgsql.PostgresException",
+                            "28000",
+                            "OpenHolderSession"
+                        )
+                    )
+                );
+            _lockRefused = await WithTrappedReleaseAsync(refused);
+
             Harness protectedTarget = new();
             protectedTarget.Engine.OnInspect = _ =>
                 Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Protected());
@@ -547,6 +561,20 @@ public class DmsDataStoreProvisioningServiceShellTests
         {
             FailureOf(_lockTimedOut).Code.Should().Be(DmsProvisioningFailureCode.LockTimeout);
             ShouldCarryDirectoryResidue(_lockTimedOut);
+        }
+
+        [Test]
+        public void It_keeps_the_residue_through_a_refused_lock_acquisition()
+        {
+            (FailureOf(_lockRefused).Code, FailureOf(_lockRefused).Category)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent
+                    )
+                );
+            ShouldCarryDirectoryResidue(_lockRefused);
         }
 
         [Test]
