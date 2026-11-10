@@ -3,11 +3,13 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Diagnostics;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
@@ -425,6 +427,199 @@ public class MssqlDeletionTests
 
         [Test]
         public void It_reverses_the_fence() => _unfence.Should().Be(new DmsCommandOutcome.Succeeded());
+    }
+
+    /// <summary>
+    /// The fence's holder deadline, through the engine on a held target lock, with no other session on the target and
+    /// a <c>CommandTimeout</c> longer than <c>SessionTerminationTimeout</c>. The guarded <c>SET SINGLE_USER</c> batch
+    /// runs before the termination bound starts, and the observation that proves exclusivity (D-22) starts inside it,
+    /// so each has its own allowance within the holder's deadline: the review counterexample (a 59-second batch and a
+    /// 40-second observation) and a batch and observation each one second short of their allowance both establish
+    /// exclusivity. An observation that outlasts its own allowance is still ended by the deadline, and the fence
+    /// stands for the delete to reverse. The durations are simulated: a fake clock advances through SqlClient's
+    /// diagnostic events as each statement's result arrives, so a deadline passed meanwhile cancels the read of that
+    /// result. This pins the holder budget against the fence's real control flow, not the driver's own timeouts.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_fence_statements_outlast_the_termination_bound_under_the_holder_deadline
+    {
+        private static readonly TimeSpan _command = TimeSpan.FromSeconds(60);
+        private static readonly TimeSpan _termination = TimeSpan.FromSeconds(30);
+        private static readonly TimeSpan _nearlyCommand = _command - TimeSpan.FromSeconds(1);
+        private static readonly TimeSpan _counterexampleObservation = TimeSpan.FromSeconds(40);
+
+        private FenceRun _counterexample = null!;
+        private FenceRun _wholeAllowances = null!;
+        private FenceRun _observationOverruns = null!;
+
+        private sealed record FenceRun(
+            string Database,
+            DmsCommandOutcome Outcome,
+            TimeSpan Elapsed,
+            string Access
+        );
+
+        /// <summary>
+        /// Advances the clock as the fence batch's and the first observation's results arrive on the holder session,
+        /// through SqlClient's diagnostic events.
+        /// </summary>
+        private sealed class StatementClock
+            : IObserver<DiagnosticListener>,
+                IObserver<KeyValuePair<string, object?>>,
+                IDisposable
+        {
+            private const string CommandCompleted = "Microsoft.Data.SqlClient.WriteCommandAfter";
+
+            private readonly FakeTimeProvider _time;
+            private readonly TimeSpan _batch;
+            private readonly TimeSpan _observation;
+            private readonly List<IDisposable> _subscriptions = [];
+            private int _observations;
+
+            public StatementClock(FakeTimeProvider time, TimeSpan batch, TimeSpan observation)
+            {
+                _time = time;
+                _batch = batch;
+                _observation = observation;
+                IDisposable all = DiagnosticListener.AllListeners.Subscribe(this);
+                lock (_subscriptions)
+                {
+                    _subscriptions.Add(all);
+                }
+            }
+
+            void IObserver<DiagnosticListener>.OnNext(DiagnosticListener listener)
+            {
+                if (listener.Name == "SqlClientDiagnosticListener")
+                {
+                    IDisposable subscription = listener.Subscribe(this);
+                    lock (_subscriptions)
+                    {
+                        _subscriptions.Add(subscription);
+                    }
+                }
+            }
+
+            void IObserver<KeyValuePair<string, object?>>.OnNext(KeyValuePair<string, object?> value)
+            {
+                if (
+                    value.Key != CommandCompleted
+                    || value.Value?.GetType().GetProperty("Command")?.GetValue(value.Value)
+                        is not SqlCommand { CommandText: { } text }
+                )
+                {
+                    return;
+                }
+
+                if (text.Contains("SET SINGLE_USER WITH ROLLBACK IMMEDIATE", StringComparison.Ordinal))
+                {
+                    _time.Advance(_batch);
+                }
+                else if (
+                    text.Contains("sys.dm_tran_locks", StringComparison.Ordinal)
+                    && Interlocked.Increment(ref _observations) == 1
+                )
+                {
+                    _time.Advance(_observation);
+                }
+            }
+
+            void IObserver<DiagnosticListener>.OnCompleted() { }
+
+            void IObserver<DiagnosticListener>.OnError(Exception error) { }
+
+            void IObserver<KeyValuePair<string, object?>>.OnCompleted() { }
+
+            void IObserver<KeyValuePair<string, object?>>.OnError(Exception error) { }
+
+            public void Dispose()
+            {
+                lock (_subscriptions)
+                {
+                    foreach (IDisposable subscription in _subscriptions)
+                    {
+                        subscription.Dispose();
+                    }
+
+                    _subscriptions.Clear();
+                }
+            }
+        }
+
+        /// <summary>Fences a target no other session uses, the batch taking nearly its allowance and the first observation <paramref name="observation"/>.</summary>
+        private static async Task<FenceRun> FenceAsync(TimeSpan observation)
+        {
+            await using TestDatabase database = await CreateDmsShapedDatabaseAsync("budget");
+            DmsTargetDatabaseName target = TargetNameOf(database.Name);
+            DmsInstanceIdentity.Mssql instance = await database.CatalogInstanceAsync();
+            FakeTimeProvider time = new();
+            MssqlDmsTargetEngine engine = new(
+                new MssqlAdminConnection(AdminConnectionString!, _command),
+                Settings(
+                    lockHeartbeatInterval: TimeSpan.FromMinutes(30),
+                    sessionTerminationTimeout: _termination
+                ),
+                time,
+                NullLogger.Instance
+            );
+            DmsCommandOutcome outcome;
+            TimeSpan elapsed;
+            await using (IDmsTargetLockHolder holder = await AcquireAsync(engine, target))
+            {
+                long started = time.GetTimestamp();
+                using (new StatementClock(time, _nearlyCommand, observation))
+                {
+                    outcome = await engine.FenceAsync(holder, target, instance, null, default);
+                }
+
+                elapsed = time.GetElapsedTime(started);
+            }
+
+            return new FenceRun(database.Name, outcome, elapsed, await UserAccessOfAsync(database.Name));
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _counterexample = await FenceAsync(_counterexampleObservation);
+            _wholeAllowances = await FenceAsync(_nearlyCommand);
+            _observationOverruns = await FenceAsync(_command + _command);
+        }
+
+        [Test]
+        public void It_establishes_exclusivity_in_the_review_counterexample() =>
+            (_counterexample.Outcome, _counterexample.Elapsed, _counterexample.Access)
+                .Should()
+                .Be(
+                    (
+                        new DmsCommandOutcome.Succeeded(),
+                        _nearlyCommand + _counterexampleObservation,
+                        "SINGLE_USER"
+                    )
+                );
+
+        [Test]
+        public void It_establishes_exclusivity_when_the_batch_and_the_observation_use_nearly_their_allowances() =>
+            (_wholeAllowances.Outcome, _wholeAllowances.Elapsed, _wholeAllowances.Access)
+                .Should()
+                .Be((new DmsCommandOutcome.Succeeded(), _nearlyCommand + _nearlyCommand, "SINGLE_USER"));
+
+        [Test]
+        public void It_still_ends_an_observation_that_outlasts_its_allowance_and_keeps_the_fence()
+        {
+            DmsCommandOutcome.Failed failed = _observationOverruns
+                .Outcome.Should()
+                .BeOfType<DmsCommandOutcome.Failed>()
+                .Subject;
+            (failed.Failure.Class, failed.Failure.Diagnostic.Operation)
+                .Should()
+                .Be((DmsCommandFailureClass.Rejected, MssqlDeletionQueries.FenceExclusivityStep));
+            failed
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.FencedTarget, _observationOverruns.Database));
+            _observationOverruns.Access.Should().Be("SINGLE_USER");
+        }
     }
 
     [TestFixture]

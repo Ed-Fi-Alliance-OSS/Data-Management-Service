@@ -15,7 +15,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// it. The holder that set single-user mode keeps a shared database lock, and with it the database's one slot, until it
 /// sets multi-user mode again or ends: while the fence stands no other session can open the target, so the holder reads
 /// the identity itself through a three-part name, and drops the target from the same session. The exclusivity
-/// observation is bounded by <c>SessionTerminationTimeout</c>, the statements by <c>CommandTimeout</c>.
+/// observation waits for no session past <c>SessionTerminationTimeout</c>; each statement, including the observation
+/// that decides, is bounded by <c>CommandTimeout</c>.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine
 {
@@ -29,7 +30,10 @@ public sealed partial class MssqlDmsTargetEngine
     /// <summary>
     /// On the holder session: single-user mode on <paramref name="target"/>, guarded by <paramref name="instance"/>,
     /// then proof that no other session uses it (D-22). SQL Server cannot keep a session through the fence, so
-    /// <paramref name="keep"/> must be null.
+    /// <paramref name="keep"/> must be null. The holder's bound is the guarded batch's <c>CommandTimeout</c>, then the
+    /// termination bound, which the batch does not shorten, and one more <c>CommandTimeout</c> for an observation
+    /// started as the bound passes: the bound is checked only after an observation returns, and one that finds no
+    /// other session decides.
     /// </summary>
     public async Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
@@ -62,7 +66,7 @@ public sealed partial class MssqlDmsTargetEngine
                     FenceObservationHook,
                     token
                 ),
-            _adminConnection.CommandTimeout + _settings.SessionTerminationTimeout,
+            _settings.SessionTerminationTimeout + (_adminConnection.CommandTimeout * 2),
             cancellationToken
         );
     }
