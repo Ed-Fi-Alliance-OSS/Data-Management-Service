@@ -435,7 +435,7 @@ public class TemplatePackageStagerTests
     {
         private StagerWorkspace _workspace = null!;
         private Exception? _versionFailure;
-        private Exception? _versionCaseFailure;
+        private string? _manifestVersionCaseStaged;
         private StagedTemplatePackage? _mixedCaseIdStaged;
 
         [SetUp]
@@ -451,15 +451,22 @@ public class TemplatePackageStagerTests
                 expectedPackageVersion: "1.0.123"
             );
 
-            // Published, attested and allowlisted as the same version up to case: the attestation and the nuspec
-            // compare ignoring case, the manifest comparison is exact (6.2 step 6).
+            // Published, attested and allowlisted as 1.0.123-beta, with only the manifest declaring 1.0.123-BETA:
+            // the manifest compares ignoring case, as the delivered consumer, the attestation and the nuspec do.
             TestTemplatePackage prerelease = _workspace.Build(
-                new TestTemplatePackageBuilder().WithPackageVersion("1.0.123-beta")
+                new TestTemplatePackageBuilder()
+                    .WithPackageVersion("1.0.123-beta")
+                    .WithManifest(manifest => manifest["packageVersion"] = "1.0.123-BETA")
             );
-            _versionCaseFailure = await _workspace.StagingFailureOf(
-                prerelease,
-                expectedPackageVersion: "1.0.123-BETA"
-            );
+            using (
+                StagedTemplatePackage staged = await _workspace.StageAsync(
+                    prerelease,
+                    expectedPackageVersion: "1.0.123-beta"
+                )
+            )
+            {
+                _manifestVersionCaseStaged = staged.Manifest.PackageVersion;
+            }
 
             TestTemplatePackage package = _workspace.Build();
             _mixedCaseIdStaged = await _workspace.StageAsync(
@@ -486,8 +493,8 @@ public class TemplatePackageStagerTests
         }
 
         [Test]
-        public void It_compares_the_version_exactly() =>
-            Refusal(_versionCaseFailure).Defect.Should().Be(TemplatePackageDefect.IdentityMismatch);
+        public void It_compares_the_manifest_version_ignoring_case() =>
+            _manifestVersionCaseStaged.Should().Be("1.0.123-BETA");
 
         [Test]
         public void It_compares_the_id_ignoring_case() => _mixedCaseIdStaged.Should().NotBeNull();

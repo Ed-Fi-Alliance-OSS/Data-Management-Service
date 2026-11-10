@@ -316,7 +316,11 @@ public sealed class TemplatePackageStager
             : throw PackageInvalid($"{requirement}; found {matches.Length}.");
     }
 
-    /// <summary>The manifest names the resolved identity: id ignoring case, version exactly (6.2 step 6).</summary>
+    /// <summary>
+    /// The manifest names the resolved identity, both members compared ignoring case as the delivered consumer
+    /// (<c>bootstrap-restore.psm1</c>), the attestation, and the nuspec do (6.2 step 6). The pin keeps the
+    /// allowlisted spelling, so this comparison never changes what a retry compares.
+    /// </summary>
     private static void RequireManifestIdentity(
         RestoreManifest manifest,
         string expectedPackageId,
@@ -325,7 +329,7 @@ public sealed class TemplatePackageStager
     {
         if (
             !SameIgnoringCase(manifest.PackageId, expectedPackageId)
-            || !string.Equals(manifest.PackageVersion, expectedPackageVersion, StringComparison.Ordinal)
+            || !SameIgnoringCase(manifest.PackageVersion, expectedPackageVersion)
         )
         {
             throw new TemplatePackageException(
