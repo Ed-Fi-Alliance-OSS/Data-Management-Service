@@ -10,6 +10,12 @@ public enum DmsEffectiveSchemaReadProblem
     TableMissing,
     NoRows,
     MultipleRows,
+
+    /// <summary>A column the read selects does not exist (PostgreSQL <c>42703</c>, SQL Server <c>207</c>).</summary>
+    ColumnMissing,
+
+    /// <summary>A returned row holds a NULL, or a column whose type is not the contract's (text, text, smallint, binary).</summary>
+    ValueInvalid,
 }
 
 /// <summary>The single <c>dms.EffectiveSchema</c> row (F-D2), compared with the manifest (6.9c item 1).</summary>

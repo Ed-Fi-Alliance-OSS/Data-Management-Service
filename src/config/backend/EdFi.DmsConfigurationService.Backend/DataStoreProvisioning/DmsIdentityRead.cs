@@ -16,6 +16,12 @@ public enum DmsIdentityReadProblem
 
     /// <summary>The server definitely refused the read for lack of a privilege; <see cref="DmsIdentityRead.Invalid.Diagnostic"/> carries the provider code.</summary>
     AccessDenied,
+
+    /// <summary>The table exists without a <c>SourceIdentity</c> column (PostgreSQL <c>42703</c>, SQL Server <c>207</c>).</summary>
+    ColumnMissing,
+
+    /// <summary>The <c>SourceIdentity</c> column has a type the identity query cannot read as text.</summary>
+    ColumnTypeInvalid,
 }
 
 /// <summary>

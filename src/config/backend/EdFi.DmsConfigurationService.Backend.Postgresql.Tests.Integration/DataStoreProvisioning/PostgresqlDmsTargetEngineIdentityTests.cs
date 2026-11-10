@@ -30,6 +30,7 @@ public class PostgresqlDmsTargetEngineIdentityTests
         private DmsIdentityRead _unparsable = null!;
         private DmsIdentityRead _empty = null!;
         private DmsIdentityRead _found = null!;
+        private DmsIdentityRead _columnMissing = null!;
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -59,6 +60,10 @@ public class PostgresqlDmsTargetEngineIdentityTests
                 $"UPDATE \"dms\".\"DataStoreIdentity\" SET \"SourceIdentity\" = '{_valid:D}';"
             );
             _found = await ReadAsync();
+            await _database.ExecuteAsync(
+                "ALTER TABLE \"dms\".\"DataStoreIdentity\" DROP COLUMN \"SourceIdentity\";"
+            );
+            _columnMissing = await ReadAsync();
         }
 
         [OneTimeTearDown]
@@ -98,6 +103,10 @@ public class PostgresqlDmsTargetEngineIdentityTests
         public void It_finds_a_single_valid_identity() =>
             _found.Should().BeOfType<DmsIdentityRead.Found>().Which.SourceIdentity.Should().Be(_valid);
 
+        [Test]
+        public void It_reports_a_table_without_the_identity_column_as_column_missing() =>
+            _columnMissing.Should().Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing));
+
         private async Task<DmsIdentityRead> ReadAsync()
         {
             PostgresqlDmsTargetEngine engine = Engine();
@@ -108,6 +117,86 @@ public class PostgresqlDmsTargetEngineIdentityTests
             );
             await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
             return await engine.ReadIdentityAsync(session, default);
+        }
+    }
+
+    /// <summary>
+    /// A lost connection is never read as malformed metadata: on a database whose identity column and effective-schema
+    /// columns are both missing, reads on a session whose backend was terminated raise the connection failure, which
+    /// the orchestrator classifies as loss or an unknown outcome, never as a typed invalid read.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_session_is_terminated_before_malformed_metadata_is_read
+    {
+        private TestDatabase? _database;
+        private Exception? _identityRead;
+        private Exception? _factsRead;
+        private bool _sessionGone = true;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("lost");
+            await _database.ExecuteAsync(
+                "ALTER TABLE \"dms\".\"DataStoreIdentity\" DROP COLUMN \"SourceIdentity\"; ALTER TABLE \"dms\".\"EffectiveSchema\" DROP COLUMN \"ResourceKeySeedHash\";"
+            );
+
+            PostgresqlDmsTargetEngine engine = Engine();
+            _identityRead = await ReadOnTerminatedSessionAsync(
+                engine,
+                session => engine.ReadIdentityAsync(session, default)
+            );
+            _factsRead = await ReadOnTerminatedSessionAsync(
+                engine,
+                session => engine.ReadTargetFactsAsync(session, default)
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_raises_the_connection_failure_from_the_identity_read() =>
+            _identityRead
+                .Should()
+                .NotBeNull()
+                .And.Match<Exception>(exception => PostgresqlErrorClassifier.IsConnectionFailure(exception));
+
+        [Test]
+        public void It_raises_the_connection_failure_from_the_facts_read() =>
+            _factsRead
+                .Should()
+                .NotBeNull()
+                .And.Match<Exception>(exception => PostgresqlErrorClassifier.IsConnectionFailure(exception));
+
+        [Test]
+        public void It_terminated_each_session_before_reading() => _sessionGone.Should().BeTrue();
+
+        private async Task<Exception?> ReadOnTerminatedSessionAsync(
+            PostgresqlDmsTargetEngine engine,
+            Func<DmsSession, Task> read
+        )
+        {
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                _database!.DatabaseName,
+                await _database.CatalogInstanceAsync(),
+                default
+            );
+            await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
+            long pid = session.ServerSession.Id;
+            await TerminateBackendAsync(pid);
+            _sessionGone &= await WaitUntilAsync(
+                async () => !await SessionExistsAsync(pid),
+                TimeSpan.FromSeconds(30)
+            );
+            return await Record.ExceptionAsync(() => read(session));
         }
     }
 

@@ -52,6 +52,17 @@ internal static class PostgresqlErrorClassifier
     }
 
     /// <summary>
+    /// The state a read of a table that exists maps to "column missing": an undefined column (<c>42703</c>), raised
+    /// in the query's own response when the table lacks a column the query names. It says nothing about the
+    /// connection, so it is never loss.
+    /// </summary>
+    public static bool IsMissingColumn(string sqlState)
+    {
+        ArgumentNullException.ThrowIfNull(sqlState);
+        return sqlState == PostgresErrorCodes.UndefinedColumn;
+    }
+
+    /// <summary>
     /// A definite refusal for lack of a privilege: <c>42501</c> (a denied read, or <c>CONNECT</c> denied on the
     /// database) or class <c>28</c> (the server's authentication rules reject this role for this database).
     /// Nothing was read or opened, and retrying without an operator changing a grant cannot succeed.

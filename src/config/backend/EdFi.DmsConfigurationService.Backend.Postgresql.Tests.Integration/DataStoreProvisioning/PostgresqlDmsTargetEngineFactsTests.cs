@@ -261,6 +261,102 @@ public class PostgresqlDmsTargetEngineFactsTests
             _populatedAfterDocument.Should().Be(new DmsTargetValidation.Valid());
     }
 
+    /// <summary>
+    /// F-01: a <c>dms.EffectiveSchema</c> whose row holds a NULL, whose column has another type, or which lacks a
+    /// column is a typed invalid read, never a driver exception; the rest of the facts are still read, and a
+    /// well-formed row is still found.
+    /// </summary>
+    [TestFixture]
+    public class Given_effective_schema_tables_of_every_shape
+    {
+        private const string Table = "\"dms\".\"EffectiveSchema\"";
+
+        private readonly List<TestDatabase> _databases = [];
+        private DmsTargetFacts _wellFormed = null!;
+        private DmsTargetFacts _nullHash = null!;
+        private DmsTargetFacts _integerCount = null!;
+        private DmsTargetFacts _textSeedHash = null!;
+        private DmsTargetFacts _seedHashMissing = null!;
+
+        private async Task<DmsTargetFacts> FactsAfterAsync(string purpose, string? alteration)
+        {
+            TestDatabase database = await CreateDmsShapedDatabaseAsync(purpose);
+            _databases.Add(database);
+            if (alteration is not null)
+            {
+                await database.ExecuteAsync(alteration);
+            }
+
+            return (await ReadAsync(database)).Facts;
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _wellFormed = await FactsAfterAsync("esform", null);
+            _nullHash = await FactsAfterAsync(
+                "esnull",
+                $"ALTER TABLE {Table} ALTER COLUMN \"EffectiveSchemaHash\" DROP NOT NULL; UPDATE {Table} SET \"EffectiveSchemaHash\" = NULL;"
+            );
+            _integerCount = await FactsAfterAsync(
+                "esint",
+                $"ALTER TABLE {Table} ALTER COLUMN \"ResourceKeyCount\" TYPE integer;"
+            );
+            _textSeedHash = await FactsAfterAsync(
+                "estext",
+                $"ALTER TABLE {Table} DROP CONSTRAINT \"CK_EffectiveSchema_ResourceKeySeedHash_Length\", ALTER COLUMN \"ResourceKeySeedHash\" TYPE text USING encode(\"ResourceKeySeedHash\", 'hex');"
+            );
+            _seedHashMissing = await FactsAfterAsync(
+                "esdrop",
+                $"ALTER TABLE {Table} DROP COLUMN \"ResourceKeySeedHash\";"
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (TestDatabase database in _databases)
+            {
+                await database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_finds_the_well_formed_row() =>
+            _wellFormed.EffectiveSchema.Should().BeOfType<DmsEffectiveSchemaRead.Found>();
+
+        [Test]
+        public void It_reports_a_null_value_as_invalid() =>
+            _nullHash
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid));
+
+        [Test]
+        public void It_reports_a_count_of_another_type_as_invalid() =>
+            _integerCount
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid));
+
+        [Test]
+        public void It_reports_a_seed_hash_of_another_type_as_invalid() =>
+            _textSeedHash
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid));
+
+        [Test]
+        public void It_reports_a_missing_column_as_column_missing() =>
+            _seedHashMissing
+                .EffectiveSchema.Should()
+                .Be(new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ColumnMissing));
+
+        [Test]
+        public void It_still_reads_the_rest_of_the_facts() =>
+            new[] { _nullHash, _integerCount, _textSeedHash, _seedHashMissing }
+                .Should()
+                .AllSatisfy(facts => facts.SchemaNames.Should().Equal(_wellFormed.SchemaNames));
+    }
+
     [TestFixture]
     public class Given_an_identity_state_object_inside_the_dms_schema
     {

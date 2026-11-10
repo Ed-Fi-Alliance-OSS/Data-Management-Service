@@ -1155,6 +1155,10 @@ public class PostgresqlDeleteTests
         private DmsDataStoreDeleteResult _absentResult = null!;
         private DmsDataStoreDeleteResult _unownedResult = null!;
         private DmsDataStoreDeleteResult _unreadableResult = null!;
+        private Lane? _columnMissing;
+        private DmsDataStoreDeleteResult _columnMissingResult = null!;
+        private (bool Exists, uint Oid, bool AllowsConnections) _columnMissingBefore;
+        private (bool Exists, uint Oid, bool AllowsConnections) _columnMissingAfter;
         private DmsInstanceIdentity.Postgresql _unownedBefore = null!;
         private (bool Exists, uint Oid, bool AllowsConnections) _unownedAfter;
         private (bool Exists, uint Oid, bool AllowsConnections) _unreadableBefore;
@@ -1183,12 +1187,22 @@ public class PostgresqlDeleteTests
             _unreadableBefore = await _unreadable.TargetCatalogAsync();
             _unreadableResult = await _unreadable.DeleteAsync();
             _unreadableAfter = await _unreadable.TargetCatalogAsync();
+
+            // F-01: the record's own identity once seeded, then the identity column dropped.
+            _columnMissing = await Lane.BuildAsync(Lane.ShapedSql(), new LaneHooks());
+            await _columnMissing.SeedTargetAsync();
+            await new TestDatabase(_columnMissing.Target.Value).ExecuteAsync(
+                "ALTER TABLE \"dms\".\"DataStoreIdentity\" DROP COLUMN \"SourceIdentity\";"
+            );
+            _columnMissingBefore = await _columnMissing.TargetCatalogAsync();
+            _columnMissingResult = await _columnMissing.DeleteAsync();
+            _columnMissingAfter = await _columnMissing.TargetCatalogAsync();
         }
 
         [OneTimeTearDown]
         public async Task Teardown()
         {
-            foreach (Lane? lane in new[] { _absent, _unowned, _unreadable })
+            foreach (Lane? lane in new[] { _absent, _unowned, _unreadable, _columnMissing })
             {
                 if (lane is not null)
                 {
@@ -1232,9 +1246,26 @@ public class PostgresqlDeleteTests
         }
 
         [Test]
+        public void It_reports_a_target_without_the_identity_column_as_unverifiable_and_leaves_it_untouched()
+        {
+            FailureOf(_columnMissingResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.DeleteIdentityStep
+                    )
+                );
+            (_columnMissingAfter, _columnMissingBefore.Exists, _columnMissingBefore.AllowsConnections)
+                .Should()
+                .Be((_columnMissingBefore, true, true));
+        }
+
+        [Test]
         public void It_never_fences_or_drops()
         {
-            foreach (Lane lane in new[] { _absent!, _unowned!, _unreadable! })
+            foreach (Lane lane in new[] { _absent!, _unowned!, _unreadable!, _columnMissing! })
             {
                 MembersOf(lane.Engine)
                     .Should()

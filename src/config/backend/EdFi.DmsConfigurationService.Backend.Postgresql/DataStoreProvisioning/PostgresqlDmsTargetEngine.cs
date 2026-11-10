@@ -50,6 +50,15 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     private const string SessionIdentityQuery =
         "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database'), a.pid, a.backend_start FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_stat_activity a WHERE d.datname = pg_catalog.current_database() AND a.pid = pg_catalog.pg_backend_pid();";
 
+    /// <summary>The field types of <see cref="PostgresqlInventoryQueries.EffectiveSchemaRows"/> the contract allows: two texts, a <c>smallint</c>, a <c>bytea</c>.</summary>
+    private static readonly Type[] _effectiveSchemaColumnTypes =
+    [
+        typeof(string),
+        typeof(string),
+        typeof(short),
+        typeof(byte[]),
+    ];
+
     private readonly PostgresqlAdminConnection _adminConnection;
     private readonly PostgresqlDmsEngineSettings _settings;
     private readonly PsqlRestoreRunner _runner;
@@ -252,6 +261,11 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             when (PostgresqlErrorClassifier.IsMissingRelation(exception.SqlState))
         {
             return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.TableMissing);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsMissingColumn(exception.SqlState))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing);
         }
         catch (PostgresException exception)
             when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
@@ -624,18 +638,13 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     )
     {
-        List<DmsEffectiveSchemaRead.Found> rows;
+        List<DmsEffectiveSchemaRead.Found?> rows;
         try
         {
             rows = await ReadRowsAsync(
                 connection,
                 PostgresqlInventoryQueries.EffectiveSchemaRows,
-                reader => new DmsEffectiveSchemaRead.Found(
-                    reader.GetString(0),
-                    reader.GetString(1),
-                    reader.GetInt16(2),
-                    Convert.ToBase64String(reader.GetFieldValue<byte[]>(3))
-                ),
+                EffectiveSchemaRowOf,
                 cancellationToken
             );
         }
@@ -644,13 +653,49 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         {
             return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.TableMissing);
         }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsMissingColumn(exception.SqlState))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ColumnMissing);
+        }
+
+        if (rows.Exists(row => row is null))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid);
+        }
 
         return rows.Count switch
         {
             0 => new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.NoRows),
-            1 => rows[0],
+            1 => rows[0]!,
             _ => new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.MultipleRows),
         };
+    }
+
+    /// <summary>
+    /// One <c>dms.EffectiveSchema</c> row in the contract's types, or null when a value is NULL or a column's type
+    /// is not the contract's. The row is already read, and the shape is checked before any typed getter runs, so a
+    /// malformed row raises nothing and a failure of the connection still surfaces from the read itself.
+    /// </summary>
+    private static DmsEffectiveSchemaRead.Found? EffectiveSchemaRowOf(NpgsqlDataReader reader)
+    {
+        for (int ordinal = 0; ordinal < _effectiveSchemaColumnTypes.Length; ordinal++)
+        {
+            if (
+                reader.GetFieldType(ordinal) != _effectiveSchemaColumnTypes[ordinal]
+                || reader.IsDBNull(ordinal)
+            )
+            {
+                return null;
+            }
+        }
+
+        return new DmsEffectiveSchemaRead.Found(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetInt16(2),
+            Convert.ToBase64String(reader.GetFieldValue<byte[]>(3))
+        );
     }
 
     /// <summary>The Populated predicate, or null when either table it reads is missing.</summary>

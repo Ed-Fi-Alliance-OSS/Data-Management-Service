@@ -216,6 +216,43 @@ public class PostgresqlErrorClassifierTests
     }
 
     [TestFixture]
+    public class Given_states_that_may_name_a_missing_column
+    {
+        // A missing table or schema, connection loss, cancellation, a refusal, and a datatype mismatch are not.
+        private static readonly string[] _others =
+        [
+            "42P01",
+            "3F000",
+            "08006",
+            "57014",
+            "42501",
+            "28000",
+            "42804",
+        ];
+
+        private bool _undefinedColumn;
+        private bool[] _otherVerdicts = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            _undefinedColumn = PostgresqlErrorClassifier.IsMissingColumn("42703");
+            _otherVerdicts = [.. _others.Select(PostgresqlErrorClassifier.IsMissingColumn)];
+        }
+
+        [Test]
+        public void It_treats_an_undefined_column_as_missing() => _undefinedColumn.Should().BeTrue();
+
+        [Test]
+        public void It_treats_no_other_state_as_a_missing_column() =>
+            _otherVerdicts.Should().AllSatisfy(verdict => verdict.Should().BeFalse());
+
+        [Test]
+        public void It_does_not_treat_an_undefined_column_as_a_missing_relation() =>
+            PostgresqlErrorClassifier.IsMissingRelation("42703").Should().BeFalse();
+    }
+
+    [TestFixture]
     public class Given_states_that_may_be_a_definite_access_refusal
     {
         private static readonly string[] _refusals = ["42501", "28000", "28P01"];
