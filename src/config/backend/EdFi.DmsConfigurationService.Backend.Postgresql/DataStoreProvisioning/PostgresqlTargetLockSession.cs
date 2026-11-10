@@ -104,8 +104,10 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// Opens the holder session and takes the lock, waiting at most <paramref name="acquireTimeout"/> on the
     /// server (<c>lock_timeout</c>, in force for the lock statement only). A lock another session still holds
     /// when the budget ends is <see cref="DmsTargetLockResult.Timeout"/>; that holder is never identified or
-    /// terminated. Any other failure closes the connection and is <see cref="DmsTargetLockResult.Failure"/>;
-    /// cancellation closes it and propagates. On success the heartbeat is started before the holder is returned.
+    /// terminated. A definite refusal of the login or the lock request (<c>42501</c> or class <c>28</c>) is
+    /// <see cref="DmsTargetLockResult.AccessDenied"/>; any other failure closes the connection and is
+    /// <see cref="DmsTargetLockResult.Failure"/>; cancellation closes it and propagates. On success the heartbeat
+    /// is started before the holder is returned.
     /// </summary>
     public static Task<DmsTargetLockResult> AcquireAsync(
         PostgresqlAdminConnection adminConnection,
@@ -296,8 +298,20 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         }
     }
 
-    private static DmsTargetLockResult Failure(Exception exception) =>
-        new DmsTargetLockResult.Failure(PostgresqlErrorClassifier.Diagnostic(exception, AcquireStep));
+    /// <summary>
+    /// What an acquisition that raised <paramref name="exception"/> held: nothing, either because the server
+    /// definitely refused the login or the lock request for lack of access (<c>42501</c>, class <c>28</c>), which
+    /// retrying cannot change, or because of any other failure. Only the type chain and the SQLSTATE are kept.
+    /// </summary>
+    private static DmsTargetLockResult Failure(Exception exception)
+    {
+        DmsProvisioningDiagnostic diagnostic = PostgresqlErrorClassifier.Diagnostic(exception, AcquireStep);
+        return
+            PostgresqlErrorClassifier.SqlStateOf(exception) is { } sqlState
+            && PostgresqlErrorClassifier.IsAccessRefusal(sqlState)
+            ? new DmsTargetLockResult.AccessDenied(diagnostic)
+            : new DmsTargetLockResult.Failure(diagnostic);
+    }
 
     private static async Task<DmsServerSessionId> ReadSessionAsync(
         NpgsqlConnection connection,

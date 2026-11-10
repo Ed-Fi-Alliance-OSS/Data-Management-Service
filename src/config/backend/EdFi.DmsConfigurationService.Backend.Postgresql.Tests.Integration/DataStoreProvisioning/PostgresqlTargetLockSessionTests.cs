@@ -5,10 +5,13 @@
 
 using System.Data;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using Npgsql;
@@ -132,6 +135,229 @@ public class PostgresqlTargetLockSessionTests
         }
 
         public ValueTask DisposeAsync() => connection.DisposeAsync();
+    }
+
+    /// <summary>
+    /// F-02 against a real server: a login role that took a lock is then made <c>NOLOGIN</c> (class 28, which the
+    /// server raises under any authentication method). The next acquisition is <c>AccessDenied</c> with the SQLSTATE
+    /// only; create and delete through the orchestrator are <c>AdminPrivilegeMissing</c>, permanent, at the lock
+    /// step, and read nothing else; neither a diagnostic nor a log line carries the password or the connection
+    /// string. A server-reported condition that is not a refusal (the role's connection limit reached, <c>53300</c>)
+    /// and a server nobody listens on stay a lock infrastructure <c>Failure</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_admin_login_is_refused_after_it_was_accepted
+    {
+        private readonly CapturingLogger _logs = new();
+        private string? _role;
+        private Lane? _lane;
+        private DmsTargetLockResult _accepted = null!;
+        private DmsTargetLockResult _limited = null!;
+        private DmsTargetLockResult _refused = null!;
+        private DmsTargetLockResult _unreachable = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+        private string[] _members = [];
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _role = await CreateLoginRoleAsync("lockrefused");
+            PostgresqlDmsTargetEngine engine = new(
+                AdminConnectionAs(_role),
+                Settings(),
+                TimeProvider.System,
+                _logs
+            );
+
+            _accepted = await engine.AcquireTargetLockAsync(
+                TargetName("accepted"),
+                DmsOperationId.New(),
+                default
+            );
+            if (_accepted is DmsTargetLockResult.Acquired acquired)
+            {
+                await acquired.Holder.DisposeAsync();
+            }
+
+            string role = PostgresqlIdentifiers.Quote(_role);
+            await ExecuteOnServerAsync($"ALTER ROLE {role} CONNECTION LIMIT 0;");
+            _limited = await engine.AcquireTargetLockAsync(
+                TargetName("limited"),
+                DmsOperationId.New(),
+                default
+            );
+
+            await ExecuteOnServerAsync($"ALTER ROLE {role} CONNECTION LIMIT -1 NOLOGIN;");
+            _refused = await engine.AcquireTargetLockAsync(
+                TargetName("refused"),
+                DmsOperationId.New(),
+                default
+            );
+
+            _lane = await Lane.BuildAsync(Lane.ShapedSql(), new LaneHooks());
+            Lane.Deployment refusing = _lane.WithEngine(engine);
+            _create = await refusing.Service.CreateAsync(_lane.Request, default);
+            _delete = await refusing.Service.DeleteAsync(_lane.DeleteRequest, default);
+            _members = [.. refusing.Engine.Calls.Select(call => call.Member)];
+
+            using TcpListener vacated = new(IPAddress.Loopback, 0);
+            vacated.Start();
+            int port = ((IPEndPoint)vacated.LocalEndpoint).Port;
+            vacated.Stop();
+            PostgresqlDmsTargetEngine unreachable = new(
+                new PostgresqlAdminConnection(
+                    new NpgsqlConnectionStringBuilder(AdminConnectionString!)
+                    {
+                        Host = "127.0.0.1",
+                        Port = port,
+                    }.ConnectionString,
+                    TimeSpan.FromSeconds(30)
+                ),
+                Settings(),
+                TimeProvider.System,
+                _logs
+            );
+            _unreachable = await unreachable.AcquireTargetLockAsync(
+                TargetName("unreachable"),
+                DmsOperationId.New(),
+                default
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+
+            if (_role is not null)
+            {
+                await DropRoleAsync(_role);
+            }
+        }
+
+        [Test]
+        public void It_acquired_the_lock_while_the_login_was_accepted() =>
+            _accepted.Should().BeOfType<DmsTargetLockResult.Acquired>();
+
+        [Test]
+        public void It_reports_the_refused_login_as_access_denied_with_the_sqlstate_only() =>
+            _refused
+                .Should()
+                .BeOfType<DmsTargetLockResult.AccessDenied>()
+                .Which.Diagnostic.Should()
+                .Be(
+                    new DmsProvisioningDiagnostic(
+                        typeof(PostgresException).FullName!,
+                        "28000",
+                        PostgresqlTargetLockSession.AcquireStep
+                    )
+                );
+
+        [Test]
+        public void It_reports_a_refused_create_and_delete_as_a_permanent_missing_privilege()
+        {
+            foreach (DmsProvisioningFailure failure in new[] { Failure(_create), Failure(_delete) })
+            {
+                (
+                    failure.Code,
+                    failure.Category,
+                    failure.Diagnostic.Operation,
+                    failure.Diagnostic.ProviderErrorCode
+                )
+                    .Should()
+                    .Be(
+                        (
+                            DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                            DmsProvisioningFailureCategory.Permanent,
+                            DmsDataStoreProvisioningService.AcquireTargetLockStep,
+                            "28000"
+                        )
+                    );
+            }
+        }
+
+        [Test]
+        public void It_reads_nothing_after_the_refused_acquisitions() =>
+            _members
+                .Should()
+                .Equal(
+                    nameof(IDmsTargetEngine.AcquireTargetLockAsync),
+                    nameof(IDmsTargetEngine.AcquireTargetLockAsync)
+                );
+
+        [Test]
+        public void It_exposes_neither_the_password_nor_the_connection_string()
+        {
+            string[] diagnostics =
+            [
+                .. new[]
+                {
+                    ((DmsTargetLockResult.AccessDenied)_refused).Diagnostic,
+                    Failure(_create).Diagnostic,
+                    Failure(_delete).Diagnostic,
+                }.SelectMany(diagnostic =>
+                    new[]
+                    {
+                        diagnostic.ExceptionTypeChain,
+                        diagnostic.ProviderErrorCode ?? string.Empty,
+                        diagnostic.Operation,
+                    }
+                ),
+            ];
+            string[] logged = [.. _logs.Entries];
+            diagnostics
+                .Concat(logged)
+                .Should()
+                .AllSatisfy(text =>
+                    text.Should()
+                        .NotContain(LoginRolePassword)
+                        .And.NotContain("Password=", "a connection string must not be quoted")
+                );
+        }
+
+        [Test]
+        public void It_keeps_an_unreachable_server_a_lock_infrastructure_failure() =>
+            _unreachable.Should().BeOfType<DmsTargetLockResult.Failure>();
+
+        [Test]
+        public void It_keeps_a_server_condition_that_is_not_a_refusal_a_lock_infrastructure_failure() =>
+            _limited
+                .Should()
+                .BeOfType<DmsTargetLockResult.Failure>()
+                .Which.Diagnostic.ProviderErrorCode.Should()
+                .Be("53300");
+
+        private static DmsProvisioningFailure Failure(DmsDataStoreCreateResult result) =>
+            result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail;
+
+        private static DmsProvisioningFailure Failure(DmsDataStoreDeleteResult result) =>
+            result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
+
+        /// <summary>Every log line the engine and its lock sessions write, formatted, with any exception's full text.</summary>
+        private sealed class CapturingLogger : ILogger
+        {
+            private readonly System.Collections.Concurrent.ConcurrentQueue<string> _entries = new();
+
+            public IEnumerable<string> Entries => _entries;
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) => _entries.Enqueue(formatter(state, exception) + (exception?.ToString() ?? string.Empty));
+        }
     }
 
     [TestFixture]
