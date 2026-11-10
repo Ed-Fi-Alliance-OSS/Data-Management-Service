@@ -1088,9 +1088,14 @@ public class ConfigurationServiceTokenHandlerTests
                 }
             }
 
-            char[] body = new char[contentLength];
-            int read = await reader.ReadBlockAsync(body.AsMemory(), deadline.Token);
-            request.Append(body, 0, read);
+            // StreamReader can refill its buffer even for an empty read. A bodyless GET's
+            // client is already waiting for our response, so do not read beyond its headers.
+            if (contentLength > 0)
+            {
+                char[] body = new char[contentLength];
+                int read = await reader.ReadBlockAsync(body.AsMemory(), deadline.Token);
+                request.Append(body, 0, read);
+            }
             byte[] response = Encoding.ASCII.GetBytes(
                 $"HTTP/1.1 200 OK\r\n{SecretSentinel} {TokenSentinel}: echoed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
             );
