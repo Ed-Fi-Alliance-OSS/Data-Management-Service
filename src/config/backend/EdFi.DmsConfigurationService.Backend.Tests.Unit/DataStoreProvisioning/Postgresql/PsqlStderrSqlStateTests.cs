@@ -9,18 +9,18 @@ using FluentAssertions;
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Postgresql;
 
 /// <summary>
-/// The stderr ring buffer of D-10b: the SQLSTATE of the last retained message when it is shaped
-/// <c>&lt;severity&gt;:  XXXXX:</c> in any server language, with or without the
+/// The stderr reader of D-10b under <c>VERBOSITY=sqlstate</c>: the SQLSTATE of the last message when it is a whole
+/// line shaped <c>&lt;severity&gt;:  XXXXX</c> in any server language, with or without the
 /// <c>psql:&lt;file&gt;:&lt;line&gt;:</c> prefix (whose file may itself contain colons); a last message that is
-/// <c>psql</c>'s own, a notice or warning class, or an invalid token yields nothing; retention is bounded at
-/// 8 KiB with the oldest text overwritten, and extraction clears the buffer.
+/// <c>psql</c>'s own, a notice or warning class, or an invalid token yields nothing; a line with anything after the
+/// code is never a message; retention is bounded at 8 KiB per line, and extraction clears the buffer.
 /// </summary>
 public class PsqlStderrSqlStateTests
 {
     private const string PrefixedErrorLine =
-        "psql:/tmp/dms-provision-0123456789ab/artifact.sql:12: ERROR:  42P01: relation \"edfi.student\" does not exist";
+        "psql:/tmp/dms-provision-0123456789ab/artifact.sql:12: ERROR:  42P01";
 
-    private const string BareErrorLine = "ERROR:  22P02: invalid input syntax for type integer";
+    private const string BareErrorLine = "ERROR:  22P02";
 
     private static string? Extract(string text)
     {
@@ -31,12 +31,11 @@ public class PsqlStderrSqlStateTests
 
     /// <summary>
     /// An earlier notice of an error class (<c>CREATE EXTENSION IF NOT EXISTS</c> reports <c>42710</c>) is
-    /// followed by the error that stopped the replay and the server's detail lines, which start with neither
-    /// <c>psql:</c> nor a code: the error's code is the one kept, which the English-only rule found by spelling
-    /// and this rule finds by position.
+    /// followed by the error that stopped the replay: the error's code is the one kept, which the English-only rule
+    /// found by spelling and this rule finds by position.
     /// </summary>
     [TestFixture]
-    public class Given_the_verbose_output_of_a_stopped_replay
+    public class Given_the_output_of_a_stopped_replay
     {
         private string? _first;
         private string? _second;
@@ -45,12 +44,8 @@ public class PsqlStderrSqlStateTests
         public void Setup()
         {
             PsqlStderrSqlState buffer = new();
-            buffer.Append(
-                "psql:/tmp/dms-provision-0123456789ab/artifact.sql:2: NOTICE:  42710: extension \"plpgsql\" already exists, skipping\n"
-            );
-            buffer.Append(PrefixedErrorLine + "\n");
-            buffer.Append("DETAIL:  Key (id)=(1) already exists.\r\n");
-            buffer.Append("LOCATION:  parserOpenTable, parse_relation.c:1449\n");
+            buffer.Append("psql:/tmp/dms-provision-0123456789ab/artifact.sql:2: NOTICE:  42710\n");
+            buffer.Append(PrefixedErrorLine + "\r\n");
             _first = buffer.ExtractAndClear();
             _second = buffer.ExtractAndClear();
         }
@@ -76,11 +71,11 @@ public class PsqlStderrSqlStateTests
         {
             string[] lines =
             [
-                "psql:/tmp/a.sql:12: FEHLER:  42501: keine Berechtigung für Schema dms",
-                "psql:/tmp/a.sql:12: ERREUR:  42P01: la relation « edfi.student » n'existe pas",
-                "psql:/tmp/a.sql:12: ОШИБКА:  23505: повторяющееся значение ключа",
-                "psql:/tmp/a.sql:12: エラー:  42601: 構文エラー",
-                "psql:/tmp/a.sql:12: FATAL:  57P01: terminating connection due to administrator command",
+                "psql:/tmp/a.sql:12: FEHLER:  42501",
+                "psql:/tmp/a.sql:12: ERREUR:  42P01",
+                "psql:/tmp/a.sql:12: ОШИБКА:  23505",
+                "psql:/tmp/a.sql:12: エラー:  42601",
+                "psql:/tmp/a.sql:12: FATAL:  57P01",
             ];
             _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
         }
@@ -93,7 +88,7 @@ public class PsqlStderrSqlStateTests
     /// <summary>
     /// The last message is <c>psql</c>'s own, which carries no SQLSTATE: a connection lost after an earlier
     /// notice, or a connection that could not be made (its server text has no code, because <c>psql</c> sets
-    /// verbose reporting only once connected). Nothing is extracted, rather than the earlier notice's code.
+    /// its reporting verbosity only once connected). Nothing is extracted, rather than the earlier notice's code.
     /// </summary>
     [TestFixture]
     public class Given_psql_reports_a_connection_failure_last
@@ -105,7 +100,7 @@ public class PsqlStderrSqlStateTests
         public void Setup()
         {
             _lostAfterNotice = Extract(
-                "psql:/tmp/a.sql:2: NOTICE:  42710: extension \"plpgsql\" already exists, skipping\n"
+                "psql:/tmp/a.sql:2: NOTICE:  42710\n"
                     + "psql:/tmp/a.sql:9: error: connection to server was lost\n"
             );
             _neverConnected = Extract(
@@ -143,11 +138,11 @@ public class PsqlStderrSqlStateTests
         {
             string[] lines =
             [
-                "psql:C:/Users/sam/dms-provision-0123456789ab/artifact.sql:3: ERROR:  42P01: relation does not exist",
-                "psql:C:\\Users\\sam\\dms-provision-0123456789ab\\artifact.sql:3: ERROR:  22P02: invalid input",
-                "psql:/tmp/dms:provision/artifact.sql:7: ERROR:  23505: duplicate key",
-                "psql:C:/Users/sam/artifact.sql:3: ERROR:  42p01: lower case is still rejected",
-                "psql:C:/Users/sam/artifact.sql: ERROR:  42P01: no line number is still rejected",
+                "psql:C:/Users/sam/dms-provision-0123456789ab/artifact.sql:3: ERROR:  42P01",
+                "psql:C:\\Users\\sam\\dms-provision-0123456789ab\\artifact.sql:3: ERROR:  22P02",
+                "psql:/tmp/dms:provision/artifact.sql:7: ERROR:  23505",
+                "psql:C:/Users/sam/artifact.sql:3: ERROR:  42p01",
+                "psql:C:/Users/sam/artifact.sql: ERROR:  42P01",
             ];
             _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
         }
@@ -182,16 +177,17 @@ public class PsqlStderrSqlStateTests
         {
             string[] lines =
             [
-                "ERROR:  4260: four characters",
-                "ERROR:  42p01: lower case",
-                "ERROR:  42P011: six characters",
-                "WARNING:  01000: a warning class",
-                "HINWEIS:  00000: a notice class in German",
-                "psql:/tmp/a.sql:4: NOTICE:  02000: a no-data class",
-                "ERROR: 42P01: one space",
-                "  ERROR:  42P01: indented",
-                "psql:artifact.sql:12: ERROR:  42P01 no trailing colon",
-                "psql:artifact.sql: ERROR:  42P01: no line number",
+                "ERROR:  4260",
+                "ERROR:  42p01",
+                "ERROR:  42P011",
+                "WARNING:  01000",
+                "HINWEIS:  00000",
+                "psql:/tmp/a.sql:4: NOTICE:  02000",
+                "ERROR: 42P01",
+                "  ERROR:  42P01",
+                "psql:artifact.sql:12: ERROR:  42P01: text after the code, as verbose reporting writes it",
+                "ERROR:  42P01 text after the code",
+                "psql:artifact.sql: ERROR:  42P01",
             ];
             _extracted = lines.ToDictionary(line => line, line => Extract(line + "\n"));
         }
@@ -238,9 +234,7 @@ public class PsqlStderrSqlStateTests
             _singleOversizedAppend.Should().Be("22P02");
 
         private static string Filler(int lines) =>
-            string.Concat(
-                Enumerable.Repeat("NOTICE:  00000: nothing to see on this line of output\n", lines)
-            );
+            string.Concat(Enumerable.Repeat("psql:/tmp/a.sql:1: NOTICE:  00000\n", lines));
     }
 
     [TestFixture]
@@ -266,20 +260,19 @@ public class PsqlStderrSqlStateTests
     }
 
     [TestFixture]
-    public class Given_a_stopping_error_followed_by_more_detail_than_one_line_may_hold
+    public class Given_a_stopping_error_followed_by_more_output_than_one_line_may_hold
     {
-        private const string Header =
-            "psql:/tmp/dms-provision-0123456789ab/artifact.sql:4120: ERROR:  42501: permission denied for schema dms";
+        private const string Header = "psql:/tmp/dms-provision-0123456789ab/artifact.sql:4120: ERROR:  42501";
 
         private string? _longDetail;
         private string? _longDetailInPieces;
-        private string? _longHeader;
+        private string? _headerShapedOverflow;
         private string? _longDetailThenLostConnection;
         private string? _longDetailThenNotice;
 
         /// <summary>
-        /// What <c>VERBOSITY=verbose</c> prints after the first line of an error raised inside a PL/pgSQL body: the
-        /// field lines and the statement's own text, here more than <see cref="PsqlStderrSqlState.Capacity"/>.
+        /// Text that is no message line, more than <see cref="PsqlStderrSqlState.Capacity"/>: what verbose
+        /// reporting would print after an error raised inside a PL/pgSQL body.
         /// </summary>
         private static string Fields()
         {
@@ -324,15 +317,19 @@ public class PsqlStderrSqlStateTests
             string output = Header + "\n" + Fields();
             _longDetail = ExtractFrom([output]);
             _longDetailInPieces = ExtractFrom(Pieces(output, 1021));
-            _longHeader = ExtractFrom([
-                Header + new string('x', 3 * PsqlStderrSqlState.Capacity) + "\n" + "DETAIL:  more\n",
+
+            // A line whose retained start is exactly a message line's shape, but which goes on past the capacity.
+            _headerShapedOverflow = ExtractFrom([
+                output
+                    + new string('A', PsqlStderrSqlState.Capacity - ":  23505".Length)
+                    + ":  23505"
+                    + new string('x', PsqlStderrSqlState.Capacity)
+                    + "\n",
             ]);
             _longDetailThenLostConnection = ExtractFrom([
                 output + "psql:/tmp/a.sql:4120: error: connection to server was lost\n",
             ]);
-            _longDetailThenNotice = ExtractFrom([
-                output + "psql:/tmp/a.sql:4121: NOTICE:  00000: a later notice\n",
-            ]);
+            _longDetailThenNotice = ExtractFrom([output + "psql:/tmp/a.sql:4121: NOTICE:  00000\n"]);
         }
 
         [Test]
@@ -342,8 +339,8 @@ public class PsqlStderrSqlStateTests
         public void It_keeps_it_whatever_the_chunk_boundaries() => _longDetailInPieces.Should().Be("42501");
 
         [Test]
-        public void It_keeps_it_when_the_first_line_itself_is_longer_than_the_capacity() =>
-            _longHeader.Should().Be("42501");
+        public void It_never_reads_a_line_longer_than_the_capacity_as_a_message() =>
+            _headerShapedOverflow.Should().Be("42501");
 
         [Test]
         public void It_still_reports_nothing_when_a_later_message_is_psqls_own() =>
@@ -352,6 +349,68 @@ public class PsqlStderrSqlStateTests
         [Test]
         public void It_still_reports_nothing_when_a_later_message_is_a_notice() =>
             _longDetailThenNotice.Should().BeNull();
+    }
+
+    /// <summary>
+    /// A retryable error stopped the replay, and multi-line diagnostic text follows it whose labelled and unlabelled
+    /// lines imitate a verbose message's first line (<c>ERROR:  23505: diagnostic text</c>). Under
+    /// <c>VERBOSITY=sqlstate</c> a message line ends at its code, so none of them is a message: the stopping error's
+    /// code stays authoritative, in one piece or in any chunks, under a translated severity too, and a genuine later
+    /// message still replaces it.
+    /// </summary>
+    [TestFixture]
+    public class Given_multiline_diagnostic_text_that_imitates_a_message_after_the_stopping_error
+    {
+        private const string Diagnostic =
+            "DETAIL:  23505: Key (id)=(1) already exists.\n"
+            + "ERROR:  23505: diagnostic text\n"
+            + "QUERY:  SELECT 1\n"
+            + "FEHLER:  42501: an unlabelled line of a multi-line value\n"
+            + "psql-looking:1: ERROR:  22P02: more diagnostic text\n"
+            + "CONTEXT:  22P02: PL/pgSQL function inline_code_block line 3 at SQL statement\n";
+
+        private const string Stopped =
+            "psql:/tmp/dms-provision-0123456789ab/artifact.sql:9: ERROR:  40001\n" + Diagnostic;
+
+        private string? _stopped;
+        private string? _stoppedInPieces;
+        private string? _translated;
+        private string? _laterPrefixedError;
+        private string? _laterBareError;
+
+        private static string? ExtractFrom(string text, int size)
+        {
+            PsqlStderrSqlState buffer = new();
+            for (int start = 0; start < text.Length; start += size)
+            {
+                buffer.Append(text.AsSpan(start, Math.Min(size, text.Length - start)));
+            }
+
+            return buffer.ExtractAndClear();
+        }
+
+        [SetUp]
+        public void Setup()
+        {
+            _stopped = Extract(Stopped);
+            _stoppedInPieces = ExtractFrom(Stopped, 7);
+            _translated = Extract("psql:/tmp/a.sql:9: FEHLER:  40001\n" + Diagnostic);
+            _laterPrefixedError = Extract(Stopped + PrefixedErrorLine + "\n");
+            _laterBareError = Extract(Stopped + BareErrorLine + "\n");
+        }
+
+        [Test]
+        public void It_keeps_the_code_of_the_stopping_error() => _stopped.Should().Be("40001");
+
+        [Test]
+        public void It_keeps_it_whatever_the_chunk_boundaries() => _stoppedInPieces.Should().Be("40001");
+
+        [Test]
+        public void It_keeps_it_under_a_translated_severity() => _translated.Should().Be("40001");
+
+        [Test]
+        public void It_still_lets_a_later_message_replace_it() =>
+            (_laterPrefixedError, _laterBareError).Should().Be(("42P01", "22P02"));
     }
 
     [TestFixture]

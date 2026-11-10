@@ -78,7 +78,7 @@ internal sealed class PsqlRestoreRunner
         "--set",
         "ON_ERROR_STOP=1",
         "--set",
-        "VERBOSITY=verbose",
+        "VERBOSITY=sqlstate",
         "--single-transaction",
         "--quiet",
     ];

@@ -210,7 +210,7 @@ public class PsqlRestoreRunnerTests
                     "--set",
                     "ON_ERROR_STOP=1",
                     "--set",
-                    "VERBOSITY=verbose",
+                    "VERBOSITY=sqlstate",
                     "--single-transaction",
                     "--quiet",
                     "--file",
@@ -276,12 +276,8 @@ public class PsqlRestoreRunnerTests
             _workspace = new ReplayWorkspace();
             _fake = FakePsql.WritingStandardError(
                 [
-                    "psql:"
-                        + _workspace.Artifact.FilePath
-                        + ":2: NOTICE:  42710: an earlier notice that is not kept",
-                    "psql:"
-                        + _workspace.Artifact.FilePath
-                        + ":3: ERROR:  42P01: relation \"edfi.student\" does not exist",
+                    "psql:" + _workspace.Artifact.FilePath + ":2: NOTICE:  42710",
+                    "psql:" + _workspace.Artifact.FilePath + ":3: ERROR:  42P01",
                     "DETAIL:  the leaked password is " + ReplayWorkspace.Password,
                     "HINT:  the leaked connection string is " + ReplayWorkspace.ConnectionString,
                     "LOCATION:  parserOpenTable, parse_relation.c:1449",

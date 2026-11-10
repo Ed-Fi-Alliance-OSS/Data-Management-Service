@@ -610,7 +610,7 @@ public class PostgresqlRestoreTests
     /// Review finding 1, through the engine's real path: a fake <c>psql</c> writes what the real one writes and
     /// exits as it does, against an empty staging database, so whatever reaches resolution is found rolled back. A
     /// German server's refusal (exit 3) is the definite privilege failure, not a rollback; a connection attempt that
-    /// failed (exit 2, no SQLSTATE: verbose reporting starts only once connected) is the retryable rollback; a script
+    /// failed (exit 2, no SQLSTATE: sqlstate reporting starts only once connected) is the retryable rollback; a script
     /// error psql reports without a SQLSTATE (exit 3) is the replay's own, permanent, failure; a server rejection
     /// (exit 3) is definite either way, retryable for a deadlock and the replay's own for any other; and a process
     /// ended from outside (exit 137) after a notice of an error class is not read as that notice's definite
@@ -691,7 +691,7 @@ public class PostgresqlRestoreTests
         {
             RequireConfiguredOrSkip();
             _outcomes["localized refusal"] = await ReplayAsync(
-                ["psql:/tmp/artifact.sql:3: FEHLER:  42501: keine Berechtigung fuer Schema public"],
+                ["psql:/tmp/artifact.sql:3: FEHLER:  42501"],
                 3
             );
             _outcomes["failed connection attempt"] = await ReplayAsync(
@@ -705,17 +705,11 @@ public class PostgresqlRestoreTests
                 3
             );
             _outcomes["ended from outside after a notice"] = await ReplayAsync(
-                ["psql:/tmp/artifact.sql:2: NOTICE:  42P04: database already exists, skipping"],
+                ["psql:/tmp/artifact.sql:2: NOTICE:  42P04"],
                 137
             );
-            _outcomes["deadlock"] = await ReplayAsync(
-                ["psql:/tmp/artifact.sql:4: ERROR:  40P01: deadlock detected"],
-                3
-            );
-            _outcomes["duplicate object"] = await ReplayAsync(
-                ["psql:/tmp/artifact.sql:4: ERROR:  42710: extension \"plpgsql\" already exists"],
-                3
-            );
+            _outcomes["deadlock"] = await ReplayAsync(["psql:/tmp/artifact.sql:4: ERROR:  40P01"], 3);
+            _outcomes["duplicate object"] = await ReplayAsync(["psql:/tmp/artifact.sql:4: ERROR:  42710"], 3);
         }
 
         [Test]

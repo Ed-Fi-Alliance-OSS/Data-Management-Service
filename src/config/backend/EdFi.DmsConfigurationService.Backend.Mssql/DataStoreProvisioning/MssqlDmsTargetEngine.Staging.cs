@@ -83,7 +83,7 @@ public sealed partial class MssqlDmsTargetEngine
         RequireHolder(holder);
         ArgumentNullException.ThrowIfNull(claim);
         RequireStagingOf(staging, claim.Operation);
-        cancellationToken.ThrowIfCancellationRequested();
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
             new DmsCommandOutcome<DmsInstanceIdentity>.Succeeded(
                 new DmsInstanceIdentity.MssqlReservation(

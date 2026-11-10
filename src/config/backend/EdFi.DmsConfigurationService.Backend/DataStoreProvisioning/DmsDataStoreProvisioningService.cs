@@ -382,15 +382,17 @@ public sealed partial class DmsDataStoreProvisioningService(
         // cleanup accounts for the name, and only a returned definite outcome or a verified termination of
         // the holder session it ran on settles it (6.7, 6.11, D-7b). It is recorded as the engine is handed
         // the call, after the scope's cancellation and loss checks, so a create those checks stop leaves
-        // nothing for cleanup to account for.
+        // nothing for cleanup to account for, and withdrawn when the holder's gate refuses it before it is
+        // sent (DmsCommandNotDispatchedException).
         DmsCommandOutcome<DmsInstanceIdentity> created = await scope.CallAsync(
             CreateStagingStep,
             options.Value.CommandTimeout,
             token =>
-            {
-                cleanup.Pending(claim, scope.Holder.Session);
-                return engine.CreateStagingAsync(scope.Holder, stage, claim, token);
-            },
+                DispatchAsync(
+                    () => cleanup.Pending(claim, scope.Holder.Session),
+                    cleanup.NotPending,
+                    () => engine.CreateStagingAsync(scope.Holder, stage, claim, token)
+                ),
             cleanup.ObserveCreate
         );
         switch (created)
@@ -1063,6 +1065,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         private DmsProvisionClaim? _pendingClaim;
         private DmsServerSessionId? _pendingSession;
         private bool _withheld;
+        private bool _withheldBeforePending;
 
         public DmsCleanupReport Report => new([.. _residue]);
 
@@ -1085,9 +1088,18 @@ public sealed partial class DmsDataStoreProvisioningService(
         /// </summary>
         public void Pending(DmsProvisionClaim claim, DmsServerSessionId session)
         {
+            _withheldBeforePending = _withheld;
             _pendingClaim = claim;
             _pendingSession = session;
             Withhold();
+        }
+
+        /// <summary>The create never reached the driver: nothing is pending, as before it was recorded.</summary>
+        public void NotPending()
+        {
+            _pendingClaim = null;
+            _pendingSession = null;
+            _withheld = _withheldBeforePending;
         }
 
         /// <summary>

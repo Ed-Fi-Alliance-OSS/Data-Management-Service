@@ -157,7 +157,7 @@ internal static class MssqlPublicationQueries
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(instance);
-        cancellationToken.ThrowIfCancellationRequested();
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         int updated;
         try
         {

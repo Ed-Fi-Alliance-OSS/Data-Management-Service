@@ -1260,6 +1260,96 @@ public class DmsDataStoreProvisioningServicePublicationTests
         }
     }
 
+    /// <summary>
+    /// The marker passes the scope's checks and is handed to the engine, whose provider finds its token cancelled
+    /// before sending the statement (SQL Server's check before the batch) and reports it as not dispatched, once for
+    /// loss and once for the caller's cancellation. Recovery is unavailable (the marker's session cannot be proven
+    /// gone), so a marker still recorded as in doubt would end <c>OutcomeUnknown</c> without the residue; the
+    /// refusal withdraws it, and the target is reported as renamed but unmarked.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_provider_refuses_the_marker_before_sending_it
+    {
+        private Harness _lost = null!;
+        private DmsDataStoreCreateResult _lostResult = null!;
+        private Harness _cancelled = null!;
+        private Exception? _cancelledOutcome;
+
+        private static Harness Refusing(Func<Harness, CancellationToken> cancel)
+        {
+            Harness harness = Scripted();
+            harness.Engine.OnAssignMarker = (_, _, _) =>
+                throw new DmsCommandNotDispatchedException(cancel(harness));
+            harness.Engine.OnTerminateSession = (session, _, _) =>
+                Task.FromResult<DmsSessionTermination>(
+                    session == _markerSession
+                        ? new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+                        : new DmsSessionTermination.Terminated()
+                );
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _lost = Refusing(harness =>
+            {
+                harness.OnlyHolder.Lose();
+                return harness.OnlyHolder.LostToken;
+            });
+            _lostResult = await CreateAsync(_lost);
+
+            using CancellationTokenSource cancellation = new();
+            _cancelled = Refusing(_ =>
+            {
+                cancellation.Cancel();
+                return cancellation.Token;
+            });
+            _cancelledOutcome = await Record.ExceptionAsync(() =>
+                CreateAsync(_cancelled, cancellation.Token)
+            );
+        }
+
+        [Test]
+        public void It_ends_as_lock_lost_for_inspection_at_the_marker_on_loss() =>
+            Verdict(_lostResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.AssignMarkerStep
+                    )
+                );
+
+        [Test]
+        public void It_reports_the_unmarked_target_on_loss() =>
+            CleanupOf(_lostResult)
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
+
+        [Test]
+        public void It_propagates_the_caller_cancellation_and_reports_the_unmarked_target()
+        {
+            _cancelledOutcome.Should().BeAssignableTo<OperationCanceledException>();
+            _cancelled
+                .Logger.Entries.Should()
+                .ContainSingle(entry => entry.EventId == DmsDataStoreProvisioningService.TargetResidue);
+        }
+
+        [Test]
+        public void It_never_tries_to_resolve_or_compensate_a_marker_that_was_not_sent() =>
+            new[] { _lost, _cancelled }
+                .Select(harness =>
+                    (
+                        harness.Engine.TerminatedSessions.Contains(_markerSession),
+                        CountOf(harness, SpyDmsTargetEngine.DropInstance)
+                    )
+                )
+                .Should()
+                .Equal((false, 0), (false, 0));
+    }
+
     [TestFixture]
     public class Given_the_holder_is_lost_around_the_marker
     {

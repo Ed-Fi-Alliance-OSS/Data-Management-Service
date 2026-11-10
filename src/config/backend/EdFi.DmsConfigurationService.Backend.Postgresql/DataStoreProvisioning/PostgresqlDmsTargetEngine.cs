@@ -412,8 +412,8 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     }
 
     /// <summary>
-    /// 6.6 step 3 on the holder session, bounded by <c>SessionTerminationTimeout</c> plus <c>CommandTimeout</c>:
-    /// the termination loop has the whole termination bound, and the statements around it one command each.
+    /// 6.6 step 3 on the holder session, bounded by <see cref="FenceDeadline"/>: the termination loop has the
+    /// whole termination bound, and the statements around it one command each.
     /// </summary>
     public async Task<DmsCommandOutcome> FenceAsync(
         IDmsTargetLockHolder holder,
@@ -438,10 +438,18 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
                     _timeProvider,
                     token
                 ),
-            _settings.SessionTerminationTimeout + _adminConnection.CommandTimeout,
+            FenceDeadline(_settings.SessionTerminationTimeout, _adminConnection.CommandTimeout),
             cancellationToken
         );
     }
+
+    /// <summary>
+    /// The fence's bound on the holder, the orchestrator's allowance for it: the instance check and the
+    /// <c>ALTER DATABASE</c> take one command each before the termination loop starts, so neither can shorten
+    /// the loop's termination bound.
+    /// </summary>
+    internal static TimeSpan FenceDeadline(TimeSpan sessionTerminationTimeout, TimeSpan commandTimeout) =>
+        sessionTerminationTimeout + commandTimeout + commandTimeout;
 
     public async Task<DmsCommandOutcome> UnfenceAsync(
         IDmsTargetLockHolder holder,

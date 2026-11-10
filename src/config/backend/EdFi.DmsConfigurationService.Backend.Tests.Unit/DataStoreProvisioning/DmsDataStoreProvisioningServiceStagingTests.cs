@@ -805,6 +805,107 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     /// <summary>
+    /// The staging CREATE passes the scope's checks and is handed to the engine, which runs it on the real holder's
+    /// execution gate; the heartbeat probe holds the gate, then finds the lock gone, so the gate refuses the create
+    /// before it is invoked. Recovery is unavailable (the holder session cannot be proven gone), so a create still
+    /// recorded as pending would leave cleanup re-inspecting the name and reporting a staging database this
+    /// operation never created. The refusal withdraws it: the loss is transient and nothing is reported.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_while_the_staging_create_waits_for_the_holder_gate
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+        private int _createsSent;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = Scripted();
+            TaskCompletionSource<bool> probe = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource waiting = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _harness.Engine.OnInspectByName = (name, _) =>
+            {
+                if (name.Value.StartsWith(DmsOperationId.StagingDatabaseNamePrefix, StringComparison.Ordinal))
+                {
+                    // The last read before the create: the heartbeat probe takes the gate and keeps it.
+                    _harness.OnlyHolder.Probe = _ => probe.Task;
+                    _harness.OnlyHolder.StartHeartbeat();
+                    _harness.Time.Advance(TimeSpan.FromSeconds(5));
+                }
+
+                return Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
+            };
+            _harness.Engine.OnCreateStaging = (_, _, token) =>
+            {
+                waiting.SetResult();
+                return _harness.OnlyHolder.RunAsync(
+                    _ =>
+                    {
+                        _createsSent++;
+                        return Task.FromResult(Staged());
+                    },
+                    CommandTimeout,
+                    token
+                );
+            };
+            _harness.Engine.OnTerminateSession = (session, _, _) =>
+                Task.FromResult<DmsSessionTermination>(
+                    session == Session
+                        ? new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+                        : new DmsSessionTermination.Terminated()
+                );
+            Task<DmsDataStoreCreateResult> create = CreateAsync(_harness);
+            await ReadStartedAsync(waiting, create);
+            probe.SetResult(false);
+            _result = await create;
+        }
+
+        [Test]
+        public void It_ends_as_transient_lock_lost_at_the_create() =>
+            (FailureOf(_result).Code, FailureOf(_result).Category, FailureOf(_result).Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.CreateStagingStep
+                    )
+                );
+
+        [Test]
+        public void It_never_sends_the_create() => _createsSent.Should().Be(0);
+
+        [Test]
+        public void It_neither_recovers_nor_re_inspects_a_create_that_was_not_sent() =>
+            (
+                _harness.Engine.TerminatedSessions.Contains(Session),
+                _harness.Engine.Calls.Count(call =>
+                    call.Member == SpyDmsTargetEngine.Inspect
+                    && call.DatabaseName is not null
+                    && call.DatabaseName.StartsWith(
+                        DmsOperationId.StagingDatabaseNamePrefix,
+                        StringComparison.Ordinal
+                    )
+                )
+            )
+                .Should()
+                .Be((false, 1));
+
+        [Test]
+        public void It_reports_no_staging_residue()
+        {
+            CleanupOf(_result).HasResidue.Should().BeFalse();
+            _harness
+                .Logger.Entries.Should()
+                .NotContain(entry => entry.EventId == DmsDataStoreProvisioningService.StagingResidue);
+        }
+
+        [Test]
+        public void It_releases_the_holder() => _harness.OnlyHolder.ReleaseCount.Should().Be(1);
+    }
+
+    /// <summary>
     /// Only the scope's deadline for the restore expires: the fake clock passes it while the engine holds the
     /// call, and the engine reports the cancellation of its token as a normal result, as both engines do. The
     /// caller never cancelled and the holder was not lost, so the create ends <c>TimedOut</c>, not with an
