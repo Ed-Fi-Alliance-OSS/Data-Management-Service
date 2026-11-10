@@ -25,6 +25,9 @@ internal static class MssqlErrorClassifier
     /// <summary>SqlClient's number for a request it cancelled after sending (<c>Operation cancelled by user</c>).</summary>
     public const int ClientCancelled = 0;
 
+    /// <summary>Operand type clash: two compared values have types with no conversion between them (for example <c>uniqueidentifier</c> and <c>smallint</c>).</summary>
+    public const int OperandTypeClash = 206;
+
     /// <summary>Invalid column name: a table the query names lacks a column it selects.</summary>
     public const int InvalidColumnName = 207;
 
@@ -75,6 +78,10 @@ internal static class MssqlErrorClassifier
 
     public const int KillNoPermission = 6102;
     public const int KillNoSuchSession = 6106;
+
+    /// <summary>An argument's data type is invalid for the function or operator it is passed to (for example <c>xml</c> under <c>LIKE</c>).</summary>
+    public const int ArgumentDataTypeInvalid = 8116;
+
     public const int ActionNoPermission = 15247;
     public const int LoginFailed = 18456;
 
@@ -183,6 +190,16 @@ internal static class MssqlErrorClassifier
     /// is the defect.
     /// </summary>
     public static bool IsConversionRefused(int number) => number == ExplicitConversionNotAllowed;
+
+    /// <summary>
+    /// The errors the Populated predicate maps to "its tables are malformed": an invalid column name (<c>207</c>), an
+    /// operand type clash between the join keys (<c>206</c>), or a name type <c>LIKE</c> does not accept (<c>8116</c>).
+    /// Each is raised when the query is compiled, in its own response, whatever rows the tables hold, and says nothing
+    /// about the connection. Type mismatches SQL Server resolves by implicit conversion raise nothing, and a conversion
+    /// that fails only for some row (<c>245</c>) depends on data, so neither is here.
+    /// </summary>
+    public static bool IsPredicateShapeRefusal(int number) =>
+        number is InvalidColumnName or OperandTypeClash or ArgumentDataTypeInvalid;
 
     /// <summary>
     /// A definite refusal for lack of a privilege or of access: a denied permission on an object, column,

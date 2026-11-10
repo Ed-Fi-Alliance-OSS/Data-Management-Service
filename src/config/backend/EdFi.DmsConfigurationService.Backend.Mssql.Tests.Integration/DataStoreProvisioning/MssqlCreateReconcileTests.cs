@@ -441,9 +441,12 @@ public class MssqlCreateReconcileTests
 
     /// <summary>
     /// F-01 over the real catalog and engine, without a restore: an owned target seeded under the target name
-    /// reconciles when intact; with its identity column dropped it is <c>TargetUnverifiable</c>, and with a NULL or
-    /// a missing <c>dms.EffectiveSchema</c> value it is <c>TargetIncompatible</c>, both for inspection, never
-    /// <c>Unknown</c>. Each retry only reads, and the target keeps its instance and stays open to connections.
+    /// reconciles when intact; with its identity column dropped it is <c>TargetUnverifiable</c>; with a NULL or a
+    /// missing <c>dms.EffectiveSchema</c> value, or (R2-1) with Populated-predicate tables whose shape SQL Server
+    /// refuses when compiling the predicate, it is <c>TargetIncompatible</c>, all for inspection, never
+    /// <c>Unknown</c>. The lane's template is Minimal, whose object-level inventory does not see the column, so the
+    /// predicate check alone refuses it; with both defects the effective schema is reported first. Each retry only
+    /// reads, and the target keeps its instance and stays open to connections.
     /// </summary>
     [TestFixture]
     public class Given_an_owned_target_with_malformed_metadata
@@ -453,6 +456,9 @@ public class MssqlCreateReconcileTests
         private Run _identityColumnMissing = null!;
         private Run _nullHash = null!;
         private Run _seedHashMissing = null!;
+        private Run _resourceNameMissing = null!;
+        private Run _xmlResourceName = null!;
+        private Run _combined = null!;
 
         private sealed record Run(
             DmsDataStoreCreateResult Result,
@@ -501,6 +507,21 @@ public class MssqlCreateReconcileTests
                 artifact,
                 "ALTER TABLE [dms].[EffectiveSchema] DROP COLUMN [ResourceKeySeedHash];"
             );
+            _resourceNameMissing = await RetryOnSeededAsync(
+                artifact,
+                "ALTER TABLE [dms].[ResourceKey] DROP COLUMN [ResourceName];"
+            );
+            _xmlResourceName = await RetryOnSeededAsync(
+                artifact,
+                "ALTER TABLE [dms].[ResourceKey] ALTER COLUMN [ResourceName] xml NULL;"
+            );
+            _combined = await RetryOnSeededAsync(
+                artifact,
+                "ALTER TABLE [dms].[ResourceKey] DROP COLUMN [ResourceName];",
+                "ALTER TABLE [dms].[EffectiveSchema] DROP CONSTRAINT [UX_EffectiveSchema_EffectiveSchemaHash];",
+                "ALTER TABLE [dms].[EffectiveSchema] ALTER COLUMN [EffectiveSchemaHash] nvarchar(64) NULL;",
+                "UPDATE [dms].[EffectiveSchema] SET [EffectiveSchemaHash] = NULL;"
+            );
         }
 
         [OneTimeTearDown]
@@ -537,16 +558,39 @@ public class MssqlCreateReconcileTests
             Verdict(_seedHashMissing.Result).Should().Be(EffectiveSchemaIncompatible);
 
         [Test]
+        public void It_reports_a_minimal_target_with_malformed_predicate_tables_as_incompatible_for_inspection()
+        {
+            Verdict(_resourceNameMissing.Result).Should().Be(PopulatedPredicateIncompatible);
+            Verdict(_xmlResourceName.Result).Should().Be(PopulatedPredicateIncompatible);
+        }
+
+        [Test]
+        public void It_reports_the_effective_schema_first_when_the_predicate_tables_are_malformed_too() =>
+            Verdict(_combined.Result).Should().Be(EffectiveSchemaIncompatible);
+
+        [Test]
         public void It_only_read_during_each_retry()
         {
             _identityColumnMissing.Members.Should().Equal(_readMembers[..^1]);
             _nullHash.Members.Should().Equal(_readMembers);
             _seedHashMissing.Members.Should().Equal(_readMembers);
+            _resourceNameMissing.Members.Should().Equal(_readMembers);
+            _xmlResourceName.Members.Should().Equal(_readMembers);
+            _combined.Members.Should().Equal(_readMembers);
         }
 
         [Test]
         public void It_left_each_target_in_place_and_open() =>
-            new[] { _intact, _identityColumnMissing, _nullHash, _seedHashMissing }
+            new[]
+            {
+                _intact,
+                _identityColumnMissing,
+                _nullHash,
+                _seedHashMissing,
+                _resourceNameMissing,
+                _xmlResourceName,
+                _combined,
+            }
                 .Should()
                 .AllSatisfy(run =>
                 {
@@ -565,6 +609,19 @@ public class MssqlCreateReconcileTests
                 DmsDataStoreProvisioningService.ReconcileValidateStep
                     + "."
                     + DmsTargetValidator.EffectiveSchemaCheck
+            );
+
+        private static (
+            DmsProvisioningFailureCode,
+            DmsProvisioningFailureCategory,
+            string
+        ) PopulatedPredicateIncompatible =>
+            (
+                DmsProvisioningFailureCode.TargetIncompatible,
+                DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                DmsDataStoreProvisioningService.ReconcileValidateStep
+                    + "."
+                    + DmsTargetValidator.PopulatedPredicateCheck
             );
     }
 

@@ -401,7 +401,10 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             cancellationToken
         );
         DmsSecurityFacts.Mssql security = await ReadSecurityStateAsync(connection, cancellationToken);
-        bool? hasPopulatedDocument = await ReadPopulatedPredicateAsync(connection, cancellationToken);
+        (bool? hasPopulatedDocument, bool predicateTablesMalformed) = await ReadPopulatedPredicateAsync(
+            connection,
+            cancellationToken
+        );
 
         return new DmsTargetFacts
         {
@@ -415,7 +418,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             DatabaseLevelObjects = databaseLevelObjects,
             Security = security,
             HasPopulatedDocument = hasPopulatedDocument,
-            PopulatedPredicateTablesMalformed = false,
+            PopulatedPredicateTablesMalformed = predicateTablesMalformed,
         };
     }
 
@@ -594,8 +597,13 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         return new DmsSecurityFacts.Mssql(permissions, members);
     }
 
-    /// <summary>The Populated predicate, or null when either table it reads is missing.</summary>
-    private async Task<bool?> ReadPopulatedPredicateAsync(
+    /// <summary>
+    /// The Populated predicate, or null when either table it reads is missing. When both exist but the server refuses
+    /// the predicate for their shape (<see cref="MssqlErrorClassifier.IsPredicateShapeRefusal"/>), the predicate is
+    /// null and the tables are reported malformed; every other error, a refusal for lack of a privilege, cancellation
+    /// and a lost connection included, propagates unchanged.
+    /// </summary>
+    private async Task<(bool? HasPopulatedDocument, bool TablesMalformed)> ReadPopulatedPredicateAsync(
         SqlConnection connection,
         CancellationToken cancellationToken
     )
@@ -607,14 +615,24 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         );
         if (!tablesExist)
         {
-            return null;
+            return (null, false);
         }
 
-        return await ReadScalarAsync<bool>(
-            connection,
-            MssqlInventoryQueries.HasPopulatedDocument,
-            cancellationToken
-        );
+        try
+        {
+            return (
+                await ReadScalarAsync<bool>(
+                    connection,
+                    MssqlInventoryQueries.HasPopulatedDocument,
+                    cancellationToken
+                ),
+                false
+            );
+        }
+        catch (SqlException exception) when (MssqlErrorClassifier.IsPredicateShapeRefusal(exception.Number))
+        {
+            return (null, true);
+        }
     }
 
     private static DmsIdentityRead ParseIdentity(string? text)

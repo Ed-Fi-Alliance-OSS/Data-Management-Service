@@ -236,6 +236,18 @@ public class MssqlErrorClassifierTests
                 .Be((true, false));
 
         [Test]
+        public void It_maps_only_compile_time_shape_errors_to_a_refused_populated_predicate() =>
+            (
+                Array.TrueForAll([207, 206, 8116], MssqlErrorClassifier.IsPredicateShapeRefusal),
+                Array.Exists(
+                    [208, 245, 529, 229, 230, 916, 0, -2, 10054, 8114],
+                    MssqlErrorClassifier.IsPredicateShapeRefusal
+                )
+            )
+                .Should()
+                .Be((true, false));
+
+        [Test]
         public void It_treats_denials_and_failed_logins_as_access_refusals() =>
             new[] { 229, 230, 262, 297, 300, 916, 3110, 5011, 6102, 15247, 18456, 18470 }
                 .Should()
