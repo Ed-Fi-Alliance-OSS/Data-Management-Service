@@ -319,6 +319,94 @@ public class MssqlRestoreTests
             _refusedReports.Should().Be(0);
     }
 
+    /// <summary>
+    /// The token fires as the plan completes, at the moment the engine reports the restore starting: the
+    /// <c>RESTORE</c> is never formed nor sent, the outcome is the definite pre-restore cancellation, and the staged
+    /// file, the work session and the staging name are all left clean.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_token_fires_as_the_restore_is_about_to_start
+    {
+        private RestoreRun? _run;
+        private DmsCommandOutcome<DmsInstanceIdentity> _outcome = null!;
+        private int _statements;
+        private string[] _stagedFilesAfter = [];
+        private bool _workSessionGone;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            _run = new RestoreRun();
+            using CancellationTokenSource cancellation = new();
+            MssqlDmsTargetEngine engine = new(
+                AdminConnection(),
+                Settings(),
+                TimeProvider.System,
+                NullLogger.Instance
+            )
+            {
+                RestoreStatement = (plan, serverPath) =>
+                {
+                    _statements++;
+                    return plan.RestoreStatement(serverPath);
+                },
+            };
+            _outcome = await _run.RestoreAsync(
+                engine,
+                await ShapedBackup.CreateAsync(),
+                cancellation.Token,
+                restoreStarting: cancellation.Cancel
+            );
+            _stagedFilesAfter = ShapedBackup.StagedFilesOf(_run.Operation);
+            _workSessionGone = await WaitUntilAsync(
+                async () => await SessionCountNamedAsync(_run.Operation.RestoreApplicationName) == 0,
+                TimeSpan.FromSeconds(20)
+            );
+            _stagingAfter = await engine.InspectAsync(_run.Stage, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_run is not null)
+            {
+                await _run.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_does_not_send_the_restore() => _statements.Should().Be(0);
+
+        [Test]
+        public void It_reports_the_definite_pre_restore_cancellation() =>
+            _outcome
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Which.Failure.Should()
+                .Be(
+                    new DmsCommandFailure(
+                        DmsCommandFailureClass.Rejected,
+                        DmsProvisioningDiagnostic.ForOperation(DmsEngineOperations.RestoreCancelled)
+                    )
+                );
+
+        [Test]
+        public void It_deletes_the_staged_file_and_reports_no_residue()
+        {
+            _stagedFilesAfter.Should().BeEmpty();
+            _outcome.Residue.Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_closes_the_work_session() => _workSessionGone.Should().BeTrue();
+
+        [Test]
+        public void It_creates_nothing_under_the_staging_name() =>
+            _stagingAfter.Should().Be(new DmsLiveTargetState.Absent());
+    }
+
     [TestFixture]
     public class Given_the_server_rejects_the_restore
     {

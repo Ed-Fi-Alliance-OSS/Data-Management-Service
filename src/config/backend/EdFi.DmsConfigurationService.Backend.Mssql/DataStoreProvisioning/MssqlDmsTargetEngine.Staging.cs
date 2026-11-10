@@ -300,6 +300,16 @@ public sealed partial class MssqlDmsTargetEngine
             // 6.4 step 6. The staging copy, the work session and the plan are done: the caller's step deadline
             // restarts here, so RestoreTimeout bounds the RESTORE alone, as the engine's own bound does.
             restoreStarting?.Invoke();
+
+            // The restart cannot revive a token that already fired, and RunRestoreAsync sends the RESTORE without
+            // the token: a cancellation observed here is still a definite "not started".
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return NotRestored(
+                    DmsProvisioningDiagnostic.ForOperation(DmsEngineOperations.RestoreCancelled)
+                );
+            }
+
             switch (
                 await RunRestoreAsync(
                     work,
