@@ -226,6 +226,7 @@ Describe "DocumentCacheAdmin release workflow wiring" {
 
         $script:prerelease = Get-Content -LiteralPath (Join-Path $workflows "on-prerelease.yml") -Raw
         $script:release = Get-Content -LiteralPath (Join-Path $workflows "on-release.yml") -Raw
+        $script:pullRequest = Get-Content -LiteralPath (Join-Path $workflows "on-dms-pullrequest.yml") -Raw
         $script:documentCacheAdminJobs = @(
             "pack-document-cache-admin",
             "sbom-create-document-cache-admin",
@@ -300,6 +301,37 @@ Describe "DocumentCacheAdmin release workflow wiring" {
                 [regex]::Matches($Workflow.Substring($jobsKey.Index), '(?m)^  (?<id>[A-Za-z_][A-Za-z0-9_-]*):[ \t]*\r?$') |
                     ForEach-Object { $_.Groups['id'].Value }
             )
+        }
+    }
+
+    Context "Pull request workflow wiring" {
+        It "packs, installs and runs DocumentCacheAdmin in the job that does so for SchemaTools, after it" {
+            $job = Get-WorkflowJob -Workflow $script:pullRequest -Name "verify-dms-packages"
+            $names = @(
+                [regex]::Matches($job, '(?m)^      - name: (.+?)\s*$') | ForEach-Object { $_.Groups[1].Value }
+            )
+
+            $schemaToolsRun = $names.IndexOf("Install and Run SchemaTools Package")
+            $create = $names.IndexOf("Create DocumentCacheAdmin NuGet Package")
+            $run = $names.IndexOf("Install and Run DocumentCacheAdmin Package")
+
+            $schemaToolsRun | Should -BeGreaterThan -1
+            $create | Should -BeGreaterThan $schemaToolsRun
+            $run | Should -BeGreaterThan $create
+        }
+
+        It "packs the DocumentCacheAdmin target and smokes the packed package without rebuilding it" {
+            $job = Get-WorkflowJob -Workflow $script:pullRequest -Name "verify-dms-packages"
+
+            (Get-WorkflowStep -Workflow $job -Name "Create DocumentCacheAdmin NuGet Package") |
+                Should -Match '-PackageTarget DocumentCacheAdmin'
+            $run = Get-WorkflowStep -Workflow $job -Name "Install and Run DocumentCacheAdmin Package"
+            $run | Should -Match 'Invoke-DocumentCacheAdminPackageSmoke\.ps1'
+            $run | Should -Match '-SkipPackageBuild'
+        }
+
+        It "registers ReleaseAssets.Tests.ps1 in the Pester allowlist" {
+            $script:pullRequest | Should -Match '(?m)^\s+"eng/ci/tests/ReleaseAssets\.Tests\.ps1",\s*$'
         }
     }
 

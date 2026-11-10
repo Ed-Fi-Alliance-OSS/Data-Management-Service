@@ -122,6 +122,41 @@ function Invoke-CapturedNativeCommand {
     }
 }
 
+function Invoke-NativeCommandSplitStream {
+    param(
+        [string]
+        $FilePath,
+
+        [string[]]
+        $Arguments,
+
+        [string]
+        $WorkingDirectory = $repoRoot
+    )
+
+    $stderrPath = Join-Path ([System.IO.Path]::GetTempPath()) "dms-document-cache-smoke-$([guid]::NewGuid().ToString('N')).stderr"
+    Push-Location $WorkingDirectory
+    try {
+        Write-Information "> $FilePath $($Arguments -join ' ')" -InformationAction Continue
+        $stdout = & $FilePath @Arguments 2> $stderrPath
+        $exitCode = $LASTEXITCODE
+        $stderr = if (Test-Path -LiteralPath $stderrPath) { Get-Content -LiteralPath $stderrPath -Raw } else { "" }
+
+        if ($exitCode -ne 0) {
+            throw "$FilePath failed with exit code $exitCode. Output: $(@($stdout) -join [System.Environment]::NewLine) $stderr"
+        }
+
+        return [pscustomobject]@{
+            StdOut = (@($stdout | ForEach-Object { $_.ToString() }) -join [System.Environment]::NewLine)
+            StdErr = "$stderr"
+        }
+    }
+    finally {
+        Pop-Location
+        Remove-Item -LiteralPath $stderrPath -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Get-ProjectProperty {
     param(
         [xml]
@@ -368,7 +403,7 @@ try {
             "ConfigurationServiceSettings__EncryptionKey" = $null
         } `
         -ScriptBlock {
-            Invoke-CapturedNativeCommand `
+            Invoke-NativeCommandSplitStream `
                 -FilePath $toolExecutablePath `
                 -Arguments @(
                     "status",
@@ -383,9 +418,32 @@ try {
                     "0.1"
                 )
         }
-    Assert-RequiredText -Text $bundledSchemaStatus -Expected '"status":"unresolved"' -Context "bundled schema status smoke"
-    Assert-RequiredText -Text $bundledSchemaStatus -Expected '"reason":"cmsUnavailable"' -Context "bundled schema status smoke"
-    if ($bundledSchemaStatus.Contains("bootstrap-api-schema-manifest", [System.StringComparison]::Ordinal)) {
+
+    # --json writes exactly one JSON document to stdout; diagnostics go to stderr.
+    $statusDocument = $null
+    try {
+        $statusDocument = $bundledSchemaStatus.StdOut | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        throw "Bundled schema status smoke stdout is not a single JSON document: $($_.Exception.Message) Stdout: $($bundledSchemaStatus.StdOut)"
+    }
+
+    $targets = @($statusDocument.targets)
+    if ($targets.Count -ne 1) {
+        throw "Bundled schema status smoke expected exactly one target but found $($targets.Count)."
+    }
+
+    $resolution = $targets[0].resolution
+    if ($resolution.status -ne "unresolved") {
+        throw "Bundled schema status smoke expected resolution status 'unresolved' but found '$($resolution.status)'."
+    }
+
+    if ($resolution.reason -ne "cmsUnavailable") {
+        throw "Bundled schema status smoke expected resolution reason 'cmsUnavailable' but found '$($resolution.reason)'."
+    }
+
+    if ($bundledSchemaStatus.StdOut.Contains("bootstrap-api-schema-manifest", [System.StringComparison]::Ordinal) -or
+        $bundledSchemaStatus.StdErr.Contains("bootstrap-api-schema-manifest", [System.StringComparison]::Ordinal)) {
         throw "Bundled schema status smoke reported an ApiSchema manifest failure."
     }
 }

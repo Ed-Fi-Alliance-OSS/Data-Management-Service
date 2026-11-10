@@ -287,6 +287,7 @@ jobs:
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
             "eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1",
+            "eng/ci/tests/ReleaseAssets.Tests.ps1",
             "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
             "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
             "eng/ci/tests/TemplateWorkflowAttestation.Tests.ps1",
@@ -494,6 +495,29 @@ jobs:
 
           # Backend.Ddl stack: effective-schema-set build -> DDL generation (both dialects) -> file emission.
           api-schema-tools ddl emit --schema $fixture --output "$env:RUNNER_TEMP/ddl-verify" --dialect both
+
+      - name: Create DocumentCacheAdmin NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 Package `
+            -DMSVersion $packageVersion `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget DocumentCacheAdmin
+
+      - name: Install and Run DocumentCacheAdmin Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # The smoke script installs from the packed .nupkg only, with an isolated
+          # global-packages folder, so it cannot validate stale or nuget.org bits.
+          ./eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1 `
+            -DMSVersion $packageVersion `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -SkipPackageBuild `
+            -ToolPath (Join-Path $env:RUNNER_TEMP "dms-document-cache")
 
       - name: Create Custom Validation NuGet Package
         run: |
