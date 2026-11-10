@@ -6,6 +6,7 @@
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Tests.E2E.Cdc;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DataManagementService.Tests.Unit;
 
@@ -338,25 +339,72 @@ public class Given_CdcScenarioRunnerAccounting
     [Test]
     public async Task It_shares_the_shutdown_budget_between_phase_drain_and_disposal()
     {
-        _runner = new(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2));
+        var clock = new ShutdownClock();
+        _runner = new(TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), clock);
         using var cancellation = new CancellationTokenSource();
-        Task disposal = Task.CompletedTask;
-        _scenarios.OnPhase = async (_, token) =>
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var phaseEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var phaseReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var phaseExited = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposalEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var disposalReleased = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _scenarios.OnPhase = async (_, _) =>
         {
-            await cancellation.CancelAsync();
-            await Task.Delay(TimeSpan.FromMilliseconds(1200));
-            token.ThrowIfCancellationRequested();
+            phaseEntered.TrySetResult();
+            await phaseReleased.Task;
+            phaseExited.TrySetResult();
         };
-        _scenarios.OnDispose = () => disposal = Task.Delay(TimeSpan.FromMilliseconds(1200));
+        _scenarios.OnDispose = () =>
+        {
+            phaseExited.Task.IsCompletedSuccessfully.Should().BeTrue();
+            disposalEntered.TrySetResult();
+            return disposalReleased.Task;
+        };
+        var run = ExpectFailure("CDC_API_CDC-E2E-01_Cancelled", cancellation.Token);
         try
         {
-            await ExpectFailure("CDC_API_CDC-E2E-01_Cancelled", cancellation.Token);
+            await phaseEntered.Task.WaitAsync(watchdog.Token);
+            await cancellation.CancelAsync();
+            await clock.ShutdownStarted.Task.WaitAsync(watchdog.Token);
+            clock.Advance(TimeSpan.FromMilliseconds(1200));
+            phaseReleased.TrySetResult();
+            await phaseExited.Task.WaitAsync(watchdog.Token);
+            await disposalEntered.Task.WaitAsync(watchdog.Token);
+            run.IsCompleted.Should().BeFalse();
+            clock.Advance(TimeSpan.FromMilliseconds(800));
+            await run.WaitAsync(watchdog.Token);
             Outcome(Read(), "Disposal").Should().Be("Failed");
             Read()["Disposal"]!["Failure"]!.GetValue<string>().Should().Be("TimedOut");
+            (await File.ReadAllTextAsync(_path + ".checkpoints")).Should().NotContain("Disposal-Drain");
+            watchdog.IsCancellationRequested.Should().BeFalse();
         }
         finally
         {
-            await disposal;
+            await cancellation.CancelAsync();
+            phaseReleased.TrySetResult();
+            disposalReleased.TrySetResult();
+            await run;
+        }
+    }
+
+    private sealed class ShutdownClock : FakeTimeProvider
+    {
+        public TaskCompletionSource ShutdownStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            if (dueTime == TimeSpan.FromSeconds(2))
+            {
+                ShutdownStarted.TrySetResult();
+            }
+            return timer;
         }
     }
 

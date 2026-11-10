@@ -12,6 +12,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Tests.Common;
@@ -1771,10 +1772,7 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
             throw new InvalidOperationException("Unable to start DocumentCacheAdmin process.");
         }
 
-        Task<string> standardOutput = process.StandardOutput.ReadToEndAsync();
-        Task<string> standardError = process.StandardError.ReadToEndAsync();
-
-        return new(process, standardOutput, standardError);
+        return new(process);
     }
 
     public async ValueTask DisposeAsync()
@@ -1887,17 +1885,47 @@ internal sealed class DocumentCacheAdminCliRunningProcess : IAsyncDisposable
     private readonly Process _process;
     private readonly Task<string> _standardOutput;
     private readonly Task<string> _standardError;
+    private readonly TaskCompletionSource<bool> _controllerLockContended = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
     private DocumentCacheAdminCliProcessResult? _result;
 
-    public DocumentCacheAdminCliRunningProcess(
-        Process process,
-        Task<string> standardOutput,
-        Task<string> standardError
-    )
+    public DocumentCacheAdminCliRunningProcess(Process process)
     {
         _process = process ?? throw new ArgumentNullException(nameof(process));
-        _standardOutput = standardOutput ?? throw new ArgumentNullException(nameof(standardOutput));
-        _standardError = standardError ?? throw new ArgumentNullException(nameof(standardError));
+        _standardOutput = process.StandardOutput.ReadToEndAsync();
+        _standardError = ReadErrorAsync(process.StandardError);
+    }
+
+    public async Task WaitForControllerLockContentionAsync(TimeSpan timeout)
+    {
+        if (!await _controllerLockContended.Task.WaitAsync(timeout))
+        {
+            throw new InvalidOperationException(
+                "DocumentCacheAdmin exited before controller-lock contention."
+            );
+        }
+    }
+
+    private async Task<string> ReadErrorAsync(StreamReader reader)
+    {
+        var output = new StringBuilder();
+        try
+        {
+            while (await reader.ReadLineAsync() is { } line)
+            {
+                output.AppendLine(line);
+                if (line == CdcControllerLockDiagnostics.Contended)
+                {
+                    _controllerLockContended.TrySetResult(true);
+                }
+            }
+            return output.ToString();
+        }
+        finally
+        {
+            _controllerLockContended.TrySetResult(false);
+        }
     }
 
     public bool HasExited

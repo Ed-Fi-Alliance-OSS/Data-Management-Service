@@ -11,26 +11,46 @@ internal sealed record CdcConnectorRestartAttempt(int Attempt, int HttpStatusCod
 
 internal static class CdcConnectorFixtureRestart
 {
-    internal static async Task<HttpStatusCode> RunAsync(
+    internal static Task<HttpStatusCode> RunAsync(
         HttpClient client,
         string connectorName,
         Action<CdcConnectorRestartAttempt> observe,
         CancellationToken cancellationToken,
         TimeSpan timeout,
         TimeSpan retryDelay
+    ) =>
+        RunAsync(
+            client,
+            () =>
+                new HttpRequestMessage(
+                    HttpMethod.Post,
+                    $"/connectors/{Uri.EscapeDataString(connectorName)}/restart?includeTasks=true&onlyFailed=false"
+                ),
+            observe,
+            cancellationToken,
+            timeout,
+            retryDelay
+        );
+
+    internal static async Task<HttpStatusCode> RunAsync(
+        HttpClient client,
+        Func<HttpRequestMessage> createRequest,
+        Action<CdcConnectorRestartAttempt> observe,
+        CancellationToken cancellationToken,
+        TimeSpan timeout,
+        TimeSpan retryDelay,
+        TimeProvider clock = null!
     )
     {
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        deadline.CancelAfter(timeout);
+        clock ??= TimeProvider.System;
+        using var timer = new CancellationTokenSource(timeout, clock);
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timer.Token);
         int attempt = 0;
         while (true)
         {
             deadline.Token.ThrowIfCancellationRequested();
             attempt++;
-            using var request = new HttpRequestMessage(
-                HttpMethod.Post,
-                $"/connectors/{Uri.EscapeDataString(connectorName)}/restart?includeTasks=true&onlyFailed=false"
-            );
+            using var request = createRequest();
             using var response = await client.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
@@ -43,7 +63,7 @@ internal static class CdcConnectorFixtureRestart
             }
 
             // A config update can trigger a rebalance. Only its explicit conflict response permits retry.
-            await Task.Delay(retryDelay, deadline.Token);
+            await Task.Delay(retryDelay, clock, deadline.Token);
         }
     }
 }

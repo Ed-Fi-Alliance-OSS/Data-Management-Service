@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Text;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Cdc;
 using FluentAssertions;
@@ -140,27 +141,39 @@ public partial class Given_Cdc_packaged_command
         );
         using var process = Start(
             Path.Combine(_directory, "api-schema-tools.dll"),
-            ["cdc", "validate", "--settings", path, "--state-path", state, "--json"]
+            ["cdc", "validate", "--settings", path, "--state-path", state, "--json"],
+            waitForInput: true
         );
         var output = process.StandardOutput.ReadToEndAsync();
-        var error = process.StandardError.ReadToEndAsync();
-        await Task.Delay(1500);
-        process.HasExited.Should().BeFalse("the real command must wait on the retained state-root lock");
-        using var signal = Process.Start(
-            new ProcessStartInfo("kill")
-            {
-                ArgumentList =
-                {
-                    "-TERM",
-                    process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                },
-            }
-        )!;
-        await signal.WaitForExitAsync();
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+        var launchReady = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var contended = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        var error = ReadDiagnosticsAsync();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
         try
         {
+            // Deliberately hold child initialization. Only the later lock diagnostic authorizes SIGTERM.
+            (await launchReady.Task.WaitAsync(timeout.Token))
+                .Should()
+                .BeTrue();
+            contended.Task.IsCompleted.Should().BeFalse();
+            await process.StandardInput.WriteLineAsync("continue");
+            process.StandardInput.Close();
+            (await contended.Task.WaitAsync(timeout.Token)).Should().BeTrue();
+            process.HasExited.Should().BeFalse();
+            using var signal = Process.Start(
+                new ProcessStartInfo("kill")
+                {
+                    ArgumentList =
+                    {
+                        "-TERM",
+                        process.Id.ToString(System.Globalization.CultureInfo.InvariantCulture),
+                    },
+                }
+            )!;
+            await signal.WaitForExitAsync(timeout.Token);
+            signal.ExitCode.Should().Be(0);
             await process.WaitForExitAsync(timeout.Token);
+            AssertResult((process.ExitCode, await output, await error), 130);
         }
         finally
         {
@@ -168,8 +181,35 @@ public partial class Given_Cdc_packaged_command
             {
                 process.Kill(entireProcessTree: true);
             }
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(10));
+            await Task.WhenAll(output, error);
         }
-        AssertResult((process.ExitCode, await output, await error), 130);
+
+        async Task<string> ReadDiagnosticsAsync()
+        {
+            var diagnostics = new StringBuilder();
+            try
+            {
+                while (await process.StandardError.ReadLineAsync() is { } line)
+                {
+                    diagnostics.AppendLine(line);
+                    if (line == "CDC_TEST_LAUNCH_READY")
+                    {
+                        launchReady.TrySetResult(true);
+                    }
+                    if (line == CdcControllerLockDiagnostics.Contended)
+                    {
+                        contended.TrySetResult(true);
+                    }
+                }
+                return diagnostics.ToString();
+            }
+            finally
+            {
+                launchReady.TrySetResult(false);
+                contended.TrySetResult(false);
+            }
+        }
     }
 
     private static void AssertResult((int Code, string Output, string Error) result, int expected)
@@ -201,15 +241,24 @@ public partial class Given_Cdc_packaged_command
         return (process.ExitCode, await output, await error);
     }
 
-    private Process Start(string assembly, string[] args)
+    private Process Start(string assembly, string[] args, bool waitForInput = false)
     {
-        var info = new ProcessStartInfo("dotnet")
+        var info = new ProcessStartInfo(waitForInput ? "sh" : "dotnet")
         {
+            RedirectStandardInput = waitForInput,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             WorkingDirectory = _temporary,
         };
+        if (waitForInput)
+        {
+            info.ArgumentList.Add("-c");
+            info.ArgumentList.Add(
+                "printf 'CDC_TEST_LAUNCH_READY\\n' >&2; IFS= read -r ready; exec dotnet \"$@\""
+            );
+            info.ArgumentList.Add("cdc-test-launch");
+        }
         foreach (
             var argument in new[]
             {

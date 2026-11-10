@@ -26,7 +26,7 @@ internal sealed partial class CdcApiScenarios
                 Dictionary<long, JsonElement> expected = [];
                 var body = CdcApiClient.NewStudent("OverlapN");
                 await phase.Gate.WaitUntilIdleAsync(ct);
-                phase.Gate.PauseForOverlap();
+                phase.Gate.PauseForOverlap(phase.HoldToken);
                 try
                 {
                     await phase.Runtime.StartProcessingAsync(ct);

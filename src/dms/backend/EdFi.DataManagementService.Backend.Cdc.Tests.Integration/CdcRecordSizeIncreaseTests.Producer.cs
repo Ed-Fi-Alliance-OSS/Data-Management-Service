@@ -35,7 +35,7 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
         // Reuse the E18/19-05 materialized-row boundary. Synthetic padding is intentionally far
         // from the producer threshold; exact serialization/framing conformance belongs to 19-05.
         await WriteSizedMaterializedRowAsync();
-        await CdcControllerFixture.WaitAsync(
+        await _fixture.Probes.WaitAsync(
             async ct =>
             {
                 var status = Observed(
@@ -132,7 +132,7 @@ public sealed partial class Given_Cdc_Controller_Record_Size_Increase
             .GetString()!
             .Length.Should()
             .Be(1_500_000);
-        await CdcControllerFixture.WaitAsync(
+        await _fixture.Probes.WaitAsync(
             async ct =>
             {
                 var current = Observed(

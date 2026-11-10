@@ -13,20 +13,37 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-[TestFixture(0, "", "success")]
-[TestFixture(1, "Bind for 127.0.0.1 failed: port is already allocated", "success")]
-[TestFixture(2, "BIND: ADDRESS ALREADY IN USE", "success")]
-[TestFixture(1, "failed to bind host port for 127.0.0.1", "success")]
-[TestFixture(1, "bind: An attempt was made to access a socket", "success")]
-[TestFixture(3, "bind: address already in use", "exhausted")]
-[TestFixture(3, "bind: address already in use", "prerequisite")]
-[TestFixture(3, "invalid mount config for type bind", "unrelated")]
-[TestFixture(3, "pull access denied for worker", "unrelated")]
-[TestFixture(3, "failed to create endpoint: network unavailable", "unrelated")]
-[TestFixture(3, "bind: address already in use", "cancel")]
-[TestFixture(3, "bind: address already in use", "cleanup-failure")]
+[TestFixture(0, "", "success", "native")]
+[TestFixture(0, "", "success", "compose")]
+[TestFixture(1, "Bind for 127.0.0.1 failed: port is already allocated", "success", "native")]
+[TestFixture(1, "Bind for 127.0.0.1 failed: port is already allocated", "success", "compose")]
+[TestFixture(2, "BIND: ADDRESS ALREADY IN USE", "success", "native")]
+[TestFixture(2, "BIND: ADDRESS ALREADY IN USE", "success", "compose")]
+[TestFixture(1, "failed to bind host port for 127.0.0.1", "success", "native")]
+[TestFixture(1, "failed to bind host port for 127.0.0.1", "success", "compose")]
+[TestFixture(1, "bind: An attempt was made to access a socket", "success", "native")]
+[TestFixture(1, "bind: An attempt was made to access a socket", "success", "compose")]
+[TestFixture(3, "bind: address already in use", "exhausted", "native")]
+[TestFixture(3, "bind: address already in use", "exhausted", "compose")]
+[TestFixture(3, "bind: address already in use", "prerequisite", "native")]
+[TestFixture(3, "bind: address already in use", "prerequisite", "compose")]
+[TestFixture(3, "invalid mount config for type bind", "unrelated", "native")]
+[TestFixture(3, "invalid mount config for type bind", "unrelated", "compose")]
+[TestFixture(3, "pull access denied for worker", "unrelated", "native")]
+[TestFixture(3, "pull access denied for worker", "unrelated", "compose")]
+[TestFixture(3, "failed to create endpoint: network unavailable", "unrelated", "native")]
+[TestFixture(3, "failed to create endpoint: network unavailable", "unrelated", "compose")]
+[TestFixture(3, "bind: address already in use", "cancel", "native")]
+[TestFixture(3, "bind: address already in use", "cancel", "compose")]
+[TestFixture(3, "bind: address already in use", "cleanup-failure", "native")]
+[TestFixture(3, "bind: address already in use", "cleanup-failure", "compose")]
 [NonParallelizable]
-public sealed class Given_PinnedImageFixtureConnectStartup(int failures, string error, string scenario)
+public sealed class Given_PinnedImageFixtureConnectStartup(
+    int failures,
+    string error,
+    string scenario,
+    string mode
+)
 {
     private const string ResourcePrefix = "dms-cdc-connect-startup-test";
     private const string PrivateDetails = "private-docker-output-credentials";
@@ -70,7 +87,8 @@ public sealed class Given_PinnedImageFixtureConnectStartup(int failures, string 
                     AssertReserved(_connect.Port);
                     AssertReserved(_metrics.Port);
                 },
-                exposeBroker: true
+                exposeBroker: true,
+                composeKafka: mode == "compose"
             )
         )!;
         string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
@@ -216,6 +234,16 @@ public sealed class Given_PinnedImageFixtureConnectStartup(int failures, string 
             CancellationToken cancellationToken
         )
         {
+            if (arguments[0] == "compose" && arguments.Contains("config"))
+            {
+                return Task.FromResult(
+                    new DockerCommandResult(
+                        0,
+                        """{"services":{"kafka":{"volumes":[{"source":"kafka-data","target":"/tmp/kraft-combined-logs"}]}}}""",
+                        ""
+                    )
+                );
+            }
             if (arguments[0] == "port")
             {
                 throw PortReadReached;
@@ -238,7 +266,9 @@ public sealed class Given_PinnedImageFixtureConnectStartup(int failures, string 
             CancellationToken cancellationToken
         )
         {
-            if (arguments[0] != "run" || !arguments.Contains(ResourcePrefix + "-connect"))
+            bool composeStart =
+                arguments[0] == "compose" && arguments.Contains("up") && arguments[^1] == "kafka-cdc-worker";
+            if (!composeStart && (arguments[0] != "run" || !arguments.Contains(ResourcePrefix + "-connect")))
             {
                 Commands.Add(string.Join(" ", arguments));
                 return Task.FromResult(new DockerCommandResult(0, "", ""));
@@ -246,6 +276,20 @@ public sealed class Given_PinnedImageFixtureConnectStartup(int failures, string 
             cancellationToken.ThrowIfCancellationRequested();
             Commands.Add("connect-run");
             string[] run = arguments.ToArray();
+            if (composeStart)
+            {
+                // Assert against the actual Compose environment supplied to Docker.
+                var environment = File.ReadAllLines(run[Array.IndexOf(run, "--env-file") + 1])
+                    .Select(line => line.Split('=', 2))
+                    .ToDictionary(pair => pair[0], pair => pair[1]);
+                run =
+                [
+                    "-p",
+                    $"127.0.0.1:{environment["CONNECT_SOURCE_PORT"]}:8083",
+                    "-p",
+                    $"127.0.0.1:{environment["CDC_METRICS_PORT"]}:9404",
+                ];
+            }
             ConnectRuns.Add(run);
             foreach (string mapping in run.Where((_, index) => index > 0 && run[index - 1] == "-p"))
             {

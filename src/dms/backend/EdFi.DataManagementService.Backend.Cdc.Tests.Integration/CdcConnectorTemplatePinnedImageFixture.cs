@@ -131,7 +131,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     private int _controllerBrokerPort;
     private int _controllerConnectPort;
     private int _controllerMetricsPort;
-    private bool _disposed;
+    private Task _disposal = null!;
+    internal CdcFixtureProbes Probes { get; } = new();
 
     private CdcConnectorTemplatePinnedImageFixture(
         CdcProvider provider,
@@ -266,6 +267,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> waitForConnect = null!
     )
     {
+        // Allocate before constructing service resources so a failed reservation cannot leak them.
+        // Keep worker endpoints reserved while the pre-worker phase captures them in requests.
+        using var ports = new CdcFixturePorts(3);
         var fixture = new CdcConnectorTemplatePinnedImageFixture(
             provider,
             settings,
@@ -273,23 +277,15 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             resourcePrefix,
             docker
         );
-
-        // Keep worker endpoints reserved while the pre-worker phase captures them in requests.
-        using var connectReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-        using var metricsReservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
         try
         {
             fixture._isolateSourceProducer = isolateSourceProducer;
             fixture._controllerComposeKafka = composeKafka;
             if (exposeBroker)
             {
-                using var reservation = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
-                reservation.Start();
-                connectReservation.Start();
-                metricsReservation.Start();
-                fixture._controllerBrokerPort = ((IPEndPoint)reservation.LocalEndpoint).Port;
-                fixture._controllerConnectPort = ((IPEndPoint)connectReservation.LocalEndpoint).Port;
-                fixture._controllerMetricsPort = ((IPEndPoint)metricsReservation.LocalEndpoint).Port;
+                fixture._controllerBrokerPort = ports.Ports[0];
+                fixture._controllerConnectPort = ports.Ports[1];
+                fixture._controllerMetricsPort = ports.Ports[2];
             }
             if (offlineKafka)
             {
@@ -308,15 +304,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 return fixture;
             }
             fixture._startupStage = "start-docker-resources";
-            await fixture.StartDockerResourcesAsync(
-                cancellationToken,
-                beforeWorker,
-                () =>
-                {
-                    connectReservation.Stop();
-                    metricsReservation.Stop();
-                }
-            );
+            await fixture.StartDockerResourcesAsync(cancellationToken, beforeWorker, ports);
             await fixture.WaitForKafkaConnectWithRecoveryAsync(cancellationToken, waitForConnect);
 
             return fixture;
@@ -1067,14 +1055,14 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         );
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
-        {
-            return;
-        }
+        _disposal ??= Probes.DisposeResourcesAsync(DisposeResourcesAsync);
+        return new(_disposal);
+    }
 
-        _disposed = true;
+    private async Task DisposeResourcesAsync()
+    {
         _httpClient.Dispose();
         await _serviceProvider.DisposeAsync();
         if (_settings.KeepContainers || _docker.IsOffline)
@@ -1273,43 +1261,47 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
     private async Task StartDockerResourcesAsync(
         CancellationToken cancellationToken,
         Func<CdcConnectorTemplatePinnedImageFixture, CancellationToken, Task> beforeWorker,
-        Action releaseWorkerPorts
+        CdcFixturePorts ports
     )
     {
         await _docker.RunAsync(["network", "create", NetworkName], cancellationToken);
-        await StartBrokerAsync(cancellationToken);
+        await StartBrokerAsync(ports, cancellationToken);
         await StartProviderAsync(cancellationToken);
         if (beforeWorker is not null)
         {
             await beforeWorker(this, cancellationToken);
         }
 
-        releaseWorkerPorts();
+        ports.Release(1);
+        ports.Release(2);
         await StartKafkaConnectAsync(cancellationToken);
     }
 
-    private async Task StartBrokerAsync(CancellationToken cancellationToken)
+    private async Task StartBrokerAsync(CdcFixturePorts ports, CancellationToken cancellationToken)
     {
-        if (_controllerComposeKafka)
-        {
-            await PrepareControllerComposeAsync(cancellationToken);
-            await RunControllerComposeAsync(["up", "--detach", "--wait", "kafka"], cancellationToken);
-            return;
-        }
         const int maximumAttempts = 3;
         for (int attempt = 1; attempt <= maximumAttempts; attempt++)
         {
-            // The reservation must be released before Docker can bind it. Another process can
-            // claim it in that gap, so reserve again for each retry instead of reusing the field.
-            using (var listener = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0))
+            _controllerBrokerPort = ports.Ports[0];
+            if (_controllerComposeKafka)
             {
-                listener.Start();
-                _controllerBrokerPort = ((IPEndPoint)listener.LocalEndpoint).Port;
+                // Regenerate both the advertised listener and Compose inputs on each attempt.
+                await PrepareControllerComposeAsync(cancellationToken);
             }
-            DockerCommandResult result = await _docker.RunAllowingFailureAsync(
-                BuildKafkaRunArguments(),
-                cancellationToken
-            );
+            ports.Release(0);
+            DockerCommandResult result;
+            if (_controllerComposeKafka)
+            {
+                result = await RunControllerComposeAsync(
+                    ["up", "--detach", "--wait", "kafka"],
+                    cancellationToken,
+                    allowingFailure: true
+                );
+            }
+            else
+            {
+                result = await _docker.RunAllowingFailureAsync(BuildKafkaRunArguments(), cancellationToken);
+            }
             if (result.ExitCode == 0)
             {
                 return;
@@ -1326,10 +1318,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(20));
             await _docker.RunAsync(["rm", "-f", "-v", BrokerContainerName], cleanup.Token);
             cancellationToken.ThrowIfCancellationRequested();
+            ports.Replace(0);
         }
     }
 
-    private static bool IsPortBindFailure(string error) =>
+    internal static bool IsPortBindFailure(string error) =>
         error.Contains("address already in use", StringComparison.OrdinalIgnoreCase)
         || error.Contains("port is already allocated", StringComparison.OrdinalIgnoreCase)
         || error.Contains("failed to bind host port", StringComparison.OrdinalIgnoreCase)
@@ -1377,14 +1370,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
 
     private async Task StartKafkaConnectAsync(CancellationToken cancellationToken)
     {
-        if (_controllerComposeKafka)
-        {
-            await RunControllerComposeAsync(
-                ["up", "--detach", "--wait", "kafka-cdc-worker"],
-                cancellationToken
-            );
-            return;
-        }
         await StartKafkaConnectWithRetryAsync(cancellationToken);
     }
 

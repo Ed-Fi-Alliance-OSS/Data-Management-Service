@@ -360,55 +360,6 @@ public sealed class Given_CdcControllerFixtureHooks
 }
 
 [TestFixture]
-public sealed class Given_CdcControllerFixtureWaits
-{
-    [Test]
-    public async Task It_polls_until_the_observation_changes()
-    {
-        int calls = 0;
-        await CdcControllerFixture.WaitAsync(
-            _ => Task.FromResult(++calls == 3),
-            TimeSpan.FromSeconds(2),
-            TimeSpan.FromMilliseconds(1),
-            CancellationToken.None
-        );
-        calls.Should().Be(3);
-    }
-
-    [Test]
-    public async Task It_bounds_a_probe_that_never_completes()
-    {
-        var pending = new TaskCompletionSource<bool>();
-        Func<Task> act = () =>
-            CdcControllerFixture.WaitAsync(
-                _ => pending.Task,
-                TimeSpan.FromMilliseconds(50),
-                TimeSpan.FromMilliseconds(1),
-                CancellationToken.None
-            );
-        await act.Should()
-            .ThrowAsync<TimeoutException>()
-            .WithMessage("Controller fixture observation deadline expired.");
-        pending.SetResult(false);
-    }
-
-    [Test]
-    public async Task It_preserves_caller_cancellation()
-    {
-        using var cancellation = new CancellationTokenSource();
-        await cancellation.CancelAsync();
-        Func<Task> act = () =>
-            CdcControllerFixture.WaitAsync(
-                ct => Task.FromCanceled<bool>(ct),
-                TimeSpan.FromSeconds(2),
-                TimeSpan.FromMilliseconds(1),
-                cancellation.Token
-            );
-        await act.Should().ThrowAsync<OperationCanceledException>();
-    }
-}
-
-[TestFixture]
 public sealed class Given_CdcControllerFixturePrerequisites
 {
     [TestCase("", "broker", "provider")]
@@ -642,7 +593,7 @@ public sealed class Given_CdcControllerFixtureLive(CdcProvider provider)
         await fixture.Resources.AssertHeartbeatAndCommittedOffsetProgressAsync(template, token);
 
         Task WaitStoppedAsync() =>
-            CdcControllerFixture.WaitAsync(
+            fixture.Probes.WaitAsync(
                 async ct =>
                     await fixture.Connect.ReadStatusAsync(request, ct)
                         is CdcTransportResult<CdcConnectStatus>.Observed status

@@ -99,8 +99,8 @@ internal sealed class CdcSourceHistoryContainment(
             token.ThrowIfCancellationRequested();
             diagnostics.Add(Diagnostic(CdcDeploymentComponent.Connect, exception));
         }
-        using var wait = CancellationTokenSource.CreateLinkedTokenSource(token);
-        wait.CancelAfter(request.Timing.WaitTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.WaitTimeout, time);
+        using var wait = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             while (true)
@@ -178,14 +178,14 @@ internal sealed class CdcSourceHistoryContainment(
             _ => CdcDeploymentDiagnostic.FromException(component, exception),
         };
 
-    private static async Task<T> CallAsync<T>(
+    private async Task<T> CallAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<T>> action,
         CancellationToken token
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             var result = await action(timeout.Token).WaitAsync(timeout.Token);

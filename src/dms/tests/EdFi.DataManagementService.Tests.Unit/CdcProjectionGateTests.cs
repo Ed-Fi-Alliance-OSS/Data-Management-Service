@@ -5,14 +5,17 @@
 
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Tests.E2E.Cdc;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DataManagementService.Tests.Unit;
 
@@ -29,6 +32,8 @@ public partial class Given_CdcProjectionGate
         CacheAheadRecoveryRequired: false
     );
     private CdcProjectionGate _gate = null!;
+    private FakeTimeProvider _clock = null!;
+    private CancellationTokenSource _phase = null!;
     private ServiceProvider _provider = null!;
     private RecordingWriter _writer = null!;
     private RecordingMaterializer _materializer = null!;
@@ -41,7 +46,9 @@ public partial class Given_CdcProjectionGate
     [SetUp]
     public async Task Setup()
     {
-        _gate = new(Target, TimeSpan.FromSeconds(2));
+        _clock = new();
+        _phase = new(TimeSpan.FromMinutes(10), _clock);
+        _gate = new(Target, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30), _clock);
         _writer = new();
         _materializer = new();
         _cancellation = new();
@@ -58,7 +65,7 @@ public partial class Given_CdcProjectionGate
             DocumentCacheTargetKey.Create("Tenant-A", 1)
         );
         _processor = _provider.GetRequiredService<IDocumentCacheProjectionItemProcessor>();
-        _gate.Pause(101);
+        _gate.Pause(_phase.Token, 101);
         _processing = _processor.ProcessItemAsync(Request(_context, 101), _cancellation.Token);
         _observation = await _gate.WaitUntilPausedAsync();
     }
@@ -81,6 +88,7 @@ public partial class Given_CdcProjectionGate
         await _provider.DisposeAsync();
         _processing.Dispose();
         _cancellation.Dispose();
+        _phase.Dispose();
     }
 
     [Test]
@@ -132,7 +140,7 @@ public partial class Given_CdcProjectionGate
         }
         await idle;
         await _processing;
-        _gate.Pause(102);
+        _gate.Pause(_phase.Token, 102);
         await _gate.WaitUntilIdleAsync(CancellationToken.None);
     }
 
@@ -153,7 +161,7 @@ public partial class Given_CdcProjectionGate
     {
         _gate.Release();
         await _processing;
-        _gate.Pause();
+        _gate.Pause(_phase.Token);
         await using var context = RuntimeContext(
             _materializer,
             _provider.GetRequiredService<IDocumentCacheWriter>(),
@@ -201,10 +209,11 @@ public partial class Given_CdcProjectionGate
     }
 
     [Test]
-    public async Task It_times_out_held_work_without_delegating()
+    public async Task It_expires_held_work_at_the_owning_phase_deadline_without_delegating()
     {
+        _clock.Advance(TimeSpan.FromMinutes(10));
         Func<Task> act = () => _processing;
-        await act.Should().ThrowAsync<TimeoutException>();
+        await act.Should().ThrowAsync<OperationCanceledException>();
         _writer.Calls.Should().BeEmpty();
     }
 
@@ -216,6 +225,146 @@ public partial class Given_CdcProjectionGate
         await act.Should().ThrowAsync<OperationCanceledException>();
         _writer.Calls.Should().BeEmpty();
         await _gate.DisposeAsync();
+    }
+
+    [Test]
+    public async Task It_requires_an_owned_hold_lifetime()
+    {
+        await using var gate = new CdcProjectionGate(Target, TimeSpan.FromSeconds(30));
+        Action pause = () => gate.Pause(CancellationToken.None);
+        pause.Should().Throw<ArgumentException>();
+    }
+
+    [Test]
+    public async Task It_bounds_disposal_but_retains_cleanup_until_noncooperative_work_exits()
+    {
+        var clock = new FakeTimeProvider();
+        var gate = new CdcProjectionGate(Target, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30), clock);
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var processing = gate.ProcessAsync(
+            new PendingProcessor(async token =>
+            {
+                using var registration = token.Register(() => cancelled.TrySetResult());
+                entered.TrySetResult();
+                await exit.Task;
+                token.ThrowIfCancellationRequested();
+                return DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved;
+            }),
+            Request(_context, 102),
+            CancellationToken.None
+        );
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            var disposal = gate.DisposeAsync().AsTask();
+            await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            clock.Advance(TimeSpan.FromSeconds(30));
+            Func<Task> dispose = () => disposal;
+            await dispose.Should().ThrowAsync<TimeoutException>();
+            gate.CleanupCompletion.IsCompleted.Should().BeFalse();
+            processing.IsCompleted.Should().BeFalse();
+            exit.SetResult();
+            await gate.CleanupCompletion.WaitAsync(TimeSpan.FromSeconds(30));
+            Func<Task> process = () => processing;
+            await process.Should().ThrowAsync<OperationCanceledException>();
+            await dispose.Should().ThrowAsync<TimeoutException>();
+        }
+        finally
+        {
+            exit.TrySetResult();
+            await ((Task)processing).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await gate.CleanupCompletion;
+        }
+    }
+
+    private sealed class PendingProcessor(
+        Func<CancellationToken, Task<DocumentCacheProjectionItemProcessResult>> process
+    ) : IDocumentCacheProjectionItemProcessor
+    {
+        public Task<DocumentCacheProjectionItemProcessResult> ProcessItemAsync(
+            DocumentCacheProjectionItemProcessRequest request,
+            CancellationToken cancellationToken = default
+        ) => process(cancellationToken);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_retains_the_runtime_and_attachment_after_a_failed_projection_drain(
+        bool callbackFails
+    )
+    {
+        var clock = new FakeTimeProvider();
+        var gate = new CdcProjectionGate(Target, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30), clock);
+        var runtime = A.Fake<ICdcProjectionRuntime>();
+        List<string> disposed = [];
+        A.CallTo(() => runtime.DisposeAsync())
+            .ReturnsLazily(() =>
+            {
+                disposed.Add("runtime");
+                return ValueTask.CompletedTask;
+            });
+        var owner = new CdcRuntimeOwner(_ => Task.FromResult((runtime, gate)));
+        await owner.InPhaseAsync(
+            async token =>
+            {
+                await owner.OpenAsync(token);
+                return true;
+            },
+            CancellationToken.None
+        );
+        var resources = new CdcAttachmentResources();
+        resources.Add(new AttachmentProbe(() => disposed.Add("transport")));
+        resources.Add(owner);
+        var cancelled = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var processing = gate.ProcessAsync(
+            new PendingProcessor(async token =>
+            {
+                using var registration = token.Register(() =>
+                {
+                    cancelled.TrySetResult();
+                    if (callbackFails)
+                    {
+                        throw new InvalidOperationException("Cancellation callback failed.");
+                    }
+                });
+                await exit.Task;
+                token.ThrowIfCancellationRequested();
+                return DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved;
+            }),
+            Request(_context, 102),
+            CancellationToken.None
+        );
+        try
+        {
+            var disposal = resources.DisposeAsync().AsTask();
+            await cancelled.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            clock.Advance(TimeSpan.FromSeconds(30));
+            Func<Task> dispose = () => disposal;
+            await dispose
+                .Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("CDC_API_ATTACHMENT_DISPOSAL");
+            disposed.Should().BeEmpty();
+            exit.SetResult();
+            await resources.CleanupCompletion.WaitAsync(TimeSpan.FromSeconds(30));
+            disposed.Should().Equal("runtime", "transport");
+            Func<Task> disposeOwner = () => owner.DisposeAsync().AsTask();
+            await disposeOwner.Should().ThrowAsync<CdcPendingCleanupException>();
+        }
+        finally
+        {
+            exit.TrySetResult();
+            await ((Task)processing).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await resources.CleanupCompletion;
+        }
+    }
+
+    private sealed class AttachmentProbe(Action dispose) : IDisposable
+    {
+        public void Dispose() => dispose();
     }
 
     [Test]
@@ -258,9 +407,11 @@ public partial class Given_CdcProjectionGate
     [Test]
     public async Task It_bounds_waiting_for_work_that_never_arrives()
     {
-        await using CdcProjectionGate gate = new(Target, TimeSpan.FromMilliseconds(30));
-        gate.Pause();
-        Func<Task> act = () => gate.WaitUntilPausedAsync();
+        await using CdcProjectionGate gate = new(Target, TimeSpan.FromSeconds(30), clock: _clock);
+        gate.Pause(_phase.Token);
+        var arrival = gate.WaitUntilPausedAsync();
+        _clock.Advance(TimeSpan.FromSeconds(30));
+        Func<Task> act = () => arrival;
         await act.Should().ThrowAsync<TimeoutException>();
     }
 
@@ -268,7 +419,7 @@ public partial class Given_CdcProjectionGate
     public async Task It_cancels_an_arrival_wait_on_disposal()
     {
         CdcProjectionGate gate = new(Target, TimeSpan.FromSeconds(2));
-        gate.Pause();
+        gate.Pause(_phase.Token);
         Task arrival = gate.WaitUntilPausedAsync();
         await gate.DisposeAsync();
         Func<Task> act = () => arrival;
@@ -279,7 +430,7 @@ public partial class Given_CdcProjectionGate
     public async Task It_honors_arrival_wait_cancellation()
     {
         await using CdcProjectionGate gate = new(Target, TimeSpan.FromSeconds(2));
-        gate.Pause();
+        gate.Pause(_phase.Token);
         using CancellationTokenSource cancellation = new();
         Task arrival = gate.WaitUntilPausedAsync(cancellation.Token);
         await cancellation.CancelAsync();

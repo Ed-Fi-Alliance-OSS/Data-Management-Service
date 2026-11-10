@@ -255,6 +255,38 @@ function Export-CdcQualificationEvidence {
         if ($file.Name -eq 'cdc-runbook-failures.json') {
             $safeValue = @($value | Where-Object { $_ -is [Collections.IDictionary] } | ForEach-Object { ConvertTo-CdcRunbookDiagnostic $_ })
         }
+        elseif ($file.Name -like 'cdc-controller-mutation-*') {
+            if ($file.Name -cnotmatch '^cdc-controller-mutation-[a-f0-9]{32}\.json$' -or
+                $value -isnot [Collections.IDictionary]) { continue }
+            $safeValue = [ordered]@{}
+            if ($value['Operation'] -is [string] -and $value['Operation'] -cin @('ConfigurationUpdate', 'TaskRestart', 'Stop')) {
+                $safeValue.Operation = $value.Operation
+            }
+            if ($value['Outcome'] -is [string] -and $value['Outcome'] -cin @('Accepted', 'Rejected', 'CallerCancelled', 'DeadlineExpired', 'TransportFailure')) {
+                $safeValue.Outcome = $value.Outcome
+            }
+            if (($value['TotalAttempts'] -is [int] -or $value['TotalAttempts'] -is [long]) -and $value.TotalAttempts -ge 0 -and $value.TotalAttempts -le [int]::MaxValue) {
+                $safeValue.TotalAttempts = $value.TotalAttempts
+            }
+            $safeValue.Attempts = @($value['Attempts'] | Where-Object {
+                $_ -is [Collections.IDictionary] -and
+                ($_['Attempt'] -is [int] -or $_['Attempt'] -is [long]) -and $_['Attempt'] -gt 0 -and $_['Attempt'] -le [int]::MaxValue -and
+                ($_['HttpStatusCode'] -is [int] -or $_['HttpStatusCode'] -is [long]) -and $_['HttpStatusCode'] -ge 100 -and $_['HttpStatusCode'] -le 599
+            } | Select-Object -Last 128 | ForEach-Object { [ordered]@{ Attempt = $_['Attempt']; HttpStatusCode = $_['HttpStatusCode'] } })
+        }
+        elseif ($file.Name -like 'cdc-controller-probe-*') {
+            if ($file.Name -cnotmatch '^cdc-controller-probe-[a-f0-9]{32}\.json$' -or
+                $value -isnot [Collections.IDictionary]) { continue }
+            $safeValue = [ordered]@{}
+            foreach ($field in @('PrimaryFailure', 'DrainFailure', 'ProbeCompletion')) {
+                $accepted = switch ($field) {
+                    PrimaryFailure { @('CallerCancellation', 'ObservationTimeout', 'ProbeCancellation', 'ProbeFailure') }
+                    DrainFailure { @('None', 'Timeout') }
+                    ProbeCompletion { @('Completed', 'Cancelled', 'Faulted', 'Pending') }
+                }
+                if ($value[$field] -is [string] -and $value[$field] -cin $accepted) { $safeValue[$field] = $value[$field] }
+            }
+        }
         elseif ($file.Name -like 'cdc-runbook-e2e-setup-*') {
             if ($file.Name -cnotmatch '^cdc-runbook-e2e-setup-[a-f0-9]{32}\.json$' -or
                 $value -isnot [Collections.IDictionary]) { continue }

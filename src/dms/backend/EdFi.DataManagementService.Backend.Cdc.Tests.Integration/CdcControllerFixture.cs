@@ -26,7 +26,8 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
     internal CdcControllerFixtureOffsets OffsetEvidence { get; } = new();
     private readonly ServiceProvider _bindingServices;
     private readonly bool _keepResources;
-    private bool _disposed;
+    private Task _disposal = null!;
+    internal CdcFixtureProbes Probes => Resources.Probes;
 
     private CdcControllerFixture(CdcConnectorTemplatePinnedImageFixture resources, bool keepResources)
     {
@@ -191,47 +192,14 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
             token
         );
 
-    /// <summary>Each probe must honor its token; its wait is also bounded if it does not.</summary>
-    public static async Task WaitAsync(
-        Func<CancellationToken, Task<bool>> probe,
-        TimeSpan timeout,
-        TimeSpan pollInterval,
-        CancellationToken token
-    )
+    public ValueTask DisposeAsync()
     {
-        if (
-            timeout <= TimeSpan.Zero
-            || timeout > TimeSpan.FromMinutes(10)
-            || pollInterval <= TimeSpan.Zero
-            || pollInterval > timeout
-        )
-        {
-            throw new ArgumentOutOfRangeException(nameof(timeout));
-        }
-
-        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
-        deadline.CancelAfter(timeout);
-        try
-        {
-            while (!await probe(deadline.Token).WaitAsync(deadline.Token))
-            {
-                await Task.Delay(pollInterval, deadline.Token);
-            }
-        }
-        catch (OperationCanceledException) when (!token.IsCancellationRequested)
-        {
-            throw new TimeoutException("Controller fixture observation deadline expired.");
-        }
+        _disposal ??= Probes.DisposeResourcesAsync(DisposeResourcesAsync);
+        return new(_disposal);
     }
 
-    public async ValueTask DisposeAsync()
+    private async Task DisposeResourcesAsync()
     {
-        if (_disposed)
-        {
-            return;
-        }
-
-        _disposed = true;
         _connectClient.Dispose();
         _metricsClient.Dispose();
         await _bindingServices.DisposeAsync();
@@ -359,10 +327,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 
     internal async Task AssertControllerMetricsPrerequisiteAsync(CancellationToken token)
     {
-        using var client = await CreateMetricsClientAsync(token);
-        await CdcControllerFixture.WaitAsync(
+        await Probes.WaitAsync(
             async ct =>
             {
+                using var client = await CreateMetricsClientAsync(ct);
                 string text = await client.GetStringAsync("/metrics", ct);
                 if (
                     !text.Contains("edfi_cdc_worker_start_time_seconds ", StringComparison.Ordinal)

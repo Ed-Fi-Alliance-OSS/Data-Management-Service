@@ -67,7 +67,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     [Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json")];
     public string Database { get; } = "admission_" + Guid.NewGuid().ToString("N");
     private ServiceProvider _services = null!;
-    private bool _disposed;
+    private Task _disposal = null!;
+    internal CdcFixtureProbes Probes { get; } = new();
     private DbConnection _providerConnection = null!;
     private IConfigurationRoot _configuration = null!;
     private ApiSchemaFileLoadResult.SuccessResult _schema = null!;
@@ -610,7 +611,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                 )
             );
         }
-        await CdcControllerFixture.WaitAsync(
+        await Probes.WaitAsync(
             async ct =>
             {
                 var result = await Registration().RegisterAsync(Request, Runtime, ct);
@@ -974,13 +975,14 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
-        {
-            return;
-        }
-        _disposed = true;
+        _disposal ??= Probes.DisposeResourcesAsync(DisposeResourcesAsync);
+        return new(_disposal);
+    }
+
+    private async Task DisposeResourcesAsync()
+    {
         AppDomain.CurrentDomain.FirstChanceException -= _observeValidationFailure;
         List<Exception> failures = [];
         async Task CleanupAsync(Func<Task> cleanup)
@@ -988,6 +990,11 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
             try
             {
                 await cleanup();
+            }
+            catch (CdcProbeDrainException pending)
+            {
+                await pending.Completion;
+                failures.Add(pending);
             }
             catch (Exception exception)
             {

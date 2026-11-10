@@ -17,6 +17,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
 public sealed class Given_Postgresql_Controller_Admission
 {
     private CdcProviderAdmissionFixture _fixture = null!;
@@ -645,7 +646,7 @@ public sealed class Given_Postgresql_Controller_Admission
         var connect = _fixture.Infrastructure.Connect;
         var request = _fixture.Request;
         Observed(await connect.StopAsync(request, Token));
-        await CdcControllerFixture.WaitAsync(
+        await _fixture.Probes.WaitAsync(
             async ct =>
             {
                 var status = Observed(await connect.ReadStatusAsync(request, ct));
@@ -669,7 +670,7 @@ public sealed class Given_Postgresql_Controller_Admission
         var target = CoreCdc.CdcPostgresqlProviderPosition.ParseWalLsn(wal).Position!.Value;
         target.Value.Should().BeGreaterThan(unchecked((ulong)position!.Value));
         Observed(await connect.ResumeAsync(request, Token));
-        await CdcControllerFixture.WaitAsync(
+        await _fixture.Probes.WaitAsync(
             async ct =>
             {
                 var offset = Observed(await connect.ReadOffsetEvidenceAsync(request, ct));

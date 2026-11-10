@@ -623,8 +623,11 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, timeProvider);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token
+        );
         var token = timeout.Token;
         try
         {
@@ -707,7 +710,7 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
         }
     }
 
-    private static async Task<CdcTransportResult<T>> PassAsync<T>(
+    private async Task<CdcTransportResult<T>> PassAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<CdcTransportResult<T>>> action,
         CancellationToken cancellationToken
@@ -715,8 +718,11 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
         where T : notnull
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.WaitTimeout, timeProvider);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token
+        );
         try
         {
             return await action(timeout.Token).WaitAsync(timeout.Token);

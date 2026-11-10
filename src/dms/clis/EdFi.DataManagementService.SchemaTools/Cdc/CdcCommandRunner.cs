@@ -26,6 +26,8 @@ namespace EdFi.DataManagementService.SchemaTools.Cdc;
 public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchemaSetBuilder schemaBuilder)
     : ICdcCommandRunner
 {
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
+
     // Narrow host seams retain the production command/controllers in transport and initialization tests.
     internal Func<HttpClient> CreateConnectClient { get; init; } = CdcConnectRestAdapter.CreateHttpClient;
     internal Func<CdcCommandConfiguration, ICdcWorkerInspectionTransport> CreateWorker { get; init; } =
@@ -85,7 +87,6 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
     {
         string name = CdcCommandHost.Name(invocation.Operation);
         CdcDeploymentComponent component = CdcDeploymentComponent.Request;
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
         try
         {
             var config = CdcCommandConfiguration.Load(invocation.SettingsPath);
@@ -104,7 +105,8 @@ public sealed class CdcCommandRunner(IApiSchemaFileLoader loader, EffectiveSchem
             config.ValidateControllerSettings();
             settings["Cdc:PublicationHistory:StatePath"] = invocation.StatePath;
             settings["Cdc:PublicationHistory:DeploymentKey"] = config.Target.DeploymentKey;
-            timeout.CancelAfter(config.Timing.WaitTimeout);
+            using var deadline = new CancellationTokenSource(config.Timing.WaitTimeout, Clock);
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
             var ct = timeout.Token;
             if (
                 invocation.Operation == CdcCommandOperation.Retire

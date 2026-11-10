@@ -162,6 +162,10 @@ public partial class Given_CdcProjectionGate
                 .Be(_observation);
             _writer.Calls.Should().BeEmpty();
             resume.IsCompleted.Should().BeFalse();
+            // The source fence and complete Kafka scan may legitimately outlive the old five-minute hold.
+            _clock.Advance(TimeSpan.FromMinutes(6));
+            _processing.IsCompleted.Should().BeFalse();
+            (await _gate.WaitUntilPausedAsync()).Should().Be(_observation);
             consumed.SetResult();
             await writerEntered.Task.WaitAsync(TimeSpan.FromSeconds(2));
             resume.IsCompleted.Should().BeFalse("the resumed scan must wait for real processing to drain");
@@ -179,8 +183,9 @@ public partial class Given_CdcProjectionGate
     [Test]
     public async Task It_rejects_an_expired_hold_instead_of_counting_idle_as_successful_processing()
     {
+        _clock.Advance(TimeSpan.FromMinutes(10));
         Func<Task> processing = () => _processing;
-        await processing.Should().ThrowAsync<TimeoutException>();
+        await processing.Should().ThrowAsync<OperationCanceledException>();
         Func<Task> resume = () => _gate.ResumeHeldProcessingAsync(CancellationToken.None);
         await resume.Should().ThrowAsync<InvalidOperationException>();
         _writer.Calls.Should().BeEmpty();

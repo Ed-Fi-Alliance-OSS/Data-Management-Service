@@ -81,7 +81,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle
             image.Should().MatchRegex("^sha256:[a-f0-9]{64}$");
             images[role] = image;
         }
-        _evidence.Add(new { Profile = "LocalSingleBroker/AuthorizationDisabledLocal", Images = images });
+        _evidence.Enqueue(new { Profile = "LocalSingleBroker/AuthorizationDisabledLocal", Images = images });
     }
 
     private Task<JsonElement> InvokeRetirementSnippetAsync(string id, long generation, bool confirm = true) =>
@@ -147,7 +147,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle
         (await _fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, Token))
             .Status.Should()
             .Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 MarkedStopVerified = true,

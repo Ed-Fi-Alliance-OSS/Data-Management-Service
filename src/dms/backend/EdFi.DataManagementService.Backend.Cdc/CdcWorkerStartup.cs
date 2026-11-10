@@ -23,6 +23,8 @@ public interface ICdcWorkerStartupTransport
 /// <summary>One fresh offset-store preparation and policy gate precedes each worker launch.</summary>
 public sealed class CdcWorkerStartup(CdcKafkaProvisioning kafka, ICdcWorkerStartupTransport infrastructure)
 {
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
+
     public async Task<CdcTransportResult<CdcTransportAcknowledgement>> StartAsync(
         CdcDeploymentRequest request,
         CancellationToken cancellationToken
@@ -41,8 +43,11 @@ public sealed class CdcWorkerStartup(CdcKafkaProvisioning kafka, ICdcWorkerStart
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.WaitTimeout, Clock);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token
+        );
         try
         {
             await using var session = await kafka.Store.AcquireAsync(
@@ -100,9 +105,9 @@ public sealed class CdcWorkerStartup(CdcKafkaProvisioning kafka, ICdcWorkerStart
     )
     {
         await infrastructure.StartBrokerAsync(request, token);
-        DateTimeOffset started = DateTimeOffset.UtcNow;
+        DateTimeOffset started = Clock.GetUtcNow();
         var result = await kafka.OffsetStoreInSessionAsync(request, session, createMissingOffsetStore, token);
-        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset now = Clock.GetUtcNow();
         if (result is not CdcTransportResult<CdcConnectOffsetStorePolicyObservation>.Observed observed)
         {
             return Reject();
@@ -166,6 +171,8 @@ public sealed class CdcWorkerStartup(CdcKafkaProvisioning kafka, ICdcWorkerStart
 /// <summary>Explicit Compose service effects used by CdcWorkerStartup; no profile-wide up or connector REST calls.</summary>
 public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTransport
 {
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
+
     private readonly string[] _arguments;
     private readonly string _brokerSizeOverrideFile;
     private string[] ComposeArguments =>
@@ -244,8 +251,11 @@ public sealed class CdcComposeWorkerStartupTransport : ICdcWorkerStartupTranspor
         CancellationToken cancellationToken
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, Clock);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            deadline.Token
+        );
         string[] composeArguments = ComposeArguments;
         await ValidateComposeAsync(request, composeArguments, timeout.Token);
         string waitSeconds = Math.Max(1, (int)Math.Ceiling(request.Timing.CallTimeout.TotalSeconds))

@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
 public sealed class Given_SqlServer_Idle_Streaming_Offset
 {
     private CdcProviderAdmissionFixture _fixture = null!;
@@ -61,7 +62,7 @@ public sealed class Given_SqlServer_Idle_Streaming_Offset
         try
         {
             Observed(await _fixture.Infrastructure.Connect.StopAsync(_fixture.Request, _timeout.Token));
-            await CdcControllerFixture.WaitAsync(
+            await _fixture.Probes.WaitAsync(
                 async ct =>
                     Observed(
                         await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, ct)
@@ -71,7 +72,7 @@ public sealed class Given_SqlServer_Idle_Streaming_Offset
                 _timeout.Token
             );
             Observed(await _fixture.Infrastructure.Connect.ResumeAsync(_fixture.Request, _timeout.Token));
-            await CdcControllerFixture.WaitAsync(
+            await _fixture.Probes.WaitAsync(
                 async ct =>
                 {
                     var offset = Observed(
@@ -104,7 +105,7 @@ public sealed class Given_SqlServer_Idle_Streaming_Offset
         {
             await _fixture.ExecuteAsync("EXEC sys.sp_cdc_start_job @job_type=N'capture';", _timeout.Token);
         }
-        await CdcControllerFixture.WaitAsync(
+        await _fixture.Probes.WaitAsync(
             async ct =>
             {
                 var validation = Observed(

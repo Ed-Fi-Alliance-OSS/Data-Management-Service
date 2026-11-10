@@ -11,6 +11,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -21,6 +22,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
 {
+    private TimeProvider _clock = null!;
     private string _root = null!;
     private CdcDeploymentRequest _request = null!;
     private LocalCdcWorkflowJournalStore _store = null!;
@@ -40,6 +42,7 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
     [SetUp]
     public async Task Setup()
     {
+        _clock = TimeProvider.System;
         _root = Path.Combine(Path.GetTempPath(), "cdc-provider-" + Guid.NewGuid().ToString("N"));
         _store = new(_root);
         _request = CdcDeploymentRequestTestData.Request(provider);
@@ -72,7 +75,7 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
                         ? RelationalProviderToken.Postgresql
                         : RelationalProviderToken.SqlServer,
                     _request.Binding.PhysicalSourceFingerprint,
-                    DateTimeOffset.UtcNow,
+                    _clock.GetUtcNow(),
                     new(_lifecycle, _latch),
                     new(!_rows, true, true),
                     Guid.NewGuid().ToString("D")
@@ -201,8 +204,33 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
         ) => writer.WriteStringValue(value.Value);
     }
 
-    private Task<CdcTransportResult<CdcProviderSetupHandoff>> RunAsync() =>
-        _controller.SetupAsync(_request, _runtime);
+    private async Task<CdcTransportResult<CdcProviderSetupHandoff>> RunAsync()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        return await _controller.SetupAsync(_request, _runtime, watchdog.Token);
+    }
+
+    private FakeTimeProvider UseClock(Action onLockContention = null!)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        _clock = clock;
+        _services.Dispose();
+        var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(clock)
+            .AddCdcConnectorTemplates()
+            .AddDmsCdcControlPlane();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
+        _services = services.BuildServiceProvider();
+        _store = new(_root, clock, _ => { }) { OnLockContention = onLockContention ?? (() => { }) };
+        _controller = new(
+            _store,
+            _services.GetRequiredService<ICdcBindingLifecycleService>(),
+            _provider,
+            _services.GetRequiredService<ICdcConnectorTemplateService>(),
+            clock
+        );
+        return clock;
+    }
 
     private async Task IntentAsync(CdcWorkflowEffect effect)
     {
@@ -484,15 +512,17 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
     public async Task It_allows_setup_and_live_reread_to_exceed_one_call_budget()
     {
         ConfigureTiming(800, 4000);
+        var clock = UseClock();
         A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
-                async (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
+                (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
                 {
                     ReadJournal()
                         .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
                         .Completions.Should()
                         .BeEmpty();
-                    await Task.Delay(500, token);
+                    clock.Advance(TimeSpan.FromMilliseconds(500));
+                    token.ThrowIfCancellationRequested();
                     return ProviderResult(r);
                 }
             );
@@ -525,18 +555,22 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
     )
     {
         ConfigureTiming(500, 4000);
+        var clock = UseClock();
+        List<Ddl.CdcProviderSetupMode> entered = [];
         A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
                 async (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
                 {
+                    entered.Add(r.Mode);
                     if (r.Mode == stalledMode)
                     {
+                        clock.Advance(_request.Timing.CallTimeout);
                         await Task.Delay(Timeout.InfiniteTimeSpan, token);
                     }
                     return ProviderResult(r);
                 }
             );
-        var result = (await RunAsync().WaitAsync(TimeSpan.FromSeconds(2)))
+        var result = (await RunAsync())
             .Should()
             .BeOfType<CdcTransportResult<CdcProviderSetupHandoff>.Unavailable>()
             .Subject;
@@ -546,6 +580,17 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
             .Operations.Single(o => o.Effect == CdcWorkflowEffect.CreateProvider)
             .Completions.Should()
             .BeEmpty();
+        entered
+            .Should()
+            .Equal(
+                stalledMode == Ddl.CdcProviderSetupMode.ValidateOnly
+                    ?
+                    [
+                        Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch,
+                        Ddl.CdcProviderSetupMode.ValidateOnly,
+                    ]
+                    : [Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch]
+            );
         _calls.Should().HaveCount(stalledMode == Ddl.CdcProviderSetupMode.ValidateOnly ? 1 : 0);
         await using var session = await _store.AcquireAsync(
             TimeSpan.FromSeconds(1),
@@ -558,6 +603,13 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
     public async Task It_bounds_lock_acquisition_by_the_call_budget_without_provider_effects()
     {
         ConfigureTiming(150, 4000);
+        FakeTimeProvider clock = null!;
+        bool contended = false;
+        clock = UseClock(() =>
+        {
+            contended = true;
+            clock.Advance(_request.Timing.CallTimeout);
+        });
         await using (
             var held = await _store.AcquireAsync(
                 TimeSpan.FromSeconds(1),
@@ -566,10 +618,11 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
             )
         )
         {
-            var result = (await RunAsync().WaitAsync(TimeSpan.FromSeconds(2)))
+            var result = (await RunAsync())
                 .Should()
                 .BeOfType<CdcTransportResult<CdcProviderSetupHandoff>.Unavailable>()
                 .Subject;
+            contended.Should().BeTrue();
             result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
             result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.WorkflowState);
             _calls.Should().BeEmpty();
@@ -582,23 +635,45 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
     public async Task It_honors_the_original_workflow_or_earlier_enclosing_deadline(bool enclosingDeadline)
     {
         ConfigureTiming(1000, 1500);
+        var clock = UseClock();
         using var cancellation = new CancellationTokenSource();
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellation.Token,
+            watchdog.Token
+        );
+        List<Ddl.CdcProviderSetupMode> entered = [];
+        CancellationToken rereadToken = CancellationToken.None;
         A.CallTo(() => _provider.SetupAsync(A<Ddl.CdcProviderSetupRequest>._, A<CancellationToken>._))
             .ReturnsLazily(
                 async (Ddl.CdcProviderSetupRequest r, CancellationToken token) =>
                 {
-                    if (enclosingDeadline && r.Mode == Ddl.CdcProviderSetupMode.ValidateOnly)
+                    entered.Add(r.Mode);
+                    if (r.Mode == Ddl.CdcProviderSetupMode.ValidateOnly)
                     {
-                        cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+                        rereadToken = token;
+                        token.IsCancellationRequested.Should().BeFalse();
+                        if (enclosingDeadline)
+                        {
+                            await cancellation.CancelAsync();
+                        }
+                        else
+                        {
+                            // Setup consumed 850 ms; the shared budget expires 650 ms into reread,
+                            // before the reread's independent 1000 ms call deadline.
+                            clock.Advance(TimeSpan.FromMilliseconds(650));
+                        }
+                        await Task.Delay(Timeout.InfiniteTimeSpan, token);
                     }
-                    await Task.Delay(850, token);
+                    clock.Advance(TimeSpan.FromMilliseconds(850));
+                    token.ThrowIfCancellationRequested();
                     return ProviderResult(r);
                 }
             );
 
         if (enclosingDeadline)
         {
-            Func<Task> run = () => _controller.SetupAsync(_request, _runtime, cancellation.Token);
+            Func<Task> run = () => _controller.SetupAsync(_request, _runtime, caller.Token);
             await run.Should().ThrowAsync<OperationCanceledException>();
         }
         else
@@ -609,7 +684,13 @@ internal class Given_CdcProviderSetupOrchestration(Ddl.CdcProvider provider)
                 .Subject;
             result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
             result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.ProviderSetup);
+            clock.GetUtcNow().Subtract(clock.Start).Should().Be(_request.Timing.WaitTimeout);
         }
+        entered
+            .Should()
+            .Equal(Ddl.CdcProviderSetupMode.InitialCreateOrExactMatch, Ddl.CdcProviderSetupMode.ValidateOnly);
+        rereadToken.IsCancellationRequested.Should().BeTrue();
+        watchdog.IsCancellationRequested.Should().BeFalse();
         _calls
             .Should()
             .ContainSingle()

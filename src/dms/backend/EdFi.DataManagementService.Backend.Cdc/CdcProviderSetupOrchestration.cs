@@ -85,8 +85,11 @@ public sealed class CdcProviderSetupOrchestration
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new OperationBoundary();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var operationTimer = new CancellationTokenSource(request.Timing.WaitTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationTimer.Token
+        );
         var token = timeout.Token;
         try
         {
@@ -356,8 +359,8 @@ public sealed class CdcProviderSetupOrchestration
         CancellationToken token
     )
     {
-        using var call = CancellationTokenSource.CreateLinkedTokenSource(token);
-        call.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _time);
+        using var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             var result = await _provider.SetupAsync(setup, call.Token).WaitAsync(call.Token);

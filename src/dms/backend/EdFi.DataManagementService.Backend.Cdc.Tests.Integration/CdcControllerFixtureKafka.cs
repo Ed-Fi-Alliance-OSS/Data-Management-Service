@@ -96,7 +96,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             .SetLogHandler((_, _) => { })
             .SetErrorHandler((_, _) => { })
             .Build();
-        await CdcControllerFixture.WaitAsync(
+        await Probes.WaitAsync(
             _ =>
             {
                 try

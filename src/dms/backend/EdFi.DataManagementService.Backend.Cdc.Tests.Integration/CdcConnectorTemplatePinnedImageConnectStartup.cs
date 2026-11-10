@@ -20,10 +20,16 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         {
             for (int attempt = 1; attempt <= maximumAttempts; attempt++)
             {
-                DockerCommandResult result = await _docker.RunAllowingFailureAsync(
-                    BuildKafkaConnectRunArguments(),
-                    cancellationToken
-                );
+                DockerCommandResult result = _controllerComposeKafka
+                    ? await RunControllerComposeAsync(
+                        ["up", "--detach", "--wait", "kafka-cdc-worker"],
+                        cancellationToken,
+                        allowingFailure: true
+                    )
+                    : await _docker.RunAllowingFailureAsync(
+                        BuildKafkaConnectRunArguments(),
+                        cancellationToken
+                    );
                 bool portConflict = IsPortBindFailure(result.StandardError);
                 string category = (result.ExitCode, portConflict) switch
                 {

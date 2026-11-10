@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Security;
 using System.Text.Json;
@@ -25,6 +24,7 @@ public sealed partial class LocalCdcWorkflowJournalStore
 {
     private readonly CdcStateStorePathResolver _paths;
     private readonly TimeProvider _time;
+    internal Action OnLockContention { get; init; } = () => { };
     private readonly Action<CdcWorkflowWriteBoundary> _onWrite;
     private static readonly ICdcLocalStateStorePermissions _permissions =
         CdcLocalStateStorePermissions.Current;
@@ -69,7 +69,7 @@ public sealed partial class LocalCdcWorkflowJournalStore
                 && pollInterval > TimeSpan.Zero
                 && pollInterval <= timeout
         );
-        long started = Stopwatch.GetTimestamp();
+        long started = _time.GetTimestamp();
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -95,12 +95,18 @@ public sealed partial class LocalCdcWorkflowJournalStore
             }
             catch (IOException exception) when ((exception.HResult & 0xffff) is 11 or 32 or 33)
             {
-                TimeSpan remaining = timeout - Stopwatch.GetElapsedTime(started);
+                CdcControllerLockDiagnostics.ReportContention();
+                OnLockContention();
+                TimeSpan remaining = timeout - _time.GetElapsedTime(started);
                 if (remaining <= TimeSpan.Zero)
                 {
                     throw new CdcWorkflowStateException(CdcWorkflowStateFailure.LockTimeout);
                 }
-                await Task.Delay(remaining < pollInterval ? remaining : pollInterval, cancellationToken);
+                await Task.Delay(
+                    remaining < pollInterval ? remaining : pollInterval,
+                    _time,
+                    cancellationToken
+                );
             }
             catch (Exception exception) when (IsStorageException(exception))
             {

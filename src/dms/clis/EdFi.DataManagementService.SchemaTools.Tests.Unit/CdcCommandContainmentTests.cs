@@ -18,6 +18,7 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using CoreProvider = EdFi.DataManagementService.Core.DocumentCache.Cdc.CdcProvider;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -402,7 +403,8 @@ public partial class Given_Cdc_command_configuration
     private static async Task RetainBindingAsync(
         ICdcBindingLifecycleService bindings,
         CdcDeploymentRequest request,
-        bool terminal
+        bool terminal,
+        TimeProvider clock = null!
     )
     {
         (await bindings.CreateBindingIfAbsentAsync(request.Binding))
@@ -415,7 +417,7 @@ public partial class Given_Cdc_command_configuration
                     new(
                         CdcJsonContract.CurrentContractVersion,
                         CdcIncidentType.SourceHistoryContinuityLost,
-                        DateTimeOffset.UtcNow,
+                        (clock ?? TimeProvider.System).GetUtcNow(),
                         request.Binding.ToCompleteBindingIdentity(),
                         CdcIncidentFailureCategory.ConnectOffsetMissing,
                         new(
@@ -687,36 +689,61 @@ public partial class Given_Cdc_command_configuration
         _settings["Cdc:Timing:WaitMilliseconds"] = "1000";
         _settings["Cdc:Timing:PollMilliseconds"] = "1";
         var request = await RequestAsync();
-        var services = new ServiceCollection();
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        var services = new ServiceCollection().AddSingleton<TimeProvider>(clock);
         services.AddDmsCdcControlPlane();
         services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
         await using var scope = services.BuildServiceProvider();
         var bindings = scope.GetRequiredService<ICdcBindingLifecycleService>();
-        await RetainBindingAsync(bindings, request, true);
+        await RetainBindingAsync(bindings, request, true, clock);
         List<string> trace = [];
         using var caller = new CancellationTokenSource();
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(caller.Token, watchdog.Token);
+        CancellationToken commandToken = default;
         using var http = new ContainmentHandler(request.Binding.ConnectorName, trace)
         {
-            AfterStatus = ct => Task.Delay(100, ct),
             AfterStop = ct =>
             {
                 if (cancelCaller)
                 {
                     caller.Cancel();
                 }
-                // The command has less than one call budget left. Lose the HTTP response after
-                // accepting stop; the production adapter and controller must independently read back.
+                else
+                {
+                    // Stop has been accepted while its own call budget still has 600 ms left.
+                    // Expire the command first, then the independent stop call's remaining budget.
+                    clock.Advance(TimeSpan.FromMilliseconds(300));
+                    commandToken.IsCancellationRequested.Should().BeTrue();
+                    ct.IsCancellationRequested.Should().BeFalse();
+                    clock.Advance(TimeSpan.FromMilliseconds(300));
+                }
                 return Task.Delay(Timeout.InfiniteTimeSpan, ct);
             },
         };
+        using var transportClient = new HttpClient(http, disposeHandler: false);
         var runner = new CdcCommandRunner(A.Fake<IApiSchemaFileLoader>(), SchemaBuilder())
         {
-            CreateRequest = async (_, _, _, _, _, ct, _, _) =>
+            Clock = clock,
+            CreateRequest = (_, _, _, _, _, ct, _, _) =>
             {
-                await Task.Delay(700, ct);
-                return request;
+                commandToken = ct;
+                clock.Advance(TimeSpan.FromMilliseconds(700));
+                ct.IsCancellationRequested.Should().BeFalse();
+                return Task.FromResult(request);
             },
             CreateConnectClient = () => new HttpClient(http, disposeHandler: false),
+            ConfigureStatus = _ =>
+                new(
+                    new LocalCdcWorkflowJournalStore(_root),
+                    bindings,
+                    new CdcConnectRestAdapter(transportClient, clock),
+                    _ =>
+                        throw new InvalidOperationException(
+                            "Expired observation must not start ordinary validation."
+                        ),
+                    clock
+                ),
             CreateProjectionRuntime = (_, _, _, ct) =>
             {
                 trace.Add("runtime");
@@ -735,7 +762,7 @@ public partial class Given_Cdc_command_configuration
             var result = await runner.RunAsync(
                 new(operation, settingsPath, _root, 3, 0, false, "", false),
                 output,
-                caller.Token
+                lifetime.Token
             );
             result.Succeeded.Should().BeFalse();
             var status = result.Data.Should().BeOfType<CdcControllerStatusResult>().Subject.Targets.Single();
@@ -769,6 +796,8 @@ public partial class Given_Cdc_command_configuration
         {
             await Run();
         }
+        trace.Count(stage => stage == "stop").Should().Be(1);
+        watchdog.IsCancellationRequested.Should().BeFalse();
         // The completed pass releases its controller lock, including when it outlives the command.
         await using var session = await new LocalCdcWorkflowJournalStore(_root).AcquireAsync(
             TimeSpan.FromSeconds(1),
