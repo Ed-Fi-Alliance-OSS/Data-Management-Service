@@ -114,6 +114,7 @@ internal static class PostgresqlDeletionQueries
             instance,
             FenceVerifyStep,
             FenceInstanceStep,
+            readCancellationNotDispatched: true,
             cancellationToken
         );
         if (refused is not null)
@@ -121,6 +122,8 @@ internal static class PostgresqlDeletionQueries
             return refused;
         }
 
+        // The last check before the fence is handed to the driver: a cancellation from here on proves nothing.
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         try
         {
             await ExecuteAsync(connection, FenceStatement(target), cancellationToken);
@@ -177,6 +180,7 @@ internal static class PostgresqlDeletionQueries
             instance,
             UnfenceVerifyStep,
             UnfenceInstanceStep,
+            readCancellationNotDispatched: false,
             cancellationToken
         );
         if (refused is not null)
@@ -223,6 +227,7 @@ internal static class PostgresqlDeletionQueries
                 instance,
                 DropTargetVerifyStep,
                 DropTargetInstanceStep,
+                readCancellationNotDispatched: true,
                 cancellationToken
             );
         if (refused is not null)
@@ -244,10 +249,7 @@ internal static class PostgresqlDeletionQueries
         {
             sessions = await SessionCountAsync(connection, current!.Oid, cancellationToken);
         }
-        catch (Exception exception)
-            when (exception is not OperationCanceledException
-                || PostgresqlStagingQueries.IsAfterSend(exception)
-            )
+        catch (Exception exception) when (exception is not OperationCanceledException)
         {
             return new DmsCommandOutcome.Failed(
                 new DmsCommandFailure(
@@ -258,6 +260,7 @@ internal static class PostgresqlDeletionQueries
         }
         catch (OperationCanceledException canceled)
         {
+            // A read cancelled even after it was sent changed nothing, and the drop was never sent.
             throw new DmsCommandNotDispatchedException(canceled);
         }
 
@@ -266,6 +269,8 @@ internal static class PostgresqlDeletionQueries
             return Failed(DmsCommandFailureClass.ObjectInUse, DropTargetSessionsStep);
         }
 
+        // The last check before the drop is handed to the driver: a cancellation from here on proves nothing.
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         try
         {
             await ExecuteAsync(
@@ -409,6 +414,9 @@ internal static class PostgresqlDeletionQueries
     /// current instance and whether it accepts connections; otherwise the definite failure to return. A read that
     /// fails proves only that nothing was sent; a cancellation before anything was sent propagates as
     /// <see cref="DmsCommandNotDispatchedException"/>, because the command that follows was never handed to the driver.
+    /// With <paramref name="readCancellationNotDispatched"/> (the fence and the drop, which the caller withdraws on
+    /// that exception) a read cancelled after it was sent (<c>57014</c>) propagates the same way: the read changed
+    /// nothing and the command was not sent. Without it (the unfence) that read is the definite failure it was.
     /// </summary>
     private static async Task<(
         DmsCommandOutcome? Refused,
@@ -420,6 +428,7 @@ internal static class PostgresqlDeletionQueries
         DmsInstanceIdentity expected,
         string verifyStep,
         string instanceStep,
+        bool readCancellationNotDispatched,
         CancellationToken cancellationToken
     )
     {
@@ -431,7 +440,7 @@ internal static class PostgresqlDeletionQueries
         }
         catch (Exception exception)
             when (exception is not OperationCanceledException
-                || PostgresqlStagingQueries.IsAfterSend(exception)
+                || (!readCancellationNotDispatched && PostgresqlStagingQueries.IsAfterSend(exception))
             )
         {
             return (

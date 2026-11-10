@@ -77,6 +77,7 @@ internal static class PostgresqlPublicationQueries
             stagingInstance,
             RenameVerifyStep,
             RenameInstanceStep,
+            readCancellationNotDispatched: true,
             cancellationToken
         );
         if (refused is DmsCommandOutcome.Failed failed)
@@ -84,6 +85,8 @@ internal static class PostgresqlPublicationQueries
             return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(failed.Failure);
         }
 
+        // The last check before the rename is handed to the driver: a cancellation from here on proves nothing.
+        DmsCommandNotDispatchedException.ThrowIfCancellationRequested(cancellationToken);
         try
         {
             await ExecuteAsync(connection, RenameStatement(staging, target), cancellationToken);
@@ -206,6 +209,7 @@ internal static class PostgresqlPublicationQueries
             instance,
             DropInstanceVerifyStep,
             DropInstanceInstanceStep,
+            readCancellationNotDispatched: false,
             cancellationToken
         );
         if (refused is not null)
@@ -239,6 +243,10 @@ internal static class PostgresqlPublicationQueries
     /// D-13 before a mutation: null when <paramref name="name"/> still holds <paramref name="expected"/>;
     /// otherwise the definite failure to return. A read that fails proves only that the mutation was not
     /// sent; a cancellation before anything was sent propagates as <see cref="DmsCommandNotDispatchedException"/>.
+    /// With <paramref name="readCancellationNotDispatched"/> (the rename, which the caller withdraws on that
+    /// exception) a read cancelled after it was sent (<c>57014</c>) propagates the same way: the read changed
+    /// nothing and the mutation was not sent. Without it (the compensation drop) that read is the definite failure
+    /// it was.
     /// </summary>
     private static async Task<DmsCommandOutcome?> VerifyAsync(
         NpgsqlConnection connection,
@@ -246,6 +254,7 @@ internal static class PostgresqlPublicationQueries
         DmsInstanceIdentity expected,
         string verifyStep,
         string instanceStep,
+        bool readCancellationNotDispatched,
         CancellationToken cancellationToken
     )
     {
@@ -256,7 +265,7 @@ internal static class PostgresqlPublicationQueries
         }
         catch (Exception exception)
             when (exception is not OperationCanceledException
-                || PostgresqlStagingQueries.IsAfterSend(exception)
+                || (!readCancellationNotDispatched && PostgresqlStagingQueries.IsAfterSend(exception))
             )
         {
             return new DmsCommandOutcome.Failed(
