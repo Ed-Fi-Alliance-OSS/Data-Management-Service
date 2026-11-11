@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Time.Testing;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
@@ -1364,9 +1365,11 @@ public class MssqlRestoreTests
     /// termination of the work session is refused while the server still lists it. The guarded kill batch for that
     /// session is replaced by its own result row for "listed, and the kill refused", because the engine closes the
     /// work connection before it returns, so no real work session can still be running when the orchestrator tries.
-    /// The engine names the session without quiescence (abandoning the restore, or, when the driver's timeout ends
-    /// the statement first, resolving it; both keep the session), the orchestrator's one more termination is
-    /// <c>NotTerminated</c> too, and nothing is dropped: the staging database is reported as residue.
+    /// The replacement is armed before the bound can fire: the engine runs on a fake clock that the test advances by
+    /// <c>RestoreTimeout</c> only once the work session is known (the driver's timeout, the same bound in real
+    /// seconds, is far beyond the run). The engine abandons the restore naming the session without quiescence, the
+    /// orchestrator's one more termination is <c>NotTerminated</c> too, and nothing is dropped: the staging database
+    /// is reported as residue.
     /// </summary>
     [TestFixture]
     public class Given_the_work_session_termination_stays_unproven_after_a_bounded_restore
@@ -1379,6 +1382,7 @@ public class MssqlRestoreTests
 
         private Lane? _lane;
         private readonly WorkSessionKill _kill = new(_ => ListedAndRefused);
+        private bool _armedBeforeTheBound;
         private DmsDataStoreCreateResult _result = null!;
         private DmsLiveTargetState _stagingAfter = null!;
 
@@ -1388,15 +1392,14 @@ public class MssqlRestoreTests
             RequireSharedStagingOrSkip();
             string marker =
                 "dms1438_restore_unproven_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+
+            // The heartbeat interval is beyond the one advance, so the clock fires nothing but the restore bound.
+            MssqlDmsEngineSettings settings = Settings(lockHeartbeatInterval: TimeSpan.FromHours(1));
+            FakeTimeProvider clock = new(DateTimeOffset.UtcNow);
             _lane = await Lane.BuildAsync(
                 await ShapedBackup.CreateAsync(),
                 new LaneHooks(),
-                new MssqlDmsTargetEngine(
-                    AdminConnection(),
-                    Settings(restoreTimeout: TimeSpan.FromSeconds(10)),
-                    TimeProvider.System,
-                    NullLogger.Instance
-                )
+                new MssqlDmsTargetEngine(AdminConnection(), settings, clock, NullLogger.Instance)
                 {
                     RestoreStatement = RestoringThenWaiting(marker),
                     GuardedKillStatement = _kill.Statement,
@@ -1404,6 +1407,10 @@ public class MssqlRestoreTests
             );
             Task<DmsDataStoreCreateResult> creating = _lane.CreateAsync();
             _kill.WorkSession = await WaitForWaitingWorkSessionAsync(_lane);
+            _armedBeforeTheBound = _kill.WorkSession != 0 && _kill.Calls == 0 && !creating.IsCompleted;
+
+            // The controlled trigger: the restore bound fires now, with the replacement armed.
+            clock.Advance(settings.RestoreTimeout);
             _result = await creating;
             _stagingAfter = await Engine().InspectAsync(_lane.Operation.StagingDatabaseName, default);
         }
@@ -1431,6 +1438,10 @@ public class MssqlRestoreTests
         }
 
         [Test]
+        public void It_armed_the_refusal_before_the_restore_bound_fired() =>
+            _armedBeforeTheBound.Should().BeTrue();
+
+        [Test]
         public void It_reports_an_unknown_outcome_naming_the_work_session() =>
             _lane!
                 .Engine.RestoreOutcomes.Should()
@@ -1441,8 +1452,10 @@ public class MssqlRestoreTests
                 );
 
         [Test]
-        public void It_tries_the_work_session_once_more() =>
-            _lane!.Engine.CountOf(nameof(IDmsTargetEngine.TerminateSessionAsync)).Should().Be(1);
+        public void It_tries_the_work_session_once_more_without_proof() =>
+            (_lane!.Engine.CountOf(nameof(IDmsTargetEngine.TerminateSessionAsync)), _kill.Calls)
+                .Should()
+                .Be((1, 2));
 
         [Test]
         public void It_reports_the_outcome_unknown_for_inspection() =>
