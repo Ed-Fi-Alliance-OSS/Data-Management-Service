@@ -274,90 +274,9 @@ Describe 'Publish-ReleaseAsset' {
 
 Describe 'on-prerelease.yml attaches the DocumentCacheAdmin release assets with Publish-ReleaseAsset' {
     BeforeAll {
-        $script:lines = (Get-Content (Join-Path $script:repoRoot '.github/workflows/on-prerelease.yml') -Raw) -split '\r?\n'
-
-        function script:Get-JobText([string] $Id) {
-            # The job's lines, from its header up to the next line indented two spaces.
-            $start = -1
-            for ($i = 0; $i -lt $script:lines.Count; $i++) {
-                if ($script:lines[$i] -cmatch "^  $([regex]::Escape($Id)):[ \t]*(?:#.*)?$") { $start = $i; break }
-            }
-            if ($start -lt 0) { return '' }
-            $end = $start + 1
-            while ($end -lt $script:lines.Count -and $script:lines[$end] -notmatch '^  \S') { $end++ }
-            return ($script:lines[$start..($end - 1)] -join "`n")
-        }
-
-        function script:Get-JobStep([string] $Job) {
-            # Each step of a job, from its '      - ' line up to the next one.
-            $lines = $Job -split "`n"
-            $steps = [Collections.Generic.List[string]]::new()
-            $inSteps = $false
-            foreach ($line in $lines) {
-                if ($line -cmatch '^    steps:[ \t]*$') { $inSteps = $true; continue }
-                if (-not $inSteps) { continue }
-                if ($line -match '^    \S') { break }
-                if ($line.StartsWith('      - ')) { $steps.Add($line) }
-                elseif ($steps.Count -gt 0) { $steps[$steps.Count - 1] += "`n$line" }
-            }
-            return $steps.ToArray()
-        }
-
-        function script:Get-StepRun([string] $Step) {
-            # The block scalar under the step's run: key, without its indentation.
-            $lines = $Step -split "`n"
-            $run = [Collections.Generic.List[string]]::new()
-            $inRun = $false
-            foreach ($line in $lines) {
-                if ($line -cmatch '^        run: \|[ \t]*$') { $inRun = $true; continue }
-                if (-not $inRun) { continue }
-                if ($line -match '^[ \t]*$') { $run.Add(''); continue }
-                if (-not $line.StartsWith('          ')) { break }
-                $run.Add($line.Substring(10))
-            }
-            return ($run -join "`n")
-        }
-
-        function script:Get-ScriptCommand([string] $Script, [string] $Name) {
-            $errors = $null
-            $ast = [Management.Automation.Language.Parser]::ParseInput($Script, [ref] $null, [ref] $errors)
-            @($errors).Count | Should -Be 0 -Because 'the run script parses as PowerShell'
-            return @($ast.FindAll({
-                        param($node)
-                        $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq $Name
-                    }, $true))
-        }
-
-        function script:Get-CommandArgument([Management.Automation.Language.CommandAst] $Command) {
-            # Each named parameter of a call to the element that is its argument.
-            $arguments = @{}
-            $elements = $Command.CommandElements
-            for ($i = 1; $i -lt $elements.Count; $i++) {
-                $parameter = $elements[$i]
-                if ($parameter -isnot [Management.Automation.Language.CommandParameterAst]) { continue }
-                $value = $parameter.Argument
-                if ($null -eq $value -and $i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [Management.Automation.Language.CommandParameterAst]) {
-                    $i++
-                    $value = $elements[$i]
-                }
-                $arguments[$parameter.ParameterName] = $value
-            }
-            return $arguments
-        }
-
-        function script:ConvertTo-AssetText([Management.Automation.Language.Ast] $List) {
-            # Each hashtable in the -Asset argument as 'Name|Path|Comparison', with each value as written,
-            # less the quotes of a constant.
-            foreach ($table in $List.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true)) {
-                $values = @{}
-                foreach ($pair in $table.KeyValuePairs) {
-                    $expression = if ($pair.Item2 -is [Management.Automation.Language.PipelineAst]) { $pair.Item2.GetPureExpression() }
-                    $values[$pair.Item1.Extent.Text] = if ($expression -is [Management.Automation.Language.StringConstantExpressionAst]) { $expression.Value } else { $pair.Item2.Extent.Text }
-                }
-                @($values.Keys | Sort-Object) -join ',' | Should -BeExactly 'Comparison,Name,Path' -Because 'each asset names exactly its Name, Path and Comparison'
-                "$($values['Name'])|$($values['Path'])|$($values['Comparison'])"
-            }
-        }
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
+        $script:workflow = Get-Content (Join-Path $script:repoRoot '.github/workflows/on-prerelease.yml') -Raw
 
         function script:Find-StepIndex([string] $Pattern) {
             # The index of the first step whose text matches the pattern, or -1.
@@ -367,8 +286,8 @@ Describe 'on-prerelease.yml attaches the DocumentCacheAdmin release assets with 
             return -1
         }
 
-        $script:attach = Get-JobText 'attach-document-cache-admin-artifacts-to-release'
-        $script:steps = @(Get-JobStep $script:attach)
+        $script:attach = Get-WorkflowJobText $script:workflow 'attach-document-cache-admin-artifacts-to-release'
+        $script:steps = @(Get-WorkflowJobStep $script:attach)
         $script:attachSteps = @($script:steps | Where-Object { $_.Contains('Publish-ReleaseAsset') })
     }
 
@@ -394,18 +313,18 @@ Describe 'on-prerelease.yml attaches the DocumentCacheAdmin release assets with 
 
     It 'imports eng/ci/release-assets.psm1 and attaches both assets with one Publish-ReleaseAsset call' {
         $script:attachSteps.Count | Should -Be 1
-        $run = Get-StepRun $script:attachSteps[0]
-        $import = @(Get-ScriptCommand $run 'Import-Module')
+        $ast = Get-PowerShellScriptAst (Get-WorkflowStepRun $script:attachSteps[0])
+        $import = @(Get-PowerShellCommand $ast 'Import-Module')
         @($import | ForEach-Object { $_.CommandElements[1].Extent.Text }) | Should -Be @('./eng/ci/release-assets.psm1')
-        $calls = @(Get-ScriptCommand $run 'Publish-ReleaseAsset')
+        $calls = @(Get-PowerShellCommand $ast 'Publish-ReleaseAsset')
         $calls.Count | Should -Be 1
         $import[0].Extent.StartOffset | Should -BeLessThan $calls[0].Extent.StartOffset
 
-        $arguments = Get-CommandArgument $calls[0]
+        $arguments = Get-PowerShellCommandArgument $calls[0]
         $arguments['Repository'].Extent.Text | Should -BeExactly '$env:GITHUB_REPOSITORY'
         $arguments['ReleaseTag'].Extent.Text | Should -BeExactly '$env:RELEASE_VERSION'
         $arguments['Token'].Extent.Text | Should -BeExactly '$env:GITHUB_TOKEN'
-        @(ConvertTo-AssetText $arguments['Asset']) | Should -Be @(
+        @(ConvertTo-ReleaseAssetText $arguments['Asset']) | Should -Be @(
             'EdFi.Api.DocumentCacheAdmin-SBOM.zip|$env:MANIFEST_FILE|ZipEntry'
             'edfiApiDocumentCacheAdmin.intoto.jsonl|edfiApiDocumentCacheAdmin.intoto.jsonl|Bytes'
         )
@@ -416,7 +335,7 @@ Describe 'on-prerelease.yml attaches the DocumentCacheAdmin release assets with 
         $step | Should -Match '(?m)^        shell: pwsh$'
         $step | Should -Match '(?m)^          RELEASE_VERSION: \$\{\{ steps\.prepare-version\.outputs\.semver \}\}$'
         $step | Should -Match '(?m)^          GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}$'
-        Get-StepRun $step | Should -Not -Match '\$\{\{'
+        Get-WorkflowStepRun $step | Should -Not -Match '\$\{\{'
     }
 
     It 'uploads nothing itself, so every asset goes through the existence check' {

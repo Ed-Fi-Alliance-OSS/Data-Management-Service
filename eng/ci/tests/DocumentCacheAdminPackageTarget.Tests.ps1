@@ -235,15 +235,8 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             "attach-document-cache-admin-artifacts-to-release"
         )
 
-        function Get-WorkflowJob {
-            param([Parameter(Mandatory)][string] $Workflow, [Parameter(Mandatory)][string] $Name)
-
-            $job = [regex]::Match($Workflow, "(?ms)^  $([regex]::Escape($Name)):\r?\n.*?(?=^  \S|\z)").Value
-            if ([string]::IsNullOrEmpty($job)) {
-                throw "Job $Name was not found."
-            }
-            return $job
-        }
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
 
         function Get-WorkflowStep {
             param([Parameter(Mandatory)][string] $Workflow, [Parameter(Mandatory)][string] $Name)
@@ -266,32 +259,6 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             return $match.Groups[1].Value
         }
 
-        # The inline form (needs: a), the one-line bracket form (needs: [a, b]) and the list form,
-        # ignoring comment lines.
-        function Get-JobNeed {
-            param([Parameter(Mandatory)][string] $Job)
-
-            $bracket = [regex]::Match($Job, '(?m)^    needs:[ \t]*\[(.*?)\][ \t]*$')
-            if ($bracket.Success) {
-                return @(
-                    $bracket.Groups[1].Value -split ',' |
-                        ForEach-Object { $_.Trim() } |
-                        Where-Object { $_ }
-                )
-            }
-
-            $inline = [regex]::Match($Job, '(?m)^    needs:[ \t]+(\S.*?)\s*$')
-            if ($inline.Success) { return @($inline.Groups[1].Value) }
-
-            $list = [regex]::Match($Job, '(?m)^    needs:[ \t]*\r?\n((?:      - .+\r?\n?|\s*#.*\r?\n?)+)')
-            if (-not $list.Success) { return @() }
-            return @(
-                $list.Groups[1].Value -split '\r?\n' |
-                    Where-Object { $_ -match '^      - (\S+)' } |
-                    ForEach-Object { $Matches[1] }
-            )
-        }
-
         function Get-JobName {
             param([Parameter(Mandatory)][string] $Workflow)
 
@@ -306,7 +273,7 @@ Describe "DocumentCacheAdmin release workflow wiring" {
 
     Context "Pull request workflow wiring" {
         It "packs, installs and runs DocumentCacheAdmin in the job that does so for SchemaTools, after it" {
-            $job = Get-WorkflowJob -Workflow $script:pullRequest -Name "verify-dms-packages"
+            $job = Get-WorkflowJobText -Workflow $script:pullRequest -Id "verify-dms-packages"
             $names = @(
                 [regex]::Matches($job, '(?m)^      - name: (.+?)\s*$') | ForEach-Object { $_.Groups[1].Value }
             )
@@ -321,7 +288,7 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "packs the DocumentCacheAdmin target and smokes the packed package without rebuilding it" {
-            $job = Get-WorkflowJob -Workflow $script:pullRequest -Name "verify-dms-packages"
+            $job = Get-WorkflowJobText -Workflow $script:pullRequest -Id "verify-dms-packages"
 
             (Get-WorkflowStep -Workflow $job -Name "Create DocumentCacheAdmin NuGet Package") |
                 Should -Match '-PackageTarget DocumentCacheAdmin'
@@ -341,36 +308,36 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "gates pack-document-cache-admin exactly as pack-schema-tools is gated" {
-            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
-            $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-schema-tools"
+            $pack = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-document-cache-admin"
+            $sibling = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-schema-tools"
 
-            @(Get-JobNeed -Job $sibling) | Should -Not -BeNullOrEmpty
-            @(Get-JobNeed -Job $pack) | Sort-Object | Should -Be (@(Get-JobNeed -Job $sibling) | Sort-Object)
+            @(Get-WorkflowJobNeed -Job $sibling) | Should -Not -BeNullOrEmpty
+            @(Get-WorkflowJobNeed -Job $pack) | Sort-Object | Should -Be (@(Get-WorkflowJobNeed -Job $sibling) | Sort-Object)
             Get-JobIf -Job $sibling | Should -Not -BeNullOrEmpty
             Get-JobIf -Job $pack | Should -BeExactly (Get-JobIf -Job $sibling)
         }
 
         It "checks out the full history in pack-document-cache-admin" {
-            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $pack = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-document-cache-admin"
 
             $pack | Should -Match '(?ms)uses: actions/checkout@\S+[^\r\n]*\r?\n\s+with:\r?\n\s+fetch-depth: 0'
         }
 
         It "derives the version in pack-document-cache-admin from the dms prefix" {
-            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $pack = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-document-cache-admin"
 
             $pack | Should -Match 'Get-VersionNumber -projectPrefix "dms"'
         }
 
         It "outputs the hash and the DMS version from pack-document-cache-admin" {
-            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $pack = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-document-cache-admin"
 
             $pack | Should -Match '(?m)^      hash-code: \S'
             $pack | Should -Match '(?m)^      dms-version: \S'
         }
 
         It "builds, smokes, hashes and uploads in that order in pack-document-cache-admin" {
-            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $pack = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-document-cache-admin"
             $build = $pack.IndexOf("./build-dms.ps1 -Command BuildAndPublish")
             $smoke = $pack.IndexOf("eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1")
             $hash = $pack.IndexOf("id: hash-code")
@@ -394,7 +361,7 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "passes the package target and skips the rebuild in the smoke in pack-document-cache-admin" {
-            $pack = Get-WorkflowJob -Workflow $script:prerelease -Name "pack-document-cache-admin"
+            $pack = Get-WorkflowJobText -Workflow $script:prerelease -Id "pack-document-cache-admin"
             $create = Get-WorkflowStep -Workflow $pack -Name "Create DocumentCacheAdmin NuGet Package"
             $smoke = Get-WorkflowStep -Workflow $pack -Name "Verify Installed DocumentCacheAdmin Package"
 
@@ -403,15 +370,15 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "creates the SBOM after pack-document-cache-admin and uploads it" {
-            $sbom = Get-WorkflowJob -Workflow $script:prerelease -Name "sbom-create-document-cache-admin"
+            $sbom = Get-WorkflowJobText -Workflow $script:prerelease -Id "sbom-create-document-cache-admin"
 
-            @(Get-JobNeed -Job $sbom) | Should -Contain "pack-document-cache-admin"
+            @(Get-WorkflowJobNeed -Job $sbom) | Should -Contain "pack-document-cache-admin"
             $sbom | Should -Match '\$\{\{ env\.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME \}\}-SBOM'
             $sbom | Should -Match 'uses: actions/upload-artifact@'
         }
 
         It "gives the SBOM job read-only contents and checks each tool exit code" {
-            $sbom = Get-WorkflowJob -Workflow $script:prerelease -Name "sbom-create-document-cache-admin"
+            $sbom = Get-WorkflowJobText -Workflow $script:prerelease -Id "sbom-create-document-cache-admin"
 
             $sbom | Should -Not -Match '(?m)^\s+contents:\s*write\b'
             $sbom | Should -Match '(?m)^      contents: read\s*$'
@@ -421,7 +388,7 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "creates provenance for the hash pack-document-cache-admin outputs" {
-            $provenance = Get-WorkflowJob -Workflow $script:prerelease -Name "provenance-create-document-cache-admin"
+            $provenance = Get-WorkflowJobText -Workflow $script:prerelease -Id "provenance-create-document-cache-admin"
 
             $provenance | Should -Match 'uses: Ed-Fi-Alliance-OSS/slsa-github-generator/\.github/workflows/generator_generic_slsa3\.yml@v2\.0\.0'
             $provenance | Should -Match 'base64-subjects: \$\{\{ needs\.pack-document-cache-admin\.outputs\.hash-code \}\}'
@@ -429,34 +396,34 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "orders and gates publish-package-document-cache-admin as publish-package-schema-tools is, plus the SBOM and provenance jobs" {
-            $publish = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-document-cache-admin"
-            $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-schema-tools"
+            $publish = Get-WorkflowJobText -Workflow $script:prerelease -Id "publish-package-document-cache-admin"
+            $sibling = Get-WorkflowJobText -Workflow $script:prerelease -Id "publish-package-schema-tools"
             # Stricter than the sibling: the package is never pushed when either attestation failed.
             $expected = @(
-                @(Get-JobNeed -Job $sibling) | ForEach-Object { $_ -replace '^pack-schema-tools$', 'pack-document-cache-admin' }
+                @(Get-WorkflowJobNeed -Job $sibling) | ForEach-Object { $_ -replace '^pack-schema-tools$', 'pack-document-cache-admin' }
                 "sbom-create-document-cache-admin"
                 "provenance-create-document-cache-admin"
             )
 
             $expected | Should -Not -BeNullOrEmpty
-            @(Get-JobNeed -Job $publish) | Sort-Object | Should -Be ($expected | Sort-Object)
+            @(Get-WorkflowJobNeed -Job $publish) | Sort-Object | Should -Be ($expected | Sort-Object)
             Get-JobIf -Job $sibling | Should -Not -BeNullOrEmpty
             Get-JobIf -Job $publish | Should -BeExactly (Get-JobIf -Job $sibling)
             $publish | Should -Match '(?m)^    environment: publishing\r?$'
         }
 
         It "pushes the package with build-dms.ps1 Push in publish-package-document-cache-admin" {
-            $publish = Get-WorkflowJob -Workflow $script:prerelease -Name "publish-package-document-cache-admin"
+            $publish = Get-WorkflowJobText -Workflow $script:prerelease -Id "publish-package-document-cache-admin"
             $step = Get-WorkflowStep -Workflow $publish -Name "Push DocumentCacheAdmin Package to Azure Artifacts"
 
             $step | Should -Match '\./build-dms\.ps1 Push'
         }
 
         It "attaches the DocumentCacheAdmin artifacts once the release is classified" {
-            $attach = Get-WorkflowJob -Workflow $script:prerelease -Name "attach-document-cache-admin-artifacts-to-release"
-            $sibling = Get-WorkflowJob -Workflow $script:prerelease -Name "attach-dms-artifacts-to-release"
+            $attach = Get-WorkflowJobText -Workflow $script:prerelease -Id "attach-document-cache-admin-artifacts-to-release"
+            $sibling = Get-WorkflowJobText -Workflow $script:prerelease -Id "attach-dms-artifacts-to-release"
 
-            @(Get-JobNeed -Job $attach) | Sort-Object | Should -Be @(
+            @(Get-WorkflowJobNeed -Job $attach) | Sort-Object | Should -Be @(
                 "classify-release",
                 "pack-document-cache-admin",
                 "provenance-create-document-cache-admin",
@@ -476,8 +443,8 @@ Describe "DocumentCacheAdmin release workflow wiring" {
             $jobNames | Should -Contain "publish-package-dms"
             $jobNames | Should -Contain "docker-publish-dms"
             foreach ($name in $jobNames | Where-Object { $_ -notin $script:documentCacheAdminJobs }) {
-                $job = Get-WorkflowJob -Workflow $script:prerelease -Name $name
-                @(Get-JobNeed -Job $job) | Where-Object { $_ -in $script:documentCacheAdminJobs } |
+                $job = Get-WorkflowJobText -Workflow $script:prerelease -Id $name
+                @(Get-WorkflowJobNeed -Job $job) | Where-Object { $_ -in $script:documentCacheAdminJobs } |
                     Should -BeNullOrEmpty -Because "$name must not wait on a DocumentCacheAdmin job"
             }
         }
@@ -496,7 +463,7 @@ Describe "DocumentCacheAdmin release workflow wiring" {
         }
 
         It "promotes DocumentCacheAdmin last among the promote steps" {
-            $promoteJob = Get-WorkflowJob -Workflow $script:release -Name "promote-azure-artifact"
+            $promoteJob = Get-WorkflowJobText -Workflow $script:release -Id "promote-azure-artifact"
             $ours = $promoteJob.IndexOf("- name: Promote EdFi.Api.DocumentCacheAdmin Package")
             $others = @(
                 [regex]::Matches($promoteJob, '(?m)^      - name: Promote (?!EdFi\.Api\.DocumentCacheAdmin Package\s*$).+$') |

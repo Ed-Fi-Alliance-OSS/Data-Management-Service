@@ -367,90 +367,17 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     BeforeAll {
         $script:workflow = Get-Content (Join-Path $script:repoRoot '.github/workflows/backfill-document-cache-admin.yml') -Raw
 
-        function script:Get-Job([string] $Id) {
-            return [regex]::Match($script:workflow, "(?ms)^  $([regex]::Escape($Id)):.*?(?=^  [A-Za-z_][\w-]*:[ \t]*\r?`$|\z)").Value
-        }
-
-        function script:Get-JobNeed([string] $Job) {
-            $needs = [regex]::Match($Job, '(?m)^    needs: \[(?<ids>[^\]]*)\]\s*$').Groups['ids'].Value
-            return @($needs -split ',' | ForEach-Object { $_.Trim() } | Where-Object { $_ } | Sort-Object)
-        }
-
-        function script:Get-JobStep([string] $Job) {
-            # Each step of a job, from its '      - ' line up to the next one.
-            $steps = [regex]::Match($Job, '(?m)^    steps:\r?$')
-            if (-not $steps.Success) { return @() }
-            return @([regex]::Split($Job.Substring($steps.Index + $steps.Length), '(?m)^(?=      - )') | Where-Object { $_ -match '\A      - ' })
-        }
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
 
         function script:Find-Step([string] $Job, [string] $Text) {
-            return @(Get-JobStep $Job | Where-Object { $_.Contains($Text) })
-        }
-
-        function script:Get-StepRun([string] $Step) {
-            # The block scalar under the step's run: key, without its indentation.
-            $run = [Collections.Generic.List[string]]::new()
-            $inRun = $false
-            foreach ($line in $Step -split '\r?\n') {
-                if ($line -cmatch '^        run: \|[ \t]*$') { $inRun = $true; continue }
-                if (-not $inRun) { continue }
-                if ($line -match '^[ \t]*$') { $run.Add(''); continue }
-                if (-not $line.StartsWith('          ')) { break }
-                $run.Add($line.Substring(10))
-            }
-            return ($run -join "`n")
-        }
-
-        function script:Get-ScriptAst([string] $Script) {
-            # Read with the PowerShell parser, so line breaks and backtick continuations do not matter.
-            $errors = $null
-            $ast = [Management.Automation.Language.Parser]::ParseInput($Script, [ref] $null, [ref] $errors)
-            @($errors).Count | Should -Be 0 -Because 'the run script parses as PowerShell'
-            return $ast
-        }
-
-        function script:Get-ScriptCommand([Management.Automation.Language.Ast] $Ast, [string] $Name) {
-            return @($Ast.FindAll({
-                        param($node)
-                        $node -is [Management.Automation.Language.CommandAst] -and $node.GetCommandName() -ceq $Name
-                    }, $true))
-        }
-
-        function script:Get-CommandArgument([Management.Automation.Language.CommandAst] $Command) {
-            # Each named parameter of a call to the element that is its argument.
-            $arguments = @{}
-            $elements = $Command.CommandElements
-            for ($i = 1; $i -lt $elements.Count; $i++) {
-                $parameter = $elements[$i]
-                if ($parameter -isnot [Management.Automation.Language.CommandParameterAst]) { continue }
-                $value = $parameter.Argument
-                if ($null -eq $value -and $i + 1 -lt $elements.Count -and $elements[$i + 1] -isnot [Management.Automation.Language.CommandParameterAst]) {
-                    $i++
-                    $value = $elements[$i]
-                }
-                $arguments[$parameter.ParameterName] = $value
-            }
-            return $arguments
-        }
-
-        function script:ConvertTo-AssetText([Management.Automation.Language.Ast] $List) {
-            # Each hashtable in the -Asset argument as 'Name|Path|Comparison', with each value as written,
-            # less the quotes of a constant.
-            foreach ($table in $List.FindAll({ param($node) $node -is [Management.Automation.Language.HashtableAst] }, $true)) {
-                $values = @{}
-                foreach ($pair in $table.KeyValuePairs) {
-                    $expression = if ($pair.Item2 -is [Management.Automation.Language.PipelineAst]) { $pair.Item2.GetPureExpression() }
-                    $values[$pair.Item1.Extent.Text] = if ($expression -is [Management.Automation.Language.StringConstantExpressionAst]) { $expression.Value } else { $pair.Item2.Extent.Text }
-                }
-                @($values.Keys | Sort-Object) -join ',' | Should -BeExactly 'Comparison,Name,Path' -Because 'each asset names exactly its Name, Path and Comparison'
-                "$($values['Name'])|$($values['Path'])|$($values['Comparison'])"
-            }
+            return @(Get-WorkflowJobStep $Job | Where-Object { $_.Contains($Text) })
         }
 
         function script:Get-VerifyRun {
-            $install = @(Find-Step (Get-Job 'verify') 'dotnet tool install')
+            $install = @(Find-Step (Get-WorkflowJobText $script:workflow 'verify') 'dotnet tool install')
             $install.Count | Should -Be 1 -Because 'one step installs the promoted tool'
-            return Get-StepRun $install[0]
+            return Get-WorkflowStepRun $install[0]
         }
 
         $script:trustedGate = "if: `${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}"
@@ -474,7 +401,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'checks out only the dispatch commit, with every tag, and builds nowhere but the repository root' {
-        $build = Get-Job 'build'
+        $build = Get-WorkflowJobText $script:workflow 'build'
         $build | Should -Not -BeNullOrEmpty
         $build | Should -Not -Match 'publish_package'
         $checkouts = @(Find-Step $build 'uses: actions/checkout@')
@@ -487,7 +414,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'validates the tag, then requires the tag''s build inputs, before any build step' {
-        $build = Get-Job 'build'
+        $build = Get-WorkflowJobText $script:workflow 'build'
         $order = @(
             'uses: actions/checkout@'
             'Assert-DocumentCacheAdminBackfillTag -ReleaseTag $env:RELEASE_TAG'
@@ -512,7 +439,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'stamps the version from the release tag, never from MinVer' {
-        $build = Get-Job 'build'
+        $build = Get-WorkflowJobText $script:workflow 'build'
         $build | Should -Not -Match 'Get-VersionNumber|minver|steps\.versions\.'
         $version = @(Find-Step $build 'Get-DocumentCacheAdminBackfillVersion')
         $version[0] | Should -Match '(?m)^        id: version\r?$'
@@ -525,7 +452,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'builds, packs and smoke-tests with the release flags, and uploads the package from the repository root' {
-        $build = Get-Job 'build'
+        $build = Get-WorkflowJobText $script:workflow 'build'
         $buildStep = @(Find-Step $build './build-dms.ps1 -Command BuildAndPublish')[0]
         foreach ($flag in '-Configuration Release', '-DMSVersion $env:APP_VERSION', '-LockedMode') {
             $buildStep.Contains($flag) | Should -BeTrue -Because "BuildAndPublish passes $flag"
@@ -548,14 +475,14 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'scans the dispatch commit for the SBOM, reads contents only, and stops when a tool fails' {
-        $sbom = Get-Job 'sbom-create-document-cache-admin'
+        $sbom = Get-WorkflowJobText $script:workflow 'sbom-create-document-cache-admin'
         $sbom | Should -Not -BeNullOrEmpty
-        Get-JobNeed $sbom | Should -Be @('build')
+        @(Get-WorkflowJobNeed $sbom | Sort-Object) | Should -Be @('build')
         $sbom | Should -Not -Match 'publish_package'
         $sbom | Should -Match '(?m)^      contents: read\r?$'
         $sbom | Should -Not -Match '(?m)^      contents: write'
 
-        $steps = @(Get-JobStep $sbom)
+        $steps = @(Get-WorkflowJobStep $sbom)
         $steps[0] | Should -Match 'uses: actions/checkout@'
         $steps[0] | Should -Match '(?m)^          ref: \$\{\{ github\.sha \}\}\r?$'
 
@@ -575,7 +502,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'always attests the exact artifact, with no publish switch' {
-        $provenance = Get-Job 'provenance-create-document-cache-admin'
+        $provenance = Get-WorkflowJobText $script:workflow 'provenance-create-document-cache-admin'
         $provenance | Should -Not -BeNullOrEmpty
         $provenance | Should -Match ([regex]::Escape('uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0'))
         $provenance | Should -Match ([regex]::Escape('base64-subjects: ${{ needs.build.outputs.hash-code }}'))
@@ -590,7 +517,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         @([regex]::Matches($script:workflow, '(?m)^[ \t]+ARTIFACTS_FEED_URL:')).Count | Should -Be 1
         $script:workflow | Should -Not -Match 'vars\.AZURE_ARTIFACTS_FEED_URL'
 
-        $push = @(Find-Step (Get-Job 'publish') 'Publish-DocumentCacheAdminBackfill')
+        $push = @(Find-Step (Get-WorkflowJobText $script:workflow 'publish') 'Publish-DocumentCacheAdminBackfill')
         $push.Count | Should -Be 1
         $push[0] | Should -Match 'InstallCredentialHandler'
         $push[0] | Should -Match '-ServiceIndexUrl \$env:ARTIFACTS_FEED_URL\b'
@@ -601,34 +528,34 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $credentials[0].endpoint | Should -BeExactly $script:feedUrl
         $credentials[0].password | Should -BeExactly 'publishing-token'
 
-        $promote = @(Find-Step (Get-Job 'promote') 'Invoke-ContractPromotion')
+        $promote = @(Find-Step (Get-WorkflowJobText $script:workflow 'promote') 'Invoke-ContractPromotion')
         $promote.Count | Should -Be 1
         $promote[0] | Should -Match '-ServiceIndexUrl \$env:ARTIFACTS_FEED_URL\b'
     }
 
     It 'publishes, promotes and attaches with the right dependencies' {
-        $publish = Get-Job 'publish'
+        $publish = Get-WorkflowJobText $script:workflow 'publish'
         $publish | Should -Not -BeNullOrEmpty
-        Get-JobNeed $publish | Should -Be @('build', 'provenance-create-document-cache-admin', 'sbom-create-document-cache-admin')
+        @(Get-WorkflowJobNeed $publish | Sort-Object) | Should -Be @('build', 'provenance-create-document-cache-admin', 'sbom-create-document-cache-admin')
         $publish | Should -Match 'Publish-DocumentCacheAdminBackfill'
 
-        $promote = Get-Job 'promote'
+        $promote = Get-WorkflowJobText $script:workflow 'promote'
         $promote | Should -Not -BeNullOrEmpty
-        Get-JobNeed $promote | Should -Be @('build', 'publish')
+        @(Get-WorkflowJobNeed $promote | Sort-Object) | Should -Be @('build', 'publish')
         $promote | Should -Match 'Invoke-ContractPromotion'
         $promote | Should -Match "-PackageName 'EdFi\.Api\.DocumentCacheAdmin'"
         $promote | Should -Match 'needs\.build\.outputs\.version'
 
-        $attach = Get-Job 'attach'
+        $attach = Get-WorkflowJobText $script:workflow 'attach'
         $attach | Should -Not -BeNullOrEmpty
         # promote too, so the assets reach the release only once the version is in the Release view.
-        Get-JobNeed $attach | Should -Be @('build', 'promote', 'provenance-create-document-cache-admin', 'publish', 'sbom-create-document-cache-admin')
+        @(Get-WorkflowJobNeed $attach | Sort-Object) | Should -Be @('build', 'promote', 'provenance-create-document-cache-admin', 'publish', 'sbom-create-document-cache-admin')
         $attach | Should -Match '(?m)^      contents: write\r?$'
     }
 
     It 'attaches with Publish-ReleaseAsset, after checking out the dispatch commit and downloading both assets' {
-        $attach = Get-Job 'attach'
-        $steps = @(Get-JobStep $attach)
+        $attach = Get-WorkflowJobText $script:workflow 'attach'
+        $steps = @(Get-WorkflowJobStep $attach)
         $steps[0] | Should -Match 'uses: actions/checkout@'
         $steps[0] | Should -Match '(?m)^          ref: \$\{\{ github\.sha \}\}\r?$'
         $order = @(
@@ -646,28 +573,28 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $step.Count | Should -Be 1
         $step[0] | Should -Match '(?m)^          RELEASE_TAG: \$\{\{ inputs\.release_tag \}\}\r?$'
         $step[0] | Should -Match '(?m)^          GITHUB_TOKEN: \$\{\{ secrets\.GITHUB_TOKEN \}\}\r?$'
-        $run = Get-StepRun $step[0]
+        $run = Get-WorkflowStepRun $step[0]
         $run | Should -Not -Match '\$\{\{'
-        $ast = Get-ScriptAst $run
+        $ast = Get-PowerShellScriptAst $run
         # The permanent module, which outlives this workflow, never the backfill module.
-        @(Get-ScriptCommand $ast 'Import-Module' | ForEach-Object { $_.CommandElements[1].Extent.Text }) |
+        @(Get-PowerShellCommand $ast 'Import-Module' | ForEach-Object { $_.CommandElements[1].Extent.Text }) |
             Should -Be @('./eng/ci/release-assets.psm1')
-        $calls = @(Get-ScriptCommand $ast 'Publish-ReleaseAsset')
+        $calls = @(Get-PowerShellCommand $ast 'Publish-ReleaseAsset')
         $calls.Count | Should -Be 1
-        $arguments = Get-CommandArgument $calls[0]
+        $arguments = Get-PowerShellCommandArgument $calls[0]
         $arguments['Repository'].Extent.Text | Should -BeExactly '$env:GITHUB_REPOSITORY'
         $arguments['ReleaseTag'].Extent.Text | Should -BeExactly '$env:RELEASE_TAG'
         $arguments['Token'].Extent.Text | Should -BeExactly '$env:GITHUB_TOKEN'
-        @(ConvertTo-AssetText $arguments['Asset']) | Should -Be @(
+        @(ConvertTo-ReleaseAssetText $arguments['Asset']) | Should -Be @(
             'EdFi.Api.DocumentCacheAdmin-SBOM.zip|$env:MANIFEST_FILE|ZipEntry'
             'edfiApiDocumentCacheAdmin.intoto.jsonl|edfiApiDocumentCacheAdmin.intoto.jsonl|Bytes'
         )
     }
 
     It 'verifies the promoted version after promote, with no environment, no secret and read-only contents' {
-        $verify = Get-Job 'verify'
+        $verify = Get-WorkflowJobText $script:workflow 'verify'
         $verify | Should -Not -BeNullOrEmpty
-        Get-JobNeed $verify | Should -Be @('build', 'promote')
+        @(Get-WorkflowJobNeed $verify | Sort-Object) | Should -Be @('build', 'promote')
         $verify | Should -Not -Match '(?m)^\s*environment:'
         $verify | Should -Not -Match 'secrets\.'
         $permissions = [regex]::Match($verify, '(?m)^    permissions:\r?\n(?<body>(?:      [^\r\n]*\r?\n?)+)').Groups['body'].Value
@@ -678,7 +605,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'installs the promoted version, read anonymously from the Release view the tool README documents, into a fresh tool path' {
-        $step = @(Find-Step (Get-Job 'verify') 'dotnet tool install')[0]
+        $step = @(Find-Step (Get-WorkflowJobText $script:workflow 'verify') 'dotnet tool install')[0]
         $step | Should -Match '(?m)^          TOOL_VERSION: \$\{\{ needs\.build\.outputs\.version \}\}\r?$'
         [regex]::Match($step, '(?m)^          RELEASE_VIEW_URL: "(?<url>[^"\r\n]+)"\r?$').Groups['url'].Value | Should -BeExactly $script:releaseViewUrl
         (Get-Content (Join-Path $script:repoRoot 'src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md') -Raw).Contains($script:releaseViewUrl) |
@@ -689,7 +616,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $run | Should -Match "(?m)^\`$toolPath = Join-Path \`$env:RUNNER_TEMP '[^'\r\n]+'\r?$"
         # A private global-packages folder, so the install cannot be served from a copy on the runner.
         $run | Should -Match "(?m)^\`$env:NUGET_PACKAGES = Join-Path \`$env:RUNNER_TEMP '[^'\r\n]+'\r?$"
-        $installs = @(Get-ScriptCommand (Get-ScriptAst $run) 'dotnet')
+        $installs = @(Get-PowerShellCommand (Get-PowerShellScriptAst $run) 'dotnet')
         $installs.Count | Should -Be 1
         $elements = @($installs[0].CommandElements | ForEach-Object { $_.Extent.Text })
         ($elements[0..3] -join ' ') | Should -BeExactly 'dotnet tool install EdFi.Api.DocumentCacheAdmin'
@@ -705,7 +632,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     }
 
     It 'retries the install up to 10 times, 30 seconds apart, and fails when the last attempt fails' {
-        $ast = Get-ScriptAst (Get-VerifyRun)
+        $ast = Get-PowerShellScriptAst (Get-VerifyRun)
         $loops = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.ForStatementAst] }, $true))
         $loops.Count | Should -Be 1
         $loop = $loops[0]
@@ -714,7 +641,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $loop.Iterator.Extent.Text | Should -BeExactly '$attempt++'
         @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.AssignmentStatementAst] -and $node.Left.Extent.Text -ceq '$attempts' }, $true) |
                 ForEach-Object { $_.Right.Extent.Text }) | Should -Be @('10')
-        @(Get-ScriptCommand $loop.Body 'dotnet').Count | Should -Be 1 -Because 'the install runs inside the loop'
+        @(Get-PowerShellCommand $loop.Body 'dotnet').Count | Should -Be 1 -Because 'the install runs inside the loop'
 
         $checks = @($loop.Body.FindAll({ param($node) $node -is [Management.Automation.Language.IfStatementAst] }, $true))
         $success = @($checks | Where-Object { $_.Clauses[0].Item1.Extent.Text -ceq '$LASTEXITCODE -eq 0' })
@@ -725,7 +652,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         @($last[0].Clauses[0].Item2.FindAll({ param($node) $node -is [Management.Automation.Language.ThrowStatementAst] }, $true)).Count | Should -Be 1
         # A success on the last attempt breaks before the last-attempt check can throw.
         $success[0].Extent.StartOffset | Should -BeLessThan $last[0].Extent.StartOffset
-        $sleep = @(Get-ScriptCommand $loop.Body 'Start-Sleep')
+        $sleep = @(Get-PowerShellCommand $loop.Body 'Start-Sleep')
         $sleep.Count | Should -Be 1
         $sleep[0].Extent.Text | Should -BeExactly 'Start-Sleep -Seconds 30'
         $sleep[0].Extent.StartOffset | Should -BeGreaterThan $last[0].Extent.StartOffset
@@ -733,7 +660,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
 
     It 'runs dms-document-cache --help from the tool path and requires exit 0, Usage: and status' {
         $run = Get-VerifyRun
-        $ast = Get-ScriptAst $run
+        $ast = Get-PowerShellScriptAst $run
         $help = @($ast.FindAll({
                     param($node)
                     $node -is [Management.Automation.Language.CommandAst] -and
@@ -756,14 +683,14 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
     It 'gates <Id> on the publish switch and the main branch only' -ForEach @(
         @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }, @{ Id = 'verify' }
     ) {
-        $job = Get-Job $Id
+        $job = Get-WorkflowJobText $script:workflow $Id
         $job | Should -Not -BeNullOrEmpty
         @([regex]::Matches($job, '(?m)^    if: .*$') | ForEach-Object { $_.Value.Trim() }) | Should -Be @($script:trustedGate)
     }
 
     It 'binds only publish and promote to the publishing environment' {
         $bound = foreach ($id in 'build', 'sbom-create-document-cache-admin', 'provenance-create-document-cache-admin', 'publish', 'promote', 'attach', 'verify') {
-            if ((Get-Job $id) -match '(?m)^    environment: publishing\r?$') { $id }
+            if ((Get-WorkflowJobText $script:workflow $id) -match '(?m)^    environment: publishing\r?$') { $id }
         }
         @($bound) | Sort-Object | Should -Be @('promote', 'publish')
     }
