@@ -1054,6 +1054,12 @@ public sealed partial class DmsDataStoreProvisioningService(
     private interface ITargetMutationLedger
     {
         bool TargetMutationIssued { get; }
+
+        /// <summary>
+        /// Keeps <paramref name="failure"/> when the ledger's in-doubt mutation alone is why it requires inspection,
+        /// so settlement can reclassify that one instance from what it proves and never rewrites any other failure.
+        /// </summary>
+        void RecordInDoubtFailure(DmsProvisioningFailure failure);
     }
 
     /// <summary>
@@ -1450,13 +1456,17 @@ public sealed partial class DmsDataStoreProvisioningService(
         /// (D-12); once the operation's ledger records one whose effect is not proven absent, it is an
         /// inspection failure, and what the mutation did is settled after the lock is released.
         /// </summary>
-        public DmsProvisioningFailure LockLostFailure() =>
-            DmsProvisioningFailure.Create(
+        public DmsProvisioningFailure LockLostFailure()
+        {
+            DmsProvisioningFailure failure = DmsProvisioningFailure.Create(
                 DmsProvisioningFailureCode.LockLost,
                 Ledger?.TargetMutationIssued == true
                     ? DmsProvisioningFailureCategory.OperatorInspectionRequired
                     : DmsProvisioningFailureCategory.Transient,
                 DmsProvisioningDiagnostic.ForOperation(CurrentStep)
             );
+            Ledger?.RecordInDoubtFailure(failure);
+            return failure;
+        }
     }
 }

@@ -348,30 +348,47 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 .AllSatisfy(members => members.Should().Equal(SpyDmsTargetEngine.DropStaging));
     }
 
+    /// <summary>
+    /// F-03 (R2-2): a rename whose result is lost while the holder still holds the lock is settled after the lock is
+    /// released, and only what settlement proves decides the category. Not renamed with the target name read absent is
+    /// a retry (<c>Unknown</c>, transient); not renamed while another database, a protected one, or a fenced one holds
+    /// the name is <c>InstanceChanged</c>; renamed is <c>IdentityAssignmentFailed</c> with the unmarked target; an
+    /// unreadable target or an unproven holder stays <c>OutcomeUnknown</c>. The staging database is dropped whenever
+    /// the rename is proven not to have happened, whatever holds the target name, and kept otherwise.
+    /// </summary>
     [TestFixture]
     public class Given_the_rename_outcome_is_unknown
     {
         private Harness _renamed = null!;
         private Harness _notRenamed = null!;
+        private Harness _foreignPresent = null!;
+        private Harness _protectedTarget = null!;
+        private Harness _foreignFenced = null!;
+        private Harness _unreadableTarget = null!;
         private Harness _neither = null!;
         private Harness _holderUnproven = null!;
         private DmsDataStoreCreateResult _renamedResult = null!;
         private DmsDataStoreCreateResult _notRenamedResult = null!;
+        private DmsDataStoreCreateResult _foreignPresentResult = null!;
+        private DmsDataStoreCreateResult _protectedTargetResult = null!;
+        private DmsDataStoreCreateResult _foreignFencedResult = null!;
+        private DmsDataStoreCreateResult _unreadableTargetResult = null!;
         private DmsDataStoreCreateResult _neitherResult = null!;
         private DmsDataStoreCreateResult _holderUnprovenResult = null!;
+        private readonly List<DmsInstanceIdentity> _foreignPresentDrops = [];
 
         private static bool HasResidue(DmsDataStoreCreateResult result, DmsResidueKind kind) =>
             CleanupOf(result).Residue.Any(residue => residue.Kind == kind);
 
         /// <summary>The rename comes back unknown; after the lock the target and staging names show what <paramref name="target"/> and <paramref name="staging"/> say.</summary>
         private static Harness InDoubt(
-            DmsLiveTargetState target,
+            Func<DmsLiveTargetState> target,
             DmsLiveTargetState staging,
             bool holderGone = true
         )
         {
             Harness harness = Scripted(
-                targetInspection: inspection => inspection <= 2 ? new DmsLiveTargetState.Absent() : target,
+                targetInspection: inspection => inspection <= 2 ? new DmsLiveTargetState.Absent() : target(),
                 stagingInspection: inspection => inspection == 1 ? new DmsLiveTargetState.Absent() : staging
             );
             harness.Engine.OnRenameIntoTarget = (_, _, _, _) =>
@@ -387,6 +404,12 @@ public class DmsDataStoreProvisioningServicePublicationTests
             return harness;
         }
 
+        private static Harness InDoubt(
+            DmsLiveTargetState target,
+            DmsLiveTargetState staging,
+            bool holderGone = true
+        ) => InDoubt(() => target, staging, holderGone);
+
         [SetUp]
         public async Task Setup()
         {
@@ -395,6 +418,30 @@ public class DmsDataStoreProvisioningServicePublicationTests
 
             _notRenamed = InDoubt(new DmsLiveTargetState.Absent(), PresentUnder(_stagingInstance));
             _notRenamedResult = await CreateAsync(_notRenamed);
+
+            _foreignPresentDrops.Clear();
+            _foreignPresent = InDoubt(PresentUnder(_foreignInstance), PresentUnder(_stagingInstance));
+            _foreignPresent.Engine.OnDropStaging = (_, instance, _) =>
+            {
+                _foreignPresentDrops.Add(instance);
+                return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Succeeded());
+            };
+            _foreignPresentResult = await CreateAsync(_foreignPresent);
+
+            _protectedTarget = InDoubt(new DmsLiveTargetState.Protected(), PresentUnder(_stagingInstance));
+            _protectedTargetResult = await CreateAsync(_protectedTarget);
+
+            _foreignFenced = InDoubt(
+                new DmsLiveTargetState.Fenced(_foreignInstance),
+                PresentUnder(_stagingInstance)
+            );
+            _foreignFencedResult = await CreateAsync(_foreignFenced);
+
+            _unreadableTarget = InDoubt(
+                () => throw new InvalidOperationException("The target name could not be read."),
+                PresentUnder(_stagingInstance)
+            );
+            _unreadableTargetResult = await CreateAsync(_unreadableTarget);
 
             _neither = InDoubt(new DmsLiveTargetState.Absent(), new DmsLiveTargetState.Absent());
             _neitherResult = await CreateAsync(_neither);
@@ -408,12 +455,81 @@ public class DmsDataStoreProvisioningServicePublicationTests
         }
 
         [Test]
-        public void It_gives_up_the_lock_as_an_inspection_failure_when_the_rename_is_found() =>
+        public void It_allows_a_retry_when_the_rename_did_not_happen_and_the_target_name_is_absent() =>
+            Verdict(_notRenamedResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.Unknown,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+
+        [Test]
+        public void It_drops_the_staging_database_when_it_was_not_renamed()
+        {
+            CountOf(_notRenamed, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+            CleanupOf(_notRenamedResult).HasResidue.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_requires_inspection_when_another_database_took_the_target_name() =>
+            new[] { _foreignPresentResult, _protectedTargetResult, _foreignFencedResult }
+                .Select(Verdict)
+                .Should()
+                .AllBeEquivalentTo(
+                    (
+                        DmsProvisioningFailureCode.InstanceChanged,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ResolveRenameStep
+                    )
+                );
+
+        [Test]
+        public void It_still_drops_its_own_staging_database_whatever_took_the_target_name()
+        {
+            new[] { _foreignPresent, _protectedTarget, _foreignFenced }
+                .Select(harness => CountOf(harness, SpyDmsTargetEngine.DropStaging))
+                .Should()
+                .Equal(1, 1, 1);
+            _foreignPresentDrops.Should().Equal(_stagingInstance);
+            new[] { _foreignPresentResult, _protectedTargetResult, _foreignFencedResult }
+                .Should()
+                .AllSatisfy(result => CleanupOf(result).HasResidue.Should().BeFalse());
+        }
+
+        [Test]
+        public void It_never_addresses_the_target_name_after_the_rename_except_to_read_it() =>
+            AfterTheRename(_foreignPresent)
+                .Where(call => call.DatabaseName == TargetName)
+                .Select(call => call.Member)
+                .Should()
+                .OnlyContain(member => member == SpyDmsTargetEngine.Inspect);
+
+        [Test]
+        public void It_keeps_an_unreadable_target_name_unresolved_and_the_staging_database_in_place()
+        {
+            Verdict(_unreadableTargetResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.OutcomeUnknown,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ResolveRenameStep
+                    )
+                );
+            CountOf(_unreadableTarget, SpyDmsTargetEngine.DropStaging).Should().Be(0);
+            HasResidue(_unreadableTargetResult, DmsResidueKind.StagingDatabase).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_reports_a_rename_found_done_as_an_unassigned_identity_for_inspection() =>
             Verdict(_renamedResult)
                 .Should()
                 .Be(
                     (
-                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCode.IdentityAssignmentFailed,
                         DmsProvisioningFailureCategory.OperatorInspectionRequired,
                         DmsDataStoreProvisioningService.RenameIntoTargetStep
                     )
@@ -437,14 +553,6 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 .Residue.Should()
                 .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
             CountOf(_renamed, SpyDmsTargetEngine.DropStaging).Should().Be(0);
-        }
-
-        [Test]
-        public void It_drops_the_staging_database_when_it_was_not_renamed()
-        {
-            Verdict(_notRenamedResult).Item1.Should().Be(DmsProvisioningFailureCode.LockLost);
-            CountOf(_notRenamed, SpyDmsTargetEngine.DropStaging).Should().Be(1);
-            CleanupOf(_notRenamedResult).HasResidue.Should().BeFalse();
         }
 
         [Test]
@@ -473,6 +581,145 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 .Equal(SpyDmsTargetEngine.TerminateSession);
             HasResidue(_holderUnprovenResult, DmsResidueKind.StagingDatabase).Should().BeTrue();
         }
+    }
+
+    /// <summary>
+    /// F-03: the holder is declared lost while the rename it carried is in doubt. The loss is real, so the code stays
+    /// <c>LockLost</c>; its category follows settlement: transient only when the rename is proven not to have happened
+    /// and the target name is absent, an inspection failure when another database holds the name or the target was
+    /// renamed. The staging database follows the rename evidence alone.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_while_the_rename_is_in_doubt
+    {
+        private Harness _notRenamed = null!;
+        private Harness _foreignTarget = null!;
+        private Harness _renamed = null!;
+        private DmsDataStoreCreateResult _notRenamedResult = null!;
+        private DmsDataStoreCreateResult _foreignTargetResult = null!;
+        private DmsDataStoreCreateResult _renamedResult = null!;
+
+        private static Harness LostInDoubt(DmsLiveTargetState target, DmsLiveTargetState staging)
+        {
+            Harness harness = Scripted(
+                targetInspection: inspection => inspection <= 2 ? new DmsLiveTargetState.Absent() : target,
+                stagingInspection: inspection => inspection == 1 ? new DmsLiveTargetState.Absent() : staging
+            );
+            harness.Engine.OnRenameIntoTarget = (_, _, _, _) =>
+            {
+                harness.OnlyHolder.Lose();
+                return Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                    new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(Session)
+                );
+            };
+            return harness;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _notRenamed = LostInDoubt(new DmsLiveTargetState.Absent(), PresentUnder(_stagingInstance));
+            _notRenamedResult = await CreateAsync(_notRenamed);
+
+            _foreignTarget = LostInDoubt(PresentUnder(_foreignInstance), PresentUnder(_stagingInstance));
+            _foreignTargetResult = await CreateAsync(_foreignTarget);
+
+            _renamed = LostInDoubt(PresentUnder(_stagingInstance), new DmsLiveTargetState.Absent());
+            _renamedResult = await CreateAsync(_renamed);
+        }
+
+        [Test]
+        public void It_reports_loss_as_transient_when_the_rename_did_not_happen_and_the_target_name_is_absent()
+        {
+            Verdict(_notRenamedResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+            CountOf(_notRenamed, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+        }
+
+        [Test]
+        public void It_keeps_loss_an_inspection_failure_when_another_database_holds_the_target_name()
+        {
+            Verdict(_foreignTargetResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+            CountOf(_foreignTarget, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+        }
+
+        [Test]
+        public void It_keeps_loss_an_inspection_failure_with_the_unmarked_target_when_the_rename_happened()
+        {
+            Verdict(_renamedResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+            CleanupOf(_renamedResult)
+                .Residue.Should()
+                .Equal(new DmsCleanupResidue(DmsResidueKind.UnmarkedTarget, TargetName));
+        }
+    }
+
+    /// <summary>
+    /// Independence: a rename whose step deadline ends it (the scope's <c>TimedOut</c>) was never given an in-doubt
+    /// classification, so settlement leaves its failure as it is even when it proves the rename did not happen.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_rename_step_deadline_ends_a_rename_that_did_not_happen
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = Scripted(stagingInspection: inspection =>
+                inspection == 1 ? new DmsLiveTargetState.Absent() : PresentUnder(_stagingInstance)
+            );
+            TaskCompletionSource started = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            _harness.Engine.OnRenameIntoTarget = async (_, _, _, token) =>
+            {
+                started.SetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                throw new InvalidOperationException("The rename was never meant to return.");
+            };
+            Task<DmsDataStoreCreateResult> create = CreateAsync(_harness);
+            await ReadStartedAsync(started, create);
+            _harness.Time.Advance(CommandTimeout * 3 + TimeSpan.FromSeconds(1));
+            _result = await create;
+        }
+
+        [Test]
+        public void It_keeps_the_deadline_failure_as_it_was() =>
+            Verdict(_result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TimedOut,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.RenameIntoTargetStep
+                    )
+                );
+
+        [Test]
+        public void It_drops_the_staging_database_the_rename_left_under_its_name() =>
+            CountOf(_harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
     }
 
     [TestFixture]

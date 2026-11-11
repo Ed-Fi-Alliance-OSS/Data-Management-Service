@@ -777,6 +777,15 @@ public sealed partial class DmsDataStoreProvisioningService
 
         public void Displaced() => State = DeletionState.Displaced;
 
+        /// <summary>
+        /// A delete does not reclassify its failures from settlement yet; whatever the ledger left in doubt keeps the
+        /// category it was given.
+        /// </summary>
+        public void RecordInDoubtFailure(DmsProvisioningFailure failure)
+        {
+            // Nothing is kept: SettleDeletionAsync reads state only to report what stands.
+        }
+
         private void Dispatch(DeletionState inDoubt)
         {
             _beforeDispatch = State;

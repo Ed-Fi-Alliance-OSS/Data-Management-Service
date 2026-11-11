@@ -193,9 +193,16 @@ public sealed partial class DmsDataStoreProvisioningService
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 throw StepFailed(RenameFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown:
-                // The holder session is in doubt: the lock is given up, and the rename is resolved after it
-                // is released, once the holder is proven gone (6.3 step 8, 6.9a).
-                throw new DmsProvisioningFailedException(scope.LockLostFailure());
+                // The rename's result was lost while the holder still holds the lock (loss would have ended the
+                // call above): the lock is given up, and the rename is resolved after it is released, once the holder
+                // is proven gone (6.3 step 8, 6.9a). Until then the outcome is unknown, which settlement reclassifies
+                // from what it proves.
+                DmsProvisioningFailure inDoubt = DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.OutcomeUnknown,
+                    DmsProvisioningDiagnostic.ForOperation(RenameIntoTargetStep)
+                );
+                publication.RecordInDoubtFailure(inDoubt);
+                throw new DmsProvisioningFailedException(inDoubt);
             default:
                 throw new InvalidOperationException("Unknown rename outcome.");
         }
@@ -459,6 +466,7 @@ public sealed partial class DmsDataStoreProvisioningService
     {
         string? unresolvedStep = await ResolveInDoubtAsync(publication, operation);
         publication.ApplyTo(cleanup);
+        result = ReclassifyInDoubtRename(publication, operation, result);
         if (publication.State == PublicationState.Marked)
         {
             return result as DmsDataStoreCreateResult.Created
@@ -560,6 +568,66 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
+    /// Reclassifies, from what settlement proved, the one failure whose category the rename in doubt alone decided
+    /// (<see cref="Publication.InDoubtFailure"/>, compared by reference); any other result is returned as it is.
+    /// A retry is allowed only when the rename is proven not to have happened and the settlement read found the
+    /// target name absent: the lost result of a rename the holder still held is <c>Unknown</c>, a declared loss stays
+    /// <c>LockLost</c>, both transient. A database that took the target name meanwhile (another instance, a protected
+    /// database, a fenced one) is <c>InstanceChanged</c>, and a rename found done leaves an unmarked target,
+    /// <c>IdentityAssignmentFailed</c>; both require inspection, as a declared loss over them still does. A rename
+    /// still unresolved keeps the failure for the <c>OutcomeUnknown</c> settlement reports. Staging cleanup follows the
+    /// rename evidence alone (<see cref="Publication.ApplyTo"/>) and is not decided here.
+    /// </summary>
+    private DmsDataStoreCreateResult? ReclassifyInDoubtRename(
+        Publication publication,
+        DmsOperationId operation,
+        DmsDataStoreCreateResult? result
+    )
+    {
+        if (
+            result is not DmsDataStoreCreateResult.Failure failure
+            || !ReferenceEquals(failure.Detail, publication.InDoubtFailure)
+        )
+        {
+            return result;
+        }
+
+        bool outcomeLost = failure.Detail.Code == DmsProvisioningFailureCode.OutcomeUnknown;
+        DmsProvisioningFailure? settled = publication.State switch
+        {
+            PublicationState.NotRenamed when publication.SettledTarget is DmsLiveTargetState.Absent =>
+                outcomeLost
+                    ? DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.Unknown,
+                        DmsProvisioningDiagnostic.ForOperation(RenameIntoTargetStep)
+                    )
+                    : DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        failure.Detail.Diagnostic
+                    ),
+            PublicationState.NotRenamed when outcomeLost => DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.InstanceChanged,
+                DmsProvisioningDiagnostic.ForOperation(ResolveRenameStep)
+            ),
+            PublicationState.Renamed when outcomeLost => DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.IdentityAssignmentFailed,
+                DmsProvisioningDiagnostic.ForOperation(RenameIntoTargetStep)
+            ),
+            _ => null,
+        };
+        return settled is null
+            ? result
+            : Fail(
+                static (detail, report) => new DmsDataStoreCreateResult.Failure(detail, report),
+                operation,
+                CreateOperationName,
+                settled,
+                failure.Cleanup
+            );
+    }
+
+    /// <summary>
     /// 6.3 step 8 for a rename in doubt: the holder session is proven gone, then the operation's instance is
     /// looked for under both names. Under the target name it was renamed (unmarked); under the staging name
     /// it was not. True when either was found; false when the holder could not be proven gone, the reads
@@ -578,6 +646,7 @@ public sealed partial class DmsDataStoreProvisioningService
             async token =>
             {
                 DmsLiveTargetState target = await engine.InspectAsync(publication.Target, token);
+                publication.SettledTarget = target;
                 if (
                     InstanceUnder(target) is { } renamed
                     && renamed.IsSameStableInstance(publication.StagingInstance!)
@@ -727,12 +796,27 @@ public sealed partial class DmsDataStoreProvisioningService
 
         public DmsServerSessionId? MarkerSession { get; private set; }
 
+        /// <summary>The failure the rename in doubt alone made an inspection failure, for settlement to reclassify.</summary>
+        public DmsProvisioningFailure? InDoubtFailure { get; private set; }
+
+        /// <summary>What the settlement read found under the target name, or null when it did not complete.</summary>
+        public DmsLiveTargetState? SettledTarget { get; set; }
+
         /// <summary>
         /// Whether a selected-target mutation may have taken effect on the holder: <c>LockLost</c> is then an
         /// inspection failure, not a transient one (D-12).
         /// </summary>
         public bool TargetMutationIssued =>
             State is not (PublicationState.None or PublicationState.NotRenamed);
+
+        /// <summary>Kept only while the rename is in doubt: any later mutation's doubt is settled by its own rules.</summary>
+        public void RecordInDoubtFailure(DmsProvisioningFailure failure)
+        {
+            if (State == PublicationState.RenameInDoubt)
+            {
+                InDoubtFailure = failure;
+            }
+        }
 
         public void RenameDispatched(StagedCandidate candidate, DmsServerSessionId holderSession)
         {
