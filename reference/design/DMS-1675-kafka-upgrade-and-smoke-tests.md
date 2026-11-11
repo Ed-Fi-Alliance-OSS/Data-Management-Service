@@ -42,8 +42,92 @@ telemetry, message contracts, and relevant unit/contract qualification passed as
 recorded below. Live qualification found and corrected the runbook's obsolete JMX
 tool class name. The refreshed security scan and disposition are recorded below.
 Qualification now targets only the shipped broker; historical-image fixtures and
-prerequisites have been removed. The dated results below record their original
-run scope and do not represent a new live run after this cleanup.
+prerequisites have been removed. The three required live selections were rerun on
+the completed code revision on November 11, as recorded below. The broader
+November 8 results remain historical evidence for their original run scope.
+
+## Head qualification — 2026-11-11
+
+Tested commit: `1b0b7180749644f71bc5228c1a6672f42c22f013`, matching PR #1440's
+head throughout the run. This includes the fixture cleanup, rebased inputs, and
+Linux process-tree cleanup fix. Tracked files were unchanged during qualification.
+Each selection ran once; no failures, fixes, or reruns were needed. The subsequent
+qualification-record update changes documentation only.
+
+| Selection | Passed | Failed | Skipped |
+| --- | ---: | ---: | ---: |
+| Connector-template smoke, both providers | 8 | 0 | 0 |
+| PostgreSQL RecordSize | 20 | 0 | 0 |
+| MSSQL RecordSize | 20 | 0 | 0 |
+
+Both RecordSize reports also passed all seven required-method groups, including
+exactly one shipped-image Compose persistence case per provider. These guards
+check the 20 executed scenarios and are not additional tests. Both persistence
+cases recorded fresh startup, managed down/up, and acknowledged size recreation:
+broker/worker replacement retained cluster/topic identity, sentinel data and
+source offsets, with fresh readiness validation. `ReplicaFetchMaxBytes` reached
+2,000,000 on the intended Kafka image. All three reports recorded zero environment,
+Connect readiness, or SQL Server startup failures or recoveries. No other CDC
+selections were rerun for this follow-up.
+
+Release builds ran on Linux/amd64 with .NET SDK 10.0.102, PowerShell 7.6.6,
+Docker 29.9.2 and Compose 5.7.0. Immutable image inputs were pulled successfully
+and inspected locally:
+
+| Role | Image |
+| --- | --- |
+| Kafka | `apache/kafka:4.3.2@sha256:852a0d49fc4e656b022e7f23785411802c9a088c78a7c5e39f33969de9c227a7` |
+| Connect | `edfialliance/ed-fi-kafka-connect@sha256:bfabcabfd28868d32ab0271b42b7d147b9566c89bfe1747716368208e8291921` |
+| PostgreSQL | `postgres:18.6-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873` |
+| SQL Server | `mcr.microsoft.com/mssql/server:2025-latest@sha256:4bab24f36c1ecd48e85f7d37df26e6bf301641d84c3fe652f9a0dcc947d512e1` |
+
+Kafka and PostgreSQL came from the repository's image-resolution scripts;
+Connect came from this head's `CdcQualifiedWorkerImage.json`, which differs from
+the November 8 input. SQL Server matched the current repository CI variable.
+`CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true`, `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=false`
+and `MSBUILDDISABLENODEREUSE=1` were set; `NODE_OPTIONS` was cleared. Each invocation
+used a private temporary directory and a new exported results directory.
+
+The three selections used these commands from the repository root, with the
+image environment variables set to the pins above:
+
+```powershell
+$archive = '/home/brad/work/dms-root/qualification-results/DMS-1675-20261111-head'
+$raw = '/tmp/dms-1675-qualification-20261111-head/ConnectorTemplateSmoke'
+$project = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj'
+
+dotnet test $project -c Release --nologo --filter 'Category=CdcConnectorTemplateSmoke' `
+    --results-directory $raw --logger 'trx;LogFileName=ConnectorTemplateSmoke.trx' `
+    --logger 'console;verbosity=quiet' -- "NUnit.WorkDirectory=$raw"
+
+./eng/ci/Invoke-CdcQualification.ps1 -Lane Postgresql -Suite RecordSize `
+    -Configuration Release -ResultsDirectory "$archive/Postgresql-RecordSize" -PullImages
+./eng/ci/Invoke-CdcQualification.ps1 -Lane Mssql -Suite RecordSize `
+    -Configuration Release -ResultsDirectory "$archive/Mssql-RecordSize" -PullImages
+```
+
+Smoke's exit code and TRX were checked with `Get-CdcQualificationReport`, requiring
+all eight cases to pass, and exported with `Export-CdcQualificationEvidence`.
+The provider runner applied the same result/export checks plus its RecordSize
+required-case guard. Final TRX counts were independently checked against all
+three reports; every test outcome was `Passed`.
+
+Retained local evidence is under
+`/home/brad/work/dms-root/qualification-results/DMS-1675-20261111-head/`:
+`ConnectorTemplateSmoke/qualification.json`, `Postgresql-RecordSize/qualification.json`,
+and `Mssql-RecordSize/qualification.json`, with sanitized TRX and structured
+attachments in those directories. `summary.json` records the tested commit/tree,
+times, counts and guards; `runtime-inputs.json` records exact image identities;
+`commands.ps1` and `invocations.txt` retain the exact invocation wrapper and commands.
+There are 197 files plus `SHA256SUMS`, whose fingerprint is
+`4aba8fbe272e334c8efec649e6891b28832361d9eaaac1f4a4325cf449925e8c`.
+
+Private logs/TRX remain under `/tmp/dms-1675-qualification-20261111-head/`,
+`/tmp/cdc-qualification-638938232dd64e6c89ca74e5bce196fb/` (PostgreSQL), and
+`/tmp/cdc-qualification-2b0acf4263dd43ca8c9414f01db52fa7/` (MSSQL). These are local
+runs, not GitHub Actions results or published CI artifacts. Generated diagnostics
+are not committed. All fixture containers were removed; the final container
+inventory exactly matched the two pre-existing containers.
 
 ## Live qualification — 2026-11-08
 
