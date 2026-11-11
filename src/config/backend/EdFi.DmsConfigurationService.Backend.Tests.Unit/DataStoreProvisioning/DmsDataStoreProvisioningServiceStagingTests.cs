@@ -209,6 +209,69 @@ public class DmsDataStoreProvisioningServiceStagingTests
             (_harness.OnlyHolder.ReleaseCount, _directoryReleased).Should().Be((1, true));
     }
 
+    /// <summary>
+    /// V4-05 end to end over real catalogs whose authenticated manifests name the two engine versions the operation
+    /// precheck and target validation once read differently, on a major-18 server: <c>+18.1</c> is refused by the
+    /// precheck before any staging database exists, and <c>18beta1</c> passes the precheck and the full validation of
+    /// the restored database and is created.
+    /// </summary>
+    [TestFixture]
+    public class Given_manifest_engine_versions_the_precheck_and_the_validation_once_read_differently
+    {
+        private SharedCatalogBuild _signed = null!;
+        private SharedCatalogBuild _suffixed = null!;
+        private Harness _signedHarness = null!;
+        private Harness _suffixedHarness = null!;
+        private DmsDataStoreCreateResult _signedResult = null!;
+        private DmsDataStoreCreateResult _suffixedResult = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _signed = SharedTemplateCatalog.BuildIsolated(engineVersion: "+18.1");
+            _signedHarness = Scripted(catalog: _signed.Catalog);
+            _signedResult = await _signedHarness.Service.CreateAsync(
+                CreateRequest(pin: _signed.Pin),
+                CancellationToken.None
+            );
+
+            _suffixed = SharedTemplateCatalog.BuildIsolated(engineVersion: "18beta1");
+            _suffixedHarness = Scripted(catalog: _suffixed.Catalog);
+            _suffixedResult = await _suffixedHarness.Service.CreateAsync(
+                CreateRequest(pin: _suffixed.Pin),
+                CancellationToken.None
+            );
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            _signed?.Workspace.Dispose();
+            _suffixed?.Workspace.Dispose();
+        }
+
+        [Test]
+        public void It_refuses_a_signed_major_at_the_precheck() =>
+            (FailureOf(_signedResult).Code, FailureOf(_signedResult).Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.EngineIncompatible,
+                        DmsDataStoreProvisioningService.EngineCheckStep
+                    )
+                );
+
+        [Test]
+        public void It_refuses_the_signed_major_before_any_staging_database_exists() =>
+            Members(_signedHarness)
+                .Should()
+                .NotContain([SpyDmsTargetEngine.CreateStaging, SpyDmsTargetEngine.RestoreIntoStaging]);
+
+        [Test]
+        public void It_creates_through_a_suffixed_major_both_readings_accept() =>
+            _suffixedResult.Should().BeOfType<DmsDataStoreCreateResult.Created>();
+    }
+
     [TestFixture]
     public class Given_the_stage_is_refused_before_anything_is_created
     {

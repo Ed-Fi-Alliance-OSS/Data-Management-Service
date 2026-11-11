@@ -103,7 +103,7 @@ internal static class ProvisioningTestValues
 /// </summary>
 internal static class SharedTemplateCatalog
 {
-    private static readonly Lazy<SharedCatalogBuild> _built = new(BuildIsolated);
+    private static readonly Lazy<SharedCatalogBuild> _built = new(() => BuildIsolated());
 
     public static CatalogWorkspace Workspace => _built.Value.Workspace;
 
@@ -123,9 +123,10 @@ internal static class SharedTemplateCatalog
 
     /// <summary>
     /// A new catalog of the same kind in a workspace of its own, for a fixture that changes the trust policy file;
-    /// the caller disposes its workspace.
+    /// the caller disposes its workspace. <paramref name="engineVersion"/>, when given, replaces the manifest's
+    /// <c>engineVersion</c>.
     /// </summary>
-    public static SharedCatalogBuild BuildIsolated()
+    public static SharedCatalogBuild BuildIsolated(string? engineVersion = null)
     {
         CatalogWorkspace workspace = new();
         RestoreManifest described = TargetFactsSample.ManifestFor(TargetFactsSample.PostgresqlFacts());
@@ -140,7 +141,7 @@ internal static class SharedTemplateCatalog
                     manifest["projects"] = new JsonArray([
                         .. TargetFactsSample.Projects.Select(project => (JsonNode)project),
                     ]);
-                    manifest["engineVersion"] = described.EngineVersion;
+                    manifest["engineVersion"] = engineVersion ?? described.EngineVersion;
                     manifest["relationalMappingVersion"] = described.RelationalMappingVersion;
                 })
         );

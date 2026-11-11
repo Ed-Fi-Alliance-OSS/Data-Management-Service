@@ -197,13 +197,14 @@ public static class DmsTargetValidator
         };
     }
 
-    /// <summary>Item 3: live major at least the manifest's, the SQL Server compatibility level, and the <c>DocumentJson</c> physical baseline.</summary>
+    /// <summary>
+    /// Item 3: live major at least the manifest's (<see cref="DmsEngineCompatibility.Accepts"/>, the reading the
+    /// operation precheck and readiness use), the SQL Server compatibility level, and the <c>DocumentJson</c>
+    /// physical baseline.
+    /// </summary>
     private static DmsTargetValidation? EngineVerdict(DmsTargetFacts facts, RestoreManifest manifest)
     {
-        if (
-            !TryParseLeadingMajor(manifest.EngineVersion, out int manifestMajor)
-            || facts.EngineMajorVersion < manifestMajor
-        )
+        if (!DmsEngineCompatibility.Accepts(facts.EngineMajorVersion, manifest.EngineVersion))
         {
             return Invalid(DmsProvisioningFailureCode.TargetIncompatible, EngineMajorCheck);
         }
@@ -468,19 +469,6 @@ public static class DmsTargetValidator
         )
             ? Invalid(DmsProvisioningFailureCode.TargetIncompatible, PopulatedPredicateCheck)
             : null;
-
-    /// <summary>The leading integer of an engine version string (<c>18.1</c>, <c>16.8 (Debian …)</c>); false when there is none.</summary>
-    private static bool TryParseLeadingMajor(string engineVersion, out int major)
-    {
-        ReadOnlySpan<char> text = engineVersion.AsSpan().TrimStart();
-        int length = 0;
-        while (length < text.Length && char.IsAsciiDigit(text[length]))
-        {
-            length++;
-        }
-
-        return int.TryParse(text[..length], out major);
-    }
 
     private static bool Same(string? left, string? right) =>
         string.Equals(left, right, StringComparison.Ordinal);
