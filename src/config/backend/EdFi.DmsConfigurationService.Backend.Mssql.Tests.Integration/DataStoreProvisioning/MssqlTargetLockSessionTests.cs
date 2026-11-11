@@ -195,11 +195,11 @@ public class MssqlTargetLockSessionTests
 
     /// <summary>
     /// F-02 against a real server: a login that took a lock is then refused, first with a wrong password
-    /// (<c>18456</c>), then disabled (<c>18470</c>). Each acquisition is <c>AccessDenied</c> with the error number
-    /// only; create and delete through the orchestrator are <c>AdminPrivilegeMissing</c>, permanent, at the lock step,
-    /// with one <c>OperationFailed</c> warning each and nothing else read; neither a diagnostic nor a log line carries
-    /// the password or a connection string. A port nobody listens on stays a lock infrastructure <c>Failure</c>, and a
-    /// caller's cancellation still wins over a refusal raised as it cancels.
+    /// (<c>18456</c>), then disabled (<c>18470</c>). For each refusal the acquisition is <c>AccessDenied</c> with the
+    /// error number only, and create and delete through the orchestrator are <c>AdminPrivilegeMissing</c>, permanent,
+    /// at the lock step with that number, with one <c>OperationFailed</c> warning each and nothing else read; neither
+    /// a diagnostic nor a log line carries a password or a connection string. A port nobody listens on stays a lock
+    /// infrastructure <c>Failure</c>, and a caller's cancellation still wins over a refusal raised as it cancels.
     /// </summary>
     [TestFixture]
     public class Given_the_admin_login_is_refused_after_it_was_accepted
@@ -207,19 +207,44 @@ public class MssqlTargetLockSessionTests
         private const string WrongPassword = "Dms1438-Wrong-Pa55word!";
 
         private readonly CapturingLogger _logs = new();
-        private readonly CapturingLogger _serviceLogs = new();
         private string? _login;
         private Lane? _lane;
         private DmsTargetLockResult _accepted = null!;
         private DmsTargetLockResult _wrongPassword = null!;
         private DmsTargetLockResult _disabled = null!;
         private DmsTargetLockResult _unreachable = null!;
-        private DmsDataStoreCreateResult _create = null!;
-        private DmsDataStoreDeleteResult _delete = null!;
-        private string[] _members = [];
+        private Operations _wrongPasswordOperations = null!;
+        private Operations _disabledOperations = null!;
         private SqlException? _realRefusal;
         private Exception? _refusedWhileCancelled;
         private DmsTargetLockResult? _refusedWhileLive;
+
+        /// <summary>A create and a delete run through the orchestrator on one engine, with what they recorded and logged.</summary>
+        private sealed record Operations(
+            string ErrorNumber,
+            DmsDataStoreCreateResult Create,
+            DmsDataStoreDeleteResult Delete,
+            string[] Members,
+            CapturingLogger ServiceLogs
+        );
+
+        private async Task<Operations> CreateAndDeleteAsync(MssqlDmsTargetEngine engine, string errorNumber)
+        {
+            CapturingLogger serviceLogs = new();
+            Lane.Deployment refusing = _lane!.WithEngine(engine, serviceLogs);
+            DmsDataStoreCreateResult create = await refusing.Service.CreateAsync(_lane.Request, default);
+            DmsDataStoreDeleteResult delete = await refusing.Service.DeleteAsync(
+                _lane.DeleteRequest,
+                default
+            );
+            return new Operations(
+                errorNumber,
+                create,
+                delete,
+                [.. refusing.Engine.Calls.Select(call => call.Member)],
+                serviceLogs
+            );
+        }
 
         private MssqlDmsTargetEngine EngineOn(string connectionString) =>
             new(
@@ -242,6 +267,7 @@ public class MssqlTargetLockSessionTests
         {
             RequireConfiguredOrSkip();
             _login = await CreateLoginAsync("lockrefused");
+            _lane = await Lane.BuildAsync(await ShapedBackup.CreateAsync(), new LaneHooks());
             MssqlDmsTargetEngine engine = EngineOn(ConnectionStringFor(_login, LoginPassword));
 
             _accepted = await engine.AcquireTargetLockAsync(
@@ -254,8 +280,13 @@ public class MssqlTargetLockSessionTests
                 await acquired.Holder.DisposeAsync();
             }
 
-            _wrongPassword = await EngineOn(ConnectionStringFor(_login, WrongPassword))
-                .AcquireTargetLockAsync(TargetName("wrongpassword"), DmsOperationId.New(), default);
+            MssqlDmsTargetEngine wrongPassword = EngineOn(ConnectionStringFor(_login, WrongPassword));
+            _wrongPassword = await wrongPassword.AcquireTargetLockAsync(
+                TargetName("wrongpassword"),
+                DmsOperationId.New(),
+                default
+            );
+            _wrongPasswordOperations = await CreateAndDeleteAsync(wrongPassword, "18456");
 
             await ExecuteOnServerAsync($"ALTER LOGIN {MssqlIdentifiers.Quote(_login)} DISABLE;");
             _disabled = await engine.AcquireTargetLockAsync(
@@ -263,12 +294,7 @@ public class MssqlTargetLockSessionTests
                 DmsOperationId.New(),
                 default
             );
-
-            _lane = await Lane.BuildAsync(await ShapedBackup.CreateAsync(), new LaneHooks());
-            Lane.Deployment refusing = _lane.WithEngine(engine, _serviceLogs);
-            _create = await refusing.Service.CreateAsync(_lane.Request, default);
-            _delete = await refusing.Service.DeleteAsync(_lane.DeleteRequest, default);
-            _members = [.. refusing.Engine.Calls.Select(call => call.Member)];
+            _disabledOperations = await CreateAndDeleteAsync(engine, "18470");
 
             // The refusal a real server raised, handed to the classification with the caller's token already
             // cancelled, as when the caller cancels while the server's refusal is on its way.
@@ -332,69 +358,87 @@ public class MssqlTargetLockSessionTests
         public void It_reports_a_disabled_login_as_access_denied_with_the_error_number_only() =>
             _disabled.Should().Be(new DmsTargetLockResult.AccessDenied(Refusal("18470")));
 
+        private Operations[] BothRefusals => [_wrongPasswordOperations, _disabledOperations];
+
         [Test]
-        public void It_reports_a_refused_create_and_delete_as_a_permanent_missing_privilege()
+        public void It_reports_each_refused_create_and_delete_as_a_permanent_missing_privilege_with_its_number()
         {
-            foreach (DmsProvisioningFailure failure in new[] { Failure(_create), Failure(_delete) })
+            foreach (Operations refused in BothRefusals)
             {
-                (
-                    failure.Code,
-                    failure.Category,
-                    failure.Diagnostic.Operation,
-                    failure.Diagnostic.ProviderErrorCode
+                foreach (
+                    DmsProvisioningFailure failure in new[]
+                    {
+                        Failure(refused.Create),
+                        Failure(refused.Delete),
+                    }
                 )
-                    .Should()
-                    .Be(
-                        (
-                            DmsProvisioningFailureCode.AdminPrivilegeMissing,
-                            DmsProvisioningFailureCategory.Permanent,
-                            DmsDataStoreProvisioningService.AcquireTargetLockStep,
-                            "18470"
-                        )
-                    );
+                {
+                    (
+                        failure.Code,
+                        failure.Category,
+                        failure.Diagnostic.Operation,
+                        failure.Diagnostic.ProviderErrorCode
+                    )
+                        .Should()
+                        .Be(
+                            (
+                                DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                                DmsProvisioningFailureCategory.Permanent,
+                                DmsDataStoreProvisioningService.AcquireTargetLockStep,
+                                refused.ErrorNumber
+                            )
+                        );
+                }
             }
         }
 
         [Test]
         public void It_reads_nothing_after_the_refused_acquisitions() =>
-            _members
+            BothRefusals
                 .Should()
-                .Equal(
-                    nameof(IDmsTargetEngine.AcquireTargetLockAsync),
-                    nameof(IDmsTargetEngine.AcquireTargetLockAsync)
+                .AllSatisfy(refused =>
+                    refused
+                        .Members.Should()
+                        .Equal(
+                            nameof(IDmsTargetEngine.AcquireTargetLockAsync),
+                            nameof(IDmsTargetEngine.AcquireTargetLockAsync)
+                        )
                 );
 
         [Test]
         public void It_logs_one_failure_warning_for_each_refused_operation_with_the_code_and_step_only()
         {
-            CapturingLogger.Entry[] warnings =
-            [
-                .. _serviceLogs.Entries.Where(entry =>
-                    entry.Id == DmsDataStoreProvisioningService.OperationFailed
-                ),
-            ];
-            warnings.Select(entry => entry.Level).Should().Equal(LogLevel.Warning, LogLevel.Warning);
             string ending =
                 $" failed at {DmsDataStoreProvisioningService.AcquireTargetLockStep} with AdminPrivilegeMissing (Permanent)";
-            warnings
-                .Select(entry => entry.Text)
-                .Should()
-                .SatisfyRespectively(
-                    create =>
-                        create
-                            .Should()
-                            .StartWith(
-                                $"DMS data store provisioning {DmsDataStoreProvisioningService.CreateOperationName} "
-                            )
-                            .And.EndWith(ending),
-                    delete =>
-                        delete
-                            .Should()
-                            .StartWith(
-                                $"DMS data store provisioning {DmsDataStoreProvisioningService.DeleteOperationName} "
-                            )
-                            .And.EndWith(ending)
-                );
+            foreach (Operations refused in BothRefusals)
+            {
+                CapturingLogger.Entry[] warnings =
+                [
+                    .. refused.ServiceLogs.Entries.Where(entry =>
+                        entry.Id == DmsDataStoreProvisioningService.OperationFailed
+                    ),
+                ];
+                warnings.Select(entry => entry.Level).Should().Equal(LogLevel.Warning, LogLevel.Warning);
+                warnings
+                    .Select(entry => entry.Text)
+                    .Should()
+                    .SatisfyRespectively(
+                        create =>
+                            create
+                                .Should()
+                                .StartWith(
+                                    $"DMS data store provisioning {DmsDataStoreProvisioningService.CreateOperationName} "
+                                )
+                                .And.EndWith(ending),
+                        delete =>
+                            delete
+                                .Should()
+                                .StartWith(
+                                    $"DMS data store provisioning {DmsDataStoreProvisioningService.DeleteOperationName} "
+                                )
+                                .And.EndWith(ending)
+                    );
+            }
         }
 
         [Test]
@@ -404,8 +448,9 @@ public class MssqlTargetLockSessionTests
             [
                 ((DmsTargetLockResult.AccessDenied)_wrongPassword).Diagnostic,
                 ((DmsTargetLockResult.AccessDenied)_disabled).Diagnostic,
-                Failure(_create).Diagnostic,
-                Failure(_delete).Diagnostic,
+                .. BothRefusals.SelectMany(refused =>
+                    new[] { Failure(refused.Create).Diagnostic, Failure(refused.Delete).Diagnostic }
+                ),
             ];
             diagnostics
                 .SelectMany(diagnostic =>
@@ -416,7 +461,11 @@ public class MssqlTargetLockSessionTests
                         diagnostic.Operation,
                     }
                 )
-                .Concat(_logs.Entries.Concat(_serviceLogs.Entries).Select(entry => entry.Text))
+                .Concat(
+                    _logs
+                        .Entries.Concat(BothRefusals.SelectMany(refused => refused.ServiceLogs.Entries))
+                        .Select(entry => entry.Text)
+                )
                 .Should()
                 .AllSatisfy(text =>
                     text.Should()

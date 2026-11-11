@@ -1682,6 +1682,30 @@ server message, or `psql` output. The category tells the caller whether to retry
 | `ArtifactMissing`, `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
 | `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
 
+#### A refused administrative login, and rotating its password
+
+When the target server refuses the administrative login or the lock request during an operation, the create
+or delete fails with `AdminPrivilegeMissing` (`Permanent`) at operation `AcquireTargetLock`. The diagnostic
+carries the provider code: PostgreSQL SQLSTATE `42501` or class `28` (for example `28P01`, a wrong password, or
+`28000`, a role that may not log in); SQL Server error `18456` (login failed) or `18470` (login disabled),
+among the other permission errors. The job does not retry it.
+
+A password rotation fails operations this way whenever the server rejects the password the Configuration
+Service is still using. The administrative connection string is resolved again for every operation, but a
+`${secret:...}` value is reused from the Configuration Service's secret cache until
+[`SecretsSettings:CacheExpirationSeconds`](./CONFIGURATION.md#secretssettings) (300 seconds by default) has
+passed since it was fetched, and a password written directly in `AdminConnectionString` changes only with a
+restart. See [How a rotation propagates](./SECRETS.md#how-a-rotation-propagates).
+
+- **Without failed operations:** neither PostgreSQL nor SQL Server keeps an old and a new password for one
+  login, so switch logins instead. Give a second administrative login the same privileges, point the secret
+  at it, and disable the first login only once the cache window has passed, or after restarting the
+  Configuration Service, which clears its cache.
+- **Changing the password in place:** update the secret and the login together, then restart the
+  Configuration Service or wait out the cache window. Operations in between fail as described above.
+- **After a failure:** correct the credential, wait until the Configuration Service resolves the updated value
+  (the cache window, or a restart), then rerun the failed job.
+
 ### Recovery
 
 Never drop a database by hand unless you have shown which data store record it belongs to. A database that
