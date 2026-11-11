@@ -429,6 +429,12 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             PostgresqlSecurityQueries.TryParsePrivilegeRow,
             cancellationToken
         );
+        List<string> superuserRoles = await ReadRowsAsync(
+            connection,
+            PostgresqlSecurityQueries.SuperuserRoles,
+            reader => reader.GetString(0),
+            cancellationToken
+        );
         (bool? hasPopulatedDocument, bool predicateTablesMalformed) = await ReadPopulatedPredicateAsync(
             connection,
             cancellationToken
@@ -444,7 +450,10 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             InventoryObjects = inventoryObjects,
             Principals = [],
             DatabaseLevelObjects = databaseLevelObjects,
-            Security = new DmsSecurityFacts.Postgresql(ownership, privileges),
+            Security = new DmsSecurityFacts.Postgresql(ownership, privileges)
+            {
+                SuperuserRoles = superuserRoles,
+            },
             HasPopulatedDocument = hasPopulatedDocument,
             PopulatedPredicateTablesMalformed = predicateTablesMalformed,
         };

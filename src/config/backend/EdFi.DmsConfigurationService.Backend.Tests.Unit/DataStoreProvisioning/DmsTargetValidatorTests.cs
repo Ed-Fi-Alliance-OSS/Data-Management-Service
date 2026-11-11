@@ -639,6 +639,103 @@ public class DmsTargetValidatorTests
             _ownershipAndPrivilegeViolations.Should().Be(Invalid(SecurityStateViolation, OwnershipCheck));
     }
 
+    /// <summary>
+    /// V4-02: a target created under superuser login <c>admin_a</c>, read after the administrative login was switched
+    /// to another superuser, lists its ordinary objects as owned by <c>admin_a</c> (with their owner privileges).
+    /// Reconciliation accepts them while the server reports <c>admin_a</c> as a superuser; a database just restored
+    /// is held to the delivered rule; and every owner the catalog does not report as a superuser, the enqueue owner
+    /// owning anything but its functions, and facts without the superuser read are still refused.
+    /// </summary>
+    [TestFixture]
+    public class Given_objects_owned_by_an_earlier_superuser_administrator
+    {
+        private const string EarlierAdmin = "admin_a";
+
+        private DmsTargetValidation _reconciled = null!;
+        private DmsTargetValidation _restored = null!;
+        private DmsTargetValidation _notSuperuser = null!;
+        private DmsTargetValidation _superuserReadMissing = null!;
+        private DmsTargetValidation _enqueueOwnerListedAsSuperuser = null!;
+        private DmsTargetValidation _earlierAdminAndForeignOwner = null!;
+        private DmsTargetValidation _earlierAdminWithForeignGrant = null!;
+
+        private static DmsTargetFacts OwnedByEarlierAdmin(params string[] superusers)
+        {
+            DmsTargetFacts facts = PostgresqlFacts()
+                .WithOwnership(
+                    Owned("schema", EarlierAdmin, "dms"),
+                    Owned("schema", EarlierAdmin, "edfi"),
+                    Owned("relation", EarlierAdmin, "dms.\"DataStoreIdentity\""),
+                    Owned("relation", EarlierAdmin, "edfi.\"School\""),
+                    Owned("function", EarlierAdmin, "dms.\"GetMaxChangeVersion\"()"),
+                    Owned("type", EarlierAdmin, "edfi.\"ReferenceKind\"")
+                )
+                .WithPrivileges(
+                    Held("relation", "SELECT", EarlierAdmin, EarlierAdmin, "edfi.\"School\""),
+                    Held("relation", "SELECT", EarlierAdmin, Enqueue, "dms.\"DocumentCacheState\"")
+                );
+            DmsSecurityFacts.Postgresql security = (DmsSecurityFacts.Postgresql)facts.Security;
+            return facts with { Security = security with { SuperuserRoles = superusers } };
+        }
+
+        private static DmsTargetValidation Reconcile(DmsTargetFacts facts) =>
+            Validate(
+                facts,
+                Identity(),
+                ManifestFor(PostgresqlFacts()),
+                Projects,
+                new DmsTargetValidationRule.Reconcile(PackageIdentity)
+            );
+
+        [SetUp]
+        public void Setup()
+        {
+            _reconciled = Reconcile(OwnedByEarlierAdmin(Admin, EarlierAdmin));
+            _restored = Staging(OwnedByEarlierAdmin(Admin, EarlierAdmin));
+            _notSuperuser = Reconcile(OwnedByEarlierAdmin(Admin));
+            _superuserReadMissing = Reconcile(OwnedByEarlierAdmin());
+            _enqueueOwnerListedAsSuperuser = Reconcile(
+                OwnedByEarlierAdmin(Admin, EarlierAdmin, Enqueue)
+                    .WithOwnership(Owned("relation", Enqueue, "dms.\"DocumentProjectionWork\""))
+            );
+            _earlierAdminAndForeignOwner = Reconcile(
+                OwnedByEarlierAdmin(Admin, EarlierAdmin)
+                    .WithOwnership(Owned("relation", "intruder", "edfi.\"School\""))
+            );
+            _earlierAdminWithForeignGrant = Reconcile(
+                OwnedByEarlierAdmin(Admin, EarlierAdmin)
+                    .WithPrivileges(Held("relation", "SELECT", EarlierAdmin, "reporting", "edfi.\"School\""))
+            );
+        }
+
+        [Test]
+        public void It_reconciles_objects_an_earlier_superuser_owns() => _reconciled.Should().Be(_valid);
+
+        [Test]
+        public void It_holds_a_database_just_restored_to_the_delivered_rule() =>
+            _restored.Should().Be(Invalid(SecurityStateViolation, OwnershipCheck));
+
+        [Test]
+        public void It_refuses_an_owner_the_server_does_not_report_as_a_superuser() =>
+            _notSuperuser.Should().Be(Invalid(SecurityStateViolation, OwnershipCheck));
+
+        [Test]
+        public void It_trusts_no_earlier_owner_without_the_superuser_read() =>
+            _superuserReadMissing.Should().Be(Invalid(SecurityStateViolation, OwnershipCheck));
+
+        [Test]
+        public void It_keeps_the_enqueue_owner_rule_even_for_a_superuser_enqueue_owner() =>
+            _enqueueOwnerListedAsSuperuser.Should().Be(Invalid(SecurityStateViolation, OwnershipCheck));
+
+        [Test]
+        public void It_still_refuses_a_foreign_owner_beside_the_earlier_superuser() =>
+            _earlierAdminAndForeignOwner.Should().Be(Invalid(SecurityStateViolation, OwnershipCheck));
+
+        [Test]
+        public void It_still_refuses_a_grant_the_earlier_superuser_made_to_another_role() =>
+            _earlierAdminWithForeignGrant.Should().Be(Invalid(SecurityStateViolation, PrivilegesCheck));
+    }
+
     [TestFixture]
     public class Given_the_populated_predicate
     {

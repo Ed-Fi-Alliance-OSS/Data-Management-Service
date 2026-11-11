@@ -748,4 +748,179 @@ public class PostgresqlCreateReconcileTests
         [Test]
         public void It_left_the_target_exactly_as_it_was() => _after.Should().Be(_before);
     }
+
+    /// <summary>
+    /// V4-02, the documented PostgreSQL login switch end to end: superuser login A creates the target and reconciles
+    /// it; the administrative login becomes superuser B and A is made <c>NOLOGIN</c> but stays a superuser; the retry
+    /// with the original pin and expected identity is <c>Reconciled</c> by reads only, and the target is unchanged and
+    /// still owned by A, so nothing was restored, renamed, marked, or re-owned. Then, under B, the controls: an
+    /// ordinary table given to a role that is not a superuser is refused at <c>Ownership</c>, and once A loses
+    /// <c>SUPERUSER</c> its database is no longer opened (<c>TargetUnverifiable</c> at <c>InspectTarget</c>).
+    /// </summary>
+    [TestFixture]
+    public class Given_the_administrative_login_is_switched_to_another_superuser
+    {
+        private string? _adminA;
+        private string? _adminB;
+        private string? _ordinaryRole;
+        private Lane? _lane;
+        private DmsDataStoreCreateResult _created = null!;
+        private (DmsDataStoreCreateResult Result, string[] Members) _underA;
+        private (DmsDataStoreCreateResult Result, string[] Members) _underB;
+        private (DmsDataStoreCreateResult Result, string[] Members) _ordinaryOwner;
+        private (DmsDataStoreCreateResult Result, string[] Members) _noLongerSuperuser;
+        private Evidence _before = null!;
+        private Evidence _after = null!;
+        private (string DatabaseOwner, long ObjectsOwnedByA) _ownershipBefore;
+        private (string DatabaseOwner, long ObjectsOwnedByA) _ownershipAfter;
+        private (bool CanLogin, bool Superuser) _adminAAtSwitch;
+
+        private async Task<(string DatabaseOwner, long ObjectsOwnedByA)> OwnershipAsync()
+        {
+            string a = PostgresqlIdentifiers.Literal(_adminA!);
+            TestDatabase target = new(_lane!.Target.Value);
+            return (
+                await target.ScalarAsync<string>(
+                    "SELECT pg_catalog.pg_get_userbyid(d.datdba)::text FROM pg_catalog.pg_database d WHERE d.datname = pg_catalog.current_database();"
+                ),
+                await target.ScalarAsync<long>(
+                    "SELECT (SELECT count(*) FROM pg_catalog.pg_class c WHERE c.relowner = r.oid)"
+                        + " + (SELECT count(*) FROM pg_catalog.pg_namespace n WHERE n.nspowner = r.oid)"
+                        + " + (SELECT count(*) FROM pg_catalog.pg_proc p WHERE p.proowner = r.oid)"
+                        + $" FROM pg_catalog.pg_roles r WHERE r.rolname = {a};"
+                )
+            );
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireLane();
+            await RequireSuperuserOrSkipAsync();
+            await EnsureEnqueueOwnerRoleAsync();
+            _adminA = await CreateLoginRoleAsync("admin_a");
+            await ExecuteOnServerAsync($"ALTER ROLE {PostgresqlIdentifiers.Quote(_adminA)} SUPERUSER;");
+            _adminB = await CreateLoginRoleAsync("admin_b");
+            await ExecuteOnServerAsync($"ALTER ROLE {PostgresqlIdentifiers.Quote(_adminB)} SUPERUSER;");
+
+            _lane = await Lane.BuildAsync(Lane.ShapedSql(), new LaneHooks());
+            Lane.Deployment underA = _lane.WithEngine(EngineAs(_adminA));
+            _created = await underA.Service.CreateAsync(_lane.Request, default);
+            _underA = await RetryAsync(
+                underA.Engine,
+                () => underA.Service.CreateAsync(_lane.Request, default)
+            );
+            _before = await EvidenceAsync(_lane.Target);
+            _ownershipBefore = await OwnershipAsync();
+
+            // The documented switch: the secret now names B; A may no longer log in but is still a superuser.
+            await ExecuteOnServerAsync($"ALTER ROLE {PostgresqlIdentifiers.Quote(_adminA)} NOLOGIN;");
+            _adminAAtSwitch = (
+                await ScalarOnServerAsync<bool>(
+                    $"SELECT r.rolcanlogin FROM pg_catalog.pg_roles r WHERE r.rolname = {PostgresqlIdentifiers.Literal(_adminA)};"
+                ),
+                await ScalarOnServerAsync<bool>(
+                    $"SELECT r.rolsuper FROM pg_catalog.pg_roles r WHERE r.rolname = {PostgresqlIdentifiers.Literal(_adminA)};"
+                )
+            );
+            Lane.Deployment underB = _lane.WithEngine(EngineAs(_adminB));
+            _underB = await RetryAsync(
+                underB.Engine,
+                () => underB.Service.CreateAsync(_lane.Request, default)
+            );
+            _after = await EvidenceAsync(_lane.Target);
+            _ownershipAfter = await OwnershipAsync();
+
+            // Control 1: an ordinary table owned by a role that is not a superuser.
+            _ordinaryRole = await CreateRoleAsync("ordinary");
+            TestDatabase target = new(_lane.Target.Value);
+            await target.ExecuteAsync(
+                $"ALTER TABLE \"dms\".\"DocumentCache\" OWNER TO {PostgresqlIdentifiers.Quote(_ordinaryRole)};"
+            );
+            _ordinaryOwner = await RetryAsync(
+                underB.Engine,
+                () => underB.Service.CreateAsync(_lane.Request, default)
+            );
+
+            // Control 2: A, still owning the database, is no longer a superuser.
+            await ExecuteOnServerAsync($"ALTER ROLE {PostgresqlIdentifiers.Quote(_adminA)} NOSUPERUSER;");
+            _noLongerSuperuser = await RetryAsync(
+                underB.Engine,
+                () => underB.Service.CreateAsync(_lane.Request, default)
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+
+            foreach (string? role in new[] { _ordinaryRole, _adminA, _adminB })
+            {
+                if (role is not null)
+                {
+                    await DropRoleAsync(role);
+                }
+            }
+        }
+
+        [Test]
+        public void It_creates_and_reconciles_under_the_first_superuser()
+        {
+            _created.Should().BeOfType<DmsDataStoreCreateResult.Created>();
+            _underA.Result.Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
+        }
+
+        [Test]
+        public void It_switched_to_a_first_superuser_that_may_no_longer_log_in() =>
+            _adminAAtSwitch.Should().Be((false, true));
+
+        [Test]
+        public void It_reconciles_under_the_second_superuser() =>
+            _underB.Result.Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
+
+        [Test]
+        public void It_only_read_under_the_second_superuser() => _underB.Members.Should().Equal(_readMembers);
+
+        [Test]
+        public void It_left_the_target_unchanged() => _after.Should().Be(_before);
+
+        [Test]
+        public void It_transferred_no_ownership()
+        {
+            (_ownershipBefore.DatabaseOwner, _ownershipBefore.ObjectsOwnedByA > 0)
+                .Should()
+                .Be((_adminA!, true), "the first superuser created the database and its objects");
+            _ownershipAfter.Should().Be(_ownershipBefore);
+        }
+
+        [Test]
+        public void It_still_refuses_an_ordinary_table_owned_by_a_role_that_is_not_a_superuser() =>
+            Verdict(_ordinaryOwner.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.SecurityStateViolation,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ReconcileValidateStep
+                            + "."
+                            + DmsTargetValidator.OwnershipCheck
+                    )
+                );
+
+        [Test]
+        public void It_no_longer_opens_the_target_once_the_first_login_is_not_a_superuser() =>
+            Verdict(_noLongerSuperuser.Result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.InspectTargetStep
+                    )
+                );
+    }
 }

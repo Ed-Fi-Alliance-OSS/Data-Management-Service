@@ -112,7 +112,7 @@ public static class DmsTargetValidator
 
         return EngineVerdict(facts, manifest)
             ?? InventoryVerdict(facts, manifest, expectedProjects)
-            ?? SecurityVerdict(facts.Security)
+            ?? SecurityVerdict(facts.Security, rule)
             ?? PopulatedVerdict(facts, manifest)
             ?? new DmsTargetValidation.Valid();
     }
@@ -364,18 +364,39 @@ public static class DmsTargetValidator
     }
 
     /// <summary>Item 7 by engine.</summary>
-    private static DmsTargetValidation? SecurityVerdict(DmsSecurityFacts security) =>
+    private static DmsTargetValidation? SecurityVerdict(
+        DmsSecurityFacts security,
+        DmsTargetValidationRule rule
+    ) =>
         security switch
         {
-            DmsSecurityFacts.Postgresql postgresql => PostgresqlSecurityVerdict(postgresql),
+            DmsSecurityFacts.Postgresql postgresql => PostgresqlSecurityVerdict(
+                postgresql,
+                rule is DmsTargetValidationRule.Reconcile
+            ),
             DmsSecurityFacts.Mssql mssql => MssqlSecurityVerdict(mssql),
             _ => throw new InvalidOperationException("Unknown security facts."),
         };
 
-    /// <summary>Ownership is judged before privileges (D-15), so an owner change is reported as ownership even though it also moves privileges.</summary>
-    private static DmsTargetValidation? PostgresqlSecurityVerdict(DmsSecurityFacts.Postgresql security)
+    /// <summary>
+    /// Ownership is judged before privileges (D-15), so an owner change is reported as ownership even though it also
+    /// moves privileges. A database just restored is held to the delivered rule: everything outside it is owned by
+    /// the administrator that replayed it. Reconciliation also accepts an object owned by a role the server reports as
+    /// a superuser (<see cref="DmsSecurityFacts.Postgresql.SuperuserRoles"/>): a target created under an earlier
+    /// superuser login keeps that owner after the login is switched, and the inspection already trusts such a
+    /// database owner and reads only tables such a role owns. The enqueue owner is never trusted this way, and every
+    /// other owner is still refused.
+    /// </summary>
+    private static DmsTargetValidation? PostgresqlSecurityVerdict(
+        DmsSecurityFacts.Postgresql security,
+        bool reconcile
+    )
     {
-        if (!security.Ownership.All(IsAllowedOwnership))
+        if (
+            !security.Ownership.All(row =>
+                IsAllowedOwnership(row) || (reconcile && IsTrustedEarlierAdministrator(row, security))
+            )
+        )
         {
             return Invalid(DmsProvisioningFailureCode.SecurityStateViolation, OwnershipCheck);
         }
@@ -392,6 +413,14 @@ public static class DmsTargetValidator
     private static bool IsAllowedOwnership(DmsPostgresqlOwnershipRow row) =>
         (Same(row.Kind, "function") && Same(row.Owner, EnqueueOwnerRoleName))
         || (Same(row.Kind, "schema") && Same(row.Identity, "public") && Same(row.Owner, "pg_database_owner"));
+
+    /// <summary>The row's owner is a superuser by the server's catalog, and not the enqueue owner, whose rule is fixed.</summary>
+    private static bool IsTrustedEarlierAdministrator(
+        DmsPostgresqlOwnershipRow row,
+        DmsSecurityFacts.Postgresql security
+    ) =>
+        !Same(row.Owner, EnqueueOwnerRoleName)
+        && security.SuperuserRoles.Contains(row.Owner, StringComparer.Ordinal);
 
     /// <summary>
     /// <c>Assert-PostgresqlArtifactPrivilege</c>: an object's owner may hold anything; PUBLIC may hold only its

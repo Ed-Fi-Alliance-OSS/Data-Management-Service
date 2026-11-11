@@ -1638,6 +1638,15 @@ otherwise the identity read is `TargetUnverifiable` and the facts read `Security
 administrator's privileges. A target created under an earlier superuser login stays readable after the
 secret is switched to another superuser login, as long as that earlier login remains a superuser.
 
+The database and the objects in it keep the earlier login as their owner; nothing transfers ownership. A
+retry of the create therefore reconciles such a target only while the server still reports the earlier login
+as a superuser, which it reads from `pg_roles` for every reconcile. Making the earlier login `NOLOGIN` is
+supported: it can no longer connect, but it stays trusted as an owner. Removing its `SUPERUSER` attribute is
+not: its targets are then refused with `TargetUnverifiable` at `InspectTarget` and need an operator to transfer
+their ownership. Objects owned by any other role that is not a superuser are still refused with
+`SecurityStateViolation` at `Ownership`, and a newly restored database must still be owned entirely by the login
+that restored it.
+
 The administrative login must be a **superuser**. The PostgreSQL template ends by making
 `edfi_dms_enqueue_owner` the owner of its enqueue functions. PostgreSQL allows that for a non-superuser only
 when the new owner may create objects in the `dms` schema, which the template's own security rules forbid.
@@ -1777,7 +1786,9 @@ restart. See [How a rotation propagates](./SECRETS.md#how-a-rotation-propagates)
   Service was restarted, which clears its cache), and every create or delete that started before the switch
   has finished. Each operation keeps the credential it resolved when it started for its whole run, cleanup
   and recovery included, so disabling the old login under a running operation can fail it or leave its
-  cleanup unfinished.
+  cleanup unfinished. On PostgreSQL, disable the first login with `NOLOGIN` and keep it a superuser: the
+  targets it created stay owned by it and are trusted only while it is one (see
+  [PostgreSQL](#postgresql)).
 - **Changing the password in place:** update the secret and the login together, then restart the
   Configuration Service or wait out the cache window. Operations in between fail as described above, and so
   can an operation already running with the old password when it opens its next connection.

@@ -65,6 +65,14 @@ internal static class PostgresqlSecurityQueries
         + "WHERE a.ns !~ '^pg_' AND a.ns <> 'information_schema'\n"
         + "ORDER BY 1;";
 
+    /// <summary>
+    /// The server's superuser roles, by name as <see cref="Ownership"/> reports an owner: the catalog fact behind the
+    /// reconcile rule that trusts an owner the earlier administrative login left (a superuser is trusted whatever its
+    /// name, as the target's own owner check trusts it). Not a delivered query.
+    /// </summary>
+    public const string SuperuserRoles =
+        "SELECT r.rolname::text FROM pg_catalog.pg_roles r WHERE r.rolsuper ORDER BY 1;";
+
     /// <summary>Splits a <c>kind|owner|identity</c> row into at most three fields; the identity must be non-blank.</summary>
     public static bool TryParseOwnershipRow(
         string? row,

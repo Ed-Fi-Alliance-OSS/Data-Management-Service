@@ -55,11 +55,20 @@ public sealed record DmsMssqlRoleMemberRow(int RoleId, int MemberId, string Role
 /// </summary>
 public abstract record DmsSecurityFacts
 {
-    /// <summary>PostgreSQL ownership and privilege rows (D-15).</summary>
+    /// <summary>PostgreSQL ownership and privilege rows (D-15), and the server's superuser role names.</summary>
     public sealed record Postgresql(
         IReadOnlyList<DmsPostgresqlOwnershipRow> Ownership,
         IReadOnlyList<DmsPostgresqlPrivilegeRow> Privileges
-    ) : DmsSecurityFacts;
+    ) : DmsSecurityFacts
+    {
+        /// <summary>
+        /// The roles the server reports as superusers when the rows were read. Reconciliation accepts an ordinary
+        /// object owned by one of them, because a target created under an earlier superuser login keeps that owner
+        /// after the login is switched (<see cref="DmsTargetValidator"/>). Empty unless the engine read it, which
+        /// trusts no owner beyond the delivered rules.
+        /// </summary>
+        public IReadOnlyList<string> SuperuserRoles { get; init; } = [];
+    }
 
     /// <summary>SQL Server database permissions and role memberships, the security state a backup carries and a RESTORE re-creates (D-15).</summary>
     public sealed record Mssql(
