@@ -65,6 +65,84 @@ public class MssqlRestoreTests
     private static Task<string> ServerPropertyAsync(string property) =>
         ScalarOnServerAsync<string>($"SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('{property}'));");
 
+    /// <summary>Waits until the lane's create has reached the staging stage and its work session is in the <c>WAITFOR</c>; returns its id, or 0.</summary>
+    private static async Task<int> WaitForWaitingWorkSessionAsync(Lane lane) =>
+        await WaitUntilAsync(
+            () => Task.FromResult(lane.Engine.CountOf(nameof(IDmsTargetEngine.CreateStagingAsync)) > 0),
+            TimeSpan.FromSeconds(60)
+        )
+            ? await WaitForWaitingWorkSessionAsync(lane.Operation)
+            : 0;
+
+    private static DmsInstanceIdentity.MssqlReservation ReservationOf(Lane lane) =>
+        new(MssqlRestorePlanner.PrimaryFileNameFor(lane.Operation));
+
+    private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) VerdictOf(
+        DmsDataStoreCreateResult result
+    )
+    {
+        DmsProvisioningFailure failure = result
+            .Should()
+            .BeOfType<DmsDataStoreCreateResult.Failure>()
+            .Subject.Detail;
+        return (failure.Code, failure.Category, failure.Diagnostic.Operation);
+    }
+
+    private static IReadOnlyList<DmsCleanupResidue> ResidueOf(DmsDataStoreCreateResult result) =>
+        result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Cleanup.Residue;
+
+    /// <summary>F-04: every unresolved restore ends here; only the cleanup that follows differs.</summary>
+    private static readonly (
+        DmsProvisioningFailureCode,
+        DmsProvisioningFailureCategory,
+        string
+    ) _unresolvedRestore = (
+        DmsProvisioningFailureCode.OutcomeUnknown,
+        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+        DmsDataStoreProvisioningService.ResolveRestoreStep
+    );
+
+    /// <summary>Whether <paramref name="outcome"/> is unknown, names <paramref name="workSession"/>, and does not claim quiescence.</summary>
+    private static bool NamesTheWorkSessionNotQuiescent(
+        DmsCommandOutcome<DmsInstanceIdentity> outcome,
+        int workSession
+    ) =>
+        outcome is DmsCommandOutcome<DmsInstanceIdentity>.Unknown { Quiescent: false, Session: { } session }
+        && session.Id == workSession;
+
+    /// <summary>
+    /// The guarded kill seam: for the restore's work session (set by the test once it is known) the first
+    /// <c>times</c> batches, or all when null, are <c>instead</c>'s, each counted; every other session gets the
+    /// production batch.
+    /// </summary>
+    private sealed class WorkSessionKill(Func<short, string> instead, int? times = null)
+    {
+        private int _workSession;
+        private int _calls;
+
+        public int WorkSession
+        {
+            get => Volatile.Read(ref _workSession);
+            set => Volatile.Write(ref _workSession, value);
+        }
+
+        /// <summary>The batches formed for the work session, replaced or not.</summary>
+        public int Calls => Volatile.Read(ref _calls);
+
+        public string Statement(short sessionId)
+        {
+            if (sessionId != WorkSession)
+            {
+                return MssqlSessionQueries.GuardedKill(sessionId);
+            }
+
+            int call = Interlocked.Increment(ref _calls);
+            return times is null || call <= times
+                ? instead(sessionId)
+                : MssqlSessionQueries.GuardedKill(sessionId);
+        }
+    }
+
     /// <summary>One restore by the engine into a fresh operation's staging name, with the database dropped afterwards.</summary>
     private sealed class RestoreRun : IAsyncDisposable
     {
@@ -471,7 +549,8 @@ public class MssqlRestoreTests
     /// <summary>
     /// A statement that completes but leaves under the staging name a database the plan did not place (out-of-band
     /// interference, stood in for by a plain <c>CREATE DATABASE</c>): nothing proves what happened, so the outcome is
-    /// unknown without a session and the database is left alone.
+    /// unknown without a session, but quiescent (F-04, D-4a): the statement has completed, so nothing of it can still
+    /// run. The engine itself leaves the database alone.
     /// </summary>
     [TestFixture]
     public class Given_the_name_holds_a_database_the_restore_did_not_plan
@@ -509,12 +588,12 @@ public class MssqlRestoreTests
         }
 
         [Test]
-        public void It_reports_an_unknown_outcome_that_names_nothing_to_terminate() =>
+        public void It_reports_a_quiescent_unknown_outcome_that_names_nothing_to_terminate() =>
             _outcome
                 .Should()
                 .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Unknown>()
                 .Which.Should()
-                .BeEquivalentTo(new { Session = (DmsServerSessionId?)null, Quiescent = false });
+                .BeEquivalentTo(new { Session = (DmsServerSessionId?)null, Quiescent = true });
 
         [Test]
         public void It_leaves_the_database_under_the_name_untouched() =>
@@ -1076,6 +1155,397 @@ public class MssqlRestoreTests
         [Test]
         public void It_deletes_the_replaced_file() =>
             ShapedBackup.StagedFilesOf(_run!.Operation).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// F-04 (a), through the orchestrator: a restore that completed is judged and the judgement fails (the
+    /// post-restore re-hash throws, inside the same <c>try</c> as the state read). Nothing of the restore can still
+    /// run, so the engine reports an unknown outcome without a session that is quiescent; the create ends
+    /// <c>OutcomeUnknown</c> at <c>ResolveRestore</c>, and cleanup drops the operation's staging database by the
+    /// reservation, leaving no residue.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_judgement_of_a_completed_restore_fails
+    {
+        private Lane? _lane;
+        private DmsDataStoreCreateResult _result = null!;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            MssqlDmsTargetEngine engine = new(
+                AdminConnection(),
+                Settings(),
+                TimeProvider.System,
+                NullLogger.Instance
+            )
+            {
+                AfterRestore = _ =>
+                    Task.FromException(new IOException("The staged backup could not be read by the test.")),
+            };
+            _lane = await Lane.BuildAsync(await ShapedBackup.CreateAsync(), new LaneHooks(), engine);
+            _result = await _lane.CreateAsync();
+            _stagingAfter = await Engine().InspectAsync(_lane.Operation.StagingDatabaseName, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reports_a_quiescent_unknown_outcome_without_a_session() =>
+            _lane!
+                .Engine.RestoreOutcomes.Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Unknown>()
+                .Which.Should()
+                .BeEquivalentTo(new { Session = (DmsServerSessionId?)null, Quiescent = true });
+
+        [Test]
+        public void It_reports_the_outcome_unknown_for_inspection() =>
+            VerdictOf(_result).Should().Be(_unresolvedRestore);
+
+        [Test]
+        public void It_drops_the_staging_database_by_the_reservation_and_leaves_no_residue()
+        {
+            _lane!.Engine.DroppedStagingInstances.Should().Equal(ReservationOf(_lane));
+            _stagingAfter.Should().Be(new DmsLiveTargetState.Absent());
+            ResidueOf(_result).Should().BeEmpty();
+            _lane.TargetMutations.Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// F-04 (b), through the orchestrator: the restore's work session is lost while the database is restoring
+    /// (killed from outside), and the engine's termination of it throws (its guarded kill replaced by a
+    /// <c>THROW</c>). The engine keeps the session it could not prove gone and does not claim quiescence; the
+    /// orchestrator gives that session one more termination. When that one proves it gone the staging database is
+    /// dropped by the reservation; when it throws too, nothing is dropped and the staging database is reported as
+    /// residue.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_termination_after_a_lost_restore_throws
+    {
+        private const string Refused = "THROW 50000, N'The guarded kill is refused by the test.', 1;";
+
+        private sealed record Run(
+            Lane Lane,
+            WorkSessionKill Kill,
+            bool Interrupted,
+            DmsDataStoreCreateResult Result,
+            DmsLiveTargetState StagingAfter
+        );
+
+        private Run? _proven;
+        private Run? _unproven;
+
+        private static async Task<Run> LoseAsync(byte[] backup, int? refusals)
+        {
+            WorkSessionKill kill = new(_ => Refused, refusals);
+            string marker =
+                "dms1438_restore_lost_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+            Lane lane = await Lane.BuildAsync(
+                backup,
+                new LaneHooks(),
+                new MssqlDmsTargetEngine(
+                    AdminConnection(),
+                    Settings(),
+                    TimeProvider.System,
+                    NullLogger.Instance
+                )
+                {
+                    RestoreStatement = RestoringThenWaiting(marker),
+                    GuardedKillStatement = kill.Statement,
+                }
+            );
+            Task<DmsDataStoreCreateResult> creating = lane.CreateAsync();
+            kill.WorkSession = await WaitForWaitingWorkSessionAsync(lane);
+            bool interrupted = kill.WorkSession != 0;
+            if (interrupted)
+            {
+                await KillAsync(kill.WorkSession);
+            }
+
+            DmsDataStoreCreateResult result = await creating;
+            DmsLiveTargetState after = await Engine()
+                .InspectAsync(lane.Operation.StagingDatabaseName, default);
+            return new Run(lane, kill, interrupted, result, after);
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            byte[] backup = await ShapedBackup.CreateAsync();
+            _proven = await LoseAsync(backup, refusals: 1);
+            _unproven = await LoseAsync(backup, refusals: null);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            foreach (Run? run in new[] { _proven, _unproven })
+            {
+                if (run is not null)
+                {
+                    await run.Lane.DisposeAsync();
+                }
+            }
+        }
+
+        private IEnumerable<Run> Runs => [_proven!, _unproven!];
+
+        [Test]
+        public void It_lost_both_work_sessions_while_the_database_was_restoring() =>
+            Runs.Select(run => run.Interrupted).Should().Equal(true, true);
+
+        [Test]
+        public void It_keeps_the_work_session_and_does_not_claim_quiescence() =>
+            Runs.Select(run =>
+                    run.Lane.Engine.RestoreOutcomes.Count == 1
+                    && NamesTheWorkSessionNotQuiescent(
+                        run.Lane.Engine.RestoreOutcomes[0],
+                        run.Kill.WorkSession
+                    )
+                )
+                .Should()
+                .Equal(true, true);
+
+        [Test]
+        public void It_gives_the_work_session_one_more_termination() =>
+            Runs.Select(run =>
+                    (run.Lane.Engine.CountOf(nameof(IDmsTargetEngine.TerminateSessionAsync)), run.Kill.Calls)
+                )
+                .Should()
+                .Equal((1, 2), (1, 2));
+
+        [Test]
+        public void It_reports_the_outcome_unknown_for_inspection() =>
+            Runs.Select(run => VerdictOf(run.Result)).Should().Equal(_unresolvedRestore, _unresolvedRestore);
+
+        [Test]
+        public void It_drops_the_staging_database_once_the_session_is_proven_gone()
+        {
+            _proven!.Lane.Engine.DroppedStagingInstances.Should().Equal(ReservationOf(_proven.Lane));
+            _proven.StagingAfter.Should().Be(new DmsLiveTargetState.Absent());
+            ResidueOf(_proven.Result).Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_keeps_the_staging_database_as_residue_while_the_session_is_unproven()
+        {
+            _unproven!.Lane.Engine.CountOf(nameof(IDmsTargetEngine.DropStagingAsync)).Should().Be(0);
+            _unproven
+                .StagingAfter.Should()
+                .BeOfType<DmsLiveTargetState.Fenced>()
+                .Which.Instance.Should()
+                .Match<DmsInstanceIdentity>(instance => ReservationOf(_unproven.Lane).IsRealizedBy(instance));
+            ResidueOf(_unproven.Result)
+                .Should()
+                .Equal(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.StagingDatabase,
+                        _unproven.Lane.Operation.StagingDatabaseName.Value
+                    )
+                );
+        }
+    }
+
+    /// <summary>
+    /// F-04 (c), control through the orchestrator: the restore bound passes while the database is restoring and every
+    /// termination of the work session is refused while the server still lists it. The guarded kill batch for that
+    /// session is replaced by its own result row for "listed, and the kill refused", because the engine closes the
+    /// work connection before it returns, so no real work session can still be running when the orchestrator tries.
+    /// The engine names the session without quiescence (abandoning the restore, or, when the driver's timeout ends
+    /// the statement first, resolving it; both keep the session), the orchestrator's one more termination is
+    /// <c>NotTerminated</c> too, and nothing is dropped: the staging database is reported as residue.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_work_session_termination_stays_unproven_after_a_bounded_restore
+    {
+        /// <summary>
+        /// The guarded batch's row (visible, matched, kill error, visible after, matched after) for a session the
+        /// server lists and refuses to kill (6107, "only user processes can be killed").
+        /// </summary>
+        private const string ListedAndRefused = "SELECT 1, 1, 6107, 1, 1;";
+
+        private Lane? _lane;
+        private readonly WorkSessionKill _kill = new(_ => ListedAndRefused);
+        private DmsDataStoreCreateResult _result = null!;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            string marker =
+                "dms1438_restore_unproven_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
+            _lane = await Lane.BuildAsync(
+                await ShapedBackup.CreateAsync(),
+                new LaneHooks(),
+                new MssqlDmsTargetEngine(
+                    AdminConnection(),
+                    Settings(restoreTimeout: TimeSpan.FromSeconds(10)),
+                    TimeProvider.System,
+                    NullLogger.Instance
+                )
+                {
+                    RestoreStatement = RestoringThenWaiting(marker),
+                    GuardedKillStatement = _kill.Statement,
+                }
+            );
+            Task<DmsDataStoreCreateResult> creating = _lane.CreateAsync();
+            _kill.WorkSession = await WaitForWaitingWorkSessionAsync(_lane);
+            _result = await creating;
+            _stagingAfter = await Engine().InspectAsync(_lane.Operation.StagingDatabaseName, default);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_lane is null)
+            {
+                return;
+            }
+
+            // The abandoned work connection is closed in the background; a session still listed is ended here.
+            int remaining = await SessionIdNamedAsync(_lane.Operation.RestoreApplicationName);
+            if (remaining != 0)
+            {
+                await KillAsync(remaining);
+                await WaitUntilAsync(
+                    async () => await SessionCountNamedAsync(_lane.Operation.RestoreApplicationName) == 0,
+                    TimeSpan.FromSeconds(30)
+                );
+            }
+
+            await _lane.DisposeAsync();
+        }
+
+        [Test]
+        public void It_reports_an_unknown_outcome_naming_the_work_session() =>
+            _lane!
+                .Engine.RestoreOutcomes.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<DmsCommandOutcome<DmsInstanceIdentity>>(outcome =>
+                    NamesTheWorkSessionNotQuiescent(outcome, _kill.WorkSession)
+                );
+
+        [Test]
+        public void It_tries_the_work_session_once_more() =>
+            _lane!.Engine.CountOf(nameof(IDmsTargetEngine.TerminateSessionAsync)).Should().Be(1);
+
+        [Test]
+        public void It_reports_the_outcome_unknown_for_inspection() =>
+            VerdictOf(_result).Should().Be(_unresolvedRestore);
+
+        [Test]
+        public void It_drops_nothing_and_reports_the_staging_database_as_residue()
+        {
+            _lane!.Engine.CountOf(nameof(IDmsTargetEngine.DropStagingAsync)).Should().Be(0);
+            _stagingAfter
+                .Should()
+                .BeOfType<DmsLiveTargetState.Fenced>()
+                .Which.Instance.Should()
+                .Match<DmsInstanceIdentity>(instance => ReservationOf(_lane).IsRealizedBy(instance));
+            ResidueOf(_result)
+                .Should()
+                .Equal(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.StagingDatabase,
+                        _lane.Operation.StagingDatabaseName.Value
+                    )
+                );
+        }
+    }
+
+    /// <summary>
+    /// F-04 (d), control through the orchestrator: the statement completes but leaves under the staging name a
+    /// database the plan did not place. The quiescent outcome lets cleanup run, and cleanup's reservation guard
+    /// refuses the foreign primary file: the database keeps its <c>database_id</c>, nothing of the operation is
+    /// reported left, and the create ends <c>OutcomeUnknown</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_create_finds_a_database_the_restore_did_not_plan
+    {
+        private Lane? _lane;
+        private DmsDataStoreCreateResult _result = null!;
+        private int _databaseIdBeforeCleanup;
+        private int _databaseIdAfter;
+
+        private static Task<int> DatabaseIdAsync(DmsOperationId operation) =>
+            ScalarOnServerAsync<int>(
+                "SELECT CONVERT(int, ISNULL(DB_ID(@name), 0));",
+                ("@name", operation.StagingDatabaseName.Value)
+            );
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            LaneHooks hooks = new()
+            {
+                Probe = async (point, operation) =>
+                {
+                    if (point == DmsProvisioningHookPoint.AfterRestoreStarted)
+                    {
+                        _databaseIdBeforeCleanup = await DatabaseIdAsync(operation);
+                    }
+                },
+            };
+            _lane = await Lane.BuildAsync(
+                await ShapedBackup.CreateAsync(),
+                hooks,
+                new MssqlDmsTargetEngine(
+                    AdminConnection(),
+                    Settings(),
+                    TimeProvider.System,
+                    NullLogger.Instance
+                )
+                {
+                    RestoreStatement = (plan, _) =>
+                        $"CREATE DATABASE {MssqlIdentifiers.Quote(plan.Staging.Value)};",
+                }
+            );
+            _result = await _lane.CreateAsync();
+            _databaseIdAfter = await DatabaseIdAsync(_lane.Operation);
+        }
+
+        [OneTimeTearDown]
+        public async Task TearDown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_reports_the_outcome_unknown_for_inspection() =>
+            VerdictOf(_result).Should().Be(_unresolvedRestore);
+
+        [Test]
+        public void It_lets_cleanup_try_the_drop_by_the_reservation() =>
+            _lane!.Engine.DroppedStagingInstances.Should().Equal(ReservationOf(_lane));
+
+        [Test]
+        public void It_leaves_the_foreign_database_untouched()
+        {
+            _databaseIdBeforeCleanup.Should().NotBe(0);
+            _databaseIdAfter.Should().Be(_databaseIdBeforeCleanup);
+        }
+
+        [Test]
+        public void It_reports_nothing_of_the_operation_left() => ResidueOf(_result).Should().BeEmpty();
     }
 
     [TestFixture]

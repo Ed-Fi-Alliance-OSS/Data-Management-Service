@@ -595,9 +595,10 @@ public sealed partial class MssqlDmsTargetEngine
     /// <summary>
     /// D-7b for a restore that ended in doubt: the work session is killed and proven gone on a token of its own,
     /// bounded by <c>SessionTerminationTimeout</c> plus the command timeout, so the caller's cancellation cannot
-    /// skip it (6.10). A session not proven gone is the <c>Unknown</c> session; with it gone the staging name
-    /// decides (<see cref="JudgeRestoredAsync"/>), a restore that did not complete failing with
-    /// <paramref name="ended"/>, which names what ended it.
+    /// skip it (6.10). A session not proven gone, or a termination that throws, is the <c>Unknown</c> session, not
+    /// quiescent, so the caller can still prove it gone; with it gone the staging name decides
+    /// (<see cref="JudgeRestoredAsync"/>), a restore that did not complete failing with <paramref name="ended"/>,
+    /// which names what ended it.
     /// </summary>
     private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ResolveRestoreAsync(
         DmsDatabaseName staging,
@@ -627,7 +628,12 @@ public sealed partial class MssqlDmsTargetEngine
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
             // Only the type chain leaves the catch: a driver error may quote the connection.
-            return UnresolvedRestore(operation, DmsProvisioningDiagnostic.TypeChain(exception));
+            return UnresolvedRestore(
+                operation,
+                DmsProvisioningDiagnostic.TypeChain(exception),
+                session,
+                quiescent: false
+            );
         }
 
         return await JudgeRestoredAsync(
@@ -643,7 +649,9 @@ public sealed partial class MssqlDmsTargetEngine
     /// What the staging name holds once nothing of the restore runs, read on a fresh maintenance session under a
     /// bound of its own: absent, or <c>RESTORING</c> with the planned primary file, is <paramref name="notCompleted"/>;
     /// <c>ONLINE</c> with that file is a completed restore, reported only after the staged file still hashes to
-    /// <c>artifactSha256</c> (D-18); anything else, or a read that fails, is <c>Unknown</c> without a session.
+    /// <c>artifactSha256</c> (D-18); anything else, or a read that fails, is <c>Unknown</c> without a session and
+    /// quiescent: entry here proves no RESTORE of this operation still runs, so cleanup may act on the name under
+    /// its reservation or instance guard, which leaves a database with another primary file alone.
     /// </summary>
     private async Task<DmsCommandOutcome<DmsInstanceIdentity>> JudgeRestoredAsync(
         DmsDatabaseName staging,
@@ -682,13 +690,13 @@ public sealed partial class MssqlDmsTargetEngine
                         StringComparison.Ordinal
                     ):
                     // Not the database this restore planned: nothing proves what happened to it.
-                    return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
+                    return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true };
                 case { State: MssqlStagingQueries.RestoringState }:
                     return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(notCompleted);
                 case { State: MssqlStagingQueries.OnlineState } online:
                     return await RehashAsync(online, backup, bound.Token);
                 default:
-                    return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
+                    return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null) { Quiescent = true };
             }
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -696,7 +704,7 @@ public sealed partial class MssqlDmsTargetEngine
             failure = DmsProvisioningDiagnostic.TypeChain(exception);
         }
 
-        return UnresolvedRestore(operation, failure);
+        return UnresolvedRestore(operation, failure, session: null, quiescent: true);
     }
 
     /// <summary>D-18 defense in depth: a completed restore is reported only while the staged file still hashes to <c>artifactSha256</c>.</summary>
@@ -727,7 +735,16 @@ public sealed partial class MssqlDmsTargetEngine
         };
     }
 
-    private DmsCommandOutcome<DmsInstanceIdentity> UnresolvedRestore(DmsOperationId operation, string failure)
+    /// <summary>
+    /// A restore outcome a failure left unresolved, logged with the type chain only. Each caller states its own
+    /// proof: the session still to be proven gone, and whether nothing of the restore can still run.
+    /// </summary>
+    private DmsCommandOutcome<DmsInstanceIdentity> UnresolvedRestore(
+        DmsOperationId operation,
+        string failure,
+        DmsServerSessionId? session,
+        bool quiescent
+    )
     {
         _logger.LogWarning(
             RestoreResolutionFailed,
@@ -735,7 +752,7 @@ public sealed partial class MssqlDmsTargetEngine
             operation.Value,
             failure
         );
-        return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null);
+        return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(session) { Quiescent = quiescent };
     }
 
     /// <summary>
