@@ -113,6 +113,16 @@ internal sealed class CatalogWorkspace : IDisposable
     public TemplateArtifactCatalog Catalog(DmsDataStoreProvisioningOptions? options = null) =>
         new(Microsoft.Extensions.Options.Options.Create(options ?? Options()), Logger);
 
+    /// <summary>A catalog whose trust-policy reads go through <paramref name="readTrustPolicyText"/> (F-06 seam).</summary>
+    public TemplateArtifactCatalog CatalogReadingPolicyThrough(
+        TemplateArtifactCatalog.BoundedTextReader readTrustPolicyText,
+        DmsDataStoreProvisioningOptions? options = null
+    ) =>
+        new(Microsoft.Extensions.Options.Options.Create(options ?? Options()), Logger)
+        {
+            ReadTrustPolicyText = readTrustPolicyText,
+        };
+
     public void Dispose()
     {
         Signer.Dispose();

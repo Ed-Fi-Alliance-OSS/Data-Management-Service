@@ -88,6 +88,34 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         MalformedUtf8,
     }
 
+    /// <summary>
+    /// Who loads the trust policy (F-06, D-6): startup validation, where any defect is
+    /// <c>StartupValidationFailed</c> and readiness becomes <c>NotReady</c>, or an operation, where a defect is
+    /// <c>TrustPolicyUnavailable</c> and readiness is untouched.
+    /// </summary>
+    internal enum TrustPolicyLoadContext
+    {
+        Startup,
+        Operation,
+    }
+
+    // D-6b, pinned on .NET 10 by opening a policy another handle holds: Windows ERROR_SHARING_VIOLATION (an
+    // exclusive or writing holder) and ERROR_LOCK_VIOLATION (a byte-range lock over the read), and on Linux the
+    // raw EWOULDBLOCK that the FileShare emulation's flock reports for a FileShare.None holder.
+    private const int SharingViolationHResult = unchecked((int)0x80070020);
+    private const int LockViolationHResult = unchecked((int)0x80070021);
+    private const int LinuxWouldBlockHResult = 11;
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> is temporary contention for the file, true only for the pinned
+    /// <c>HResult</c> values; any other I/O failure is not assumed to pass by itself.
+    /// </summary>
+    internal static bool IsTemporaryFileContention(IOException exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return exception.HResult is SharingViolationHResult or LockViolationHResult or LinuxWouldBlockHResult;
+    }
+
     private static readonly string[] _extractedArtifactFileNames =
     [
         StagedTemplatePackage.ArtifactBaseName
@@ -120,6 +148,16 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     /// <summary>Test seam: runs immediately before an operation directory is released, where a test can make its deletion fail.</summary>
     internal Action<PrivateOperationDirectory>? BeforeRelease { get; set; }
 
+    /// <summary>Reads a file of at most <paramref name="maxBytes"/> bytes into text, or the defect that left none.</summary>
+    internal delegate Task<(string? Text, BoundedTextDefect Defect)> BoundedTextReader(
+        string path,
+        long maxBytes,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Test seam: reads the trust policy into text or a defect; production reads the file through one handle.</summary>
+    internal BoundedTextReader ReadTrustPolicyText { get; init; } = ReadBoundedTextAsync;
+
     /// <summary><c>OperationDirectory</c> when configured, else the process temp path, without a trailing separator.</summary>
     public static string OperationRootDirectoryFor(DmsDataStoreProvisioningOptions options)
     {
@@ -133,18 +171,27 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     public async Task<DmsArtifactResolution> ResolveAsync(
         DmsDatabaseTemplate template,
         CancellationToken cancellationToken
-    ) => (await ResolveWithManifestAsync(template, cancellationToken)).Resolution;
+    ) =>
+        (
+            await ResolveWithManifestAsync(template, TrustPolicyLoadContext.Operation, cancellationToken)
+        ).Resolution;
 
     /// <summary>
     /// The resolution, and on success the <c>engineVersion</c> of the manifest it authenticated, read before the
-    /// private directory is released.
+    /// private directory is released. <paramref name="context"/> decides how a trust-policy defect is reported.
     /// </summary>
     private async Task<(DmsArtifactResolution Resolution, string? EngineVersion)> ResolveWithManifestAsync(
         DmsDatabaseTemplate template,
+        TrustPolicyLoadContext context,
         CancellationToken cancellationToken
     )
     {
-        TemplateArtifactStaging staging = await StageAsync(template, DmsOperationId.New(), cancellationToken);
+        TemplateArtifactStaging staging = await StageAsync(
+            template,
+            DmsOperationId.New(),
+            context,
+            cancellationToken
+        );
         switch (staging)
         {
             case TemplateArtifactStaging.Failure failure:
@@ -163,9 +210,16 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         }
     }
 
-    public async Task<TemplateArtifactStaging> StageAsync(
+    public Task<TemplateArtifactStaging> StageAsync(
         DmsDatabaseTemplate template,
         DmsOperationId operationId,
+        CancellationToken cancellationToken
+    ) => StageAsync(template, operationId, TrustPolicyLoadContext.Operation, cancellationToken);
+
+    private async Task<TemplateArtifactStaging> StageAsync(
+        DmsDatabaseTemplate template,
+        DmsOperationId operationId,
+        TrustPolicyLoadContext context,
         CancellationToken cancellationToken
     )
     {
@@ -194,6 +248,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
         // 6.2 step 4: the policy is re-read for every operation; a defect is the operator's, never the package's.
         (TemplateTrustPolicy? policy, DmsProvisioningFailure? policyFailure) = await LoadTrustPolicyAsync(
+            context,
             cancellationToken
         );
         if (policyFailure is not null)
@@ -382,6 +437,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     public async Task<TemplateCatalogValidation> ValidateAsync(CancellationToken cancellationToken)
     {
         (TemplateTrustPolicy? policy, DmsProvisioningFailure? policyFailure) = await LoadTrustPolicyAsync(
+            TrustPolicyLoadContext.Startup,
             cancellationToken
         );
         if (policyFailure is not null)
@@ -412,6 +468,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         {
             (DmsArtifactResolution resolution, string? engineVersion) = await ResolveWithManifestAsync(
                 template,
+                TrustPolicyLoadContext.Startup,
                 cancellationToken
             );
             if (resolution is DmsArtifactResolution.Failure failure)
@@ -569,6 +626,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     }
 
     private async Task<(TemplateTrustPolicy? Policy, DmsProvisioningFailure? Failure)> LoadTrustPolicyAsync(
+        TrustPolicyLoadContext context,
         CancellationToken cancellationToken
     )
     {
@@ -581,21 +639,15 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         BoundedTextDefect defect;
         try
         {
-            (json, defect) = await ReadBoundedTextAsync(path, MaxTrustPolicyBytes, cancellationToken);
+            (json, defect) = await ReadTrustPolicyText(path, MaxTrustPolicyBytes, cancellationToken);
         }
         catch (IOException exception)
         {
-            return (
-                null,
-                Failure(DmsProvisioningFailureCode.StartupValidationFailed, TrustPolicyStep, exception)
-            );
+            return (null, PolicyFailure(context, exception, IsTemporaryFileContention(exception)));
         }
         catch (UnauthorizedAccessException exception)
         {
-            return (
-                null,
-                Failure(DmsProvisioningFailureCode.StartupValidationFailed, TrustPolicyStep, exception)
-            );
+            return (null, PolicyFailure(context, exception, temporary: false));
         }
 
         try
@@ -615,11 +667,34 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         }
         catch (TemplateTrustPolicyException exception)
         {
-            return (
-                null,
-                Failure(DmsProvisioningFailureCode.StartupValidationFailed, TrustPolicyStep, exception)
-            );
+            return (null, PolicyFailure(context, exception, temporary: false));
         }
+    }
+
+    /// <summary>
+    /// A trust-policy defect (§3.6): at startup <c>StartupValidationFailed</c>; in an operation
+    /// <c>TrustPolicyUnavailable</c>, transient only for <paramref name="temporary"/> contention and for inspection
+    /// otherwise. The diagnostic carries the type chain only, never the path or the message.
+    /// </summary>
+    private static DmsProvisioningFailure PolicyFailure(
+        TrustPolicyLoadContext context,
+        Exception exception,
+        bool temporary
+    )
+    {
+        if (context == TrustPolicyLoadContext.Startup)
+        {
+            return Failure(DmsProvisioningFailureCode.StartupValidationFailed, TrustPolicyStep, exception);
+        }
+
+        DmsProvisioningFailureCategory category = temporary
+            ? DmsProvisioningFailureCategory.Transient
+            : DmsProvisioningFailureCategory.OperatorInspectionRequired;
+        return DmsProvisioningFailure.Create(
+            DmsProvisioningFailureCode.TrustPolicyUnavailable,
+            category,
+            DmsProvisioningDiagnostic.From(exception, TrustPolicyStep)
+        );
     }
 
     /// <summary>

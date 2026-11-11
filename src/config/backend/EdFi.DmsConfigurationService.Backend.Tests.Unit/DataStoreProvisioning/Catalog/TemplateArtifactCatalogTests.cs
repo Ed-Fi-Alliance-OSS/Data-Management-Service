@@ -71,6 +71,57 @@ public class TemplateArtifactCatalogTests
         return options;
     }
 
+    /// <summary>Startup validation in its own workspace: the readiness reasons it reports.</summary>
+    private static async Task<IReadOnlyList<DmsReadinessReason>> ValidateInOwnWorkspace(
+        Action<CatalogWorkspace> arrange
+    )
+    {
+        using CatalogWorkspace workspace = new();
+        arrange(workspace);
+        return (await workspace.Catalog().ValidateAsync(CancellationToken.None)).Reasons;
+    }
+
+    /// <summary>F-06: the <c>HResult</c> values pinned on .NET 10 for a policy another handle holds.</summary>
+    private static readonly int[] _pinnedContention =
+    [
+        unchecked((int)0x80070020), // Windows ERROR_SHARING_VIOLATION
+        unchecked((int)0x80070021), // Windows ERROR_LOCK_VIOLATION
+        11, // Linux EWOULDBLOCK from the FileShare emulation
+    ];
+
+    private static readonly (
+        DmsProvisioningFailureCode,
+        DmsProvisioningFailureCategory,
+        string
+    ) _unavailableForInspection = (
+        DmsProvisioningFailureCode.TrustPolicyUnavailable,
+        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+        TemplateArtifactCatalog.TrustPolicyStep
+    );
+
+    private static readonly (
+        DmsProvisioningFailureCode,
+        DmsProvisioningFailureCategory,
+        string
+    ) _unavailableForNow = (
+        DmsProvisioningFailureCode.TrustPolicyUnavailable,
+        DmsProvisioningFailureCategory.Transient,
+        TemplateArtifactCatalog.TrustPolicyStep
+    );
+
+    private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) VerdictOf(
+        DmsProvisioningFailure failure
+    ) => (failure.Code, failure.Category, failure.Diagnostic.Operation);
+
+    /// <summary>A trust-policy reader that throws <paramref name="exception"/>.</summary>
+    private static TemplateArtifactCatalog.BoundedTextReader Throwing(Exception exception) =>
+        (_, _, _) => Task.FromException<(string?, TemplateArtifactCatalog.BoundedTextDefect)>(exception);
+
+    /// <summary>A trust-policy reader that reports <paramref name="defect"/> and no text.</summary>
+    private static TemplateArtifactCatalog.BoundedTextReader Returning(
+        TemplateArtifactCatalog.BoundedTextDefect defect
+    ) => (_, _, _) => Task.FromResult<(string?, TemplateArtifactCatalog.BoundedTextDefect)>((null, defect));
+
     [TestFixture]
     public class Given_a_valid_catalog
     {
@@ -420,36 +471,20 @@ public class TemplateArtifactCatalogTests
                 );
 
         [Test]
-        public void It_reports_a_malformed_policy_as_not_ready_before_staging()
+        public void It_reports_a_malformed_policy_for_inspection_before_staging()
         {
             DmsProvisioningFailure failure = FailureOf(_malformedResolution);
             using AssertionScope scope = new();
-            (failure.Code, failure.Category, failure.Diagnostic.Operation)
-                .Should()
-                .Be(
-                    (
-                        DmsProvisioningFailureCode.StartupValidationFailed,
-                        DmsProvisioningFailureCategory.NotReady,
-                        TemplateArtifactCatalog.TrustPolicyStep
-                    )
-                );
+            VerdictOf(failure).Should().Be(_unavailableForInspection);
             failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(TemplateTrustPolicyException).FullName);
         }
 
         [Test]
-        public void It_reports_a_missing_policy_as_not_ready_before_staging()
+        public void It_reports_a_missing_policy_for_inspection_before_staging()
         {
             DmsProvisioningFailure failure = FailureOf(_missingResolution);
             using AssertionScope scope = new();
-            (failure.Code, failure.Category, failure.Diagnostic.Operation)
-                .Should()
-                .Be(
-                    (
-                        DmsProvisioningFailureCode.StartupValidationFailed,
-                        DmsProvisioningFailureCategory.NotReady,
-                        TemplateArtifactCatalog.TrustPolicyStep
-                    )
-                );
+            VerdictOf(failure).Should().Be(_unavailableForInspection);
             failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(FileNotFoundException).FullName);
         }
 
@@ -1040,37 +1075,47 @@ public class TemplateArtifactCatalogTests
     public class Given_a_trust_policy_larger_than_the_catalog_reads
     {
         private Outcome _outcome = null!;
+        private IReadOnlyList<DmsReadinessReason> _startupReasons = [];
+
+        private static void Oversized(CatalogWorkspace workspace)
+        {
+            workspace.BuildBoth();
+            File.WriteAllBytes(
+                workspace.TrustPolicyPath,
+                new byte[TemplateArtifactCatalog.MaxTrustPolicyBytes + 1]
+            );
+        }
 
         [SetUp]
-        public async Task Setup() =>
-            _outcome = await ResolveInOwnWorkspace(
-                workspace =>
-                {
-                    workspace.BuildBoth();
-                    File.WriteAllBytes(
-                        workspace.TrustPolicyPath,
-                        new byte[TemplateArtifactCatalog.MaxTrustPolicyBytes + 1]
-                    );
-                },
-                WithoutOperationsRoot
-            );
+        public async Task Setup()
+        {
+            _outcome = await ResolveInOwnWorkspace(Oversized, WithoutOperationsRoot);
+            _startupReasons = await ValidateInOwnWorkspace(Oversized);
+        }
 
         [Test]
-        public void It_reports_the_policy_as_not_ready_before_staging()
+        public void It_reports_the_policy_for_inspection_before_staging()
         {
             DmsProvisioningFailure failure = FailureOf(_outcome.Resolution);
             using AssertionScope scope = new();
-            (failure.Code, failure.Category, failure.Diagnostic.Operation)
-                .Should()
-                .Be(
-                    (
-                        DmsProvisioningFailureCode.StartupValidationFailed,
-                        DmsProvisioningFailureCategory.NotReady,
-                        TemplateArtifactCatalog.TrustPolicyStep
-                    )
-                );
+            VerdictOf(failure).Should().Be(_unavailableForInspection);
             failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(TemplateTrustPolicyException).FullName);
         }
+
+        [Test]
+        public void It_still_fails_startup_validation_on_the_policy_probe() =>
+            _startupReasons
+                .Should()
+                .Equal(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        TemplateArtifactCatalog.TrustPolicyProbe,
+                        DmsProvisioningDiagnostic.From(
+                            new TemplateTrustPolicyException("x"),
+                            TemplateArtifactCatalog.TrustPolicyStep
+                        )
+                    )
+                );
     }
 
     [TestFixture]
@@ -1138,6 +1183,7 @@ public class TemplateArtifactCatalogTests
         private Outcome _attestationNonAscii = null!;
         private Outcome _policyInvalid = null!;
         private Outcome _policyNonAscii = null!;
+        private IReadOnlyList<DmsReadinessReason> _policyInvalidAtStartup = [];
 
         /// <summary>The package's attestation document with one extra string member the verifier ignores, holding the raw bytes.</summary>
         private static byte[] AttestationWith(TestTemplatePackage package, byte[] rawValueBytes)
@@ -1194,6 +1240,11 @@ public class TemplateArtifactCatalogTests
                 workspace.Build(workspace.MinimalBuilder());
                 File.WriteAllBytes(workspace.TrustPolicyPath, PolicyWith(workspace, _acuteE));
             });
+            _policyInvalidAtStartup = await ValidateInOwnWorkspace(workspace =>
+            {
+                workspace.BuildBoth();
+                File.WriteAllBytes(workspace.TrustPolicyPath, PolicyWith(workspace, _invalidUtf8));
+            });
         }
 
         [Test]
@@ -1215,21 +1266,24 @@ public class TemplateArtifactCatalogTests
             _attestationNonAscii.Resolution.Should().BeOfType<DmsArtifactResolution.Resolved>();
 
         [Test]
-        public void It_reports_a_policy_with_an_invalid_byte_as_not_ready_before_staging()
+        public void It_reports_a_policy_with_an_invalid_byte_for_inspection_before_staging()
         {
             DmsProvisioningFailure failure = FailureOf(_policyInvalid.Resolution);
             using AssertionScope scope = new();
-            (failure.Code, failure.Category, failure.Diagnostic.Operation)
-                .Should()
-                .Be(
-                    (
-                        DmsProvisioningFailureCode.StartupValidationFailed,
-                        DmsProvisioningFailureCategory.NotReady,
-                        TemplateArtifactCatalog.TrustPolicyStep
-                    )
-                );
+            VerdictOf(failure).Should().Be(_unavailableForInspection);
             failure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(TemplateTrustPolicyException).FullName);
         }
+
+        [Test]
+        public void It_still_fails_startup_validation_for_a_policy_with_an_invalid_byte() =>
+            _policyInvalidAtStartup
+                .Should()
+                .ContainSingle()
+                .Which.Should()
+                .Match<DmsReadinessReason>(reason =>
+                    reason.Code == DmsProvisioningFailureCode.StartupValidationFailed
+                    && reason.Probe == TemplateArtifactCatalog.TrustPolicyProbe
+                );
 
         [Test]
         public void It_accepts_the_same_policy_with_valid_non_ascii_text() =>
@@ -1335,5 +1389,338 @@ public class TemplateArtifactCatalogTests
         [Test]
         public void It_reports_no_engine_version_when_the_policy_cannot_load() =>
             _noPolicyValidation.EngineRequirements.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// F-06 (D-6b): temporary file contention is recognised only by the <c>HResult</c> values pinned on .NET 10 for a
+    /// policy another handle holds; every other I/O failure, including a missing file, is not.
+    /// </summary>
+    [TestFixture]
+    public class Given_io_failures_to_classify
+    {
+        [Test]
+        public void It_recognizes_each_pinned_contention_value() =>
+            _pinnedContention
+                .Select(hresult =>
+                    TemplateArtifactCatalog.IsTemporaryFileContention(new IOException("x", hresult))
+                )
+                .Should()
+                .Equal(true, true, true);
+
+        [Test]
+        public void It_recognizes_no_other_value()
+        {
+            IOException[] others =
+            [
+                new("x", unchecked((int)0x80070005)), // access denied
+                new("x", unchecked((int)0x8007001F)), // general failure
+                new("x", unchecked((int)0x80070070)), // disk full
+                new("x", 5), // Linux EIO
+                new("x", 0),
+                new(),
+                new FileNotFoundException("x"),
+                new DirectoryNotFoundException("x"),
+            ];
+            others
+                .Select(TemplateArtifactCatalog.IsTemporaryFileContention)
+                .Should()
+                .Equal(Enumerable.Repeat(false, others.Length));
+        }
+    }
+
+    /// <summary>
+    /// F-06: a trust-policy defect met by an operation (the public resolve and stage) is
+    /// <c>TrustPolicyUnavailable</c> at <c>TrustPolicy</c>, before staging: transient only for a pinned contention
+    /// value, and for inspection for any other I/O failure, a missing or denied file, an oversized policy, or one
+    /// that is not UTF-8. The diagnostic holds the type chain only, never the path the exception names.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_trust_policy_read_fails_during_an_operation
+    {
+        private CatalogWorkspace _workspace = null!;
+        private string _path = string.Empty;
+        private DmsProvisioningFailure[] _contention = [];
+        private DmsProvisioningFailure _generalFailure = null!;
+        private DmsProvisioningFailure _notFound = null!;
+        private DmsProvisioningFailure _denied = null!;
+        private DmsProvisioningFailure _tooLarge = null!;
+        private DmsProvisioningFailure _malformed = null!;
+        private DmsProvisioningFailure _stagedContention = null!;
+
+        private async Task<DmsProvisioningFailure> ResolveThroughAsync(
+            TemplateArtifactCatalog.BoundedTextReader reader
+        ) =>
+            FailureOf(
+                await _workspace
+                    .CatalogReadingPolicyThrough(reader, WithoutOperationsRoot(_workspace))
+                    .ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None)
+            );
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _workspace = new CatalogWorkspace();
+            _workspace.BuildBoth();
+            _path = _workspace.TrustPolicyPath;
+            List<DmsProvisioningFailure> contention = [];
+            foreach (int hresult in _pinnedContention)
+            {
+                contention.Add(
+                    await ResolveThroughAsync(Throwing(new IOException($"{_path} is in use.", hresult)))
+                );
+            }
+
+            _contention = [.. contention];
+            _generalFailure = await ResolveThroughAsync(
+                Throwing(new IOException($"{_path} failed.", unchecked((int)0x8007001F)))
+            );
+            _notFound = await ResolveThroughAsync(Throwing(new FileNotFoundException("Not found.", _path)));
+            _denied = await ResolveThroughAsync(
+                Throwing(new UnauthorizedAccessException($"Access to {_path} is denied."))
+            );
+            _tooLarge = await ResolveThroughAsync(
+                Returning(TemplateArtifactCatalog.BoundedTextDefect.TooLarge)
+            );
+            _malformed = await ResolveThroughAsync(
+                Returning(TemplateArtifactCatalog.BoundedTextDefect.MalformedUtf8)
+            );
+            TemplateArtifactStaging staged = await _workspace
+                .CatalogReadingPolicyThrough(
+                    Throwing(new IOException($"{_path} is in use.", _pinnedContention[0])),
+                    WithoutOperationsRoot(_workspace)
+                )
+                .StageAsync(DmsDatabaseTemplate.Minimal, DmsOperationId.New(), CancellationToken.None);
+            _stagedContention = staged.Should().BeOfType<TemplateArtifactStaging.Failure>().Subject.Detail;
+        }
+
+        [OneTimeTearDown]
+        public void TearDown() => _workspace.Dispose();
+
+        [Test]
+        public void It_reports_each_pinned_contention_value_as_transient() =>
+            _contention
+                .Select(VerdictOf)
+                .Should()
+                .Equal(Enumerable.Repeat(_unavailableForNow, _pinnedContention.Length));
+
+        [Test]
+        public void It_does_not_assume_any_other_io_failure_is_transient() =>
+            VerdictOf(_generalFailure).Should().Be(_unavailableForInspection);
+
+        [Test]
+        public void It_reports_a_missing_or_denied_policy_for_inspection() =>
+            new[] { _notFound, _denied }
+                .Select(VerdictOf)
+                .Should()
+                .Equal(_unavailableForInspection, _unavailableForInspection);
+
+        [Test]
+        public void It_reports_an_oversized_or_malformed_policy_for_inspection() =>
+            new[] { _tooLarge, _malformed }
+                .Select(VerdictOf)
+                .Should()
+                .Equal(_unavailableForInspection, _unavailableForInspection);
+
+        [Test]
+        public void It_treats_the_public_stage_as_an_operation() =>
+            VerdictOf(_stagedContention).Should().Be(_unavailableForNow);
+
+        [Test]
+        public void It_keeps_only_the_type_chain_and_never_the_path()
+        {
+            using AssertionScope scope = new();
+            _generalFailure.Diagnostic.ExceptionTypeChain.Should().Be(typeof(IOException).FullName);
+            _denied.Diagnostic.ExceptionTypeChain.Should().Be(typeof(UnauthorizedAccessException).FullName);
+            foreach (
+                DmsProvisioningFailure failure in new[] { _generalFailure, _notFound, _denied }.Concat(
+                    _contention
+                )
+            )
+            {
+                failure.Diagnostic.ProviderErrorCode.Should().BeNull();
+                new[] { failure.Diagnostic.ExceptionTypeChain, failure.Diagnostic.Operation, failure.Summary }
+                    .Should()
+                    .NotContain(text => text.Contains(_path, StringComparison.Ordinal));
+            }
+        }
+    }
+
+    /// <summary>
+    /// F-06 on a real file: a policy another handle holds with <c>FileShare.None</c> is transient for an operation
+    /// (Windows sharing violation, Linux <c>EWOULDBLOCK</c>) and still a startup validation failure for readiness.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_trust_policy_file_is_held_exclusively
+    {
+        private DmsProvisioningFailure _operation = null!;
+        private IReadOnlyList<DmsReadinessReason> _startup = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            using CatalogWorkspace workspace = new();
+            workspace.BuildBoth();
+            using FileStream holder = new(
+                workspace.TrustPolicyPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.None
+            );
+            _operation = FailureOf(
+                await workspace
+                    .Catalog(WithoutOperationsRoot(workspace))
+                    .ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None)
+            );
+            _startup = (await workspace.Catalog().ValidateAsync(CancellationToken.None)).Reasons;
+        }
+
+        [Test]
+        public void It_reports_the_held_policy_as_transient_for_an_operation()
+        {
+            using AssertionScope scope = new();
+            VerdictOf(_operation).Should().Be(_unavailableForNow);
+            _operation.Diagnostic.ExceptionTypeChain.Should().Be(typeof(IOException).FullName);
+        }
+
+        [Test]
+        public void It_still_fails_startup_validation_on_the_policy_probe() =>
+            _startup
+                .Should()
+                .Equal(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        TemplateArtifactCatalog.TrustPolicyProbe,
+                        DmsProvisioningDiagnostic.From(
+                            new IOException(),
+                            TemplateArtifactCatalog.TrustPolicyStep
+                        )
+                    )
+                );
+    }
+
+    /// <summary>
+    /// F-06, supplementary on Unix: a real policy file the service may not read (mode <c>000</c>) is for inspection.
+    /// Windows covers the denial mapping through the seam in
+    /// <see cref="Given_the_trust_policy_read_fails_during_an_operation"/>. Root ignores the mode, so this runs as
+    /// any non-root user. .NET reports the denial with the <c>EACCES</c> as an inner <see cref="IOException"/>.
+    /// </summary>
+    [TestFixture]
+    [Platform(Exclude = "Win")]
+    public class Given_the_trust_policy_file_may_not_be_read
+    {
+        private DmsProvisioningFailure? _operation;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            using CatalogWorkspace workspace = new();
+            workspace.BuildBoth();
+            File.SetUnixFileMode(workspace.TrustPolicyPath, UnixFileMode.None);
+            try
+            {
+                _operation = FailureOf(
+                    await workspace
+                        .Catalog(WithoutOperationsRoot(workspace))
+                        .ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None)
+                );
+            }
+            finally
+            {
+                File.SetUnixFileMode(
+                    workspace.TrustPolicyPath,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite
+                );
+            }
+        }
+
+        [Test]
+        public void It_reports_the_denied_policy_for_inspection()
+        {
+            using AssertionScope scope = new();
+            VerdictOf(_operation!).Should().Be(_unavailableForInspection);
+            _operation!
+                .Diagnostic.ExceptionTypeChain.Should()
+                .Be($"{typeof(UnauthorizedAccessException).FullName}/{typeof(IOException).FullName}");
+        }
+    }
+
+    /// <summary>
+    /// F-06, nested startup context: startup validation loads the policy itself (call 1, passed through to the real
+    /// reader) and again inside each template's resolution (calls 2 and 3). A defect on call 2, the first template's
+    /// load, is that template's catalog probe failing as <c>StartupValidationFailed</c>, never
+    /// <c>TrustPolicyUnavailable</c>, for an unrecognised I/O failure, a pinned contention value, and malformed UTF-8
+    /// alike. The other template still resolves.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_policy_fails_inside_a_templates_startup_resolution
+    {
+        private readonly Dictionary<
+            string,
+            (IReadOnlyList<DmsReadinessReason> Reasons, int Calls)
+        > _variants = [];
+
+        private static async Task<(IReadOnlyList<DmsReadinessReason>, int)> ValidateFailingCallTwoAsync(
+            TemplateArtifactCatalog.BoundedTextReader onCallTwo
+        )
+        {
+            using CatalogWorkspace workspace = new();
+            workspace.BuildBoth();
+            TemplateArtifactCatalog.BoundedTextReader real = workspace.Catalog().ReadTrustPolicyText;
+            int calls = 0;
+            TemplateArtifactCatalog catalog = workspace.CatalogReadingPolicyThrough(
+                (path, maxBytes, cancellationToken) =>
+                    ++calls == 2
+                        ? onCallTwo(path, maxBytes, cancellationToken)
+                        : real(path, maxBytes, cancellationToken)
+            );
+            IReadOnlyList<DmsReadinessReason> reasons = (
+                await catalog.ValidateAsync(CancellationToken.None)
+            ).Reasons;
+            return (reasons, calls);
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _variants["unrecognised"] = await ValidateFailingCallTwoAsync(
+                Throwing(new IOException("x", unchecked((int)0x8007001F)))
+            );
+            _variants["contention"] = await ValidateFailingCallTwoAsync(
+                Throwing(new IOException("x", _pinnedContention[0]))
+            );
+            _variants["malformed"] = await ValidateFailingCallTwoAsync(
+                Returning(TemplateArtifactCatalog.BoundedTextDefect.MalformedUtf8)
+            );
+        }
+
+        [Test]
+        public void It_loads_the_policy_once_for_startup_and_once_per_template() =>
+            _variants.Values.Select(variant => variant.Calls).Should().Equal(3, 3, 3);
+
+        [Test]
+        public void It_fails_the_first_templates_catalog_probe_as_a_startup_failure() =>
+            _variants
+                .Values.Select(variant =>
+                    variant
+                        .Reasons.Select(reason => (reason.Code, reason.Probe, reason.Diagnostic?.Operation))
+                        .ToArray()
+                )
+                .Should()
+                .AllSatisfy(reasons =>
+                    reasons
+                        .Should()
+                        .Equal(
+                            (
+                                DmsProvisioningFailureCode.StartupValidationFailed,
+                                TemplateArtifactCatalog.CatalogProbeFor(DmsDatabaseTemplate.All[0]),
+                                TemplateArtifactCatalog.TrustPolicyStep
+                            )
+                        )
+                );
     }
 }

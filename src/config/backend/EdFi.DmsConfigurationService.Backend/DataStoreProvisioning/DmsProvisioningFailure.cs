@@ -272,6 +272,10 @@ public sealed record DmsProvisioningFailure
                 [Transient, Inspection],
                 "The target database could not be dropped."
             ),
+            [DmsProvisioningFailureCode.TrustPolicyUnavailable] = new(
+                [Inspection, Transient],
+                "The trust policy could not be read or is not valid; packages cannot be authenticated."
+            ),
         };
 
         return entries.ToFrozenDictionary();

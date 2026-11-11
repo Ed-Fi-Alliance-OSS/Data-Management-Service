@@ -75,4 +75,8 @@ public enum DmsProvisioningFailureCode
 
     // Transient (lock / connection) or OperatorInspectionRequired
     DropFailed,
+
+    // OperatorInspectionRequired; Transient for temporary file contention (F-06). Operation-time only: at
+    // startup a policy defect is StartupValidationFailed.
+    TrustPolicyUnavailable,
 }

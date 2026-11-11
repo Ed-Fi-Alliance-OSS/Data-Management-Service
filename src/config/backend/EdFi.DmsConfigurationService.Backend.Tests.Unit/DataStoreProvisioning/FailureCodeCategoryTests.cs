@@ -63,6 +63,7 @@ public class FailureCodeCategoryTests
         [OutcomeUnknown] = [OperatorInspectionRequired],
         [CompensationFailed] = [OperatorInspectionRequired],
         [DropFailed] = [Transient, OperatorInspectionRequired],
+        [TrustPolicyUnavailable] = [OperatorInspectionRequired, Transient],
     };
 
     private static readonly DmsProvisioningDiagnostic _diagnostic = DmsProvisioningDiagnostic.ForOperation(
@@ -128,11 +129,17 @@ public class FailureCodeCategoryTests
         }
 
         [Test]
-        public void It_gives_exactly_four_codes_a_context_dependent_category() =>
+        public void It_gives_exactly_five_codes_a_context_dependent_category() =>
             _codes
                 .Where(code => DmsProvisioningFailure.CategoriesOf(code).Count > 1)
                 .Should()
-                .BeEquivalentTo([ExclusiveAccessNotEstablished, LockLost, RestoreFailed, DropFailed]);
+                .BeEquivalentTo([
+                    ExclusiveAccessNotEstablished,
+                    LockLost,
+                    RestoreFailed,
+                    DropFailed,
+                    TrustPolicyUnavailable,
+                ]);
     }
 
     [TestFixture]
