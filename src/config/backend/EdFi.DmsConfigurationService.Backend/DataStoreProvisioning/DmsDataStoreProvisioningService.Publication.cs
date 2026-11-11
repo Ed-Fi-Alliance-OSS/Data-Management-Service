@@ -193,6 +193,11 @@ public sealed partial class DmsDataStoreProvisioningService
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
                 throw StepFailed(RenameFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown:
+                // An engine may report the caller's cancellation of a dispatched rename as an unknown outcome (SQL
+                // Server does). The cancellation wins: it leaves the rename in doubt in the ledger, so the create
+                // settles it and runs its cleanup after the lock is released, then rethrows (6.10, AC 1).
+                scope.CallerToken.ThrowIfCancellationRequested();
+
                 // The rename's result was lost while the holder still holds the lock (loss would have ended the
                 // call above): the lock is given up, and the rename is resolved after it is released, once the holder
                 // is proven gone (6.3 step 8, 6.9a). Until then the outcome is unknown, which settlement reclassifies

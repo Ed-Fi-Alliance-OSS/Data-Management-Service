@@ -722,6 +722,83 @@ public class DmsDataStoreProvisioningServicePublicationTests
             CountOf(_harness, SpyDmsTargetEngine.DropStaging).Should().Be(1);
     }
 
+    /// <summary>
+    /// F-03 (review of Step 3.1): an engine may report the caller's cancellation of a dispatched rename as an unknown
+    /// outcome, as SQL Server does. The cancellation wins over any reclassification: the rename in doubt is settled
+    /// after the lock is released (the holder proven gone, both names read), the staging database is dropped when the
+    /// rename is proven not to have happened and kept when it did, and only then does the caller receive
+    /// <see cref="OperationCanceledException"/>.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_while_the_rename_is_dispatched
+    {
+        private Harness _notRenamed = null!;
+        private Harness _renamed = null!;
+        private Exception? _notRenamedOutcome;
+        private Exception? _renamedOutcome;
+
+        private static async Task<(Harness Harness, Exception? Outcome)> CancelledInDoubtAsync(
+            DmsLiveTargetState target,
+            DmsLiveTargetState staging
+        )
+        {
+            Harness harness = Scripted(
+                targetInspection: inspection => inspection <= 2 ? new DmsLiveTargetState.Absent() : target,
+                stagingInspection: inspection => inspection == 1 ? new DmsLiveTargetState.Absent() : staging
+            );
+            using CancellationTokenSource caller = new();
+            harness.Engine.OnRenameIntoTarget = async (_, _, _, _) =>
+            {
+                await caller.CancelAsync();
+                return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(Session);
+            };
+            Exception? outcome = await Record.ExceptionAsync(() => CreateAsync(harness, caller.Token));
+            return (harness, outcome);
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (_notRenamed, _notRenamedOutcome) = await CancelledInDoubtAsync(
+                new DmsLiveTargetState.Absent(),
+                PresentUnder(_stagingInstance)
+            );
+            (_renamed, _renamedOutcome) = await CancelledInDoubtAsync(
+                PresentUnder(_stagingInstance),
+                new DmsLiveTargetState.Absent()
+            );
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation_instead_of_a_reclassified_failure()
+        {
+            _notRenamedOutcome.Should().BeAssignableTo<OperationCanceledException>();
+            _renamedOutcome.Should().BeAssignableTo<OperationCanceledException>();
+        }
+
+        [Test]
+        public void It_settles_the_rename_after_releasing_the_lock_before_the_caller_sees_the_cancellation()
+        {
+            foreach (Harness harness in new[] { _notRenamed, _renamed })
+            {
+                harness.OnlyHolder.ReleaseCount.Should().Be(1);
+                AfterTheRename(harness)
+                    .Select(call => call.Member)
+                    .Should()
+                    .StartWith([SpyDmsTargetEngine.TerminateSession, SpyDmsTargetEngine.Inspect]);
+                harness.Engine.TerminatedSessions.Should().Contain(Session);
+            }
+        }
+
+        [Test]
+        public void It_drops_the_staging_database_the_rename_proved_untouched() =>
+            CountOf(_notRenamed, SpyDmsTargetEngine.DropStaging).Should().Be(1);
+
+        [Test]
+        public void It_keeps_the_staging_name_alone_when_the_rename_happened() =>
+            CountOf(_renamed, SpyDmsTargetEngine.DropStaging).Should().Be(0);
+    }
+
     [TestFixture]
     public class Given_the_holder_is_lost_before_the_rename_is_dispatched
     {
