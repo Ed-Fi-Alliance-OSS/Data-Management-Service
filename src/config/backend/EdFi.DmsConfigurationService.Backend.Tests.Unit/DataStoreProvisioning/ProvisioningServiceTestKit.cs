@@ -103,7 +103,7 @@ internal static class ProvisioningTestValues
 /// </summary>
 internal static class SharedTemplateCatalog
 {
-    private static readonly Lazy<SharedCatalogBuild> _built = new(Build);
+    private static readonly Lazy<SharedCatalogBuild> _built = new(BuildIsolated);
 
     public static CatalogWorkspace Workspace => _built.Value.Workspace;
 
@@ -121,7 +121,11 @@ internal static class SharedTemplateCatalog
         }
     }
 
-    private static SharedCatalogBuild Build()
+    /// <summary>
+    /// A new catalog of the same kind in a workspace of its own, for a fixture that changes the trust policy file;
+    /// the caller disposes its workspace.
+    /// </summary>
+    public static SharedCatalogBuild BuildIsolated()
     {
         CatalogWorkspace workspace = new();
         RestoreManifest described = TargetFactsSample.ManifestFor(TargetFactsSample.PostgresqlFacts());
@@ -260,7 +264,9 @@ internal sealed class Harness
         Action<DmsDataStoreProvisioningOptions>? configure = null,
         IDmsProvisioningTestHooks? hooks = null,
         bool systemClock = false,
-        IDmsAdminConnectionSource? adminConnection = null
+        IDmsAdminConnectionSource? adminConnection = null,
+        ITemplateArtifactCatalog? catalog = null,
+        IDmsDataStoreProvisionerReadiness? readinessSource = null
     )
     {
         TimeProvider clock = systemClock ? TimeProvider.System : Time;
@@ -285,9 +291,9 @@ internal sealed class Harness
         };
         configure?.Invoke(options);
         Service = new DmsDataStoreProvisioningService(
-            new FakeReadiness(readiness ?? Ready()),
+            readinessSource ?? new FakeReadiness(readiness ?? Ready()),
             Engine,
-            Catalog,
+            catalog ?? Catalog,
             Options.Create(options),
             protectedNames ?? ProvisioningTestValues.ProtectedNames,
             adminConnection ?? AdminConnection,

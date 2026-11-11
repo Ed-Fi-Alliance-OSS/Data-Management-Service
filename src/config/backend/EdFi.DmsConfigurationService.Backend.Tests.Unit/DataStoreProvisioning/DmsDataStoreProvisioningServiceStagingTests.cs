@@ -74,10 +74,18 @@ public class DmsDataStoreProvisioningServiceStagingTests
     private static Harness Scripted(
         RecordingHooks? hooks = null,
         Action<DmsDataStoreProvisioningOptions>? configure = null,
-        bool systemClock = false
+        bool systemClock = false,
+        ITemplateArtifactCatalog? catalog = null,
+        IDmsDataStoreProvisionerReadiness? readiness = null
     )
     {
-        Harness harness = new(hooks: hooks, configure: configure, systemClock: systemClock);
+        Harness harness = new(
+            hooks: hooks,
+            configure: configure,
+            systemClock: systemClock,
+            catalog: catalog,
+            readinessSource: readiness
+        );
         SpyDmsTargetEngine engine = harness.Engine;
         engine.OnInspectByName = (_, _) =>
             Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
@@ -2356,5 +2364,194 @@ public class DmsDataStoreProvisioningServiceStagingTests
             (CountOf(_harness, SpyDmsTargetEngine.DropStaging), Members(_harness)[^1])
                 .Should()
                 .Be((1, SpyDmsTargetEngine.DropStaging));
+    }
+
+    /// <summary>
+    /// F-06 recovery without a restart, through one service instance over a real catalog and the real readiness
+    /// singleton recorded <c>Ready</c>: while the trust policy cannot be used, resolve and create fail as
+    /// <c>TrustPolicyUnavailable</c> at <c>TrustPolicy</c> with no engine call and readiness untouched; once the
+    /// file is usable again, the same calls succeed with the pin the catalog resolved before, because every
+    /// operation re-reads the policy.
+    /// </summary>
+    private sealed class PolicyRecovery : IDisposable
+    {
+        private readonly SharedCatalogBuild _build = SharedTemplateCatalog.BuildIsolated();
+
+        public PolicyRecovery()
+        {
+            Readiness.Record(Ready);
+            Harness = Scripted(catalog: _build.Catalog, readiness: Readiness);
+            Request = CreateRequest(pin: _build.Pin);
+        }
+
+        public DmsDataStoreProvisionerReadiness Readiness { get; } = new();
+
+        public DmsProvisionerReadiness Ready { get; } =
+            new DmsProvisionerReadiness.Ready(
+                "postgresql",
+                new DateTimeOffset(2026, 11, 10, 9, 0, 0, TimeSpan.Zero)
+            );
+
+        public Harness Harness { get; }
+
+        public DmsTrustedArtifactPin Pin => _build.Pin;
+
+        public string PolicyPath => _build.Workspace.TrustPolicyPath;
+
+        /// <summary>One create request, presented again unchanged after recovery.</summary>
+        public DmsDataStoreCreateRequest Request { get; }
+
+        public async Task<(DmsArtifactResolution Resolved, DmsDataStoreCreateResult Created)> BothAsync() =>
+            (
+                await Harness.Service.ResolveArtifactAsync(
+                    DmsDatabaseTemplate.Minimal,
+                    CancellationToken.None
+                ),
+                await Harness.Service.CreateAsync(Request, CancellationToken.None)
+            );
+
+        public void Dispose() => _build.Workspace.Dispose();
+    }
+
+    private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) Verdict(
+        DmsProvisioningFailure failure
+    ) => (failure.Code, failure.Category, failure.Diagnostic.Operation);
+
+    private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) PolicyVerdict(
+        DmsProvisioningFailureCategory category
+    ) =>
+        (
+            DmsProvisioningFailureCode.TrustPolicyUnavailable,
+            category,
+            TemplateArtifactCatalog.TrustPolicyStep
+        );
+
+    [TestFixture]
+    public class Given_the_trust_policy_is_held_and_then_released
+    {
+        private PolicyRecovery _recovery = null!;
+        private DmsArtifactResolution _resolvedWhileHeld = null!;
+        private DmsDataStoreCreateResult _createdWhileHeld = null!;
+        private int _engineCallsWhileHeld = -1;
+        private DmsProvisionerReadiness _readinessWhileHeld = null!;
+        private DmsArtifactResolution _resolvedAfter = null!;
+        private DmsDataStoreCreateResult _createdAfter = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _recovery = new PolicyRecovery();
+            using (new FileStream(_recovery.PolicyPath, FileMode.Open, FileAccess.Read, FileShare.None))
+            {
+                (_resolvedWhileHeld, _createdWhileHeld) = await _recovery.BothAsync();
+                _engineCallsWhileHeld = _recovery.Harness.Engine.Calls.Count;
+                _readinessWhileHeld = _recovery.Readiness.Current;
+            }
+
+            (_resolvedAfter, _createdAfter) = await _recovery.BothAsync();
+        }
+
+        [TearDown]
+        public void TearDown() => _recovery.Dispose();
+
+        [Test]
+        public void It_reports_both_calls_as_transient_while_the_policy_is_held() =>
+            new[]
+            {
+                Verdict(_resolvedWhileHeld.Should().BeOfType<DmsArtifactResolution.Failure>().Subject.Detail),
+                Verdict(FailureOf(_createdWhileHeld)),
+            }
+                .Should()
+                .Equal(
+                    PolicyVerdict(DmsProvisioningFailureCategory.Transient),
+                    PolicyVerdict(DmsProvisioningFailureCategory.Transient)
+                );
+
+        [Test]
+        public void It_makes_no_engine_call_while_the_policy_is_held() =>
+            _engineCallsWhileHeld.Should().Be(0);
+
+        [Test]
+        public void It_leaves_the_recorded_readiness_in_place() =>
+            new[] { _readinessWhileHeld, _recovery.Readiness.Current }
+                .Should()
+                .AllSatisfy(current => current.Should().BeSameAs(_recovery.Ready));
+
+        [Test]
+        public void It_resolves_the_same_pin_once_the_policy_is_released() =>
+            _resolvedAfter
+                .Should()
+                .BeOfType<DmsArtifactResolution.Resolved>()
+                .Which.Pin.Should()
+                .Be(_recovery.Pin);
+
+        [Test]
+        public void It_creates_through_the_same_service_once_the_policy_is_released() =>
+            _createdAfter
+                .Should()
+                .Be(new DmsDataStoreCreateResult.Created(_recovery.Pin, DmsCleanupReport.Clean));
+    }
+
+    [TestFixture]
+    public class Given_the_trust_policy_is_malformed_and_then_repaired
+    {
+        private PolicyRecovery _recovery = null!;
+        private DmsArtifactResolution _resolvedWhileMalformed = null!;
+        private DmsDataStoreCreateResult _createdWhileMalformed = null!;
+        private int _engineCallsWhileMalformed = -1;
+        private DmsArtifactResolution _resolvedAfter = null!;
+        private DmsDataStoreCreateResult _createdAfter = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _recovery = new PolicyRecovery();
+            byte[] policy = await File.ReadAllBytesAsync(_recovery.PolicyPath);
+            await File.WriteAllTextAsync(_recovery.PolicyPath, "{");
+            (_resolvedWhileMalformed, _createdWhileMalformed) = await _recovery.BothAsync();
+            _engineCallsWhileMalformed = _recovery.Harness.Engine.Calls.Count;
+
+            await File.WriteAllBytesAsync(_recovery.PolicyPath, policy);
+            (_resolvedAfter, _createdAfter) = await _recovery.BothAsync();
+        }
+
+        [TearDown]
+        public void TearDown() => _recovery.Dispose();
+
+        [Test]
+        public void It_reports_both_calls_for_inspection_while_the_policy_is_malformed() =>
+            new[]
+            {
+                Verdict(
+                    _resolvedWhileMalformed.Should().BeOfType<DmsArtifactResolution.Failure>().Subject.Detail
+                ),
+                Verdict(FailureOf(_createdWhileMalformed)),
+            }
+                .Should()
+                .Equal(
+                    PolicyVerdict(DmsProvisioningFailureCategory.OperatorInspectionRequired),
+                    PolicyVerdict(DmsProvisioningFailureCategory.OperatorInspectionRequired)
+                );
+
+        [Test]
+        public void It_makes_no_engine_call_while_the_policy_is_malformed() =>
+            _engineCallsWhileMalformed.Should().Be(0);
+
+        [Test]
+        public void It_leaves_the_recorded_readiness_in_place() =>
+            _recovery.Readiness.Current.Should().BeSameAs(_recovery.Ready);
+
+        [Test]
+        public void It_succeeds_through_the_same_service_once_the_policy_is_repaired()
+        {
+            _resolvedAfter
+                .Should()
+                .BeOfType<DmsArtifactResolution.Resolved>()
+                .Which.Pin.Should()
+                .Be(_recovery.Pin);
+            _createdAfter
+                .Should()
+                .Be(new DmsDataStoreCreateResult.Created(_recovery.Pin, DmsCleanupReport.Clean));
+        }
     }
 }

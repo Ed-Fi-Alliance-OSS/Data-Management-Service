@@ -396,7 +396,10 @@ lifecycle maps the value itself.
   (`InvalidRequest`, `NotReady`, `Permanent`, `OperatorInspectionRequired`) is terminal: fail the job
   permanently and record the code. The codes and their categories are listed in
   [Failure codes](./OPERATIONS.md#failure-codes). A failure carries no connection string, secret, or
-  server message, so its code and diagnostic may be recorded as they are.
+  server message, so its code and diagnostic may be recorded as they are. `TrustPolicyUnavailable` follows
+  the same rule: `Transient` while the trust policy file is temporarily held, `OperatorInspectionRequired`
+  otherwise. `NotReady` comes only from the startup gate; a trust-policy problem an operation meets never
+  produces it and never changes readiness.
 - **Cancellation.** Pass the handler's cancellation token to every call. When it is cancelled, the call
   settles the outcome and makes its bounded cleanup attempts, then throws `OperationCanceledException`. If
   the identity marker is found committed, the call reports success instead. A cancelled call returns no

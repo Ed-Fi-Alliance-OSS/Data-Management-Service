@@ -1594,6 +1594,15 @@ Until a CI-signed release publishes its producer key, sign the packages you depl
 
 Any change to a package's bytes after signing makes it `ArtifactUntrusted`.
 
+Every operation reads the trust policy again; nothing is cached from startup, so a corrected or replaced
+policy takes effect without a restart. Replace the file atomically: write the new policy to a file in the
+same directory, then rename it over the file `TrustPolicyPath` names. An operation that meets a policy it
+cannot use fails with `TrustPolicyUnavailable` before anything on the target server is touched, and
+readiness does not change. The failure is `Transient` while another process holds the file open
+exclusively, and `OperatorInspectionRequired` for a policy that is missing, cannot be read, is too large, or
+is not valid. At startup the same defects make provisioning `NotReady` (`StartupValidationFailed`, probe
+`TrustPolicy`) until the service restarts.
+
 ### PostgreSQL
 
 | Topology | Supported |
@@ -1690,6 +1699,7 @@ server message, or `psql` output. The category tells the caller whether to retry
 | `SecretResolutionFailed`, `ServerUnavailable`, `LockTimeout`, `LockUnavailable`, `TimedOut`, `StagingFailed`, `StagingNameCollision`, `Unknown` | `Transient` |
 | `RestoreFailed` | `Permanent`; `Transient` when the restore is known to have rolled back for a reason that can clear on its own: a lost connection, a PostgreSQL serialization failure, deadlock, unavailable lock, or temporary resource shortage, or a SQL Server deadlock victim (error 1205) or temporary memory shortage (error 701) |
 | `ExclusiveAccessNotEstablished`, `LockLost`, `DropFailed` | `Transient` before anything on the target changed, or when the operation proved afterwards that its uncertain rename or fence left nothing in place (the rename did not happen and nothing holds the target name; the target is ours and accepts connections); `OperatorInspectionRequired` otherwise |
+| `TrustPolicyUnavailable` | `OperatorInspectionRequired`; `Transient` while another process holds the trust policy file open exclusively. Only an operation reports it; at startup a policy that cannot be used is `StartupValidationFailed`. See [Template package trust](#template-package-trust) |
 | `ArtifactMissing`, `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
 | `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
 
