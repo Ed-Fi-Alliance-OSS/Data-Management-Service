@@ -61,14 +61,14 @@ internal static class MssqlEnvironment
     /// <summary>
     /// D-22 identity: without <c>VIEW SERVER STATE</c> (<c>VIEW SERVER PERFORMANCE STATE</c> from SQL Server 2022)
     /// <c>sys.dm_exec_sessions</c> shows only the caller's own session, so no session can be identified or proven
-    /// gone (spec row 5am).
+    /// gone.
     /// </summary>
     public const string ViewServerStatePrivilegeProbe = "ViewServerStatePrivilege";
 
     /// <summary>
     /// The instance identity's primary file comes from <c>sys.master_files</c>, which a login without
     /// <c>CREATE DATABASE</c>, <c>ALTER ANY DATABASE</c>, or <c>VIEW ANY DEFINITION</c> cannot see; an opened session
-    /// with no file evidence is refused as a changed instance (spec row 5ah), so readiness requires it. Observed,
+    /// with no file evidence is refused as a changed instance, so readiness requires it. Observed,
     /// not inferred from the permissions above.
     /// </summary>
     public const string FileCatalogVisibilityProbe = "FileCatalogVisibility";

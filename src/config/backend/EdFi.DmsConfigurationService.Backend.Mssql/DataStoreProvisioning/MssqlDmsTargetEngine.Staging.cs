@@ -453,10 +453,10 @@ public sealed partial class MssqlDmsTargetEngine
     /// <summary>
     /// Runs <paramref name="statement"/> on the work session under <c>RestoreTimeout</c>. With the token handed to
     /// the driver, a cancellation after the <c>RESTORE</c> had streamed its progress messages was observed not to end
-    /// the batch, nor to let a kill registered on the same token run, until the batch ended on its own (row 5ao). So
+    /// the batch, nor to let a kill registered on the same token run, until the batch ended on its own. So
     /// the token is not handed to the driver: when it fires (the caller or the bound) the work session is killed from
     /// a fresh maintenance session (D-7b), and the statement is awaited only within one budget,
-    /// <c>SessionTerminationTimeout</c> plus the command timeout (row 5ap). A statement that ended is completed,
+    /// <c>SessionTerminationTimeout</c> plus the command timeout. A statement that ended is completed,
     /// rejected in its own response, or ended in doubt, named after the caller's cancellation, the bound, or anything
     /// else; one whose end is not proven within the budget is abandoned to a background close.
     /// </summary>
@@ -558,7 +558,7 @@ public sealed partial class MssqlDmsTargetEngine
     /// <summary>
     /// Leaves a restore whose end is not proven: logged by operation id only, then the work connection is closed and
     /// the statement and command are released in the background, so neither a close that waits for the driver nor the
-    /// statement itself is awaited by the operation (row 5ap).
+    /// statement itself is awaited by the operation (D-7b).
     /// </summary>
     private void AbandonRestore(
         SqlConnection work,

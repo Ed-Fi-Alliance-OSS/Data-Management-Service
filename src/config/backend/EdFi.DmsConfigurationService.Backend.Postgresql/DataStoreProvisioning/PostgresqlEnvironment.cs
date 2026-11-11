@@ -83,7 +83,7 @@ internal static class PostgresqlEnvironment
 
     /// <summary>
     /// D-22 identity: <c>pg_read_all_stats</c> or superuser, without which <c>backend_start</c> of another
-    /// role's session is hidden and no session can be proven terminated (spec row 5t).
+    /// role's session is hidden and no session can be proven terminated.
     /// </summary>
     public const string ReadAllStatsPrivilegeProbe = "ReadAllStatsPrivilege";
 

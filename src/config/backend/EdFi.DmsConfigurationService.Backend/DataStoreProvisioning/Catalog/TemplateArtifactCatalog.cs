@@ -72,7 +72,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
     /// <summary>
     /// Strict UTF-8: an invalid byte sequence is a decoding failure, never a replacement character, so text that
-    /// is not well-formed is refused before any of it is parsed (the row 5f rule, extended from escapes to bytes).
+    /// is not well-formed is refused before any of it is parsed, as an unpaired surrogate escape is.
     /// </summary>
     private static readonly UTF8Encoding _strictUtf8 = new(
         encoderShouldEmitUTF8Identifier: false,
@@ -508,7 +508,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         return new TemplateCatalogValidation(reasons, requirements);
     }
 
-    /// <summary>The failure code and fixed operation a stager or extraction refusal maps to (spec row 5h).</summary>
+    /// <summary>The failure code and fixed operation a stager or extraction refusal maps to.</summary>
     internal static DmsProvisioningFailure FailureFor(TemplatePackageException exception)
     {
         ArgumentNullException.ThrowIfNull(exception);

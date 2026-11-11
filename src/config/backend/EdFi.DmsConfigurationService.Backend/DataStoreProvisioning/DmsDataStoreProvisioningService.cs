@@ -22,9 +22,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <c>LockLost</c>, and it is enforced at every read boundary, not only through the token: a read is not
 /// dispatched once loss is declared, and a read that completes normally, or throws anything, while loss
 /// is declared still ends the operation there. Caller cancellation propagates after the lock is
-/// released; the lock is released on every path. This build delivers the shell, a complete create path,
-/// and the owned delete: the artifact is staged and compared with the pin before the lock, the staging
-/// database is created and claimed on the holder session, the artifact is restored into it, the result is
+/// released; the lock is released on every path. A create stages the artifact and compares it with the pin
+/// before the lock; the staging database is created and claimed on the holder session, the artifact is restored
+/// into it, the result is
 /// validated in full on an instance-bound session, renamed into the target on the holder session, re-checked,
 /// and marked, with compensation for a marker proven uncommitted; the staging database is dropped on every
 /// exit that does not publish it, bounded (D-19), with what remains reported as residue. A target found
