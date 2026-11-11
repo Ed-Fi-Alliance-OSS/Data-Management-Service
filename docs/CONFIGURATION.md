@@ -423,7 +423,7 @@ container the Configuration Service runs in.
 | `CleanupAttempts` | Attempts to remove what a failed operation created (staging database, files). | `3` | 1 – 10 |
 | `Postgresql:PsqlPath` | The `psql` executable used to replay PostgreSQL templates. CMS host. | `/usr/bin/psql` | A file path |
 | `Postgresql:MinimumPsqlMajorVersion` | The lowest accepted `psql` major version. It can raise the supported floor but not lower it. | `18` | 18 or more |
-| `Mssql:StagingPath` | The directory the service copies a SQL Server backup into for `RESTORE`. Owned by the Configuration Service user, group shared with the SQL Server service identity, mode `2750`. Required for `mssql`. CMS host. | none | A directory path |
+| `Mssql:StagingPath` | The directory the service copies a SQL Server backup into for `RESTORE`. Owned by the Configuration Service user, group shared with the SQL Server service identity, mode `2750`, reached without a symbolic link through directories owned by `root` or the Configuration Service user that only their owner can write, or that carry the sticky bit (see [SQL Server](./OPERATIONS.md#sql-server)). Required for `mssql`. CMS host. | none | A directory path |
 | `Mssql:StagingServerPath` | The same directory as the SQL Server host sees it, in that host's path convention (`/var/opt/...` or `D:\...`). Required for `mssql`. | none | An absolute path |
 | `Mssql:StagingFileMode` | The mode of each staged backup on Unix. Group or other write is refused. Ignored on Windows, where the file takes the access control of the staging directory. | `0640` | Three octal permission digits with an optional leading `0`, such as `640` or `0640`; setuid, setgid, and sticky bits are refused |
 

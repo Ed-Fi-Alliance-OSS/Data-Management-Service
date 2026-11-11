@@ -5,7 +5,9 @@
 
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -178,6 +180,100 @@ public class MssqlEnvironmentValidationTests
                         )
                     )
                 );
+    }
+
+    /// <summary>
+    /// V4-01 at startup: a correctly owned <c>0750</c> staging directory under a parent its group may write without the
+    /// sticky bit, or a staging path that is a symbolic link to such a directory, is refused under the
+    /// <c>StagingDirectory</c> probe with the reason, once and only after the directory's own rules pass; under a sticky
+    /// shared parent it is accepted. The checks read the file system only, so the unreachable server stays the only
+    /// other reason.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_private_staging_directory_on_a_path_another_identity_could_replace
+    {
+        private string _root = string.Empty;
+        private IReadOnlyList<DmsReadinessReason> _underGroupWritable = [];
+        private IReadOnlyList<DmsReadinessReason> _throughLink = [];
+        private IReadOnlyList<DmsReadinessReason> _underSticky = [];
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.Ignore("The staging directory ancestry is read on Unix only.");
+                return;
+            }
+
+            _root = PrivateTestDirectory.Create(NewDirectoryPath());
+            string groupWritable = Leaf("group-ancestor", Private0750 | UnixFileMode.GroupWrite);
+            string sticky = Leaf("sticky", Private0750 | UnixFileMode.GroupWrite | UnixFileMode.StickyBit);
+            string target = Leaf("private", Private0750);
+            string link = Path.Combine(_root, "link");
+            Directory.CreateSymbolicLink(link, target);
+
+            _underGroupWritable = ReasonsOf(
+                await EngineWithStagingAt(groupWritable).ValidateEnvironmentAsync(default)
+            );
+            _throughLink = ReasonsOf(await EngineWithStagingAt(link).ValidateEnvironmentAsync(default));
+            _underSticky = ReasonsOf(await EngineWithStagingAt(sticky).ValidateEnvironmentAsync(default));
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            if (_root.Length > 0)
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+        }
+
+        [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+        private string Leaf(string parent, UnixFileMode parentMode)
+        {
+            string staging = PrivateTestDirectory.Create(Path.Combine(_root, parent, "staging"));
+            File.SetUnixFileMode(staging, Private0750);
+            File.SetUnixFileMode(Path.Combine(_root, parent), parentMode);
+            return staging;
+        }
+
+        private static (DmsProvisioningFailureCode, string)[] StagingReasons(
+            IReadOnlyList<DmsReadinessReason> reasons
+        ) =>
+            [
+                .. reasons
+                    .Where(reason => reason.Probe == MssqlEnvironment.StagingDirectoryProbe)
+                    .Select(reason => (reason.Code, reason.Diagnostic!.Operation)),
+            ];
+
+        [Test]
+        public void It_refuses_a_staging_directory_under_a_group_writable_parent() =>
+            StagingReasons(_underGroupWritable)
+                .Should()
+                .Equal(
+                    (
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        MssqlEnvironment.StagingDirectoryUnsafeAncestryPrefix
+                            + nameof(UnsafeOperationRootReason.ReplaceableEntries)
+                    )
+                );
+
+        [Test]
+        public void It_refuses_a_staging_path_that_is_a_symbolic_link() =>
+            StagingReasons(_throughLink)
+                .Should()
+                .Equal(
+                    (
+                        DmsProvisioningFailureCode.StartupValidationFailed,
+                        MssqlEnvironment.StagingDirectoryUnsafeAncestryPrefix
+                            + nameof(UnsafeOperationRootReason.SymbolicLink)
+                    )
+                );
+
+        [Test]
+        public void It_accepts_a_staging_directory_under_a_sticky_shared_parent() =>
+            _underSticky.Select(reason => reason.Probe).Should().Equal(MssqlEnvironment.TargetServerProbe);
     }
 
     /// <summary>

@@ -96,6 +96,12 @@ internal static class MssqlEnvironment
     public const string StagingDirectoryModeOperation = StagingDirectoryProbe + ".ReadMode";
     public const string StagingDirectoryNotOwnedOperation = StagingDirectoryProbe + ".NotOwnedByProcess";
     public const string StagingDirectoryOwnerOperation = StagingDirectoryProbe + ".ReadOwner";
+
+    /// <summary>
+    /// The directory itself is a symbolic link, or an ancestor lets an identity other than <c>root</c> and this
+    /// process replace it (<c>OperationRootSafety</c>); the reason follows the prefix.
+    /// </summary>
+    public const string StagingDirectoryUnsafeAncestryPrefix = StagingDirectoryProbe + ".UnsafeAncestry.";
     public const string StagingProbeDeleteOperation = StagingVisibilityProbe + ".Delete";
     public const string StagingProbeServerOperation = StagingVisibilityProbe + ".Server";
     public const string LockHeartbeatOperation = TargetLockProbe + ".Heartbeat";

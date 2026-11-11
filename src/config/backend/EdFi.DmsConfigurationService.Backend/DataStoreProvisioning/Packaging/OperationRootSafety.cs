@@ -29,11 +29,12 @@ public enum UnsafeOperationRootReason
 }
 
 /// <summary>
-/// The configured operation root, or the path to it, lets an identity other than <c>root</c> and this process replace the
-/// private operation directory after it is claimed. The message names the reason only, never the path.
+/// The configured operation root or SQL Server staging directory, or the path to it, lets an identity other than
+/// <c>root</c> and this process replace what the provisioner wrote there. The message names the reason only, never
+/// the path.
 /// </summary>
 public sealed class UnsafeOperationRootException(UnsafeOperationRootReason reason)
-    : IOException($"The operation directory root is not safe to use ({reason}).")
+    : IOException($"The directory or one of its ancestors is not safe to use ({reason}).")
 {
     public UnsafeOperationRootReason Reason { get; } = reason;
 }
@@ -49,9 +50,10 @@ public sealed class UnsafeOperationRootException(UnsafeOperationRootReason reaso
 /// permission on a directory may rename the entries in it, so a group-writable directory without the sticky bit (what a
 /// <c>umask</c> of <c>0002</c> creates) is refused. Windows is not checked here: the claim carries a protected access
 /// control list, and the operator configures share and folder permissions. The owner and mode are read with
-/// <c>statx</c> without following links, as <c>UnixFileOwnership</c> reads an owner in the SQL Server adapter.
+/// <c>statx</c> without following links. The SQL Server adapter applies the same condition to its staging directory,
+/// which <c>RESTORE</c> opens by path after the backup is staged and re-hashed there.
 /// </summary>
-internal static class OperationRootSafety
+public static class OperationRootSafety
 {
     private const int AtCurrentDirectory = -100;
     private const int AtSymlinkNoFollow = 0x100;
@@ -70,7 +72,8 @@ internal static class OperationRootSafety
 
     /// <summary>
     /// Throws <see cref="UnsafeOperationRootException"/> unless <paramref name="fullyQualifiedRoot"/> and each of its
-    /// ancestors meet the condition above. Unix only.
+    /// ancestors meet the condition above. Unix only. The caller checks the lexical, fully qualified form it then
+    /// uses, so no <c>.</c> or <c>..</c> segment can reach another directory.
     /// </summary>
     public static void RequireSafe(string fullyQualifiedRoot)
     {

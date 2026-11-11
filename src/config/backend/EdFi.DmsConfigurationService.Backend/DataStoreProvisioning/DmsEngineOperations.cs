@@ -46,6 +46,14 @@ public static class DmsEngineOperations
     public const string StageBackupPrefix = "StageBackup.";
 
     /// <summary>
+    /// The prefix of a staging refused because the staging directory, or one of its ancestors, could let an
+    /// identity other than <c>root</c> and the Configuration Service replace the staged backup before
+    /// <c>RESTORE</c> opens it by path (<see cref="Packaging.OperationRootSafety"/>): <c>StagingFailed</c> for
+    /// inspection, because only the operator can change the directory. The reason follows the prefix.
+    /// </summary>
+    public const string StageBackupUnsafeDirectoryPrefix = StageBackupPrefix + "UnsafeDirectory.";
+
+    /// <summary>
     /// The prefix of every refusal of the SQL Server backup itself (D-11), including a backup the server
     /// refuses to read: <c>BackupInvalid</c>, inspection. The defect after the prefix names the rule.
     /// </summary>

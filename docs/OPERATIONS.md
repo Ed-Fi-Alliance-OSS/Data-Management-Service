@@ -1579,7 +1579,7 @@ DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <pr
 | `ClientCertificate` | The Configuration Service's own PostgreSQL connections would send no client certificate: `PGSSLCERT` is unset and the home directory holds no `.postgresql/postgresql.crt` (`%APPDATA%\postgresql\postgresql.crt` on Windows), unless `SSL Mode` is `Disable`. `psql` never sends one. | Remove the variable or the file; client-certificate authentication of the administrative login is not supported. |
 | `AmbientPassword` | With no `Password` in `AdminConnectionString`, the Configuration Service's own PostgreSQL connections would find no password elsewhere: `PGPASSWORD` is unset or empty, and no password file exists at `PGPASSFILE` or, when that is unset, at `.pgpass` in the home directory (`%APPDATA%\postgresql\pgpass.conf` on Windows). `psql` receives only the configured password. | Put the password in `AdminConnectionString` (a `${secret:...}` reference), or remove the variable or the file. |
 | `GssAuthentication` | The server did not authenticate the administrative login to `postgres` through GSSAPI (Kerberos). That login comes from the Configuration Service's Kerberos credentials, which `psql` does not receive. `pg_hba.conf` is matched per database, so this probe cannot see a GSSAPI rule for other databases: each create checks its staging database before `psql` starts and fails with a permanent `RestoreFailed`, operation `RestoreIntoStaging.GssAuthentication`, when that database is authenticated through GSSAPI. | Authenticate the administrative login with a password (or `trust`/`peer`) in `pg_hba.conf` for every database; GSSAPI authentication of it is not supported. |
-| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists; on Linux, it is owned by the Configuration Service user and is not group- or other-writable; and SQL Server can read a probe file written into it. On Windows the owner and access control list are not checked. | See [SQL Server](#sql-server). |
+| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists; on Linux, it is owned by the Configuration Service user, is not group- or other-writable, and is neither a symbolic link nor under a directory another account could use to replace it; and SQL Server can read a probe file written into it. On Windows the owner and access control list are not checked. | See [SQL Server](#sql-server). |
 | `TargetLock` | A lock can be taken and released on the server. | Usually a server or privilege problem an earlier probe also reports. |
 
 ### Template package trust
@@ -1668,11 +1668,32 @@ Initialize such a cluster again with UTF-8 encoding. A cluster whose `template0`
 `RESTORE` reads its backup from a file the server opens, so the Configuration Service copies each backup into
 a staging directory the server also sees. The directory separates the two identities: the Configuration
 Service owns it and writes into it, and SQL Server can only read it. On Linux the service refuses a
-directory it does not own or that is group- or other-writable. On Windows, and on a share, it does not
-inspect the owner or the access control list: the operator must configure that separation (the
-Configuration Service identity with Modify, the SQL Server service identity with Read & Execute only) and
-verify it, because the service cannot detect a directory other accounts may write. It re-hashes the staged file after the restore and fails with
-`StagingIntegrityViolation` if the file changed.
+directory it does not own or that is group- or other-writable.
+
+The directory's own permissions protect a staged file only while its path keeps naming that directory, and
+`RESTORE` opens the file by path after it has been staged and verified. On Linux the service therefore also
+refuses, at startup and again before every staging, a `StagingPath` that is a symbolic link or passes through
+one, and a path any directory above which is owned by an account other than `root` and the Configuration
+Service, or is writable by its group or by others without the sticky bit. Any such account could rename the
+staging directory away and put its own file under the same path. Startup reports this as
+`StagingDirectory.UnsafeAncestry.<reason>`; an operation fails with `StagingFailed` for inspection at operation
+`StageBackup.UnsafeDirectory.<reason>`, before anything is written. The reasons are `SymbolicLink`,
+`NotDirectory`, `UntrustedOwner`, `ReplaceableEntries`, and `Unverifiable`. The same-host and shared-volume
+setups below pass: `/var/opt` and a container mount point's parents belong to `root` and are not group-writable.
+
+The service cannot inspect the server's side of `StagingServerPath`, so the operator must give it the same
+property. In the SQL Server host's or container's namespace, the staging directory and every directory above it
+must be real directories, not symbolic links, and no account other than `root` (or a Windows administrator) may
+write any directory above the staging directory, so none can rename or replace it. The SQL Server service
+account must not be able to write the staging directory or anything above it. Mount the shared volume or share
+only into the Configuration Service and SQL Server, so no other container or process can write into it or
+mount something else at that path.
+
+On Windows, and on a share, the service does not inspect the owner or the access control list: the operator
+must configure that separation (the Configuration Service identity with Modify, the SQL Server service identity
+with Read & Execute only) on the staging folder and every folder above it, and verify it, because the service
+cannot detect a directory other accounts may write. It re-hashes the staged file after the restore and fails
+with `StagingIntegrityViolation` if the file changed.
 
 | Topology | Setup | Supported |
 | --- | --- | --- |

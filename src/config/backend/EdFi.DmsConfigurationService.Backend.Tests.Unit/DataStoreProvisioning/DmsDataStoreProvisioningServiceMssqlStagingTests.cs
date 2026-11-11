@@ -317,6 +317,16 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
             DmsProvisioningFailureCategory.Transient
         )]
         [TestCase(
+            "StageBackup.UnsafeDirectory.ReplaceableEntries",
+            DmsProvisioningFailureCode.StagingFailed,
+            DmsProvisioningFailureCategory.OperatorInspectionRequired
+        )]
+        [TestCase(
+            "StageBackup.UnsafeDirectory.SymbolicLink",
+            DmsProvisioningFailureCode.StagingFailed,
+            DmsProvisioningFailureCategory.OperatorInspectionRequired
+        )]
+        [TestCase(
             "PlanRestore.BackupSetCount",
             DmsProvisioningFailureCode.BackupInvalid,
             DmsProvisioningFailureCategory.OperatorInspectionRequired
@@ -350,6 +360,7 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
         }
 
         [TestCase("StageBackup.Copy")]
+        [TestCase("StageBackup.UnsafeDirectory.SymbolicLink")]
         [TestCase("PlanRestore.BackupSetCount")]
         [TestCase(DmsEngineOperations.StagedBackupChanged)]
         public async Task It_drops_the_staging_name_by_the_reservation_and_reports_no_residue(
@@ -364,6 +375,7 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
         }
 
         [TestCase("StageBackup.Copy")]
+        [TestCase("StageBackup.UnsafeDirectory.SymbolicLink")]
         [TestCase(DmsEngineOperations.StagedBackupChanged)]
         public async Task It_never_validates_or_addresses_the_target(string operation)
         {

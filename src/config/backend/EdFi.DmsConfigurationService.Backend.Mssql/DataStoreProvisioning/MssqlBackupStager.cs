@@ -19,8 +19,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// handed out only when both hashes equal the manifest's <c>artifactSha256</c>. Immutability is not claimed from a
 /// share mode (advisory on Unix): it rests on the directory denying the server identity any create, unlink, or
 /// rename (mode <c>2750</c>), on the file mode denying it any write, and on unique per-operation names;
-/// <see cref="VerifyAsync"/> repeats the independent hash after <c>RESTORE</c> as defense in depth. A file this
-/// routine created is deleted on every failure with the bounded D-19 deletion; one it did not create is left alone.
+/// <see cref="VerifyAsync"/> repeats the independent hash after <c>RESTORE</c> as defense in depth. Those modes
+/// protect the file only while its path keeps naming this directory: <c>RESTORE</c> opens the path after the
+/// re-hash, so on Unix, before anything is written, the directory and every ancestor must also pass
+/// <see cref="OperationRootSafety"/> (no symbolic link, owned by <c>root</c> or this process, no group or other
+/// write without the sticky bit); otherwise the staging is refused with
+/// <see cref="DmsEngineOperations.StageBackupUnsafeDirectoryPrefix"/> and the reason. A file this routine created
+/// is deleted on every failure with the bounded D-19 deletion; one it did not create is left alone.
 /// </summary>
 public sealed class MssqlBackupStager
 {
@@ -141,7 +146,29 @@ public sealed class MssqlBackupStager
         ArgumentNullException.ThrowIfNull(source);
         ArgumentException.ThrowIfNullOrWhiteSpace(expectedSha256);
         string fileName = FileNameFor(operation);
-        string localPath = Path.Combine(_settings.StagingPath, fileName);
+
+        // The lexical, fully qualified form is checked and written under. A directory that does not exist is left
+        // to the create, which fails as before.
+        string stagingDirectory = Path.GetFullPath(_settings.StagingPath);
+        if (!OperatingSystem.IsWindows() && Directory.Exists(stagingDirectory))
+        {
+            try
+            {
+                OperationRootSafety.RequireSafe(stagingDirectory);
+            }
+            catch (UnsafeOperationRootException exception)
+            {
+                return new MssqlStagingResult.Failed(
+                    DmsProvisioningDiagnostic.From(
+                        exception,
+                        DmsEngineOperations.StageBackupUnsafeDirectoryPrefix + exception.Reason
+                    ),
+                    null
+                );
+            }
+        }
+
+        string localPath = Path.Combine(stagingDirectory, fileName);
 
         FileStream target;
         try

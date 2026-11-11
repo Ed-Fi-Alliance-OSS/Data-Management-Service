@@ -850,6 +850,19 @@ public sealed partial class DmsDataStoreProvisioningService(
             case DmsEngineOperations.StagedBackupChanged:
                 throw StepFailed(DmsProvisioningFailureCode.StagingIntegrityViolation, failure.Diagnostic);
             case not null
+                when operation.StartsWith(
+                    DmsEngineOperations.StageBackupUnsafeDirectoryPrefix,
+                    StringComparison.Ordinal
+                ):
+                // A configuration defect, as for an unsafe operation root: a retry cannot help.
+                throw new DmsProvisioningFailedException(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.StagingFailed,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        failure.Diagnostic
+                    )
+                );
+            case not null
                 when operation.StartsWith(DmsEngineOperations.StageBackupPrefix, StringComparison.Ordinal):
                 throw StepFailed(DmsProvisioningFailureCode.StagingFailed, failure.Diagnostic);
             case not null

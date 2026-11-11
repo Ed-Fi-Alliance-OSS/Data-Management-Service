@@ -8,6 +8,7 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -15,14 +16,19 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// D-18 staging: generated name, <c>CreateNew</c>, copy hash and independent re-hash, the bounded deletion of a file
-/// the routine created, the configured Unix mode under a restrictive umask, and the settings contract.
+/// the routine created, the configured Unix mode under a restrictive umask, the settings contract, and (V4-01) the
+/// refusal of a staging directory whose path another identity could replace.
 /// </summary>
 public class MssqlBackupStagerTests
 {
     public const UnixFileMode Mode0640 =
         UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead;
 
-    /// <summary>A private staging directory, a backup-shaped artifact in a sibling directory, and the stager over them.</summary>
+    /// <summary>
+    /// A private staging directory, a backup-shaped artifact in a sibling directory, and the stager over them. The
+    /// root and the staging directory are created private (<see cref="PrivateTestDirectory"/>), so a <c>umask</c> of
+    /// <c>0002</c> cannot leave the staging path replaceable, which the stager refuses.
+    /// </summary>
     public sealed class StagingDirectory : IDisposable
     {
         public StagingDirectory(byte[]? artifactBytes = null, int cleanupAttempts = 3)
@@ -32,7 +38,7 @@ public class MssqlBackupStagerTests
                 "dms1438-stager-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))
             );
             StagingPath = Path.Combine(Root, "staging");
-            Directory.CreateDirectory(StagingPath);
+            PrivateTestDirectory.Create(StagingPath);
             Directory.CreateDirectory(Path.Combine(Root, "artifact"));
             ArtifactBytes = artifactBytes ?? RandomNumberGenerator.GetBytes(200_000);
             string artifactPath = Path.Combine(Root, "artifact", "artifact.bak");
@@ -564,6 +570,193 @@ public class MssqlBackupStagerTests
             ((MssqlStagingResult.Failed)_missingDirectory)
                 .Diagnostic.ExceptionTypeChain.Should()
                 .Be(typeof(DirectoryNotFoundException).FullName);
+    }
+
+    /// <summary>
+    /// V4-01: the staged file's modes protect it only while its path keeps naming the staging directory, and
+    /// <c>RESTORE</c> opens that path after the re-hash. On Unix a staging directory under a parent its group may
+    /// write without the sticky bit, a staging path that is a symbolic link, and one reached through a symbolic link
+    /// are refused with the reason before anything is written; a sticky shared parent and a private parent are
+    /// accepted. Through the engine, the refusal ends the restore before any connection is attempted (nothing listens
+    /// on the configured server, so a connection attempt would end in a connection failure instead).
+    /// </summary>
+    [TestFixture]
+    public class Given_a_staging_directory_whose_path_another_identity_could_replace
+    {
+        private const UnixFileMode Mode0750 =
+            UnixFileMode.UserRead
+            | UnixFileMode.UserWrite
+            | UnixFileMode.UserExecute
+            | UnixFileMode.GroupRead
+            | UnixFileMode.GroupExecute;
+
+        private const UnixFileMode Mode0770 = Mode0750 | UnixFileMode.GroupWrite;
+
+        private string _root = string.Empty;
+        private StagedArtifact _artifact = null!;
+        private readonly Dictionary<string, (string StagingPath, MssqlStagingResult Result)> _cases = [];
+        private DmsCommandOutcome<DmsInstanceIdentity> _throughEngine = null!;
+        private string[] _entriesAfterEngine = [];
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.Ignore(
+                    "Unix ownership and modes apply on Unix only; Windows relies on the operator's ACLs."
+                );
+                return;
+            }
+
+            _root = PrivateTestDirectory.Create(
+                Path.Combine(
+                    Path.GetTempPath(),
+                    "dms1438-ancestry-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))
+                )
+            );
+            string artifactPath = Path.Combine(
+                PrivateTestDirectory.Create(Path.Combine(_root, "artifact")),
+                "a.bak"
+            );
+            byte[] bytes = RandomNumberGenerator.GetBytes(4096);
+            await File.WriteAllBytesAsync(artifactPath, bytes);
+            _artifact = new StagedArtifact(artifactPath, Sha256Of(bytes), DmsArtifactKind.MssqlBackup);
+
+            string groupWritable = Leaf("group-ancestor", Mode0770);
+            string sticky = Leaf("sticky", Mode0770 | UnixFileMode.StickyBit);
+            string privateParent = Leaf("private", Mode0750);
+            string linkTarget = Leaf("link-target", Mode0750);
+            string linkLeaf = Path.Combine(_root, "private", "link-leaf");
+            Directory.CreateSymbolicLink(linkLeaf, linkTarget);
+            string linkAncestor = Path.Combine(_root, "link-ancestor");
+            Directory.CreateSymbolicLink(linkAncestor, Path.Combine(_root, "link-target"));
+
+            await StageAsync("group-ancestor", groupWritable, "a00000000001");
+            await StageAsync("link-leaf", linkLeaf, "a00000000002");
+            await StageAsync("link-ancestor", Path.Combine(linkAncestor, "staging"), "a00000000003");
+            await StageAsync("sticky", sticky, "a00000000004");
+            await StageAsync("private", privateParent, "a00000000005");
+
+            DmsOperationId operation = Operation("a00000000006");
+            MssqlDmsTargetEngine engine = new(
+                new MssqlAdminConnection(
+                    "Server=127.0.0.1,1;User Id=sa;Password=unused;Connect Timeout=1;TrustServerCertificate=true",
+                    TimeSpan.FromSeconds(5)
+                ),
+                new MssqlDmsEngineSettings(
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(1),
+                    TimeSpan.FromSeconds(30),
+                    TimeSpan.FromMinutes(5),
+                    Settings(groupWritable)
+                ),
+                TimeProvider.System,
+                NullLogger.Instance
+            );
+            _throughEngine = await engine.RestoreIntoStagingAsync(
+                operation.StagingDatabaseName,
+                ProvisioningTestValues.Name("EdFi_Target"),
+                _artifact,
+                operation,
+                CancellationToken.None
+            );
+            _entriesAfterEngine = Directory.GetFileSystemEntries(groupWritable);
+        }
+
+        [OneTimeTearDown]
+        public void TearDown()
+        {
+            if (_root.Length > 0)
+            {
+                Directory.Delete(_root, recursive: true);
+            }
+        }
+
+        /// <summary>Creates <c>&lt;root&gt;/&lt;parent&gt;/staging</c>, the parent with <paramref name="parentMode"/> and the staging directory <c>0750</c>.</summary>
+        [System.Runtime.Versioning.UnsupportedOSPlatform("windows")]
+        private string Leaf(string parent, UnixFileMode parentMode)
+        {
+            string staging = PrivateTestDirectory.Create(Path.Combine(_root, parent, "staging"));
+            File.SetUnixFileMode(staging, Mode0750);
+            File.SetUnixFileMode(Path.Combine(_root, parent), parentMode);
+            return staging;
+        }
+
+        private static MssqlStagingSettings Settings(string stagingPath) =>
+            new(stagingPath, "/var/opt/dms-staging", Mode0640, 3, TimeSpan.FromSeconds(10));
+
+        private async Task StageAsync(string name, string stagingPath, string operation) =>
+            _cases[name] = (
+                stagingPath,
+                await new MssqlBackupStager(
+                    Settings(stagingPath),
+                    TimeProvider.System,
+                    NullLogger.Instance
+                ).StageAsync(_artifact, Operation(operation), CancellationToken.None)
+            );
+
+        private (string Operation, bool ResidueReported) Refusal(string name)
+        {
+            MssqlStagingResult.Failed failed = _cases[name]
+                .Result.Should()
+                .BeOfType<MssqlStagingResult.Failed>()
+                .Subject;
+            return (failed.Diagnostic.Operation, failed.Residue is not null);
+        }
+
+        private static string Refused(UnsafeOperationRootReason reason) =>
+            DmsEngineOperations.StageBackupUnsafeDirectoryPrefix + reason;
+
+        [Test]
+        public void It_refuses_a_staging_directory_under_a_parent_its_group_may_write() =>
+            Refusal("group-ancestor")
+                .Should()
+                .Be((Refused(UnsafeOperationRootReason.ReplaceableEntries), false));
+
+        [Test]
+        public void It_refuses_a_staging_path_that_is_a_symbolic_link() =>
+            Refusal("link-leaf").Should().Be((Refused(UnsafeOperationRootReason.SymbolicLink), false));
+
+        [Test]
+        public void It_refuses_a_staging_path_reached_through_a_symbolic_link() =>
+            Refusal("link-ancestor").Should().Be((Refused(UnsafeOperationRootReason.SymbolicLink), false));
+
+        [Test]
+        public void It_writes_nothing_where_it_refuses() =>
+            new[]
+            {
+                Path.Combine(_root, "group-ancestor", "staging"),
+                Path.Combine(_root, "link-target", "staging"),
+            }
+                .SelectMany(Directory.GetFileSystemEntries)
+                .Should()
+                .BeEmpty();
+
+        [Test]
+        public void It_stages_under_a_sticky_shared_parent_and_a_private_parent() =>
+            new[] { _cases["sticky"].Result, _cases["private"].Result }
+                .Should()
+                .AllBeOfType<MssqlStagingResult.Staged>();
+
+        [Test]
+        public void It_ends_the_restore_at_the_staging_refusal_before_any_connection()
+        {
+            DmsCommandFailure failure = _throughEngine
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Subject.Failure;
+            (failure.Class, failure.Diagnostic.Operation, failure.Diagnostic.ExceptionTypeChain)
+                .Should()
+                .Be(
+                    (
+                        DmsCommandFailureClass.Rejected,
+                        Refused(UnsafeOperationRootReason.ReplaceableEntries),
+                        typeof(UnsafeOperationRootException).FullName!
+                    )
+                );
+            _entriesAfterEngine.Should().BeEmpty();
+        }
     }
 
     [TestFixture]

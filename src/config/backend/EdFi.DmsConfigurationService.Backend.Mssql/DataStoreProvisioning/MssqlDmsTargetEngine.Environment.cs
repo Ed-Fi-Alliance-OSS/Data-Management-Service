@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
@@ -125,8 +126,10 @@ public sealed partial class MssqlDmsTargetEngine
 
     /// <summary>
     /// D-18 on the CMS host: the directory exists and, on Unix, is owned by this process's user and its mode grants
-    /// no group or other write. False when the directory does not exist, so the visibility probe is not attempted
-    /// in it.
+    /// no group or other write; then, read without following links, it is not a symbolic link and no ancestor lets
+    /// another identity replace it (<see cref="OperationRootSafety"/>), the rule the staging routine applies before
+    /// every write. One reason at most, for the first rule that fails. False when the directory does not exist or
+    /// its ancestry is refused, so the visibility probe is not attempted in it.
     /// </summary>
     private bool ValidateStagingDirectory(List<DmsReadinessReason> reasons)
     {
@@ -178,9 +181,34 @@ public sealed partial class MssqlDmsTargetEngine
         if (MssqlEnvironment.EvaluateStagingDirectory(exists, mode, ownedByProcess) is { } reason)
         {
             reasons.Add(reason);
+            return exists;
         }
 
-        return exists;
+        if (!exists || OperatingSystem.IsWindows())
+        {
+            return exists;
+        }
+
+        try
+        {
+            OperationRootSafety.RequireSafe(Path.GetFullPath(path));
+        }
+        catch (UnsafeOperationRootException exception)
+        {
+            reasons.Add(
+                new DmsReadinessReason(
+                    DmsProvisioningFailureCode.StartupValidationFailed,
+                    MssqlEnvironment.StagingDirectoryProbe,
+                    DmsProvisioningDiagnostic.From(
+                        exception,
+                        MssqlEnvironment.StagingDirectoryUnsafeAncestryPrefix + exception.Reason
+                    )
+                )
+            );
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>
