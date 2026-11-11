@@ -259,7 +259,8 @@ public sealed class Given_DocumentCacheAdminInProcessCommandRunner
                 {
                     harness.Primitives.TransitionRequests.Should().NotBeEmpty();
                 }
-                stderr.ToString().Should().BeEmpty();
+                // The deliberate competing acquisition shares the command's diagnostic scope.
+                stderr.ToString().Should().Be(CdcControllerLockDiagnostics.Contended + Environment.NewLine);
             }
         }
         finally
