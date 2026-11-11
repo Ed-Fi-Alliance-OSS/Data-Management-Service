@@ -194,6 +194,55 @@ public sealed class Given_CdcSqlServerCompletedJob
         }
     }
 
+    [Test]
+    public async Task It_retries_when_the_rejected_execution_finishes_before_it_can_be_joined()
+    {
+        var clock = new FakeTimeProvider();
+        using var caller = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        List<string> calls = [];
+        var operation = CdcSqlServerCompletedJob.RunAsync(
+            new(Job, 7, 1, false),
+            _ => throw new AssertionException("Unexpected pre-start read."),
+            (job, _) =>
+            {
+                job.Should().Be(Job);
+                calls.Add("start");
+                // The first start was rejected as already running, then the active-row
+                // lookup found nothing because that execution had just completed.
+                return Task.FromResult(
+                    calls.Count == 1
+                        ? CdcSqlServerJobRequest.Retry
+                        : new CdcSqlServerJobRequest(true, 3, RequestedAt)
+                );
+            },
+            (job, boundary, _) =>
+            {
+                job.Should().Be(Job);
+                boundary.Should().Be(7);
+                calls.Add("history");
+                return Task.FromResult(Execution(9));
+            },
+            caller.Token,
+            clock
+        );
+        try
+        {
+            calls.Should().Equal("start");
+            operation.IsCompleted.Should().BeFalse();
+            clock.Advance(TimeSpan.FromMilliseconds(250));
+            var evidence = await operation.WaitAsync(caller.Token);
+            calls.Should().Equal("start", "start", "history");
+            evidence.HistoryBoundary.Should().Be(7);
+            evidence.Started.Should().BeTrue();
+            evidence.Execution.Should().Be(Execution(9));
+        }
+        finally
+        {
+            await caller.CancelAsync();
+            await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
     [TestCase("failed")]
     [TestCase("old")]
     [TestCase("other-job")]
@@ -239,9 +288,14 @@ public sealed class Given_CdcSqlServerCompletedJob
         reads.Should().Be(1);
     }
 
-    [TestCase(false)]
-    [TestCase(true)]
-    public async Task It_distinguishes_cancellation_from_a_completion_deadline(bool callerCancels)
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task It_distinguishes_cancellation_from_a_completion_deadline(
+        bool callerCancels,
+        bool retryingStart
+    )
     {
         var clock = new FakeTimeProvider();
         using var caller = new CancellationTokenSource(TimeSpan.FromSeconds(30));
@@ -249,9 +303,18 @@ public sealed class Given_CdcSqlServerCompletedJob
         var operation = CdcSqlServerCompletedJob.RunAsync(
             new(Job, 0, 0, false),
             _ => throw new AssertionException("Unexpected pre-start read."),
-            (_, _) => Task.FromResult(new CdcSqlServerJobRequest(true, 3, RequestedAt)),
+            (_, _) =>
+            {
+                if (retryingStart)
+                {
+                    entered.TrySetResult();
+                    return Task.FromResult(CdcSqlServerJobRequest.Retry);
+                }
+                return Task.FromResult(new CdcSqlServerJobRequest(true, 3, RequestedAt));
+            },
             async (_, _, token) =>
             {
+                retryingStart.Should().BeFalse("no execution was started or joined yet");
                 entered.TrySetResult();
                 await Task.Delay(Timeout.InfiniteTimeSpan, token);
                 throw new AssertionException("Expected cancellation.");

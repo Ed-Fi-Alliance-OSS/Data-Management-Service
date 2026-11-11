@@ -156,7 +156,7 @@ public sealed class Given_CdcConnectorFixtureMutation
             .GetString()
             .Should()
             .Be(callerCancels ? "CallerCancelled" : "DeadlineExpired");
-        evidence.RootElement.GetProperty("TotalAttempts").GetInt32().Should().Be(1);
+        evidence.RootElement.GetProperty("TotalAttempts").GetInt32().Should().Be(2);
         var attempt = evidence
             .RootElement.GetProperty("Attempts")
             .EnumerateArray()
@@ -165,6 +165,45 @@ public sealed class Given_CdcConnectorFixtureMutation
             .Subject;
         attempt.GetProperty("Attempt").GetInt32().Should().Be(1);
         attempt.GetProperty("HttpStatusCode").GetInt32().Should().Be(409);
+    }
+
+    [Test]
+    public async Task It_counts_a_dispatched_mutation_when_transport_fails_before_any_response()
+    {
+        string directory = TestContext.CurrentContext.WorkDirectory;
+        const string pattern = "cdc-controller-mutation-*.json";
+        string[] before = Directory.GetFiles(directory, pattern);
+        int requests = 0;
+        using var client = new HttpClient(
+            new Handler(
+                (_, _) =>
+                {
+                    requests++;
+                    throw new HttpRequestException("private-transport-failure");
+                }
+            )
+        )
+        {
+            BaseAddress = new Uri("http://localhost"),
+        };
+
+        Func<Task> operation = () =>
+            CdcConnectorFixtureMutation.RunAsync(
+                client,
+                () => new HttpRequestMessage(HttpMethod.Put, "/connectors/private-name/stop"),
+                CdcFixtureMutation.Stop,
+                CancellationToken.None
+            );
+        await operation.Should().ThrowAsync<HttpRequestException>();
+
+        requests.Should().Be(1);
+        string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
+        string json = await File.ReadAllTextAsync(path);
+        json.Should().NotContain("private-");
+        using var evidence = JsonDocument.Parse(json);
+        evidence.RootElement.GetProperty("Outcome").GetString().Should().Be("TransportFailure");
+        evidence.RootElement.GetProperty("TotalAttempts").GetInt32().Should().Be(1);
+        evidence.RootElement.GetProperty("Attempts").EnumerateArray().Should().BeEmpty();
     }
 
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)

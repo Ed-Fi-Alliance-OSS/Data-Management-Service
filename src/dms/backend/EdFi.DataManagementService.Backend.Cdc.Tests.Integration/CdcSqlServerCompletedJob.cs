@@ -13,7 +13,11 @@ internal sealed record CdcSqlServerJobState(
     int CaptureHistoryCount = 0
 );
 
-internal sealed record CdcSqlServerJobRequest(bool Started, int SessionId, DateTime RequestedAt);
+internal sealed record CdcSqlServerJobRequest(bool Started, int SessionId, DateTime RequestedAt)
+{
+    // Agent rejected the start, but the execution finished before it could be joined.
+    internal static CdcSqlServerJobRequest Retry { get; } = new(false, 0, default);
+}
 
 internal sealed record CdcSqlServerJobExecution(
     Guid JobId,
@@ -59,6 +63,11 @@ internal static class CdcSqlServerCompletedJob
             }
             deadline.Token.ThrowIfCancellationRequested();
             var requested = await start(before.JobId, deadline.Token);
+            while (requested == CdcSqlServerJobRequest.Retry)
+            {
+                await Task.Delay(TimeSpan.FromMilliseconds(250), clock, deadline.Token);
+                requested = await start(before.JobId, deadline.Token);
+            }
             while (true)
             {
                 var completion = await readCompletion(before.JobId, before.LastHistoryId, deadline.Token);

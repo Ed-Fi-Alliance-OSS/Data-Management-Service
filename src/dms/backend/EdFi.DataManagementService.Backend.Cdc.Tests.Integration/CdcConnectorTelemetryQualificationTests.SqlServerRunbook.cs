@@ -141,7 +141,9 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 await using var reader = await active.ExecuteReaderAsync(cancellation);
                 if (!await reader.ReadAsync(cancellation))
                 {
-                    throw;
+                    // It may have completed since sp_start_job rejected our request. Retry
+                    // under the caller's existing deadline rather than accepting stale history.
+                    return CdcSqlServerJobRequest.Retry;
                 }
                 return new(false, reader.GetInt32(0), reader.GetDateTime(1));
             }

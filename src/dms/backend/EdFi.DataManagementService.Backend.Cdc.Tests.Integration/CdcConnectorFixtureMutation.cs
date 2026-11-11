@@ -41,7 +41,6 @@ internal static class CdcConnectorFixtureMutation
                 createRequest,
                 attempt =>
                 {
-                    evidence.TotalAttempts = attempt.Attempt;
                     // Bound retained evidence independently of transport speed or future poll settings.
                     if (evidence.Attempts.Count == 128)
                     {
@@ -52,7 +51,8 @@ internal static class CdcConnectorFixtureMutation
                 token,
                 TimeSpan.FromSeconds(30),
                 TimeSpan.FromMilliseconds(250),
-                clock
+                clock,
+                observeDispatch: attempt => evidence.TotalAttempts = attempt
             );
             evidence.Outcome = (int)status is >= 200 and < 300 ? "Accepted" : "Rejected";
             return status;

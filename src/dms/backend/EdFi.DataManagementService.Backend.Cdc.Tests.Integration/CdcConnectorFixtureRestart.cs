@@ -39,7 +39,8 @@ internal static class CdcConnectorFixtureRestart
         CancellationToken cancellationToken,
         TimeSpan timeout,
         TimeSpan retryDelay,
-        TimeProvider clock = null!
+        TimeProvider clock = null!,
+        Action<int> observeDispatch = null!
     )
     {
         clock ??= TimeProvider.System;
@@ -49,8 +50,9 @@ internal static class CdcConnectorFixtureRestart
         while (true)
         {
             deadline.Token.ThrowIfCancellationRequested();
-            attempt++;
             using var request = createRequest();
+            attempt++;
+            observeDispatch?.Invoke(attempt);
             using var response = await client.SendAsync(
                 request,
                 HttpCompletionOption.ResponseHeadersRead,
