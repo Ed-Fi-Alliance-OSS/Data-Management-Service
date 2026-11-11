@@ -135,7 +135,8 @@ public class PostgresqlStagingTests
     /// staging database is created. The staging database is a copy of <c>template0</c>, so the create succeeds
     /// (a copy of <c>template1</c> is refused with <c>55006</c> while another session is on it) and none of the
     /// markers reach it. Teardown closes the session and removes the markers from <c>template1</c>, and asserts
-    /// they are gone; setup removes any left by an earlier run first.
+    /// they are gone; setup removes any left by an earlier run first. Teardown undoes only what setup reached, and
+    /// removes the markers even when another cleanup action fails.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -147,7 +148,8 @@ public class PostgresqlStagingTests
         private const string MarkerCount =
             $"SELECT (SELECT count(*) FROM pg_catalog.pg_class WHERE relname = '{MarkerTable}') + (SELECT count(*) FROM pg_catalog.pg_proc WHERE proname = '{MarkerFunction}');";
 
-        private DmsOperationId _operation;
+        private bool _template1Touched;
+        private DmsOperationId? _operation;
         private IDmsTargetLockHolder? _holder;
         private NpgsqlConnection? _template1Session;
         private long _markersInTemplate1;
@@ -192,6 +194,7 @@ public class PostgresqlStagingTests
         public async Task Setup()
         {
             RequireConfiguredOrSkip();
+            _template1Touched = true;
             await RemoveMarkersAsync();
             await ExecuteInTemplate1Async(
                 $"CREATE TABLE public.{MarkerTable} (id int); CREATE FUNCTION public.{MarkerFunction}() RETURNS int LANGUAGE sql AS 'SELECT 1';"
@@ -199,17 +202,18 @@ public class PostgresqlStagingTests
             _markersInTemplate1 = await ScalarInTemplate1Async(MarkerCount);
             _template1Session = await OpenTemplate1Async();
 
-            _operation = DmsOperationId.New();
+            DmsOperationId operation = DmsOperationId.New();
+            _operation = operation;
             PostgresqlDmsTargetEngine engine = Engine();
-            _holder = await AcquireAsync(engine, TargetName("template0"), _operation);
-            DmsDatabaseName staging = _operation.StagingDatabaseName;
+            _holder = await AcquireAsync(engine, TargetName("template0"), operation);
+            DmsDatabaseName staging = operation.StagingDatabaseName;
             _template1SessionsDuringCreate = await ScalarOnServerAsync<long>(
                 "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = 'template1';"
             );
             _created = await engine.CreateStagingAsync(
                 _holder,
                 staging,
-                new DmsProvisionClaim(_operation, Guid.NewGuid()),
+                new DmsProvisionClaim(operation, Guid.NewGuid()),
                 default
             );
             if (_created is DmsCommandOutcome<DmsInstanceIdentity>.Succeeded succeeded)
@@ -223,21 +227,38 @@ public class PostgresqlStagingTests
         [OneTimeTearDown]
         public async Task Teardown()
         {
-            if (_holder is not null)
+            try
             {
-                await _holder.DisposeAsync();
-            }
+                try
+                {
+                    if (_holder is not null)
+                    {
+                        await _holder.DisposeAsync();
+                    }
+                }
+                finally
+                {
+                    if (_template1Session is not null)
+                    {
+                        await _template1Session.DisposeAsync();
+                    }
+                }
 
-            if (_template1Session is not null)
+                if (_operation is { } operation)
+                {
+                    await DropByNameAsync(operation.StagingDatabaseName);
+                }
+            }
+            finally
             {
-                await _template1Session.DisposeAsync();
+                if (_template1Touched)
+                {
+                    await RemoveMarkersAsync();
+                    (await ScalarInTemplate1Async(MarkerCount))
+                        .Should()
+                        .Be(0, "teardown removes the template1 markers");
+                }
             }
-
-            await DropByNameAsync(_operation.StagingDatabaseName);
-            await RemoveMarkersAsync();
-            (await ScalarInTemplate1Async(MarkerCount))
-                .Should()
-                .Be(0, "teardown removes the template1 markers");
         }
 
         [Test]

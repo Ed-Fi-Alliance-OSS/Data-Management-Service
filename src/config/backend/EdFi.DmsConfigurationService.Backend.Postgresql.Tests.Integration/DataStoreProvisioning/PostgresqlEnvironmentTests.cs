@@ -102,9 +102,9 @@ public class PostgresqlEnvironmentTests
     /// F-05 (D-5): readiness and the operation-time server facts read <c>template0</c>, the template of every
     /// staging database, and never <c>template1</c>. With <c>template1</c> renamed aside (a reversible stand-in
     /// for a <c>template1</c> that is not <c>UTF8</c>), the lane admin still passes every server probe and the
-    /// facts report <c>template0</c>'s <c>UTF8</c>. Teardown renames it back and asserts it is a template again;
-    /// setup first restores one left aside by an interrupted run. While it is aside, nothing on the server can
-    /// create a database from the default template, so the fixture runs alone.
+    /// facts report <c>template0</c>'s <c>UTF8</c>. Teardown renames it back and asserts it is a template again,
+    /// only when setup reached the server; setup first restores one left aside by an interrupted run. While it is
+    /// aside, nothing on the server can create a database from the default template, so the fixture runs alone.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -114,6 +114,7 @@ public class PostgresqlEnvironmentTests
 
         private readonly string _aside =
             AsidePrefix + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()[..6]);
+        private bool _renamingStarted;
         private bool _template1Aside;
         private DmsEngineEnvironment _environment = null!;
         private DmsServerFacts _facts = null!;
@@ -152,6 +153,7 @@ public class PostgresqlEnvironmentTests
             RequireConfiguredOrSkip();
             await RequireSuperuserOrSkipAsync();
             await EnsureEnqueueOwnerRoleAsync();
+            _renamingStarted = true;
             await RestoreLeftAsideAsync();
             await WaitForNoSessionsOnAsync("template1");
             await RenameAsync("template1", _aside);
@@ -170,6 +172,11 @@ public class PostgresqlEnvironmentTests
         [OneTimeTearDown]
         public async Task Teardown()
         {
+            if (!_renamingStarted)
+            {
+                return;
+            }
+
             await RestoreLeftAsideAsync();
             (
                 await ScalarOnServerAsync<bool>(
