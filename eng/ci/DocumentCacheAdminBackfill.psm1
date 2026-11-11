@@ -191,6 +191,53 @@ function Resolve-BackfillReleaseTag {
 
 <#
 .SYNOPSIS
+Returns each untracked or ignored work tree path that restoring paths HEAD does not track would replace.
+.DESCRIPTION
+git restore replaces whatever the work tree holds at a path it writes, so this returns any untracked
+or ignored file at or under one of the paths, and any file or symbolic link where one of their folders
+goes. A file in that place that is one of the changed inputs is left out: HEAD tracks it, and the
+restore removes it.
+#>
+function Get-BackfillRestoreObstruction {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Top,
+
+        [Parameter(Mandatory)]
+        [string[]] $Path,
+
+        [Parameter(Mandatory)]
+        [string[]] $Changed
+    )
+
+    $obstructions = [Collections.Generic.List[string]]::new()
+    # With no exclude option, ls-files --others lists ignored files as well as untracked ones.
+    $listed = (& git -C $Top --literal-pathspecs ls-files --others -z -- @Path) -join "`n"
+    if ($LASTEXITCODE -ne 0) {
+        throw "git ls-files could not list the untracked files at the paths to restore: exit $LASTEXITCODE."
+    }
+    $obstructions.AddRange([string[]] @($listed -split "`0" | Where-Object { $_ }))
+
+    $removed = [Collections.Generic.HashSet[string]]::new($Changed, [StringComparer]::Ordinal)
+    foreach ($restored in $Path) {
+        $folder = ''
+        foreach ($segment in @($restored -split '/' | Select-Object -SkipLast 1)) {
+            $folder = if ($folder) { "$folder/$segment" } else { $segment }
+            $item = Get-Item -LiteralPath (Join-Path $Top $folder) -Force -ErrorAction Ignore
+            if ($null -eq $item -or $removed.Contains($folder)) { break }
+            if (-not $item.PSIsContainer -or $item.LinkType) {
+                $obstructions.Add($folder)
+                break
+            }
+        }
+    }
+    $obstructions | Sort-Object -Unique
+}
+
+<#
+.SYNOPSIS
 Refuses a dispatch commit whose build inputs differ from those of the release tag.
 .DESCRIPTION
 Compares HEAD of the repository holding the current directory with the commit the tag names, over
@@ -237,9 +284,9 @@ In the repository holding the current directory, restores in the index and the w
 Get-DocumentCacheAdminBackfillSourceInput path that differs between HEAD and the commit the tag
 names: a path the tag has gets the tag's content, and a path only HEAD has is removed. Everything
 else stays as HEAD has it, the workflows and the tool README included. A work tree with uncommitted
-changes to tracked files is refused before anything is restored, and afterwards the index is
-compared with the tag over the inputs Assert-DocumentCacheAdminBackfillSource compares. Nothing is
-committed.
+changes to tracked files, or with an untracked or ignored file the restore would replace, is refused
+before anything is restored, and afterwards the index is compared with the tag over the inputs
+Assert-DocumentCacheAdminBackfillSource compares. Nothing is committed.
 #>
 function Restore-DocumentCacheAdminBackfillSource {
     [CmdletBinding(SupportsShouldProcess = $true)]
@@ -274,6 +321,19 @@ function Restore-DocumentCacheAdminBackfillSource {
         Write-Information "The build inputs already equal those of $ReleaseTag ($tagCommit); nothing was restored."
         return
     }
+
+    $listed = (& git -C $top diff --name-only --no-renames --diff-filter=D -z $tagCommit HEAD -- @inputs) -join "`n"
+    if ($LASTEXITCODE -ne 0) {
+        throw "git diff could not list the build inputs that only release tag '$ReleaseTag' ($tagCommit) has: exit $LASTEXITCODE."
+    }
+    $tagOnly = @($listed -split "`0" | Where-Object { $_ })
+    if ($tagOnly.Count -gt 0) {
+        $obstructions = @(Get-BackfillRestoreObstruction -Top $top -Path $tagOnly -Changed $changed)
+        if ($obstructions.Count -gt 0) {
+            throw "The work tree has untracked or ignored files where the build inputs of '$ReleaseTag' would be restored, so nothing was restored: $($obstructions -join ', '). Move them, or restore in a fresh checkout."
+        }
+    }
+
     if (-not $PSCmdlet.ShouldProcess("$($changed.Count) build input path(s)", "Restore from $ReleaseTag")) {
         return
     }

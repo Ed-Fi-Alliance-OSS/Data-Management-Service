@@ -285,6 +285,51 @@ Describe 'DocumentCacheAdminBackfill module' {
             Get-Content -LiteralPath 'src/dms/core/Lib.cs' -Raw | Should -BeExactly 'an uncommitted edit'
         }
 
+        It 'refuses, restoring nothing, <Case> that restoring an input deleted after the tag would replace' -ForEach @(
+            @{ Case = 'an untracked file'; Path = 'src/dms/core/Lib.cs'; Ignore = $false }
+            @{ Case = 'an ignored file'; Path = 'src/dms/core/Lib.cs'; Ignore = $true }
+            @{ Case = 'an untracked folder'; Path = 'src/dms/core/Lib.cs/Notes.txt'; Ignore = $false }
+            @{ Case = 'an untracked file where its folder goes'; Path = 'src/dms/core'; Ignore = $false }
+        ) {
+            Invoke-FixtureGit rm -q 'src/dms/core/Lib.cs'
+            Set-FixtureFile 'build-dms.ps1' 'changed after the tag'
+            if ($Ignore) { Set-FixtureFile '.gitignore' $Path }
+            Invoke-FixtureGit add -A
+            Invoke-FixtureGit commit -q -m 'after the tag'
+            Set-FixtureFile $Path 'untracked work'
+            & git check-ignore -q -- $Path
+            $LASTEXITCODE | Should -Be $(if ($Ignore) { 0 } else { 1 })
+
+            { Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Throw "*untracked or ignored*$Path*"
+            Get-Content -LiteralPath $Path -Raw | Should -BeExactly 'untracked work'
+            Get-Content -LiteralPath 'build-dms.ps1' -Raw | Should -BeExactly 'changed after the tag'
+            @(& git diff --cached --name-only) | Should -BeNullOrEmpty
+        }
+
+        It 'restores an input deleted after the tag, and keeps an untracked file beside it' {
+            Invoke-FixtureGit rm -q 'src/dms/core/Lib.cs'
+            Invoke-FixtureGit commit -q -m 'after the tag'
+            Set-FixtureFile 'src/dms/core/Notes.txt' 'untracked work'
+
+            Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0'
+
+            @(& git diff --cached --name-only) | Should -Be @('src/dms/core/Lib.cs')
+            Get-Content -LiteralPath 'src/dms/core/Lib.cs' -Raw | Should -BeExactly 'class Lib { }'
+            Get-Content -LiteralPath 'src/dms/core/Notes.txt' -Raw | Should -BeExactly 'untracked work'
+        }
+
+        It 'restores an input folder that a tracked file replaced after the tag' {
+            Invoke-FixtureGit rm -q 'src/dms/core/Lib.cs'
+            Set-FixtureFile 'src/dms/core' 'a file where the folder was'
+            Invoke-FixtureGit add -A
+            Invoke-FixtureGit commit -q -m 'after the tag'
+
+            Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0'
+
+            @(& git diff --cached --name-status | Sort-Object) | Should -Be @("A`tsrc/dms/core/Lib.cs", "D`tsrc/dms/core")
+            Get-Content -LiteralPath 'src/dms/core/Lib.cs' -Raw | Should -BeExactly 'class Lib { }'
+        }
+
         It 'restores nothing under -WhatIf' {
             Save-FixtureChange 'src/dms/core/Lib.cs'
             Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' -WhatIf
