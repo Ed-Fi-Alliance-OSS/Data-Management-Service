@@ -74,8 +74,11 @@ public sealed class ConfigurationServiceTokenLease(string accessToken, long gene
 /// Every successful grant publishes a new <see cref="ConfigurationServiceTokenLease.Generation" />.
 /// A protected read's 401 invalidates only the generation that read sent, so a late rejection never
 /// evicts a newer bearer, even one with the same text. An invalidated or expired generation is never
-/// returned, including to a caller that joined its grant. A successful recovery never suppresses
-/// recovery for a later call's first rejection; only a failed grant starts the failure window.
+/// returned, including to a caller that joined its grant. If a joined bearer expires before admission
+/// and no newer grant or failure has superseded it, it fails through the shared 5-second window
+/// instead of starting another grant from that wait. A successful recovery never suppresses
+/// recovery for a later call's first rejection; only a failed or unusable acquisition starts the
+/// failure window.
 /// </para>
 /// <para>
 /// Every grant failure surfaces as an <see cref="HttpRequestException" /> with fixed text and is
@@ -220,17 +223,49 @@ public class ConfigurationServiceTokenHandler(
 
             // The caller's token ends only this caller's wait; the shared grant keeps running.
             CachedToken token = await pending.WaitAsync(cancellationToken);
+            HttpRequestException? exhausted = null;
 
             lock (_gate)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (ReferenceEquals(_current, token) && IsReusable(token))
                 {
                     return token.Lease;
                 }
+
+                if (ReferenceEquals(_current, token) && _pending is null && _failure is null)
+                {
+                    // This publication expired while its joiners were waiting to resume. Treat it
+                    // like an unusable grant, rather than letting each wait acquire indefinitely.
+                    // A newer pending grant or failure owns admission and must remain untouched.
+                    exhausted = new HttpRequestException(
+                        HttpRequestError.InvalidResponse,
+                        "Configuration Service token reuse window ended before the token could be used."
+                    );
+                    _current = null;
+                    _failure = new GrantFailure(exhausted, timeProvider.GetTimestamp());
+                }
             }
 
-            // The joined grant's bearer was rejected, or its window closed, before this caller could
-            // use it. Admission decides again rather than returning a rejected or expired bearer.
+            if (exhausted is not null)
+            {
+                try
+                {
+                    logger.LogError(
+                        "Configuration Service token reuse window ended before the token could be used"
+                    );
+                }
+                catch (Exception)
+                {
+                    // Diagnostics must not replace the safe failure already shared with joiners.
+                }
+
+                throw exhausted;
+            }
+
+            // A rejection or newer grant superseded the joined publication. Follow its outcome
+            // rather than returning an old bearer or overwriting the newer coordinator state.
         }
     }
 

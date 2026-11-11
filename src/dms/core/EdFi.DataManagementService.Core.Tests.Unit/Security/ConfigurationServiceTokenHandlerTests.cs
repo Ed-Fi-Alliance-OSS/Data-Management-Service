@@ -2089,6 +2089,246 @@ public class ConfigurationServiceTokenHandlerTests
         public void It_obtains_a_replacement_at_900_milliseconds() => _attemptsAtCutoff.Should().Be(2);
     }
 
+    /// <summary>Holds a joined caller after publication without delaying the shared grant.</summary>
+    private sealed class DeferredTokenCaller : SynchronizationContext
+    {
+        private readonly Channel<(SendOrPostCallback Callback, object? State)> _callbacks =
+            Channel.CreateUnbounded<(SendOrPostCallback, object?)>();
+
+        public override void Post(SendOrPostCallback callback, object? state) =>
+            _callbacks.Writer.TryWrite((callback, state));
+
+        public Task<ConfigurationServiceTokenLease> Join(IConfigurationServiceTokenHandler handler)
+        {
+            SynchronizationContext? previous = Current;
+            SetSynchronizationContext(this);
+
+            try
+            {
+                return handler.GetTokenAsync(GrantClientId, SecretSentinel, GrantScope);
+            }
+            finally
+            {
+                SetSynchronizationContext(previous);
+            }
+        }
+
+        public async Task ResumeAsync()
+        {
+            var callback = await _callbacks.Reader.ReadAsync().AsTask().WaitAsync(Failsafe);
+            callback.Callback(callback.State);
+        }
+    }
+
+    /// <summary>
+    /// A grant can publish successfully but expire before its joiners resume. Those joiners must
+    /// fail through one shared cooldown instead of repeatedly acquiring short-lived tokens.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Published_Token_Expiring_Before_Admission : ConfigurationServiceTokenHandlerTests
+    {
+        private ServiceProvider _provider = null!;
+        private RecordingLoggerProvider _logs = null!;
+        private ScriptedTransport _transport = null!;
+        private Exception?[] _failures = [];
+        private Exception? _insideCooldown;
+        private int _attemptsInsideCooldown;
+        private int _errorsInsideCooldown;
+        private string _replacement = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var time = new FakeTimeProvider();
+            var response = new TaskCompletionSource<HttpResponseMessage>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int attempts = 0;
+            _transport = new ScriptedTransport(
+                (_, _) =>
+                    Interlocked.Increment(ref attempts) == 1
+                        ? response.Task
+                        : Task.FromResult(JsonResponse(HttpStatusCode.OK, ValidGrantBody("replacement")))
+            );
+            _logs = new RecordingLoggerProvider();
+            _provider = BuildRegisteredProvider(_logs, time, _transport);
+            var handler = _provider.GetRequiredService<IConfigurationServiceTokenHandler>();
+            Task<string> first = RequestToken(_provider);
+            DeferredTokenCaller[] callers = [new(), new(), new()];
+            Task<ConfigurationServiceTokenLease>[] joined =
+            [
+                .. callers.Select(caller => caller.Join(handler)),
+            ];
+
+            time.Advance(TimeSpan.FromMilliseconds(850));
+            response.SetResult(JsonResponse(HttpStatusCode.OK, ValidGrantBody(TokenSentinel, 1)));
+            (await first.WaitAsync(Failsafe)).Should().Be(TokenSentinel);
+            time.Advance(TimeSpan.FromMilliseconds(50));
+
+            foreach (DeferredTokenCaller caller in callers)
+            {
+                await caller.ResumeAsync();
+            }
+
+            _failures = await Task.WhenAll(joined.Select(call => CaptureFailure(() => call)));
+            time.Advance(TimeSpan.FromSeconds(5) - OneTick);
+            _insideCooldown = await CaptureFailure(() => RequestToken(_provider));
+            _attemptsInsideCooldown = _transport.Requests.Count;
+            _errorsInsideCooldown = _logs
+                .For(TokenHandlerCategory)
+                .Count(entry => entry.Level == LogLevel.Error);
+
+            time.Advance(OneTick);
+            _replacement = await RequestToken(_provider).WaitAsync(Failsafe);
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_fails_every_delayed_joiner_without_returning_an_expired_token() =>
+            _failures
+                .Should()
+                .AllSatisfy(failure =>
+                    failure
+                        .Should()
+                        .BeOfType<HttpRequestException>()
+                        .Which.HttpRequestError.Should()
+                        .Be(HttpRequestError.InvalidResponse)
+                );
+
+        [Test]
+        public void It_shares_the_failure_for_five_seconds()
+        {
+            _insideCooldown
+                .Should()
+                .BeOfType<HttpRequestException>()
+                .Which.Message.Should()
+                .Be(_failures[0]!.Message);
+            _attemptsInsideCooldown.Should().Be(1);
+        }
+
+        [Test]
+        public void It_logs_the_exhaustion_once_without_bearer_or_credential_values()
+        {
+            _errorsInsideCooldown.Should().Be(1);
+            AssertNoSentinels(_logs.Rendered);
+            foreach (Exception? failure in _failures)
+            {
+                AssertNoSentinels(failure!.ToString());
+            }
+        }
+
+        [Test]
+        public void It_admits_a_replacement_at_the_cooldown_boundary()
+        {
+            _transport.Requests.Should().HaveCount(2);
+            _replacement.Should().Be("replacement");
+        }
+    }
+
+    /// <summary>
+    /// A delayed joiner must not overwrite a newer generation or its failure window when the older
+    /// token expires. Generation fencing still takes precedence over the exhausted-token policy.
+    /// </summary>
+    [TestFixture("success")]
+    [TestFixture("failure")]
+    [TestFixture("pending")]
+    [Parallelizable]
+    public class Given_An_Expired_Joined_Token_After_A_Newer_Grant(string newerOutcome)
+        : ConfigurationServiceTokenHandlerTests
+    {
+        private ServiceProvider _provider = null!;
+        private ScriptedTransport _transport = null!;
+        private Exception? _failure;
+        private ConfigurationServiceTokenLease? _result;
+        private ConfigurationServiceTokenLease? _newer;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var time = new FakeTimeProvider();
+            var response = new TaskCompletionSource<HttpResponseMessage>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            var replacement = new TaskCompletionSource<HttpResponseMessage>(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+            int attempts = 0;
+            _transport = new ScriptedTransport(
+                (_, _) => Interlocked.Increment(ref attempts) == 1 ? response.Task : replacement.Task
+            );
+            _provider = BuildRegisteredProvider(new RecordingLoggerProvider(), time, _transport);
+            var handler = _provider.GetRequiredService<IConfigurationServiceTokenHandler>();
+            Task<string> first = RequestToken(_provider);
+            var caller = new DeferredTokenCaller();
+            Task<ConfigurationServiceTokenLease> joined = caller.Join(handler);
+            response.SetResult(JsonResponse(HttpStatusCode.OK, ValidGrantBody(TokenSentinel, 1)));
+            await first.WaitAsync(Failsafe);
+            time.Advance(TimeSpan.FromMilliseconds(900));
+
+            Task<ConfigurationServiceTokenLease> newer = handler.GetTokenAsync(
+                GrantClientId,
+                SecretSentinel,
+                GrantScope
+            );
+
+            if (newerOutcome is "pending")
+            {
+                await caller.ResumeAsync();
+            }
+
+            replacement.SetResult(
+                newerOutcome is "failure"
+                    ? JsonResponse(HttpStatusCode.TooManyRequests, TokenShapedBody)
+                    : JsonResponse(HttpStatusCode.OK, ValidGrantBody("newer"))
+            );
+            await CaptureFailure(async () =>
+            {
+                _newer = await newer;
+            });
+
+            if (newerOutcome is not "pending")
+            {
+                await caller.ResumeAsync();
+            }
+
+            _failure = await CaptureFailure(async () =>
+            {
+                _result = await joined;
+            });
+
+            // A late joiner must not shorten a newer 429's 30-second window to five seconds.
+            time.Advance(TimeSpan.FromSeconds(5));
+            await CaptureFailure(() => RequestToken(_provider));
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_preserves_the_newer_outcome()
+        {
+            if (newerOutcome is "failure")
+            {
+                _failure
+                    .Should()
+                    .BeOfType<HttpRequestException>()
+                    .Which.StatusCode.Should()
+                    .Be(HttpStatusCode.TooManyRequests);
+            }
+            else
+            {
+                _failure.Should().BeNull();
+                _result.Should().BeSameAs(_newer);
+            }
+        }
+
+        [Test]
+        public void It_sends_no_additional_grant() => _transport.Requests.Should().HaveCount(2);
+    }
+
     /// <summary>
     /// A grant that completes at its own computed cutoff has no reuse left. It fails safely and
     /// starts the short failure window.

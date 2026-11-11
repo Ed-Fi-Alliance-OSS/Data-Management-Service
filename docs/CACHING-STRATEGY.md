@@ -274,6 +274,10 @@ grant. It does not use HybridCache.
   409 among them), transport failures, timeouts and unusable 2xx responses.
   Callers in that window receive the same safe failure. `Retry-After` is not
   read.
+- If a published token expires before a joined caller resumes, and no newer
+  grant or failure has superseded it, DMS reports an unusable-token failure and
+  starts the same 5-second window. The caller does not keep fetching tokens
+  that expire before it can use them.
 - Grants remain available while active requests drain during host shutdown.
   Once the host has stopped, a pending grant is canceled without starting that
   window.
@@ -304,7 +308,7 @@ grant. It does not use HybridCache.
     sends no third read or further grant for that call. The replacement stays
     in place for later reads.
   - Each later call can recover from its own first 401, even immediately after
-    a successful recovery. Only a failed grant starts the back-off window.
+    a successful recovery. Only a failed or unusable token acquisition starts the back-off window.
   - DMS sends no replay when the replacement grant fails.
   - The grant itself and other protected failures, such as 403 or 503, are
     never replayed.
