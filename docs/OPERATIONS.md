@@ -1720,10 +1720,14 @@ restart. See [How a rotation propagates](./SECRETS.md#how-a-rotation-propagates)
 
 - **Without failed operations:** neither PostgreSQL nor SQL Server keeps an old and a new password for one
   login, so switch logins instead. Give a second administrative login the same privileges, point the secret
-  at it, and disable the first login only once the cache window has passed, or after restarting the
-  Configuration Service, which clears its cache.
+  at it, and disable the first login only once both hold: the cache window has passed (or the Configuration
+  Service was restarted, which clears its cache), and every create or delete that started before the switch
+  has finished. Each operation keeps the credential it resolved when it started for its whole run, cleanup
+  and recovery included, so disabling the old login under a running operation can fail it or leave its
+  cleanup unfinished.
 - **Changing the password in place:** update the secret and the login together, then restart the
-  Configuration Service or wait out the cache window. Operations in between fail as described above.
+  Configuration Service or wait out the cache window. Operations in between fail as described above, and so
+  can an operation already running with the old password when it opens its next connection.
 - **After a failure:** correct the credential, wait until the Configuration Service resolves the updated value
   (the cache window, or a restart), then rerun the failed job.
 
