@@ -75,58 +75,78 @@ internal sealed class CdcFixtureProbes(
         }
         var timer = new CancellationTokenSource(timeout, _clock);
         var deadline = CancellationTokenSource.CreateLinkedTokenSource(token, timer.Token);
+        using var operations = new CdcOperationDrain();
         Task<bool> active = Task.FromResult(false);
-        bool transferred = false;
+        Exception failure = null!;
+        string primary = "ProbeFailure";
         try
         {
             while (true)
             {
                 deadline.Token.ThrowIfCancellationRequested();
-                active = probe(deadline.Token);
+                active = ProbeAsync(probe, deadline.Token, operations);
                 bool satisfied = await active.WaitAsync(deadline.Token);
                 deadline.Token.ThrowIfCancellationRequested();
                 if (satisfied)
                 {
-                    return;
+                    break;
                 }
                 await Task.Delay(pollInterval, _clock, deadline.Token);
             }
         }
         catch (Exception original)
         {
-            string primary =
+            primary =
                 original is OperationCanceledException
                     ? CancellationCategory(token, timer.Token)
                     : "ProbeFailure";
-            Exception failure =
+            failure =
                 primary == "ObservationTimeout"
                     ? new TimeoutException("Controller fixture observation deadline expired.")
                     : original;
-            Task cancellation = deadline.CancelAsync();
-            Task<string> drain = ObserveExitAsync(active, cancellation);
-            try
+        }
+        Task cancellation = failure is not null ? deadline.CancelAsync() : Task.CompletedTask;
+        Task<string> drain = ObserveExitAsync(active, cancellation, deadline, timer);
+        try
+        {
+            string outcome = await drain.WaitAsync(_drainTimeout, _clock);
+            if (failure is not null)
             {
-                string outcome = await drain.WaitAsync(_drainTimeout, _clock);
                 await PublishFailureAsync(new(primary, "None", outcome));
             }
-            catch (TimeoutException)
-            {
-                // Retain the original task and sources; the timed-out await is not its owner.
-                transferred = true;
-                Task completion = FinishPendingAsync(drain, deadline, timer);
-                _pending.Enqueue(completion);
-                await PublishFailureAsync(new(primary, "Timeout", "Pending"));
-                throw new CdcProbeDrainException(failure, completion);
-            }
+        }
+        catch (TimeoutException)
+        {
+            // The retained drain owns underlying operations, cancellation callbacks and source disposal.
+            Task completion = FinishPendingAsync(drain);
+            _pending.Enqueue(completion);
+            await PublishFailureAsync(new(primary, "Timeout", "Pending"));
+            throw new CdcProbeDrainException(
+                failure ?? new TimeoutException("Fixture probe cleanup deadline expired."),
+                completion
+            );
+        }
+        if (failure is not null)
+        {
             ExceptionDispatchInfo.Capture(failure).Throw();
+        }
+    }
+
+    private static async Task<bool> ProbeAsync(
+        Func<CancellationToken, Task<bool>> probe,
+        CancellationToken token,
+        CdcOperationDrain operations
+    )
+    {
+        try
+        {
+            return await probe(token);
         }
         finally
         {
-            if (!transferred)
-            {
-                deadline.Dispose();
-                timer.Dispose();
-            }
+            // A successful outer result also cannot authorize another poll or teardown while
+            // a timed-out transport from this poll is still unwinding.
+            await operations.DrainAsync();
         }
     }
 
@@ -138,33 +158,39 @@ internal sealed class CdcFixtureProbes(
             _ => "ProbeCancellation",
         };
 
-    private static async Task<string> ObserveExitAsync(Task active, Task cancellation)
-    {
-        try
-        {
-            await Task.WhenAll(active, cancellation);
-            return "Completed";
-        }
-        catch (OperationCanceledException)
-        {
-            return "Cancelled";
-        }
-        catch
-        {
-            return "Faulted";
-        }
-    }
-
-    private async Task FinishPendingAsync(
-        Task<string> drain,
+    private static async Task<string> ObserveExitAsync(
+        Task active,
+        Task cancellation,
         CancellationTokenSource deadline,
         CancellationTokenSource timer
     )
     {
-        _lateOutcomes.Enqueue(await drain);
-        deadline.Dispose();
-        timer.Dispose();
+        string outcome;
+        try
+        {
+            await Task.WhenAll(active, cancellation);
+            outcome = "Completed";
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = "Cancelled";
+        }
+        catch
+        {
+            outcome = "Faulted";
+        }
+        // CancelAsync does not await callbacks when a parent already initiated cancellation.
+        // Linked-source disposal joins that parent registration and may block. Keep that join
+        // off the observing thread, inside the same bounded, retained drain as the probe itself.
+        await Task.Run(() =>
+        {
+            deadline.Dispose();
+            timer.Dispose();
+        });
+        return outcome;
     }
+
+    private async Task FinishPendingAsync(Task<string> drain) => _lateOutcomes.Enqueue(await drain);
 
     internal async Task DisposeResourcesAsync(Func<Task> cleanup)
     {

@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.Net;
 using System.Text.Json;
+using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -15,6 +17,238 @@ public sealed class Given_CdcFixtureProbes
 {
     private static readonly TimeSpan ObservationBudget = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan DrainBudget = TimeSpan.FromSeconds(20);
+
+    [TestCase("send", false, false)]
+    [TestCase("send", true, false)]
+    [TestCase("stream", false, false)]
+    [TestCase("stream", true, false)]
+    [TestCase("read", false, false)]
+    [TestCase("read", true, false)]
+    [TestCase("send", false, true)]
+    [TestCase("send", true, true)]
+    public async Task It_drains_real_adapter_transport_work_after_the_adapter_returns(
+        string stage,
+        bool drainExpires,
+        bool callerCancels
+    )
+    {
+        var clock = new DrainClock();
+        ConcurrentQueue<CdcProbeFailureEvidence> evidence = new();
+        var owner = new CdcFixtureProbes(
+            clock,
+            DrainBudget,
+            item =>
+            {
+                evidence.Enqueue(item);
+                return Task.CompletedTask;
+            }
+        );
+        using var transport = new DeferredTransport(stage);
+        using var client = new HttpClient(transport) { Timeout = Timeout.InfiniteTimeSpan };
+        using var caller = new CancellationTokenSource();
+        var adapter = new CdcConnectRestAdapter(client, clock);
+        var request = CdcDeploymentRequestTestData.Request();
+        var returned = Signal();
+        var operation = owner.WaitAsync(
+            async token =>
+            {
+                try
+                {
+                    var result = await adapter.ReadStatusAsync(request, token);
+                    result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.Timeout);
+                    // Even an outer probe reporting success must retain the timed-out transport.
+                    return true;
+                }
+                finally
+                {
+                    returned.SetResult();
+                }
+            },
+            ObservationBudget,
+            TimeSpan.FromSeconds(1),
+            caller.Token
+        );
+        Task cleanup = Task.CompletedTask;
+        try
+        {
+            await transport.Entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            if (callerCancels)
+            {
+                await caller.CancelAsync();
+            }
+            else
+            {
+                clock.Advance(request.Timing.CallTimeout);
+            }
+            await transport.Cancelled.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await returned.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            operation.IsCompleted.Should().BeFalse();
+            if (!callerCancels)
+            {
+                clock.Advance(ObservationBudget - request.Timing.CallTimeout);
+            }
+            await clock.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            evidence.Should().BeEmpty();
+            Func<Task> finish = () => operation.WaitAsync(TimeSpan.FromSeconds(30));
+            if (drainExpires)
+            {
+                clock.Advance(DrainBudget);
+                await finish.Should().ThrowAsync<CdcProbeDrainException>();
+                owner.DrainFailed.Should().BeTrue();
+                Func<Task> dispose = () => owner.DisposeResourcesAsync(DisposeClientAsync);
+                cleanup = (await dispose.Should().ThrowAsync<CdcProbeDrainException>()).Which.Completion;
+                cleanup.IsCompleted.Should().BeFalse();
+                transport.ResourcesDisposed.Should().BeFalse();
+            }
+            transport.Exit.SetResult();
+            if (drainExpires)
+            {
+                await cleanup.WaitAsync(TimeSpan.FromSeconds(30));
+                owner.LateOutcomes.Should().Equal(callerCancels ? "Cancelled" : "Completed");
+            }
+            else
+            {
+                if (callerCancels)
+                {
+                    await finish.Should().ThrowAsync<OperationCanceledException>();
+                }
+                else
+                {
+                    await finish.Should().ThrowAsync<TimeoutException>();
+                }
+                owner.DrainFailed.Should().BeFalse();
+                await owner.DisposeResourcesAsync(DisposeClientAsync);
+            }
+            transport.ResourcesDisposed.Should().BeTrue();
+            transport.Mutations.Should().Be(1);
+            transport.MutatedAfterDisposal.Should().BeFalse();
+            string completion = callerCancels ? "Cancelled" : "Completed";
+            evidence
+                .Should()
+                .Equal(
+                    new CdcProbeFailureEvidence(
+                        callerCancels ? "CallerCancellation" : "ObservationTimeout",
+                        drainExpires ? "Timeout" : "None",
+                        drainExpires ? "Pending" : completion
+                    )
+                );
+        }
+        finally
+        {
+            transport.Exit.TrySetResult();
+            await caller.CancelAsync();
+            await operation.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await cleanup;
+        }
+
+        Task DisposeClientAsync()
+        {
+            transport.ResourcesDisposed = true;
+            client.Dispose();
+            return Task.CompletedTask;
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_includes_an_already_running_parent_cancellation_callback_in_the_drain(
+        bool callerCancels
+    )
+    {
+        // FakeTimeProvider serializes timer callbacks. Give the drain its own scheduler so an
+        // intentionally blocked observation callback cannot prevent the drain timer from firing.
+        var drainClock = new FakeTimeProvider();
+        var clock = new DrainClock(drainClock);
+        ConcurrentQueue<CdcProbeFailureEvidence> evidence = new();
+        var owner = new CdcFixtureProbes(
+            clock,
+            DrainBudget,
+            item =>
+            {
+                evidence.Enqueue(item);
+                return Task.CompletedTask;
+            }
+        );
+        using var caller = new CancellationTokenSource();
+        using var releaseCallback = new ManualResetEventSlim();
+        var callbackEntered = Signal();
+        var probeExit = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+        CancellationTokenRegistration registration = default;
+        bool disposed = false;
+        bool callbackExited = false;
+        bool callbackUsedDisposedResources = false;
+        var operation = owner.WaitAsync(
+            token =>
+            {
+                registration = token.Register(() =>
+                {
+                    callbackEntered.SetResult();
+                    releaseCallback.Wait();
+                    callbackUsedDisposedResources = disposed;
+                    callbackExited = true;
+                });
+                return probeExit.Task;
+            },
+            ObservationBudget,
+            TimeSpan.FromSeconds(1),
+            caller.Token
+        );
+        Task cancellation = Task.Run(() =>
+        {
+            if (callerCancels)
+            {
+                caller.Cancel();
+            }
+            else
+            {
+                clock.Advance(ObservationBudget);
+            }
+        });
+        Task cleanup = Task.CompletedTask;
+        try
+        {
+            await callbackEntered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            probeExit.SetResult(true);
+            await clock.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            drainClock.Advance(DrainBudget);
+            Func<Task> finish = () => operation.WaitAsync(TimeSpan.FromSeconds(30));
+            await finish.Should().ThrowAsync<CdcProbeDrainException>();
+            callbackExited.Should().BeFalse();
+            owner.DrainFailed.Should().BeTrue();
+            evidence
+                .Should()
+                .Equal(
+                    new CdcProbeFailureEvidence(
+                        callerCancels ? "CallerCancellation" : "ObservationTimeout",
+                        "Timeout",
+                        "Pending"
+                    )
+                );
+            Func<Task> dispose = () =>
+                owner.DisposeResourcesAsync(() =>
+                {
+                    disposed = true;
+                    return Task.CompletedTask;
+                });
+            cleanup = (await dispose.Should().ThrowAsync<CdcProbeDrainException>()).Which.Completion;
+            cleanup.IsCompleted.Should().BeFalse();
+            disposed.Should().BeFalse();
+            releaseCallback.Set();
+            await cleanup.WaitAsync(TimeSpan.FromSeconds(30));
+            callbackExited.Should().BeTrue();
+            callbackUsedDisposedResources.Should().BeFalse();
+            disposed.Should().BeTrue();
+        }
+        finally
+        {
+            probeExit.TrySetResult(true);
+            releaseCallback.Set();
+            await cancellation;
+            await operation.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await cleanup;
+            await registration.DisposeAsync();
+        }
+    }
 
     [TestCase(false)]
     [TestCase(true)]
@@ -342,7 +576,83 @@ public sealed class Given_CdcFixtureProbes
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-    private sealed class DrainClock : FakeTimeProvider
+    private sealed class DeferredTransport(string stage) : HttpMessageHandler
+    {
+        internal TaskCompletionSource Entered { get; } = Signal();
+        internal TaskCompletionSource Cancelled { get; } = Signal();
+        internal TaskCompletionSource Exit { get; } = Signal();
+        internal bool ResourcesDisposed { get; set; }
+        internal bool MutatedAfterDisposal { get; private set; }
+        internal int Mutations { get; private set; }
+
+        private async Task WaitForExitAsync(CancellationToken token)
+        {
+            Entered.SetResult();
+            try
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+            finally
+            {
+                Cancelled.SetResult();
+                await Exit.Task;
+                MutatedAfterDisposal = ResourcesDisposed;
+                Mutations++;
+            }
+        }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            if (stage == "send")
+            {
+                await WaitForExitAsync(cancellationToken);
+            }
+            return new(HttpStatusCode.OK)
+            {
+                Content =
+                    stage == "stream"
+                        ? new DeferredContent(this)
+                        : new StreamContent(new DeferredStream(this)),
+            };
+        }
+
+        private sealed class DeferredContent(DeferredTransport owner) : HttpContent
+        {
+            protected override async Task<Stream> CreateContentReadStreamAsync(
+                CancellationToken cancellationToken
+            )
+            {
+                await owner.WaitForExitAsync(cancellationToken);
+                return Stream.Null;
+            }
+
+            protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context) =>
+                throw new AssertionException("The adapter should request a stream directly.");
+
+            protected override bool TryComputeLength(out long length)
+            {
+                length = 0;
+                return false;
+            }
+        }
+
+        private sealed class DeferredStream(DeferredTransport owner) : MemoryStream
+        {
+            public override async ValueTask<int> ReadAsync(
+                Memory<byte> buffer,
+                CancellationToken cancellationToken = default
+            )
+            {
+                await owner.WaitForExitAsync(cancellationToken);
+                return 0;
+            }
+        }
+    }
+
+    private sealed class DrainClock(FakeTimeProvider drainClock = null!) : FakeTimeProvider
     {
         internal TaskCompletionSource DrainStarted { get; } = Signal();
 
@@ -353,7 +663,10 @@ public sealed class Given_CdcFixtureProbes
             TimeSpan period
         )
         {
-            var timer = base.CreateTimer(callback, state, dueTime, period);
+            var timer =
+                dueTime == DrainBudget && drainClock is not null
+                    ? drainClock.CreateTimer(callback, state, dueTime, period)
+                    : base.CreateTimer(callback, state, dueTime, period);
             if (dueTime == DrainBudget)
             {
                 DrainStarted.TrySetResult();

@@ -638,8 +638,8 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
             {
                 message.Content = new StringContent(body, Encoding.UTF8, "application/json");
             }
-            using var response = await client
-                .SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token)
+            using var response = await CdcOperationDrain
+                .Track(client.SendAsync(message, HttpCompletionOption.ResponseHeadersRead, token))
                 .WaitAsync(token);
             if (response.StatusCode == HttpStatusCode.NotFound)
             {
@@ -670,11 +670,19 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
             {
                 return Failure<JsonElement>(CdcDeploymentFailure.ValidationFailed);
             }
-            await using var stream = await response.Content.ReadAsStreamAsync(token).WaitAsync(token);
+            await using var stream = await CdcOperationDrain
+                .Track(response.Content.ReadAsStreamAsync(token))
+                .WaitAsync(token);
             using MemoryStream buffer = new();
             byte[] chunk = new byte[8192];
             int read;
-            while ((read = await stream.ReadAsync(chunk, token).AsTask().WaitAsync(token)) != 0)
+            while (
+                (
+                    read = await CdcOperationDrain
+                        .Track(stream.ReadAsync(chunk, token).AsTask())
+                        .WaitAsync(token)
+                ) != 0
+            )
             {
                 if (buffer.Length + read > MaximumResponseBytes)
                 {
@@ -725,7 +733,7 @@ public sealed class CdcConnectRestAdapter(HttpClient client, TimeProvider timePr
         );
         try
         {
-            return await action(timeout.Token).WaitAsync(timeout.Token);
+            return await CdcOperationDrain.Track(action(timeout.Token)).WaitAsync(timeout.Token);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {
