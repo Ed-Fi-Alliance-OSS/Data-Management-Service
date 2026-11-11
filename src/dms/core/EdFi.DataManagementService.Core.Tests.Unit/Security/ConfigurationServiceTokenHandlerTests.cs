@@ -2116,8 +2116,8 @@ public class ConfigurationServiceTokenHandlerTests
         private readonly Channel<(SendOrPostCallback Callback, object? State)> _callbacks =
             Channel.CreateUnbounded<(SendOrPostCallback, object?)>();
 
-        public override void Post(SendOrPostCallback callback, object? state) =>
-            _callbacks.Writer.TryWrite((callback, state));
+        public override void Post(SendOrPostCallback d, object? state) =>
+            _callbacks.Writer.TryWrite((d, state));
 
         public Task<ConfigurationServiceTokenLease> Join(IConfigurationServiceTokenHandler handler)
         {
