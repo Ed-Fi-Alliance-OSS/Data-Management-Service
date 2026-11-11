@@ -493,7 +493,6 @@ public static class DmsTargetValidator
     /// </summary>
     internal sealed record SchemaPartition(
         bool HasDms,
-        bool HasAuth,
         IReadOnlyList<string> AlwaysPresent,
         IReadOnlyList<string> TrackedChangesProjects,
         IReadOnlyList<string> ResourceSchemas,
@@ -515,7 +514,6 @@ public static class DmsTargetValidator
 
             return new SchemaPartition(
                 byRole[SchemaRole.Dms].Any(),
-                byRole[SchemaRole.Auth].Any(),
                 [.. byRole[SchemaRole.AlwaysPresent]],
                 trackedChangesProjects,
                 resourceSchemas,
