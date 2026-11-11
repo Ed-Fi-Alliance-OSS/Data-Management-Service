@@ -66,8 +66,9 @@ public sealed class ConfigurationServiceTokenLease(string accessToken, long gene
 /// One grant is in flight at a time and every caller that arrives meanwhile joins it; a caller that
 /// cancels its own wait leaves the grant running. After a failed grant, new attempts are suppressed
 /// for 5 seconds from its completion, or 30 seconds after a 429, and callers in that window receive
-/// the same safe failure. Host shutdown cancels a pending grant without publishing anything or
-/// starting that window.
+/// the same safe failure. Grants remain available while requests drain during host shutdown. Once
+/// the host has stopped, a pending grant is canceled without publishing anything or starting that
+/// window.
 /// </para>
 /// <para>
 /// Every successful grant publishes a new <see cref="ConfigurationServiceTokenLease.Generation" />.
@@ -256,7 +257,7 @@ public class ConfigurationServiceTokenHandler(
 
     /// <summary>
     /// Runs one grant outside the gate and publishes its outcome before completing the task its
-    /// joiners wait on. The grant has its own HTTP budget and stops only for host shutdown.
+    /// joiners wait on. The grant has its own HTTP budget and can run until host draining finishes.
     /// </summary>
     private async Task RunGrantAsync(
         TaskCompletionSource<CachedToken> grant,
@@ -267,17 +268,19 @@ public class ConfigurationServiceTokenHandler(
     )
     {
         // Everything that can throw runs inside the try, so the joiners' task always completes.
-        CancellationToken stopping = CancellationToken.None;
+        CancellationToken stopped = CancellationToken.None;
 
         try
         {
-            stopping = hostApplicationLifetime?.ApplicationStopping ?? CancellationToken.None;
+            // ApplicationStopping fires before active requests drain. Those requests may still
+            // need a grant or 401 recovery; cancel shared work only after the host has stopped.
+            stopped = hostApplicationLifetime?.ApplicationStopped ?? CancellationToken.None;
             long startTimestamp = timeProvider.GetTimestamp();
             (string accessToken, double? expiresIn) = await FetchTokenAsync(
                 clientId,
                 clientSecret,
                 scope,
-                stopping
+                stopped
             );
             ReuseWindow window = Publishable(expiresIn, startTimestamp, cap);
             CachedToken token;
@@ -296,14 +299,14 @@ public class ConfigurationServiceTokenHandler(
 
             grant.SetResult(token);
         }
-        catch (OperationCanceledException) when (stopping.IsCancellationRequested)
+        catch (OperationCanceledException) when (stopped.IsCancellationRequested)
         {
             lock (_gate)
             {
                 _pending = null;
             }
 
-            grant.SetCanceled(stopping);
+            grant.SetCanceled(stopped);
         }
         catch (Exception exception)
         {

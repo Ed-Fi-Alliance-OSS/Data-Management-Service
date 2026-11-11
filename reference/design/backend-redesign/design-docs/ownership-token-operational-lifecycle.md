@@ -89,9 +89,8 @@ This record was evaluated against DMS
   for OpenIddict and `TokenLifespan = 1800` in
   [`setup-keycloak.ps1`](../../../../eng/docker-compose/setup-keycloak.ps1).
 - [`CacheSettings`](../../../../src/dms/core/EdFi.DataManagementService.Core/Configuration/CacheSettings.cs)
-  defaults to `ApplicationContextCacheExpirationSeconds = 600`. The Configuration Service
-  bearer is reused for its issuer-reported lifetime less `min(60 s, 10%)`; the deprecated
-  `TokenCacheExpirationSeconds` setting has no default and only applies an explicitly set lower cap.
+  defaults: `ApplicationContextCacheExpirationSeconds = 600` and
+  `TokenCacheExpirationSeconds = 1500`.
 - [`CachedApplicationContextProvider`](../../../../src/dms/core/EdFi.DataManagementService.Core/Configuration/CachedApplicationContextProvider.cs)
   already implements per-client reload internally; nothing exposes it administratively.
 - [`ApiClientModule`](../../../../src/config/frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/Modules/ApiClientModule.cs)

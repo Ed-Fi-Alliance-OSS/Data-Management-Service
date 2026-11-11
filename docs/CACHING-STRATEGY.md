@@ -274,7 +274,9 @@ grant. It does not use HybridCache.
   409 among them), transport failures, timeouts and unusable 2xx responses.
   Callers in that window receive the same safe failure. `Retry-After` is not
   read.
-- Host shutdown cancels a pending grant without starting that window.
+- Grants remain available while active requests drain during host shutdown.
+  Once the host has stopped, a pending grant is canceled without starting that
+  window.
 - The grant has its own transport, which does not follow redirects, and the
   existing 100-second budget for the whole grant.
 - Failed grants log the numeric HTTP status when available. Problem-details types

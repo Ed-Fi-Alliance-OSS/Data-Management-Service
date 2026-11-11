@@ -918,9 +918,10 @@ public class ConfigurationServiceTokenHandlerTests
     /// A grant whose success body never arrives is bounded by the existing 100-second HTTP budget,
     /// which covers the body read as well as the headers, and fails without a secret.
     /// </summary>
-    [TestFixture]
+    [TestFixture(false)]
+    [TestFixture(true)]
     [Parallelizable]
-    public class Given_A_Stalled_Grant_Success_Body : ConfigurationServiceTokenHandlerTests
+    public class Given_A_Stalled_Grant_Success_Body(bool duringDrain) : ConfigurationServiceTokenHandlerTests
     {
         private ServiceProvider _provider = null!;
         private RecordingLoggerProvider _logs = null!;
@@ -931,13 +932,22 @@ public class ConfigurationServiceTokenHandlerTests
         public async Task Setup()
         {
             var fakeTime = new FakeTimeProvider();
+            IHostApplicationLifetime lifetime = A.Fake<IHostApplicationLifetime>();
+            A.CallTo(() => lifetime.ApplicationStopping).Returns(new CancellationToken(duringDrain));
+            A.CallTo(() => lifetime.ApplicationStopped).Returns(CancellationToken.None);
             var readStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
             _logs = new RecordingLoggerProvider();
             ScriptedTransport transport = AnsweringWithBody(
                 HttpStatusCode.OK,
                 new StalledStream(readStarted)
             );
-            _provider = BuildRegisteredProvider(_logs, fakeTime, transport, transport);
+            _provider = BuildRegisteredProvider(
+                _logs,
+                fakeTime,
+                transport,
+                transport,
+                configureServices: services => services.AddSingleton(lifetime)
+            );
 
             Task<string> call = RequestToken(_provider);
             await readStarted.Task.WaitAsync(Failsafe);
@@ -2333,25 +2343,25 @@ public class ConfigurationServiceTokenHandlerTests
     }
 
     /// <summary>
-    /// Host shutdown cancels a pending grant. Nothing is published, no failed-grant cooldown starts,
-    /// and the grant boundary logs no failure.
+    /// Once the host has finished draining, it cancels a pending grant. Nothing is published, no
+    /// failed-grant cooldown starts, and the grant boundary logs no failure.
     /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_Host_Shutdown_During_A_Grant : ConfigurationServiceTokenHandlerTests
+    public class Given_Host_Stopped_During_A_Grant : ConfigurationServiceTokenHandlerTests
     {
         private ServiceProvider _provider = null!;
         private RecordingLoggerProvider _logs = null!;
-        private CancellationTokenSource _stopping = null!;
+        private CancellationTokenSource _stopped = null!;
         private Exception? _pendingFailure;
         private Exception? _failureAfterShutdown;
 
         [SetUp]
         public async Task Setup()
         {
-            _stopping = new CancellationTokenSource();
+            _stopped = new CancellationTokenSource();
             IHostApplicationLifetime lifetime = A.Fake<IHostApplicationLifetime>();
-            A.CallTo(() => lifetime.ApplicationStopping).Returns(_stopping.Token);
+            A.CallTo(() => lifetime.ApplicationStopped).Returns(_stopped.Token);
             _logs = new RecordingLoggerProvider();
             var transport = new GatedTransport();
             _provider = BuildRegisteredProvider(
@@ -2364,7 +2374,7 @@ public class ConfigurationServiceTokenHandlerTests
 
             Task<string> pending = RequestToken(_provider);
             _ = await transport.NextAsync() ?? throw new TimeoutException();
-            await _stopping.CancelAsync();
+            await _stopped.CancelAsync();
             _pendingFailure = await CaptureFailure(() => pending);
 
             _failureAfterShutdown = await CaptureFailure(() => RequestToken(_provider));
@@ -2374,7 +2384,7 @@ public class ConfigurationServiceTokenHandlerTests
         public void TearDown()
         {
             _provider.Dispose();
-            _stopping.Dispose();
+            _stopped.Dispose();
         }
 
         [Test]

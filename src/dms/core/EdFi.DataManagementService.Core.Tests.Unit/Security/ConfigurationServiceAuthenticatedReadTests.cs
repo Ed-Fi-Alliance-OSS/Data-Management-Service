@@ -9,8 +9,10 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.Profile;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Security.Model;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
@@ -739,6 +741,117 @@ public class ConfigurationServiceAuthenticatedReadTests
     }
 
     /// <summary>
+    /// ApplicationStopping begins the drain: requests with live caller tokens must still be able to
+    /// obtain their first bearer, replace an expired bearer, or recover once from a protected 401.
+    /// A grant already pending at that point must also complete for its waiting read.
+    /// </summary>
+    [TestFixture("cold")]
+    [TestFixture("pending")]
+    [TestFixture("expired")]
+    [TestFixture("rejected")]
+    [Parallelizable]
+    public class Given_An_Application_Read_During_Host_Drain(string grantReason)
+        : ConfigurationServiceAuthenticatedReadTests
+    {
+        private ServiceProvider _provider = null!;
+        private CancellationTokenSource _stopping = null!;
+        private CancellationTokenSource _caller = null!;
+        private GatedTransport _grants = null!;
+        private ProtectedReadTransport _reads = null!;
+        private object? _result;
+        private Exception? _failure;
+        private bool _grantCanceled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var fakeTime = new FakeTimeProvider();
+            _stopping = new CancellationTokenSource();
+            _caller = new CancellationTokenSource();
+            IHostApplicationLifetime lifetime = A.Fake<IHostApplicationLifetime>();
+            A.CallTo(() => lifetime.ApplicationStopping).Returns(_stopping.Token);
+            A.CallTo(() => lifetime.ApplicationStopped).Returns(CancellationToken.None);
+            _grants = new GatedTransport();
+            _reads = new ProtectedReadTransport(
+                (_, attempt) =>
+                    grantReason is "rejected" && attempt == 1
+                        ? Rejected()
+                        : JsonResponse(HttpStatusCode.OK, ApplicationContextBody)
+            );
+            _provider = BuildRegisteredProvider(
+                new RecordingLoggerProvider(),
+                fakeTime,
+                _grants,
+                _reads,
+                configureServices: services => services.AddSingleton(lifetime)
+            );
+
+            if (grantReason is "expired" or "rejected")
+            {
+                Task<string> initial = RequestToken(_provider);
+                PendingRequest seed = await _grants.NextAsync() ?? throw new TimeoutException();
+                seed.Answer(HttpStatusCode.OK, ValidGrantBody("initial-token"));
+                await initial.WaitAsync(Failsafe);
+
+                if (grantReason is "expired")
+                {
+                    fakeTime.Advance(TimeSpan.FromSeconds(540));
+                }
+            }
+
+            if (grantReason is not "pending")
+            {
+                await _stopping.CancelAsync();
+            }
+
+            var services = new ReadServices(_provider);
+            Task<object?> read = ReadApplicationAsync();
+            PendingRequest pending = await _grants.NextAsync() ?? throw new TimeoutException();
+            await _stopping.CancelAsync();
+            _grantCanceled = pending.CancellationToken.IsCancellationRequested;
+            pending.Answer(HttpStatusCode.OK, ValidGrantBody("draining-token"));
+            (_result, _failure) = await Capture(read);
+
+            async Task<object?> ReadApplicationAsync() =>
+                await services.Applications.GetApplicationByClientIdAsync(
+                    ReadClientId,
+                    ReadTenant,
+                    _caller.Token
+                );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _provider.Dispose();
+            _stopping.Dispose();
+            _caller.Dispose();
+        }
+
+        [Test]
+        public void It_completes_the_draining_application_read()
+        {
+            _failure.Should().BeNull();
+            ApplicationRead.AssertSuccess(_result);
+        }
+
+        [Test]
+        public void It_keeps_the_grant_and_caller_active_during_drain()
+        {
+            _grantCanceled.Should().BeFalse();
+            _caller.IsCancellationRequested.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_sends_only_the_grants_and_reads_needed_for_recovery()
+        {
+            _grants.Count.Should().Be(grantReason is "expired" or "rejected" ? 2 : 1);
+            _reads.Reads.Should().HaveCount(grantReason is "rejected" ? 2 : 1);
+            _reads.Reads.Last().Bearer.Should().Be("draining-token");
+        }
+    }
+
+    /// <summary>
     /// A replay rejected again leaves its bearer current, so a later call that the Configuration
     /// Service accepts again reuses it without another grant.
     /// </summary>
@@ -1140,12 +1253,14 @@ public class ConfigurationServiceAuthenticatedReadTests
     }
 
     /// <summary>
-    /// While a replacement for a rejected lease is pending, a duplicate late rejection of that lease
-    /// and a cold caller join the same grant and receive the same generation.
+    /// While a replacement for a rejected or expired lease is pending, a late rejection of that lease
+    /// and another caller join the same grant and receive the same generation.
     /// </summary>
-    [TestFixture]
+    [TestFixture(false)]
+    [TestFixture(true)]
     [Parallelizable]
-    public class Given_A_Rejection_While_A_Replacement_Is_Pending : ConfigurationServiceAuthenticatedReadTests
+    public class Given_A_Rejection_While_A_Replacement_Is_Pending(bool expired)
+        : ConfigurationServiceAuthenticatedReadTests
     {
         private ServiceProvider _provider = null!;
         private GatedTransport _grants = null!;
@@ -1155,13 +1270,9 @@ public class ConfigurationServiceAuthenticatedReadTests
         [SetUp]
         public async Task Setup()
         {
+            var fakeTime = new FakeTimeProvider();
             _grants = new GatedTransport();
-            _provider = BuildRegisteredProvider(
-                new RecordingLoggerProvider(),
-                new FakeTimeProvider(),
-                _grants,
-                _grants
-            );
+            _provider = BuildRegisteredProvider(new RecordingLoggerProvider(), fakeTime, _grants, _grants);
             var handler = _provider.GetRequiredService<IConfigurationServiceTokenHandler>();
 
             Task<ConfigurationServiceTokenLease> first = Lease(handler);
@@ -1171,7 +1282,14 @@ public class ConfigurationServiceAuthenticatedReadTests
             );
             ConfigurationServiceTokenLease rejected = await first.WaitAsync(Failsafe);
 
-            Task<ConfigurationServiceTokenLease> recovery = Refresh(handler, rejected);
+            if (expired)
+            {
+                fakeTime.Advance(TimeSpan.FromSeconds(540));
+            }
+
+            Task<ConfigurationServiceTokenLease> recovery = expired
+                ? Lease(handler)
+                : Refresh(handler, rejected);
             PendingRequest replacement = await _grants.NextAsync() ?? throw new TimeoutException();
             Task<ConfigurationServiceTokenLease> duplicateRejection = Refresh(handler, rejected);
             Task<ConfigurationServiceTokenLease> coldCaller = Lease(handler);
