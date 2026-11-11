@@ -154,8 +154,7 @@ public class MssqlRestoreTests
         {
             Operation = DmsOperationId.New();
             _directory = Path.Combine(Path.GetTempPath(), "dms1438-restore-" + Operation.Value);
-            // Private, so a umask of 0002 cannot leave a staging directory the stager refuses as replaceable.
-            PrivateTestDirectory.Create(_directory);
+            Directory.CreateDirectory(_directory);
         }
 
         public DmsOperationId Operation { get; }
@@ -735,7 +734,8 @@ public class MssqlRestoreTests
             RequireConfiguredOrSkip();
             _operation = DmsOperationId.New();
             _stagingPath = Path.Combine(Path.GetTempPath(), "dms1438-unseen-" + _operation.Value);
-            Directory.CreateDirectory(Path.Combine(_stagingPath, "artifact"));
+            // Private, so a umask of 0002 cannot leave a staging directory the stager refuses as replaceable.
+            PrivateTestDirectory.Create(Path.Combine(_stagingPath, "artifact"));
             string dataPath = await ServerPropertyAsync("InstanceDefaultDataPath");
             string serverPath = dataPath.StartsWith('/')
                 ? "/var/opt/dms1438-missing-" + _operation.Value
