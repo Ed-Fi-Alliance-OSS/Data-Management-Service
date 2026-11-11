@@ -130,7 +130,7 @@ Describe 'DocumentCacheAdminBackfill module' {
         }
     }
 
-    Context 'Assert-DocumentCacheAdminBackfillSource' {
+    Context 'Assert-DocumentCacheAdminBackfillSource and Restore-DocumentCacheAdminBackfillSource' {
         BeforeAll {
             function Invoke-FixtureGit {
                 # Signing is switched off because a developer's global config may require it.
@@ -234,6 +234,77 @@ Describe 'DocumentCacheAdminBackfill module' {
         It 'refuses an existing tag that is not a stable vMAJOR.MINOR.PATCH tag, though its inputs are equal' {
             Invoke-FixtureGit tag v8.2.0-beta.1
             { Assert-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.2.0-beta.1' } | Should -Throw
+        }
+
+        It 'restores every build input of the tag that changed after it, and nothing else, so the commit passes the source check' {
+            # Changed, added and deleted inputs, beside a changed README and a changed file outside the
+            # inputs. global.json and Directory.Build.rsp are inputs that exist in neither commit.
+            Set-FixtureFile 'src/dms/core/Lib.cs' 'changed after the tag'
+            Set-FixtureFile 'src/dms/core/Added.cs' 'added after the tag'
+            Set-FixtureFile $script:readme '# current install guidance'
+            Set-FixtureFile 'eng/ci/x.ps1' 'param($Changed)'
+            Invoke-FixtureGit rm -q build-dms.ps1
+            Invoke-FixtureGit add -A
+            Invoke-FixtureGit commit -q -m 'after the tag'
+
+            Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0'
+
+            @(& git diff --cached --name-only | Sort-Object) | Should -Be @('build-dms.ps1', 'src/dms/core/Added.cs', 'src/dms/core/Lib.cs')
+            Get-Content -LiteralPath 'src/dms/core/Lib.cs' -Raw | Should -BeExactly 'class Lib { }'
+            Get-Content -LiteralPath 'build-dms.ps1' -Raw | Should -BeExactly 'param()'
+            Test-Path -LiteralPath 'src/dms/core/Added.cs' | Should -BeFalse
+            Get-Content -LiteralPath $script:readme -Raw | Should -BeExactly '# current install guidance'
+            Get-Content -LiteralPath 'eng/ci/x.ps1' -Raw | Should -BeExactly 'param($Changed)'
+            Invoke-FixtureGit commit -q -m 'restore the build inputs of v8.1.0'
+            { Assert-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Not -Throw
+        }
+
+        It 'stages nothing when the build inputs already equal the tag' {
+            Save-FixtureChange $script:readme, 'eng/ci/x.ps1'
+            Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0'
+            @(& git diff --cached --name-only) | Should -BeNullOrEmpty
+        }
+
+        It 'restores from the repository root when run in a subdirectory' {
+            Save-FixtureChange 'src/dms/core/Lib.cs'
+            Push-Location -LiteralPath (Join-Path $script:fixture 'eng/ci')
+            try {
+                Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0'
+            }
+            finally {
+                Pop-Location
+            }
+            @(& git diff --cached --name-only) | Should -Be @('src/dms/core/Lib.cs')
+        }
+
+        It 'refuses, restoring nothing, a work tree with uncommitted changes to tracked files' {
+            Save-FixtureChange 'build-dms.ps1'
+            Set-FixtureFile 'src/dms/core/Lib.cs' 'an uncommitted edit'
+            { Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Throw '*uncommitted*'
+            Get-Content -LiteralPath 'build-dms.ps1' -Raw | Should -BeExactly 'changed after the tag: build-dms.ps1'
+            Get-Content -LiteralPath 'src/dms/core/Lib.cs' -Raw | Should -BeExactly 'an uncommitted edit'
+        }
+
+        It 'restores nothing under -WhatIf' {
+            Save-FixtureChange 'src/dms/core/Lib.cs'
+            Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' -WhatIf
+            @(& git diff --cached --name-only) | Should -BeNullOrEmpty
+            Get-Content -LiteralPath 'src/dms/core/Lib.cs' -Raw | Should -BeExactly 'changed after the tag: src/dms/core/Lib.cs'
+        }
+
+        It 'refuses to restore from <Case>' -ForEach @(
+            @{ Case = 'a release tag that does not exist'; Tag = 'v8.1.2'; Message = '*v8.1.2*' }
+            @{ Case = 'a tag that is not a stable vMAJOR.MINOR.PATCH tag'; Tag = 'v8.2.0-beta.1'; Message = '*stable*' }
+        ) {
+            Invoke-FixtureGit tag v8.2.0-beta.1
+            Save-FixtureChange 'src/dms/core/Lib.cs'
+            { Restore-DocumentCacheAdminBackfillSource -ReleaseTag $Tag } | Should -Throw $Message
+            @(& git diff --cached --name-only) | Should -BeNullOrEmpty
+        }
+
+        It 'names Restore-DocumentCacheAdminBackfillSource when the source check refuses' {
+            Save-FixtureChange 'src/dms/core/Lib.cs'
+            { Assert-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Throw '*Restore-DocumentCacheAdminBackfillSource*'
         }
 
         It 'throws when git diff exits with neither 0 nor 1' {
@@ -359,6 +430,7 @@ Describe 'DocumentCacheAdminBackfill module' {
             'Get-DocumentCacheAdminBackfillSourceInput'
             'Get-DocumentCacheAdminBackfillVersion'
             'Publish-DocumentCacheAdminBackfill'
+            'Restore-DocumentCacheAdminBackfillSource'
         )
     }
 }
@@ -380,7 +452,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
             return Get-WorkflowStepRun $install[0]
         }
 
-        $script:trustedGate = "if: `${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}"
+        $script:trustedGate = "if: `${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}"
         $script:feedUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json'
         $script:releaseViewUrl = 'https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json'
     }
@@ -680,7 +752,7 @@ Describe 'DocumentCacheAdmin backfill workflow wiring' {
         $run | Should -Match '(?m)^    if \(-not \$help\.Contains\(\$expected\)\) \{ throw [^\r\n]+ \}\r?$'
     }
 
-    It 'gates <Id> on the publish switch and the main branch only' -ForEach @(
+    It 'gates <Id> on the publish switch and the backfill branch only' -ForEach @(
         @{ Id = 'publish' }, @{ Id = 'promote' }, @{ Id = 'attach' }, @{ Id = 'verify' }
     ) {
         $job = Get-WorkflowJobText $script:workflow $Id

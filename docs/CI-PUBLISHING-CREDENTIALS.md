@@ -39,8 +39,8 @@ token unless a read actually fails without one.
 - The `EdFi.Api.DocumentCacheAdmin` tool is published by `on-prerelease.yml` on the release's own
   `dms-pre-*` tag and promoted by `on-release.yml` on a `v*` tag, in the same `publishing` jobs.
   `backfill-document-cache-admin.yml` is a one-time, dispatch-only workflow whose `publish` and
-  `promote` jobs run in `publishing` only from `main` with `publish_package=true`. It is removed
-  after the 8.1.0 backfill; see
+  `promote` jobs run in `publishing` only from the `backfill/document-cache-admin-8.1.0` branch with
+  `publish_package=true`. It is removed after the 8.1.0 backfill; see
   [The one-time DocumentCacheAdmin backfill](#the-one-time-documentcacheadmin-backfill).
 - Inside those jobs, only the step that pushes, promotes or logs in reads the token. No workflow
   puts a publishing token in workflow-wide or job-wide `env`.
@@ -220,15 +220,32 @@ keeps the original commit. What to do depends on whether that commit includes th
 ## The one-time DocumentCacheAdmin backfill
 
 `EdFi.Api.DocumentCacheAdmin` 8.1.0 was released before the tool's release jobs existed.
-`backfill-document-cache-admin.yml` publishes it once. A release maintainer runs it:
+`backfill-document-cache-admin.yml` publishes it once.
+It builds the commit it is dispatched from at version 8.1.0, and refuses unless that commit's build
+inputs equal those of `v8.1.0`, the tool README excepted.
+Main's build inputs have changed since `v8.1.0`, so the workflow publishes only from the
+`backfill/document-cache-admin-8.1.0` branch: main plus one commit that restores the inputs of
+`v8.1.0`.
+A release maintainer runs it:
 
-1. Dispatch it from `main` soon after the change that adds it merges. It builds the dispatch
-   commit at version 8.1.0 and refuses unless that commit's build inputs equal those of `v8.1.0`,
-   so a later change on `main` to any build input it compares makes the run refuse.
+1. Create the branch from a clean checkout of the main commit that includes the workflow:
+
+   ```shell
+   git fetch origin main --tags
+   git switch -c backfill/document-cache-admin-8.1.0 origin/main
+   pwsh -NoProfile -Command "Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1; Restore-DocumentCacheAdminBackfillSource -ReleaseTag v8.1.0 -InformationAction Continue"
+   git commit -m "Restore the v8.1.0 build inputs for the DocumentCacheAdmin backfill"
+   git push origin backfill/document-cache-admin-8.1.0
+   ```
+
+   `Restore-DocumentCacheAdminBackfillSource` stages the `v8.1.0` version of every build input that
+   differs, removes inputs added since, and leaves the workflows and the tool README as main has them.
+   No ruleset protects the branch, so start the runs below right after pushing it, and check that each
+   run's commit is the one you pushed.
 2. Start a dry run first:
 
    ```shell
-   gh workflow run backfill-document-cache-admin.yml --ref main -f release_tag=v8.1.0 -f publish_package=false
+   gh workflow run backfill-document-cache-admin.yml --ref backfill/document-cache-admin-8.1.0 -f release_tag=v8.1.0 -f publish_package=false
    ```
 
    The build, SBOM and provenance jobs must pass. The build job's `Require the build inputs of the
@@ -238,7 +255,7 @@ keeps the original commit. What to do depends on whether that commit includes th
 3. Start the publishing run:
 
    ```shell
-   gh workflow run backfill-document-cache-admin.yml --ref main -f release_tag=v8.1.0 -f publish_package=true
+   gh workflow run backfill-document-cache-admin.yml --ref backfill/document-cache-admin-8.1.0 -f release_tag=v8.1.0 -f publish_package=true
    ```
 
    The `publish` and `promote` jobs run in the `publishing` environment and wait for its approval
@@ -253,6 +270,15 @@ keeps the original commit. What to do depends on whether that commit includes th
    `eng/ci/tests/ReleasePublishingCredentials.Tests.ps1`, the test file's entry in the Pester
    allowlist in `on-dms-pullrequest.yml`, the backfill lines elsewhere on this page, and this
    section. Keep `eng/ci/release-assets.psm1`, which the release workflows also use.
+   The provenance names the branch's commit, so replace the branch with a tag on that commit instead
+   of only deleting it.
+   The tag name must not start with `v`, because every tag trigger matches `v*.*.*`:
+
+   ```shell
+   git tag document-cache-admin-backfill-8.1.0 origin/backfill/document-cache-admin-8.1.0
+   git push origin document-cache-admin-backfill-8.1.0
+   git push origin --delete backfill/document-cache-admin-8.1.0
+   ```
 
 ## Read-only inspection
 

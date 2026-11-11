@@ -5,12 +5,13 @@
 
 # One-time support for .github/workflows/backfill-document-cache-admin.yml, which backfills
 # EdFi.Api.DocumentCacheAdmin for releases cut before the DocumentCacheAdmin release chain existed.
-# The workflow is dispatched from main only and builds the dispatch commit, as
-# Pkg EdFi.Api.SecurityMetadataTools.yml does, so the SBOM and the provenance describe the commit
-# actually built. The version comes from the named stable release tag, and
-# Assert-DocumentCacheAdminBackfillSource refuses the run unless the dispatch commit's build inputs
-# equal the tag's, the tool README excepted so the package carries the current install guidance. Run
-# the backfill soon after merge, because a later change to those inputs on main blocks it.
+# The workflow builds the dispatch commit, as Pkg EdFi.Api.SecurityMetadataTools.yml does, so the
+# SBOM and the provenance describe the commit actually built. The version comes from the named stable
+# release tag, and Assert-DocumentCacheAdminBackfillSource refuses the run unless the dispatch
+# commit's build inputs equal the tag's, the tool README excepted so the package carries the current
+# install guidance. Main's build inputs no longer equal v8.1.0's, so the workflow publishes only from
+# the backfill/document-cache-admin-8.1.0 branch: main plus one commit, made with
+# Restore-DocumentCacheAdminBackfillSource, that restores the tag's build inputs.
 #
 # Once 8.1.0 is backfilled, delete .github/workflows/backfill-document-cache-admin.yml, this module,
 # eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1, the 'backfill-document-cache-admin.yml publishing
@@ -18,7 +19,9 @@
 # DocumentCacheAdminBackfill.Tests.ps1 entry in the Pester allowlist in
 # .github/workflows/on-dms-pullrequest.yml, and from docs/CI-PUBLISHING-CREDENTIALS.md both the
 # backfill lines and the 'The one-time DocumentCacheAdmin backfill' section. Keep
-# eng/ci/release-assets.psm1, which the release workflows attach with too.
+# eng/ci/release-assets.psm1, which the release workflows attach with too. The provenance names the
+# backfill branch's commit, so replace that branch with the document-cache-admin-backfill-8.1.0 tag on
+# the same commit rather than only deleting it.
 
 $ErrorActionPreference = 'Stop'
 $repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
@@ -161,6 +164,33 @@ function Get-DocumentCacheAdminBackfillSourceInput {
 
 <#
 .SYNOPSIS
+Returns the root of the git work tree holding the current directory and the commit a release tag names.
+#>
+function Resolve-BackfillReleaseTag {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string] $ReleaseTag,
+
+        [Parameter(Mandatory)]
+        [string] $Purpose
+    )
+
+    # The pathspecs are relative to the repository root, so git runs there wherever this is called.
+    $top = & git rev-parse --show-toplevel
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($top)) {
+        throw "Cannot $Purpose '$ReleaseTag': the current directory is not in a git work tree."
+    }
+
+    $tagCommit = & git -C $top rev-parse --verify --quiet "refs/tags/$ReleaseTag^{commit}"
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tagCommit)) {
+        throw "Release tag '$ReleaseTag' does not resolve to a commit in this checkout. The tag must exist, and the checkout must fetch tags."
+    }
+    return [pscustomobject]@{ Top = $top; TagCommit = $tagCommit }
+}
+
+<#
+.SYNOPSIS
 Refuses a dispatch commit whose build inputs differ from those of the release tag.
 .DESCRIPTION
 Compares HEAD of the repository holding the current directory with the commit the tag names, over
@@ -177,17 +207,9 @@ function Assert-DocumentCacheAdminBackfillSource {
     )
 
     Assert-StableReleaseTag -ReleaseTag $ReleaseTag
-
-    # The pathspecs are relative to the repository root, so git runs there wherever this is called.
-    $top = & git rev-parse --show-toplevel
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($top)) {
-        throw "Cannot compare build inputs with '$ReleaseTag': the current directory is not in a git work tree."
-    }
-
-    $tagCommit = & git -C $top rev-parse --verify --quiet "refs/tags/$ReleaseTag^{commit}"
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($tagCommit)) {
-        throw "Release tag '$ReleaseTag' does not resolve to a commit in this checkout. The tag must exist, and the checkout must fetch tags."
-    }
+    $tag = Resolve-BackfillReleaseTag -ReleaseTag $ReleaseTag -Purpose 'compare build inputs with'
+    $top = $tag.Top
+    $tagCommit = $tag.TagCommit
 
     $inputs = Get-DocumentCacheAdminBackfillSourceInput
     & git -C $top diff --quiet $tagCommit HEAD -- @inputs
@@ -204,7 +226,75 @@ function Assert-DocumentCacheAdminBackfillSource {
     if ($LASTEXITCODE -ne 0) {
         throw "git diff could not list the build inputs that differ from release tag '$ReleaseTag' ($tagCommit): exit $LASTEXITCODE."
     }
-    throw "The build inputs of this commit differ from those of release tag '$ReleaseTag' ($tagCommit), so it would not build that release. Differing inputs: $($changed -join ', ')."
+    throw "The build inputs of this commit differ from those of release tag '$ReleaseTag' ($tagCommit), so it would not build that release. Differing inputs: $($changed -join ', '). Restore-DocumentCacheAdminBackfillSource stages the tag's inputs for a commit that would."
+}
+
+<#
+.SYNOPSIS
+Stages the build inputs of a release tag, so a commit of them passes Assert-DocumentCacheAdminBackfillSource.
+.DESCRIPTION
+In the repository holding the current directory, restores in the index and the work tree every
+Get-DocumentCacheAdminBackfillSourceInput path that differs between HEAD and the commit the tag
+names: a path the tag has gets the tag's content, and a path only HEAD has is removed. Everything
+else stays as HEAD has it, the workflows and the tool README included. A work tree with uncommitted
+changes to tracked files is refused before anything is restored, and afterwards the index is
+compared with the tag over the inputs Assert-DocumentCacheAdminBackfillSource compares. Nothing is
+committed.
+#>
+function Restore-DocumentCacheAdminBackfillSource {
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Mandatory)]
+        [AllowEmptyString()]
+        [string] $ReleaseTag
+    )
+
+    Assert-StableReleaseTag -ReleaseTag $ReleaseTag
+    $tag = Resolve-BackfillReleaseTag -ReleaseTag $ReleaseTag -Purpose 'restore the build inputs of'
+    $top = $tag.Top
+    $tagCommit = $tag.TagCommit
+
+    $uncommitted = @(& git -C $top status --porcelain --untracked-files=no)
+    if ($LASTEXITCODE -ne 0) {
+        throw "git status could not read the work tree: exit $LASTEXITCODE."
+    }
+    if ($uncommitted.Count -gt 0) {
+        throw "The work tree has uncommitted changes to tracked files, so the build inputs of '$ReleaseTag' were not restored. Restore them in a clean checkout."
+    }
+
+    # Concrete paths only: git restore refuses a pathspec that matches nothing, as the inputs that
+    # exist in neither commit do, where git diff accepts it.
+    $inputs = Get-DocumentCacheAdminBackfillSourceInput
+    $listed = (& git -C $top diff --name-only --no-renames -z $tagCommit HEAD -- @inputs) -join "`n"
+    if ($LASTEXITCODE -ne 0) {
+        throw "git diff could not list the build inputs that differ from release tag '$ReleaseTag' ($tagCommit): exit $LASTEXITCODE."
+    }
+    $changed = @($listed -split "`0" | Where-Object { $_ })
+    if ($changed.Count -eq 0) {
+        Write-Information "The build inputs already equal those of $ReleaseTag ($tagCommit); nothing was restored."
+        return
+    }
+    if (-not $PSCmdlet.ShouldProcess("$($changed.Count) build input path(s)", "Restore from $ReleaseTag")) {
+        return
+    }
+
+    $pathList = [IO.Path]::GetTempFileName()
+    try {
+        [IO.File]::WriteAllText($pathList, ($changed -join "`0"))
+        & git -C $top --literal-pathspecs restore --source $tagCommit --staged --worktree --pathspec-from-file $pathList --pathspec-file-nul
+        if ($LASTEXITCODE -ne 0) {
+            throw "git restore could not restore the build inputs of release tag '$ReleaseTag' ($tagCommit): exit $LASTEXITCODE."
+        }
+    }
+    finally {
+        Remove-Item -LiteralPath $pathList -Force
+    }
+
+    & git -C $top diff --cached --quiet $tagCommit -- @inputs
+    if ($LASTEXITCODE -ne 0) {
+        throw "After the restore, the staged build inputs still differ from those of release tag '$ReleaseTag' ($tagCommit): git diff exit $LASTEXITCODE."
+    }
+    Write-Information "Staged the build inputs of $ReleaseTag ($tagCommit) over $($changed.Count) path(s). Commit them; the commit passes Assert-DocumentCacheAdminBackfillSource."
 }
 
 <#
@@ -313,4 +403,4 @@ function Publish-DocumentCacheAdminBackfill {
     }
 }
 
-Export-ModuleMember -Function Assert-DocumentCacheAdminBackfillTag, Get-DocumentCacheAdminBackfillVersion, Get-DocumentCacheAdminBackfillSourceInput, Assert-DocumentCacheAdminBackfillSource, Publish-DocumentCacheAdminBackfill
+Export-ModuleMember -Function Assert-DocumentCacheAdminBackfillTag, Get-DocumentCacheAdminBackfillVersion, Get-DocumentCacheAdminBackfillSourceInput, Assert-DocumentCacheAdminBackfillSource, Restore-DocumentCacheAdminBackfillSource, Publish-DocumentCacheAdminBackfill

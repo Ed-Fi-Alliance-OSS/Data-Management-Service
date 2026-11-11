@@ -4,13 +4,14 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 # One-time backfill of EdFi.Api.DocumentCacheAdmin for releases cut before the DocumentCacheAdmin
-# release chain existed. Dispatch it from main only. Like Pkg EdFi.Api.SecurityMetadataTools.yml, it
-# builds the dispatch commit, so the SBOM and the provenance describe the commit actually built. The
-# package version comes from the named stable release tag, never from MinVer, and the run refuses
-# unless the dispatch commit's build inputs equal the tag's, the tool README excepted so the package
-# carries the current install guidance (Get-DocumentCacheAdminBackfillSourceInput in
-# eng/ci/DocumentCacheAdminBackfill.psm1 lists the inputs). Run it soon after merge: a later change to
-# any of those inputs on main makes it refuse.
+# release chain existed. Like Pkg EdFi.Api.SecurityMetadataTools.yml, it builds the dispatch commit,
+# so the SBOM and the provenance describe the commit actually built. The package version comes from
+# the named stable release tag, never from MinVer, and the run refuses unless the dispatch commit's
+# build inputs equal the tag's, the tool README excepted so the package carries the current install
+# guidance (Get-DocumentCacheAdminBackfillSourceInput in eng/ci/DocumentCacheAdminBackfill.psm1 lists
+# the inputs). Main's build inputs no longer equal v8.1.0's, so it publishes only from the
+# backfill/document-cache-admin-8.1.0 branch: main plus one commit, made with
+# Restore-DocumentCacheAdminBackfillSource, that restores the tag's build inputs.
 #
 # docs/CI-PUBLISHING-CREDENTIALS.md describes how to run it: a dry run first, then the publishing run.
 #
@@ -20,7 +21,9 @@
 # DocumentCacheAdminBackfill.Tests.ps1 entry in the Pester allowlist in
 # .github/workflows/on-dms-pullrequest.yml, and from docs/CI-PUBLISHING-CREDENTIALS.md both the
 # backfill lines and the 'The one-time DocumentCacheAdmin backfill' section. Keep
-# eng/ci/release-assets.psm1, which the release workflows attach with too.
+# eng/ci/release-assets.psm1, which the release workflows attach with too. The provenance names the
+# backfill branch's commit, so replace that branch with the document-cache-admin-backfill-8.1.0 tag on
+# the same commit rather than only deleting it.
 
 name: Backfill EdFi.Api.DocumentCacheAdmin
 on:
@@ -231,10 +234,10 @@ jobs:
   publish:
     name: Publish exact DocumentCacheAdmin artifact
     needs: [build, sbom-create-document-cache-admin, provenance-create-document-cache-admin]
-    # Runs only from main, never a dispatch on another branch, and only in the 'publishing'
-    # environment, whose protection rules GitHub checks before it releases the token; the token
-    # reaches only the step that pushes or promotes.
-    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}
+    # Runs only from the backfill/document-cache-admin-8.1.0 branch, never from main or another branch,
+    # and only in the 'publishing' environment, whose protection rules GitHub checks before it
+    # releases the token; the token reaches only the step that pushes or promotes.
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
     concurrency:
       group: publish-package-document-cache-admin-backfill
       cancel-in-progress: false
@@ -277,7 +280,7 @@ jobs:
     name: Promote backfilled DocumentCacheAdmin version to Release
     # Retry only this failed job in the same run after a successful push.
     needs: [build, publish]
-    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
     environment: publishing
     runs-on: ubuntu-latest
     env:
@@ -308,7 +311,7 @@ jobs:
     # left as it is when its content matches and refused when it differs, so a re-run completes a
     # partial attach and never replaces an asset.
     needs: [build, publish, promote, sbom-create-document-cache-admin, provenance-create-document-cache-admin]
-    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -346,7 +349,7 @@ jobs:
     # Installs the promoted version as the tool README documents, reading the Release view
     # anonymously, and runs its help. It binds no environment and reads no secret.
     needs: [build, promote]
-    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/main' }}
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read

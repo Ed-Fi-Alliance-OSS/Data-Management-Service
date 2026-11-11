@@ -314,8 +314,11 @@ Describe 'backfill-document-cache-admin.yml publishing credentials' {
         Get-JobCondition $script:jobs[$Id] | Should -Match '^inputs\.publish_package &&'
     }
 
-    It 'runs <Id> only from <Case>: <Publishes>' -ForEach @(
-        @{ Case = 'a manual run on main'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/main'; RefType = 'branch'; Publishes = $true }
+    It 'runs the gated jobs only from <Case>: <Publishes>' -ForEach @(
+        @{ Case = 'a manual run on the backfill branch'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/backfill/document-cache-admin-8.1.0'; RefType = 'branch'; Publishes = $true }
+        @{ Case = 'a manual run on main, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/main'; RefType = 'branch'; Publishes = $false }
+        @{ Case = 'a manual run on a branch that only starts with the backfill branch name, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/backfill/document-cache-admin-8.1.0-other'; RefType = 'branch'; Publishes = $false }
+        @{ Case = 'a manual run on a tag named like the backfill branch, never'; EventName = 'workflow_dispatch'; Ref = 'refs/tags/backfill/document-cache-admin-8.1.0'; RefType = 'tag'; Publishes = $false }
         @{ Case = 'a manual run on a feature branch, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/DMS-1685'; RefType = 'branch'; Publishes = $false }
         @{ Case = 'a manual run on a branch named like a v tag, never'; EventName = 'workflow_dispatch'; Ref = 'refs/heads/v8.1.0'; RefType = 'branch'; Publishes = $false }
         @{ Case = 'a manual run on a tag ref, never'; EventName = 'workflow_dispatch'; Ref = 'refs/tags/v8.1.0'; RefType = 'tag'; Publishes = $false }
