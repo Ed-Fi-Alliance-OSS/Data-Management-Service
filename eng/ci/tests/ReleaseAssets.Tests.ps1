@@ -63,7 +63,8 @@ Describe 'Publish-ReleaseAsset' {
         function Invoke-TestAttach {
             param([string] $ReleaseTag = 'v8.1.0', [object[]] $Asset = $script:assets)
             Publish-ReleaseAsset -Repository $script:repository -ReleaseTag $ReleaseTag -Token 'test-only' -Asset $Asset `
-                -GetRelease $script:getRelease -DownloadAsset $script:downloadAsset -UploadAsset $script:uploadAsset
+                -GetRelease $script:getRelease -DownloadAsset $script:downloadAsset -UploadAsset $script:uploadAsset `
+                -DeleteAsset $script:deleteAsset
         }
     }
 
@@ -80,19 +81,31 @@ Describe 'Publish-ReleaseAsset' {
             @{ Name = $script:provenanceName; Path = $script:provenance; Comparison = 'Bytes' }
         )
 
-        # Asset name to the file holding its bytes on the release.
+        # Asset name to the file holding its bytes on the release, and to the state GitHub reports for
+        # it when that is not uploaded. A state of 'none' leaves the property out.
         $script:existing = [ordered]@{}
+        $script:states = @{}
         $script:lookups = [Collections.Generic.List[object]]::new()
         $script:downloads = [Collections.Generic.List[object]]::new()
         $script:uploads = [Collections.Generic.List[object]]::new()
+        $script:deletes = [Collections.Generic.List[object]]::new()
+        # Each delete and upload, in the order they were made.
+        $script:changes = [Collections.Generic.List[string]]::new()
         $script:release = 'present'
         $script:getRelease = {
             param($Repository, $Tag, $Token)
             $script:lookups.Add([pscustomobject]@{ Repository = $Repository; Tag = $Tag; Token = $Token })
             if ($script:release -ne 'present') { return $null }
+            $id = 100
             return [pscustomobject]@{
                 id     = 42
-                assets = @($script:existing.Keys | ForEach-Object { [pscustomobject]@{ name = $_; url = "https://api.invalid/assets/$_" } })
+                assets = @($script:existing.Keys | ForEach-Object {
+                        $id++
+                        $asset = [ordered]@{ id = $id; name = $_; url = "https://api.invalid/assets/$id" }
+                        $state = if ($script:states.ContainsKey($_)) { $script:states[$_] } else { 'uploaded' }
+                        if ($state -ne 'none') { $asset.state = $state }
+                        [pscustomobject] $asset
+                    })
             }
         }
         $script:downloadAsset = {
@@ -103,6 +116,12 @@ Describe 'Publish-ReleaseAsset' {
         $script:uploadAsset = {
             param($Repository, $Release, $Name, $Path, $Token)
             $script:uploads.Add([pscustomobject]@{ Repository = $Repository; ReleaseId = $Release.id; Name = $Name; Bytes = [IO.File]::ReadAllBytes($Path); Token = $Token })
+            $script:changes.Add("upload $Name")
+        }
+        $script:deleteAsset = {
+            param($Repository, $Asset, $Token)
+            $script:deletes.Add([pscustomobject]@{ Repository = $Repository; Id = $Asset.id; Name = $Asset.name; Token = $Token })
+            $script:changes.Add("delete $($Asset.name)")
         }
     }
 
@@ -170,6 +189,52 @@ Describe 'Publish-ReleaseAsset' {
         $script:existing[$script:provenanceName] = New-AssetFile '{"payloadType":"another"}'
         { Invoke-TestAttach } | Should -Throw "*$script:provenanceName*different*"
         $script:uploads.Count | Should -Be 0
+    }
+
+    It 'deletes and uploads again, without downloading it, an asset an interrupted upload left in state <State>' -ForEach @(
+        # GitHub documents that a failed upload can leave an empty starter asset, and its schema lists
+        # open beside uploaded.
+        @{ State = 'starter' }
+        @{ State = 'open' }
+    ) {
+        $script:existing[$script:sbomName] = New-AssetFile ''
+        $script:states[$script:sbomName] = $State
+        $script:existing[$script:provenanceName] = New-AssetFile $script:provenanceText
+        Invoke-TestAttach
+        @($script:downloads.Name) | Should -Be @($script:provenanceName)
+        @($script:deletes.Name) | Should -Be @($script:sbomName)
+        @($script:deletes.Id) | Should -Be @(101)
+        @($script:deletes.Repository) | Should -Be @($script:repository)
+        @($script:deletes.Token) | Should -Be @('test-only')
+        @($script:changes) | Should -Be @("delete $script:sbomName", "upload $script:sbomName")
+        Get-UploadedManifest $script:uploads[0].Bytes | Should -BeExactly $script:manifestText
+    }
+
+    It 'refuses, deleting and uploading nothing, when another asset differs though one is unfinished' {
+        $script:existing[$script:sbomName] = New-AssetFile ''
+        $script:states[$script:sbomName] = 'starter'
+        $script:existing[$script:provenanceName] = New-AssetFile '{"payloadType":"another"}'
+        { Invoke-TestAttach } | Should -Throw "*$script:provenanceName*different*"
+        $script:changes.Count | Should -Be 0
+    }
+
+    It 'refuses, deleting nothing, an empty asset whose state is <Case>, because only the state marks an upload unfinished' -ForEach @(
+        @{ Case = 'uploaded'; State = 'uploaded' }
+        @{ Case = 'not reported'; State = 'none' }
+    ) {
+        $script:existing[$script:provenanceName] = New-AssetFile ''
+        $script:states[$script:provenanceName] = $State
+        { Invoke-TestAttach } | Should -Throw "*$script:provenanceName*different*"
+        $script:changes.Count | Should -Be 0
+    }
+
+    It 'deletes nothing under -WhatIf' {
+        $script:existing[$script:sbomName] = New-AssetFile ''
+        $script:states[$script:sbomName] = 'starter'
+        Publish-ReleaseAsset -Repository $script:repository -ReleaseTag 'v8.1.0' -Token 'test-only' -Asset $script:assets `
+            -GetRelease $script:getRelease -DownloadAsset $script:downloadAsset -UploadAsset $script:uploadAsset `
+            -DeleteAsset $script:deleteAsset -WhatIf
+        $script:changes.Count | Should -Be 0
     }
 
     It 'refuses a tag with no GitHub release' {

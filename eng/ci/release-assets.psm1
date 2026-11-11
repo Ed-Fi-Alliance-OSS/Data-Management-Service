@@ -8,8 +8,9 @@
 # Attaches files to a GitHub release so that a retry completes a partial attach. GitHub refuses an
 # upload under a name the release already has, so a job that uploads blindly fails on its retry once
 # any asset reached the release. Here every asset is checked before any is uploaded: one the release
-# lacks is uploaded, one it already has with the same content is left as it is, and one it has with
-# different content is refused, because a release asset is never replaced.
+# lacks is uploaded, one an interrupted upload left unfinished is deleted and uploaded again, one it
+# already has with the same content is left as it is, and one it has with different content is
+# refused, because a completed release asset is never replaced.
 
 $ErrorActionPreference = 'Stop'
 # No -Force, for the reason package-helpers.psm1 gives.
@@ -111,6 +112,35 @@ function Send-GitHubReleaseAsset {
     Invoke-RestMethod -Method Post -Uri $uri -Headers $headers -ContentType 'application/octet-stream' -InFile $Path | Out-Null
 }
 
+function Remove-GitHubReleaseAsset {
+    <#
+    .SYNOPSIS
+        Deletes one release asset.
+    #>
+    [CmdletBinding(SupportsShouldProcess = $true)]
+    param(
+        [Parameter(Mandatory)]
+        [string]
+        $Repository,
+
+        [Parameter(Mandatory)]
+        [object]
+        $Asset,
+
+        [Parameter(Mandatory)]
+        [string]
+        $Token
+    )
+
+    $headers = @{
+        Accept = 'application/vnd.github+json'
+        Authorization = "Bearer $Token"
+    }
+    if ($PSCmdlet.ShouldProcess("release asset $($Asset.name)", 'Delete')) {
+        Invoke-RestMethod -Method Delete -Uri "https://api.github.com/repos/$Repository/releases/assets/$($Asset.id)" -Headers $headers | Out-Null
+    }
+}
+
 function Get-SingleZipEntrySha256 {
     <#
     .SYNOPSIS
@@ -150,11 +180,13 @@ function Publish-ReleaseAsset {
         replacing an asset.
     .DESCRIPTION
         The tag and every asset are checked before the release is looked up, and every asset is
-        compared with the release before any is uploaded. An asset the release lacks is uploaded. An
-        asset it already has is downloaded and compared: a Bytes asset byte for byte, and a ZipEntry
-        asset by the one file in its zip, because Compress-Archive does not write the same zip bytes
-        twice. An equal asset is left as it is, so a retry completes a partial attach. A different one
-        throws before anything is uploaded.
+        compared with the release before any is deleted or uploaded. An asset the release lacks is
+        uploaded. An asset whose state is reported and is not uploaded was left by an interrupted
+        upload, so it is deleted and uploaded again. Any other asset the release already has is
+        downloaded and compared: a Bytes asset byte for byte, and a ZipEntry asset by the one file in
+        its zip, because Compress-Archive does not write the same zip bytes twice. An equal asset is
+        left as it is, so a retry completes a partial attach. A different one throws before anything
+        is deleted or uploaded.
     .PARAMETER Repository
         The repository as owner/name, for example $env:GITHUB_REPOSITORY.
     .PARAMETER ReleaseTag
@@ -171,6 +203,8 @@ function Publish-ReleaseAsset {
         Downloads an existing asset of the release to a path, with a token.
     .PARAMETER UploadAsset
         Uploads a file to the release of a repository as a named asset, with a token.
+    .PARAMETER DeleteAsset
+        Deletes an existing asset of the release of a repository, with a token.
     #>
     [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
     param(
@@ -201,7 +235,10 @@ function Publish-ReleaseAsset {
         $UploadAsset = {
             param($Repository, $Release, $Name, $Path, $Token)
             Send-GitHubReleaseAsset -Repository $Repository -Release $Release -Name $Name -Path $Path -Token $Token
-        }
+        },
+
+        [scriptblock]
+        $DeleteAsset = { param($Repository, $Asset, $Token) Remove-GitHubReleaseAsset -Repository $Repository -Asset $Asset -Token $Token }
     )
 
     Assert-ReleaseRef -ReleaseRef $ReleaseTag -Prefix v
@@ -236,8 +273,9 @@ function Publish-ReleaseAsset {
         throw "Release tag '$ReleaseTag' has no GitHub release in $Repository to attach $($assets.Name -join ' and ') to."
     }
 
+    # The work directory is scratch space for the comparison, so -WhatIf does not apply to it.
     $work = Join-Path ([IO.Path]::GetTempPath()) "release-assets-$([guid]::NewGuid().ToString('N'))"
-    New-Item -ItemType Directory -Path $work | Out-Null
+    New-Item -ItemType Directory -Path $work -WhatIf:$false | Out-Null
     try {
         $toUpload = [Collections.Generic.List[object]]::new()
         for ($index = 0; $index -lt $assets.Count; $index++) {
@@ -246,12 +284,19 @@ function Publish-ReleaseAsset {
             $upload = $item.Path
             if ($item.Comparison -ceq 'ZipEntry') {
                 $upload = Join-Path $work "upload-$index.zip"
-                Compress-Archive -LiteralPath $item.Path -DestinationPath $upload
+                Compress-Archive -LiteralPath $item.Path -DestinationPath $upload -WhatIf:$false
             }
 
             $existing = @($release.assets | Where-Object { $_.name -ceq $item.Name })
             if ($existing.Count -eq 0) {
-                $toUpload.Add([pscustomobject]@{ Name = $item.Name; Path = $upload })
+                $toUpload.Add([pscustomobject]@{ Name = $item.Name; Path = $upload; Unfinished = $null })
+                continue
+            }
+            # GitHub documents that a failed upload can leave an empty asset in state starter, and that
+            # it can be deleted. Any state other than uploaded holds no content to compare, so the
+            # asset is deleted and uploaded again. Without a state, the asset is compared.
+            if ($null -ne $existing[0].state -and [string] $existing[0].state -cne 'uploaded') {
+                $toUpload.Add([pscustomobject]@{ Name = $item.Name; Path = $upload; Unfinished = $existing[0] })
                 continue
             }
 
@@ -271,13 +316,17 @@ function Publish-ReleaseAsset {
 
         foreach ($item in $toUpload) {
             if ($PSCmdlet.ShouldProcess("$($item.Name) on release $ReleaseTag", 'Upload')) {
+                if ($null -ne $item.Unfinished) {
+                    Write-Information "Deleting the unfinished $($item.Name) that an earlier upload left on release $ReleaseTag."
+                    & $DeleteAsset $Repository $item.Unfinished $Token
+                }
                 Write-Information "Uploading $($item.Name) to release $ReleaseTag."
                 & $UploadAsset $Repository $release $item.Name $item.Path $Token
             }
         }
     }
     finally {
-        Remove-Item -LiteralPath $work -Recurse -Force
+        Remove-Item -LiteralPath $work -Recurse -Force -WhatIf:$false
     }
 }
 
