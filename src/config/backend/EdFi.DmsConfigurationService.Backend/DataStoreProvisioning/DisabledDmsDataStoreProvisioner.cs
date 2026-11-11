@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// The provisioner registered while the feature is disabled: every call returns
 /// <c>Failure(NotReady/FeatureDisabled)</c> and touches nothing. When the feature is enabled the orchestrator
 /// is registered instead and refuses through <see cref="RefusalFor"/> until readiness is <c>Ready</c>
-/// (<c>AdapterUnavailable</c> or <c>StartupValidationFailed</c>). Readiness can never be <c>Ready</c> while this
+/// (<c>StartupValidationFailed</c>). Readiness can never be <c>Ready</c> while this
 /// class is the registered provisioner; if it were, that is a registration error and the call throws rather
 /// than pretending to provision.
 /// </summary>
@@ -25,11 +25,7 @@ public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerRead
         DmsProvisioningFailureCode code = readiness switch
         {
             DmsProvisionerReadiness.Disabled => DmsProvisioningFailureCode.FeatureDisabled,
-            DmsProvisionerReadiness.NotReady notReady => notReady.Reasons.Any(reason =>
-                reason.Code == DmsProvisioningFailureCode.AdapterUnavailable
-            )
-                ? DmsProvisioningFailureCode.AdapterUnavailable
-                : DmsProvisioningFailureCode.StartupValidationFailed,
+            DmsProvisionerReadiness.NotReady => DmsProvisioningFailureCode.StartupValidationFailed,
             DmsProvisionerReadiness.Ready => throw new InvalidOperationException(
                 "DMS data store provisioning readiness is Ready, but the refusing provisioner is registered instead of the orchestrator."
             ),

@@ -360,7 +360,7 @@ Job handlers that call it must follow this contract.
 
 The state is set once at startup and never returns from `NotReady` to `Ready` without a restart. Every
 provisioner call checks it first: while it is not `Ready`, the call returns a failure with category
-`NotReady` (`FeatureDisabled`, `StartupValidationFailed`, or `AdapterUnavailable`) and touches nothing. A handler should not
+`NotReady` (`FeatureDisabled` or `StartupValidationFailed`) and touches nothing. A handler should not
 enqueue or keep retrying provisioning work while the gate is closed: `NotReady` is terminal until a
 restart, so treat it as a permanent job failure and let the record converge, as described in
 [What consumers must provide](#what-consumers-must-provide).

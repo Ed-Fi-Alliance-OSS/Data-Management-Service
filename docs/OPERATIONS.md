@@ -1723,7 +1723,7 @@ server message, or `psql` output. The category tells the caller whether to retry
 
 | Code | Category |
 | --- | --- |
-| `FeatureDisabled`, `StartupValidationFailed`, `AdapterUnavailable` | `NotReady` |
+| `FeatureDisabled`, `StartupValidationFailed` | `NotReady` |
 | `TemplateNotAllowlisted`, `InvalidTargetName`, `EmptySourceIdentity`, `ArtifactPinMissing` | `InvalidRequest` |
 | `ProtectedTarget`, `AdminPrivilegeMissing`, `RoleStateUnsafe`, `EngineIncompatible`, `StagingNotVisible` | `Permanent` |
 | `ServerRejected` | `Permanent`; `Transient` when the server rejected the administrative command, so nothing changed, for a reason that can clear on its own: a PostgreSQL serialization failure, deadlock, unavailable lock, or temporary resource shortage, or a SQL Server deadlock victim (error 1205) or temporary memory shortage (error 701). A refusal for lack of a privilege is `AdminPrivilegeMissing`, never this |

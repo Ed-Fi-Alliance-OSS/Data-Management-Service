@@ -283,10 +283,11 @@ public static class WebApplicationBuilderExtensions
     /// not match. Disabled (the shipped default): only the readiness singleton and the refusing provisioner,
     /// no options validation, no startup work. Enabled: the section is bound and validated at startup; the
     /// orchestrator replaces the refusing provisioner, beside the directory catalog, the protected set, and the
-    /// administrative connection source; and the engine adapter for the provider is registered. A provider
-    /// without an adapter (only possible for a value the options validator refuses, which stops the host) gets
-    /// the <see cref="UnavailableDmsTargetEngine"/>, so readiness can never become <c>Ready</c> for it. Every
-    /// call is refused until startup records <c>Ready</c> (D-2).
+    /// administrative connection source; and the engine adapter for the provider is registered. Any other
+    /// provider value, or none, registers only the options and their validator: the validator refuses it when
+    /// startup first resolves the options, so the host stops with the validator's text, and nothing is
+    /// registered that would need an engine adapter the value does not name. Every call is refused until startup
+    /// records <c>Ready</c> (D-2).
     /// </summary>
     private static void ConfigureDmsDataStoreProvisioning(
         WebApplicationBuilder webAppBuilder,
@@ -315,10 +316,21 @@ public static class WebApplicationBuilderExtensions
             DmsDataStoreProvisioningOptionsValidator
         >();
 
-        string? configuredProvider = section[nameof(DmsDataStoreProvisioningOptions.Provider)];
-        string targetProvider = string.IsNullOrWhiteSpace(configuredProvider)
-            ? "(unset)"
-            : configuredProvider;
+        string? targetProvider = section[nameof(DmsDataStoreProvisioningOptions.Provider)];
+        if (
+            targetProvider
+            is not (
+                DmsDataStoreProvisioningOptions.PostgresqlProvider
+                or DmsDataStoreProvisioningOptions.MssqlProvider
+            )
+        )
+        {
+            logger.Information(
+                "DMS data store provisioning is enabled without a supported target provider; options validation stops startup"
+            );
+            return;
+        }
+
         webAppBuilder.Services.TryAddSingleton(TimeProvider.System);
         webAppBuilder.Services.AddSingleton<ITemplateArtifactCatalog, TemplateArtifactCatalog>();
         webAppBuilder.Services.AddSingleton(ProtectedDatabaseNamesFor);
@@ -333,18 +345,8 @@ public static class WebApplicationBuilderExtensions
             return;
         }
 
-        if (targetProvider == DmsDataStoreProvisioningOptions.MssqlProvider)
-        {
-            logger.Information("DMS data store provisioning is enabled for target provider mssql");
-            webAppBuilder.Services.AddMssqlDmsTargetEngine();
-            return;
-        }
-
-        logger.Information(
-            "DMS data store provisioning is enabled for target provider {Provider}; no engine adapter exists in this build for it, so the provisioner will refuse every call",
-            LoggingUtility.SanitizeForLog(targetProvider)
-        );
-        webAppBuilder.Services.AddSingleton<IDmsTargetEngine>(new UnavailableDmsTargetEngine(targetProvider));
+        logger.Information("DMS data store provisioning is enabled for target provider mssql");
+        webAppBuilder.Services.AddMssqlDmsTargetEngine();
     }
 
     /// <summary>

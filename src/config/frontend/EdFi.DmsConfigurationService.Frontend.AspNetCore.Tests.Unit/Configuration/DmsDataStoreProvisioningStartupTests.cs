@@ -266,6 +266,68 @@ public class DmsDataStoreProvisioningStartupTests
     }
 
     /// <summary>
+    /// V4-03: enabled with a provider token that names no adapter, or with none, and an otherwise valid section. The
+    /// host fails to start with the options validator's text naming the setting, even with the service provider
+    /// validating every registration when it is built, so the failure is never a missing engine service.
+    /// </summary>
+    [TestFixture("oracle")]
+    [TestFixture(null)]
+    public class Given_enabled_with_a_provider_that_names_no_adapter(string? provider)
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public void Act()
+        {
+            Dictionary<string, string> settings = EnabledSettings("postgresql", "postgresql");
+            settings.Remove($"{Section}:Provider");
+            if (provider is not null)
+            {
+                settings[$"{Section}:Provider"] = provider;
+            }
+
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseDefaultServiceProvider(options => options.ValidateOnBuild = true);
+                foreach ((string key, string value) in settings)
+                {
+                    builder.UseSetting(key, value);
+                }
+            });
+            _exception = StartupExceptionFor(_factory);
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        private static IEnumerable<Exception> Chain(Exception? exception) =>
+            exception switch
+            {
+                null => [],
+                AggregateException aggregate => [aggregate, .. aggregate.InnerExceptions.SelectMany(Chain)],
+                _ => [exception, .. Chain(exception.InnerException)],
+            };
+
+        [Test]
+        public void It_fails_with_the_validator_text_naming_the_provider_setting() =>
+            Chain(_exception)
+                .OfType<OptionsValidationException>()
+                .Should()
+                .ContainSingle()
+                .Which.Message.Should()
+                .Contain($"{Section}:Provider must be exactly postgresql or mssql.");
+
+        [Test]
+        public void It_does_not_fail_on_a_missing_engine_service() =>
+            Chain(_exception)
+                .Select(exception => exception.Message)
+                .Should()
+                .NotContain(message => message.Contains(nameof(IDmsTargetEngine), StringComparison.Ordinal));
+    }
+
+    /// <summary>
     /// Step 4.9: enabled for SQL Server with a server nothing listens on and a staging directory that does not
     /// exist. The real adapter is registered and wrapped by a recording fake, so the fixture sees every call that
     /// reaches it.
@@ -378,13 +440,6 @@ public class DmsDataStoreProvisioningStartupTests
         [Test]
         public void It_skips_the_visibility_and_lock_probes_on_an_unreachable_server() =>
             Reasons.Select(reason => reason.Probe).Should().NotContain(["StagingVisibility", "TargetLock"]);
-
-        [Test]
-        public void It_no_longer_reports_the_adapter_as_unavailable() =>
-            Reasons
-                .Select(reason => reason.Code)
-                .Should()
-                .NotContain(DmsProvisioningFailureCode.AdapterUnavailable);
 
         [Test]
         public void It_refuses_a_create_and_a_delete_as_not_ready() =>

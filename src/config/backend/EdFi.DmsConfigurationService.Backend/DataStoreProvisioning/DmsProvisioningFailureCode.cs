@@ -14,7 +14,6 @@ public enum DmsProvisioningFailureCode
     // NotReady (readiness)
     FeatureDisabled,
     StartupValidationFailed,
-    AdapterUnavailable,
 
     // InvalidRequest (boundary)
     TemplateNotAllowlisted,

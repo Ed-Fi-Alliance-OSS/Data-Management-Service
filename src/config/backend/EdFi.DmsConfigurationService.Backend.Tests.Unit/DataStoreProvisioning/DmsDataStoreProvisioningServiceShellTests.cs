@@ -41,10 +41,7 @@ public class DmsDataStoreProvisioningServiceShellTests
         {
             _harness = new Harness(
                 new DmsProvisionerReadiness.NotReady([
-                    new DmsReadinessReason(
-                        DmsProvisioningFailureCode.AdapterUnavailable,
-                        "AdapterResolution"
-                    ),
+                    new DmsReadinessReason(DmsProvisioningFailureCode.StagingNotVisible, "StagingVisibility"),
                 ])
             );
             _resolution = await _harness.Service.ResolveArtifactAsync(
@@ -62,7 +59,7 @@ public class DmsDataStoreProvisioningServiceShellTests
                 .Should()
                 .BeOfType<DmsArtifactResolution.Failure>()
                 .Which.Detail.Code.Should()
-                .Be(DmsProvisioningFailureCode.AdapterUnavailable);
+                .Be(DmsProvisioningFailureCode.StartupValidationFailed);
             FailureOf(_create).Category.Should().Be(DmsProvisioningFailureCategory.NotReady);
             FailureOf(_delete).Category.Should().Be(DmsProvisioningFailureCategory.NotReady);
         }

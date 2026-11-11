@@ -108,20 +108,17 @@ public class DisabledDmsDataStoreProvisionerTests
     [TestFixture]
     public class Given_the_feature_is_enabled_but_not_ready
     {
-        private DmsProvisioningFailure _adapterUnavailable = null!;
+        private DmsProvisioningFailure _severalReasons = null!;
         private DmsProvisioningFailure _otherReason = null!;
         private DmsProvisioningFailure _pending = null!;
 
         [SetUp]
         public void Setup()
         {
-            _adapterUnavailable = DisabledDmsDataStoreProvisioner.RefusalFor(
+            _severalReasons = DisabledDmsDataStoreProvisioner.RefusalFor(
                 new DmsProvisionerReadiness.NotReady([
                     new DmsReadinessReason(DmsProvisioningFailureCode.EngineIncompatible, "ServerFloors"),
-                    new DmsReadinessReason(
-                        DmsProvisioningFailureCode.AdapterUnavailable,
-                        "AdapterResolution"
-                    ),
+                    new DmsReadinessReason(DmsProvisioningFailureCode.ServerUnavailable, "TargetServer"),
                 ])
             );
             _otherReason = DisabledDmsDataStoreProvisioner.RefusalFor(
@@ -135,10 +132,15 @@ public class DisabledDmsDataStoreProvisionerTests
         }
 
         [Test]
-        public void It_reports_adapter_unavailable_when_any_reason_says_so() =>
-            (_adapterUnavailable.Category, _adapterUnavailable.Code)
+        public void It_reports_startup_validation_failed_whatever_the_reasons() =>
+            (_severalReasons.Category, _severalReasons.Code)
                 .Should()
-                .Be((DmsProvisioningFailureCategory.NotReady, DmsProvisioningFailureCode.AdapterUnavailable));
+                .Be(
+                    (
+                        DmsProvisioningFailureCategory.NotReady,
+                        DmsProvisioningFailureCode.StartupValidationFailed
+                    )
+                );
 
         [Test]
         public void It_reports_startup_validation_failed_otherwise() =>

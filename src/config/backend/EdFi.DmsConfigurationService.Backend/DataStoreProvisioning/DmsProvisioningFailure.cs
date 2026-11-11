@@ -104,10 +104,6 @@ public sealed record DmsProvisioningFailure
                 [NotReady],
                 "DMS data store provisioning failed startup validation; restart after remediation."
             ),
-            [DmsProvisioningFailureCode.AdapterUnavailable] = new(
-                [NotReady],
-                "No DMS target engine adapter exists for the configured provider."
-            ),
             [DmsProvisioningFailureCode.TemplateNotAllowlisted] = new(
                 [InvalidRequest],
                 "The requested template is not an allowlisted DMS template."

@@ -21,7 +21,6 @@ public class FailureCodeCategoryTests
     {
         [FeatureDisabled] = [NotReady],
         [StartupValidationFailed] = [NotReady],
-        [AdapterUnavailable] = [NotReady],
         [TemplateNotAllowlisted] = [InvalidRequest],
         [InvalidTargetName] = [InvalidRequest],
         [EmptySourceIdentity] = [InvalidRequest],
