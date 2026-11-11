@@ -6,7 +6,9 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Text.Json;
+using Confluent.Kafka;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Time.Testing;
 
@@ -17,6 +19,122 @@ public sealed class Given_CdcFixtureProbes
 {
     private static readonly TimeSpan ObservationBudget = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan DrainBudget = TimeSpan.FromSeconds(20);
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_retains_the_Kafka_client_until_a_cancelled_native_call_exits(bool drainExpires)
+    {
+        var clock = new DrainClock();
+        ConcurrentQueue<CdcProbeFailureEvidence> evidence = new();
+        var owner = new CdcFixtureProbes(
+            clock,
+            DrainBudget,
+            item =>
+            {
+                evidence.Enqueue(item);
+                return Task.CompletedTask;
+            }
+        );
+        var request = CdcDeploymentRequestTestData.Request();
+        var client = A.Fake<IAdminClient>();
+        var entered = Signal();
+        var returned = Signal();
+        using var release = new ManualResetEventSlim();
+        using var caller = new CancellationTokenSource();
+        bool disposed = false;
+        bool nativeExited = false;
+        bool usedDisposedClient = false;
+        A.CallTo(() => client.GetMetadata(request.Binding.TopicName, request.Timing.CallTimeout))
+            .ReturnsLazily(() =>
+            {
+                entered.SetResult();
+                release.Wait();
+                usedDisposedClient = disposed;
+                nativeExited = true;
+                return new Metadata([], [], -1, "");
+            });
+        A.CallTo(() => client.Dispose()).Invokes(() => disposed = true);
+        using var adapter = new CdcKafkaAdminAdapter(
+            client,
+            A.Fake<ICdcKafkaAuthorizationInspection>(),
+            ownsClient: true
+        );
+        var operation = owner.WaitAsync(
+            async token =>
+            {
+                try
+                {
+                    await adapter.InspectTopicAsync(request, request.Binding.TopicName, token);
+                    return false;
+                }
+                finally
+                {
+                    returned.SetResult();
+                }
+            },
+            ObservationBudget,
+            TimeSpan.FromSeconds(1),
+            caller.Token
+        );
+        Task cleanup = Task.CompletedTask;
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await caller.CancelAsync();
+            // Adapter cancellation stays prompt even though the synchronous native call cannot cancel.
+            await returned.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            await clock.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            nativeExited.Should().BeFalse();
+            operation.IsCompleted.Should().BeFalse();
+            Func<Task> finish = () => operation.WaitAsync(TimeSpan.FromSeconds(30));
+            if (drainExpires)
+            {
+                clock.Advance(DrainBudget);
+                await finish.Should().ThrowAsync<CdcProbeDrainException>();
+                Func<Task> dispose = () => owner.DisposeResourcesAsync(DisposeClientAsync);
+                cleanup = (await dispose.Should().ThrowAsync<CdcProbeDrainException>()).Which.Completion;
+                cleanup.IsCompleted.Should().BeFalse();
+                disposed.Should().BeFalse();
+            }
+            release.Set();
+            if (drainExpires)
+            {
+                await cleanup.WaitAsync(TimeSpan.FromSeconds(30));
+                owner.LateOutcomes.Should().Equal("Cancelled");
+            }
+            else
+            {
+                await finish.Should().ThrowAsync<OperationCanceledException>();
+                await owner.DisposeResourcesAsync(DisposeClientAsync);
+            }
+            nativeExited.Should().BeTrue();
+            usedDisposedClient.Should().BeFalse();
+            disposed.Should().BeTrue();
+            owner.DrainFailed.Should().Be(drainExpires);
+            evidence
+                .Should()
+                .Equal(
+                    new CdcProbeFailureEvidence(
+                        "CallerCancellation",
+                        drainExpires ? "Timeout" : "None",
+                        drainExpires ? "Pending" : "Cancelled"
+                    )
+                );
+        }
+        finally
+        {
+            release.Set();
+            await caller.CancelAsync();
+            await operation.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await cleanup;
+        }
+
+        Task DisposeClientAsync()
+        {
+            adapter.Dispose();
+            return Task.CompletedTask;
+        }
+    }
 
     [TestCase("send", false, false)]
     [TestCase("send", true, false)]
