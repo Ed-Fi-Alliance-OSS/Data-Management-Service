@@ -286,7 +286,8 @@ grant. It does not use HybridCache.
 - Failed grants log the numeric HTTP status when available. Problem-details types
   are reported exactly only for `about:blank`,
   `urn:ed-fi:api:security:authentication:too-many-tokens`,
-  `urn:ed-fi:management-api:security:authentication:too-many-tokens`, and
+  `urn:ed-fi:management-api:security:authentication:too-many-tokens`,
+  `urn:ed-fi:api:internal-server-error`, and
   `urn:ed-fi:management-api:internal-server-error`. Other string
   types are reported as `unrecognized`; an absent, non-string or unreadable type
   is omitted. Diagnostic body reads are limited to 16 KiB and one second so they

@@ -609,6 +609,8 @@ public class ConfigurationServiceTokenHandler(
                 ConfigurationServiceProblemTypes.LegacyTooManyTokens,
             ConfigurationServiceProblemTypes.ManagementApiTooManyTokens =>
                 ConfigurationServiceProblemTypes.ManagementApiTooManyTokens,
+            ConfigurationServiceProblemTypes.LegacyInternalServerError =>
+                ConfigurationServiceProblemTypes.LegacyInternalServerError,
             ConfigurationServiceProblemTypes.ManagementApiInternalServerError =>
                 ConfigurationServiceProblemTypes.ManagementApiInternalServerError,
             _ => UnrecognizedProblemType,

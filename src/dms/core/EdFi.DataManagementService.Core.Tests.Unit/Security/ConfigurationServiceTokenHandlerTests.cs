@@ -587,6 +587,11 @@ public class ConfigurationServiceTokenHandlerTests
         HttpStatusCode.TooManyRequests
     )]
     [TestFixture(
+        """{"type":"urn:ed-fi:api:internal-server-error","detail":"SECRET TOKEN"}""",
+        "urn:ed-fi:api:internal-server-error",
+        HttpStatusCode.InternalServerError
+    )]
+    [TestFixture(
         """{"type":"urn:ed-fi:management-api:internal-server-error","detail":"SECRET TOKEN"}""",
         "urn:ed-fi:management-api:internal-server-error",
         HttpStatusCode.InternalServerError
@@ -1186,10 +1191,13 @@ public class ConfigurationServiceTokenHandlerTests
     /// Header failures and failures while HttpClient buffers a successful read must be sanitized
     /// before a provider logs or wraps them. Neither path is a protected 401 or starts recovery.
     /// </summary>
-    [TestFixture(false)]
-    [TestFixture(true)]
+    [TestFixture(false, HttpRequestError.InvalidResponse)]
+    [TestFixture(false, HttpRequestError.NameResolutionError)]
+    [TestFixture(false, HttpRequestError.ConnectionError)]
+    [TestFixture(false, HttpRequestError.SecureConnectionError)]
+    [TestFixture(true, HttpRequestError.Unknown)]
     [Parallelizable]
-    public class Given_A_Protected_Read_Transport_Failure(bool duringBody)
+    public class Given_A_Protected_Read_Transport_Failure(bool duringBody, HttpRequestError error)
         : ConfigurationServiceTokenHandlerTests
     {
         private ServiceProvider _provider = null!;
@@ -1208,7 +1216,7 @@ public class ConfigurationServiceTokenHandlerTests
                 : new ScriptedTransport(
                     (_, _) =>
                         throw new HttpRequestException(
-                            HttpRequestError.InvalidResponse,
+                            error,
                             $"invalid response header {SecretSentinel} {TokenSentinel}"
                         )
                 );
@@ -1241,6 +1249,19 @@ public class ConfigurationServiceTokenHandlerTests
         {
             AssertNoSentinels(_logs.Rendered);
             AssertNoSentinels(_failure!.ToString());
+        }
+
+        [Test]
+        public void It_preserves_the_safe_transport_category_in_provider_diagnostics()
+        {
+            HttpRequestException failure = _failure!
+                .InnerException.Should()
+                .BeOfType<HttpRequestException>()
+                .Which;
+            failure.HttpRequestError.Should().Be(error);
+            failure.Message.Should().Contain($"({error})");
+            failure.InnerException.Should().BeNull();
+            _logs.Rendered.Should().Contain($"({error})");
         }
     }
 

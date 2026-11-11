@@ -116,7 +116,7 @@ public class ConfigurationServiceApiClient(HttpClient httpClient)
             // never let upstream text or its inner exceptions reach provider logs.
             string message = failure.StatusCode is HttpStatusCode status
                 ? $"Configuration Service request failed with status code {(int)status}."
-                : "Configuration Service request failed during transport.";
+                : $"Configuration Service request failed during transport ({failure.HttpRequestError}).";
             throw new HttpRequestException(
                 failure.HttpRequestError,
                 message,
