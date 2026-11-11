@@ -11,7 +11,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// Backup validation and destination control of D-11 (6.4 step 5). <see cref="ReadAsync"/> reads the staged
+/// Backup validation and destination control of D-11. <see cref="ReadAsync"/> reads the staged
 /// backup's <c>RESTORE HEADERONLY</c> and <c>RESTORE FILELISTONLY</c> results on a work session;
 /// <see cref="Plan"/> judges them and places every file. The header must hold exactly one backup set, a full
 /// database backup (<c>BackupType = 1</c>) at <c>Position = 1</c>, whose recorded database name differs, ignoring
@@ -321,7 +321,7 @@ public abstract record MssqlRestorePlanResult
 
     public sealed record Planned(MssqlRestorePlan Plan) : MssqlRestorePlanResult;
 
-    /// <summary><c>BackupInvalid</c> (inspection, 6.4 step 5) for the first failing rule.</summary>
+    /// <summary><c>BackupInvalid</c> (inspection) for the first failing rule.</summary>
     public sealed record Refused(MssqlBackupDefect Defect) : MssqlRestorePlanResult
     {
         /// <summary><c>PlanRestore.&lt;Defect&gt;</c>; never a name or a path from the backup.</summary>

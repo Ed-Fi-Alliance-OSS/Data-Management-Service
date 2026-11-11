@@ -104,7 +104,7 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
         LockResourcePrefix + name.Value.ToLowerInvariant();
 
     /// <summary>
-    /// The readiness lock probe's resource (7.3 item 7): <see cref="LockResourcePrefix"/> plus <c>__probe__</c>,
+    /// The readiness lock probe's resource: <see cref="LockResourcePrefix"/> plus <c>__probe__</c>,
     /// which no target resource can equal, because a target name starts with a letter.
     /// </summary>
     public const string ProbeResource = LockResourcePrefix + "__probe__";
@@ -282,7 +282,7 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
     /// <summary>
     /// Runs the heartbeat's probe once, now, through the execution gate under <c>CommandTimeout</c>, with the
     /// heartbeat's loss rules: a connection failure, or an answer that the lock is no longer held, declares the
-    /// holder lost. The readiness lock probe (7.3 item 7) uses it to prove one heartbeat on a fresh holder
+    /// holder lost. The readiness lock probe uses it to prove one heartbeat on a fresh holder
     /// without waiting for the timer.
     /// </summary>
     internal async Task<bool> ProbeOnceAsync(CancellationToken cancellationToken)

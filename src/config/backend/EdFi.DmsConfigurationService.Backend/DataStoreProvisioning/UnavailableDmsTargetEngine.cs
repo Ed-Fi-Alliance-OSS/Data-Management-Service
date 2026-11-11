@@ -8,7 +8,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// Registered for a provider whose adapter does not exist in this build (4.4). Environmental validation
+/// Registered for a provider whose adapter does not exist in this build. Environmental validation
 /// always reports <c>NotReady(AdapterUnavailable)</c>, so readiness can never become <c>Ready</c> and the
 /// orchestrator refuses every call before reaching the engine; every other member throws because no call
 /// should ever arrive.

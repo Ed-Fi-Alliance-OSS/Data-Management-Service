@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>What <see cref="IDmsTargetEngine.InspectAsync"/> finds under a name (6.1 step 6).</summary>
+/// <summary>What <see cref="IDmsTargetEngine.InspectAsync"/> finds under a name.</summary>
 public abstract record DmsLiveTargetState
 {
     public sealed record Absent() : DmsLiveTargetState;

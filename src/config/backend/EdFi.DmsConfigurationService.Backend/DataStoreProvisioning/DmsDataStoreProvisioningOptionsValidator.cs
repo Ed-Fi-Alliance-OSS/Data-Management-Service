@@ -14,7 +14,7 @@ using static EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.DmsDataS
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The static validation of <see cref="DmsDataStoreProvisioningOptions"/> (spec 4.3, 7.2), run at startup
+/// The static validation of <see cref="DmsDataStoreProvisioningOptions"/>, run at startup
 /// through <c>ValidateOnStart</c>. A disabled section always passes. When enabled, every failed rule is
 /// reported; each message names <c>DmsDataStoreProvisioning:&lt;Key&gt;</c> and the rule, and never echoes
 /// a configured value, because the connection string and paths may hold credentials. A nested section,
@@ -22,8 +22,8 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// </summary>
 /// <remarks>
 /// The connection string is parsed for syntax with the provider-neutral <see cref="DbConnectionStringBuilder"/>:
-/// this project references no database driver (F-C1). The engine adapter's own builder and a real
-/// connection are exercised by the readiness probes (7.3 step 4), which is where provider-specific
+/// this project references no database driver. The engine adapter's own builder and a real
+/// connection are exercised by the readiness probes, which is where provider-specific
 /// parsing lives. CMS-local paths must be fully qualified under the CMS host's own rules;
 /// <c>Mssql:StagingServerPath</c> is the SQL Server host's view and may follow either convention.
 /// </remarks>
@@ -493,7 +493,9 @@ public sealed partial class DmsDataStoreProvisioningOptionsValidator(ISecretReso
         }
         else if (!StagingFileModePattern().IsMatch(mssql.StagingFileMode))
         {
-            failures.Add($"{ModeKey} must be three or four octal digits such as 0640.");
+            failures.Add(
+                $"{ModeKey} must be three octal permission digits with an optional leading 0, such as 640 or 0640; setuid, setgid, and sticky bits are not accepted."
+            );
         }
         else if (HasGroupOrOtherWriteBit(mssql.StagingFileMode))
         {

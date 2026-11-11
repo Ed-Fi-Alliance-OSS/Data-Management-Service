@@ -9,7 +9,7 @@ using System.Text.Json;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 
 /// <summary>
-/// Parses and validates one trust policy document in the delivered schema (F-P5), applying every rule of the
+/// Parses and validates one trust policy document in the delivered schema, applying every rule of the
 /// delivered <c>Read-TrustPolicyDocument</c> plus the producer-name uniqueness rule of
 /// <c>Read-TemplateTrustPolicy</c>: an integer <c>version</c> equal to 1; a <c>producers</c> array (empty allowed);
 /// each producer a non-blank <c>name</c> and a known, case-sensitive <c>provider</c>; each

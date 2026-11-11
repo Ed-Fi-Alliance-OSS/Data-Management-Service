@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The 4.3 settings the SQL Server engine reads: the lock budget and heartbeat cadence (D-12), the bound for
+/// The settings the SQL Server engine reads: the lock budget and heartbeat cadence (D-12), the bound for
 /// proving a session gone when the engine resolves a restore itself (D-22), the restore bound, and the staging
 /// routine's settings (D-18). Every value is range-checked so the engine never holds a setting outside the
 /// documented range.

@@ -101,8 +101,21 @@ These were raised during review and accepted. They are reflected in the code and
   the probe is `Template0Encoding` (formerly `Template1Encoding`). Compatibility consequence: a cluster whose
   `template1` is UTF-8 but whose `template0` is not, previously `Ready`, is now `NotReady`
   (`EngineIncompatible`, `Template0Encoding`) and must be initialized again with UTF-8 encoding.
-- **`ServerRejected`** (`Permanent`) was added for an administrative command the server refuses for reasons
-  other than privilege.
+- **`ServerRejected`** was added for an administrative command the server refuses for reasons other than
+  privilege. It is `Permanent`, or `Transient` when the provider's error classifier names the rejection one
+  that clears on its own (the same SQLSTATEs and SQL Server errors that make `RestoreFailed` transient). The
+  engine outcome carries that verdict separately from what the error proves about the command's effect, so
+  retryability never changes the code, settlement, or cleanup.
+- **PostgreSQL target trust boundary.** A database under the target name whose owner is neither a
+  superuser nor the administrative login is never opened (`TargetUnverifiable` at `InspectTarget`), and the
+  relations the provisioner reads inside a candidate (identity, effective schema, the Populated predicate's
+  tables) must be tables such a role owns with built-in column types, or the read is refused before it
+  runs. Reading an object another role controls could run its code as the administrator. Any superuser
+  owner is trusted, so targets created before a switch to another superuser login stay readable.
+- **Unix operation root.** The private operation directory (D-5) is refused under a root, or an ancestor,
+  that is a symbolic link, is owned by an account other than `root` or the service user, or is writable by
+  its group or others without the sticky bit (no group is assumed trusted): another account could otherwise replace the directory `psql`
+  later opens by path. The refusal is `StagingFailed` for inspection, at startup and per operation.
 - **Real-package tests** sign the feed packages with an ephemeral key and a trust policy written for it,
   which is the operator path, not a bypass. Restore cancellation and timeout tests hold the restore at a
   point only the test releases, instead of racing a running restore.

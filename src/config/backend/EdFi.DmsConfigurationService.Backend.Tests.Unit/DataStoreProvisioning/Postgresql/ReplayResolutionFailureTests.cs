@@ -6,6 +6,7 @@
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -35,7 +36,7 @@ public class ReplayResolutionFailureTests
         {
             Operation = DmsOperationId.New();
             _root = Path.Combine(Path.GetTempPath(), "dms1438-not-started-" + Operation.Value);
-            Directory.CreateDirectory(_root);
+            PrivateTestDirectory.Create(_root);
             OperationDirectory = PrivateOperationDirectory.Create(_root, Operation);
             string path = OperationDirectory.PathOf("artifact.sql");
             File.WriteAllText(path, "SELECT 1;\n");

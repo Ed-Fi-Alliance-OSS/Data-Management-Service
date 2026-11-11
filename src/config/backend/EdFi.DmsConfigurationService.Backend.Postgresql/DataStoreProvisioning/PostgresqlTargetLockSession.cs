@@ -33,7 +33,7 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     public const string AcquireStep = "AcquireTargetLock";
 
     /// <summary>
-    /// The resource the readiness lock probe takes (7.3 item 7): <c>dms-provision-target:v1:__probe__</c>. No
+    /// The resource the readiness lock probe takes: <c>dms-provision-target:v1:__probe__</c>. No
     /// target name can produce it, because a target name starts with a letter.
     /// </summary>
     public const string ProbeResource = "__probe__";
@@ -84,7 +84,7 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// The advisory lock key of D-12: the first eight bytes of the SHA-256 of
     /// <see cref="LockResourcePrefix"/> plus the lowercased target name, read big-endian as a signed 64-bit
     /// integer. In <c>pg_locks</c> it appears as <c>classid</c> (the high 32 bits) and <c>objid</c> (the low
-    /// 32 bits) with <c>objsubid = 1</c>, which is how the operator procedure (7.6) finds the holder.
+    /// 32 bits) with <c>objsubid = 1</c>, which is how the operator procedure finds the holder.
     /// </summary>
     public static long LockKeyFor(DmsTargetDatabaseName name) =>
         LockKeyForResource(name.Value.ToLowerInvariant());
@@ -261,7 +261,7 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
     /// <summary>
     /// Runs the heartbeat's probe once, now, through the execution gate under <c>CommandTimeout</c>, with the
     /// heartbeat's loss rules: a connection failure declares the holder lost. The readiness lock probe
-    /// (7.3 item 7) uses it to prove one heartbeat on a fresh holder without waiting for the timer.
+    /// uses it to prove one heartbeat on a fresh holder without waiting for the timer.
     /// </summary>
     internal Task<bool> ProbeOnceAsync(CancellationToken cancellationToken) =>
         RunAsync(ProbeAsync, _commandTimeout, cancellationToken);

@@ -32,7 +32,7 @@ public sealed class PrivateOperationDirectory : IDisposable
     /// <summary>
     /// The name of the only credential an operation ever writes into its directory: the replay's
     /// <c>libpq</c> password file (D-10). Cleanup recognizes it by this name and reports it as
-    /// <c>CredentialFile</c> residue at Critical (6.11, D-19).
+    /// <c>CredentialFile</c> residue at Critical (D-19).
     /// </summary>
     public const string CredentialFileName = "pgpass";
 
@@ -67,7 +67,9 @@ public sealed class PrivateOperationDirectory : IDisposable
     /// <summary>
     /// Claims <c>&lt;rootDirectory&gt;/dms-provision-&lt;op&gt;</c>. The root must be a fully qualified path to an existing
     /// directory; an entry already present under the generated name, whatever its kind or contents, is refused
-    /// with <see cref="IOException"/> and left untouched.
+    /// with <see cref="IOException"/> and left untouched. On Unix a root that would let another identity replace the
+    /// directory after the claim is refused first with <see cref="UnsafeOperationRootException"/>
+    /// (<see cref="OperationRootSafety"/>), and nothing is created.
     /// </summary>
     public static PrivateOperationDirectory Create(string rootDirectory, DmsOperationId operationId) =>
         Create(rootDirectory, operationId, beforeClaim: null);
@@ -94,6 +96,13 @@ public sealed class PrivateOperationDirectory : IDisposable
         if (!Directory.Exists(rootDirectory))
         {
             throw new DirectoryNotFoundException("The operation directory root does not exist.");
+        }
+
+        if (!OperatingSystem.IsWindows())
+        {
+            // The lexical form is checked and claimed under, so no "." or ".." segment can reach another directory.
+            rootDirectory = System.IO.Path.GetFullPath(rootDirectory);
+            OperationRootSafety.RequireSafe(rootDirectory);
         }
 
         string path = System.IO.Path.Combine(rootDirectory, NamePrefix + operationId.Value);

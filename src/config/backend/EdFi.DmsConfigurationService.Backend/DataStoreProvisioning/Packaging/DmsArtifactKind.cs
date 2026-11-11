@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 
-/// <summary>The restore artifact a template package carries (F-P2).</summary>
+/// <summary>The restore artifact a template package carries.</summary>
 public enum DmsArtifactKind
 {
     /// <summary>A plain <c>pg_dump --no-owner</c> SQL file, replayed with <c>psql</c>.</summary>

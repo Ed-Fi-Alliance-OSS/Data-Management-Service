@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The database names a provisioning request may never select (spec 6.8): the engine system
+/// The database names a provisioning request may never select: the engine system
 /// databases of both engines regardless of the configured provider, the names the provisioner
 /// generates for itself, and the deployment's protected set (the CMS catalog database plus the
 /// operator-listed <c>AdditionalProtectedDatabaseNames</c>). All comparisons are case-insensitive
@@ -14,7 +14,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// </summary>
 public sealed class ProtectedDatabaseNames
 {
-    /// <summary>System databases of both engines (F-P13).</summary>
+    /// <summary>System databases of both engines.</summary>
     public static IReadOnlyList<string> Reserved { get; } =
     ["postgres", "template0", "template1", "master", "model", "msdb", "tempdb"];
 

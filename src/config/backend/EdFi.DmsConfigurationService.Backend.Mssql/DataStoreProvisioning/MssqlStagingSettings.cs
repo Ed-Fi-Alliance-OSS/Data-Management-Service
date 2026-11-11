@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The 4.3 settings the SQL Server staging routine reads (D-18): the CMS-side staging directory, the same
+/// The settings the SQL Server staging routine reads (D-18): the CMS-side staging directory, the same
 /// directory as the database server sees it, the Unix mode of every staged file and probe, and the D-19 bounds
 /// of a staged file's deletion. Every value is checked so the routine never holds one outside the documented
 /// contract; the options validator reports the same rules with setting names at startup.

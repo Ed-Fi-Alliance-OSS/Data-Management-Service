@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The class of an error that proves the intended effect did not commit (6.9a definite failure).
+/// The class of an error that proves the intended effect did not commit (a definite failure).
 /// </summary>
 public enum DmsCommandFailureClass
 {
@@ -29,17 +29,30 @@ public enum DmsCommandFailureClass
     Rejected,
 }
 
-public sealed record DmsCommandFailure(DmsCommandFailureClass Class, DmsProvisioningDiagnostic Diagnostic);
+/// <summary>
+/// A definite failure: <see cref="Class"/> says what the error proves about the effect, and <see cref="Retryable"/>
+/// separately whether the same command can succeed later without anyone changing anything. Neither says whether
+/// cleanup or recovery is safe; that stays with the caller's settlement rules.
+/// </summary>
+public sealed record DmsCommandFailure(DmsCommandFailureClass Class, DmsProvisioningDiagnostic Diagnostic)
+{
+    /// <summary>
+    /// True when the server's rejection names a condition that clears on its own (a deadlock, an unavailable lock,
+    /// temporary resource exhaustion), as the provider's error classifier decides; false, the default, for every other
+    /// failure, including every refusal for lack of a privilege.
+    /// </summary>
+    public bool Retryable { get; init; }
+}
 
 /// <summary>
-/// The outcome of a mutating engine command (6.9a). <c>Succeeded</c> and <c>Failed</c> are definite;
+/// The outcome of a mutating engine command. <c>Succeeded</c> and <c>Failed</c> are definite;
 /// <c>Unknown</c> means the client cannot tell whether the effect committed (timeout, cancellation after
 /// send, connection loss, process killed), and names the session that must be proven terminated before
 /// state is read (D-7b, D-22). An unknown outcome proves nothing beyond what it states: its state may be
 /// read only after its session is proven gone, or when the engine marks it <see cref="Unknown.Quiescent"/>
-/// because it already proved that no process or session of the command remains (6.3 step 5); one with
+/// because it already proved that no process or session of the command remains; one with
 /// neither a session nor that mark cannot be resolved and permits no destructive recovery.
-/// <see cref="Residue"/> lists what the command left that the caller must account for (6.11), such as a
+/// <see cref="Residue"/> lists what the command left that the caller must account for, such as a
 /// replay process whose end could not be confirmed.
 /// </summary>
 public abstract record DmsCommandOutcome

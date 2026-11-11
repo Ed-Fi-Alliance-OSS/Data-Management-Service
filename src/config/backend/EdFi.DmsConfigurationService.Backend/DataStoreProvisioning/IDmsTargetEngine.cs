@@ -8,7 +8,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The engine port the orchestrator drives (spec 4.2). One adapter per target provider lives in the
+/// The engine port the orchestrator drives. One adapter per target provider lives in the
 /// provider project and is selected by <c>DmsDataStoreProvisioning:Provider</c>, independently of the CMS
 /// catalog provider. Every mutating member returns a <see cref="DmsCommandOutcome"/> whose unknown case
 /// names the session to prove terminated (D-7b); every selected-target mutation takes the lock holder
@@ -21,10 +21,10 @@ public interface IDmsTargetEngine
     /// <summary><c>postgresql</c> or <c>mssql</c> (D-17).</summary>
     string Provider { get; }
 
-    /// <summary>The engine's share of the readiness probes (7.3 items 4 to 7); no lock is held.</summary>
+    /// <summary>The engine's share of the readiness probes; no lock is held.</summary>
     Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken);
 
-    /// <summary>Version, encoding or default paths, and server clock (6.1 step 5).</summary>
+    /// <summary>Version, encoding or default paths, and server clock.</summary>
     Task<DmsServerFacts> ReadServerFactsAsync(CancellationToken cancellationToken);
 
     /// <summary>
@@ -55,7 +55,7 @@ public interface IDmsTargetEngine
     /// <summary><c>dms.DataStoreIdentity</c> with the delivered rule (<c>LIMIT 2</c> / <c>TOP (2)</c>).</summary>
     Task<DmsIdentityRead> ReadIdentityAsync(DmsSession session, CancellationToken cancellationToken);
 
-    /// <summary>The catalog facts the validator judges (6.9c).</summary>
+    /// <summary>The catalog facts the validator judges.</summary>
     Task<DmsTargetFacts> ReadTargetFactsAsync(DmsSession session, CancellationToken cancellationToken);
 
     /// <summary>
@@ -112,7 +112,7 @@ public interface IDmsTargetEngine
     /// <summary>
     /// On the instance-bound <paramref name="session"/>: assigns <paramref name="expectedSourceIdentity"/> to
     /// <c>dms.DataStoreIdentity.SourceIdentity</c> with an in-statement instance predicate, then re-reads it
-    /// on the same session (6.9b). The last mutation of a create; the sole commit marker (D-7).
+    /// on the same session. The last mutation of a create; the sole commit marker (D-7).
     /// </summary>
     Task<DmsCommandOutcome> AssignMarkerAsync(
         DmsSession session,
@@ -142,8 +142,8 @@ public interface IDmsTargetEngine
     );
 
     /// <summary>
-    /// On the holder session, under its fence: the delivered identity read of <paramref name="target"/> (6.6 SQL Server
-    /// step 4). On SQL Server the session that set single-user mode holds the database's one slot until it reverses the
+    /// On the holder session, under its fence: the delivered identity read of <paramref name="target"/>. On
+    /// SQL Server the session that set single-user mode holds the database's one slot until it reverses the
     /// fence, so no other session can read it; the holder reads it through a three-part name. Same outcomes as
     /// <see cref="ReadIdentityAsync"/>. PostgreSQL keeps its own session through the fence and does not support it.
     /// </summary>
@@ -155,9 +155,9 @@ public interface IDmsTargetEngine
 
     /// <summary>
     /// On the holder session: drops the selected target after re-verifying <paramref name="instance"/> under
-    /// <paramref name="target"/>. Two callers: owned deletion (6.6 step 5), which by its nature drops a target
+    /// <paramref name="target"/>. Two callers: owned deletion, which by its nature drops a target
     /// found by inspection whose marker equals the expected identity, after fencing and verified exclusivity;
-    /// and compensation (6.7), which is never issued on retry, on a target found by inspection, after a
+    /// and compensation, which is never issued on retry, on a target found by inspection, after a
     /// committed or unresolved marker, or after lock loss.
     /// </summary>
     Task<DmsCommandOutcome> DropInstanceAsync(
@@ -171,7 +171,7 @@ public interface IDmsTargetEngine
     /// <summary>
     /// Drops this operation's staging database on any session after re-verifying
     /// <paramref name="stagingInstance"/> under <paramref name="staging"/>; staging names are unique to the
-    /// operation, so this is cleanup, allowed after lock loss (6.7).
+    /// operation, so this is cleanup, allowed after lock loss.
     /// </summary>
     Task<DmsCommandOutcome> DropStagingAsync(
         DmsDatabaseName staging,

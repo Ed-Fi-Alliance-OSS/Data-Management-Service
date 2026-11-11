@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// The claim the provisioner writes on a database it created (D-13): the PostgreSQL database comment
 /// <c>edfi-dms-provision:v1:&lt;op&gt;:&lt;expected source identity&gt;</c>, stored in the cluster catalog
 /// keyed by <c>oid</c> so it survives the rename into the target name. It is detection and operator
-/// evidence (7.6), never destroy authority (D-14).
+/// evidence, never destroy authority (D-14).
 /// </summary>
 public sealed record DmsProvisionClaim
 {

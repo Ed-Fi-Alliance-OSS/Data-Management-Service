@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
 /// A syntactically safe database name on the target server: the selected target, this operation's
-/// staging database, or an engine maintenance database. Only the grammar of spec 6.8 is enforced;
+/// staging database, or an engine maintenance database. Only the grammar is enforced;
 /// reservation and protection are the business of <see cref="DmsTargetDatabaseName"/>, from which this
 /// type converts implicitly. A default-initialized value has no name and throws when read.
 /// </summary>

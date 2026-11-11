@@ -11,7 +11,7 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// Resolves <c>AdminConnectionString</c> (F-C6): a value without references is used as configured; each
+/// Resolves <c>AdminConnectionString</c>: a value without references is used as configured; each
 /// reference is resolved through the registered <see cref="ISecretResolver"/> and the shared
 /// <see cref="SecretValueCache"/> (tenant-less: the administrative connection belongs to the deployment, not to
 /// a tenant), and substituted into the value of the key that held it, so a resolved value that needs quoting

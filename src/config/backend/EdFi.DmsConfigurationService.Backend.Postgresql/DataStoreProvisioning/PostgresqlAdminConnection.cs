@@ -11,13 +11,13 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The provisioner's administrative connection to the target PostgreSQL server (4.3
+/// The provisioner's administrative connection to the target PostgreSQL server (the configured
 /// <c>AdminConnectionString</c>, with secret references already resolved). Every connection it opens is
 /// dedicated: pooling is off so a session is never shared, reused, or silently replaced (D-12); the
 /// database is chosen per open and the configured value is never used; TCP keepalive is on so a dead peer
 /// is noticed; the command timeout is <c>CommandTimeout</c>. The connection string is never exposed or
 /// logged. Built over a source, it reads the source at every open, so each operation connects with the
-/// resolution it bound (6.1 step 3) and a secret rotated between operations reaches the next one; the parsed
+/// resolution it bound and a secret rotated between operations reaches the next one; the parsed
 /// form is reused while the value is unchanged.
 /// </summary>
 public sealed class PostgresqlAdminConnection
@@ -43,7 +43,7 @@ public sealed class PostgresqlAdminConnection
     }
 
     /// <param name="resolvedConnectionString">Returns the value for the calling operation; read at every open and never logged.</param>
-    /// <param name="commandTimeout">The 4.3 <c>CommandTimeout</c>.</param>
+    /// <param name="commandTimeout">The <c>CommandTimeout</c>.</param>
     public PostgresqlAdminConnection(Func<string> resolvedConnectionString, TimeSpan commandTimeout)
     {
         ArgumentNullException.ThrowIfNull(resolvedConnectionString);

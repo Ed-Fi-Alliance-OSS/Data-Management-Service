@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>What the engine reads about the target server before an operation (6.1 step 5, D-9).</summary>
+/// <summary>What the engine reads about the target server before an operation (D-9).</summary>
 /// <param name="ProductVersion">The server's version string, for diagnostics only.</param>
 /// <param name="MajorVersion">The server's major version, compared with the manifest's engine major.</param>
 /// <param name="ServerEncoding">PostgreSQL: the <c>template0</c> encoding, the template of every staging database (must be <c>UTF8</c>); null on SQL Server.</param>

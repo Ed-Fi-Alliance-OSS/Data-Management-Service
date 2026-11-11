@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The provisioner registered while the feature is disabled (4.4): every call returns
+/// The provisioner registered while the feature is disabled: every call returns
 /// <c>Failure(NotReady/FeatureDisabled)</c> and touches nothing. When the feature is enabled the orchestrator
 /// is registered instead and refuses through <see cref="RefusalFor"/> until readiness is <c>Ready</c>
 /// (<c>AdapterUnavailable</c> or <c>StartupValidationFailed</c>). Readiness can never be <c>Ready</c> while this

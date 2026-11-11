@@ -12,8 +12,8 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 /// <summary>
 /// Validates a strictly parsed restore manifest against the version-1 contract, rule for rule and in the
 /// order of the delivered <c>Assert-RestoreManifestShape</c>, and materializes the <see cref="RestoreManifest"/>.
-/// Beyond the delivered rules it rejects any member that is not part of the contract, at every level (6.2
-/// step 5). Every integer must be a JSON number with no fraction or exponent; every text field a JSON string;
+/// Beyond the delivered rules it rejects any member that is not part of the contract, at every level.
+/// Every integer must be a JSON number with no fraction or exponent; every text field a JSON string;
 /// a JSON null counts as absent. The first violated rule throws <see cref="RestoreManifestException"/> naming
 /// the field or entry position, never a value. The element must come from
 /// <see cref="TrustContract.TryParse(string, out JsonDocument?, out TrustContract.ParseFailure)"/>, so that

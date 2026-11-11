@@ -13,16 +13,16 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 
 /// <summary>
-/// Immutable private staging of a template package (D-5; 6.2 steps 3 to 6), in this order: create the operation
+/// Immutable private staging of a template package (D-5), in this order: create the operation
 /// directory (<c>0700</c>); copy the catalog nupkg into it (<c>0600</c>) and never read the catalog file again;
 /// hash the private copy by reading it back through the one handle that stays open for the package's lifetime;
-/// verify the attestation against that hash, the allowlisted identity and the trust policy exactly in the F-P6
+/// verify the attestation against that hash, the allowlisted identity and the trust policy exactly in the delivered
 /// order, before the archive is opened; then open the copy as a zip and enforce the delivered consumer's entry
-/// rules (F-P2) in its order: unique entry names, exactly one <c>restore-manifest.json</c>, a manifest that
+/// rules in its order: unique entry names, exactly one <c>restore-manifest.json</c>, a manifest that
 /// satisfies the version-1 contract and names the resolved package identity, exactly one <c>.nuspec</c> that
 /// names the same identity, exactly one entry named by the manifest's <c>artifactFileName</c>, and no other
 /// <c>.sql</c> or <c>.bak</c> entry. No artifact content is read here: <see cref="StagedTemplatePackage"/>
-/// extracts and hashes it on the create path only (6.2 step 8). Every failure deletes the operation directory
+/// extracts and hashes it on the create path only. Every failure deletes the operation directory
 /// before the exception leaves. Refusals are <see cref="TemplatePackageException"/>, including every malformed
 /// container the zip reader reports (<see cref="InvalidDataException"/>) at any of its boundaries: opening the
 /// archive, enumerating the central directory, which the reader defers until the entries are first asked for,
@@ -318,7 +318,7 @@ public sealed class TemplatePackageStager
 
     /// <summary>
     /// The manifest names the resolved identity, both members compared ignoring case as the delivered consumer
-    /// (<c>bootstrap-restore.psm1</c>), the attestation, and the nuspec do (6.2 step 6). The pin keeps the
+    /// (<c>bootstrap-restore.psm1</c>), the attestation, and the nuspec do. The pin keeps the
     /// allowlisted spelling, so this comparison never changes what a retry compares.
     /// </summary>
     private static void RequireManifestIdentity(

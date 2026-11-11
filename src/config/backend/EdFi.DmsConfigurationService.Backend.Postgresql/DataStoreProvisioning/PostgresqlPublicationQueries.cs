@@ -10,14 +10,14 @@ using NpgsqlTypes;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The publication commands of 6.3 steps 8 and 10 and the compensation drop of 6.7, classified by 6.9a the
+/// The publication commands and the compensation drop, classified the
 /// way the staging commands are: a normal return is definite success, a server-reported error whose
 /// SQLSTATE proves no commit is a definite failure, and anything else is
 /// <see cref="DmsCommandOutcome.Unknown"/> naming the session the statement ran on. Every mutation first
 /// re-reads the instance under the name it addresses (D-13) and touches nothing when it differs; a failure
 /// of that read is a definite failure, because the mutation was never sent. The statements that cannot
 /// take parameters (<c>ALTER DATABASE … RENAME</c>, <c>DROP DATABASE</c>) are built only from validated
-/// names (6.8); the marker and every catalog read are parameterized.
+/// names; the marker and every catalog read are parameterized.
 /// </summary>
 internal static class PostgresqlPublicationQueries
 {
@@ -43,7 +43,7 @@ internal static class PostgresqlPublicationQueries
     public const string DropInstanceInstanceStep = "DropInstance.InstanceChanged";
 
     /// <summary>
-    /// The 6.3 step 10 marker: the singleton row, guarded in the statement itself by the session's database
+    /// The marker: the singleton row, guarded in the statement itself by the session's database
     /// still being the verified instance.
     /// </summary>
     public const string MarkerStatement =
@@ -53,7 +53,7 @@ internal static class PostgresqlPublicationQueries
         $"ALTER DATABASE {PostgresqlIdentifiers.Quote(staging.Value)} RENAME TO {PostgresqlIdentifiers.Quote(target.Value)};";
 
     /// <summary>
-    /// 6.3 step 8 on the holder's connection: the staging name must still hold
+    /// On the holder's connection: the staging name must still hold
     /// <paramref name="stagingInstance"/>, then <c>ALTER DATABASE … RENAME TO</c>, which fails with
     /// <c>42P04</c> when any database holds the target name and leaves that database untouched (D-6). Once
     /// the rename has returned, the instance is read back under the target name to its end, whatever
@@ -118,7 +118,7 @@ internal static class PostgresqlPublicationQueries
     }
 
     /// <summary>
-    /// 6.3 step 10 and 6.9b on the instance-bound connection: the marker statement with the instance
+    /// On the instance-bound connection: the marker statement with the instance
     /// predicate, then the identity re-read on the same connection. One row updated and the expected value
     /// read back is success; no row updated, or a server error that proves no commit (a missing relation, a
     /// constraint, a privilege), is a definite failure; anything else, including a read-back that fails or
@@ -190,7 +190,7 @@ internal static class PostgresqlPublicationQueries
     }
 
     /// <summary>
-    /// The 6.7 compensation drop on the holder's connection: the target name must still hold
+    /// The compensation drop on the holder's connection: the target name must still hold
     /// <paramref name="instance"/>, then <c>DROP DATABASE … WITH (FORCE)</c>, which ends any session that
     /// connected to the unmarked database since the rename. A database already gone is success; a
     /// different instance under the name is a definite <see cref="DmsCommandFailureClass.DoesNotExist"/>
@@ -276,6 +276,9 @@ internal static class PostgresqlPublicationQueries
                     DmsCommandFailureClass.Rejected,
                     PostgresqlErrorClassifier.Diagnostic(exception, verifyStep)
                 )
+                {
+                    Retryable = PostgresqlErrorClassifier.IsRetryableRejection(exception),
+                }
             );
         }
         catch (OperationCanceledException canceled)

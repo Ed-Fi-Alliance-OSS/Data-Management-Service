@@ -7,6 +7,7 @@ using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -76,7 +77,7 @@ public class PostgresqlGssStagingAuthenticationTests
         _admin = new PostgresqlAdminConnection(connectionString, TimeSpan.FromSeconds(30));
         _operation = DmsOperationId.New();
         _root = Path.Combine(Path.GetTempPath(), "dms1438-gss-" + _operation.Value);
-        Directory.CreateDirectory(_root);
+        PrivateTestDirectory.Create(_root);
         PrivateOperationDirectory directory = PrivateOperationDirectory.Create(_root, _operation);
         string artifactPath = directory.PathOf("artifact.sql");
         byte[] artifact = "SELECT 1;\n"u8.ToArray();

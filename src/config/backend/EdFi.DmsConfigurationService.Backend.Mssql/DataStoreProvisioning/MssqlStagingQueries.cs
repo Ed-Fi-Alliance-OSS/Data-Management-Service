@@ -11,7 +11,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The catalog reads and the guarded drop of the SQL Server staging stage (6.4 steps 6 and 7, 6.7): the state of
+/// The catalog reads and the guarded drop of the SQL Server staging stage: the state of
 /// the database under the staging name with its primary file, the session's own id, the server's default
 /// directories, and a drop that runs only while the name still holds the instance the caller verified.
 /// </summary>

@@ -18,7 +18,7 @@ public enum DmsEffectiveSchemaReadProblem
     ValueInvalid,
 }
 
-/// <summary>The single <c>dms.EffectiveSchema</c> row (F-D2), compared with the manifest (6.9c item 1).</summary>
+/// <summary>The single <c>dms.EffectiveSchema</c> row, compared with the manifest.</summary>
 public abstract record DmsEffectiveSchemaRead
 {
     /// <param name="ResourceKeySeedHashB64">The 32-byte seed hash as base64, the manifest's representation.</param>

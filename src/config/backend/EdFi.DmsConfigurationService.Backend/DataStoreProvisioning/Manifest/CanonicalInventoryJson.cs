@@ -11,7 +11,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// The canonical inventory JSON of the delivered restore contract (F-P8, <c>ConvertTo-CanonicalInventoryJson</c>):
+/// The canonical inventory JSON of the delivered restore contract (<c>ConvertTo-CanonicalInventoryJson</c>):
 /// <c>{"schemas":[{"schemaName":…,"objects":[{"name":…,"type":…}]}],"principals":[…]}</c> on one line with
 /// fixed key order, entries in canonical order, and deterministic string escaping: <c>"</c> and <c>\</c> are
 /// backslash-escaped and every UTF-16 code unit below U+0020 or above U+007E is written as a lowercase

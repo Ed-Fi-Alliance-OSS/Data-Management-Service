@@ -24,7 +24,7 @@ internal enum PostgresqlEnqueueOwnerState
     UnsafeMemberships,
 }
 
-/// <summary>The server facts readiness judges (7.3 item 4), read on one maintenance connection.</summary>
+/// <summary>The server facts readiness judges, read on one maintenance connection.</summary>
 /// <param name="ServerVersionNum"><c>server_version_num</c>.</param>
 /// <param name="Template0Encoding">The encoding of <c>template0</c>, which every staging database copies, or null when it does not exist.</param>
 /// <param name="Privileges">The admin role's attributes and predefined-role privileges, or null when the server is below the floor and they were not read.</param>
@@ -52,7 +52,7 @@ internal sealed record PostgresqlAdminPrivileges(
 );
 
 /// <summary>
-/// The PostgreSQL environmental validation of 7.3 items 4 and 5 (D-9, D-16, D-22): the reads and the rules
+/// The PostgreSQL environmental validation (D-9, D-16, D-22): the reads and the rules
 /// that turn their facts into readiness reasons. Every reason carries a fixed probe name and a diagnostic
 /// with a fixed operation; nothing read from the server other than a SQLSTATE reaches a reason.
 /// </summary>
@@ -90,10 +90,10 @@ internal static class PostgresqlEnvironment
     /// <summary>D-16: <c>edfi_dms_enqueue_owner</c> present and locked down, or creatable.</summary>
     public const string EnqueueOwnerProbe = "EnqueueOwnerRole";
 
-    /// <summary>D-9 and 7.3 item 5: <c>psql --version</c> runs, parses, and meets the floor.</summary>
+    /// <summary>D-9: <c>psql --version</c> runs, parses, and meets the floor.</summary>
     public const string PsqlProbe = "PsqlVersion";
 
-    /// <summary>7.3 item 7: the probe lock is acquired, holds through one heartbeat, and is released.</summary>
+    /// <summary>The probe lock is acquired, holds through one heartbeat, and is released.</summary>
     public const string TargetLockProbe = "TargetLock";
 
     /// <summary>
@@ -339,7 +339,7 @@ internal static class PostgresqlEnvironment
         };
 
     /// <summary>
-    /// The <c>psql</c> rule (7.3 item 5): an executable that cannot run, does not exit cleanly, or prints no
+    /// The <c>psql</c> rule: an executable that cannot run, does not exit cleanly, or prints no
     /// <c>psql (PostgreSQL)</c> version is <c>StartupValidationFailed</c>; one below the floor is
     /// <c>EngineIncompatible</c>.
     /// </summary>

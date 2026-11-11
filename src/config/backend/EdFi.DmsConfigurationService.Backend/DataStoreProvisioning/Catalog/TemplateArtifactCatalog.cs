@@ -13,13 +13,13 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 
 /// <summary>
-/// The local directory catalog (D-3) and the artifact resolution of 6.2, with no server contact. For a
+/// The local directory catalog (D-3) and the artifact resolution, with no server contact. For a
 /// template it takes the allowlist entry from configuration, locates <c>&lt;PackageId&gt;.&lt;Version&gt;.nupkg</c>
 /// and its sibling <c>.attestation.json</c> under <c>ArtifactDirectory</c> by those names alone, reads the trust
 /// policy from <c>TrustPolicyPath</c> for this operation, and hands the package to
 /// <see cref="TemplatePackageStager"/>, which copies it into the operation's private directory, hashes the
-/// copy, verifies the attestation in the F-P6 order before opening the archive, and enforces the entry rules
-/// and the manifest contract. The catalog then performs the remaining configuration comparisons of 6.2 step 6
+/// copy, verifies the attestation in the delivered order before opening the archive, and enforces the entry rules
+/// and the manifest contract. The catalog then performs the remaining configuration comparisons
 /// in that order (engine, template kind, Data Standard version, effective schema hash, project set, the
 /// optional format and mapping expectations, the <c>DocumentJson</c> baseline type) and builds the pin.
 /// Every refusal is one failure code with a fixed operation name that says which check failed and never a
@@ -31,7 +31,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 {
     public const string PackageExtension = ".nupkg";
 
-    /// <summary>The detached attestation is the sibling <c>&lt;nupkg file name&gt;.attestation.json</c> (F-P3).</summary>
+    /// <summary>The detached attestation is the sibling <c>&lt;nupkg file name&gt;.attestation.json</c>.</summary>
     public const string AttestationExtension = ".attestation.json";
 
     /// <summary>The largest attestation document read; real documents are well under a kilobyte.</summary>
@@ -50,13 +50,16 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     public const string MatchConfigurationStep = "MatchConfiguration";
     public const string ExtractArtifactStep = "ExtractArtifact";
 
-    /// <summary>The check name reported when the trust policy names no detached-attestation producer (7.3 step 2).</summary>
+    /// <summary>The check name reported when the trust policy names no detached-attestation producer.</summary>
     public const string NoProducersCheck = "NoProducers";
 
-    /// <summary>The readiness probe name of 7.3 step 2.</summary>
+    /// <summary>The check name reported, with the reason, when the operation root lets another identity replace the operation directory.</summary>
+    public const string OperationRootUnsafeCheck = "OperationRootUnsafe";
+
+    /// <summary>The readiness probe name of the trust policy check.</summary>
     public const string TrustPolicyProbe = "TrustPolicy";
 
-    /// <summary>The readiness probe name of 7.3 step 3 for one template: <c>Catalog.&lt;wire value&gt;</c>.</summary>
+    /// <summary>The readiness probe name for one template: <c>Catalog.&lt;wire value&gt;</c>.</summary>
     public static string CatalogProbeFor(DmsDatabaseTemplate template)
     {
         ArgumentNullException.ThrowIfNull(template);
@@ -89,7 +92,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     }
 
     /// <summary>
-    /// Who loads the trust policy (F-06, D-6): startup validation, where any defect is
+    /// Who loads the trust policy (D-6): startup validation, where any defect is
     /// <c>StartupValidationFailed</c> and readiness becomes <c>NotReady</c>, or an operation, where a defect is
     /// <c>TrustPolicyUnavailable</c> and readiness is untouched.
     /// </summary>
@@ -197,7 +200,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             case TemplateArtifactStaging.Failure failure:
                 return (new DmsArtifactResolution.Failure(failure.Detail, failure.Cleanup), null);
             case TemplateArtifactStaging.Staged staged:
-                // 6.2 step 7: the pin is complete, nothing is extracted, and the private directory goes now.
+                // The pin is complete, nothing is extracted, and the private directory goes now.
                 DmsTrustedArtifactPin pin = staged.Artifact.Pin;
                 string engineVersion = staged.Artifact.Manifest.EngineVersion;
                 IReadOnlyList<DmsCleanupResidue> residue = staged.Artifact.Release();
@@ -226,7 +229,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         ArgumentNullException.ThrowIfNull(template);
         (string packageId, string packageVersion) = AllowlistEntryFor(template);
 
-        // 6.2 step 2: both file names derive from the allowlist alone; the request contributes the template only.
+        // Both file names derive from the allowlist alone; the request contributes the template only.
         string packagePath = Path.Combine(
             ArtifactDirectory,
             packageId + "." + packageVersion + PackageExtension
@@ -246,7 +249,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             return Refused(template, attestationFailure);
         }
 
-        // 6.2 step 4: the policy is re-read for every operation; a defect is the operator's, never the package's.
+        // The policy is re-read for every operation; a defect is the operator's, never the package's.
         (TemplateTrustPolicy? policy, DmsProvisioningFailure? policyFailure) = await LoadTrustPolicyAsync(
             context,
             cancellationToken
@@ -256,13 +259,28 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             return Refused(template, policyFailure);
         }
 
-        // 6.2 step 3 (D-5): the claim is this operation's ownership of the directory. A refused claim, whether an
+        // D-5: the claim is this operation's ownership of the directory. A refused claim, whether an
         // entry already holds the generated name or the root is unusable, created nothing, so nothing is released
         // or reported, and the entry that won the name is never touched.
         PrivateOperationDirectory directory;
         try
         {
             directory = PrivateOperationDirectory.Create(OperationRootDirectory, operationId, BeforeClaim);
+        }
+        catch (UnsafeOperationRootException exception)
+        {
+            // A configuration defect, not contention: retrying cannot help until the operator changes the root.
+            return Refused(
+                template,
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.StagingFailed,
+                    DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                    DmsProvisioningDiagnostic.From(
+                        exception,
+                        StagePackageStep + "." + OperationRootUnsafeCheck + "." + exception.Reason
+                    )
+                )
+            );
         }
         catch (IOException exception)
         {
@@ -297,7 +315,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             return Refused(template, stagingFailure!, new DmsCleanupReport(stagingResidue));
         }
 
-        // 6.2 step 6: the stager proved the manifest and the nuspec name the allowlisted identity; the rest
+        // The stager proved the manifest and the nuspec name the allowlisted identity; the rest
         // compares the manifest with this deployment's configuration.
         TrustedTemplateArtifact artifact = new(
             staged,
@@ -364,7 +382,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     }
 
     /// <summary>
-    /// 6.2 steps 3 to 5 through the stager, into a directory this catalog claimed: the staged package, or the
+    /// Through the stager, into a directory this catalog claimed: the staged package, or the
     /// classified refusal together with whatever the release of that directory could not delete, which is this
     /// operation's residue (reported in the result and, on cancellation, in the log alone).
     /// </summary>
@@ -424,7 +442,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         return (staged, failure, residue);
     }
 
-    /// <summary>Releases a directory this catalog claimed: deletes it on a best-effort basis and reports what remains (6.11).</summary>
+    /// <summary>Releases a directory this catalog claimed: deletes it on a best-effort basis and reports what remains.</summary>
     private IReadOnlyList<DmsCleanupResidue> ReleaseClaimed(PrivateOperationDirectory directory)
     {
         BeforeRelease?.Invoke(directory);
@@ -522,7 +540,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
     /// <summary>
     /// What remains of an operation directory after its deletion was attempted, as residue with generated
-    /// resource ids (6.11): the package copy, an extracted artifact, and the directory itself. Empty when the
+    /// resource ids: the package copy, an extracted artifact, and the directory itself. Empty when the
     /// directory is gone. Nothing is deleted here.
     /// </summary>
     internal static IReadOnlyList<DmsCleanupResidue> ResidueUnder(string directoryPath)
@@ -672,7 +690,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     }
 
     /// <summary>
-    /// A trust-policy defect (§3.6): at startup <c>StartupValidationFailed</c>; in an operation
+    /// A trust-policy defect: at startup <c>StartupValidationFailed</c>; in an operation
     /// <c>TrustPolicyUnavailable</c>, transient only for <paramref name="temporary"/> contention and for inspection
     /// otherwise. The diagnostic carries the type chain only, never the path or the message.
     /// </summary>
@@ -767,7 +785,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         }
     }
 
-    /// <summary>The first 6.2 step 6 comparison the manifest fails, by name, or null when it passes every one.</summary>
+    /// <summary>The first configuration comparison the manifest fails, by name, or null when it passes every one.</summary>
     private string? FirstConfigurationMismatch(
         RestoreManifest manifest,
         DmsDatabaseTemplate template,
@@ -781,7 +799,7 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             );
         HashSet<string> projects = new(manifest.Projects, StringComparer.OrdinalIgnoreCase);
 
-        // In the 6.2 step 6 order; the first comparison that fails names the refusal.
+        // In the order; the first comparison that fails names the refusal.
         (string Check, bool Matches)[] comparisons =
         [
             (nameof(manifest.DatabaseEngine), Same(manifest.DatabaseEngine, _options.Provider)),
@@ -815,11 +833,11 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
         return Array.Find(comparisons, comparison => !comparison.Matches).Check;
     }
 
-    /// <summary>An optional expectation (4.3) is met when it is omitted or equal.</summary>
+    /// <summary>An optional expectation is met when it is omitted or equal.</summary>
     private static bool MeetsOptional(string actual, string? expected) =>
         string.IsNullOrWhiteSpace(expected) || Same(actual, expected);
 
-    /// <summary>The pin (4.2): identity in the allowlist's spelling, hashes and versions from the verified copy and its manifest.</summary>
+    /// <summary>The pin: identity in the allowlist's spelling, hashes and versions from the verified copy and its manifest.</summary>
     private static DmsTrustedArtifactPin PinFor(
         StagedTemplatePackage staged,
         string packageId,

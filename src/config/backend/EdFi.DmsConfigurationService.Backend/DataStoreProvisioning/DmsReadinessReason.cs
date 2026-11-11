@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// One reason readiness failed (7.3): the failure code, the fixed name of the probe that raised it, and
+/// One reason readiness failed: the failure code, the fixed name of the probe that raised it, and
 /// an optional value-free diagnostic.
 /// </summary>
 public sealed record DmsReadinessReason(

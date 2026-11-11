@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The publication stage of a create (6.3 steps 8 to 10, 6.9b, 6.7): the validated staging database is
+/// The publication stage of a create: the validated staging database is
 /// renamed into the selected target on the holder session; the renamed instance is re-checked on an
 /// instance-bound session; the marker is assigned there as the last mutation; and a marker proven
 /// uncommitted is compensated on the holder session in the same invocation. Every selected-target mutation
@@ -45,8 +45,8 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// The create under the target lock (6.3 steps 1 to 10), then the settlement of what the ledger left in
-    /// doubt (D-12, 6.10). A cancellation that arrives once a selected-target mutation was sent is held until
+    /// The create under the target lock, then the settlement of what the ledger left in
+    /// doubt (D-12). A cancellation that arrives once a selected-target mutation was sent is held until
     /// the settlement has run and handed back for the caller to rethrow, unless the marker committed.
     /// </summary>
     private async Task<(
@@ -77,7 +77,7 @@ public sealed partial class DmsDataStoreProvisioningService
                     DmsLiveTargetState state = await PreambleAsync(scope, request.TargetName);
                     if (state is DmsLiveTargetState.Present)
                     {
-                        // 6.3 step 1 and 6.5: a target already holding the name is reconciled by reads
+                        // A target already holding the name is reconciled by reads
                         // only, and nothing is created, restored, renamed, marked, or dropped
                         return await ReconcileAsync(scope, request, artifact, state, InspectTargetStep);
                     }
@@ -90,7 +90,7 @@ public sealed partial class DmsDataStoreProvisioningService
                         cleanup
                     );
 
-                    // 6.3 step 7: advisory; the rename is the authoritative check. A database that took the
+                    // Advisory; the rename is the authoritative check. A database that took the
                     // name meanwhile is reconciled, never renamed over; the staging database is dropped by
                     // cleanup after the lock is released.
                     DmsLiveTargetState late = await scope.ReadAsync(
@@ -127,8 +127,8 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.3 steps 8 to 10 under the lock, entered right after the <c>BeforeRename</c> hook. A collision with
-    /// any database already holding the target name ends in reconciliation reads (6.5); the publication
+    /// Under the lock, entered right after the <c>BeforeRename</c> hook. A collision with
+    /// any database already holding the target name ends in reconciliation reads; the publication
     /// itself returns <c>Created</c> or throws the step's failure.
     /// </summary>
     private async Task<DmsDataStoreCreateResult> PublishAsync(
@@ -143,7 +143,7 @@ public sealed partial class DmsDataStoreProvisioningService
         DmsOperationId operation = scope.Operation;
         DmsTargetDatabaseName target = request.TargetName;
 
-        // 6.3 step 8: the rename is this operation's selected-target mutation, in doubt from the moment it is
+        // The rename is this operation's selected-target mutation, in doubt from the moment it is
         // sent until a definite outcome settles it (D-7b, D-12). It is recorded as the engine is handed the
         // call, after the scope's cancellation and loss checks, and withdrawn when the holder's gate or the
         // provider's check before sending reports it never reached the driver, so a rename stopped before
@@ -184,23 +184,23 @@ public sealed partial class DmsDataStoreProvisioningService
             }:
                 // D-6: any database holding the name refuses the rename and is left untouched; the staging
                 // database is ours and dropped by cleanup. What holds the name is inspected afresh and
-                // reconciled (6.5).
+                // reconciled.
                 DmsLiveTargetState colliding = await scope.ReadAsync(
                     ReconcileInspectStep,
                     token => engine.InspectAsync(target, token)
                 );
                 return await ReconcileAsync(scope, request, artifact, colliding, ReconcileInspectStep);
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
-                throw StepFailed(RenameFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
+                throw StepFailed(RenameFailureCodeOf(failed.Failure), failed.Failure);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown:
                 // An engine may report the caller's cancellation of a dispatched rename as an unknown outcome (SQL
                 // Server does). The cancellation wins: it leaves the rename in doubt in the ledger, so the create
-                // settles it and runs its cleanup after the lock is released, then rethrows (6.10, AC 1).
+                // settles it and runs its cleanup after the lock is released, then rethrows (AC 1).
                 scope.CallerToken.ThrowIfCancellationRequested();
 
                 // The rename's result was lost while the holder still holds the lock (loss would have ended the
                 // call above): the lock is given up, and the rename is resolved after it is released, once the holder
-                // is proven gone (6.3 step 8, 6.9a). Until then the outcome is unknown, which settlement reclassifies
+                // is proven gone. Until then the outcome is unknown, which settlement reclassifies
                 // from what it proves.
                 DmsProvisioningFailure inDoubt = DmsProvisioningFailure.Create(
                     DmsProvisioningFailureCode.OutcomeUnknown,
@@ -218,7 +218,6 @@ public sealed partial class DmsDataStoreProvisioningService
         // that a database dropped or recreated under the name since the rename fails.
         await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeMarker, operation, scope.CallerToken);
 
-        // 6.3 step 9.
         DmsSession? session = await OpenOwnedSessionAsync(
             scope,
             OpenTargetSessionStep,
@@ -244,7 +243,7 @@ public sealed partial class DmsDataStoreProvisioningService
                 scope.CallerToken
             );
 
-            // 6.3 step 10 on the instance-bound session; the marker is in doubt from the moment it is sent. It is
+            // On the instance-bound session; the marker is in doubt from the moment it is sent. It is
             // recorded as the engine is handed the call, after the scope's cancellation and loss checks, so a
             // marker those checks stop is never in doubt and the target stays a known unmarked one; a marker the
             // provider refuses before sending it (DmsCommandNotDispatchedException) is withdrawn the same way.
@@ -280,8 +279,8 @@ public sealed partial class DmsDataStoreProvisioningService
                     && publication.State == PublicationState.MarkerInDoubt
                 )
             {
-                // The caller's cancellation leaves a dispatched marker in doubt; it is resolved, never skipped
-                // (6.10). A cancellation that stopped the marker before dispatch propagates instead, and the
+                // The caller's cancellation leaves a dispatched marker in doubt; it is resolved, never skipped.
+                // A cancellation that stopped the marker before dispatch propagates instead, and the
                 // settlement reports the target as renamed but unmarked.
                 marked = new DmsCommandOutcome.Unknown(session.ServerSession);
             }
@@ -294,7 +293,7 @@ public sealed partial class DmsDataStoreProvisioningService
             case DmsCommandOutcome.Failed failed:
                 return await CompensateAsync(scope, target, publication, failed.Failure.Diagnostic);
             case DmsCommandOutcome.Unknown:
-                // 6.9b: a committed marker is success even under cancellation; one proven uncommitted on our
+                // A committed marker is success even under cancellation; one proven uncommitted on our
                 // instance permits compensation; anything else is left for inspection.
                 switch (await ResolveMarkerAsync(publication, operation))
                 {
@@ -319,7 +318,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.3 step 9: the rename changes no content, so only identity (still the package value) and the effective
+    /// The rename changes no content, so only identity (still the package value) and the effective
     /// schema are re-read on the instance-bound session; any difference means the instance changed, which is
     /// for inspection and never compensated.
     /// </summary>
@@ -362,9 +361,9 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.7 compensation: with the marker proven uncommitted, the renamed target is dropped on the holder
+    /// Compensation: with the marker proven uncommitted, the renamed target is dropped on the holder
     /// session with its instance re-verified, on a bounded token of its own so the caller's cancellation
-    /// cannot skip it (6.10); it is never issued after loss, which the holder refuses. A completed
+    /// cannot skip it; it is never issued after loss, which the holder refuses. A completed
     /// compensation ends <c>IdentityAssignmentFailed</c>, or the caller's cancellation when that is what
     /// ended the marker; a refused or failed one ends <c>CompensationFailed</c> with the target reported.
     /// The bound covers the wait for the holder's gate (one <c>CommandTimeout</c>, a heartbeat probe's bound)
@@ -408,7 +407,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.9b resolution of a marker in doubt, on tokens of its own: the marker's session is proven gone, then
+    /// Resolution of a marker in doubt, on tokens of its own: the marker's session is proven gone, then
     /// the identity is read on a new session bound to the renamed instance. The expected value is
     /// <see cref="MarkerVerdict.Committed"/>; the package value is <see cref="MarkerVerdict.Uncommitted"/>;
     /// an unproven termination, a refused open, any other read, or a read that failed on every attempt is
@@ -456,7 +455,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// After the lock is released (6.10, D-12): settles what the ledger left in doubt by reading state only,
+    /// After the lock is released (D-12): settles what the ledger left in doubt by reading state only,
     /// and reports a renamed but unmarked target. A committed marker is <c>Created</c> whatever ended the
     /// stage; an outcome that cannot be read is <c>OutcomeUnknown</c>; otherwise the stage's own result
     /// stands. Returns null only when <paramref name="result"/> is null and nothing overrides it.
@@ -557,7 +556,7 @@ public sealed partial class DmsDataStoreProvisioningService
 
                 if (verdict == MarkerVerdict.Uncommitted)
                 {
-                    // Never compensated without the lock (6.7): the target is reported instead.
+                    // Never compensated without the lock: the target is reported instead.
                     publication.MarkerResolvedUncommitted();
                     return null;
                 }
@@ -633,7 +632,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.3 step 8 for a rename in doubt: the holder session is proven gone, then the operation's instance is
+    /// For a rename in doubt: the holder session is proven gone, then the operation's instance is
     /// looked for under both names. Under the target name it was renamed (unmarked); under the staging name
     /// it was not. True when either was found; false when the holder could not be proven gone, the reads
     /// failed on every attempt, or the instance is under neither name.
@@ -738,7 +737,7 @@ public sealed partial class DmsDataStoreProvisioningService
             failure
         );
 
-    /// <summary>Where the selected target stands in a create's publication (D-12, 6.7).</summary>
+    /// <summary>Where the selected target stands in a create's publication (D-12).</summary>
     private enum PublicationState
     {
         /// <summary>No selected-target mutation was sent.</summary>
@@ -773,7 +772,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// The ledger of a create's selected-target mutations (D-12, 6.7): each is recorded before it is sent and
+    /// The ledger of a create's selected-target mutations (D-12): each is recorded before it is sent and
     /// settled from the outcome it returns, observed before any loss check can discard it, so whatever ends
     /// the stage leaves an exact record of what may have happened to the target.
     /// </summary>

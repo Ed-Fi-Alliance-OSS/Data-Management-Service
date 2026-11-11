@@ -33,14 +33,14 @@ public abstract record DmsInstanceIdentity
 
     /// <summary>
     /// <c>database_id</c> plus the operation tag carried by the primary file's <c>physical_name</c>, both
-    /// unaffected by rename (F-P17); <c>database_id</c> reuse after a drop is detected by the tag.
+    /// unaffected by rename; <c>database_id</c> reuse after a drop is detected by the tag.
     /// <see cref="CreateDateSnapshot"/> changes on rename and is only a guard for commands issued after the
     /// snapshot was taken; it is excluded from <see cref="IsSameStableInstance"/>.
     /// </summary>
     public sealed record Mssql(int DatabaseId, string PrimaryFileTag, DateTimeOffset CreateDateSnapshot)
         : DmsInstanceIdentity
     {
-        /// <summary>The identity after a rename, with <c>create_date</c> re-captured (6.4 step 10).</summary>
+        /// <summary>The identity after a rename, with <c>create_date</c> re-captured.</summary>
         public Mssql WithCreateDateSnapshot(DateTimeOffset createDateSnapshot) =>
             this with
             {
@@ -49,7 +49,7 @@ public abstract record DmsInstanceIdentity
     }
 
     /// <summary>
-    /// A SQL Server staging name reserved for the database the restore will create (6.4): nothing exists on the
+    /// A SQL Server staging name reserved for the database the restore will create: nothing exists on the
     /// server yet, so the only evidence that a database later found under the staging name is this operation's is
     /// the file name its primary file carries, <c>&lt;stage&gt;__&lt;op&gt;.mdf</c> (D-11, D-13). The orchestrator
     /// replaces it with the restored instance; until then cleanup drops a database under the staging name only

@@ -16,7 +16,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 /// read from that same handle. The catalog file is never touched again. <see cref="ExtractArtifactAsync"/>
 /// streams the single declared artifact from the held archive into a generated file name
 /// (<c>artifact.sql</c> or <c>artifact.bak</c>, mode <c>0600</c>) while hashing, and refuses the result when the
-/// hash differs from the manifest's <c>artifactSha256</c> (6.2 step 8). Disposal closes the handle and deletes
+/// hash differs from the manifest's <c>artifactSha256</c>. Disposal closes the handle and deletes
 /// the operation directory on a best-effort basis; bounded cleanup accounts for what remains through
 /// <see cref="Directory"/>.
 /// </summary>

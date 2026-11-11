@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>The kinds of resource bounded cleanup can leave behind (6.11).</summary>
+/// <summary>The kinds of resource bounded cleanup can leave behind.</summary>
 public enum DmsResidueKind
 {
     OperationDirectory,

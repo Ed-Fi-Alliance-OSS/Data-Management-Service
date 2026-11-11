@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 
 /// <summary>
-/// The catalog's startup verdict (7.3 items 2 and 3): one reason per failed probe, and the engine version each
+/// The catalog's startup verdict: one reason per failed probe, and the engine version each
 /// template's authenticated manifest declares, for every template that resolved. Readiness compares the latter
 /// with the live server (<see cref="DmsEngineCompatibility"/>).
 /// </summary>

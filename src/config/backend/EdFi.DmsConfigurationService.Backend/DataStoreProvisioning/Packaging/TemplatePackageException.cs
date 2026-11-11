@@ -35,6 +35,6 @@ public sealed class TemplatePackageException : Exception
 
     public TemplatePackageDefect Defect { get; }
 
-    /// <summary>The first failing F-P6 check when <see cref="Defect"/> is <see cref="TemplatePackageDefect.Untrusted"/>; null otherwise.</summary>
+    /// <summary>The first failing attestation check when <see cref="Defect"/> is <see cref="TemplatePackageDefect.Untrusted"/>; null otherwise.</summary>
     public TrustRefusalReason? TrustRefusal { get; }
 }

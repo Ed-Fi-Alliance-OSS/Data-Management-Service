@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>The availability of a present, unfenced database (6.5 step 1): only <see cref="Online"/> can be reconciled.</summary>
+/// <summary>The availability of a present, unfenced database: only <see cref="Online"/> can be reconciled.</summary>
 public enum DmsDatabaseState
 {
     Online,
@@ -15,4 +15,11 @@ public enum DmsDatabaseState
 
     /// <summary>Any other non-online state the engine reports.</summary>
     Other,
+
+    /// <summary>
+    /// PostgreSQL: the database is owned by a role that is neither a superuser nor the administrative login, so
+    /// its objects may run that role's code when read. It is never opened, read, or changed; the operation reports
+    /// it for inspection.
+    /// </summary>
+    UntrustedOwner,
 }

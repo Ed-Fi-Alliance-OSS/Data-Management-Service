@@ -8,6 +8,7 @@ using System.Text;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
@@ -57,7 +58,7 @@ public class PostgresqlRestoreTests
         public static ReplayArtifact Write(DmsOperationId operation, byte[] sql)
         {
             string root = Path.Combine(Path.GetTempPath(), "dms1438-replay-" + operation.Value);
-            Directory.CreateDirectory(root);
+            PrivateTestDirectory.Create(root);
             PrivateOperationDirectory directory = PrivateOperationDirectory.Create(root, operation);
             string path = directory.PathOf("artifact.sql");
             File.WriteAllBytes(path, sql);
@@ -491,7 +492,7 @@ public class PostgresqlRestoreTests
             DmsDatabaseName stage = _operation.StagingDatabaseName;
             await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(stage.Value)};");
             _root = Path.Combine(Path.GetTempPath(), "dms1438-unconfirmed-" + _operation.Value);
-            Directory.CreateDirectory(_root);
+            PrivateTestDirectory.Create(_root);
             PrivateOperationDirectory directory = PrivateOperationDirectory.Create(_root, _operation);
             string artifactPath = directory.PathOf("artifact.sql");
             await File.WriteAllTextAsync(artifactPath, "SELECT 1;\n");
@@ -601,7 +602,7 @@ public class PostgresqlRestoreTests
             DmsDatabaseName stage = _operation.StagingDatabaseName;
             await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(stage.Value)};");
             _root = Path.Combine(Path.GetTempPath(), "dms1438-exited-" + _operation.Value);
-            Directory.CreateDirectory(_root);
+            PrivateTestDirectory.Create(_root);
             PrivateOperationDirectory directory = PrivateOperationDirectory.Create(_root, _operation);
             string artifactPath = directory.PathOf("artifact.sql");
             await File.WriteAllTextAsync(artifactPath, "SELECT 1;\n");
@@ -722,7 +723,7 @@ public class PostgresqlRestoreTests
             await using FakePsql fake = FakePsql.WritingStandardError(standardError, exitCode);
             try
             {
-                Directory.CreateDirectory(root);
+                PrivateTestDirectory.Create(root);
                 PrivateOperationDirectory directory = PrivateOperationDirectory.Create(root, operation);
                 string artifactPath = directory.PathOf("artifact.sql");
                 await File.WriteAllTextAsync(artifactPath, "SELECT 1;\n");

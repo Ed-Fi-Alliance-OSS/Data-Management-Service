@@ -11,20 +11,19 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The PostgreSQL adapter of the engine port (4.1). This build delivers the read members: server facts
-/// (6.1 step 5), inspection by name with the instance identity <c>oid</c> plus claim comment (6.1 step 6,
-/// D-13), instance-bound sessions that verify the instance at open and capture the backend's <c>pid</c> and
-/// <c>backend_start</c> (D-7b), the delivered identity read, and the catalog facts the validator judges
-/// (6.9c); and the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder session
+/// The PostgreSQL adapter of the engine port. This build delivers the read members: server facts,
+/// inspection by name with the instance identity <c>oid</c> plus claim comment (D-13), and the owner judged
+/// before anything connects to a candidate database, instance-bound sessions that verify the instance at open and capture the backend's <c>pid</c> and
+/// <c>backend_start</c> (D-7b), the delivered identity read, and the catalog facts the validator judges,
+/// each preceded by a check that the relations read are trusted; and the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder session
 /// (<see cref="PostgresqlTargetLockSession"/>) that every later selected-target mutation runs on; and session
 /// termination (D-22): <see cref="TerminateSessionAsync"/> proves a session gone, or reports why it could not,
-/// through <see cref="PostgresqlSessionQueries"/>; and the staging stage (6.3 steps 4 and 5, 6.7): the
+/// through <see cref="PostgresqlSessionQueries"/>; and the staging stage: the
 /// staging database created and claimed on the holder session, the <c>psql</c> replay with its outcome
-/// protocol, and the staging drop, in the second part of this class; and publication (6.3 steps 8 and 10,
-/// 6.7): the rename into the target and the compensation drop on the holder session, and the marker on an
-/// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>; and the owned delete (6.6):
+/// protocol, and the staging drop, in the second part of this class; and publication: the rename into the target and the compensation drop on the holder session, and the marker on an
+/// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>; and the owned delete:
 /// the fence, its reversal, and the guarded drop on the holder session, through
-/// <see cref="PostgresqlDeletionQueries"/>; and the environmental validation (7.3 items 4, 5 and 7) in a
+/// <see cref="PostgresqlDeletionQueries"/>; and the environmental validation in a
 /// third part. Every read is on a dedicated connection. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
 /// row the inventory contract cannot describe is reported as a content-profile violation, because the
 /// authoritative DDL never produces one.
@@ -41,14 +40,60 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
     public const string ReadTargetFactsOperation = "ReadTargetFacts";
 
+    /// <summary>The <c>Diagnostic.Operation</c> of a facts read refused because a relation it reads is not trusted (<see cref="UntrustedRelationsQuery"/>).</summary>
+    public const string RelationTrustStep = "RelationTrust";
+
     private const string ServerFactsQuery =
         "SELECT current_setting('server_version'), current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname = 'template0'), pg_catalog.now();";
 
-    private const string InspectQuery =
-        "SELECT d.oid, d.datistemplate, d.datallowconn, pg_catalog.shobj_description(d.oid, 'pg_database') FROM pg_catalog.pg_database d WHERE d.datname = @name;";
+    /// <summary>
+    /// Whether the role whose oid is <paramref name="roleOid"/> is trusted: a superuser, or the administrative login
+    /// itself. Only a trusted role can have put code where the provisioner's reads run it, so a database or relation
+    /// another role owns is never read. A superuser is trusted whatever its name, so a target created under a login
+    /// that was later replaced by another superuser login (the documented rotation) stays readable. Only catalog
+    /// objects and schema-qualified operators are used, so the check itself resolves nothing a database owner chose.
+    /// </summary>
+    private static string TrustedRole(string roleOid) =>
+        $"EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.oid OPERATOR(pg_catalog.=) {roleOid} AND (r.rolsuper OR r.rolname OPERATOR(pg_catalog.=) CURRENT_USER))";
 
-    private const string SessionIdentityQuery =
-        "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database'), a.pid, a.backend_start FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_stat_activity a WHERE d.datname = pg_catalog.current_database() AND a.pid = pg_catalog.pg_backend_pid();";
+    /// <summary>Read on the maintenance database, before anything connects to the candidate: its owner is judged here.</summary>
+    private static readonly string _inspectQuery =
+        "SELECT d.oid, d.datistemplate, d.datallowconn, pg_catalog.shobj_description(d.oid, 'pg_database'), "
+        + TrustedRole("d.datdba")
+        + " FROM pg_catalog.pg_database d WHERE d.datname = @name;";
+
+    /// <summary>Read first on a session to the candidate, from the shared catalog: the instance, the owner judged again, and the backend.</summary>
+    private static readonly string _sessionIdentityQuery =
+        "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database'), a.pid, a.backend_start, "
+        + TrustedRole("d.datdba")
+        + " FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_stat_activity a WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database() AND a.pid OPERATOR(pg_catalog.=) pg_catalog.pg_backend_pid();";
+
+    /// <summary>The relation the identity read selects from.</summary>
+    private static readonly string _identityRelationsQuery = UntrustedRelationsQuery("DataStoreIdentity");
+
+    /// <summary>The relations the facts read selects from; every other facts query reads only the system catalogs.</summary>
+    private static readonly string _factsRelationsQuery = UntrustedRelationsQuery(
+        "EffectiveSchema",
+        "Document",
+        "ResourceKey"
+    );
+
+    /// <summary>
+    /// The names among <paramref name="relationNames"/> in schema <c>dms</c> that a read could not select from without
+    /// possibly running code a role other than a trusted one (<see cref="TrustedRole"/>) chose: anything but an
+    /// ordinary or partitioned table, a table such a role does not own, or a table with a column of a type created after
+    /// the server's built-in objects (a type's input and output functions run on every read) or a virtual generated
+    /// column (its expression runs on every read). A name that does not exist is not listed; the read then reports it
+    /// missing as before. The names are fixed constants of this class, never input.
+    /// </summary>
+    private static string UntrustedRelationsQuery(params string[] relationNames) =>
+        "SELECT c.relname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
+        + " WHERE n.nspname OPERATOR(pg_catalog.=) 'dms'::pg_catalog.name AND c.relname OPERATOR(pg_catalog.=) ANY (ARRAY["
+        + string.Join(", ", relationNames.Select(name => $"'{name}'"))
+        + "]::pg_catalog.name[]) AND NOT (c.relkind OPERATOR(pg_catalog.=) ANY ('{r,p}'::pg_catalog.\"char\"[]) AND "
+        + TrustedRole("c.relowner")
+        + " AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid OPERATOR(pg_catalog.=) c.oid AND a.attnum OPERATOR(pg_catalog.>) 0 AND NOT a.attisdropped"
+        + " AND (a.atttypid OPERATOR(pg_catalog.>=) 16384::pg_catalog.oid OR a.attgenerated OPERATOR(pg_catalog.=) 'v'::pg_catalog.\"char\")));";
 
     /// <summary>The field types of <see cref="PostgresqlInventoryQueries.EffectiveSchemaRows"/> the contract allows: two texts, a <c>smallint</c>, a <c>bytea</c>.</summary>
     private static readonly Type[] _effectiveSchemaColumnTypes =
@@ -65,8 +110,8 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
-    /// <param name="adminConnection">The resolved administrative connection (4.3 <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
-    /// <param name="settings">The range-checked 4.3 settings the engine reads.</param>
+    /// <param name="adminConnection">The resolved administrative connection (the configured <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
+    /// <param name="settings">The range-checked configured settings the engine reads.</param>
     /// <param name="timeProvider">Drives the holder heartbeat, every deadline, and the replay bounds.</param>
     /// <param name="logger">Receives the holder's ignored errors and the replay's progress as type chains and fixed values; never a value from a request, a file, or output.</param>
     public PostgresqlDmsTargetEngine(
@@ -162,7 +207,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
             cancellationToken
         );
-        await using NpgsqlCommand command = new(InspectQuery, connection);
+        await using NpgsqlCommand command = new(_inspectQuery, connection);
         command.Parameters.AddWithValue("name", name.Value);
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
@@ -174,15 +219,23 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         bool isTemplate = reader.GetBoolean(1);
         bool allowsConnections = reader.GetBoolean(2);
         string claim = await ClaimOfAsync(reader, 3, cancellationToken);
+        bool trustedOwner = reader.GetBoolean(4);
         if (isTemplate)
         {
             return new DmsLiveTargetState.Protected();
         }
 
         DmsInstanceIdentity.Postgresql instance = new(oid, claim);
-        return allowsConnections
-            ? new DmsLiveTargetState.Present(instance, DmsDatabaseState.Online)
-            : new DmsLiveTargetState.Fenced(instance);
+        if (!allowsConnections)
+        {
+            return new DmsLiveTargetState.Fenced(instance);
+        }
+
+        // A database another role owns is reported, never opened; nothing in it is read as the administrator.
+        return new DmsLiveTargetState.Present(
+            instance,
+            trustedOwner ? DmsDatabaseState.Online : DmsDatabaseState.UntrustedOwner
+        );
     }
 
     public async Task<DmsSessionOpenResult> OpenSessionAsync(
@@ -222,9 +275,11 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
 
         try
         {
-            (DmsInstanceIdentity.Postgresql actual, DmsServerSessionId serverSession) =
+            (DmsInstanceIdentity.Postgresql actual, DmsServerSessionId serverSession, bool trustedOwner) =
                 await ReadSessionIdentityAsync(connection, cancellationToken);
-            if (!actual.IsSameStableInstance(expected))
+
+            // An owner that is no longer trusted means the database is not the one inspection judged.
+            if (!trustedOwner || !actual.IsSameStableInstance(expected))
             {
                 await connection.DisposeAsync();
                 return new DmsSessionOpenResult.InstanceChanged();
@@ -250,6 +305,11 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         List<string?> values;
         try
         {
+            if (await HasUntrustedRelationAsync(connection, _identityRelationsQuery, cancellationToken))
+            {
+                return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.RelationUntrusted);
+            }
+
             values = await ReadRowsAsync(
                 connection,
                 PostgresqlInventoryQueries.SourceIdentityRows,
@@ -285,7 +345,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     }
 
     /// <summary>
-    /// The facts every 6.9c check needs, read on the instance-bound session. A query the server definitely
+    /// The facts every validation check needs, read on the instance-bound session. A query the server definitely
     /// refuses for lack of a privilege raises <see cref="DmsAccessDeniedException"/> with the SQLSTATE only;
     /// a missing singleton table is a typed read, and every other error, including cancellation and a lost
     /// connection, propagates unchanged.
@@ -314,6 +374,16 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     )
     {
         NpgsqlConnection connection = RequireSession(session).Connection;
+        if (await HasUntrustedRelationAsync(connection, _factsRelationsQuery, cancellationToken))
+        {
+            throw new DmsProvisioningFailedException(
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.SecurityStateViolation,
+                    DmsProvisioningDiagnostic.ForOperation(RelationTrustStep)
+                )
+            );
+        }
+
         DmsEffectiveSchemaRead effectiveSchema = await ReadEffectiveSchemaAsync(
             connection,
             cancellationToken
@@ -439,7 +509,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     }
 
     /// <summary>
-    /// 6.6 step 3 on the holder session, bounded by <see cref="FenceDeadline"/>: the termination loop has the
+    /// On the holder session, bounded by <see cref="FenceDeadline"/>: the termination loop has the
     /// whole termination bound, and the statements before and after it one command each.
     /// </summary>
     public async Task<DmsCommandOutcome> FenceAsync(
@@ -513,7 +583,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     /// </summary>
     internal static TimeSpan UnfenceDeadline(TimeSpan commandTimeout) => commandTimeout * 2;
 
-    /// <summary>Not used on PostgreSQL: the fence keeps the delete's own session, which reads the identity (6.6 step 4).</summary>
+    /// <summary>Not used on PostgreSQL: the fence keeps the delete's own session, which reads the identity.</summary>
     public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
         IDmsTargetLockHolder holder,
         DmsTargetDatabaseName target,
@@ -524,7 +594,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         );
 
     /// <summary>
-    /// On the holder session: the compensation drop (6.7), or the owned delete (6.6 step 5), which drops only a
+    /// On the holder session: the compensation drop, or the owned delete, which drops only a
     /// target that is still fenced with no client session on it.
     /// </summary>
     public async Task<DmsCommandOutcome> DropInstanceAsync(
@@ -620,10 +690,11 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>The instance behind the session's own database and the backend serving it.</summary>
     private static async Task<(
         DmsInstanceIdentity.Postgresql Instance,
-        DmsServerSessionId Session
+        DmsServerSessionId Session,
+        bool TrustedOwner
     )> ReadSessionIdentityAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
     {
-        await using NpgsqlCommand command = new(SessionIdentityQuery, connection);
+        await using NpgsqlCommand command = new(_sessionIdentityQuery, connection);
         await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
         if (!await reader.ReadAsync(cancellationToken))
         {
@@ -634,8 +705,21 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         string claim = await ClaimOfAsync(reader, 1, cancellationToken);
         long pid = reader.GetInt32(2);
         DateTimeOffset backendStart = ToUtc(await reader.GetFieldValueAsync<DateTime>(3, cancellationToken));
-        return (new DmsInstanceIdentity.Postgresql(oid, claim), new DmsServerSessionId(pid, backendStart));
+        return (
+            new DmsInstanceIdentity.Postgresql(oid, claim),
+            new DmsServerSessionId(pid, backendStart),
+            reader.GetBoolean(4)
+        );
     }
+
+    /// <summary>Whether <paramref name="guardQuery"/> (<see cref="UntrustedRelationsQuery"/>) lists any relation.</summary>
+    private static async Task<bool> HasUntrustedRelationAsync(
+        NpgsqlConnection connection,
+        string guardQuery,
+        CancellationToken cancellationToken
+    ) =>
+        (await ReadRowsAsync(connection, guardQuery, reader => reader.GetString(0), cancellationToken)).Count
+        > 0;
 
     private static async Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
         NpgsqlConnection connection,

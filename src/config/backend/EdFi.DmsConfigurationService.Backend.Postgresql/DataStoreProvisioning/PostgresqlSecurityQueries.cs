@@ -9,7 +9,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The delivered PostgreSQL security reads (F-P9b), text for text: <c>Get-PostgresqlTemplateOwnershipQuerySql</c>
+/// The delivered PostgreSQL security reads, text for text: <c>Get-PostgresqlTemplateOwnershipQuerySql</c>
 /// without a schema list (the consumer's full scope: every schema outside the system schemas) and
 /// <c>Get-PostgresqlPrivilegeQuerySql</c>. Both judge against <c>current_user</c>, the connected administrator.
 /// Their rows are split here as <c>Assert-PostgresqlArtifactOwnership</c> and

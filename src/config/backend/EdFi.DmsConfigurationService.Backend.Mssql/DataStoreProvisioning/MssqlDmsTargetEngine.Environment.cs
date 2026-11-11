@@ -9,7 +9,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The environmental validation of the SQL Server adapter (7.3 items 4, 6 and 7, the fifth part of this class).
+/// The environmental validation of the SQL Server adapter (the fifth part of this class).
 /// Every probe group runs and every failing rule is reported, so an operator sees the complete picture in one
 /// restart. The staging directory is checked whatever the server's state; the visibility probe and the lock probe
 /// are skipped when the server could not be reached, because they would only repeat that failure. Nothing is
@@ -184,7 +184,7 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// 7.3 item 6 and D-21 with the real staging routine (<see cref="MssqlStagingProbe"/>). A failure to reach the
+    /// And D-21 with the real staging routine (<see cref="MssqlStagingProbe"/>). A failure to reach the
     /// server during the probe is a reason under this probe; the probe has already tried to delete its file.
     /// </summary>
     private async Task<IReadOnlyList<DmsReadinessReason>> ProbeStagingVisibilityAsync(
@@ -232,7 +232,7 @@ public sealed partial class MssqlDmsTargetEngine
         );
 
     /// <summary>
-    /// 7.3 item 7: acquires the probe lock (<see cref="MssqlTargetLockSession.ProbeResource"/>) on a holder session
+    /// Acquires the probe lock (<see cref="MssqlTargetLockSession.ProbeResource"/>) on a holder session
     /// as an operation would, under <c>LockAcquireTimeout</c>, runs one heartbeat probe on it, and releases it.
     /// Contention past the budget is <c>LockTimeout</c>; a failed acquisition, or a heartbeat that fails or finds
     /// the lock no longer held, is <c>LockUnavailable</c>.

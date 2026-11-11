@@ -6,13 +6,13 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 
 /// <summary>
-/// The artifact port the orchestrator calls before any server contact (6.2): template to allowlist entry,
+/// The artifact port the orchestrator calls before any server contact: template to allowlist entry,
 /// package and attestation located by allowlist-derived names, private staging, trust verification, manifest
 /// validation, configuration match, and the pin. <see cref="ResolveAsync"/> serves
 /// <c>ResolveArtifactAsync</c> and the create path's pin comparison: it releases the private directory before
 /// returning. <see cref="StageAsync"/> serves the create path once the pin matches: the artifact stays staged
-/// for extraction (6.2 step 8) and the restore, and is released by its owner. <see cref="ValidateAsync"/> is
-/// the readiness probe of 7.3 steps 2 and 3. No member contacts a database server.
+/// for extraction and the restore, and is released by its owner. <see cref="ValidateAsync"/> is
+/// the readiness probe. No member contacts a database server.
 /// </summary>
 public interface ITemplateArtifactCatalog
 {
@@ -34,7 +34,7 @@ public interface ITemplateArtifactCatalog
     );
 
     /// <summary>
-    /// The startup probes (7.3 steps 2 and 3): the trust policy loads and names at least one
+    /// The startup probes: the trust policy loads and names at least one
     /// detached-attestation producer, and both allowlisted packages resolve against the configuration.
     /// Returns one reason per failed probe (none means every probe passed) and the engine version each
     /// resolved template's authenticated manifest declares, for readiness to compare with the live server.

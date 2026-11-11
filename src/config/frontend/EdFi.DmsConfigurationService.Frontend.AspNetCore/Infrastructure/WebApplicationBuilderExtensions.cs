@@ -278,7 +278,7 @@ public static class WebApplicationBuilderExtensions
     }
 
     /// <summary>
-    /// Registers DMS data store provisioning (spec 4.4) by <c>DmsDataStoreProvisioning:Provider</c>, which is
+    /// Registers DMS data store provisioning by <c>DmsDataStoreProvisioning:Provider</c>, which is
     /// read independently of <c>AppSettings:Datastore</c>: the target engine and the CMS catalog engine need
     /// not match. Disabled (the shipped default): only the readiness singleton and the refusing provisioner,
     /// no options validation, no startup work. Enabled: the section is bound and validated at startup; the
@@ -348,7 +348,7 @@ public static class WebApplicationBuilderExtensions
     }
 
     /// <summary>
-    /// The protected set (4.3 <c>AdditionalProtectedDatabaseNames</c>): the operator's entries plus the CMS
+    /// The protected set (the configured <c>AdditionalProtectedDatabaseNames</c>): the operator's entries plus the CMS
     /// catalog database, whose name is read from <c>DatabaseSettings:DatabaseConnection</c> with the catalog
     /// provider's own builder. A catalog connection string that names no database cannot be protected, so it
     /// stops startup naming the setting, never the value.

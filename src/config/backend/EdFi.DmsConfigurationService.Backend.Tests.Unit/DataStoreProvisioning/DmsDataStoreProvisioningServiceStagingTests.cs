@@ -328,6 +328,105 @@ public class DmsDataStoreProvisioningServiceStagingTests
                 );
     }
 
+    /// <summary>
+    /// H-02: a staging create the server definitely rejected changed nothing, and whether a retry can succeed is the
+    /// provider's separate verdict (<see cref="DmsCommandFailure.Retryable"/>). A retryable rejection is a transient
+    /// <c>ServerRejected</c>; any other rejection stays permanent, and retryability never changes the code chosen for a
+    /// missing privilege. Nothing is restored, renamed, or dropped, and the cleanup report is empty.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_staging_create_is_rejected_with_or_without_retryability
+    {
+        private static readonly (DmsCommandFailureClass Class, string Code, bool Retryable)[] _rejections =
+        [
+            (DmsCommandFailureClass.Rejected, "40P01", true),
+            (DmsCommandFailureClass.Rejected, "53300", true),
+            (DmsCommandFailureClass.Rejected, "1205", true),
+            (DmsCommandFailureClass.Rejected, "22023", false),
+            (DmsCommandFailureClass.PrivilegeMissing, "42501", false),
+            (DmsCommandFailureClass.PrivilegeMissing, "42501", true),
+        ];
+
+        private readonly List<(Harness Harness, DmsDataStoreCreateResult Result)> _runs = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _runs.Clear();
+            foreach ((DmsCommandFailureClass failureClass, string code, bool retryable) in _rejections)
+            {
+                Harness harness = Scripted();
+                harness.Engine.OnCreateStaging = (_, _, _) =>
+                    Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                        new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                            new DmsCommandFailure(
+                                failureClass,
+                                new DmsProvisioningDiagnostic(
+                                    "Npgsql.PostgresException",
+                                    code,
+                                    "CreateStaging"
+                                )
+                            )
+                            {
+                                Retryable = retryable,
+                            }
+                        )
+                    );
+                _runs.Add((harness, await CreateAsync(harness)));
+            }
+        }
+
+        [Test]
+        public void It_is_transient_only_for_a_retryable_server_rejection() =>
+            _runs
+                .Select(run => FailureOf(run.Result))
+                .Select(failure => (failure.Code, failure.Category, failure.Diagnostic.ProviderErrorCode))
+                .Should()
+                .Equal(
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Transient,
+                        "40P01"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Transient,
+                        "53300"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Transient,
+                        "1205"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Permanent,
+                        "22023"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent,
+                        "42501"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent,
+                        "42501"
+                    )
+                );
+
+        [Test]
+        public void It_restores_renames_and_drops_nothing_and_reports_no_residue() =>
+            _runs
+                .Should()
+                .OnlyContain(run =>
+                    !run.Harness.Engine.Members.Contains(SpyDmsTargetEngine.RestoreIntoStaging)
+                    && !run.Harness.Engine.Members.Contains(SpyDmsTargetEngine.RenameIntoTarget)
+                    && !run.Harness.Engine.Members.Contains(SpyDmsTargetEngine.DropStaging)
+                    && !((DmsDataStoreCreateResult.Failure)run.Result).Cleanup.HasResidue
+                );
+    }
+
     [TestFixture]
     public class Given_the_staging_create_outcome_is_unknown
     {

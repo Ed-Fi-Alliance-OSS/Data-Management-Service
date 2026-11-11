@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// One resource cleanup could not remove (6.11). <paramref name="ResourceId"/> is the generated name of
+/// One resource cleanup could not remove. <paramref name="ResourceId"/> is the generated name of
 /// the resource (an operation directory, a staged file name, a database name); it is never a secret, a
 /// path containing credentials, or a value taken from a request.
 /// </summary>

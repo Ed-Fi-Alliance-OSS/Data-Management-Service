@@ -138,7 +138,7 @@ internal static class MssqlInventoryQueries
 
     /// <summary>
     /// <see cref="SourceIdentityRows"/> through a three-part name, for the holder session in <c>master</c> that holds a
-    /// fenced target's single-user slot (6.6 SQL Server step 4). <c>NOCOUNT</c> is left as the holder has it.
+    /// fenced target's single-user slot. <c>NOCOUNT</c> is left as the holder has it.
     /// </summary>
     public static string SourceIdentityRowsIn(DmsDatabaseName database) =>
         $"SELECT TOP (2) CONVERT(nvarchar(max), [SourceIdentity]) FROM {MssqlIdentifiers.Quote(database.Value)}.[dms].[DataStoreIdentity];";

@@ -8,7 +8,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <summary>
 /// What bounded in-operation cleanup (D-19) could not remove. Every result carries one; an empty
 /// report means every resource the operation created is gone. Residue is removed by the documented
-/// operator procedure (7.6), never by automatic sweeping.
+/// operator procedure, never by automatic sweeping.
 /// </summary>
 public sealed record DmsCleanupReport(IReadOnlyList<DmsCleanupResidue> Residue)
 {

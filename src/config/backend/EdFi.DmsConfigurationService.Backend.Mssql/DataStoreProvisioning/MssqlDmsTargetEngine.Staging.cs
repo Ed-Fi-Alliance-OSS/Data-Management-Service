@@ -12,7 +12,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The staging stage of the SQL Server engine (6.4 steps 4 to 7, 6.7). The restore creates the staging database,
+/// The staging stage of the SQL Server engine. The restore creates the staging database,
 /// so the create only reserves the name. The restore stages the backup (D-18), reads and plans it on a work session
 /// named <c>dms-provision:&lt;op&gt;</c> (D-11), and runs <c>RESTORE DATABASE … WITH MOVE</c> on that session under
 /// <c>RestoreTimeout</c>. Nothing before the <c>RESTORE</c> can create a database, so every failure there is
@@ -21,7 +21,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// its own, then the staging name decides: absent or <c>RESTORING</c> with the operation's primary file means the
 /// restore did not complete (a definite failure named after what ended it; a restoring database is cleanup's), and
 /// <c>ONLINE</c> with that file means it did. A completed restore is re-hashed (D-18) before it is reported. The
-/// staged file is deleted once the outcome is known (6.4 step 13). The staging drop re-verifies the instance, or
+/// staged file is deleted once the outcome is known. The staging drop re-verifies the instance, or
 /// for a reservation the primary file name, and drops in one guarded batch on any session.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine
@@ -70,7 +70,7 @@ public sealed partial class MssqlDmsTargetEngine
     internal Func<MssqlStagedBackup, Task>? AfterRestore { get; init; }
 
     /// <summary>
-    /// SQL Server only reserves the staging name: the restore creates the database (6.4). Nothing is sent to the
+    /// SQL Server only reserves the staging name: the restore creates the database. Nothing is sent to the
     /// server; the reservation names the primary file the restored database will carry.
     /// </summary>
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
@@ -106,7 +106,7 @@ public sealed partial class MssqlDmsTargetEngine
         RequireStagingOf(staging, operation);
         MssqlBackupStager stager = new(_settings.Staging, _timeProvider, _logger);
 
-        // 6.4 step 4. The stager deletes what it created on every failure and on cancellation.
+        // The stager deletes what it created on every failure and on cancellation.
         MssqlStagingResult staged;
         try
         {
@@ -150,7 +150,7 @@ public sealed partial class MssqlDmsTargetEngine
             throw;
         }
 
-        // 6.4 step 13: the staged file is no longer needed once the outcome, and with it the re-hash, is known.
+        // The staged file is no longer needed once the outcome, and with it the re-hash, is known.
         return await stager.DeleteAsync(backup)
             ? outcome
             : outcome with
@@ -258,7 +258,7 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// 6.4 steps 5 to 7 with the staged backup: the work session, the plan, the restore and its outcome. Every failure
+    /// With the staged backup: the work session, the plan, the restore and its outcome. Every failure
     /// before the <c>RESTORE</c> is definite, because nothing before it creates a database.
     /// </summary>
     private async Task<DmsCommandOutcome<DmsInstanceIdentity>> RestoreStagedAsync(
@@ -297,7 +297,7 @@ public sealed partial class MssqlDmsTargetEngine
                 return refused!;
             }
 
-            // 6.4 step 6. The staging copy, the work session and the plan are done: the caller's step deadline
+            // The staging copy, the work session and the plan are done: the caller's step deadline
             // restarts here, so RestoreTimeout bounds the RESTORE alone, as the engine's own bound does.
             restoreStarting?.Invoke();
 
@@ -341,7 +341,7 @@ public sealed partial class MssqlDmsTargetEngine
                     );
             }
 
-            // 6.4 step 7 on a token of its own: the restore committed, so the caller's cancellation no longer
+            // On a token of its own: the restore committed, so the caller's cancellation no longer
             // skips the reads that report it.
             return await JudgeRestoredAsync(
                 staging,
@@ -364,7 +364,7 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// 6.4 step 5 on the work session: its own server id, the default directories, and the backup's header and file
+    /// On the work session: its own server id, the default directories, and the backup's header and file
     /// list judged by the planner (D-11). Returns the session with the plan, or with the definite failure that
     /// refused it: nothing here creates a database, so every failure is definite.
     /// </summary>
@@ -595,7 +595,7 @@ public sealed partial class MssqlDmsTargetEngine
     /// <summary>
     /// D-7b for a restore that ended in doubt: the work session is killed and proven gone on a token of its own,
     /// bounded by <c>SessionTerminationTimeout</c> plus the command timeout, so the caller's cancellation cannot
-    /// skip it (6.10). A session not proven gone, or a termination that throws, is the <c>Unknown</c> session, not
+    /// skip it. A session not proven gone, or a termination that throws, is the <c>Unknown</c> session, not
     /// quiescent, so the caller can still prove it gone; with it gone the staging name decides
     /// (<see cref="JudgeRestoredAsync"/>), a restore that did not complete failing with <paramref name="ended"/>,
     /// which names what ended it.

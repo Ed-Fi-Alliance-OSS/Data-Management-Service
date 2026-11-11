@@ -11,24 +11,24 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The SQL Server adapter of the engine port (4.1). This build delivers the read members: server facts with
-/// the default data and log paths and the server's UTC clock (6.1 step 5, 6.4 step 2), inspection by name
+/// The SQL Server adapter of the engine port. This build delivers the read members: server facts with
+/// the default data and log paths and the server's UTC clock, inspection by name
 /// with the instance identity <c>database_id</c> plus primary-file <c>physical_name</c> plus the
-/// <c>create_date</c> snapshot (6.1 step 6, D-13), instance-bound sessions that verify all three at open and
+/// <c>create_date</c> snapshot (D-13), instance-bound sessions that verify all three at open and
 /// capture <c>@@SPID</c> and <c>login_time</c> (D-7b), the delivered identity read, and the catalog facts the
-/// validator judges (6.9c), including the compatibility level and the security state. Every read is on a
+/// validator judges, including the compatibility level and the security state. Every read is on a
 /// dedicated connection. And the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder
 /// session (<see cref="MssqlTargetLockSession"/>) that every later selected-target mutation runs on.
 /// And session termination (D-22): <see cref="TerminateSessionAsync"/> kills a session addressed by
 /// <c>session_id</c> and <c>login_time</c> from a fresh maintenance session and proves it gone
 /// (<see cref="MssqlSessionQueries"/>).
-/// And the staging stage (6.4 steps 4 to 7, 6.7): the staging name reserved, the backup staged, planned and
+/// And the staging stage: the staging name reserved, the backup staged, planned and
 /// restored on a work session with its outcome resolved here, re-hashed after the restore, and the staging
 /// database dropped by its instance or by the reserved primary file name (the second part of this class).
-/// And publication (6.4 steps 10 and 12, 6.7): the rename into the target with the identity transition, the
+/// And publication: the rename into the target with the identity transition, the
 /// marker, and the compensation drop (the third part of this class).
-/// And the owned delete (6.6): the fence, its reversal and the owned drop (the fourth part of this class).
-/// And the environmental validation (7.3): server facts and privileges, the staging directory and its visibility to
+/// And the owned delete: the fence, its reversal and the owned drop (the fourth part of this class).
+/// And the environmental validation: server facts and privileges, the staging directory and its visibility to
 /// the server, and the lock probe (the fifth part of this class).
 /// Connection and driver failures of a read propagate for the orchestrator to
 /// classify; a catalog row the inventory contract cannot describe is reported as a content-profile
@@ -60,7 +60,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
 
     private const string OnlineState = "ONLINE";
 
-    /// <summary>The <c>state_desc</c> and <c>user_access_desc</c> values that make a database fenced (6.1 step 6).</summary>
+    /// <summary>The <c>state_desc</c> and <c>user_access_desc</c> values that make a database fenced.</summary>
     private static readonly HashSet<string> _fencedStates = new(StringComparer.Ordinal)
     {
         "OFFLINE",
@@ -87,8 +87,8 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
-    /// <param name="adminConnection">The resolved administrative connection (4.3 <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
-    /// <param name="settings">The range-checked 4.3 settings the engine reads.</param>
+    /// <param name="adminConnection">The resolved administrative connection (the configured <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
+    /// <param name="settings">The range-checked configured settings the engine reads.</param>
     /// <param name="timeProvider">Drives the holder heartbeat and every deadline.</param>
     /// <param name="logger">Receives the holder's ignored errors as type chains; never a value.</param>
     public MssqlDmsTargetEngine(
@@ -327,7 +327,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     }
 
     /// <summary>
-    /// The facts every 6.9c check needs, read on the instance-bound session. A query the server definitely
+    /// The facts every validation check needs, read on the instance-bound session. A query the server definitely
     /// refuses for lack of a privilege raises <see cref="DmsAccessDeniedException"/> with the error number
     /// only; a missing singleton table, a missing effective-schema column, and an effective-schema row with a NULL or
     /// a value of another type are typed reads, and every other error, including cancellation and a lost

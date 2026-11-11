@@ -22,8 +22,8 @@ internal sealed class StagerWorkspace : IDisposable
 
     public StagerWorkspace()
     {
-        Directory.CreateDirectory(CatalogDirectory);
-        Directory.CreateDirectory(OperationsRoot);
+        PrivateTestDirectory.Create(CatalogDirectory);
+        PrivateTestDirectory.Create(OperationsRoot);
     }
 
     public string CatalogDirectory => Path.Combine(_root, "catalog");

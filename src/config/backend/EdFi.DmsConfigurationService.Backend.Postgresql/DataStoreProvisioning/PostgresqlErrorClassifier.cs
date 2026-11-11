@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// <summary>
 /// The only reader of <see cref="PostgresException"/> in the provisioner. It keeps the SQLSTATE of the first
 /// PostgreSQL error in an exception chain and never reads the message, detail, hint, or any field that can
-/// carry a value, and it classifies a SQLSTATE by what it proves about the command's effect (6.9a): a
+/// carry a value, and it classifies a SQLSTATE by what it proves about the command's effect: a
 /// server-reported error whose class rules out a commit is a definite failure; a connection-class or
 /// cancellation-class state leaves the outcome in doubt.
 /// </summary>
@@ -115,7 +115,7 @@ internal static class PostgresqlErrorClassifier
     }
 
     /// <summary>
-    /// The failure class a SQLSTATE proves (6.9a), or null when the outcome is in doubt: a connection-class
+    /// The failure class a SQLSTATE proves, or null when the outcome is in doubt: a connection-class
     /// state, a cancelled query (<c>57014</c>, cancellation after send), a dropped database (<c>57P04</c>), or
     /// the server's own statement of doubt (<c>40003</c>, <c>statement_completion_unknown</c>). Any other
     /// server-reported error came in the command's own response as a rejection of that command, which is
@@ -170,6 +170,10 @@ internal static class PostgresqlErrorClassifier
                 or PostgresErrorCodes.OutOfMemory
                 or PostgresErrorCodes.TooManyConnections;
     }
+
+    /// <summary><see cref="IsRetryableRejection(string)"/> over the SQLSTATE of <paramref name="exception"/>; false when it has none.</summary>
+    public static bool IsRetryableRejection(Exception exception) =>
+        SqlStateOf(exception) is { } sqlState && IsRetryableRejection(sqlState);
 
     /// <summary>A SQLSTATE is five ASCII digits or upper-case letters; any other text is not kept, whether it came from the driver or from <c>psql</c> output.</summary>
     public static bool IsSqlState(string? sqlState) =>

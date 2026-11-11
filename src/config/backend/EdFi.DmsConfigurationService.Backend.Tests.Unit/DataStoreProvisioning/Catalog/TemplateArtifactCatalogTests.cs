@@ -8,6 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
@@ -1069,6 +1070,105 @@ public class TemplateArtifactCatalogTests
 
         [Test]
         public void It_logs_no_residue_for_a_directory_it_did_not_claim() => _residueLogs.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// H-03: an operations root another identity could replace entries in is a configuration defect. An operation is
+    /// refused before anything is staged (so before any replay) as <c>StagingFailed</c> for inspection, naming the check
+    /// and reason only; startup validation reports the same refusal for every template; with the sticky bit added the
+    /// same root resolves.
+    /// </summary>
+    [TestFixture]
+    [Platform(Exclude = "Win")]
+    public class Given_an_operations_root_another_identity_could_replace
+    {
+        private CatalogWorkspace _workspace = null!;
+        private DmsArtifactResolution _refused = null!;
+        private TemplateCatalogValidation _startup = null!;
+        private string[] _entriesAfterRefusal = [];
+        private DmsArtifactResolution _sticky = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new CatalogWorkspace();
+            _workspace.BuildBoth();
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            UnixFileMode everyone =
+                UnixFileMode.UserRead
+                | UnixFileMode.UserWrite
+                | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead
+                | UnixFileMode.GroupWrite
+                | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead
+                | UnixFileMode.OtherWrite
+                | UnixFileMode.OtherExecute;
+            File.SetUnixFileMode(_workspace.OperationsRoot, everyone);
+            _refused = await _workspace
+                .Catalog()
+                .ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
+            _startup = await _workspace.Catalog().ValidateAsync(CancellationToken.None);
+            _entriesAfterRefusal = _workspace.OperationEntries;
+
+            File.SetUnixFileMode(_workspace.OperationsRoot, everyone | UnixFileMode.StickyBit);
+            _sticky = await _workspace
+                .Catalog()
+                .ResolveAsync(DmsDatabaseTemplate.Minimal, CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _workspace.Dispose();
+
+        private static readonly string _operation =
+            TemplateArtifactCatalog.StagePackageStep
+            + "."
+            + TemplateArtifactCatalog.OperationRootUnsafeCheck
+            + "."
+            + nameof(UnsafeOperationRootReason.ReplaceableEntries);
+
+        [Test]
+        public void It_refuses_the_operation_for_inspection_naming_the_check_and_reason()
+        {
+            DmsProvisioningFailure failure = FailureOf(_refused);
+            (
+                failure.Code,
+                failure.Category,
+                failure.Diagnostic.Operation,
+                failure.Diagnostic.ExceptionTypeChain
+            )
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.StagingFailed,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        _operation,
+                        typeof(UnsafeOperationRootException).FullName!
+                    )
+                );
+        }
+
+        [Test]
+        public void It_stages_nothing_under_the_refused_root() => _entriesAfterRefusal.Should().BeEmpty();
+
+        [Test]
+        public void It_reports_the_refusal_at_startup_for_every_template() =>
+            _startup
+                .Reasons.Select(reason => (reason.Code, reason.Diagnostic!.Operation))
+                .Should()
+                .Equal(
+                    DmsDatabaseTemplate.All.Select(_ =>
+                        (DmsProvisioningFailureCode.StagingFailed, _operation)
+                    )
+                );
+
+        [Test]
+        public void It_resolves_once_the_root_is_sticky() =>
+            _sticky.Should().BeOfType<DmsArtifactResolution.Resolved>();
     }
 
     [TestFixture]

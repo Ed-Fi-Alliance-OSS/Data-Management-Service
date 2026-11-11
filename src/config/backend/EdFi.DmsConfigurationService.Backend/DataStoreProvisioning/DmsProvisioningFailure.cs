@@ -8,9 +8,9 @@ using System.Collections.Frozen;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// A typed, retry-classifiable provisioning failure (spec section 8). The summary is fixed text per code;
+/// A typed, retry-classifiable provisioning failure. The summary is fixed text per code;
 /// the diagnostic is the only variable part and carries no values. The category is the code's default
-/// unless the code is one of the four context-dependent codes, whose allowed categories are pinned in
+/// unless the code is one of the context-dependent codes, whose allowed categories are pinned in
 /// <see cref="CategoriesOf"/>; any other combination is a programming error and throws.
 /// </summary>
 public sealed record DmsProvisioningFailure
@@ -65,7 +65,7 @@ public sealed record DmsProvisioningFailure
         return new DmsProvisioningFailure(category, code, entry.Summary, diagnostic);
     }
 
-    /// <summary>The categories section 8 allows for the code; the first is the default.</summary>
+    /// <summary>The categories the failure taxonomy allows for the code; the first is the default.</summary>
     public static IReadOnlyList<DmsProvisioningFailureCategory> CategoriesOf(
         DmsProvisioningFailureCode code
     ) => EntryOf(code).Categories;
@@ -145,7 +145,7 @@ public sealed record DmsProvisioningFailure
                 "The SQL Server host cannot read the configured staging directory."
             ),
             [DmsProvisioningFailureCode.ServerRejected] = new(
-                [Permanent],
+                [Permanent, Transient],
                 "The target server rejected an administrative command."
             ),
             [DmsProvisioningFailureCode.SecretResolutionFailed] = new(
@@ -169,7 +169,7 @@ public sealed record DmsProvisioningFailure
                 "An operation step exceeded its timeout."
             ),
             [DmsProvisioningFailureCode.StagingFailed] = new(
-                [Transient],
+                [Transient, Inspection],
                 "A file could not be staged privately for the operation."
             ),
             [DmsProvisioningFailureCode.StagingNameCollision] = new(

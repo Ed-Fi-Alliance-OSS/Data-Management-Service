@@ -31,13 +31,13 @@ public class FailureCodeCategoryTests
         [RoleStateUnsafe] = [Permanent],
         [EngineIncompatible] = [Permanent],
         [StagingNotVisible] = [Permanent],
-        [ServerRejected] = [Permanent],
+        [ServerRejected] = [Permanent, Transient],
         [SecretResolutionFailed] = [Transient],
         [ServerUnavailable] = [Transient],
         [LockTimeout] = [Transient],
         [LockUnavailable] = [Transient],
         [TimedOut] = [Transient],
-        [StagingFailed] = [Transient],
+        [StagingFailed] = [Transient, OperatorInspectionRequired],
         [StagingNameCollision] = [Transient],
         [Unknown] = [Transient],
         [ExclusiveAccessNotEstablished] = [Transient, OperatorInspectionRequired],
@@ -129,11 +129,13 @@ public class FailureCodeCategoryTests
         }
 
         [Test]
-        public void It_gives_exactly_five_codes_a_context_dependent_category() =>
+        public void It_gives_exactly_seven_codes_a_context_dependent_category() =>
             _codes
                 .Where(code => DmsProvisioningFailure.CategoriesOf(code).Count > 1)
                 .Should()
                 .BeEquivalentTo([
+                    ServerRejected,
+                    StagingFailed,
                     ExclusiveAccessNotEstablished,
                     LockLost,
                     RestoreFailed,

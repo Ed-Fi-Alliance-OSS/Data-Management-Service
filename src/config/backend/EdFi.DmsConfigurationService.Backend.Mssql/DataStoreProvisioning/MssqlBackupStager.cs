@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The SQL Server staging routine of D-18 (6.4 step 4): copies the extracted backup into
+/// The SQL Server staging routine of D-18: copies the extracted backup into
 /// <c>&lt;StagingPath&gt;/dms-provision-&lt;op&gt;.bak</c>, a name generated from the operation id alone, created with
 /// <see cref="FileMode.CreateNew"/> so an existing entry is refused and never touched, with the configured Unix
 /// mode applied on the handle (the create mode is subject to the umask), hashing while it copies; flushes it to
@@ -230,7 +230,7 @@ public sealed class MssqlBackupStager
     /// <summary>
     /// Re-opens the staged file by path and hashes it independently of any earlier handle: intact when the bytes
     /// still hash to the manifest's <c>artifactSha256</c>, a mismatch when they do not (including a file replaced
-    /// under the same name), unreadable when it cannot be opened or read. 6.4 step 7 calls this after
+    /// under the same name), unreadable when it cannot be opened or read. The restore calls this after
     /// <c>RESTORE</c>.
     /// </summary>
     public static async Task<MssqlStagedFileCheck> VerifyAsync(
@@ -407,7 +407,7 @@ public abstract record MssqlStagingResult
     public sealed record Staged(MssqlStagedBackup Backup) : MssqlStagingResult;
 
     /// <summary>
-    /// <c>StagingFailed</c> (transient, 6.4 step 4) at the step <paramref name="Diagnostic"/> names; nothing of this
+    /// <c>StagingFailed</c> (transient) at the step <paramref name="Diagnostic"/> names; nothing of this
     /// operation remains unless <paramref name="Residue"/> names the file the bounded deletion could not remove.
     /// </summary>
     public sealed record Failed(DmsProvisioningDiagnostic Diagnostic, DmsCleanupResidue? Residue)

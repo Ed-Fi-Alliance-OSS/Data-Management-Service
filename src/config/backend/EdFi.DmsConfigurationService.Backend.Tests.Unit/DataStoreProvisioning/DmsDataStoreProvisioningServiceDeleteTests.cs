@@ -546,6 +546,87 @@ public class DmsDataStoreProvisioningServiceDeleteTests
         }
     }
 
+    /// <summary>
+    /// H-02: a fence the server rejected before it took effect (no fenced-target residue) changed nothing. A retryable
+    /// rejection is a transient <c>ServerRejected</c>, any other permanent, and a missing privilege stays
+    /// <c>AdminPrivilegeMissing</c> whatever the flag says. Nothing is reversed or dropped and nothing is left over.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_fence_is_rejected_before_it_takes_effect_with_or_without_retryability
+    {
+        private static readonly (DmsCommandFailureClass Class, string Code, bool Retryable)[] _rejections =
+        [
+            (DmsCommandFailureClass.Rejected, "53200", true),
+            (DmsCommandFailureClass.Rejected, "1205", true),
+            (DmsCommandFailureClass.Rejected, "22023", false),
+            (DmsCommandFailureClass.PrivilegeMissing, "42501", true),
+        ];
+
+        private readonly List<(OwnedTarget Target, DmsDataStoreDeleteResult Result)> _runs = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _runs.Clear();
+            foreach ((DmsCommandFailureClass failureClass, string code, bool retryable) in _rejections)
+            {
+                OwnedTarget target = new();
+                target.Harness.Engine.OnFence = (_, _, _, _) =>
+                    Task.FromResult<DmsCommandOutcome>(
+                        new DmsCommandOutcome.Failed(
+                            new DmsCommandFailure(
+                                failureClass,
+                                new DmsProvisioningDiagnostic("Npgsql.PostgresException", code, "Fence")
+                            )
+                            {
+                                Retryable = retryable,
+                            }
+                        )
+                    );
+                _runs.Add((target, await target.DeleteAsync()));
+            }
+        }
+
+        [Test]
+        public void It_is_transient_only_for_a_retryable_server_rejection() =>
+            _runs
+                .Select(run => FailureOf(run.Result))
+                .Select(failure => (failure.Code, failure.Category, failure.Diagnostic.ProviderErrorCode))
+                .Should()
+                .Equal(
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Transient,
+                        "53200"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Transient,
+                        "1205"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.ServerRejected,
+                        DmsProvisioningFailureCategory.Permanent,
+                        "22023"
+                    ),
+                    (
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        DmsProvisioningFailureCategory.Permanent,
+                        "42501"
+                    )
+                );
+
+        [Test]
+        public void It_neither_reverses_nor_drops_and_leaves_nothing() =>
+            _runs
+                .Should()
+                .AllSatisfy(run =>
+                {
+                    run.Target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence]));
+                    ResidueOf(run.Result).Should().BeEmpty();
+                });
+    }
+
     [TestFixture]
     public class Given_the_fence_stands_and_cannot_be_reversed
     {

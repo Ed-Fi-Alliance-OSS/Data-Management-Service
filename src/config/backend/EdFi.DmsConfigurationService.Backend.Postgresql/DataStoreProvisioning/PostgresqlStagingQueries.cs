@@ -9,13 +9,13 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The staging database commands of 6.3 steps 4 and 5 and their cleanup (6.7), each classified by 6.9a:
+/// The staging database commands and their cleanup, each classified by what its outcome proves:
 /// a normal return is definite success, a server-reported error whose SQLSTATE proves no commit is a
 /// definite failure, and anything else (the driver's own cancellation after send, a connection-class
 /// error, the server's statement of doubt) is <see cref="DmsCommandOutcome{T}.Unknown"/> naming the
 /// session the statement ran on. The statements that cannot take parameters (<c>CREATE DATABASE</c>,
 /// <c>COMMENT ON DATABASE</c>, <c>DROP DATABASE</c>) are built only from validated names and the claim
-/// text (6.8); every catalog read is parameterized.
+/// text; every catalog read is parameterized.
 /// </summary>
 internal static class PostgresqlStagingQueries
 {
@@ -39,7 +39,7 @@ internal static class PostgresqlStagingQueries
         "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database') FROM pg_catalog.pg_database d WHERE d.datname = @name;";
 
     /// <summary>
-    /// The delivered <c>Get-PostgresqlRestoreGlobalRoleSql</c> block (D-16, F-P11): creates the locked-down
+    /// The delivered <c>Get-PostgresqlRestoreGlobalRoleSql</c> block (D-16): creates the locked-down
     /// role when missing, refuses a role that exists with any login, inheritance, or elevated attribute, or
     /// with a privilege-bearing outgoing membership. The two refusals carry
     /// <see cref="RoleStateUnsafeSqlState"/> so the orchestrator can name them without reading a message.
@@ -71,7 +71,7 @@ internal static class PostgresqlStagingQueries
         """;
 
     /// <summary>
-    /// F-05 (D-5): the staging database is a copy of the pristine <c>template0</c>, never of <c>template1</c>, so
+    /// D-5: the staging database is a copy of the pristine <c>template0</c>, never of <c>template1</c>, so
     /// no local object in <c>template1</c> reaches it and a session on <c>template1</c> cannot refuse the copy.
     /// No locale clause: the database takes <c>template0</c>'s locale, the cluster's initdb locale.
     /// </summary>
@@ -85,7 +85,7 @@ internal static class PostgresqlStagingQueries
         $"DROP DATABASE {PostgresqlIdentifiers.Quote(name.Value)} WITH (FORCE);";
 
     /// <summary>
-    /// Test seams for the create (Step 3.5 review): <see cref="AfterCreate"/> runs once
+    /// Test seams for the create: <see cref="AfterCreate"/> runs once
     /// <c>CREATE DATABASE</c> has returned, and the statement overrides replace the claim or the best-effort
     /// drop, so a test can interrupt the create exactly where a database exists but is not yet claimed.
     /// </summary>
@@ -96,7 +96,7 @@ internal static class PostgresqlStagingQueries
     );
 
     /// <summary>
-    /// 6.3 step 4 on the holder's connection: <c>CREATE DATABASE</c>, the claim comment, then the instance read
+    /// On the holder's connection: <c>CREATE DATABASE</c>, the claim comment, then the instance read
     /// back by name. Once the database exists, the claim and the read run to their own end whatever happens
     /// to <paramref name="cancellationToken"/>, bounded by the driver's command timeout, because stopping
     /// between them would leave an unclaimed database nobody accounts for. A definite failure of the claim or
@@ -183,7 +183,7 @@ internal static class PostgresqlStagingQueries
     }
 
     /// <summary>
-    /// 6.7 cleanup on any session: the name must still hold the operation's instance (oid and claim), then
+    /// Cleanup on any session: the name must still hold the operation's instance (oid and claim), then
     /// <c>DROP DATABASE ... WITH (FORCE)</c>. An absent database, before or during the drop, is success; a
     /// different instance under the name is a definite failure that touches nothing.
     /// </summary>
@@ -309,7 +309,7 @@ internal static class PostgresqlStagingQueries
     }
 
     /// <summary>
-    /// 6.9a over an exception: a SQLSTATE whose class proves no commit is <c>Failed</c>; every other
+    /// Over an exception: a SQLSTATE whose class proves no commit is <c>Failed</c>; every other
     /// exception (the driver's cancellation of a sent statement, a connection-class error, the server's
     /// statement of doubt, a transport failure) is <c>Unknown</c> for <paramref name="session"/>.
     /// </summary>
@@ -320,6 +320,9 @@ internal static class PostgresqlStagingQueries
         {
             return new DmsCommandOutcome.Failed(
                 new DmsCommandFailure(failureClass, PostgresqlErrorClassifier.Diagnostic(exception, step))
+                {
+                    Retryable = PostgresqlErrorClassifier.IsRetryableRejection(sqlState),
+                }
             );
         }
 
@@ -382,7 +385,7 @@ internal static class PostgresqlStagingQueries
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
         {
-            // Not confirmed: the caller reports the name as residue (6.11).
+            // Not confirmed: the caller reports the name as residue.
             return false;
         }
     }

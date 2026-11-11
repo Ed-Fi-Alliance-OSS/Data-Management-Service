@@ -38,7 +38,7 @@ internal sealed class ReplayWorkspace : IAsyncDisposable
     public ReplayWorkspace()
     {
         Root = Path.Combine(Path.GetTempPath(), "dms-1438-replay-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(Root);
+        PrivateTestDirectory.Create(Root);
         Operation = DmsOperationId.New();
         OperationDirectory = PrivateOperationDirectory.Create(Root, Operation);
         string artifactPath = OperationDirectory.PathOf("artifact.sql");

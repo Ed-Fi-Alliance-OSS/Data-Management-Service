@@ -5,24 +5,24 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>One <c>DocumentJson</c> column (incl. <c>DocumentCache</c>) and its engine column type (6.9c item 3).</summary>
+/// <summary>One <c>DocumentJson</c> column (incl. <c>DocumentCache</c>) and its engine column type.</summary>
 public sealed record DmsDocumentJsonColumn(string SchemaName, string TableName, string ColumnType);
 
 /// <summary>
-/// One inventoried catalog object as the delivered inventory query reports it (F-P8,
-/// <c>Get-InventoryObjectQuerySql</c>): its schema, its name (function names carry their identity-argument
+/// One inventoried catalog object as the delivered inventory query reports it
+/// (<c>Get-InventoryObjectQuerySql</c>): its schema, its name (function names carry their identity-argument
 /// signature; table-attached objects are qualified by their table), and its type tag.
 /// </summary>
 public sealed record DmsInventoryObject(string SchemaName, string Name, string Type);
 
 /// <summary>
-/// One user-created database-level object (F-P9, <c>Get-InventoryDatabaseObjectQuerySql</c>): state that
+/// One user-created database-level object (<c>Get-InventoryDatabaseObjectQuerySql</c>): state that
 /// lives in the database but in no schema. The authoritative DDL creates none, so every row is a violation.
 /// </summary>
 public sealed record DmsDatabaseLevelObject(string Kind, string Name);
 
 /// <summary>
-/// The catalog facts the provider-neutral validator judges (6.9c): the effective-schema row, the engine
+/// The catalog facts the provider-neutral validator judges: the effective-schema row, the engine
 /// facts, the physical baseline, the full inventory enumeration (schemas, objects, principals, database-level
 /// objects), the engine's security rows, and the Populated-kind data predicate. The engine reads them on an
 /// instance-bound session; <see cref="DmsTargetValidator"/> compares them with the manifest and the

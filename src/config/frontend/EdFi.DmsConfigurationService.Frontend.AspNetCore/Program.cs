@@ -198,7 +198,9 @@ if (!ReportInvalidConfiguration(app))
         );
     }
     InitializeDatabase(app);
-    // After InitializeDatabase, so the readiness verdict is recorded once the catalog is in place (spec 4.4).
+    // After InitializeDatabase, so the readiness verdict is recorded once the catalog is in place. It runs before the
+    // host listens, so no endpoint, /health included, answers until the provisioning checks end (OPERATIONS.md,
+    // Readiness, sizes the startup allowance for them).
     await DmsDataStoreProvisioningStartup.RunAsync(app.Services, app.Logger, CancellationToken.None);
     await InitializeClaimsData(app);
 }

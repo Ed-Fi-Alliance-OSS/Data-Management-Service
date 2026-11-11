@@ -1199,7 +1199,7 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                     .Should()
                     .ContainSingle("mode {0}", mode)
                     .Which.Should()
-                    .Contain("must be three or four octal digits");
+                    .Contain("must be three octal permission digits with an optional leading 0");
             }
         }
     }
@@ -1396,7 +1396,8 @@ public class DmsDataStoreProvisioningOptionsValidatorTests
                 "must be a three- or four-part numeric version with an optional prerelease suffix.",
             ["Compatibility:DataStandardVersion"] = "must be a dotted numeric version such as 5.2.0.",
             ["Compatibility:EffectiveSchemaHash"] = "must be 64 lowercase hexadecimal characters.",
-            ["Mssql:StagingFileMode"] = "must be three or four octal digits such as 0640.",
+            ["Mssql:StagingFileMode"] =
+                "must be three octal permission digits with an optional leading 0, such as 640 or 0640; setuid, setgid, and sticky bits are not accepted.",
         };
 
         [SetUp]

@@ -11,7 +11,7 @@ public abstract record DmsProvisionerReadiness
     /// <summary><c>DmsDataStoreProvisioning:Enabled</c> is false; nothing was validated or registered.</summary>
     public sealed record Disabled() : DmsProvisionerReadiness;
 
-    /// <summary>Static and environmental validation (7.3) passed for the named provider.</summary>
+    /// <summary>Static and environmental validation passed for the named provider.</summary>
     public sealed record Ready(string Provider, DateTimeOffset ValidatedAtUtc) : DmsProvisionerReadiness;
 
     /// <summary>At least one probe failed; the provisioner refuses every call until restart.</summary>

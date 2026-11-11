@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>Why <c>dms.DataStoreIdentity</c> could not be read as a single valid identity (6.5 step 2).</summary>
+/// <summary>Why <c>dms.DataStoreIdentity</c> could not be read as a single valid identity.</summary>
 public enum DmsIdentityReadProblem
 {
     TableMissing,
@@ -22,11 +22,16 @@ public enum DmsIdentityReadProblem
 
     /// <summary>The <c>SourceIdentity</c> column has a type the identity query cannot read as text.</summary>
     ColumnTypeInvalid,
+
+    /// <summary>
+    /// PostgreSQL: the identity relation is not an ordinary table owned by a superuser or the administrative login
+    /// with only built-in column types, so reading it could run another role's code; it was not read.
+    /// </summary>
+    RelationUntrusted,
 }
 
 /// <summary>
-/// The result of reading <c>dms.DataStoreIdentity.SourceIdentity</c> with the delivered rule (F-D1,
-/// F-P12): exactly one row, parseable as a <c>D</c>-format GUID, not all zero.
+/// The result of reading <c>dms.DataStoreIdentity.SourceIdentity</c> with the delivered rule: exactly one row, parseable as a <c>D</c>-format GUID, not all zero.
 /// </summary>
 public abstract record DmsIdentityRead
 {

@@ -573,7 +573,7 @@ internal sealed class Lane : IAsyncDisposable
     {
         string root = Path.Combine(Path.GetTempPath(), "dms1438-mssql-lane-" + DmsOperationId.New().Value);
         string operations = Path.Combine(root, "operations");
-        Directory.CreateDirectory(operations);
+        PrivateTestDirectory.Create(operations);
         return (root, operations);
     }
 

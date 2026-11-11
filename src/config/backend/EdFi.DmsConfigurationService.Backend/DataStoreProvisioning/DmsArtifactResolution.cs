@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
 /// The outcome of <see cref="IDmsDataStoreProvisioner.ResolveArtifactAsync"/>; no server was contacted either
-/// way. Resolution stages the package privately and releases that directory before returning (6.2 step 7), so
+/// way. Resolution stages the package privately and releases that directory before returning, so
 /// both outcomes carry the cleanup report of that release (D-19): residue never changes the outcome.
 /// </summary>
 public abstract record DmsArtifactResolution

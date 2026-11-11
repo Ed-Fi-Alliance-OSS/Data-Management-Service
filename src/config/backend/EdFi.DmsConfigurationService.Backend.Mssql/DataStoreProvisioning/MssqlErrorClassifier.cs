@@ -14,7 +14,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// The only reader of <see cref="SqlException"/> in the provisioner. It keeps the error number and severity
 /// of the first SQL Server error in an exception chain and never reads the message, procedure, server, or
 /// any field that can carry a value, and it classifies an error number by what it proves about the
-/// command's effect (6.9a): a server-reported error whose number rules out a commit is a definite failure;
+/// command's effect: a server-reported error whose number rules out a commit is a definite failure;
 /// a connection-class error, a client timeout, or a cancellation leaves the outcome in doubt.
 /// </summary>
 internal static class MssqlErrorClassifier
@@ -237,8 +237,12 @@ internal static class MssqlErrorClassifier
         return errorNumbers.Contains(DeadlockVictim) || errorNumbers.Contains(InsufficientMemory);
     }
 
+    /// <summary><see cref="IsRetryableRejection(IReadOnlyList{int})"/> over the error numbers of <paramref name="exception"/>; false when it carries none.</summary>
+    public static bool IsRetryableRejection(Exception exception) =>
+        IsRetryableRejection(ErrorNumbersOf(exception));
+
     /// <summary>
-    /// The failure class an error proves (6.9a), or null when the outcome is in doubt: a connection-class
+    /// The failure class an error proves, or null when the outcome is in doubt: a connection-class
     /// error, a client timeout (<c>-2</c>), a client cancellation after send (<c>0</c>), or an aborted batch
     /// (<c>3980</c>). Any other server-reported error came in the command's own response as a rejection of
     /// that command, which is treated as proof of no commit; a number that does not say so is added here,

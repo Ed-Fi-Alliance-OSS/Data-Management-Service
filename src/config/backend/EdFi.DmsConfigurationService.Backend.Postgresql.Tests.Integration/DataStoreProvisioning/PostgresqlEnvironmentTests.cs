@@ -199,9 +199,13 @@ public class PostgresqlEnvironmentTests
     }
 
     /// <summary>
-    /// Review P2: this process names a client certificate in <c>PGSSLCERT</c>, which Npgsql would send and the replay
-    /// cannot, so the lane admin, otherwise passing every server probe, is <c>NotReady</c> under <c>ClientCertificate</c>.
-    /// The variable is process-wide, so the fixture runs alone and restores it.
+    /// This process names a client certificate in <c>PGSSLCERT</c>, which Npgsql would send whenever it negotiates TLS
+    /// and the replay cannot, so readiness is <c>NotReady</c> under <c>ClientCertificate</c>. The rule depends on the SSL
+    /// mode, so the fixture chooses it rather than inheriting the lane's: under <c>Require</c> the certificate is refused,
+    /// and under <c>Disable</c>, where Npgsql sends none, it is not (the product's disabled-SSL exemption). Only the
+    /// connection string's mode is read for the rule, so neither engine needs the server to accept that mode, and the
+    /// lane's <c>Root Certificate</c> is cleared because a non-verifying mode refuses one. The variable is process-wide,
+    /// so the fixture runs alone and restores it.
     /// </summary>
     [TestFixture]
     [NonParallelizable]
@@ -209,7 +213,23 @@ public class PostgresqlEnvironmentTests
     {
         private const string Variable = "PGSSLCERT";
 
-        private DmsEngineEnvironment _environment = null!;
+        private DmsEngineEnvironment _required = null!;
+        private DmsEngineEnvironment _disabled = null!;
+
+        private static PostgresqlDmsTargetEngine EngineWithSslMode(SslMode sslMode) =>
+            new(
+                new PostgresqlAdminConnection(
+                    new NpgsqlConnectionStringBuilder(AdminConnectionString!)
+                    {
+                        SslMode = sslMode,
+                        RootCertificate = null,
+                    }.ConnectionString,
+                    TimeSpan.FromSeconds(30)
+                ),
+                Settings(),
+                TimeProvider.System,
+                NullLogger.Instance
+            );
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -222,7 +242,8 @@ public class PostgresqlEnvironmentTests
             );
             try
             {
-                _environment = await Engine().ValidateEnvironmentAsync(default);
+                _required = await EngineWithSslMode(SslMode.Require).ValidateEnvironmentAsync(default);
+                _disabled = await EngineWithSslMode(SslMode.Disable).ValidateEnvironmentAsync(default);
             }
             finally
             {
@@ -231,12 +252,18 @@ public class PostgresqlEnvironmentTests
         }
 
         [Test]
-        public void It_is_not_ready_naming_the_client_certificate() =>
-            ReasonsOf(_environment)
+        public void It_is_not_ready_naming_the_client_certificate_when_tls_is_negotiated() =>
+            ReasonsOf(_required)
                 .Should()
                 .ContainSingle(reason => reason.Probe == PostgresqlEnvironment.ClientCertificateProbe)
                 .Which.Code.Should()
                 .Be(DmsProvisioningFailureCode.StartupValidationFailed);
+
+        [Test]
+        public void It_does_not_name_the_client_certificate_when_ssl_is_disabled() =>
+            ReasonsOf(_disabled)
+                .Should()
+                .NotContain(reason => reason.Probe == PostgresqlEnvironment.ClientCertificateProbe);
     }
 
     [TestFixture]

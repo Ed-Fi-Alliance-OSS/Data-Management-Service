@@ -5,12 +5,12 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>Why the selected target is being dropped on the holder session (6.7); staging databases are dropped as cleanup instead.</summary>
+/// <summary>Why the selected target is being dropped on the holder session; staging databases are dropped as cleanup instead.</summary>
 public enum DmsDropReason
 {
-    /// <summary>The renamed target after a proven-uncommitted marker, in the same invocation (6.7).</summary>
+    /// <summary>The renamed target after a proven-uncommitted marker, in the same invocation.</summary>
     Compensation,
 
-    /// <summary>An owned, fenced, exclusively held target being deleted (6.6).</summary>
+    /// <summary>An owned, fenced, exclusively held target being deleted.</summary>
     Delete,
 }

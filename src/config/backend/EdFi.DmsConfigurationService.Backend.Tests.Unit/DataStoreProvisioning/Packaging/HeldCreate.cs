@@ -42,6 +42,9 @@ public sealed class HeldCreate
     /// <summary>Cancels the create, as its caller would.</summary>
     public Task CancelAsync() => _cancellation.CancelAsync();
 
+    /// <summary>The create as started, so a wait for a point inside it can also see it end early.</summary>
+    public Task<DmsDataStoreCreateResult> Running => _running;
+
     /// <summary>
     /// Waits up to <see cref="JoinBound"/> for the create to end and returns it ended, to be awaited for its result or
     /// its exception; throws <see cref="TimeoutException"/> when it is still running.

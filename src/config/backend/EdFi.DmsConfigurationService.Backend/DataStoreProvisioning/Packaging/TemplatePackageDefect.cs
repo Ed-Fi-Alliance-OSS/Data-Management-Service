@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 
 /// <summary>
-/// Why a template package was refused by the stager (6.2 steps 4, 5, 6 and 8). Each value maps to one failure
+/// Why a template package was refused by the stager. Each value maps to one failure
 /// code the catalog reports; the stager never decides between codes itself.
 /// </summary>
 public enum TemplatePackageDefect
@@ -14,7 +14,7 @@ public enum TemplatePackageDefect
     /// <summary>The attestation did not prove the private copy trusted; <see cref="TemplatePackageException.TrustRefusal"/> names the first failing check (<c>ArtifactUntrusted</c>).</summary>
     Untrusted,
 
-    /// <summary>The archive violates an entry rule of the delivered contract (F-P2), is not a readable zip archive at any boundary (opening, central directory, entry open or decompression), or an entry exceeds the size the contract allows (<c>ManifestInvalid</c>).</summary>
+    /// <summary>The archive violates an entry rule of the delivered contract, is not a readable zip archive at any boundary (opening, central directory, entry open or decompression), or an entry exceeds the size the contract allows (<c>ManifestInvalid</c>).</summary>
     PackageInvalid,
 
     /// <summary>The <c>restore-manifest.json</c> entry is not a version-1 manifest; the inner exception is the <see cref="Manifest.RestoreManifestException"/> (<c>ManifestInvalid</c>).</summary>

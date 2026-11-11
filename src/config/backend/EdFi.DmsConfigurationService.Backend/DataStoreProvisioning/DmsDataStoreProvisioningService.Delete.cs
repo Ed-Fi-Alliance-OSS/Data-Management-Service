@@ -9,7 +9,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The owned delete (6.6) under the target lock: the target found by the preamble is opened on a session
+/// The owned delete under the target lock: the target found by the preamble is opened on a session
 /// bound to its instance and must carry the expected identity; it is then fenced on the holder session with
 /// every other session terminated and proven gone (D-22), its identity and instance are read again under the
 /// fence, our own session is closed and proven gone, and the drop re-verifies the instance, the fence and the
@@ -103,7 +103,7 @@ public sealed partial class DmsDataStoreProvisioningService
         return result ?? throw new InvalidOperationException("The delete ended without a result.");
     }
 
-    /// <summary>6.6 steps 1 to 6 under the lock; returns the result or throws the step's failure.</summary>
+    /// <summary>Under the lock; returns the result or throws the step's failure.</summary>
     private async Task<DmsDataStoreDeleteResult> DeleteUnderLockAsync(
         LockScope scope,
         DmsDataStoreDeleteRequest request,
@@ -112,7 +112,7 @@ public sealed partial class DmsDataStoreProvisioningService
     {
         DmsTargetDatabaseName target = request.TargetName;
 
-        // 6.6 step 1: the preamble refuses protected and fenced targets.
+        // The preamble refuses protected and fenced targets.
         DmsLiveTargetState state = await PreambleAsync(scope, target);
         if (state is DmsLiveTargetState.Absent)
         {
@@ -126,14 +126,14 @@ public sealed partial class DmsDataStoreProvisioningService
 
         DmsInstanceIdentity instance = present.Instance;
 
-        // SQL Server's fence ends every session on the target and keeps none (6.6 SQL Server step 3).
+        // SQL Server's fence ends every session on the target and keeps none.
         bool fenceKeepsNoSession = string.Equals(
             engine.Provider,
             DmsDataStoreProvisioningOptions.MssqlProvider,
             StringComparison.Ordinal
         );
 
-        // 6.6 step 2: our target session, bound to the inspected instance; ownership is read, nothing is mutated.
+        // Our target session, bound to the inspected instance; ownership is read, nothing is mutated.
         DmsSession? session = await OpenOwnedSessionAsync(
             scope,
             DeleteOpenSessionStep,
@@ -154,13 +154,13 @@ public sealed partial class DmsDataStoreProvisioningService
 
             if (fenceKeepsNoSession)
             {
-                // 6.6 SQL Server step 3: our work session is closed and proven gone before the fence.
+                // Our work session is closed and proven gone before the fence.
                 sessionClosed = true;
                 await session.DisposeAsync();
                 await ReleaseTargetSessionAsync(scope, targetSession);
             }
 
-            // 6.6 step 3: D-23, the last await point before the fence.
+            // D-23, the last await point before the fence.
             await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeFence, scope.Operation, scope.CallerToken);
             await FenceAsync(scope, target, instance, fenceKeepsNoSession ? null : targetSession, deletion);
 
@@ -169,7 +169,7 @@ public sealed partial class DmsDataStoreProvisioningService
                 deletion,
                 async () =>
                 {
-                    // 6.6 step 4: ownership and instance again, now that no other session can change them.
+                    // Ownership and instance again, now that no other session can change them.
                     // SQL Server: the holder holds the single-user slot, so it reads the identity itself.
                     // That read runs on the holder's gate: its deadline covers the gate wait (one CommandTimeout,
                     // a heartbeat probe's bound) and SQL Server's holder bound (one CommandTimeout).
@@ -206,7 +206,7 @@ public sealed partial class DmsDataStoreProvisioningService
 
                     if (!fenceKeepsNoSession)
                     {
-                        // 6.6 step 5: our own session is closed and proven gone before the drop checks for sessions.
+                        // Our own session is closed and proven gone before the drop checks for sessions.
                         sessionClosed = true;
                         await session.DisposeAsync();
                         await ReleaseTargetSessionAsync(scope, targetSession);
@@ -293,7 +293,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.6 step 3 on the holder session, keeping <paramref name="keep"/> (none on SQL Server). A target that is no longer the
+    /// On the holder session, keeping <paramref name="keep"/> (none on SQL Server). A target that is no longer the
     /// instance is <c>InstanceChanged</c> with nothing fenced; a fence that stands but did not establish
     /// exclusivity is reversed first and reported as <c>ExclusiveAccessNotEstablished</c>, or
     /// <c>AdminPrivilegeMissing</c> for a missing privilege; an outcome in doubt puts the lock in doubt
@@ -351,11 +351,11 @@ public sealed partial class DmsDataStoreProvisioningService
                 };
                 await UnfenceIfFencedAsync(scope, deletion);
                 scope.CallerToken.ThrowIfCancellationRequested();
-                throw StepFailed(code, failed.Failure.Diagnostic);
+                throw StepFailed(code, failed.Failure);
             case DmsCommandOutcome.Unknown:
                 // An engine may report the caller's cancellation of a dispatched fence as an unknown outcome. The
                 // cancellation wins: it leaves the fence in doubt in the ledger, so the delete settles it after the lock
-                // is released and then rethrows (6.10, AC 1).
+                // is released and then rethrows (AC 1).
                 scope.CallerToken.ThrowIfCancellationRequested();
 
                 // The fence's result was lost while the holder still holds the lock (loss would have ended the call
@@ -373,7 +373,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// 6.6 step 5 on the holder session. Success is <c>Dropped</c>; a name found empty is <c>AlreadyAbsent</c>;
+    /// On the holder session. Success is <c>Dropped</c>; a name found empty is <c>AlreadyAbsent</c>;
     /// another instance under the name is <c>InstanceChanged</c> and touched nothing; any other definite failure
     /// reverses the fence first and is <c>ExclusiveAccessNotEstablished</c>, <c>AdminPrivilegeMissing</c>, or
     /// <c>DropFailed</c>; an outcome in doubt is <c>LockLost</c> and settled after the lock is released.
@@ -496,7 +496,7 @@ public sealed partial class DmsDataStoreProvisioningService
 
     /// <summary>
     /// Reverses a standing fence on the holder session, on a bounded token of its own so the caller's
-    /// cancellation cannot skip it (6.10). A refused or unresolved reversal leaves the ledger fenced (or in
+    /// cancellation cannot skip it. A refused or unresolved reversal leaves the ledger fenced (or in
     /// doubt) for settlement, which reports the target; loss propagates.
     /// The bound covers the wait for the holder's gate (one <c>CommandTimeout</c>, a heartbeat probe's bound) and
     /// the largest provider bound once the gate is held (PostgreSQL's instance check and reversal, one
@@ -529,7 +529,7 @@ public sealed partial class DmsDataStoreProvisioningService
     }
 
     /// <summary>
-    /// After the lock is released (6.10, D-12): settles what the ledger left in doubt by reading state only. A
+    /// After the lock is released (D-12): settles what the ledger left in doubt by reading state only. A
     /// drop the engine confirmed is <c>Dropped</c> even when loss or the caller's cancellation discarded its
     /// result, because the ledger observed it first. A
     /// drop in doubt is resolved by the name once the holder is proven gone: empty is <c>Dropped</c> whatever
@@ -710,7 +710,7 @@ public sealed partial class DmsDataStoreProvisioningService
     /// <summary>
     /// A target left fenced needs an operator, whatever ended the delete: a failure already requiring inspection
     /// stands; one whose code allows inspection moves there; any other (a deadline, an unclassified error, a
-    /// missing privilege) becomes <c>ExclusiveAccessNotEstablished</c> for inspection, the code section 8 gives a
+    /// missing privilege) becomes <c>ExclusiveAccessNotEstablished</c> for inspection, the code the failure taxonomy gives a
     /// fence that could not be completed, with the original diagnostic kept.
     /// </summary>
     private static DmsProvisioningFailure ForFencedTarget(DmsProvisioningFailure failure)
@@ -732,7 +732,7 @@ public sealed partial class DmsDataStoreProvisioningService
         );
     }
 
-    /// <summary>Where the selected target stands in a delete (D-12, 6.6).</summary>
+    /// <summary>Where the selected target stands in a delete (D-12).</summary>
     private enum DeletionState
     {
         /// <summary>No selected-target mutation was sent, or the one sent proved to change nothing.</summary>

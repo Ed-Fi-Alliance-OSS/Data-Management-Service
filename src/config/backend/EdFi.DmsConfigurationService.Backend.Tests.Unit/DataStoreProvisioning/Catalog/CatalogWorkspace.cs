@@ -38,8 +38,8 @@ internal sealed class CatalogWorkspace : IDisposable
 
     public CatalogWorkspace()
     {
-        Directory.CreateDirectory(ArtifactDirectory);
-        Directory.CreateDirectory(OperationsRoot);
+        PrivateTestDirectory.Create(ArtifactDirectory);
+        PrivateTestDirectory.Create(OperationsRoot);
     }
 
     public EphemeralAttestationSigner Signer { get; } = new(TestTemplatePackageBuilder.DefaultProducerName);

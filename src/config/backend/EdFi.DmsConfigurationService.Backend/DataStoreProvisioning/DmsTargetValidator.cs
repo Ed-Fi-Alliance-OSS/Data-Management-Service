@@ -9,12 +9,12 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The provider-neutral validation set of 6.9c over engine-supplied facts: (1) the effective-schema row
+/// The provider-neutral validation set over engine-supplied facts: (1) the effective-schema row
 /// against the manifest, (2) the identity row by the stage's rule, (3) the engine facts and the physical
 /// baseline, (4) the canonical inventory hash recomputed from the catalog, (5) the <c>DmsDatastoreOnly</c>
-/// content profile (F-P9, <c>Assert-DmsOnlyInventory</c>), (6) the resource-schema partition against the
-/// manifest's projects and the deployment's expectations, (7) the engine's security rules (F-P9b,
-/// <c>Assert-PostgresqlArtifactOwnership</c> and <c>Assert-PostgresqlArtifactPrivilege</c>, or
+/// content profile (<c>Assert-DmsOnlyInventory</c>), (6) the resource-schema partition against the
+/// manifest's projects and the deployment's expectations, (7) the engine's security rules
+/// (<c>Assert-PostgresqlArtifactOwnership</c> and <c>Assert-PostgresqlArtifactPrivilege</c>, or
 /// <c>Assert-MssqlArtifactSecurityState</c>), and (8) the Populated predicate. Checks run in that order and
 /// the first failure is the verdict, named for
 /// <c>Diagnostic.Operation</c>; messages carry no value from a row. Nothing here reaches a server.
@@ -119,7 +119,7 @@ public static class DmsTargetValidator
 
     /// <summary>
     /// The canonical inventory of the catalog <paramref name="facts"/> describe: every enumerated schema with
-    /// its objects, plus the principals (F-P8, <c>ConvertFrom-InventoryQueryRow</c>). False, with a value-free
+    /// its objects, plus the principals (<c>ConvertFrom-InventoryQueryRow</c>). False, with a value-free
     /// <paramref name="defect"/>, when a schema repeats, an object names a schema the enumeration did not
     /// report, or the canonical rules refuse an entry.
     /// </summary>
@@ -197,7 +197,7 @@ public static class DmsTargetValidator
         };
     }
 
-    /// <summary>Item 3: live major at least the manifest's, the SQL Server compatibility level, and the <c>DocumentJson</c> physical baseline (F-P10).</summary>
+    /// <summary>Item 3: live major at least the manifest's, the SQL Server compatibility level, and the <c>DocumentJson</c> physical baseline.</summary>
     private static DmsTargetValidation? EngineVerdict(DmsTargetFacts facts, RestoreManifest manifest)
     {
         if (
@@ -296,7 +296,7 @@ public static class DmsTargetValidator
     }
 
     /// <summary>
-    /// The <c>DmsDatastoreOnly</c> gate (F-P9, <c>Assert-DmsOnlyInventory</c>), in the delivered order: the
+    /// The <c>DmsDatastoreOnly</c> gate (<c>Assert-DmsOnlyInventory</c>), in the delivered order: the
     /// <c>dms</c> schema present and non-empty; no <c>dmscs</c>; no <c>OpenIddict*</c> object; the always-present
     /// schema empty; every resource schema paired with its <c>tracked_changes_</c> companion and vice versa;
     /// <c>edfi</c> present when any resource schema is; no principals; no database-level objects.
@@ -362,7 +362,7 @@ public static class DmsTargetValidator
         return everyResourceHasCompanion && everyCompanionHasResource && coreIsPresent;
     }
 
-    /// <summary>Item 7 by engine (F-P9b).</summary>
+    /// <summary>Item 7 by engine.</summary>
     private static DmsTargetValidation? SecurityVerdict(DmsSecurityFacts security) =>
         security switch
         {

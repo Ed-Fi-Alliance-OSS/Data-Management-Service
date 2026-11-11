@@ -25,7 +25,7 @@ internal enum PsqlKillReason
 /// ended, reports its exit code and the SQLSTATE extracted from its standard error, if any; a process the
 /// runner killed and confirmed gone reports why; a process whose termination could not be confirmed within
 /// the bound (it did not exit after the stop, or a descendant still holds an output pipe) reports that,
-/// with the stop reason when one was requested. The outcome protocol (6.9a, D-7b) is the engine's: an
+/// with the stop reason when one was requested. The outcome protocol (D-7b) is the engine's: an
 /// exit is definite evidence, the other two leave the server side in doubt until the <c>psql</c> session
 /// is proven gone.
 /// </summary>
@@ -47,7 +47,7 @@ internal abstract record PsqlRunResult
 /// environment is exactly the <see cref="LibpqEnvironment"/> allowlist with <c>PGAPPNAME</c> naming the
 /// operation (D-7b), standard input is closed, standard output is discarded, and standard error reaches
 /// nothing but the <see cref="PsqlStderrSqlState"/> buffer (D-10b). The caller's token and
-/// <c>RestoreTimeout</c> are linked (6.10); either kills the process tree, and every wait that follows is
+/// <c>RestoreTimeout</c> are linked; either kills the process tree, and every wait that follows is
 /// bounded, so the run returns within the termination bound of the stop even when something it started
 /// lingers. The password file is deleted when the run ends, however it ends. Logs carry the operation id,
 /// process id, exit code, elapsed time, and the validated SQLSTATE: never an argument, a path, or a line
@@ -90,8 +90,8 @@ internal sealed class PsqlRestoreRunner
     private readonly TimeProvider _timeProvider;
     private readonly ILogger _logger;
 
-    /// <param name="psqlPath">4.3 <c>Postgresql:PsqlPath</c>, fully qualified.</param>
-    /// <param name="restoreTimeout">4.3 <c>RestoreTimeout</c>: the bound of one replay.</param>
+    /// <param name="psqlPath">The configured <c>Postgresql:PsqlPath</c>, fully qualified.</param>
+    /// <param name="restoreTimeout">The configured <c>RestoreTimeout</c>: the bound of one replay.</param>
     /// <param name="timeProvider">Drives the bounds and the elapsed time in logs.</param>
     /// <param name="logger">Receives the run's value-free progress entries.</param>
     public PsqlRestoreRunner(
@@ -136,7 +136,7 @@ internal sealed class PsqlRestoreRunner
     /// <paramref name="adminConnection"/>, keeping the password file inside <paramref name="directory"/>.
     /// Cancellation does not propagate as an exception: a cancelled run returns
     /// <see cref="PsqlRunResult.Killed"/> or <see cref="PsqlRunResult.Unconfirmed"/>, so the engine can run
-    /// the outcome protocol before the orchestrator surfaces the cancellation (6.10). A failure before the
+    /// the outcome protocol before the orchestrator surfaces the cancellation. A failure before the
     /// process is started, cancellation included, returns <see cref="PsqlRunResult.NotStarted"/>; the system's
     /// refusal to create the process itself propagates as its <see cref="System.ComponentModel.Win32Exception"/>,
     /// whose code the engine classifies.
@@ -204,7 +204,7 @@ internal sealed class PsqlRestoreRunner
         {
             if (!PgPassFile.TryDelete(passwordFilePath))
             {
-                // The operation directory's release retries and reports it as credential residue (6.11).
+                // The operation directory's release retries and reports it as credential residue.
                 _logger.LogWarning(
                     PasswordFileRetained,
                     "The replay of operation {Operation} could not delete its password file; the operation directory's cleanup reports it",

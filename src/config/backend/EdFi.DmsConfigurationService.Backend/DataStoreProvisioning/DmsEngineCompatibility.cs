@@ -8,9 +8,9 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// D-9 and 6.4 step 2: the live server's major version must reach the major of the manifest's
+/// D-9: the live server's major version must reach the major of the manifest's
 /// <c>engineVersion</c>, because neither engine restores a template produced by a newer one. One rule serves the
-/// per-operation engine check and readiness (7.3 item 4), so startup refuses exactly the deployments every create
+/// per-operation engine check and readiness, so startup refuses exactly the deployments every create
 /// would refuse.
 /// </summary>
 public static class DmsEngineCompatibility

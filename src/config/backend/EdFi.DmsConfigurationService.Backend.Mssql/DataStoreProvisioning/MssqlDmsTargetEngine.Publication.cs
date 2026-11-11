@@ -8,11 +8,11 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The publication stage of the SQL Server engine (6.4 steps 10 and 12, 6.7). The rename and the compensation drop run
+/// The publication stage of the SQL Server engine. The rename and the compensation drop run
 /// on the holder session inside its execution gate, bounded by <c>CommandTimeout</c>; the rename returns the instance
-/// with its <c>create_date</c> re-captured, because the rename changes it (F-P17), so every later guard (the marker
+/// with its <c>create_date</c> re-captured, because the rename changes it, so every later guard (the marker
 /// session's open, the marker's resolution, the compensation drop) compares the post-rename snapshot. The marker runs
-/// on the instance-bound session with its instance predicate. The owned delete (6.6) is in the deletion partial.
+/// on the instance-bound session with its instance predicate. The owned delete is in the deletion partial.
 /// </summary>
 public sealed partial class MssqlDmsTargetEngine
 {
@@ -61,8 +61,8 @@ public sealed partial class MssqlDmsTargetEngine
     }
 
     /// <summary>
-    /// On the holder session: the compensation drop (6.7) of the renamed target, guarded by its instance, or the owned
-    /// delete's drop (6.6 step 5), which also requires the target to be fenced.
+    /// On the holder session: the compensation drop of the renamed target, guarded by its instance, or the owned
+    /// delete's drop, which also requires the target to be fenced.
     /// </summary>
     public async Task<DmsCommandOutcome> DropInstanceAsync(
         IDmsTargetLockHolder holder,

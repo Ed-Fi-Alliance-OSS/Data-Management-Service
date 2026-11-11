@@ -8,10 +8,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <summary>
 /// The fixed <see cref="DmsProvisioningDiagnostic.Operation"/> names an engine puts on a definite
 /// command failure when the orchestrator must tell the cause apart without reading a provider code or a
-/// message (6.9a): what ended a replay whose transaction was found rolled back, and the D-16 role that
+/// message: what ended a replay whose transaction was found rolled back, and the D-16 role that
 /// exists but is not locked down, and an owned delete that found the target name empty. An engine emits
-/// exactly these spellings; the orchestrator maps them to failure codes and categories (6.3 step 5, 6.6,
-/// 6.10).
+/// exactly these spellings; the orchestrator maps them to failure codes and categories.
 /// </summary>
 public static class DmsEngineOperations
 {
@@ -41,13 +40,13 @@ public static class DmsEngineOperations
     public const string StagedBackupChanged = "RestoreIntoStaging.StagedBackupChanged";
 
     /// <summary>
-    /// The prefix of every SQL Server staging-routine failure (6.4 step 4, D-18), including a staged file the server
+    /// The prefix of every SQL Server staging-routine failure (D-18), including a staged file the server
     /// cannot open: <c>StagingFailed</c>, transient. The step after the prefix names where it failed.
     /// </summary>
     public const string StageBackupPrefix = "StageBackup.";
 
     /// <summary>
-    /// The prefix of every refusal of the SQL Server backup itself (6.4 step 5, D-11), including a backup the server
+    /// The prefix of every refusal of the SQL Server backup itself (D-11), including a backup the server
     /// refuses to read: <c>BackupInvalid</c>, inspection. The defect after the prefix names the rule.
     /// </summary>
     public const string PlanRestorePrefix = "PlanRestore.";
@@ -56,7 +55,7 @@ public static class DmsEngineOperations
     public const string RoleStateUnsafe = "EnsureEnqueueOwner.RoleStateUnsafe";
 
     /// <summary>
-    /// An owned delete (6.6 step 5) found no database under the target name, before or by the drop, with
+    /// An owned delete found no database under the target name, before or by the drop, with
     /// <see cref="DmsCommandFailureClass.DoesNotExist"/>: the requested state already holds, <c>AlreadyAbsent</c>.
     /// </summary>
     public const string DropTargetAbsent = "DropTarget.Absent";

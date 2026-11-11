@@ -13,26 +13,26 @@ using Microsoft.Extensions.Options;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The orchestrator (4.1) over the engine and catalog ports. Every call checks readiness first and
+/// The orchestrator over the engine and catalog ports. Every call checks readiness first and
 /// refuses with <c>NotReady</c> before touching either port (D-2); then the boundary is validated
-/// (<c>InvalidRequest</c>, 6.1 step 2); for a create the artifact is resolved and compared with the pin
-/// before any server contact and before the lock (6.2, 6.3 step 1); then the target lock is acquired
-/// (6.1 step 4) and every later engine call runs under a token linked to the caller, the holder's
-/// <c>LostToken</c>, and <c>CommandTimeout</c> (6.10). Loss of the holder ends the operation as
+/// (<c>InvalidRequest</c>); for a create the artifact is resolved and compared with the pin
+/// before any server contact and before the lock; then the target lock is acquired
+/// and every later engine call runs under a token linked to the caller, the holder's
+/// <c>LostToken</c>, and <c>CommandTimeout</c>. Loss of the holder ends the operation as
 /// <c>LockLost</c>, and it is enforced at every read boundary, not only through the token: a read is not
 /// dispatched once loss is declared, and a read that completes normally, or throws anything, while loss
-/// is declared still ends the operation there (6.10). Caller cancellation propagates after the lock is
-/// released; the lock is released on every path. This build delivers the shell, a complete create path
-/// (6.3 steps 2 to 10), and the owned delete (6.6): the artifact is staged and compared with the pin before the lock, the staging
+/// is declared still ends the operation there. Caller cancellation propagates after the lock is
+/// released; the lock is released on every path. This build delivers the shell, a complete create path,
+/// and the owned delete: the artifact is staged and compared with the pin before the lock, the staging
 /// database is created and claimed on the holder session, the artifact is restored into it, the result is
 /// validated in full on an instance-bound session, renamed into the target on the holder session, re-checked,
 /// and marked, with compensation for a marker proven uncommitted; the staging database is dropped on every
 /// exit that does not publish it, bounded (D-19), with what remains reported as residue. A target found
 /// holding the name, by the preamble, by the last inspection before the rename, or by the rename itself, is
-/// reconciled (6.5) by reads only, against the full validation set of the trusted template. A delete fences
+/// reconciled by reads only, against the full validation set of the trusted template. A delete fences
 /// an owned target, proves exclusivity, re-verifies ownership and instance, and drops it on the holder
 /// session, reversing the fence on every failure it can. Before any of that, after the boundary, the
-/// administrative connection string is resolved again (6.1 step 3) and bound to the operation, so the engine
+/// administrative connection string is resolved again and bound to the operation, so the engine
 /// connects with the current secret values and with the same values throughout the operation.
 /// </summary>
 public sealed partial class DmsDataStoreProvisioningService(
@@ -136,7 +136,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             ((DmsAdminConnectionResolution.Resolved)resolution).Connection
         );
 
-        // 6.2 runs before the lock so no lock is held during file work (6.3 step 1). The operation id names
+        // Runs before the lock so no lock is held during file work. The operation id names
         // the private directory, the staging database, and the holder session alike.
         DmsOperationId operation = DmsOperationId.New();
         TemplateArtifactStaging staging = await catalog.StageAsync(
@@ -170,7 +170,7 @@ public sealed partial class DmsDataStoreProvisioningService(
                 );
             }
 
-            // 6.2 step 8: the artifact is extracted while hashing; a mismatch is ArtifactTampered.
+            // The artifact is extracted while hashing; a mismatch is ArtifactTampered.
             StagedArtifact stagedArtifact = await artifact.ExtractArtifactAsync(cancellationToken);
             (result, cancellation) = await CreateUnderLockAsync(
                 request,
@@ -195,7 +195,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         }
         finally
         {
-            // 6.7 cleanup on every exit, after the lock is released: the staging database is unique to this
+            // Cleanup on every exit, after the lock is released: the staging database is unique to this
             // operation, so it may be dropped on any session, also after loss, unless it was renamed into the
             // target or a rename is still in doubt; then the private directory.
             publication.ApplyTo(cleanup);
@@ -215,7 +215,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             ExceptionDispatchInfo.Throw(cancellation);
         }
 
-        // What cleanup could not remove rides every result of this create (6.11); it never changes the class.
+        // What cleanup could not remove rides every result of this create; it never changes the class.
         return WithCleanup(
             result ?? throw new InvalidOperationException("The create ended without a result."),
             cleanup.Report
@@ -280,7 +280,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         new([.. first.Residue, .. second.Residue]);
 
     /// <summary>
-    /// The staging stage (6.3 steps 2 to 6; 6.4 steps 2 to 8) under the lock: the engine floor, the staging
+    /// The staging stage under the lock: the engine floor, the staging
     /// name free, the staging database created and claimed on the holder session (SQL Server: the name
     /// reserved, because the restore creates the database), the artifact restored into it with the outcome
     /// protocol, full validation on an instance-bound session, the session released with proof, and the
@@ -298,13 +298,13 @@ public sealed partial class DmsDataStoreProvisioningService(
         DmsOperationId operation = scope.Operation;
         DmsDatabaseName stage = operation.StagingDatabaseName;
 
-        // 6.3 step 2: the live major must carry the manifest's (D-9); the other floors are readiness probes.
+        // The live major must carry the manifest's (D-9); the other floors are readiness probes.
         if (!DmsEngineCompatibility.Accepts(scope.ServerFacts.MajorVersion, artifact.Manifest.EngineVersion))
         {
             throw StepFailed(DmsProvisioningFailureCode.EngineIncompatible, EngineCheckStep);
         }
 
-        // 6.4 step 2: SQL Server places every restored file in the server's default directories (D-11).
+        // SQL Server places every restored file in the server's default directories (D-11).
         if (
             string.Equals(
                 engine.Provider,
@@ -316,7 +316,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             throw StepFailed(DmsProvisioningFailureCode.EngineIncompatible, EngineCheckStep);
         }
 
-        // 6.3 step 3: a generated name already in use is transient; a retry draws a new operation id.
+        // A generated name already in use is transient; a retry draws a new operation id.
         DmsLiveTargetState stagingState = await scope.ReadAsync(
             InspectStagingStep,
             token => engine.InspectAsync(stage, token)
@@ -326,11 +326,11 @@ public sealed partial class DmsDataStoreProvisioningService(
             throw StepFailed(DmsProvisioningFailureCode.StagingNameCollision, InspectStagingStep);
         }
 
-        // 6.3 step 4 on the holder session; on SQL Server a reservation (6.4).
+        // On the holder session; on SQL Server a reservation.
         DmsProvisionClaim claim = new(operation, request.ExpectedSourceIdentity);
         DmsInstanceIdentity reserved = await CreateStagingAsync(scope, stage, claim, cleanup);
 
-        // 6.3 step 5, 6.4 steps 4 to 7: the restore and its outcome; in doubt when the replay's fate is read by
+        // The restore and its outcome; in doubt when the replay's fate is read by
         // the validation. The instance is the created one, or on SQL Server the one the restore created.
         (bool restoreInDoubt, DmsInstanceIdentity stagingInstance) = await RestoreAsync(
             scope,
@@ -341,7 +341,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             cleanup
         );
 
-        // 6.3 step 6 on an instance-bound session; for a restore in doubt, the reads also decide its fate.
+        // On an instance-bound session; for a restore in doubt, the reads also decide its fate.
         (DmsServerSessionId stagingSession, Guid packageIdentity) = await ValidateStagingAsync(
             scope,
             request,
@@ -370,7 +370,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         return new StagedCandidate(stagingInstance, packageIdentity);
     }
 
-    /// <summary>6.3 step 4: the staging database created and claimed on the holder session, registered for cleanup.</summary>
+    /// <summary>The staging database created and claimed on the holder session, registered for cleanup.</summary>
     private async Task<DmsInstanceIdentity> CreateStagingAsync(
         LockScope scope,
         DmsDatabaseName stage,
@@ -380,7 +380,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     {
         // The create is this operation's, and unproven, from the moment it is sent: whatever ends the step,
         // cleanup accounts for the name, and only a returned definite outcome or a verified termination of
-        // the holder session it ran on settles it (6.7, 6.11, D-7b). It is recorded as the engine is handed
+        // the holder session it ran on settles it (D-7b). It is recorded as the engine is handed
         // the call, after the scope's cancellation and loss checks, so a create those checks stop leaves
         // nothing for cleanup to account for, and withdrawn when the holder's gate refuses it before it is
         // sent (DmsCommandNotDispatchedException).
@@ -404,7 +404,7 @@ public sealed partial class DmsDataStoreProvisioningService(
             case DmsCommandOutcome<DmsInstanceIdentity>.Succeeded succeeded:
                 return succeeded.Value;
             case DmsCommandOutcome<DmsInstanceIdentity>.Failed failed:
-                throw StepFailed(CreateStagingFailureCodeOf(failed.Failure), failed.Failure.Diagnostic);
+                throw StepFailed(CreateStagingFailureCodeOf(failed.Failure), failed.Failure);
             case DmsCommandOutcome<DmsInstanceIdentity>.Unknown:
                 // The holder is in doubt: the operation ends LockLost (transient, no selected-target mutation),
                 // and cleanup, once the holder is released, proves it gone before it decides about the name.
@@ -415,7 +415,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// 6.3 step 5 and 6.4 steps 4 to 7: the restore, bounded by the engine (the scope's deadline is a backstop
+    /// The restore, bounded by the engine (the scope's deadline is a backstop
     /// beyond it), and its outcome. Returns whether the outcome is unresolved, so the validation's reads must
     /// decide the replay's fate, with the staging instance: the created one, or for a SQL Server reservation the
     /// instance the restore created, adopted only when its primary file carries the reserved name and recorded
@@ -548,7 +548,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// 6.3 step 6: identity and facts on an instance-bound session, judged by the validator under the
+    /// Identity and facts on an instance-bound session, judged by the validator under the
     /// staging rule. For a restore in doubt, both singleton tables missing proves the replay rolled back
     /// (a transient restore failure, or the caller's cancellation), one missing leaves the outcome
     /// unresolved and the staging database in place; both present means it committed. Returns the
@@ -737,7 +737,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// Recovery for an unknown outcome (6.10): terminates <paramref name="session"/> with verification on a
+    /// Recovery for an unknown outcome: terminates <paramref name="session"/> with verification on a
     /// token of its own, bounded by <c>SessionTerminationTimeout</c> plus <c>CommandTimeout</c>, so neither
     /// the caller's cancellation nor the holder's loss can cut it short. True only for a proven-gone verdict;
     /// a refusal, a timeout, or any exception is no proof, and only the exception's type chain is logged.
@@ -774,7 +774,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// A re-read after an unknown outcome (6.9), once its session is proven gone: up to
+    /// A re-read after an unknown outcome, once its session is proven gone: up to
     /// <c>OutcomeResolutionAttempts</c> attempts, each on a token of its own bounded by <c>CommandTimeout</c>, so
     /// neither the caller's cancellation nor the holder's loss can cut it short. Only an exception is retried,
     /// because it shows nothing about the state; whatever an attempt returns is the answer. When every attempt
@@ -817,7 +817,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         };
 
     /// <summary>
-    /// 6.3 step 5 and 6.4 steps 4 to 7 for a definite restore failure: the engine's fixed operation names what
+    /// For a definite restore failure: the engine's fixed operation names what
     /// ended the replay, or, by its prefix, the SQL Server staging routine or backup rule that refused it.
     /// The engine reports a cancellation of the token it was given, which links the caller's token, the
     /// holder's loss, and the scope's deadline; loss was already checked when the call returned, so a
@@ -865,10 +865,10 @@ public sealed partial class DmsDataStoreProvisioningService(
         }
     }
 
-    /// <summary>The common preamble under the lock (6.1 steps 5 and 6).</summary>
+    /// <summary>The common preamble under the lock.</summary>
     private async Task<DmsLiveTargetState> PreambleAsync(LockScope scope, DmsTargetDatabaseName target)
     {
-        // The facts feed the engine checks of later stages (6.3 step 2, 6.4 step 2).
+        // The facts feed the engine checks of later stages.
         scope.ServerFacts = await scope.ReadAsync(ReadServerFactsStep, engine.ReadServerFactsAsync);
         DmsLiveTargetState state = await scope.ReadAsync(
             InspectTargetStep,
@@ -889,7 +889,7 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// Acquires the target lock (6.1 step 4), runs <paramref name="body"/> under it, and assembles the
+    /// Acquires the target lock, runs <paramref name="body"/> under it, and assembles the
     /// result: a step failure becomes <paramref name="failure"/>; loss of the holder becomes
     /// <c>LockLost</c>; caller cancellation and unexpected exceptions propagate. The holder is disposed,
     /// releasing the lock, on every path. <paramref name="priorCleanup"/> is what the steps before the lock
@@ -995,12 +995,12 @@ public sealed partial class DmsDataStoreProvisioningService(
             detail.Category
         );
 
-        // The shell itself creates no resource; the report is what the steps before the lock left behind (6.11).
+        // The shell itself creates no resource; the report is what the steps before the lock left behind.
         return failure(detail, cleanup);
     }
 
     /// <summary>
-    /// 6.1 step 3: the administrative connection string is resolved again for every operation, after the
+    /// The administrative connection string is resolved again for every operation, after the
     /// boundary and before any file work, server contact, or the lock, so a rotated secret reaches the next
     /// operation through the secret cache; the operation then binds that one resolution for its whole
     /// duration. A failure is transient <c>SecretResolutionFailed</c>.
@@ -1048,6 +1048,27 @@ public sealed partial class DmsDataStoreProvisioningService(
     ) => new(DmsProvisioningFailure.Create(code, diagnostic));
 
     /// <summary>
+    /// A definite engine failure reported as <paramref name="code"/> with its diagnostic. Whether the command took
+    /// effect and whether a retry can succeed are separate facts: <c>ServerRejected</c> is <c>Transient</c> when the
+    /// provider classified the rejection retryable (<see cref="DmsCommandFailure.Retryable"/>) and <c>Permanent</c>
+    /// otherwise, and every other code keeps its default category. Retryability never chooses the code, and never
+    /// decides what cleanup, settlement, or recovery may do.
+    /// </summary>
+    private static DmsProvisioningFailedException StepFailed(
+        DmsProvisioningFailureCode code,
+        DmsCommandFailure failure
+    ) =>
+        new(
+            code == DmsProvisioningFailureCode.ServerRejected && failure.Retryable
+                ? DmsProvisioningFailure.Create(
+                    code,
+                    DmsProvisioningFailureCategory.Transient,
+                    failure.Diagnostic
+                )
+                : DmsProvisioningFailure.Create(code, failure.Diagnostic)
+        );
+
+    /// <summary>
     /// An operation's record of the selected-target mutations it sent (D-12): <c>LockLost</c> is transient
     /// while none may have taken effect, and an inspection failure once one may have.
     /// </summary>
@@ -1084,9 +1105,9 @@ public sealed partial class DmsDataStoreProvisioningService(
     }
 
     /// <summary>
-    /// The staging database this create owns (6.7): dropped on every exit with bounded attempts (D-19)
+    /// The staging database this create owns: dropped on every exit with bounded attempts (D-19)
     /// unless the drop was withheld because the replay's fate is open (D-7b); what cannot be dropped, or
-    /// is deliberately left, is residue (6.11) alongside what the artifact release could not remove.
+    /// is deliberately left, is residue alongside what the artifact release could not remove.
     /// </summary>
     private sealed class StagingCleanup(DmsDatabaseName stage)
     {
@@ -1304,7 +1325,7 @@ public sealed partial class DmsDataStoreProvisioningService(
 
     /// <summary>
     /// One operation's time under the lock: links every engine call to the caller token, the holder's
-    /// <c>LostToken</c>, and the per-command deadline (6.10), and classifies what a read throws. Caller
+    /// <c>LostToken</c>, and the per-command deadline, and classifies what a read throws. Caller
     /// cancellation and holder loss propagate as <see cref="OperationCanceledException"/> for the boundary
     /// to tell apart; a deadline is <c>TimedOut</c>; anything else a read throws is <c>Unknown</c> with its
     /// type chain, because the provider-neutral orchestrator cannot classify driver exceptions. Loss is
@@ -1328,7 +1349,7 @@ public sealed partial class DmsDataStoreProvisioningService(
 
         public CancellationToken CallerToken => callerToken;
 
-        /// <summary>The preamble's server facts (6.1 step 5), for the engine checks of later stages.</summary>
+        /// <summary>The preamble's server facts, for the engine checks of later stages.</summary>
         public DmsServerFacts ServerFacts { get; set; } = null!;
 
         /// <summary>The operation's ledger of selected-target mutations, which decides the category of <c>LockLost</c>.</summary>
@@ -1365,7 +1386,7 @@ public sealed partial class DmsDataStoreProvisioningService(
         ) => CallCoreAsync(step, deadline, call, observe, callerToken);
 
         /// <summary>
-        /// A call that the caller's cancellation must not skip, such as compensation (6.10): bounded by
+        /// A call that the caller's cancellation must not skip, such as compensation: bounded by
         /// <paramref name="deadline"/> and stopped by loss, but not linked to the caller's token.
         /// </summary>
         public Task<T> RecoveryCallAsync<T>(

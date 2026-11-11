@@ -9,14 +9,14 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// Creates and deletes DMS target databases from the allowlisted template packages (AC 1). Every call
 /// first consults readiness and returns a <c>NotReady</c> failure without touching anything when the
 /// feature is disabled or startup validation failed (D-2). Cancellation surfaces as
-/// <see cref="OperationCanceledException"/> only after the outcome protocol and cleanup have run (6.10);
+/// <see cref="OperationCanceledException"/> only after the outcome protocol and cleanup have run;
 /// a marker found committed is reported as success even under cancellation.
 /// </summary>
 public interface IDmsDataStoreProvisioner
 {
     /// <summary>
     /// Authenticates the allowlisted package for the template and returns its pin with no server contact
-    /// and no files left behind (6.2). DMS-1439 persists the pin and presents it on create and every retry.
+    /// and no files left behind. DMS-1439 persists the pin and presents it on create and every retry.
     /// </summary>
     Task<DmsArtifactResolution> ResolveArtifactAsync(
         DmsDatabaseTemplate template,
@@ -26,7 +26,7 @@ public interface IDmsDataStoreProvisioner
     /// <summary>
     /// Stage, validate, rename, mark (D-6, D-7): the selected name is bound only to an already validated
     /// database, and the expected identity is assigned last. A target that already exists is reconciled
-    /// against the pin, never restored over or dropped (6.5).
+    /// against the pin, never restored over or dropped.
     /// </summary>
     Task<DmsDataStoreCreateResult> CreateAsync(
         DmsDataStoreCreateRequest request,
@@ -34,7 +34,7 @@ public interface IDmsDataStoreProvisioner
     );
 
     /// <summary>
-    /// Fence, verify exclusivity, re-verify ownership and instance, drop (6.6). An absent target is
+    /// Fence, verify exclusivity, re-verify ownership and instance, drop. An absent target is
     /// idempotent success; a mismatched or unverifiable target is reported without mutation.
     /// </summary>
     Task<DmsDataStoreDeleteResult> DeleteAsync(

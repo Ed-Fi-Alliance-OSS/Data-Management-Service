@@ -8,7 +8,7 @@ using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
-/// <summary>The server facts readiness judges (7.3 item 4), read in one statement on a maintenance connection.</summary>
+/// <summary>The server facts readiness judges, read in one statement on a maintenance connection.</summary>
 /// <param name="ProductMajorVersion"><c>SERVERPROPERTY('ProductMajorVersion')</c>.</param>
 /// <param name="DefaultDataPath"><c>SERVERPROPERTY('InstanceDefaultDataPath')</c>, or null.</param>
 /// <param name="DefaultLogPath"><c>SERVERPROPERTY('InstanceDefaultLogPath')</c>, or null.</param>
@@ -31,7 +31,7 @@ internal sealed record MssqlEnvironmentFacts(
 );
 
 /// <summary>
-/// The SQL Server environmental validation of 7.3 items 4 and 6 (D-18, D-21, D-22): the read and the rules that
+/// The SQL Server environmental validation (D-18, D-21, D-22): the read and the rules that
 /// turn its facts, the staging directory, and the visibility probe into readiness reasons. Every reason carries a
 /// fixed probe name and a diagnostic with a fixed operation; nothing read from the server or the file system other
 /// than an error number and an exception type chain reaches a reason.
@@ -44,7 +44,7 @@ internal static class MssqlEnvironment
     /// <summary><c>ProductMajorVersion</c> at least <see cref="MinimumProductMajorVersion"/>.</summary>
     public const string ServerVersionProbe = "ServerVersion";
 
-    /// <summary>6.4 step 2: the restore's <c>MOVE</c> destinations are the instance default data and log directories.</summary>
+    /// <summary>The restore's <c>MOVE</c> destinations are the instance default data and log directories.</summary>
     public const string DefaultDataPathProbe = "DefaultDataPath";
 
     public const string DefaultLogPathProbe = "DefaultLogPath";
@@ -73,18 +73,18 @@ internal static class MssqlEnvironment
     /// </summary>
     public const string FileCatalogVisibilityProbe = "FileCatalogVisibility";
 
-    /// <summary>7.3 item 6: the CMS-side staging directory exists, is owned by the CMS user, and grants no group or other write (D-18).</summary>
+    /// <summary>The CMS-side staging directory exists, is owned by the CMS user, and grants no group or other write (D-18).</summary>
     public const string StagingDirectoryProbe = "StagingDirectory";
 
-    /// <summary>7.3 item 6 and D-21: the real staging routine writes, re-reads, and deletes a probe the server can open.</summary>
+    /// <summary>And D-21: the real staging routine writes, re-reads, and deletes a probe the server can open.</summary>
     public const string StagingVisibilityProbe = "StagingVisibility";
 
-    /// <summary>7.3 item 7: the probe lock is acquired, holds through one heartbeat, and is released.</summary>
+    /// <summary>The probe lock is acquired, holds through one heartbeat, and is released.</summary>
     public const string TargetLockProbe = "TargetLock";
 
     /// <summary>
     /// The lowest <c>ProductMajorVersion</c> accepted: SQL Server 2022. Every operation still requires the live
-    /// major to reach the manifest's (6.4 step 2); this floor only refuses a server the adapter was never meant for.
+    /// major to reach the manifest's; this floor only refuses a server the adapter was never meant for.
     /// </summary>
     public const int MinimumProductMajorVersion = 16;
 
@@ -205,7 +205,7 @@ internal static class MssqlEnvironment
     /// the staged backups in it, so a directory owned by the SQL Server identity passes the mode rule and the
     /// visibility probe (a root CMS can still write there) while giving the reader the writer's power. Mode and
     /// owner are read on Unix only (<paramref name="mode"/> and <paramref name="ownedByProcess"/> null on Windows,
-    /// where the share and NTFS permissions of 7.4 are the operator's and are not inspected).
+    /// where the share and NTFS permissions are the operator's and are not inspected).
     /// </summary>
     public static DmsReadinessReason? EvaluateStagingDirectory(
         bool exists,

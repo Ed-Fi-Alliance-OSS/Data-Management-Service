@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 
 /// <summary>
 /// Verifies a detached attestation against the exact package bytes' SHA-256, the allowlisted package identity,
-/// and the trust policy, in exactly the delivered <c>Test-TemplateAttestation</c> order (F-P6): at least one
+/// and the trust policy, in exactly the delivered <c>Test-TemplateAttestation</c> order: at least one
 /// detached-attestation producer; the document parses with integer version 1; the algorithm is exactly
 /// <c>ECDSA_P256_SHA256</c>; payload and signature decode from base64; the key id matches a policy key
 /// (case-sensitively, first match in policy order); the key is proven on P-256 and verifies the P1363 signature
@@ -65,7 +65,7 @@ public static class TemplateAttestationVerifier
         return JudgePayload(signed!, packageSha256, expectedPackageId, expectedPackageVersion);
     }
 
-    /// <summary>F-P6 checks on the document: shape, algorithm, base64, key lookup, and signature.</summary>
+    /// <summary>attestation checks on the document: shape, algorithm, base64, key lookup, and signature.</summary>
     private static (TrustRefusalReason? Refusal, SignedPayload? Signed) ReadSignedPayload(
         string? attestationJson,
         TemplateTrustPolicy.Producer[] producers
@@ -107,7 +107,7 @@ public static class TemplateAttestationVerifier
             : (TrustRefusalReason.BadSignature, null);
     }
 
-    /// <summary>F-P6 checks on the verified payload: shape, hash form, hash equality, identity, producer.</summary>
+    /// <summary>attestation checks on the verified payload: shape, hash form, hash equality, identity, producer.</summary>
     private static TrustVerdict JudgePayload(
         SignedPayload signed,
         string packageSha256,

@@ -1552,7 +1552,14 @@ expected identity, after closing every other session on it.
 
 At startup, an enabled provisioner checks its environment once. A failure does not stop the service: it
 marks provisioning `NotReady`, logs each failed check at Critical, and refuses every provisioning call until
-the service restarts. Fix the cause, then restart. Each Critical line has this form:
+the service restarts. Fix the cause, then restart.
+
+The checks run before the Configuration Service starts listening for HTTP, so no endpoint, `/health`
+included, answers until they end. Their duration depends on the configured bounds (`CommandTimeout`,
+`LockAcquireTimeout`, `SessionTerminationTimeout`) and on how long copying and hashing each allowlisted
+package takes. Size the deployment's startup allowance (a Kubernetes `startupProbe`, or a longer initial
+delay before liveness checks) to cover them; a liveness check that fails during startup restarts a host
+that is still initializing. Each Critical line has this form:
 
 ```text
 DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <provider>: probe <Probe> failed at <Operation> (exception types <types>, provider error <code>)
@@ -1572,7 +1579,7 @@ DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <pr
 | `ClientCertificate` | The Configuration Service's own PostgreSQL connections would send no client certificate: `PGSSLCERT` is unset and the home directory holds no `.postgresql/postgresql.crt` (`%APPDATA%\postgresql\postgresql.crt` on Windows), unless `SSL Mode` is `Disable`. `psql` never sends one. | Remove the variable or the file; client-certificate authentication of the administrative login is not supported. |
 | `AmbientPassword` | With no `Password` in `AdminConnectionString`, the Configuration Service's own PostgreSQL connections would find no password elsewhere: `PGPASSWORD` is unset or empty, and no password file exists at `PGPASSFILE` or, when that is unset, at `.pgpass` in the home directory (`%APPDATA%\postgresql\pgpass.conf` on Windows). `psql` receives only the configured password. | Put the password in `AdminConnectionString` (a `${secret:...}` reference), or remove the variable or the file. |
 | `GssAuthentication` | The server did not authenticate the administrative login to `postgres` through GSSAPI (Kerberos). That login comes from the Configuration Service's Kerberos credentials, which `psql` does not receive. `pg_hba.conf` is matched per database, so this probe cannot see a GSSAPI rule for other databases: each create checks its staging database before `psql` starts and fails with a permanent `RestoreFailed`, operation `RestoreIntoStaging.GssAuthentication`, when that database is authenticated through GSSAPI. | Authenticate the administrative login with a password (or `trust`/`peer`) in `pg_hba.conf` for every database; GSSAPI authentication of it is not supported. |
-| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists, is owned by the Configuration Service user (on Linux), is not group- or other-writable, and SQL Server can read a probe file written into it. | See [SQL Server](#sql-server). |
+| `StagingDirectory`, `StagingVisibility` | The SQL Server staging directory exists; on Linux, it is owned by the Configuration Service user and is not group- or other-writable; and SQL Server can read a probe file written into it. On Windows the owner and access control list are not checked. | See [SQL Server](#sql-server). |
 | `TargetLock` | A lock can be taken and released on the server. | Usually a server or privilege problem an earlier probe also reports. |
 
 ### Template package trust
@@ -1610,6 +1617,26 @@ is not valid. At startup the same defects make provisioning `NotReady` (`Startup
 | The Configuration Service (container or host) with `psql` 18 or later, reaching the server over TCP. The published Configuration Service image includes `psql` 18 at `/usr/bin/psql`. | Yes |
 | No `psql` in the Configuration Service runtime | No (`NotReady`, `PsqlVersion`) |
 | A non-superuser administrative login | No (`NotReady`, `Superuser`) |
+| The Configuration Service reaching the server directly, or through a pooler in session mode (one server backend per client connection for the connection's whole life) | Yes |
+| A pooler in transaction or statement mode between the Configuration Service and the server | No (not detected) |
+
+The per-target lock is a session-level advisory lock held on one connection for the whole operation, and
+the service ends and verifies other sessions by the server backend (`pid` and start time) serving them.
+A transaction or statement pooler can serve consecutive commands of one connection from different
+backends, which breaks both; PgBouncer, for example, lists session-level advisory locks as
+[unsupported in transaction pooling](https://www.pgbouncer.org/features.html). The service turns Npgsql's own
+pooling off, but that does not control an external pooler, and startup does not detect one. Every
+connection must also reach the same server: see `Host` under
+[AdminConnectionString](./CONFIGURATION.md#dmsdatastoreprovisioning).
+
+A database under the target name that is owned by a role other than a superuser or the administrative
+login itself is never opened or read: a create or delete of that name fails with `TargetUnverifiable` at
+operation `InspectTarget`. Inside a database those roles own, the identity, effective-schema, and
+document tables are read only when each is a table owned by such a role with built-in column types;
+otherwise the identity read is `TargetUnverifiable` and the facts read `SecurityStateViolation`
+(operation `RelationTrust`). Reading an object another role created could run that role's code with the
+administrator's privileges. A target created under an earlier superuser login stays readable after the
+secret is switched to another superuser login, as long as that earlier login remains a superuser.
 
 The administrative login must be a **superuser**. The PostgreSQL template ends by making
 `edfi_dms_enqueue_owner` the owner of its enqueue functions. PostgreSQL allows that for a non-superuser only
@@ -1640,8 +1667,11 @@ Initialize such a cluster again with UTF-8 encoding. A cluster whose `template0`
 
 `RESTORE` reads its backup from a file the server opens, so the Configuration Service copies each backup into
 a staging directory the server also sees. The directory separates the two identities: the Configuration
-Service owns it and writes into it, and SQL Server can only read it. The service refuses a group- or
-other-writable directory. It re-hashes the staged file after the restore and fails with
+Service owns it and writes into it, and SQL Server can only read it. On Linux the service refuses a
+directory it does not own or that is group- or other-writable. On Windows, and on a share, it does not
+inspect the owner or the access control list: the operator must configure that separation (the
+Configuration Service identity with Modify, the SQL Server service identity with Read & Execute only) and
+verify it, because the service cannot detect a directory other accounts may write. It re-hashes the staged file after the restore and fails with
 `StagingIntegrityViolation` if the file changed.
 
 | Topology | Setup | Supported |
@@ -1695,8 +1725,10 @@ server message, or `psql` output. The category tells the caller whether to retry
 | --- | --- |
 | `FeatureDisabled`, `StartupValidationFailed`, `AdapterUnavailable` | `NotReady` |
 | `TemplateNotAllowlisted`, `InvalidTargetName`, `EmptySourceIdentity`, `ArtifactPinMissing` | `InvalidRequest` |
-| `ProtectedTarget`, `AdminPrivilegeMissing`, `RoleStateUnsafe`, `EngineIncompatible`, `StagingNotVisible`, `ServerRejected` | `Permanent` |
-| `SecretResolutionFailed`, `ServerUnavailable`, `LockTimeout`, `LockUnavailable`, `TimedOut`, `StagingFailed`, `StagingNameCollision`, `Unknown` | `Transient` |
+| `ProtectedTarget`, `AdminPrivilegeMissing`, `RoleStateUnsafe`, `EngineIncompatible`, `StagingNotVisible` | `Permanent` |
+| `ServerRejected` | `Permanent`; `Transient` when the server rejected the administrative command, so nothing changed, for a reason that can clear on its own: a PostgreSQL serialization failure, deadlock, unavailable lock, or temporary resource shortage, or a SQL Server deadlock victim (error 1205) or temporary memory shortage (error 701). A refusal for lack of a privilege is `AdminPrivilegeMissing`, never this |
+| `SecretResolutionFailed`, `ServerUnavailable`, `LockTimeout`, `LockUnavailable`, `TimedOut`, `StagingNameCollision`, `Unknown` | `Transient` |
+| `StagingFailed` | `Transient`; `OperatorInspectionRequired` when the operation directory root is unsafe on a Unix host (operation `StagePackage.OperationRootUnsafe.<reason>`; see `OperationDirectory` in [CONFIGURATION.md](./CONFIGURATION.md#dmsdatastoreprovisioning)) |
 | `RestoreFailed` | `Permanent`; `Transient` when the restore is known to have rolled back for a reason that can clear on its own: a lost connection, a PostgreSQL serialization failure, deadlock, unavailable lock, or temporary resource shortage, or a SQL Server deadlock victim (error 1205) or temporary memory shortage (error 701) |
 | `ExclusiveAccessNotEstablished`, `LockLost`, `DropFailed` | `Transient` before anything on the target changed, or when the operation proved afterwards that its uncertain rename or fence left nothing in place (the rename did not happen and nothing holds the target name; the target is ours and accepts connections); `OperatorInspectionRequired` otherwise |
 | `TrustPolicyUnavailable` | `OperatorInspectionRequired`; `Transient` while another process holds the trust policy file open exclusively. Only an operation reports it; at startup a policy that cannot be used is `StartupValidationFailed`. See [Template package trust](#template-package-trust) |

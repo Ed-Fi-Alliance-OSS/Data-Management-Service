@@ -8,7 +8,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <summary>
 /// An administrative connection open bounded on the engine's clock whatever connect timeout the connection string
 /// carries: a value of <c>0</c> (Npgsql <c>Timeout</c>, SqlClient <c>Connect Timeout</c>) lets the driver wait for
-/// a stalled login forever. It bounds the startup readiness probes' opens (7.3) and every SQL Server
+/// a stalled login forever. It bounds the startup readiness probes' opens and every SQL Server
 /// administrative open (<c>MssqlAdminConnection</c>), because SqlClient does not honour cancellation while a login
 /// stalls. Only the open is abandoned, never the work that follows it: the wait ends at the bound or at the
 /// caller's cancellation even when the driver ignores both, and a connection the abandoned open still produces is

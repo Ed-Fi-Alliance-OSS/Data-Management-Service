@@ -349,6 +349,111 @@ public class DmsDataStoreProvisioningServicePublicationTests
     }
 
     /// <summary>
+    /// H-02: a rename the server definitely rejected left the target name as it was, and only the provider's separate
+    /// retryability verdict makes the <c>ServerRejected</c> that reports it transient; a non-retryable rejection stays
+    /// permanent, a missing privilege stays <c>AdminPrivilegeMissing</c> whatever the flag says, and an object in use
+    /// keeps its own transient code. The staging database is dropped and nothing else follows, with nothing left over.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_rename_is_rejected_with_or_without_retryability
+    {
+        private static readonly (
+            DmsCommandFailureClass Class,
+            string Code,
+            bool Retryable,
+            DmsProvisioningFailureCode Expected,
+            DmsProvisioningFailureCategory Category
+        )[] _table =
+        [
+            (
+                DmsCommandFailureClass.Rejected,
+                "55P03",
+                true,
+                DmsProvisioningFailureCode.ServerRejected,
+                DmsProvisioningFailureCategory.Transient
+            ),
+            (
+                DmsCommandFailureClass.Rejected,
+                "701",
+                true,
+                DmsProvisioningFailureCode.ServerRejected,
+                DmsProvisioningFailureCategory.Transient
+            ),
+            (
+                DmsCommandFailureClass.Rejected,
+                "22023",
+                false,
+                DmsProvisioningFailureCode.ServerRejected,
+                DmsProvisioningFailureCategory.Permanent
+            ),
+            (
+                DmsCommandFailureClass.PrivilegeMissing,
+                "42501",
+                true,
+                DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                DmsProvisioningFailureCategory.Permanent
+            ),
+            (
+                DmsCommandFailureClass.ObjectInUse,
+                "55006",
+                false,
+                DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                DmsProvisioningFailureCategory.Transient
+            ),
+        ];
+
+        private readonly List<(DmsDataStoreCreateResult Result, Harness Harness)> _runs = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _runs.Clear();
+            foreach ((DmsCommandFailureClass failureClass, string code, bool retryable, _, _) in _table)
+            {
+                Harness harness = Scripted();
+                harness.Engine.OnRenameIntoTarget = (_, _, _, _) =>
+                    Task.FromResult<DmsCommandOutcome<DmsInstanceIdentity>>(
+                        new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                            new DmsCommandFailure(
+                                failureClass,
+                                new DmsProvisioningDiagnostic(
+                                    "Npgsql.PostgresException",
+                                    code,
+                                    "RenameIntoTarget"
+                                )
+                            )
+                            {
+                                Retryable = retryable,
+                            }
+                        )
+                    );
+                _runs.Add((await CreateAsync(harness), harness));
+            }
+        }
+
+        [Test]
+        public void It_is_transient_only_for_a_retryable_server_rejection_or_its_own_transient_code() =>
+            _runs
+                .Select(run => FailureOf(run.Result))
+                .Select(failure => (failure.Code, failure.Category, failure.Diagnostic.ProviderErrorCode))
+                .Should()
+                .Equal(_table.Select(row => (row.Expected, row.Category, (string?)row.Code)));
+
+        [Test]
+        public void It_drops_the_staging_database_goes_no_further_and_leaves_no_residue() =>
+            _runs
+                .Should()
+                .AllSatisfy(run =>
+                {
+                    AfterTheRename(run.Harness)
+                        .Select(call => call.Member)
+                        .Should()
+                        .Equal(SpyDmsTargetEngine.DropStaging);
+                    ((DmsDataStoreCreateResult.Failure)run.Result).Cleanup.HasResidue.Should().BeFalse();
+                });
+    }
+
+    /// <summary>
     /// F-03 (R2-2): a rename whose result is lost while the holder still holds the lock is settled after the lock is
     /// released, and only what settlement proves decides the category. Not renamed with the target name read absent is
     /// a retry (<c>Unknown</c>, transient); not renamed while another database, a protected one, or a fenced one holds

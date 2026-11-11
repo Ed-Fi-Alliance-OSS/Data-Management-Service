@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>How DMS-1439 classifies a failure for retry (spec section 8).</summary>
+/// <summary>How DMS-1439 classifies a failure for retry.</summary>
 public enum DmsProvisioningFailureCategory
 {
     /// <summary>Boundary rejection: template, name, empty identity, missing pin. Terminal.</summary>

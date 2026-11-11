@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 
 /// <summary>
-/// The operator trust policy in the delivered DMS-1271 schema (F-P5): a version-1 document listing producers,
+/// The operator trust policy in the delivered DMS-1271 schema: a version-1 document listing producers,
 /// each either a <c>detached-attestation</c> producer with one or more ECDSA P-256 public keys, or a
 /// <c>nuget-author-signature</c> producer, which the schema reserves and no verification path consults.
 /// Producer names are unique ignoring case. <see cref="TemplateTrustPolicyReader"/> is the only path that proves

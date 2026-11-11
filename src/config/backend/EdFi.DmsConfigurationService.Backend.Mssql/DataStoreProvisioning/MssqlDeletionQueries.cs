@@ -13,8 +13,8 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 internal readonly record struct MssqlFenceObservation(bool Visible, int Others);
 
 /// <summary>
-/// The owned delete of 6.6 (SQL Server) on the holder's connection: the fence, its reversal, and the guarded drop,
-/// classified by 6.9a the way the publication commands are. Each is one guarded batch without <c>TRY/CATCH</c>: the
+/// The owned delete on the holder's connection: the fence, its reversal, and the guarded drop,
+/// classified the way the publication commands are. Each is one guarded batch without <c>TRY/CATCH</c>: the
 /// name, the <c>database_id</c>, the primary file and the <c>create_date</c> snapshot the delete inspected are checked
 /// and only then is the statement run, so the error that refuses it reaches the client with its own number (D-13). The
 /// snapshot is part of the guard here, unlike the publication commands, because nothing in a delete changes it (single-
@@ -27,7 +27,7 @@ internal readonly record struct MssqlFenceObservation(bool Visible, int Others);
 /// fence must be reversed. Exclusivity is then proven by observation (D-22): no other session may be using the
 /// database, read with the visibility the count needs. Nothing is killed after the fence: a client that took the
 /// single-user slot is left alone and the fence is reported as not established. <c>ALTER DATABASE</c> and
-/// <c>DROP DATABASE</c> take no parameters, so their names are quoted from validated names (6.8); the guards and every
+/// <c>DROP DATABASE</c> take no parameters, so their names are quoted from validated names; the guards and every
 /// catalog read are parameterized.
 /// </summary>
 internal static class MssqlDeletionQueries
@@ -95,7 +95,7 @@ internal static class MssqlDeletionQueries
         + $"ELSE DROP DATABASE {MssqlIdentifiers.Quote(target.Value)};";
 
     /// <summary>
-    /// 6.6 step 3 (SQL Server): the name must still hold <paramref name="instance"/>, then
+    /// The name must still hold <paramref name="instance"/>, then
     /// <c>SET SINGLE_USER WITH ROLLBACK IMMEDIATE</c>; then, every <see cref="MssqlSessionQueries.VerificationInterval"/>
     /// until <paramref name="terminationTimeout"/> has passed, no other session may use the database (D-22). Sessions
     /// the admin cannot see are <see cref="DmsCommandFailureClass.PrivilegeMissing"/> under
@@ -204,7 +204,7 @@ internal static class MssqlDeletionQueries
     }
 
     /// <summary>
-    /// 6.6 step 5 (SQL Server): the name must hold <paramref name="instance"/>, still in single-user mode; then
+    /// The name must hold <paramref name="instance"/>, still in single-user mode; then
     /// <c>DROP DATABASE</c> in the same batch. An empty name is the definite
     /// <see cref="DmsCommandFailureClass.DoesNotExist"/> under <see cref="DmsEngineOperations.DropTargetAbsent"/>;
     /// another instance is <see cref="DmsCommandFailureClass.DoesNotExist"/> under
@@ -377,10 +377,17 @@ internal static class MssqlDeletionQueries
     }
 
     /// <summary>An error the server reported for the statement is definite; anything else leaves it in doubt on <paramref name="session"/>.</summary>
-    private static DmsCommandOutcome Classify(Exception exception, DmsServerSessionId session, string step) =>
+    internal static DmsCommandOutcome Classify(
+        Exception exception,
+        DmsServerSessionId session,
+        string step
+    ) =>
         exception is SqlException && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
             ? new DmsCommandOutcome.Failed(
                 new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, step))
+                {
+                    Retryable = MssqlErrorClassifier.IsRetryableRejection(exception),
+                }
             )
             : new DmsCommandOutcome.Unknown(session);
 

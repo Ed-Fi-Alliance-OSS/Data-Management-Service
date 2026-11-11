@@ -13,7 +13,7 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The staging stage of the PostgreSQL engine (6.3 steps 4 and 5, 6.7): the staging database is created
+/// The staging stage of the PostgreSQL engine: the staging database is created
 /// and claimed on the holder session; the replay runs through <see cref="PsqlRestoreRunner"/> after the
 /// D-16 role check, and a replay whose outcome is in doubt is resolved here, because only this engine can
 /// address the <c>psql</c> session by its application name (D-7b): every such session is terminated with
@@ -173,12 +173,12 @@ public sealed partial class PostgresqlDmsTargetEngine
                 SqlState: { } sqlState
             } when PostgresqlErrorClassifier.FailureClassOf(sqlState) is { } failureClass:
                 // ON_ERROR_STOP ended the replay on a server-reported rejection: the single transaction
-                // never committed (6.9a). Only exit 3 says the last message is the error that stopped the
+                // never committed. Only exit 3 says the last message is the error that stopped the
                 // script; after any other exit it may be an earlier notice.
                 return ScriptStopped(failureClass, sqlState);
             case PsqlRunResult.Unconfirmed unconfirmed:
                 // No lookup proves anything while the process may still run: it can connect after the
-                // enumeration, so the outcome stays unknown and the process is the operator's (7.6).
+                // enumeration, so the outcome stays unknown and the process is the operator's.
                 return new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(null)
                 {
                     Residue =
@@ -320,7 +320,7 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>
     /// The staging instance after <c>psql</c> exited 0, which proves the single transaction committed and leaves
     /// nothing of the replay running. The read runs on a <c>CommandTimeout</c> bound of its own, so a cancellation
-    /// or deadline arriving after the replay cannot discard that outcome (6.10); a read that still fails is
+    /// or deadline arriving after the replay cannot discard that outcome; a read that still fails is
     /// <c>Unknown</c> and quiescent, so the orchestrator's reads decide the state and cleanup may drop the database.
     /// </summary>
     private async Task<DmsCommandOutcome<DmsInstanceIdentity>> ReadCommittedInstanceAsync(
@@ -375,7 +375,7 @@ public sealed partial class PostgresqlDmsTargetEngine
     /// <summary>
     /// D-7b for a replay whose process is proven ended (it exited, or it was killed and its exit observed)
     /// without a verdict: on a token of its own, bounded by <c>SessionTerminationTimeout</c> so the caller's
-    /// cancellation cannot skip it (6.10), every session carrying the replay's application name on the
+    /// cancellation cannot skip it, every session carrying the replay's application name on the
     /// staging database is terminated with verification; one that cannot be proven gone is the
     /// <c>Unknown</c> session, and a lookup or termination that fails proves nothing, so the outcome stays
     /// <c>Unknown</c>, names no session and is not quiescent. With the process and every session gone, nothing
@@ -495,7 +495,7 @@ public sealed partial class PostgresqlDmsTargetEngine
     }
 
     /// <summary>
-    /// The replay's fate from the two tables (6.3 step 5): both existing is a commit even when a table is
+    /// The replay's fate from the two tables: both existing is a commit even when a table is
     /// empty, because only a committed transaction leaves a table behind; an empty or invalid singleton is
     /// a content problem for validation, not evidence of a rollback.
     /// </summary>

@@ -8,14 +8,14 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// Reconciliation of a create whose target name is already taken (6.5), under the lock and by reads only:
+/// Reconciliation of a create whose target name is already taken, under the lock and by reads only:
 /// nothing is created, restored, renamed, marked, or dropped on the database holding the name. It is entered
-/// from the preamble (6.3 step 1), from the last inspection before the rename (6.3 step 7), and from a rename
-/// refused because the name is taken (6.3 step 8); in the last two the staging database is this operation's
+/// from the preamble, from the last inspection before the rename, and from a rename
+/// refused because the name is taken; in the last two the staging database is this operation's
 /// and is dropped by cleanup after the lock is released. A matching identity is necessary but proves nothing
-/// about content: an owned target is <c>Reconciled</c> only after the full validation set (6.9c) passes
+/// about content: an owned target is <c>Reconciled</c> only after the full validation set passes
 /// against the manifest of the trusted artifact, which was verified, staged and compared with the request's
-/// pin before the lock (6.2).
+/// pin before the lock.
 /// </summary>
 public sealed partial class DmsDataStoreProvisioningService
 {
@@ -26,14 +26,14 @@ public sealed partial class DmsDataStoreProvisioningService
     public const string ReconcileValidateStep = "Reconcile.Validate";
 
     /// <summary>
-    /// 6.5 for the database <paramref name="state"/> describes, as the inspection named <paramref name="inspectStep"/>
+    /// For the database <paramref name="state"/> describes, as the inspection named <paramref name="inspectStep"/>
     /// found it. Step 1: a protected or fenced database keeps the preamble's verdicts, and anything that is not
     /// an online database is <c>TargetUnverifiable</c>. Step 2: on a session bound to the inspected instance, an
     /// unreadable identity is <c>TargetUnverifiable</c> and another identity <c>TargetUnowned</c>, with no
     /// further read; a connection, an identity read, or a facts read the server definitely refuses for lack of a
     /// privilege leaves the target unverifiable too, reported with the refusal's sanitized diagnostic (type chain
     /// and provider code) under the step that was refused, so it
-    /// requires inspection instead of looking transient. Step 3: the expected identity is followed by every 6.9c check under the reconcile rule,
+    /// requires inspection instead of looking transient. Step 3: the expected identity is followed by every validation check under the reconcile rule,
     /// whose first failure is the result. Step 4: <c>Reconciled</c> with the pin.
     /// </summary>
     private async Task<DmsDataStoreCreateResult> ReconcileAsync(

@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 
 /// <summary>
-/// Why a detached attestation did not verify (spec 6.2 step 4). Each value names the first F-P6 check that
+/// Why a detached attestation did not verify. Each value names the first attestation check that
 /// failed; the catalog reports it as the detail of <see cref="DmsProvisioningFailureCode.ArtifactUntrusted"/>.
 /// No value carries anything read from the document, the package, or the policy.
 /// </summary>

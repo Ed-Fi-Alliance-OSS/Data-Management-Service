@@ -6,14 +6,14 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// One row of the delivered PostgreSQL ownership query (F-P9b, <c>Get-PostgresqlTemplateOwnershipQuerySql</c>
+/// One row of the delivered PostgreSQL ownership query (<c>Get-PostgresqlTemplateOwnershipQuerySql</c>
 /// in its full scope): an object the connected administrator does not own. <see cref="Owner"/> is the plain
 /// role name; <see cref="Identity"/> is the <c>%I</c>-quoted object identity.
 /// </summary>
 public sealed record DmsPostgresqlOwnershipRow(string Kind, string Owner, string Identity);
 
 /// <summary>
-/// One row of the delivered PostgreSQL privilege query (F-P9b, <c>Get-PostgresqlPrivilegeQuerySql</c>): a
+/// One row of the delivered PostgreSQL privilege query (<c>Get-PostgresqlPrivilegeQuerySql</c>): a
 /// privilege held on a schema, relation, column, function, or standalone type outside the system schemas,
 /// with the engine's built-in defaults expanded. <see cref="Owner"/> and <see cref="Grantee"/> are
 /// <c>%I</c>-quoted role names; <see cref="Grantee"/> is <c>-</c> for PUBLIC.
@@ -27,8 +27,8 @@ public sealed record DmsPostgresqlPrivilegeRow(
 );
 
 /// <summary>
-/// One <c>permission</c> row of the delivered SQL Server security-state query (F-P9b,
-/// <c>Get-MssqlSecurityStateQuerySql</c>): a row of <c>sys.database_permissions</c>, built-in principals
+/// One <c>permission</c> row of the delivered SQL Server security-state query
+/// (<c>Get-MssqlSecurityStateQuerySql</c>): a row of <c>sys.database_permissions</c>, built-in principals
 /// included. Judgment uses the numeric fields, <see cref="PermissionName"/>, and <see cref="StateDesc"/>;
 /// <see cref="Grantee"/> and <see cref="Securable"/> only describe a row.
 /// </summary>
@@ -50,7 +50,7 @@ public sealed record DmsMssqlPermissionRow(
 public sealed record DmsMssqlRoleMemberRow(int RoleId, int MemberId, string Role, string Member);
 
 /// <summary>
-/// The engine's security rows for 6.9c item 7, judged by the provider-neutral rule sets in
+/// The engine's security rows for the security check of target validation, judged by the provider-neutral rule sets in
 /// <see cref="DmsTargetValidator"/>.
 /// </summary>
 public abstract record DmsSecurityFacts

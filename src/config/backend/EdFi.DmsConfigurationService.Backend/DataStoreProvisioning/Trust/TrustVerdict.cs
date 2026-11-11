@@ -7,7 +7,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 
 /// <summary>
 /// The result of <see cref="TemplateAttestationVerifier.Verify"/>: either the package bytes are attested by a
-/// named policy producer, or the first F-P6 check that failed. A verdict never carries a key id, a hash, a
+/// named policy producer, or the first attestation check that failed. A verdict never carries a key id, a hash, a
 /// package identity, or any other value read from the document.
 /// </summary>
 public abstract record TrustVerdict

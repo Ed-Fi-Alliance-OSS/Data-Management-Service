@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The verdict of <see cref="IDmsTargetEngine.ValidateEnvironmentAsync"/> (7.3 probes 4 to 7), with the server's
+/// The verdict of <see cref="IDmsTargetEngine.ValidateEnvironmentAsync"/>, with the server's
 /// major version when the engine read it, so readiness can compare it with the templates' manifests
 /// (<see cref="DmsEngineCompatibility"/>).
 /// </summary>

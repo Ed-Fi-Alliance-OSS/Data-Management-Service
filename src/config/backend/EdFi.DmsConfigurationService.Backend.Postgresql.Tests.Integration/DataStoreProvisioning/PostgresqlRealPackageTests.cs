@@ -69,12 +69,38 @@ public class PostgresqlRealPackageTests
     /// marker naming <c>psql</c> and the holding shell and sleeps until the runner kills the process tree. Nothing
     /// commits while the replay is held, so the caller's cancellation, or the restore bound that only the test fires
     /// (<see cref="ControlledRestoreDeadline"/>), always meets the whole dump replayed and uncommitted, however fast the
-    /// replay ran. <see cref="Release"/> ends a hold the runner did not.
+    /// replay ran. <see cref="Release"/> ends a hold the runner did not. The runner gives <c>psql</c> a cleared
+    /// environment, so the shell commands use the absolute paths of <c>mv</c> and <c>sleep</c>, resolved here (Ubuntu
+    /// has them under <c>/usr/bin</c>, Alpine under <c>/bin</c>); a host with neither fails setup at once.
     /// </summary>
     private sealed class HeldReplay : IDisposable
     {
+        private static readonly string[] _utilityDirectories = ["/usr/bin", "/bin"];
+
         private readonly string _directory;
         private readonly string _marker;
+
+        /// <summary>The first executable <paramref name="name"/> in <see cref="_utilityDirectories"/>; fails the fixture when there is none.</summary>
+        private static string ResolveUtility(string name)
+        {
+            foreach (string directory in _utilityDirectories)
+            {
+                string candidate = Path.Combine(directory, name);
+                if (
+                    !OperatingSystem.IsWindows()
+                    && File.Exists(candidate)
+                    && (File.GetUnixFileMode(candidate) & UnixFileMode.OtherExecute) != 0
+                )
+                {
+                    return candidate;
+                }
+            }
+
+            Assert.Fail(
+                $"The held replay needs an executable '{name}' in {string.Join(" or ", _utilityDirectories)}."
+            );
+            return string.Empty;
+        }
 
         public HeldReplay()
         {
@@ -83,6 +109,8 @@ public class PostgresqlRealPackageTests
                 Assert.Ignore("The held replay wraps psql in a POSIX shell script.");
             }
 
+            string move = ResolveUtility("mv");
+            string sleep = ResolveUtility("sleep");
             _directory = Path.Combine(
                 Path.GetTempPath(),
                 "dms1438-held-replay-" + DmsOperationId.New().Value
@@ -92,7 +120,7 @@ public class PostgresqlRealPackageTests
             string wrapper = Path.Combine(_directory, "psql");
             File.WriteAllText(
                 wrapper,
-                $"#!/bin/sh\nexec '{PsqlPath}' \"$@\" --command '\\! echo $PPID $$ > {_marker}.tmp && /usr/bin/mv {_marker}.tmp {_marker} && exec /usr/bin/sleep infinity'\n"
+                $"#!/bin/sh\nexec '{PsqlPath}' \"$@\" --command '\\! echo $PPID $$ > {_marker}.tmp && {move} {_marker}.tmp {_marker} && exec {sleep} infinity'\n"
             );
             if (!OperatingSystem.IsWindows())
             {
@@ -120,9 +148,40 @@ public class PostgresqlRealPackageTests
 
         public PostgresqlDmsTargetEngine Engine { get; }
 
-        /// <summary>Waits until the replay has run the whole dump and holds its transaction open; false if it never does.</summary>
-        public Task<bool> WaitUntilHeldAsync() =>
-            WaitUntilAsync(() => Task.FromResult(File.Exists(_marker)), TimeSpan.FromMinutes(3));
+        /// <summary>
+        /// Waits until the replay has run the whole dump and holds its transaction open. When <paramref name="create"/>
+        /// ends first, the replay can no longer be held: the fixture fails at once with what the create ended with,
+        /// instead of waiting out the marker's bound. False if the bound passes with the create still running.
+        /// </summary>
+        public async Task<bool> WaitUntilHeldAsync(HeldCreate create)
+        {
+            Task<bool> held = WaitUntilAsync(
+                () => Task.FromResult(File.Exists(_marker) || create.Running.IsCompleted),
+                TimeSpan.FromMinutes(3)
+            );
+            bool settled = await held;
+            if (!File.Exists(_marker) && create.Running.IsCompleted)
+            {
+                Assert.Fail($"The create ended before its replay was held: {Describe(create.Running)}.");
+            }
+
+            return settled && File.Exists(_marker);
+        }
+
+        /// <summary>A completed create's outcome as codes and type names only.</summary>
+        private static string Describe(Task<DmsDataStoreCreateResult> ended) =>
+            ended.Status switch
+            {
+                TaskStatus.Faulted => "exception "
+                    + DmsProvisioningDiagnostic.TypeChain(ended.Exception!.InnerException!),
+                TaskStatus.Canceled => "cancelled",
+                _ => ended.Result switch
+                {
+                    DmsDataStoreCreateResult.Failure failure =>
+                        $"{failure.Detail.Code} at {failure.Detail.Diagnostic.Operation} ({failure.Detail.Diagnostic.ProviderErrorCode})",
+                    DmsDataStoreCreateResult result => result.GetType().Name,
+                },
+            };
 
         /// <summary>
         /// Kills the held <c>psql</c> first, so its transaction ends uncommitted, then the shell holding it; nothing when
@@ -597,7 +656,7 @@ public class PostgresqlRealPackageTests
                 ControlledRestoreDeadline.RestoreTimeout
             );
             _create = HeldCreate.Start(token => lane.Service.CreateAsync(lane.Request, token));
-            (await _replay.WaitUntilHeldAsync())
+            (await _replay.WaitUntilHeldAsync(_create))
                 .Should()
                 .BeTrue("the replay must hold the whole dump before the caller cancels");
             _openTransactions = await OpenTransactionsNamedAsync(lane.Operation.RestoreApplicationName);
@@ -681,7 +740,7 @@ public class PostgresqlRealPackageTests
                 ControlledRestoreDeadline.RestoreTimeout
             );
             _create = HeldCreate.Start(token => lane.Service.CreateAsync(lane.Request, token));
-            (await _replay.WaitUntilHeldAsync())
+            (await _replay.WaitUntilHeldAsync(_create))
                 .Should()
                 .BeTrue("the replay must hold the whole dump before the bound expires");
             _openTransactions = await OpenTransactionsNamedAsync(lane.Operation.RestoreApplicationName);

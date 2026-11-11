@@ -11,11 +11,11 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 
 /// <summary>
 /// An allowlisted template package that authenticated and matched the configuration, staged in its
-/// operation's private directory with its pin (6.2 step 7). It stays open, holding the package copy through
+/// operation's private directory with its pin. It stays open, holding the package copy through
 /// the stager's exclusive handle, until <see cref="Release"/>: the create path extracts the artifact from it
-/// (6.2 step 8) and keeps it through the restore. <see cref="Release"/> closes the handle, deletes the
+/// and keeps it through the restore. <see cref="Release"/> closes the handle, deletes the
 /// directory on a best-effort basis, and reports what remains as residue (<c>PackageCopy</c>,
-/// <c>ExtractedArtifact</c>, <c>OperationDirectory</c>) for the cleanup report (6.11); it never throws for a
+/// <c>ExtractedArtifact</c>, <c>OperationDirectory</c>) for the cleanup report; it never throws for a
 /// deletion failure, and a later call retries the deletion while residue remains, so bounded cleanup (D-19)
 /// can call it again. Disposal is a release.
 /// </summary>
@@ -55,7 +55,7 @@ public sealed class TrustedTemplateArtifact : IDisposable
     public bool IsReleased => _residue is not null;
 
     /// <summary>
-    /// Extracts the declared artifact once into the operation directory while verifying its hash (6.2 step 8).
+    /// Extracts the declared artifact once into the operation directory while verifying its hash.
     /// A refusal is raised as <see cref="DmsProvisioningFailedException"/> carrying <c>ArtifactTampered</c> or
     /// <c>ManifestInvalid</c> for the operation boundary, and a file system failure writing the artifact (a full
     /// disk, a refused write) as <c>StagingFailed</c> with only its type chain; cancellation passes through.

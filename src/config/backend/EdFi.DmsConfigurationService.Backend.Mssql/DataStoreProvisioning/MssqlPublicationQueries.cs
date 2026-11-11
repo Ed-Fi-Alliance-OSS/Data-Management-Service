@@ -10,7 +10,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The publication commands of 6.4 steps 10 and 12 and the compensation drop of 6.7, classified by 6.9a the way the
+/// The publication commands and the compensation drop, classified the way the
 /// staging commands are: a normal return is definite success, an error the server reported in the command's own
 /// response is a definite failure classified by its first error number, and anything else is
 /// <see cref="DmsCommandOutcome.Unknown"/> naming the session the statement ran on. The rename and the drop are each
@@ -18,7 +18,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// statement run, in the same batch and without <c>TRY/CATCH</c>, so the error that refuses it reaches the client with
 /// its own number (D-13; the check is still followed by a mutation, within the supported boundary). A guard that
 /// fails answers a one-row result and touches nothing. <c>ALTER DATABASE … MODIFY NAME</c> and <c>DROP DATABASE</c>
-/// take no parameters, so their names are quoted from validated names (6.8); the guards, the marker and every catalog
+/// take no parameters, so their names are quoted from validated names; the guards, the marker and every catalog
 /// read are parameterized.
 /// </summary>
 internal static class MssqlPublicationQueries
@@ -49,14 +49,14 @@ internal static class MssqlPublicationQueries
         "EXISTS (SELECT 1 FROM sys.databases d WHERE d.name = @name AND d.database_id = @id AND (SELECT f.physical_name FROM sys.master_files f WHERE f.database_id = d.database_id AND f.file_id = 1) = @file)";
 
     /// <summary>
-    /// 6.4 step 10's identity transition: the name and the <c>create_date</c> of the instance, found by its stable pair
+    /// The rename's identity transition: the name and the <c>create_date</c> of the instance, found by its stable pair
     /// (<c>database_id</c> and primary file), never by name.
     /// </summary>
     private const string TransitionQuery =
         "SELECT d.name, d.create_date FROM sys.databases d WHERE d.database_id = @id AND (SELECT f.physical_name FROM sys.master_files f WHERE f.database_id = d.database_id AND f.file_id = 1) = @file;";
 
     /// <summary>
-    /// The 6.4 step 12 marker: the singleton row, guarded in the statement itself by the session's database still being
+    /// The marker: the singleton row, guarded in the statement itself by the session's database still being
     /// the verified instance (<c>DB_ID()</c> and its primary file). The row count is read from <c>@@ROWCOUNT</c>
     /// because the session may run with <c>NOCOUNT</c> on (the delivered identity read sets it).
     /// </summary>
@@ -70,12 +70,12 @@ internal static class MssqlPublicationQueries
         $"IF {InstanceGuard} DROP DATABASE {MssqlIdentifiers.Quote(target.Value)}; ELSE SELECT CONVERT(int, {GuardFailed});";
 
     /// <summary>
-    /// 6.4 step 10 on the holder's connection: <paramref name="staging"/> must still hold
+    /// On the holder's connection: <paramref name="staging"/> must still hold
     /// <paramref name="stagingInstance"/>, then <c>ALTER DATABASE … MODIFY NAME</c>, which fails with <c>1801</c> when
     /// any database holds the target name and leaves that database untouched (D-6). Once the rename has returned, the
     /// identity transition is read to its end, whatever happens to <paramref name="cancellationToken"/>, bounded by
     /// the driver's command timeout: the instance found by its stable pair must be under <paramref name="target"/>, and
-    /// its <c>create_date</c>, which the rename changed (F-P17), is the snapshot every later guard uses. A read that
+    /// its <c>create_date</c>, which the rename changed, is the snapshot every later guard uses. A read that
     /// fails or finds the instance elsewhere leaves the outcome unknown for the caller to resolve.
     /// </summary>
     public static async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameAsync(
@@ -140,7 +140,7 @@ internal static class MssqlPublicationQueries
     }
 
     /// <summary>
-    /// 6.4 step 12 and 6.9b on the instance-bound connection: the marker statement with the instance predicate, then
+    /// On the instance-bound connection: the marker statement with the instance predicate, then
     /// the delivered identity read on the same connection. One row updated and the expected value read back is
     /// success; no row updated, or an error the server reported in the statement's own response (a missing table, a
     /// constraint, a privilege), is a definite failure; anything else, including a read-back that fails or shows
@@ -227,7 +227,7 @@ internal static class MssqlPublicationQueries
     }
 
     /// <summary>
-    /// The 6.7 compensation drop on the holder's connection: <paramref name="target"/> must still hold
+    /// The compensation drop on the holder's connection: <paramref name="target"/> must still hold
     /// <paramref name="instance"/> (<c>database_id</c> and primary file), then <c>DROP DATABASE</c> in the same batch.
     /// Another database under the name, or none, is a definite <see cref="DmsCommandFailureClass.DoesNotExist"/> that
     /// touches nothing. Unlike PostgreSQL's <c>WITH (FORCE)</c>, a session connected to the unmarked database refuses
@@ -348,10 +348,13 @@ internal static class MssqlPublicationQueries
         exception is SqlException && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
             ? new DmsCommandOutcome.Failed(
                 new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, step))
+                {
+                    Retryable = MssqlErrorClassifier.IsRetryableRejection(exception),
+                }
             )
             : new DmsCommandOutcome.Unknown(session);
 
-    private static DmsCommandOutcome<T> Classify<T>(
+    internal static DmsCommandOutcome<T> Classify<T>(
         Exception exception,
         DmsServerSessionId session,
         string step
@@ -359,6 +362,9 @@ internal static class MssqlPublicationQueries
         exception is SqlException && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
             ? new DmsCommandOutcome<T>.Failed(
                 new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, step))
+                {
+                    Retryable = MssqlErrorClassifier.IsRetryableRejection(exception),
+                }
             )
             : new DmsCommandOutcome<T>.Unknown(session);
 }

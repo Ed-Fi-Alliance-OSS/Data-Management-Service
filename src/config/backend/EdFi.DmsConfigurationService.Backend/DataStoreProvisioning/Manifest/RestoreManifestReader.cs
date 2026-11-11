@@ -9,7 +9,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// Reads one <c>restore-manifest.json</c> document strictly (6.2 step 5): the text is parsed with the trust
+/// Reads one <c>restore-manifest.json</c> document strictly: the text is parsed with the trust
 /// contract's document rules (duplicate member names rejected, every name and string decoded once, no
 /// comments or trailing commas), then validated by <see cref="RestoreManifestShapeValidator"/> against every
 /// rule of the delivered <c>Assert-RestoreManifestShape</c>, with unknown members rejected and numbers required

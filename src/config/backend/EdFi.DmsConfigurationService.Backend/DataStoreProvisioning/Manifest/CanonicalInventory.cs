@@ -8,7 +8,7 @@ using System.Diagnostics.CodeAnalysis;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// The canonical inventory model of the delivered restore contract (F-P8, <c>ConvertTo-CanonicalInventory</c>):
+/// The canonical inventory model of the delivered restore contract (<c>ConvertTo-CanonicalInventory</c>):
 /// schemas sorted ordinally by name, each schema's objects sorted ordinally by lowercased type then name, and
 /// principals sorted ordinally, with duplicate schema names, duplicate (type, name) pairs within a schema, and
 /// duplicate principals refused. An instance is built from a restore manifest's <c>inventory</c> member or,

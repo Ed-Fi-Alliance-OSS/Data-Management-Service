@@ -4,9 +4,11 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net.Sockets;
+using System.Reflection;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Mssql;
 
@@ -290,5 +292,108 @@ public class MssqlErrorClassifierTests
             (MssqlErrorClassifier.FailureClassOf(701, 17), MssqlErrorClassifier.FailureClassOf(701, 20))
                 .Should()
                 .Be((DmsCommandFailureClass.Rejected, (DmsCommandFailureClass?)null));
+    }
+
+    /// <summary>
+    /// H-02: the rename's and the fence's classification of a <see cref="SqlException"/> keeps whether the command took
+    /// effect apart from whether a retry can succeed. A deadlock victim (<c>1205</c>) and a temporary memory shortage
+    /// (<c>701</c>) are definite and retryable; a refused login or permission stays definite and not retryable. The
+    /// driver offers no constructor, so the exceptions are built through its internal factory; a driver change that
+    /// removes it fails this fixture loudly rather than passing it.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_server_error_from_a_rename_or_a_fence
+    {
+        private static readonly DmsServerSessionId _session = new(51, DateTimeOffset.UnixEpoch);
+
+        private static SqlException Rejected(int number)
+        {
+            ConstructorInfo errorConstructor = typeof(SqlError)
+                .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
+                .OrderByDescending(constructor => constructor.GetParameters().Length)
+                .First();
+            object?[] arguments =
+            [
+                .. errorConstructor
+                    .GetParameters()
+                    .Select(parameter =>
+                        parameter.Name switch
+                        {
+                            "infoNumber" => number,
+                            "errorClass" => UserSeverity,
+                            _ when parameter.ParameterType == typeof(string) => string.Empty,
+                            _ when parameter.ParameterType.IsValueType => Activator.CreateInstance(
+                                parameter.ParameterType
+                            ),
+                            _ => null,
+                        }
+                    ),
+            ];
+            SqlError error = (SqlError)errorConstructor.Invoke(arguments);
+            SqlErrorCollection errors = (SqlErrorCollection)
+                Activator.CreateInstance(typeof(SqlErrorCollection), nonPublic: true)!;
+            typeof(SqlErrorCollection)
+                .GetMethod("Add", BindingFlags.Instance | BindingFlags.NonPublic)!
+                .Invoke(errors, [error]);
+            MethodInfo create = typeof(SqlException)
+                .GetMethods(BindingFlags.Static | BindingFlags.NonPublic)
+                .Single(method =>
+                    method.Name == "CreateException"
+                    && method
+                        .GetParameters()
+                        .Select(parameter => parameter.ParameterType)
+                        .SequenceEqual([typeof(SqlErrorCollection), typeof(string)])
+                );
+            SqlException exception = (SqlException)create.Invoke(null, [errors, "17.0.0"])!;
+            (exception.Number, exception.Class).Should().Be((number, UserSeverity));
+            return exception;
+        }
+
+        private static (DmsCommandFailureClass?, bool?, string?) Fence(int number) =>
+            MssqlDeletionQueries.Classify(Rejected(number), _session, MssqlDeletionQueries.FenceStep) switch
+            {
+                DmsCommandOutcome.Failed failed => (
+                    failed.Failure.Class,
+                    failed.Failure.Retryable,
+                    failed.Failure.Diagnostic.ProviderErrorCode
+                ),
+                _ => (null, null, null),
+            };
+
+        private static (DmsCommandFailureClass?, bool?, string?) Rename(int number) =>
+            MssqlPublicationQueries.Classify<DmsInstanceIdentity>(
+                Rejected(number),
+                _session,
+                MssqlPublicationQueries.RenameStep
+            ) switch
+            {
+                DmsCommandOutcome<DmsInstanceIdentity>.Failed failed => (
+                    failed.Failure.Class,
+                    failed.Failure.Retryable,
+                    failed.Failure.Diagnostic.ProviderErrorCode
+                ),
+                _ => (null, null, null),
+            };
+
+        [Test]
+        public void It_marks_a_deadlock_victim_and_a_memory_shortage_retryable() =>
+            new[] { Rename(1205), Rename(701), Fence(1205), Fence(701) }
+                .Should()
+                .Equal(
+                    (DmsCommandFailureClass.Rejected, true, "1205"),
+                    (DmsCommandFailureClass.Rejected, true, "701"),
+                    (DmsCommandFailureClass.Rejected, true, "1205"),
+                    (DmsCommandFailureClass.Rejected, true, "701")
+                );
+
+        [Test]
+        public void It_keeps_refusals_and_other_rejections_not_retryable() =>
+            new[] { Rename(5011), Fence(5011), Rename(3701) }
+                .Should()
+                .Equal(
+                    (DmsCommandFailureClass.PrivilegeMissing, false, "5011"),
+                    (DmsCommandFailureClass.PrivilegeMissing, false, "5011"),
+                    (DmsCommandFailureClass.Rejected, false, "3701")
+                );
     }
 }

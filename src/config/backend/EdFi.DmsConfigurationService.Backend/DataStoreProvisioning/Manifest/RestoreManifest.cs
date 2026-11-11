@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// A version-1 restore manifest of the delivered template package contract (F-P7), as
+/// A version-1 restore manifest of the delivered template package contract, as
 /// <see cref="RestoreManifestReader"/> accepted it: every field present with the required JSON kind and value
 /// shape, hashes in lowercase 64-hex form, the fixed <see cref="ContentProfileDmsDatastoreOnly"/> profile,
 /// engine-consistent artifact extension and compatibility-level rules, and an inventory whose recomputed
@@ -94,7 +94,7 @@ public sealed class RestoreManifest
     public static string ArtifactExtensionFor(string databaseEngine) =>
         string.Equals(databaseEngine, MssqlEngine, StringComparison.Ordinal) ? ".bak" : ".sql";
 
-    /// <summary>The <c>documentJsonColumnType</c> a manifest for <paramref name="databaseEngine"/> must declare (F-P10 baseline).</summary>
+    /// <summary>The <c>documentJsonColumnType</c> a manifest for <paramref name="databaseEngine"/> must declare.</summary>
     public static string DocumentJsonColumnTypeFor(string databaseEngine) =>
         string.Equals(databaseEngine, MssqlEngine, StringComparison.Ordinal)
             ? MssqlDocumentJsonColumnType

@@ -10,7 +10,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The staging visibility probe of D-21 (7.3 item 6). A zero-byte probe is written with the real staging routine
+/// The staging visibility probe of D-21. A zero-byte probe is written with the real staging routine
 /// (<see cref="MssqlBackupStager"/>, under a fresh operation id, so the CMS's create, read, and re-hash are the ones a
 /// create performs), then the server is asked for its header through the configured server path, with documented
 /// commands only. The server's error numbers decide: <c>3201</c> (the device cannot be opened, also for a file the
@@ -21,7 +21,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// the run returns a verdict, also reported in the result; when the run ends with an exception, that exception
 /// propagates unchanged. A run the caller
 /// cancels ends with <see cref="OperationCanceledException"/>, whatever form the driver's cancellation took, never
-/// with a verdict. Readiness (Step 4.9) maps the verdict to <c>StagingNotVisible</c> or <c>NotReady</c>.
+/// with a verdict. Readiness maps the verdict to <c>StagingNotVisible</c> or <c>NotReady</c>.
 /// </summary>
 public sealed class MssqlStagingProbe
 {

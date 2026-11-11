@@ -9,12 +9,12 @@ using System.Text.Json;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 
 /// <summary>
-/// The detached attestation document of the delivered trust contract (F-P4):
+/// The detached attestation document of the delivered trust contract:
 /// <c>{ "version": 1, "payloadB64", "signature": { "algorithm", "keyId", "valueB64" } }</c>. The signature is
 /// ECDSA P-256 with SHA-256 over the raw decoded payload bytes (IEEE P1363 <c>r||s</c>), and the payload is the
 /// compact JSON <c>{ attestationVersion, packageId, packageVersion, packageSha256, producer, createdUtc }</c>.
 /// Parsing establishes shape only: values are kept exactly as written and nothing is decoded, compared, or
-/// verified here; <see cref="TemplateAttestationVerifier"/> applies the F-P6 checks in order.
+/// verified here; <see cref="TemplateAttestationVerifier"/> applies the attestation checks in order.
 /// </summary>
 /// <param name="PayloadB64">The base64 of the signed payload bytes, as written.</param>
 /// <param name="Signature">The signature block, as written.</param>

@@ -39,7 +39,7 @@ internal abstract record PsqlVersionProbeResult
 }
 
 /// <summary>
-/// The startup probe of the configured executable (7.3 item 5): runs <c>psql --version</c> under the
+/// The startup probe of the configured executable: runs <c>psql --version</c> under the
 /// environment allowlist with a short bound and parses the announced version, so readiness can prove that
 /// <c>PsqlPath</c> is a <c>psql</c> whose major version meets the floor before any operation depends on it.
 /// </summary>
@@ -48,7 +48,7 @@ internal static partial class PsqlVersionProbe
     /// <summary>The <c>Diagnostic.Operation</c> of a probe that failed.</summary>
     public const string ProbeStep = "ProbePsqlVersion";
 
-    /// <summary>The bound of 7.3: a version print that takes longer than this is not a usable executable.</summary>
+    /// <summary>The readiness bound: a version print that takes longer than this is not a usable executable.</summary>
     public static readonly TimeSpan DefaultTimeout = TimeSpan.FromSeconds(5);
 
     private const string VersionArgument = "--version";

@@ -10,14 +10,14 @@ using NpgsqlTypes;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The owned delete of 6.6 on the holder's connection: the fence, its reversal, and the guarded drop, each
-/// classified by 6.9a the way the publication commands are. Every command first re-reads the instance under
+/// The owned delete on the holder's connection: the fence, its reversal, and the guarded drop, each
+/// classified the way the publication commands are. Every command first re-reads the instance under
 /// the target name (D-13) and touches nothing when it differs; a failure of that read is a definite failure,
 /// because nothing was sent. Once <c>ALLOW_CONNECTIONS false</c> has returned the target is fenced, and every
 /// definite failure after it carries <see cref="DmsResidueKind.FencedTarget"/> residue, so the caller knows
 /// that the fence must be reversed. Sessions are client backends on the target's <c>oid</c>; each is
 /// terminated by pid and start time with the D-22 guarded statement. The statements that cannot take
-/// parameters (<c>ALTER DATABASE</c>, <c>DROP DATABASE</c>) are built only from validated names (6.8); every
+/// parameters (<c>ALTER DATABASE</c>, <c>DROP DATABASE</c>) are built only from validated names; every
 /// catalog read is parameterized.
 /// </summary>
 internal static class PostgresqlDeletionQueries
@@ -84,7 +84,7 @@ internal static class PostgresqlDeletionQueries
         $"ALTER DATABASE {PostgresqlIdentifiers.Quote(target.Value)} WITH ALLOW_CONNECTIONS true;";
 
     /// <summary>
-    /// 6.6 step 3: the name must still hold <paramref name="instance"/>; then <c>ALLOW_CONNECTIONS false</c>, and
+    /// The name must still hold <paramref name="instance"/>; then <c>ALLOW_CONNECTIONS false</c>, and
     /// every other client session on the instance, except <paramref name="keep"/>, is terminated and proven
     /// gone, re-enumerating until none remains or <paramref name="terminationTimeout"/> has passed (D-22). A
     /// session whose start time is hidden, or whose termination the server refuses while this admin lacks
@@ -203,7 +203,7 @@ internal static class PostgresqlDeletionQueries
     }
 
     /// <summary>
-    /// 6.6 step 5: the name must hold <paramref name="instance"/>, still fenced, with no client session on it;
+    /// The name must hold <paramref name="instance"/>, still fenced, with no client session on it;
     /// then <c>DROP DATABASE … WITH (FORCE)</c>. A name found empty, before or by the drop, is the definite
     /// <see cref="DmsCommandFailureClass.DoesNotExist"/> under <see cref="DmsEngineOperations.DropTargetAbsent"/>;
     /// another instance under the name is <see cref="DmsCommandFailureClass.DoesNotExist"/> under
@@ -450,6 +450,9 @@ internal static class PostgresqlDeletionQueries
                         DmsCommandFailureClass.Rejected,
                         PostgresqlErrorClassifier.Diagnostic(exception, verifyStep)
                     )
+                    {
+                        Retryable = PostgresqlErrorClassifier.IsRetryableRejection(exception),
+                    }
                 ),
                 null,
                 false

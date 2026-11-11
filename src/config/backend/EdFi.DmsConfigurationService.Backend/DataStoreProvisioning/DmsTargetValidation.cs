@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// Which 6.9c validation set applies and what the identity row must hold. The identity rule is the one
+/// Which target validation set applies and what the identity row must hold. The identity rule is the one
 /// point where the delivered consumer's rule (the restored value must differ from the package's) and the
 /// provisioner's rule (the target must carry the expected identity) both live, selected by the stage.
 /// </summary>
@@ -20,7 +20,7 @@ public abstract record DmsTargetValidationRule
             : identity;
 
     /// <summary>
-    /// The staging database before rename (6.3 step 6): the full set, with the identity any valid non-empty
+    /// The staging database before rename: the full set, with the identity any valid non-empty
     /// GUID that differs from <see cref="ExpectedSourceIdentity"/> (the package value is captured here; the
     /// marker is assigned later).
     /// </summary>
@@ -34,7 +34,7 @@ public abstract record DmsTargetValidationRule
         public Guid ExpectedSourceIdentity { get; }
     }
 
-    /// <summary>A present target under reconciliation (6.5 step 3): the full set, with the identity equal to <see cref="ExpectedSourceIdentity"/>.</summary>
+    /// <summary>A present target under reconciliation: the full set, with the identity equal to <see cref="ExpectedSourceIdentity"/>.</summary>
     public sealed record Reconcile : DmsTargetValidationRule
     {
         public Reconcile(Guid expectedSourceIdentity)
@@ -46,7 +46,7 @@ public abstract record DmsTargetValidationRule
     }
 
     /// <summary>
-    /// The renamed target before the marker (6.3 step 9): items 1 and 2 only, with the identity still equal
+    /// The renamed target before the marker: items 1 and 2 only, with the identity still equal
     /// to <see cref="PackageSourceIdentity"/>, the value captured on the staging database. Any difference
     /// means the instance changed.
     /// </summary>
@@ -66,6 +66,6 @@ public abstract record DmsTargetValidation
 {
     public sealed record Valid() : DmsTargetValidation;
 
-    /// <summary>The first failing check in 6.9c order, as the failure code it maps to and the fixed check name for <c>Diagnostic.Operation</c>.</summary>
+    /// <summary>The first failing check in validation order, as the failure code it maps to and the fixed check name for <c>Diagnostic.Operation</c>.</summary>
     public sealed record Invalid(DmsProvisioningFailureCode Code, string Check) : DmsTargetValidation;
 }

@@ -5,7 +5,7 @@
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
-/// <summary>The outcome of <see cref="IDmsDataStoreProvisioner.DeleteAsync"/> (6.6).</summary>
+/// <summary>The outcome of <see cref="IDmsDataStoreProvisioner.DeleteAsync"/>.</summary>
 public abstract record DmsDataStoreDeleteResult
 {
     /// <summary>The owned target was fenced, verified exclusive, re-verified, and dropped.</summary>

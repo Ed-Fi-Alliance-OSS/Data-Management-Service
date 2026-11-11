@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// The verdict of <see cref="DmsTargetDatabaseName.TryCreate"/> (spec 6.8). Checks run in this order and
+/// The verdict of <see cref="DmsTargetDatabaseName.TryCreate"/>. Checks run in this order and
 /// the first failing rule is reported; a candidate is never trimmed or otherwise repaired.
 /// </summary>
 public enum DmsTargetNameValidation

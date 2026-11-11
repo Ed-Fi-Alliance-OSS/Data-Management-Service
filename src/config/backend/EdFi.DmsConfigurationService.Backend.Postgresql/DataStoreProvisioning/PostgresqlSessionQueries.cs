@@ -57,7 +57,7 @@ internal static class PostgresqlSessionQueries
     public const string OwnSession =
         "SELECT a.pid, a.backend_start FROM pg_catalog.pg_stat_activity a WHERE a.pid = pg_catalog.pg_backend_pid();";
 
-    /// <summary>The longest deadline a termination accepts; the setting's range (4.3) is narrower.</summary>
+    /// <summary>The longest deadline a termination accepts; the setting's range is narrower.</summary>
     public static readonly TimeSpan MaximumDeadline = TimeSpan.FromHours(1);
 
     /// <summary>How often the catalog is re-read while a session the server reported ended is still listed.</summary>

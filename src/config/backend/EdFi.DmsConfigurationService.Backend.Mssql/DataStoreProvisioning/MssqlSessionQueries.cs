@@ -52,7 +52,7 @@ internal static class MssqlSessionQueries
     /// <summary>The session's state with the visibility it was read under, in one statement.</summary>
     public const string SessionObservation = "SELECT " + SessionsVisible + ", " + SessionMatched + ";";
 
-    /// <summary>The longest deadline a termination accepts; the setting's range (4.3) is narrower.</summary>
+    /// <summary>The longest deadline a termination accepts; the setting's range is narrower.</summary>
     public static readonly TimeSpan MaximumDeadline = TimeSpan.FromHours(1);
 
     /// <summary>How often the catalog is re-read while a killed session is still listed (rolling back).</summary>

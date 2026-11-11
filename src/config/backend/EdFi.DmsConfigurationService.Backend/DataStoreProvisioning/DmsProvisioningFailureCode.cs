@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// Every failure code the provisioner can raise (spec section 8). The category of each code, and the
+/// Every failure code the provisioner can raise. The category of each code, and the
 /// fixed summary text, live in <see cref="DmsProvisioningFailure"/>.
 /// </summary>
 public enum DmsProvisioningFailureCode
@@ -76,7 +76,7 @@ public enum DmsProvisioningFailureCode
     // Transient (lock / connection) or OperatorInspectionRequired
     DropFailed,
 
-    // OperatorInspectionRequired; Transient for temporary file contention (F-06). Operation-time only: at
+    // OperatorInspectionRequired; Transient for temporary file contention. Operation-time only: at
     // startup a policy defect is StartupValidationFailed.
     TrustPolicyUnavailable,
 }

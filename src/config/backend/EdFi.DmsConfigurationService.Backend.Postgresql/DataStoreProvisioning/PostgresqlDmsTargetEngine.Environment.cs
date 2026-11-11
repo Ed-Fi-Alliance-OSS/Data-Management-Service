@@ -9,7 +9,7 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The environmental validation of the PostgreSQL adapter (7.3 items 4, 5 and 7). Every probe group runs and
+/// The environmental validation of the PostgreSQL adapter. Every probe group runs and
 /// every failing rule is reported, so an operator sees the complete picture in one restart; the lock probe
 /// alone is skipped when the server could not be reached, because it would only repeat that failure.
 /// Nothing is created, altered, or signalled on the server: the probes read catalogs, take and release one
@@ -173,7 +173,7 @@ public sealed partial class PostgresqlDmsTargetEngine
         );
 
     /// <summary>
-    /// 7.3 item 7: acquires the probe lock (<c>dms-provision-target:v1:__probe__</c>) on a holder session as
+    /// Acquires the probe lock (<c>dms-provision-target:v1:__probe__</c>) on a holder session as
     /// an operation would, under <c>LockAcquireTimeout</c>, runs one heartbeat probe on it, and releases it.
     /// Contention past the budget is <c>LockTimeout</c>; a failed acquisition or a heartbeat that finds the
     /// holder lost is <c>LockUnavailable</c>.

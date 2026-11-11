@@ -9,7 +9,7 @@ using System.Text;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 
 /// <summary>
-/// The canonical inventory hash of the delivered restore contract (F-P8, <c>Get-CanonicalInventoryHash</c>):
+/// The canonical inventory hash of the delivered restore contract (<c>Get-CanonicalInventoryHash</c>):
 /// the lowercase hex SHA-256 of the UTF-8 bytes of <see cref="CanonicalInventoryJson.Serialize"/>. It is the
 /// value a manifest records as <c>inventorySha256</c> and the value recomputed from a database's catalog, so
 /// it is the only comparison between two inventories.

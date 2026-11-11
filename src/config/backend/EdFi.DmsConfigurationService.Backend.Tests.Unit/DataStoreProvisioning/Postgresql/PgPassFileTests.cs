@@ -152,7 +152,7 @@ public class PgPassFileTests
         public async Task Setup()
         {
             _root = Path.Combine(Path.GetTempPath(), "dms-1438-pgpass-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_root);
+            PrivateTestDirectory.Create(_root);
             _directory = PrivateOperationDirectory.Create(_root, DmsOperationId.New());
 
             _path = await PgPassFile.WriteAsync(_directory, TwoEndpoints(), Database, CancellationToken.None);
@@ -237,7 +237,7 @@ public class PgPassFileTests
         public async Task Setup()
         {
             _root = Path.Combine(Path.GetTempPath(), "dms-1438-pgpass-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(_root);
+            PrivateTestDirectory.Create(_root);
             _directory = PrivateOperationDirectory.Create(_root, DmsOperationId.New());
             string path = _directory.PathOf(PgPassFile.FileName);
 

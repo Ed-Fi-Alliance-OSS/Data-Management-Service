@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
 /// The identity of one provisioning operation: twelve lowercase hexadecimal characters drawn from
-/// <see cref="RandomNumberGenerator"/>. Every resource the operation creates is named from it (spec 6):
+/// <see cref="RandomNumberGenerator"/>. Every resource the operation creates is named from it:
 /// the staging database, the holder session, the <c>psql</c> session, the SQL Server physical-file tag,
 /// and the claim comment. A default-initialized value has no id and throws when read.
 /// </summary>

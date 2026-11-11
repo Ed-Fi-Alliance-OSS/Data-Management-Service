@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
-/// A selected target database name that passed every rule in spec 6.8: the ASCII grammar
+/// A selected target database name that passed every rule of the provisioner's name rules: the ASCII grammar
 /// <c>^[A-Za-z][A-Za-z0-9_]{0,62}$</c> (quotable on both engines and within PostgreSQL's 63-byte
 /// limit), no surrounding whitespace, not an engine system database, not in the deployment's
 /// protected set, and not carrying a provisioner-generated prefix. The only construction path is

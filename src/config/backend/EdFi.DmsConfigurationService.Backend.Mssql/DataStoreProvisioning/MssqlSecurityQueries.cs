@@ -10,7 +10,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The delivered SQL Server security-state read (F-P9b), text for text: <c>Get-MssqlSecurityStateQuerySql</c>,
+/// The delivered SQL Server security-state read, text for text: <c>Get-MssqlSecurityStateQuerySql</c>,
 /// every row of <c>sys.database_permissions</c> and <c>sys.database_role_members</c>, built-in principals
 /// included. Its rows are split here as <c>Assert-MssqlArtifactSecurityState</c> splits them: a member row
 /// into at most five fields, a permission row into at most nine (the last field, a name, may contain the

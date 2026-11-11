@@ -9,14 +9,14 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The provisioner's administrative connection to the target SQL Server (4.3 <c>AdminConnectionString</c>,
+/// The provisioner's administrative connection to the target SQL Server (the configured <c>AdminConnectionString</c>,
 /// with secret references already resolved). Every connection it opens is dedicated: pooling is off so a
 /// session is never shared or reused, and connection resiliency is off (<c>ConnectRetryCount = 0</c>) so a
 /// broken session is never silently replaced by a new one under the same object (D-12); MARS is off so a
 /// connection carries one request at a time; the database is chosen per open and the configured value is
 /// never used; the command timeout is <c>CommandTimeout</c>. SqlClient relies on the operating system's TCP
 /// keepalive (D-12). The connection string is never exposed or logged. Built over a source, it reads the
-/// source at every open, so each operation connects with the resolution it bound (6.1 step 3) and a secret
+/// source at every open, so each operation connects with the resolution it bound and a secret
 /// rotated between operations reaches the next one; the parsed form is reused while the value is unchanged.
 /// Every open's wait ends within <c>CommandTimeout</c> on <see cref="TimeProvider"/>, and the driver's own login
 /// ends within <c>Connect Timeout</c>, which is never zero or longer than <c>CommandTimeout</c>
@@ -47,7 +47,7 @@ public sealed class MssqlAdminConnection
     }
 
     /// <param name="resolvedConnectionString">Returns the value for the calling operation; read at every open and never logged.</param>
-    /// <param name="commandTimeout">The 4.3 <c>CommandTimeout</c>.</param>
+    /// <param name="commandTimeout">The <c>CommandTimeout</c>.</param>
     /// <param name="timeProvider">The clock that bounds every open; the system clock when omitted.</param>
     public MssqlAdminConnection(
         Func<string> resolvedConnectionString,

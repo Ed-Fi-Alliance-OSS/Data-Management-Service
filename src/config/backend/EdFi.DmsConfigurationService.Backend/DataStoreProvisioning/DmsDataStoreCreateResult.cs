@@ -18,7 +18,7 @@ public abstract record DmsDataStoreCreateResult
 
     /// <summary>
     /// The target already existed, is marked with the expected identity, and passed full re-validation
-    /// against the pinned artifact (6.5); nothing was mutated.
+    /// against the pinned artifact; nothing was mutated.
     /// </summary>
     public sealed record Reconciled(DmsTrustedArtifactPin Artifact, DmsCleanupReport Cleanup)
         : DmsDataStoreCreateResult;

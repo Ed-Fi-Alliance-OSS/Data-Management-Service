@@ -9,7 +9,7 @@ using Microsoft.Data.SqlClient;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The owned delete of the SQL Server engine (6.6): the fence, the identity read under it, its reversal and the owned
+/// The owned delete of the SQL Server engine: the fence, the identity read under it, its reversal and the owned
 /// drop, each on the holder session inside its execution gate. The fence (<c>SET SINGLE_USER WITH ROLLBACK IMMEDIATE</c>)
 /// ends every session on the database and can keep none, so the caller closes and proves gone its own session before
 /// it. The holder that set single-user mode keeps a shared database lock, and with it the database's one slot, until it
@@ -96,7 +96,7 @@ public sealed partial class MssqlDmsTargetEngine
         );
     }
 
-    /// <summary>On the holder session: the owned drop (6.6 step 5) of our fenced instance.</summary>
+    /// <summary>On the holder session: the owned drop of our fenced instance.</summary>
     private async Task<DmsCommandOutcome> DropOwnedTargetAsync(
         MssqlTargetLockSession session,
         DmsTargetDatabaseName target,
@@ -119,7 +119,7 @@ public sealed partial class MssqlDmsTargetEngine
 
     /// <summary>
     /// On the holder session, under its fence: the identity read through a three-part name, because the holder holds the
-    /// single-user slot and no other session can open the target (6.6 SQL Server step 4). A missing table, a missing or
+    /// single-user slot and no other session can open the target. A missing table, a missing or
     /// unconvertible identity column, and a refusal for lack of a privilege are typed reads, as in
     /// <see cref="ReadIdentityAsync"/>; anything else propagates.
     /// </summary>

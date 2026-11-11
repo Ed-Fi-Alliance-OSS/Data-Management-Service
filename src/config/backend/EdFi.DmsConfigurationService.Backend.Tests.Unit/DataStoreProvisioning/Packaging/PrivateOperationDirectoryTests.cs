@@ -264,6 +264,180 @@ public class PrivateOperationDirectoryTests
             _missingRootFailure.Should().BeOfType<DirectoryNotFoundException>();
     }
 
+    /// <summary>
+    /// H-03: the rule over one path entry's raw <c>st_mode</c> and owner. A directory owned by <c>root</c> or this
+    /// process is safe when neither its group nor others may write to it, or when the sticky bit keeps them from renaming
+    /// the entries they do not own. A group is not assumed trusted: a group-writable directory without the sticky bit (what
+    /// a <c>umask</c> of <c>0002</c> creates) is refused, as are a symbolic link, a non-directory, and another owner.
+    /// </summary>
+    [TestFixture]
+    public class Given_path_entries_judged_by_mode_and_owner
+    {
+        private const uint Self = 1000;
+        private const uint Other = 1001;
+        private const int DirectoryType = 0x4000;
+
+        [Test]
+        public void It_accepts_private_and_sticky_directories_owned_by_root_or_this_process() =>
+            new[]
+            {
+                OperationRootSafety.Judge(DirectoryType | 0b111_101_101, Self, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_000_000, Self, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_101_101, 0, Self),
+                OperationRootSafety.Judge(DirectoryType | 0x200 | 0b111_111_111, 0, Self),
+                OperationRootSafety.Judge(DirectoryType | 0x200 | 0b111_111_111, Self, Self),
+                OperationRootSafety.Judge(DirectoryType | 0x200 | 0b111_111_000, 0, Self),
+            }
+                .Should()
+                .AllSatisfy(reason => reason.Should().BeNull());
+
+        [Test]
+        public void It_refuses_entries_another_identity_could_replace() =>
+            new[]
+            {
+                OperationRootSafety.Judge(0xA000 | 0b111_111_111, Self, Self),
+                OperationRootSafety.Judge(0x8000 | 0b110_100_100, Self, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_101_101, Other, Self),
+                OperationRootSafety.Judge(DirectoryType | 0x200 | 0b111_111_111, Other, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_111_111, Self, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_111_101, Self, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_111_000, 0, Self),
+                OperationRootSafety.Judge(DirectoryType | 0b111_101_111, Self, Self),
+            }
+                .Should()
+                .Equal(
+                    UnsafeOperationRootReason.SymbolicLink,
+                    UnsafeOperationRootReason.NotDirectory,
+                    UnsafeOperationRootReason.UntrustedOwner,
+                    UnsafeOperationRootReason.UntrustedOwner,
+                    UnsafeOperationRootReason.ReplaceableEntries,
+                    UnsafeOperationRootReason.ReplaceableEntries,
+                    UnsafeOperationRootReason.ReplaceableEntries,
+                    UnsafeOperationRootReason.ReplaceableEntries
+                );
+    }
+
+    /// <summary>
+    /// H-03 on a real Unix file system: a root, or an ancestor of it, whose entries another identity could rename away is
+    /// refused before anything is created under it, whether its group or others may write it; a sticky world-writable
+    /// root and a private root are used as before.
+    /// A symbolic link to an otherwise safe root is refused, since the link's target is not what was checked.
+    /// </summary>
+    [TestFixture]
+    [Platform(Exclude = "Win")]
+    public class Given_an_operations_root_another_identity_could_replace
+    {
+        private StagerWorkspace _workspace = null!;
+        private string _link = null!;
+        private Exception? _worldWritable;
+        private Exception? _groupWritable;
+        private Exception? _worldWritableAncestor;
+        private Exception? _symbolicLink;
+        private Exception? _sticky;
+        private Exception? _private;
+        private string[] _entriesAfterRefusals = [];
+
+        private static Exception? Claim(string root) =>
+            Record.Exception(() => PrivateOperationDirectory.Create(root, DmsOperationId.New()).Dispose());
+
+        [SetUp]
+        public void Setup()
+        {
+            _workspace = new StagerWorkspace();
+            string root = _workspace.OperationsRoot;
+            string ancestor = Path.GetDirectoryName(root)!;
+            _link = Path.Combine(Path.GetTempPath(), "dms1438-root-link-" + Guid.NewGuid().ToString("N"));
+            if (OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            const UnixFileMode Private =
+                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute;
+            const UnixFileMode Everyone =
+                Private
+                | UnixFileMode.GroupRead
+                | UnixFileMode.GroupWrite
+                | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead
+                | UnixFileMode.OtherWrite
+                | UnixFileMode.OtherExecute;
+            UnixFileMode ancestorMode = File.GetUnixFileMode(ancestor);
+
+            File.SetUnixFileMode(root, Everyone);
+            _worldWritable = Claim(root);
+            File.SetUnixFileMode(
+                root,
+                Private | UnixFileMode.GroupRead | UnixFileMode.GroupWrite | UnixFileMode.GroupExecute
+            );
+            _groupWritable = Claim(root);
+
+            File.SetUnixFileMode(root, Private);
+            File.SetUnixFileMode(ancestor, Everyone);
+            _worldWritableAncestor = Claim(root);
+            File.SetUnixFileMode(ancestor, ancestorMode);
+
+            File.CreateSymbolicLink(_link, root);
+            _symbolicLink = Claim(_link);
+            _entriesAfterRefusals = Directory.GetFileSystemEntries(root);
+
+            File.SetUnixFileMode(root, Everyone | UnixFileMode.StickyBit);
+            _sticky = Claim(root);
+            File.SetUnixFileMode(root, Private);
+            _private = Claim(root);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_link) || Directory.Exists(_link))
+            {
+                File.Delete(_link);
+            }
+
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_refuses_a_root_others_or_its_group_may_write_without_the_sticky_bit() =>
+            new[] { _worldWritable, _groupWritable }
+                .Should()
+                .AllSatisfy(failure =>
+                    failure
+                        .Should()
+                        .BeOfType<UnsafeOperationRootException>()
+                        .Which.Reason.Should()
+                        .Be(UnsafeOperationRootReason.ReplaceableEntries)
+                );
+
+        [Test]
+        public void It_refuses_a_private_root_under_an_ancestor_others_may_write() =>
+            _worldWritableAncestor
+                .Should()
+                .BeOfType<UnsafeOperationRootException>()
+                .Which.Reason.Should()
+                .Be(UnsafeOperationRootReason.ReplaceableEntries);
+
+        [Test]
+        public void It_refuses_a_root_reached_through_a_symbolic_link() =>
+            _symbolicLink
+                .Should()
+                .BeOfType<UnsafeOperationRootException>()
+                .Which.Reason.Should()
+                .Be(UnsafeOperationRootReason.SymbolicLink);
+
+        [Test]
+        public void It_creates_nothing_under_a_refused_root() => _entriesAfterRefusals.Should().BeEmpty();
+
+        [Test]
+        public void It_names_no_path_in_the_refusal() =>
+            _worldWritable!.Message.Should().NotContain(_workspace.OperationsRoot).And.NotContain("/");
+
+        [Test]
+        public void It_uses_a_sticky_world_writable_root_and_a_private_root() =>
+            (_sticky, _private).Should().Be(((Exception?)null, (Exception?)null));
+    }
+
     [TestFixture]
     [Platform(Exclude = "Win")]
     public class Given_a_directory_on_a_unix_file_system

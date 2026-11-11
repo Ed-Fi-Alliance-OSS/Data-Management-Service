@@ -6,7 +6,7 @@
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The quoting rules of spec 6.8 for the provisioner's PostgreSQL statements: identifiers in double quotes
+/// The quoting rules for the provisioner's PostgreSQL statements: identifiers in double quotes
 /// with embedded double quotes doubled; the few non-parameterizable literals (<c>COMMENT ON DATABASE … IS</c>)
 /// in single quotes with embedded single quotes doubled. Every catalog read is parameterized and never
 /// uses these; the statements that do are built only from validated components (a
