@@ -113,10 +113,12 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
     /// Opens the holder session and takes the lock, waiting at most <paramref name="acquireTimeout"/> on the
     /// server (<c>@LockTimeout</c>, which bounds this request only). A lock another session still holds when the
     /// budget ends is <see cref="DmsTargetLockResult.Timeout"/>; that holder is never identified or terminated.
-    /// Any other failure closes the connection and is <see cref="DmsTargetLockResult.Failure"/>; cancellation
-    /// closes it and propagates as <see cref="OperationCanceledException"/>, including when SqlClient reports
-    /// the cancelled request as a <see cref="SqlException"/>. On success the heartbeat is started before the
-    /// holder is returned.
+    /// A definite refusal of the login or the lock request (<see cref="MssqlErrorClassifier.IsAccessRefusal"/>, a
+    /// failed or disabled login included) is <see cref="DmsTargetLockResult.AccessDenied"/>; any other failure closes
+    /// the connection and is <see cref="DmsTargetLockResult.Failure"/>; cancellation closes it and propagates as
+    /// <see cref="OperationCanceledException"/>, including when SqlClient reports the cancelled request as a
+    /// <see cref="SqlException"/> and when the caller cancelled as the server refused. On success the heartbeat is
+    /// started before the holder is returned.
     /// </summary>
     public static Task<DmsTargetLockResult> AcquireAsync(
         MssqlAdminConnection adminConnection,
@@ -364,7 +366,13 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
         }
     }
 
-    private static DmsTargetLockResult FailureOrCancellation(
+    /// <summary>
+    /// What an acquisition that raised <paramref name="exception"/> held: the caller's cancellation, which takes
+    /// precedence over whatever the server answered; otherwise nothing, either because the server definitely refused
+    /// the login or the lock request for lack of access, which retrying cannot change, or because of any other
+    /// failure. Only the type chain and the first error number are kept.
+    /// </summary>
+    internal static DmsTargetLockResult FailureOrCancellation(
         Exception exception,
         CancellationToken cancellationToken
     )
@@ -378,7 +386,10 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
             );
         }
 
-        return new DmsTargetLockResult.Failure(MssqlErrorClassifier.Diagnostic(exception, AcquireStep));
+        DmsProvisioningDiagnostic diagnostic = MssqlErrorClassifier.Diagnostic(exception, AcquireStep);
+        return exception is SqlException refused && MssqlErrorClassifier.IsAccessRefusal(refused.Number)
+            ? new DmsTargetLockResult.AccessDenied(diagnostic)
+            : new DmsTargetLockResult.Failure(diagnostic);
     }
 
     private static async Task<DmsServerSessionId> ReadSessionAsync(

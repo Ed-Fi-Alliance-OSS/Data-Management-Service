@@ -5,10 +5,13 @@
 
 using System.Data;
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Time.Testing;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
@@ -188,6 +191,295 @@ public class MssqlTargetLockSessionTests
         public Task ReleaseAsync() => ReleaseAppLockAsync(connection, resource, default);
 
         public ValueTask DisposeAsync() => connection.DisposeAsync();
+    }
+
+    /// <summary>
+    /// F-02 against a real server: a login that took a lock is then refused, first with a wrong password
+    /// (<c>18456</c>), then disabled (<c>18470</c>). Each acquisition is <c>AccessDenied</c> with the error number
+    /// only; create and delete through the orchestrator are <c>AdminPrivilegeMissing</c>, permanent, at the lock step,
+    /// with one <c>OperationFailed</c> warning each and nothing else read; neither a diagnostic nor a log line carries
+    /// the password or a connection string. A port nobody listens on stays a lock infrastructure <c>Failure</c>, and a
+    /// caller's cancellation still wins over a refusal raised as it cancels.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_admin_login_is_refused_after_it_was_accepted
+    {
+        private const string WrongPassword = "Dms1438-Wrong-Pa55word!";
+
+        private readonly CapturingLogger _logs = new();
+        private readonly CapturingLogger _serviceLogs = new();
+        private string? _login;
+        private Lane? _lane;
+        private DmsTargetLockResult _accepted = null!;
+        private DmsTargetLockResult _wrongPassword = null!;
+        private DmsTargetLockResult _disabled = null!;
+        private DmsTargetLockResult _unreachable = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+        private string[] _members = [];
+        private SqlException? _realRefusal;
+        private Exception? _refusedWhileCancelled;
+        private DmsTargetLockResult? _refusedWhileLive;
+
+        private MssqlDmsTargetEngine EngineOn(string connectionString) =>
+            new(
+                new MssqlAdminConnection(connectionString, TimeSpan.FromSeconds(30)),
+                Settings(),
+                TimeProvider.System,
+                _logs
+            );
+
+        private static string ConnectionStringFor(string login, string password) =>
+            new SqlConnectionStringBuilder(AdminConnectionString!)
+            {
+                IntegratedSecurity = false,
+                UserID = login,
+                Password = password,
+            }.ConnectionString;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _login = await CreateLoginAsync("lockrefused");
+            MssqlDmsTargetEngine engine = EngineOn(ConnectionStringFor(_login, LoginPassword));
+
+            _accepted = await engine.AcquireTargetLockAsync(
+                TargetName("accepted"),
+                DmsOperationId.New(),
+                default
+            );
+            if (_accepted is DmsTargetLockResult.Acquired acquired)
+            {
+                await acquired.Holder.DisposeAsync();
+            }
+
+            _wrongPassword = await EngineOn(ConnectionStringFor(_login, WrongPassword))
+                .AcquireTargetLockAsync(TargetName("wrongpassword"), DmsOperationId.New(), default);
+
+            await ExecuteOnServerAsync($"ALTER LOGIN {MssqlIdentifiers.Quote(_login)} DISABLE;");
+            _disabled = await engine.AcquireTargetLockAsync(
+                TargetName("disabled"),
+                DmsOperationId.New(),
+                default
+            );
+
+            _lane = await Lane.BuildAsync(await ShapedBackup.CreateAsync(), new LaneHooks());
+            Lane.Deployment refusing = _lane.WithEngine(engine, _serviceLogs);
+            _create = await refusing.Service.CreateAsync(_lane.Request, default);
+            _delete = await refusing.Service.DeleteAsync(_lane.DeleteRequest, default);
+            _members = [.. refusing.Engine.Calls.Select(call => call.Member)];
+
+            // The refusal a real server raised, handed to the classification with the caller's token already
+            // cancelled, as when the caller cancels while the server's refusal is on its way.
+            try
+            {
+                await using SqlConnection refused = new(ConnectionStringFor(_login, LoginPassword));
+                await refused.OpenAsync();
+            }
+            catch (SqlException exception)
+            {
+                _realRefusal = exception;
+            }
+
+            using CancellationTokenSource cancelled = new();
+            await cancelled.CancelAsync();
+            _refusedWhileCancelled = await Record.ExceptionAsync(() =>
+                Task.FromResult(MssqlTargetLockSession.FailureOrCancellation(_realRefusal!, cancelled.Token))
+            );
+            _refusedWhileLive = MssqlTargetLockSession.FailureOrCancellation(
+                _realRefusal!,
+                CancellationToken.None
+            );
+
+            using TcpListener vacated = new(IPAddress.Loopback, 0);
+            vacated.Start();
+            int port = ((IPEndPoint)vacated.LocalEndpoint).Port;
+            vacated.Stop();
+            _unreachable = await EngineOn(
+                    new SqlConnectionStringBuilder(AdminConnectionString!)
+                    {
+                        DataSource = $"127.0.0.1,{port}",
+                        ConnectTimeout = 5,
+                    }.ConnectionString
+                )
+                .AcquireTargetLockAsync(TargetName("unreachable"), DmsOperationId.New(), default);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+
+            if (_login is not null)
+            {
+                await DropLoginAsync(_login);
+            }
+        }
+
+        [Test]
+        public void It_acquired_the_lock_while_the_login_was_accepted() =>
+            _accepted.Should().BeOfType<DmsTargetLockResult.Acquired>();
+
+        [Test]
+        public void It_reports_a_wrong_password_as_access_denied_with_the_error_number_only() =>
+            _wrongPassword.Should().Be(new DmsTargetLockResult.AccessDenied(Refusal("18456")));
+
+        [Test]
+        public void It_reports_a_disabled_login_as_access_denied_with_the_error_number_only() =>
+            _disabled.Should().Be(new DmsTargetLockResult.AccessDenied(Refusal("18470")));
+
+        [Test]
+        public void It_reports_a_refused_create_and_delete_as_a_permanent_missing_privilege()
+        {
+            foreach (DmsProvisioningFailure failure in new[] { Failure(_create), Failure(_delete) })
+            {
+                (
+                    failure.Code,
+                    failure.Category,
+                    failure.Diagnostic.Operation,
+                    failure.Diagnostic.ProviderErrorCode
+                )
+                    .Should()
+                    .Be(
+                        (
+                            DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                            DmsProvisioningFailureCategory.Permanent,
+                            DmsDataStoreProvisioningService.AcquireTargetLockStep,
+                            "18470"
+                        )
+                    );
+            }
+        }
+
+        [Test]
+        public void It_reads_nothing_after_the_refused_acquisitions() =>
+            _members
+                .Should()
+                .Equal(
+                    nameof(IDmsTargetEngine.AcquireTargetLockAsync),
+                    nameof(IDmsTargetEngine.AcquireTargetLockAsync)
+                );
+
+        [Test]
+        public void It_logs_one_failure_warning_for_each_refused_operation_with_the_code_and_step_only()
+        {
+            CapturingLogger.Entry[] warnings =
+            [
+                .. _serviceLogs.Entries.Where(entry =>
+                    entry.Id == DmsDataStoreProvisioningService.OperationFailed
+                ),
+            ];
+            warnings.Select(entry => entry.Level).Should().Equal(LogLevel.Warning, LogLevel.Warning);
+            string ending =
+                $" failed at {DmsDataStoreProvisioningService.AcquireTargetLockStep} with AdminPrivilegeMissing (Permanent)";
+            warnings
+                .Select(entry => entry.Text)
+                .Should()
+                .SatisfyRespectively(
+                    create =>
+                        create
+                            .Should()
+                            .StartWith(
+                                $"DMS data store provisioning {DmsDataStoreProvisioningService.CreateOperationName} "
+                            )
+                            .And.EndWith(ending),
+                    delete =>
+                        delete
+                            .Should()
+                            .StartWith(
+                                $"DMS data store provisioning {DmsDataStoreProvisioningService.DeleteOperationName} "
+                            )
+                            .And.EndWith(ending)
+                );
+        }
+
+        [Test]
+        public void It_exposes_neither_a_password_nor_a_connection_string()
+        {
+            DmsProvisioningDiagnostic[] diagnostics =
+            [
+                ((DmsTargetLockResult.AccessDenied)_wrongPassword).Diagnostic,
+                ((DmsTargetLockResult.AccessDenied)_disabled).Diagnostic,
+                Failure(_create).Diagnostic,
+                Failure(_delete).Diagnostic,
+            ];
+            diagnostics
+                .SelectMany(diagnostic =>
+                    new[]
+                    {
+                        diagnostic.ExceptionTypeChain,
+                        diagnostic.ProviderErrorCode ?? string.Empty,
+                        diagnostic.Operation,
+                    }
+                )
+                .Concat(_logs.Entries.Concat(_serviceLogs.Entries).Select(entry => entry.Text))
+                .Should()
+                .AllSatisfy(text =>
+                    text.Should()
+                        .NotContain(LoginPassword)
+                        .And.NotContain(WrongPassword)
+                        .And.NotContain("Password=", "a connection string must not be quoted")
+                );
+        }
+
+        [Test]
+        public void It_keeps_an_unreachable_server_a_lock_infrastructure_failure() =>
+            _unreachable.Should().BeOfType<DmsTargetLockResult.Failure>();
+
+        [Test]
+        public void It_lets_the_callers_cancellation_win_over_a_refusal_raised_as_it_cancels()
+        {
+            _realRefusal!.Number.Should().Be(MssqlErrorClassifier.LoginAccountDisabled);
+            _refusedWhileCancelled
+                .Should()
+                .BeOfType<OperationCanceledException>()
+                .Which.InnerException.Should()
+                .BeSameAs(_realRefusal);
+            _refusedWhileLive.Should().BeOfType<DmsTargetLockResult.AccessDenied>();
+        }
+
+        private static DmsProvisioningDiagnostic Refusal(string number) =>
+            new(typeof(SqlException).FullName!, number, MssqlTargetLockSession.AcquireStep);
+
+        private static DmsProvisioningFailure Failure(DmsDataStoreCreateResult result) =>
+            result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail;
+
+        private static DmsProvisioningFailure Failure(DmsDataStoreDeleteResult result) =>
+            result.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail;
+
+        /// <summary>Every log line written to it (the engine and its lock sessions, or the orchestrator), formatted, with any exception's full text.</summary>
+        private sealed class CapturingLogger : ILogger<DmsDataStoreProvisioningService>
+        {
+            private readonly System.Collections.Concurrent.ConcurrentQueue<Entry> _entries = new();
+
+            public sealed record Entry(EventId Id, LogLevel Level, string Text);
+
+            public IEnumerable<Entry> Entries => _entries;
+
+            public IDisposable? BeginScope<TState>(TState state)
+                where TState : notnull => null;
+
+            public bool IsEnabled(LogLevel logLevel) => true;
+
+            public void Log<TState>(
+                LogLevel logLevel,
+                EventId eventId,
+                TState state,
+                Exception? exception,
+                Func<TState, Exception?, string> formatter
+            ) =>
+                _entries.Enqueue(
+                    new Entry(
+                        eventId,
+                        logLevel,
+                        formatter(state, exception) + (exception?.ToString() ?? string.Empty)
+                    )
+                );
+        }
     }
 
     [TestFixture]
