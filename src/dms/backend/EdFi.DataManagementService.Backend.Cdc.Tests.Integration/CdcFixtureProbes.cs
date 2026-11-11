@@ -180,16 +180,54 @@ internal sealed class CdcFixtureProbes(
         await cleanup();
     }
 
+    internal async Task DisposeInOrderAsync(params Func<Task>[] steps)
+    {
+        bool failed = false;
+        for (int index = 0; index < steps.Length; index++)
+        {
+            try
+            {
+                await steps[index]();
+            }
+            catch (CdcProbeDrainException pending)
+            {
+                // The caller must receive the known drain failure now. The continuation owns
+                // the remaining dependencies until the child has actually finished using them.
+                var remaining = steps[(index + 1)..];
+                Task deferred = CleanupAfterExitAsync(
+                    pending.Completion,
+                    () => DisposeInOrderAsync(remaining)
+                );
+                throw new CdcProbeDrainException(pending, deferred);
+            }
+            catch
+            {
+                failed = true;
+            }
+        }
+        if (failed)
+        {
+            throw new InvalidOperationException("Fixture evidence or cleanup failed. Details redacted.");
+        }
+    }
+
     private async Task CleanupAfterExitAsync(Task completion, Func<Task> cleanup)
     {
-        await completion;
+        try
+        {
+            await completion;
+        }
+        catch
+        {
+            _lateOutcomes.Enqueue("CleanupFaulted");
+        }
         try
         {
             await cleanup();
         }
         catch (CdcProbeDrainException nested)
         {
-            await nested.Completion;
+            await CleanupAfterExitAsync(nested.Completion, () => Task.CompletedTask);
         }
         catch
         {

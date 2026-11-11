@@ -198,12 +198,15 @@ public sealed class Given_CdcFixtureProbes
                         "Pending"
                     )
                 );
+            var parent = new CdcFixtureProbes(publish: _ => Task.CompletedTask);
             Func<Task> dispose = () =>
-                owner.DisposeResourcesAsync(() =>
-                {
-                    disposed = true;
-                    return Task.CompletedTask;
-                });
+                parent.DisposeResourcesAsync(() =>
+                    owner.DisposeResourcesAsync(() =>
+                    {
+                        disposed = true;
+                        return Task.CompletedTask;
+                    })
+                );
             cleanup = (await dispose.Should().ThrowAsync<CdcProbeDrainException>()).Which.Completion;
             disposed.Should().BeFalse();
             cleanup.IsCompleted.Should().BeFalse();
@@ -268,6 +271,73 @@ public sealed class Given_CdcFixtureProbes
             );
         (await operation.Should().ThrowAsync<InvalidOperationException>()).Which.Should().BeSameAs(original);
         calls.Should().Be(1);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_propagates_nested_drain_failure_without_waiting_and_retains_remaining_dependencies(
+        bool lateCleanupFails
+    )
+    {
+        var owner = new CdcFixtureProbes(publish: _ => Task.CompletedTask);
+        var childExit = Signal();
+        var grandchildExit = Signal();
+        var secondCleanup = Signal();
+        List<string> calls = [];
+        Task deferred = Task.CompletedTask;
+        try
+        {
+            Task disposal = owner.DisposeResourcesAsync(() =>
+                owner.DisposeInOrderAsync(
+                    () =>
+                    {
+                        calls.Add("child");
+                        throw new CdcProbeDrainException(new TimeoutException(), childExit.Task);
+                    },
+                    () =>
+                    {
+                        calls.Add("second-child");
+                        secondCleanup.TrySetResult();
+                        throw new CdcProbeDrainException(new TimeoutException(), grandchildExit.Task);
+                    },
+                    () =>
+                    {
+                        calls.Add("dependency");
+                        return lateCleanupFails
+                            ? Task.FromException(new InvalidOperationException("private late failure"))
+                            : Task.CompletedTask;
+                    }
+                )
+            );
+            // No timer: both children are deliberately still blocked when teardown must return.
+            disposal.IsCompleted.Should().BeTrue();
+            Func<Task> finish = () => disposal;
+            deferred = (await finish.Should().ThrowAsync<CdcProbeDrainException>()).Which.Completion;
+            deferred.IsCompleted.Should().BeFalse();
+            calls.Should().ContainSingle().Which.Should().Be("child");
+            childExit.SetResult();
+            await secondCleanup.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            deferred.IsCompleted.Should().BeFalse();
+            calls.Should().Equal("child", "second-child");
+            grandchildExit.SetResult();
+            await deferred.WaitAsync(TimeSpan.FromSeconds(30));
+            calls.Should().Equal("child", "second-child", "dependency");
+            if (lateCleanupFails)
+            {
+                owner.LateOutcomes.Should().ContainSingle().Which.Should().Be("CleanupFaulted");
+            }
+            else
+            {
+                owner.LateOutcomes.Should().BeEmpty();
+            }
+            await finish.Should().ThrowAsync<CdcProbeDrainException>();
+        }
+        finally
+        {
+            childExit.TrySetResult();
+            grandchildExit.TrySetResult();
+            await deferred;
+        }
     }
 
     private static TaskCompletionSource Signal() => new(TaskCreationOptions.RunContinuationsAsynchronously);

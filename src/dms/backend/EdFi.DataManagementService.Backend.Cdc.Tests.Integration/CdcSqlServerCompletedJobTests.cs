@@ -13,6 +13,11 @@ public sealed class Given_CdcSqlServerCompletedJob
 {
     private static readonly Guid Job = Guid.Parse("12345678-1234-1234-1234-123456789abc");
 
+    private static readonly DateTime RequestedAt = new(2026, 11, 10, 12, 0, 0, DateTimeKind.Unspecified);
+
+    private static CdcSqlServerJobExecution Execution(int id, int status = 1) =>
+        new(Job, id, status, 3, RequestedAt, 4);
+
     [Test]
     public async Task It_treats_empty_completed_history_as_pending_until_the_requested_job_finishes()
     {
@@ -26,13 +31,13 @@ public sealed class Given_CdcSqlServerCompletedJob
         var operation = CdcSqlServerCompletedJob.RunAsync(
             new(Job, 0, 0, false),
             _ => throw new AssertionException("Unexpected pre-start read."),
-            (_, _) => Task.FromResult(true),
+            (_, _) => Task.FromResult(new CdcSqlServerJobRequest(true, 3, RequestedAt)),
             (_, boundary, token) =>
             {
                 boundary.Should().Be(0);
                 if (++reads == 1)
                 {
-                    return Task.FromResult(new CdcSqlServerJobExecution(Job, 0, -1));
+                    return Task.FromResult(Execution(0, -1));
                 }
                 secondRead.TrySetResult();
                 return completion.Task.WaitAsync(token);
@@ -47,14 +52,14 @@ public sealed class Given_CdcSqlServerCompletedJob
             clock.Advance(TimeSpan.FromMilliseconds(250));
             await secondRead.Task.WaitAsync(caller.Token);
             operation.IsCompleted.Should().BeFalse();
-            completion.SetResult(new(Job, 2, 1));
+            completion.SetResult(Execution(2));
             (await operation).Execution.InstanceId.Should().Be(2);
             reads.Should().Be(2);
         }
         finally
         {
             await caller.CancelAsync();
-            completion.TrySetResult(new(Job, 2, 1));
+            completion.TrySetResult(Execution(2));
             await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
@@ -85,7 +90,7 @@ public sealed class Given_CdcSqlServerCompletedJob
             {
                 job.Should().Be(Job);
                 calls.Add("start");
-                return Task.FromResult(started);
+                return Task.FromResult(new CdcSqlServerJobRequest(started, 3, RequestedAt));
             },
             (job, boundary, token) =>
             {
@@ -109,16 +114,82 @@ public sealed class Given_CdcSqlServerCompletedJob
             operation.IsCompleted.Should().BeFalse();
             string[] expected = initiallyRunning ? ["idle", "start", "history"] : ["start", "history"];
             calls.Should().Equal(expected);
-            completion.SetResult(new(Job, 9, 1));
+            var execution = Execution(9) with { RequestSource = started ? 4 : 1 };
+            completion.SetResult(execution);
             var evidence = await operation;
             evidence.HistoryBoundary.Should().Be(initiallyRunning ? 7 : 0);
-            evidence.Execution.Should().Be(new CdcSqlServerJobExecution(Job, 9, 1));
+            evidence.Execution.Should().Be(execution);
             evidence.Started.Should().Be(started);
         }
         finally
         {
             await cancellation.CancelAsync();
-            completion.TrySetResult(new(Job, 9, 1));
+            completion.TrySetResult(Execution(9));
+            await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
+    [TestCase(true, "scheduled")]
+    [TestCase(true, "old-request")]
+    [TestCase(true, "old-session")]
+    [TestCase(false, "scheduled")]
+    [TestCase(false, "old-session")]
+    public async Task It_does_not_accept_an_intervening_execution_as_the_requested_or_joined_run(
+        bool started,
+        string scenario
+    )
+    {
+        var clock = new FakeTimeProvider();
+        using var caller = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var finalRead = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var completion = new TaskCompletionSource<CdcSqlServerJobExecution>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        int reads = 0;
+        var operation = CdcSqlServerCompletedJob.RunAsync(
+            new(Job, 7, 1, false),
+            _ => throw new AssertionException("Unexpected pre-start read."),
+            (_, _) => Task.FromResult(new CdcSqlServerJobRequest(started, 3, RequestedAt)),
+            (_, boundary, token) =>
+            {
+                boundary.Should().Be(7);
+                if (++reads == 1)
+                {
+                    // Execution 8 completed after the snapshot, before execution 9 was
+                    // started/joined. It must not certify 9 even when its history is successful.
+                    return Task.FromResult(
+                        Execution(8) with
+                        {
+                            SessionId = scenario == "old-session" ? 2 : 3,
+                            RequestedAt =
+                                scenario == "scheduled" && started ? RequestedAt : RequestedAt.AddSeconds(-1),
+                            RequestSource = scenario == "scheduled" ? 1 : 4,
+                        }
+                    );
+                }
+                finalRead.TrySetResult();
+                return completion.Task.WaitAsync(token);
+            },
+            caller.Token,
+            clock
+        );
+        try
+        {
+            reads.Should().Be(1);
+            operation.IsCompleted.Should().BeFalse();
+            clock.Advance(TimeSpan.FromMilliseconds(250));
+            await finalRead.Task.WaitAsync(caller.Token);
+            operation.IsCompleted.Should().BeFalse();
+            // A later failure of the requested execution must not be hidden by run 8's success.
+            completion.SetResult(Execution(9, 0));
+            Func<Task> finish = () => operation;
+            await finish.Should().ThrowAsync<InvalidOperationException>();
+            reads.Should().Be(2);
+        }
+        finally
+        {
+            await caller.CancelAsync();
+            completion.TrySetResult(Execution(9));
             await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
         }
     }
@@ -134,7 +205,7 @@ public sealed class Given_CdcSqlServerCompletedJob
             CdcSqlServerCompletedJob.RunAsync(
                 new(Job, 7, 1, false),
                 _ => throw new AssertionException("Idle job needs no additional pre-start read."),
-                (_, _) => Task.FromResult(true),
+                (_, _) => Task.FromResult(new CdcSqlServerJobRequest(true, 3, RequestedAt)),
                 (_, _, _) =>
                 {
                     reads++;
@@ -148,7 +219,10 @@ public sealed class Given_CdcSqlServerCompletedJob
                         new CdcSqlServerJobExecution(
                             scenario == "other-job" ? Guid.NewGuid() : Job,
                             scenario == "old" ? 7 : 9,
-                            scenario == "failed" ? 0 : 1
+                            scenario == "failed" ? 0 : 1,
+                            3,
+                            RequestedAt,
+                            4
                         )
                     );
                 },
@@ -175,7 +249,7 @@ public sealed class Given_CdcSqlServerCompletedJob
         var operation = CdcSqlServerCompletedJob.RunAsync(
             new(Job, 0, 0, false),
             _ => throw new AssertionException("Unexpected pre-start read."),
-            (_, _) => Task.FromResult(true),
+            (_, _) => Task.FromResult(new CdcSqlServerJobRequest(true, 3, RequestedAt)),
             async (_, _, token) =>
             {
                 entered.TrySetResult();

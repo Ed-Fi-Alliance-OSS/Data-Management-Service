@@ -42,6 +42,8 @@ public sealed class Given_authorized_three_broker_cdc_policy
             _peer = _fixture.Request("b");
             await _fixture.PrepareOffsetsAsync(_request, timeout.Token);
             Value(await _fixture.StartPolicyWorkerAsync(_request, true, timeout.Token));
+            _request = _fixture.RefreshWorkerEndpoints(_request);
+            _peer = _fixture.RefreshWorkerEndpoints(_peer);
             await _fixture.ProvisionTopicsAsync(_request, timeout.Token);
             await _fixture.ProvisionTopicsAsync(_peer, timeout.Token);
             foreach (var request in new[] { _request, _peer })

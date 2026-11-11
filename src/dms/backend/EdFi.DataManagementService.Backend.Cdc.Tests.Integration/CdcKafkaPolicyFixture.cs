@@ -20,7 +20,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// actual authenticated clients exercise access. No substitute provider, producer-capacity or ACL evidence.
 /// SASL/PLAIN is confined to an isolated Docker network and loopback ports, with ephemeral credentials.
 /// </summary>
-internal sealed partial class CdcKafkaPolicyFixture(bool secured)
+internal sealed partial class CdcKafkaPolicyFixture(bool secured, IDockerCli docker = null!)
     : IAsyncDisposable,
         ICdcKafkaAuthorizationInspection,
         ICdcWorkerStartupTransport,
@@ -28,7 +28,7 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
 {
     internal CdcFixtureProbes Probes { get; } = new();
     private Task _disposal = null!;
-    private readonly DockerCli _docker = new();
+    private readonly IDockerCli _docker = docker ?? new DockerCli();
     private readonly string _prefix = "cdc-policy-" + Guid.NewGuid().ToString("N")[..12];
     private readonly string _password = Guid.NewGuid().ToString("N");
     private readonly CdcFixturePorts _reservedPorts = new(secured ? 5 : 3);
@@ -531,60 +531,8 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
             );
         }
 
-        List<string> args =
-        [
-            "run",
-            "--detach",
-            "--name",
-            Worker,
-            "--network",
-            _prefix,
-            "-p",
-            $"127.0.0.1:{_workerPort}:8083",
-            "-p",
-            $"127.0.0.1:{_metricsPort}:9404",
-        ];
-        Dictionary<string, string> env = new()
-        {
-            ["BOOTSTRAP_SERVERS"] = string.Join(
-                ',',
-                Enumerable.Range(0, _ports.Length).Select(i => Broker(i) + ":9092")
-            ),
-            ["GROUP_ID"] = WorkerGroup,
-            ["CONFIG_STORAGE_TOPIC"] = ConfigTopic,
-            ["OFFSET_STORAGE_TOPIC"] = OffsetTopic,
-            ["STATUS_STORAGE_TOPIC"] = StatusTopic,
-            ["CONFIG_STORAGE_REPLICATION_FACTOR"] = _ports.Length.ToString(CultureInfo.InvariantCulture),
-            ["OFFSET_STORAGE_REPLICATION_FACTOR"] = _ports.Length.ToString(CultureInfo.InvariantCulture),
-            ["STATUS_STORAGE_REPLICATION_FACTOR"] = _ports.Length.ToString(CultureInfo.InvariantCulture),
-            ["CONNECT_REST_ADVERTISED_HOST_NAME"] = Worker,
-            ["CONNECT_REST_ADVERTISED_PORT"] = "8083",
-            ["CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY"] = "All",
-            ["KAFKA_HEAP_OPTS"] = "-Xms512m -Xmx1g",
-        };
-        if (secured)
-        {
-            env["CONNECT_SECURITY_PROTOCOL"] = "SASL_PLAINTEXT";
-            env["CONNECT_SASL_MECHANISM"] = "PLAIN";
-            env["CONNECT_SASL_JAAS_CONFIG"] =
-                $"org.apache.kafka.common.security.plain.PlainLoginModule required username=\"worker\" password=\"{_password}\";";
-        }
-        foreach (var (key, value) in env)
-        {
-            args.AddRange(["-e", key + "=" + value]);
-        }
-
-        args.Add(CdcQualifiedWorkerImage.Image);
-        _containers.Add(Worker);
-        _reservedPorts.Release(_reservedPorts.Ports.Length - 2);
-        _reservedPorts.Release(_reservedPorts.Ports.Length - 1);
-        await CdcFixtureDockerStartup.RunAsync(
-            attemptToken => _docker.RunAllowingFailureAsync(args, attemptToken),
-            cleanupToken => DockerAsync(["rm", "-f", "-v", Worker], cleanupToken),
-            // The admitted request already owns these endpoints. Do not silently replace it.
-            () => { },
-            cancellationToken
-        );
+        await StartWorkerContainerAsync(cancellationToken);
+        request = RefreshWorkerEndpoints(request);
         WorkerLaunches++;
         string started = await DockerAsync(
             ["inspect", Worker, "--format", "{{.State.StartedAt}}"],
@@ -615,6 +563,83 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
                     "Finished starting connectors and tasks",
                     StringComparison.Ordinal
                 ),
+            cancellationToken
+        );
+    }
+
+    internal CdcDeploymentRequest RefreshWorkerEndpoints(CdcDeploymentRequest request) =>
+        CdcFixtureRequests.WithWorkerEndpoints(
+            request,
+            new($"http://127.0.0.1:{_workerPort}/"),
+            new($"http://127.0.0.1:{_metricsPort}/metrics")
+        );
+
+    internal async Task StartWorkerContainerAsync(CancellationToken cancellationToken)
+    {
+        List<string> environment = [];
+        Dictionary<string, string> env = new()
+        {
+            ["BOOTSTRAP_SERVERS"] = string.Join(
+                ',',
+                Enumerable.Range(0, _ports.Length).Select(i => Broker(i) + ":9092")
+            ),
+            ["GROUP_ID"] = WorkerGroup,
+            ["CONFIG_STORAGE_TOPIC"] = ConfigTopic,
+            ["OFFSET_STORAGE_TOPIC"] = OffsetTopic,
+            ["STATUS_STORAGE_TOPIC"] = StatusTopic,
+            ["CONFIG_STORAGE_REPLICATION_FACTOR"] = _ports.Length.ToString(CultureInfo.InvariantCulture),
+            ["OFFSET_STORAGE_REPLICATION_FACTOR"] = _ports.Length.ToString(CultureInfo.InvariantCulture),
+            ["STATUS_STORAGE_REPLICATION_FACTOR"] = _ports.Length.ToString(CultureInfo.InvariantCulture),
+            ["CONNECT_REST_ADVERTISED_HOST_NAME"] = Worker,
+            ["CONNECT_REST_ADVERTISED_PORT"] = "8083",
+            ["CONNECT_CONNECTOR_CLIENT_CONFIG_OVERRIDE_POLICY"] = "All",
+            ["KAFKA_HEAP_OPTS"] = "-Xms512m -Xmx1g",
+        };
+        if (secured)
+        {
+            env["CONNECT_SECURITY_PROTOCOL"] = "SASL_PLAINTEXT";
+            env["CONNECT_SASL_MECHANISM"] = "PLAIN";
+            env["CONNECT_SASL_JAAS_CONFIG"] =
+                $"org.apache.kafka.common.security.plain.PlainLoginModule required username=\"worker\" password=\"{_password}\";";
+        }
+        foreach (var (key, value) in env)
+        {
+            environment.AddRange(["-e", key + "=" + value]);
+        }
+
+        _containers.Add(Worker);
+        await CdcFixtureDockerStartup.RunAsync(
+            attemptToken =>
+            {
+                _reservedPorts.Release(_reservedPorts.Ports.Length - 2);
+                _reservedPorts.Release(_reservedPorts.Ports.Length - 1);
+                return _docker.RunAllowingFailureAsync(
+                    [
+                        "run",
+                        "--detach",
+                        "--name",
+                        Worker,
+                        "--network",
+                        _prefix,
+                        "-p",
+                        $"127.0.0.1:{_workerPort}:8083",
+                        "-p",
+                        $"127.0.0.1:{_metricsPort}:9404",
+                        .. environment,
+                        CdcQualifiedWorkerImage.Image,
+                    ],
+                    attemptToken
+                );
+            },
+            cleanupToken => DockerAsync(["rm", "-f", "-v", Worker], cleanupToken),
+            () =>
+            {
+                if (WorkerLaunches == 0)
+                {
+                    _reservedPorts.Replace(_reservedPorts.Ports.Length - 2);
+                    _reservedPorts.Replace(_reservedPorts.Ports.Length - 1);
+                }
+            },
             cancellationToken
         );
     }

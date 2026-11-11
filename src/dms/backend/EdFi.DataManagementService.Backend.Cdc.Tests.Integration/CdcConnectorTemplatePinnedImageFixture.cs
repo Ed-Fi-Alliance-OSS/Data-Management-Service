@@ -1272,9 +1272,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             await beforeWorker(this, cancellationToken);
         }
 
-        ports.Release(1);
-        ports.Release(2);
-        await StartKafkaConnectAsync(cancellationToken);
+        await StartKafkaConnectWithRetryAsync(cancellationToken, ports);
     }
 
     private async Task StartBrokerAsync(CdcFixturePorts ports, CancellationToken cancellationToken)

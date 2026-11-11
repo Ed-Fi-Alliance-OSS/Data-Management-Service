@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Globalization;
 using EdFi.DataManagementService.Backend.Ddl;
@@ -97,27 +98,52 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             return state;
         }
 
-        async Task<bool> StartAsync(Guid jobId, CancellationToken cancellation)
+        async Task<CdcSqlServerJobRequest> StartAsync(Guid jobId, CancellationToken cancellation)
         {
             await using var command = connection.CreateCommand();
             command.CommandTimeout = 10;
-            command.CommandText = "EXEC msdb.dbo.sp_start_job @job_id=@job;";
+            // SQL Agent truncates request timestamps to seconds. Match that precision.
+            // This fixture owns manual starts after setup. Scheduled executions have source 1.
+            command.CommandText = """
+                SET @requested = GETDATE();
+                SET @requested = DATEADD(millisecond, -DATEPART(millisecond, @requested), @requested);
+                SELECT @session = MAX(session_id) FROM msdb.dbo.syssessions;
+                EXEC msdb.dbo.sp_start_job @job_id=@job;
+                """;
             AddParameter(command, "@job", jobId);
+            var requested = command.CreateParameter();
+            requested.ParameterName = "@requested";
+            requested.DbType = DbType.DateTime;
+            requested.Direction = ParameterDirection.Output;
+            command.Parameters.Add(requested);
+            var session = command.CreateParameter();
+            session.ParameterName = "@session";
+            session.DbType = DbType.Int32;
+            session.Direction = ParameterDirection.Output;
+            command.Parameters.Add(session);
             try
             {
                 await command.ExecuteNonQueryAsync(cancellation);
-                return true;
+                return new(true, (int)session.Value!, (DateTime)requested.Value!);
             }
             catch (SqlException exception) when (exception.Number == 22022)
             {
-                // A scheduled run can win the gap after the idle observation. Only an actual
-                // active execution of this same job permits joining it; other Agent errors fail.
-                var current = await ReadStateAsync(cancellation);
-                if (current.JobId != jobId || !current.Running)
+                // Join only the exact active/queued execution observed after Agent rejects our
+                // start. An earlier completed execution cannot certify this joined request.
+                await using var active = connection.CreateCommand();
+                active.CommandTimeout = 10;
+                active.CommandText = """
+                    SELECT session_id, run_requested_date FROM msdb.dbo.sysjobactivity
+                    WHERE job_id=@job AND session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+                      AND run_requested_date IS NOT NULL AND stop_execution_date IS NULL;
+                    """;
+                AddParameter(active, "@job", jobId);
+                await using var reader = await active.ExecuteReaderAsync(cancellation);
+                if (!await reader.ReadAsync(cancellation))
                 {
                     throw;
                 }
-                return false;
+                return new(false, reader.GetInt32(0), reader.GetDateTime(1));
             }
         }
 
@@ -129,17 +155,29 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         {
             await using var command = connection.CreateCommand();
             command.CommandTimeout = 10;
-            // Read the first new execution, not the latest: a later success cannot conceal failure.
+            // job_history_id ties the terminal history row to Agent's execution identity.
+            // The helper validates the session, request time and request source before accepting it.
             command.CommandText = """
-                SELECT TOP (1) job_id, instance_id, run_status FROM msdb.dbo.sysjobhistory
-                WHERE job_id=@job AND step_id=0 AND instance_id>@boundary ORDER BY instance_id;
+                SELECT h.job_id, h.instance_id, h.run_status,
+                       a.session_id, a.run_requested_date, CONVERT(int, a.run_requested_source)
+                FROM msdb.dbo.sysjobactivity a
+                JOIN msdb.dbo.sysjobhistory h ON h.job_id=a.job_id AND h.instance_id=a.job_history_id
+                WHERE a.job_id=@job AND a.session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+                  AND a.stop_execution_date IS NOT NULL AND h.step_id=0 AND h.instance_id>@boundary;
                 """;
             AddParameter(command, "@job", jobId);
             AddParameter(command, "@boundary", boundary);
             await using var reader = await command.ExecuteReaderAsync(cancellation);
             return await reader.ReadAsync(cancellation)
-                ? new(reader.GetGuid(0), reader.GetInt32(1), reader.GetInt32(2))
-                : new(jobId, 0, -1);
+                ? new(
+                    reader.GetGuid(0),
+                    reader.GetInt32(1),
+                    reader.GetInt32(2),
+                    reader.GetInt32(3),
+                    reader.GetDateTime(4),
+                    reader.GetInt32(5)
+                )
+                : new(jobId, 0, -1, 0, default, 0);
         }
     }
 

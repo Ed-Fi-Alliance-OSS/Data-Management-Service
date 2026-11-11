@@ -433,24 +433,18 @@ public sealed class Given_CdcControllerFixtureLive(CdcProvider provider)
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
         var token = timeout.Token;
         string preWorkerRoot = string.Empty;
-        Uri preWorkerConnect = null!;
-        Uri preWorkerMetrics = null!;
         await using var fixture = await CdcControllerFixture.StartAsync(
             provider,
             token,
             async (preparing, ct) =>
             {
                 preWorkerRoot = preparing.StateRoot;
-                preWorkerConnect = preparing.ConnectEndpoint;
-                preWorkerMetrics = await preparing.MetricsEndpointAsync(ct);
                 var bindings = await preparing.Bindings.ListBindingsAsync("dms", ct);
                 bindings.Status.Should().Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
                 bindings.States.Should().BeEmpty();
             }
         );
         fixture.StateRoot.Should().Be(preWorkerRoot);
-        fixture.ConnectEndpoint.Should().Be(preWorkerConnect);
-        (await fixture.MetricsEndpointAsync(token)).Should().Be(preWorkerMetrics);
         var template = await fixture.Resources.CreateRequestAsync(token);
         await fixture.Resources.RegisterRenderedConnectorConfigDirectlyAsync(
             fixture.Resources.Render(template),

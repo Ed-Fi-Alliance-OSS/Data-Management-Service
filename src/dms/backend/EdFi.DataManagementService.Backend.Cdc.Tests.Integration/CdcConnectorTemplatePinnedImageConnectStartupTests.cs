@@ -53,6 +53,7 @@ public sealed class Given_PinnedImageFixtureConnectStartup(
     private Uri _connect = null!;
     private Uri _metrics = null!;
     private int _preparations;
+    private CdcConnectorTemplatePinnedImageFixture _fixture = null!;
 
     [SetUp]
     public void Setup()
@@ -81,6 +82,7 @@ public sealed class Given_PinnedImageFixtureConnectStartup(
                 beforeWorker: async (fixture, token) =>
                 {
                     _preparations++;
+                    _fixture = fixture;
                     _connect = fixture.ControllerConnectEndpoint;
                     _metrics = await fixture.ControllerMetricsEndpointAsync(token);
                     // Another process cannot steal either endpoint during preparation.
@@ -127,19 +129,43 @@ public sealed class Given_PinnedImageFixtureConnectStartup(
         }
     }
 
+    [TearDown]
+    public void Cleanup() => _docker.DisposeCompetitors();
+
     [Test]
-    public void It_preserves_prepared_endpoints_and_releases_reservations_before_launch()
+    public async Task It_replaces_stolen_endpoints_and_publishes_the_final_worker_addresses()
     {
         _preparations.Should().Be(1);
-        foreach (string[] run in _docker.ConnectRuns)
+        var mappings = _docker
+            .ConnectRuns.Select(run => run.Where((_, index) => index > 0 && run[index - 1] == "-p").ToArray())
+            .ToArray();
+        mappings[0].Should().Equal($"127.0.0.1:{_connect.Port}:8083", $"127.0.0.1:{_metrics.Port}:9404");
+        var ports = mappings
+            .SelectMany(run => run.Select(mapping => int.Parse(mapping.Split(':')[1])))
+            .ToArray();
+        ports.Should().OnlyHaveUniqueItems("each initial startup retry must escape the competing listeners");
+        var finalConnect = _fixture.ControllerConnectEndpoint;
+        var finalMetrics = await _fixture.ControllerMetricsEndpointAsync(CancellationToken.None);
+        mappings[^1]
+            .Should()
+            .Equal($"127.0.0.1:{finalConnect.Port}:8083", $"127.0.0.1:{finalMetrics.Port}:9404");
+        var prepared = Tests.Unit.CdcDeploymentRequestTestData.Request();
+        var refreshed = CdcFixtureRequests.WithWorkerEndpoints(prepared, finalConnect, finalMetrics);
+        refreshed.ConnectEndpoint.Should().Be(finalConnect);
+        refreshed.WorkerMetricsEndpoint.Should().Be(finalMetrics);
+        refreshed.Binding.Should().BeSameAs(prepared.Binding);
+        refreshed.DmsSettings.Should().BeSameAs(prepared.DmsSettings);
+        refreshed.ProviderSetup.Should().BeSameAs(prepared.ProviderSetup);
+        // Competitors survive container removal and every retry. Only test cleanup releases them.
+        foreach (int stolen in _docker.StolenPorts)
         {
-            run.Where((_, index) => index > 0 && run[index - 1] == "-p")
-                .Should()
-                .Equal($"127.0.0.1:{_connect.Port}:8083", $"127.0.0.1:{_metrics.Port}:9404");
+            AssertReserved(stolen);
         }
-        // Also verifies disposal after terminal failure and cancellation.
-        AssertAvailable(_connect.Port);
-        AssertAvailable(_metrics.Port);
+        _docker.DisposeCompetitors();
+        foreach (int port in ports)
+        {
+            AssertAvailable(port);
+        }
     }
 
     [Test]
@@ -221,6 +247,17 @@ public sealed class Given_PinnedImageFixtureConnectStartup(
         CancellationTokenSource cancellation
     ) : IDockerCli
     {
+        private readonly List<TcpListener> _competitors = [];
+        public List<int> StolenPorts { get; } = [];
+
+        public void DisposeCompetitors()
+        {
+            foreach (var competitor in _competitors)
+            {
+                competitor.Dispose();
+            }
+        }
+
         public List<string[]> ConnectRuns { get; } = [];
         public List<string> Commands { get; } = [];
         public Exception PortReadReached { get; } = new InvalidOperationException("port read reached");
@@ -298,6 +335,17 @@ public sealed class Given_PinnedImageFixtureConnectStartup(
             if (ConnectRuns.Count > failures)
             {
                 return Task.FromResult(new DockerCommandResult(0, PrivateDetails, ""));
+            }
+            if (CdcConnectorTemplatePinnedImageFixture.IsPortBindFailure(error))
+            {
+                foreach (string mapping in run.Where((_, index) => index > 0 && run[index - 1] == "-p"))
+                {
+                    int port = int.Parse(mapping.Split(':')[1]);
+                    var competitor = new TcpListener(IPAddress.Loopback, port);
+                    _competitors.Add(competitor);
+                    competitor.Start();
+                    StolenPorts.Add(port);
+                }
             }
             if (scenario == "cancel")
             {
