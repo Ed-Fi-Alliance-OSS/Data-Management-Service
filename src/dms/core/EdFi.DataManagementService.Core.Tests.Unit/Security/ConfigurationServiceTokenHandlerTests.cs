@@ -571,26 +571,56 @@ public class ConfigurationServiceTokenHandlerTests
     /// The safe problem-type allowlist. Allowlisted types are emitted exactly, any other string
     /// type as a fixed marker, and an absent, non-string or unreadable type contributes nothing.
     /// </summary>
-    [TestFixture("""{"type":"about:blank","detail":"SECRET"}""", "about:blank")]
+    [TestFixture(
+        """{"type":"about:blank","detail":"SECRET"}""",
+        "about:blank",
+        HttpStatusCode.TooManyRequests
+    )]
     [TestFixture(
         """{"type":"urn:ed-fi:api:security:authentication:too-many-tokens","detail":"SECRET"}""",
-        "urn:ed-fi:api:security:authentication:too-many-tokens"
+        "urn:ed-fi:api:security:authentication:too-many-tokens",
+        HttpStatusCode.TooManyRequests
     )]
     [TestFixture(
         """{"type":"urn:ed-fi:management-api:security:authentication:too-many-tokens","detail":"SECRET"}""",
-        "urn:ed-fi:management-api:security:authentication:too-many-tokens"
+        "urn:ed-fi:management-api:security:authentication:too-many-tokens",
+        HttpStatusCode.TooManyRequests
     )]
-    [TestFixture("""{"type":"urn:example:identity-provider-unavailable"}""", "unrecognized")]
-    [TestFixture("""{"type":"urn:example:TOKEN:SECRET","detail":"SECRET"}""", "unrecognized")]
-    [TestFixture("""{"type":"URN:ED-FI:API:SECURITY:AUTHENTICATION:TOO-MANY-TOKENS"}""", "unrecognized")]
-    [TestFixture("""{"title":"TOKEN","detail":"SECRET"}""", null)]
-    [TestFixture("""{"type":42,"detail":"SECRET"}""", null)]
-    [TestFixture("""{"type":{"value":"SECRET"},"detail":"TOKEN"}""", null)]
-    [TestFixture("""{"error":"invalid_client","error_description":"SECRET TOKEN"}""", null)]
-    [TestFixture("""not json SECRET TOKEN""", null)]
+    [TestFixture(
+        """{"type":"urn:ed-fi:management-api:internal-server-error","detail":"SECRET TOKEN"}""",
+        "urn:ed-fi:management-api:internal-server-error",
+        HttpStatusCode.InternalServerError
+    )]
+    [TestFixture(
+        """{"type":"urn:example:identity-provider-unavailable"}""",
+        "unrecognized",
+        HttpStatusCode.TooManyRequests
+    )]
+    [TestFixture(
+        """{"type":"urn:example:TOKEN:SECRET","detail":"SECRET"}""",
+        "unrecognized",
+        HttpStatusCode.TooManyRequests
+    )]
+    [TestFixture(
+        """{"type":"URN:ED-FI:API:SECURITY:AUTHENTICATION:TOO-MANY-TOKENS"}""",
+        "unrecognized",
+        HttpStatusCode.TooManyRequests
+    )]
+    [TestFixture("""{"title":"TOKEN","detail":"SECRET"}""", null, HttpStatusCode.TooManyRequests)]
+    [TestFixture("""{"type":42,"detail":"SECRET"}""", null, HttpStatusCode.TooManyRequests)]
+    [TestFixture("""{"type":{"value":"SECRET"},"detail":"TOKEN"}""", null, HttpStatusCode.TooManyRequests)]
+    [TestFixture(
+        """{"error":"invalid_client","error_description":"SECRET TOKEN"}""",
+        null,
+        HttpStatusCode.TooManyRequests
+    )]
+    [TestFixture("""not json SECRET TOKEN""", null, HttpStatusCode.TooManyRequests)]
     [Parallelizable]
-    public class Given_A_Problem_Type_In_A_Failed_Grant(string bodyTemplate, string? expectedType)
-        : ConfigurationServiceTokenHandlerTests
+    public class Given_A_Problem_Type_In_A_Failed_Grant(
+        string bodyTemplate,
+        string? expectedType,
+        HttpStatusCode statusCode
+    ) : ConfigurationServiceTokenHandlerTests
     {
         private ServiceProvider _provider = null!;
         private RecordingLoggerProvider _logs = null!;
@@ -602,7 +632,7 @@ public class ConfigurationServiceTokenHandlerTests
         {
             string body = bodyTemplate.Replace("SECRET", SecretSentinel).Replace("TOKEN", TokenSentinel);
             _logs = new RecordingLoggerProvider();
-            ScriptedTransport transport = Answering(HttpStatusCode.TooManyRequests, body);
+            ScriptedTransport transport = Answering(statusCode, body);
             _provider = BuildRegisteredProvider(_logs, new FakeTimeProvider(), transport, transport);
 
             _failure = await CaptureFailure(() => RequestToken(_provider));
@@ -617,11 +647,7 @@ public class ConfigurationServiceTokenHandlerTests
         [Test]
         public void It_keeps_the_numeric_status()
         {
-            _failure
-                .Should()
-                .BeOfType<HttpRequestException>()
-                .Which.StatusCode.Should()
-                .Be(HttpStatusCode.TooManyRequests);
+            _failure.Should().BeOfType<HttpRequestException>().Which.StatusCode.Should().Be(statusCode);
         }
 
         [Test]
@@ -634,11 +660,16 @@ public class ConfigurationServiceTokenHandlerTests
 
             if (expectedType is null)
             {
-                grantBoundaryLog.Should().Contain("status code 429").And.NotContain("problem type");
+                grantBoundaryLog
+                    .Should()
+                    .Contain($"status code {(int)statusCode}")
+                    .And.NotContain("problem type");
             }
             else
             {
-                grantBoundaryLog.Should().Contain($"status code 429 and problem type {expectedType}");
+                grantBoundaryLog
+                    .Should()
+                    .Contain($"status code {(int)statusCode} and problem type {expectedType}");
             }
         }
 
@@ -648,15 +679,20 @@ public class ConfigurationServiceTokenHandlerTests
             foreach (Exception? failure in new[] { _failure, _cooldownFailure })
             {
                 HttpRequestException rejected = failure.Should().BeOfType<HttpRequestException>().Which;
-                rejected.StatusCode.Should().Be(HttpStatusCode.TooManyRequests);
+                rejected.StatusCode.Should().Be(statusCode);
 
                 if (expectedType is null)
                 {
-                    rejected.Message.Should().Contain("status code 429").And.NotContain("problem type");
+                    rejected
+                        .Message.Should()
+                        .Contain($"status code {(int)statusCode}")
+                        .And.NotContain("problem type");
                 }
                 else
                 {
-                    rejected.Message.Should().Contain($"status code 429 and problem type {expectedType}");
+                    rejected
+                        .Message.Should()
+                        .Contain($"status code {(int)statusCode} and problem type {expectedType}");
                 }
             }
         }
@@ -2123,6 +2159,64 @@ public class ConfigurationServiceTokenHandlerTests
             AssertNoSentinels(_logs.Rendered);
             AssertNoSentinels(_failure!.ToString());
         }
+    }
+
+    /// <summary>
+    /// An already-canceled caller must not consume a cached answer, start a grant, or receive an
+    /// availability failure from the cooldown instead of its own cancellation.
+    /// </summary>
+    [TestFixture("empty", 0)]
+    [TestFixture("reusable", 1)]
+    [TestFixture("cooldown", 1)]
+    [Parallelizable]
+    public class Given_An_Already_Canceled_Token_Caller(string cacheState, int expectedGrantCount)
+        : ConfigurationServiceTokenHandlerTests
+    {
+        private ServiceProvider _provider = null!;
+        private ScriptedTransport _transport = null!;
+        private Exception _failure = null!;
+        private CancellationToken _callerToken;
+        private int _grantCount;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            HttpStatusCode status =
+                cacheState == "cooldown" ? HttpStatusCode.ServiceUnavailable : HttpStatusCode.OK;
+            _transport = Answering(status, ValidGrantBody());
+            _provider = BuildRegisteredProvider(
+                new RecordingLoggerProvider(),
+                new FakeTimeProvider(),
+                _transport
+            );
+
+            if (cacheState != "empty")
+            {
+                await CaptureFailure(() => RequestToken(_provider));
+            }
+
+            _callerToken = new CancellationToken(canceled: true);
+            _failure = (await CaptureFailure(() => RequestToken(_provider, _callerToken)))!;
+            _grantCount = _transport.Requests.Count;
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_propagates_the_callers_cancellation() =>
+            _failure.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_preserves_the_callers_token() =>
+            _failure
+                .Should()
+                .BeAssignableTo<OperationCanceledException>()
+                .Which.CancellationToken.Should()
+                .Be(_callerToken);
+
+        [Test]
+        public void It_does_not_start_a_grant() => _grantCount.Should().Be(expectedGrantCount);
     }
 
     /// <summary>

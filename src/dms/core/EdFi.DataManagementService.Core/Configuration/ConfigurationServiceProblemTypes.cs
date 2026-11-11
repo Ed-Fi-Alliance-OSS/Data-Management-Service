@@ -5,7 +5,7 @@
 
 namespace EdFi.DataManagementService.Core.Configuration;
 
-/// <summary>Known CMS token-limit types shared by the private grant and public OAuth readers.</summary>
+/// <summary>Known CMS problem types used by the private grant and public OAuth readers.</summary>
 /// <remarks>
 /// CMS has used both prefixes for problem-details token-limit rejections. Keep exact matches for
 /// either version. Its newer OAuth error envelope is handled separately by the public proxy.
@@ -16,4 +16,6 @@ internal static class ConfigurationServiceProblemTypes
 
     internal const string ManagementApiTooManyTokens =
         "urn:ed-fi:management-api:security:authentication:too-many-tokens";
+
+    internal const string ManagementApiInternalServerError = "urn:ed-fi:management-api:internal-server-error";
 }

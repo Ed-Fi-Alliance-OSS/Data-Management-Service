@@ -170,6 +170,8 @@ public class ConfigurationServiceTokenHandler(
         CancellationToken cancellationToken = default
     )
     {
+        cancellationToken.ThrowIfCancellationRequested();
+
         // Read before any grant. Hosts without eager options validation, such as the DocumentCache
         // runtime, first meet an invalid cap here: its value-free OptionsValidationException reaches
         // the caller, and no grant is sent or failure window started.
@@ -184,6 +186,8 @@ public class ConfigurationServiceTokenHandler(
 
             lock (_gate)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 if (_current is not null && IsReusable(_current))
                 {
                     return _current.Lease;
@@ -570,6 +574,8 @@ public class ConfigurationServiceTokenHandler(
                 ConfigurationServiceProblemTypes.LegacyTooManyTokens,
             ConfigurationServiceProblemTypes.ManagementApiTooManyTokens =>
                 ConfigurationServiceProblemTypes.ManagementApiTooManyTokens,
+            ConfigurationServiceProblemTypes.ManagementApiInternalServerError =>
+                ConfigurationServiceProblemTypes.ManagementApiInternalServerError,
             _ => UnrecognizedProblemType,
         };
     }
