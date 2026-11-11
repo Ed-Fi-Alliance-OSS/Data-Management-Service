@@ -173,7 +173,8 @@ public class MssqlStagingTests
                 Path.GetTempPath(),
                 "dms1438-probe-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))
             );
-            Directory.CreateDirectory(_stagingPath);
+            // Private, so a umask of 0002 cannot leave a staging directory the stager refuses as replaceable.
+            PrivateTestDirectory.Create(_stagingPath);
             string dataPath = await ServerPropertyAsync("InstanceDefaultDataPath");
             string missing = "dms1438-missing-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
             string serverPath = dataPath.StartsWith('/') ? "/var/opt/" + missing : @"C:\" + missing;
@@ -272,7 +273,7 @@ public class MssqlStagingTests
                 Path.GetTempPath(),
                 "dms1438-probe-" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))
             );
-            Directory.CreateDirectory(_stagingPath);
+            PrivateTestDirectory.Create(_stagingPath);
             string marker =
                 "dms1438_probe_cancel_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6));
             string pattern = "%" + marker + "%";

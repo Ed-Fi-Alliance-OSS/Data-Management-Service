@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -153,7 +154,8 @@ public class MssqlRestoreTests
         {
             Operation = DmsOperationId.New();
             _directory = Path.Combine(Path.GetTempPath(), "dms1438-restore-" + Operation.Value);
-            Directory.CreateDirectory(_directory);
+            // Private, so a umask of 0002 cannot leave a staging directory the stager refuses as replaceable.
+            PrivateTestDirectory.Create(_directory);
         }
 
         public DmsOperationId Operation { get; }
