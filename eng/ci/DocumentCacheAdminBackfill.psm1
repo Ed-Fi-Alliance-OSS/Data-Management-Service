@@ -368,7 +368,7 @@ function Restore-DocumentCacheAdminBackfillSource {
     if ($LASTEXITCODE -ne 0) {
         throw "After the restore, the staged build inputs still differ from those of release tag '$ReleaseTag' ($tagCommit): git diff exit $LASTEXITCODE."
     }
-    Write-Information "Staged the build inputs of $ReleaseTag ($tagCommit) over $($changed.Count) path(s). Commit them; the commit passes Assert-DocumentCacheAdminBackfillSource."
+    Write-Information "Staged the build inputs of $ReleaseTag ($tagCommit) over $($changed.Count) path(s). Commit them with no hooks (git -c core.hooksPath=/dev/null commit --no-verify), since a hook that reformats files would change them; the commit then passes Assert-DocumentCacheAdminBackfillSource."
 }
 
 <#

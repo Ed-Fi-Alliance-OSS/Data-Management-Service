@@ -250,13 +250,15 @@ A release maintainer runs it:
    git fetch origin main --tags
    git switch -c backfill/document-cache-admin-8.1.0 origin/main
    pwsh -NoProfile -Command "Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1; Restore-DocumentCacheAdminBackfillSource -ReleaseTag v8.1.0 -InformationAction Continue"
-   git commit -m "Restore the v8.1.0 build inputs for the DocumentCacheAdmin backfill"
+   git -c core.hooksPath=/dev/null commit --no-verify -m "Restore the v8.1.0 build inputs for the DocumentCacheAdmin backfill"
    git push origin backfill/document-cache-admin-8.1.0
    ```
 
    `Restore-DocumentCacheAdminBackfillSource` stages the `v8.1.0` version of every build input that
    differs, removes inputs added since, and leaves the workflows and the tool README as main has them.
    It refuses, restoring nothing, when an untracked or ignored file is in the way.
+   The commit runs no hooks, because the repository's pre-commit hook reformats staged C# files and
+   the commit must hold the tag's files exactly.
    Check that each run below names the commit you pushed.
 3. Start a dry run first:
 
