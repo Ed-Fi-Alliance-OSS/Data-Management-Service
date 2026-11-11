@@ -60,7 +60,7 @@ NuGet package was added.
 | D-7 | `dms.DataStoreIdentity.SourceIdentity` is assigned last and is the only ownership and commit marker. |
 | D-7b | Outcome protocol: each mutating command runs on a session whose server identity is captured when it opens. A lost result is settled by re-reading state, ending that session first when needed, never by assuming either outcome. |
 | D-8 | `ResolveArtifactAsync` returns a pin without contacting the server; DMS-1439 persists it; create and every retry present it and fail with `ArtifactChangedSinceCreate` unless the package resolved again equals it field by field. |
-| D-9 | PostgreSQL 18 or later, `UTF8` `template1`, `psql` major at least `MinimumPsqlMajorVersion` (18), and the server major at least the manifest's. |
+| D-9 | PostgreSQL 18 or later, `UTF8` `template0` (every staging database is created from `template0`; `template1` is not used), `psql` major at least `MinimumPsqlMajorVersion` (18), and the server major at least the manifest's. |
 | D-10, D-10b | `psql` receives the password through a temporary `0600` `PGPASSFILE` and runs `--single-transaction` with `ON_ERROR_STOP`. Its standard error is read only into a bounded buffer to extract a SQLSTATE; it is never logged, stored, or put in an exception. PostgreSQL connection strings accept a fixed key subset. |
 | D-11 | SQL Server backups must hold exactly one full backup set, with a recorded database name different from both the staging and the target name, data and log files only (at most 16), and safe logical names. Files go to the instance default paths under generated names, never to recorded paths; `REPLACE` is never used. |
 | D-12 | Exclusion runs on the target server. Each operation holds a per-name lock on a dedicated holder session (PostgreSQL session advisory lock, SQL Server session application lock on `dms-provision-target:v1:<lowercase name>`). The rename into the target, fence, unfence, and drop are issued on that holder session, so losing the session removes the ability to make them. The identity marker is written on a work session opened against the verified instance and checked against it, not on the holder. A heartbeat detects loss. One execution gate serializes commands on the holder. A rename or fence whose result is lost, or whose holder is lost while it is in doubt, is settled after the lock is released, and its category comes from what settlement proves: it is transient only when the mutation provably left nothing in place (the rename did not happen and the target name is empty; the target is ours and accepts connections), and requires inspection otherwise. A loss while a fence is being reversed keeps requiring inspection, because the reversal was issued for another failure that the loss hides. A caller's cancellation reported as a lost result still propagates after settlement. |
@@ -93,6 +93,14 @@ These were raised during review and accepted. They are reflected in the code and
 - **Visibility probe error numbers.** SQL Server on Linux answers a readable zero-byte file with `3254`, not
   `3241`/`3242`, so `3254` counts as visible. `3201` covers both a missing path and a file the server
   identity cannot read.
+- **PostgreSQL staging databases are copies of `template0`.** They were created from the default
+  `template1`, so objects an operator had added there reached the staging database and failed the exact
+  inventory check, and any session on `template1` made the create fail (`55006`). The statement is now
+  `CREATE DATABASE … TEMPLATE template0 ENCODING 'UTF8'`, with no locale clause, so the staging database takes
+  the cluster's initialization locale. Readiness and the operation-time server facts read `template0`, and
+  the probe is `Template0Encoding` (formerly `Template1Encoding`). Compatibility consequence: a cluster whose
+  `template1` is UTF-8 but whose `template0` is not, previously `Ready`, is now `NotReady`
+  (`EngineIncompatible`, `Template0Encoding`) and must be initialized again with UTF-8 encoding.
 - **`ServerRejected`** (`Permanent`) was added for an administrative command the server refuses for reasons
   other than privilege.
 - **Real-package tests** sign the feed packages with an ephemeral key and a trust policy written for it,

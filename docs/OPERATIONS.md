@@ -1565,6 +1565,7 @@ DMSPROV-<Code>: DMS data store provisioning is not ready for target provider <pr
 | `Catalog.Minimal`, `Catalog.Sample` | Each allowlisted package and its attestation are present, the attestation verifies, and the manifest matches `Compatibility`. | Place the exact package and attestation in `ArtifactDirectory`, or correct the allowlist or `Compatibility`. |
 | `TargetServer` | The server can be reached and its facts read. | Network, credentials, TLS settings. |
 | `ServerVersion`, `EngineCompatibility.<template>` | PostgreSQL 18 or later; SQL Server 2022 (16) or later; and the server's major version is at least the one each package was built on. | Upgrade the server, or use packages built for it. |
+| `Template0Encoding` | PostgreSQL: `template0`, from which every staging database is created, uses `UTF8`. `template1` is not checked or used. | Initialize the cluster again with UTF-8 encoding; see [PostgreSQL](#postgresql). |
 | `Superuser`, `CreateDatabasePrivilege`, `SignalBackendPrivilege`, `ReadAllStatsPrivilege`, `EnqueueOwnerRole` | PostgreSQL privileges; see [PostgreSQL](#postgresql). | Grant them to the administrative login. |
 | `CreateDatabasePrivilege`, `AlterAnyDatabasePrivilege`, `AlterAnyConnectionPrivilege`, `ViewServerStatePrivilege`, `FileCatalogVisibility`, `DefaultDataPath`, `DefaultLogPath` | SQL Server privileges and default file locations; see [SQL Server](#sql-server). | Grant them, or set the instance default paths. |
 | `PsqlVersion` | `Postgresql:PsqlPath` runs and reports major version 18 or later. | Install `psql` 18, or correct the path. |
@@ -1614,7 +1615,17 @@ The narrower privileges are still checked and named individually, so one startup
   membership that carries the admin, inherit, or set option; otherwise operations fail with
   `RoleStateUnsafe`.
 
-`template1` must use `UTF8` encoding.
+`template0` must use `UTF8` encoding; `template1` is not used. Every staging database is created with
+`CREATE DATABASE ... TEMPLATE template0 ENCODING 'UTF8'`, so objects added to `template1` never reach it and
+a session open on `template1` does not block it. The staging database, and the target it becomes, takes
+`template0`'s locale, which is the locale the cluster was initialized with. PostgreSQL cannot change the
+encoding of `template0` in place: a cluster whose `template0` is not UTF-8 must be initialized again with
+UTF-8 encoding.
+
+**Upgrade note.** Earlier builds of the provisioner checked and copied `template1` (probe
+`Template1Encoding`). A cluster that was `Ready` because its `template1` is UTF-8 while its `template0` is
+not becomes `NotReady` after upgrading, with `DMSPROV-EngineIncompatible` and probe `Template0Encoding`.
+Initialize such a cluster again with UTF-8 encoding. A cluster whose `template0` is UTF-8 needs no change.
 
 ### SQL Server
 

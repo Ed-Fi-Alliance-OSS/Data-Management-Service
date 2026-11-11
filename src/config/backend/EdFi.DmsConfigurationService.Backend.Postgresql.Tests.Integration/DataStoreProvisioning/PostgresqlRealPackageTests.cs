@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
@@ -24,7 +25,8 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Data
 /// from the operation's own staging database (the same artifact, another identity) takes the name before the rename and
 /// is refused untouched. With the replay held after the whole real dump, inside its open transaction, a caller
 /// cancellation and an expiry of the restore bound, both triggered by the test, roll it back and drop the staging
-/// database. A tampered package and a package for the other engine are refused before any engine call.
+/// database. A tampered package and a package for the other engine are refused before any engine call. Both template
+/// kinds provision unchanged while <c>template1</c> holds local objects and an open session (F-05).
 /// </summary>
 [Category(Category)]
 public class PostgresqlRealPackageTests
@@ -344,6 +346,117 @@ public class PostgresqlRealPackageTests
         [Test]
         public void It_leaves_no_staging_database_and_no_operation_entry() =>
             (_stagingAfter, _lane!.OperationEntries.Length).Should().Be((new DmsLiveTargetState.Absent(), 0));
+    }
+
+    /// <summary>
+    /// F-05 (D-5), end to end: <c>template1</c> holds a marker table and function, and an open session, while each
+    /// real package is created. The staging database is a copy of <c>template0</c>, so the create succeeds (and with
+    /// it the validator's exact canonical inventory) and the target holds no marker; the delete drops it. A staging
+    /// database copied from <c>template1</c> would be refused with <c>55006</c> while the session is open, or would
+    /// carry the markers into the inventory. Teardown undoes only what setup reached: it closes the session, and
+    /// removes the markers from <c>template1</c> even when another cleanup action fails, then asserts they are gone.
+    /// </summary>
+    [TestFixture(RestoreManifest.MinimalTemplateKind)]
+    [TestFixture(RestoreManifest.PopulatedTemplateKind)]
+    [NonParallelizable]
+    public class Given_template1_holds_a_local_object_and_a_connection(string templateKind)
+    {
+        private bool _template1Touched;
+        private NpgsqlConnection? _template1Session;
+        private Lane? _lane;
+        private long _markersInTemplate1;
+        private long _template1SessionsDuringCreate;
+        private DmsDataStoreCreateResult _created = null!;
+        private long _markersInTarget = -1;
+        private DmsDataStoreDeleteResult? _deleted;
+        private DmsLiveTargetState? _targetAfterDelete;
+
+        private static DmsDatabaseTemplate TemplateFor(string kind) =>
+            kind == RestoreManifest.MinimalTemplateKind
+                ? DmsDatabaseTemplate.Minimal
+                : DmsDatabaseTemplate.Sample;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(templateKind);
+            _template1Touched = true;
+            await AddTemplate1MarkersAsync();
+            _markersInTemplate1 = await ScalarInTemplate1Async(Template1MarkerCount);
+            _template1Session = await OpenTemplate1Async();
+
+            _lane = await Lane.BuildAsync(package, TemplateFor(templateKind), new LaneHooks());
+            _template1SessionsDuringCreate = await Template1SessionCountAsync();
+            _created = await _lane.CreateAsync();
+            if (_created is DmsDataStoreCreateResult.Created)
+            {
+                _markersInTarget = await new TestDatabase(_lane.Target.Value).ScalarAsync<long>(
+                    Template1MarkerCount
+                );
+                await WaitForNoSessionsOnAsync(_lane.Target.Value);
+                _deleted = await _lane.DeleteAsync();
+                _targetAfterDelete = await InspectAsync(_lane.Target);
+            }
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            try
+            {
+                try
+                {
+                    if (_lane is not null)
+                    {
+                        await _lane.DisposeAsync();
+                    }
+                }
+                finally
+                {
+                    if (_template1Session is not null)
+                    {
+                        await _template1Session.DisposeAsync();
+                    }
+                }
+            }
+            finally
+            {
+                if (_template1Touched)
+                {
+                    await RemoveTemplate1MarkersAsync();
+                    (await ScalarInTemplate1Async(Template1MarkerCount))
+                        .Should()
+                        .Be(0, "teardown removes the template1 markers");
+                }
+            }
+        }
+
+        [Test]
+        public void It_created_both_markers_in_template1() => _markersInTemplate1.Should().Be(2);
+
+        [Test]
+        public void It_held_a_template1_session_during_the_create() =>
+            _template1SessionsDuringCreate.Should().BeGreaterThanOrEqualTo(1);
+
+        [Test]
+        public void It_creates_the_target_past_the_exact_inventory_check() =>
+            _created
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Created>(
+                    "a staging database from template0 is unaffected by template1 (failure: {0} at {1})",
+                    (_created as DmsDataStoreCreateResult.Failure)?.Detail.Code,
+                    (_created as DmsDataStoreCreateResult.Failure)?.Detail.Diagnostic.Operation
+                );
+
+        [Test]
+        public void It_carries_no_template1_marker_into_the_target() => _markersInTarget.Should().Be(0);
+
+        [Test]
+        public void It_drops_the_target_on_delete()
+        {
+            _deleted.Should().BeOfType<DmsDataStoreDeleteResult.Dropped>();
+            _targetAfterDelete.Should().Be(new DmsLiveTargetState.Absent());
+        }
     }
 
     [TestFixture]

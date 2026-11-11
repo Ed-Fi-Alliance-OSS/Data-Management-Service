@@ -333,6 +333,63 @@ internal static class DmsProvisioningTestServer
     }
 
     /// <summary>Creates an empty database and, when given, replays <paramref name="script"/> into it.</summary>
+    private const string Template1MarkerTable = "dms1438_template1_marker";
+
+    private const string Template1MarkerFunction = "dms1438_template1_marker_fn";
+
+    /// <summary>
+    /// F-05: how many of the <c>template1</c> markers (a table and a function) the database a session is on holds;
+    /// 2 in a contaminated <c>template1</c>, 0 in anything created from <c>template0</c>.
+    /// </summary>
+    public const string Template1MarkerCount =
+        $"SELECT (SELECT count(*) FROM pg_catalog.pg_class WHERE relname = '{Template1MarkerTable}') + (SELECT count(*) FROM pg_catalog.pg_proc WHERE proname = '{Template1MarkerFunction}');";
+
+    /// <summary>A session on <c>template1</c>, unpooled so that closing it ends the backend.</summary>
+    public static async Task<NpgsqlConnection> OpenTemplate1Async()
+    {
+        NpgsqlConnectionStringBuilder builder = new(AdminConnectionString)
+        {
+            Database = "template1",
+            Pooling = false,
+        };
+        NpgsqlConnection connection = new(builder.ConnectionString);
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    public static async Task<long> ScalarInTemplate1Async(string sql)
+    {
+        await using NpgsqlConnection connection = await OpenTemplate1Async();
+        await using NpgsqlCommand command = new(sql, connection);
+        return (long)(await command.ExecuteScalarAsync())!;
+    }
+
+    private static async Task ExecuteInTemplate1Async(string sql)
+    {
+        await using NpgsqlConnection connection = await OpenTemplate1Async();
+        await using NpgsqlCommand command = new(sql, connection);
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>Places the markers in <c>template1</c>, removing any an earlier run left first.</summary>
+    public static async Task AddTemplate1MarkersAsync()
+    {
+        await RemoveTemplate1MarkersAsync();
+        await ExecuteInTemplate1Async(
+            $"CREATE TABLE public.{Template1MarkerTable} (id int); CREATE FUNCTION public.{Template1MarkerFunction}() RETURNS int LANGUAGE sql AS 'SELECT 1';"
+        );
+    }
+
+    public static Task RemoveTemplate1MarkersAsync() =>
+        ExecuteInTemplate1Async(
+            $"DROP FUNCTION IF EXISTS public.{Template1MarkerFunction}(); DROP TABLE IF EXISTS public.{Template1MarkerTable};"
+        );
+
+    public static Task<long> Template1SessionCountAsync() =>
+        ScalarOnServerAsync<long>(
+            "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = 'template1';"
+        );
+
     public static async Task<TestDatabase> CreateDatabaseAsync(string purpose, string? script = null)
     {
         string name = $"dms1438_{purpose}_{Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(6))}";
