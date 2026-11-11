@@ -150,14 +150,28 @@ function Get-DocumentCacheAdminBackfillSourceInput {
     'eng/docker-compose/dms-schema-environment.psm1'
     'eng/docker-compose/database-safety.psm1'
     'eng/schema-package-utility.psm1'
+    # The plugin fixtures the integration test project publishes against the packed contracts after
+    # it builds, as PackedContractFixturePlugins.targets directs.
+    'eng/fixtures'
     # Repository-wide settings: local tools, analyzer settings, and the line endings git checks
     # every other input out with.
     '.config'
     '.editorconfig'
     '.gitattributes'
-    # Read by the SDK and by MSBuild at the repository root when present. Neither exists today.
+    # Read when present, and none exists today: by the SDK and MSBuild at the repository root, and by
+    # MSBuild and NuGet in the folders above the plugin fixtures, which the projects under src never
+    # reach because src holds their own. NuGet finds its config file in any letter case.
     'global.json'
     'Directory.Build.rsp'
+    'Directory.Build.props'
+    'Directory.Build.targets'
+    'Directory.Packages.props'
+    ':(icase)nuget.config'
+    'eng/Directory.Build.rsp'
+    'eng/Directory.Build.props'
+    'eng/Directory.Build.targets'
+    'eng/Directory.Packages.props'
+    ':(icase)eng/nuget.config'
     # Packed into the tool, and allowed to differ so the package carries the current install guidance.
     ':(exclude)src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md'
 }

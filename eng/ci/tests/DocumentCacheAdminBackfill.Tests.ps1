@@ -112,20 +112,49 @@ Describe 'DocumentCacheAdminBackfill module' {
                 'eng/docker-compose/dms-schema-environment.psm1'
                 'eng/docker-compose/database-safety.psm1'
                 'eng/schema-package-utility.psm1'
+                'eng/fixtures'
                 '.config'
                 '.editorconfig'
                 '.gitattributes'
                 'global.json'
                 'Directory.Build.rsp'
+                'Directory.Build.props'
+                'Directory.Build.targets'
+                'Directory.Packages.props'
+                ':(icase)nuget.config'
+                'eng/Directory.Build.rsp'
+                'eng/Directory.Build.props'
+                'eng/Directory.Build.targets'
+                'eng/Directory.Packages.props'
+                ':(icase)eng/nuget.config'
                 ":(exclude)$script:readme"
             )
         }
 
         It 'names only paths that exist in this repository, so a misspelled input cannot leave the gate blind to it' {
-            # global.json and Directory.Build.rsp are read only when present, and are absent today.
-            foreach ($entry in Get-DocumentCacheAdminBackfillSourceInput | Where-Object { $_ -notin 'global.json', 'Directory.Build.rsp' }) {
+            # These are read only when present, and are absent today.
+            $absent = @(
+                'global.json', 'Directory.Build.rsp', 'Directory.Build.props', 'Directory.Build.targets', 'Directory.Packages.props', ':(icase)nuget.config'
+                'eng/Directory.Build.rsp', 'eng/Directory.Build.props', 'eng/Directory.Build.targets', 'eng/Directory.Packages.props', ':(icase)eng/nuget.config'
+            )
+            foreach ($entry in Get-DocumentCacheAdminBackfillSourceInput | Where-Object { $_ -notin $absent }) {
                 $path = $entry -replace '^:\(exclude\)', ''
                 Test-Path -LiteralPath (Join-Path $script:repoRoot $path) | Should -BeTrue -Because "$path is a gate input"
+            }
+        }
+
+        It 'compares every folder outside src that the integration tests'' fixture staging compiles' {
+            # The solution build runs this staging after the integration test project builds, and it
+            # publishes fixture projects from outside src.
+            $targets = Get-Content -Raw -LiteralPath (Join-Path $script:repoRoot 'src/dms/tests/EdFi.DataManagementService.Tests.Integration/PackedContractFixturePlugins.targets')
+            $outside = @(
+                [regex]::Matches($targets, '\$\(PackedContractFixtureRepositoryRoot\)(?!src/)([^/";]+/[^/";]+)') |
+                    ForEach-Object { $_.Groups[1].Value } |
+                    Sort-Object -Unique
+            )
+            $outside | Should -Not -BeNullOrEmpty
+            foreach ($folder in $outside) {
+                $folder | Should -BeIn @(Get-DocumentCacheAdminBackfillSourceInput)
             }
         }
     }
@@ -206,6 +235,22 @@ Describe 'DocumentCacheAdminBackfill module' {
         It 'refuses a change to build-dms.ps1 and names it' {
             Save-FixtureChange 'build-dms.ps1'
             { Assert-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Throw '*build-dms.ps1*'
+        }
+
+        It 'refuses <Path> once it appears, and restores the tag without it, because <Reason>' -ForEach @(
+            @{ Path = 'eng/fixtures/plugins/Acme.Fixture/Acme.Fixture.csproj'; Reason = 'the integration tests compile the plugin fixtures' }
+            @{ Path = 'Directory.Build.props'; Reason = 'MSBuild reads it above the plugin fixtures' }
+            @{ Path = 'eng/Directory.Packages.props'; Reason = 'MSBuild reads it above the plugin fixtures' }
+            @{ Path = 'NuGet.Config'; Reason = 'NuGet reads it above the plugin fixtures, in any letter case' }
+            @{ Path = 'eng/nuget.config'; Reason = 'NuGet reads it above the plugin fixtures' }
+        ) {
+            Save-FixtureChange $Path
+            { Assert-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Throw "*$Path*"
+
+            Restore-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0'
+            Test-Path -LiteralPath $Path | Should -BeFalse
+            Invoke-FixtureGit commit -q -m 'restore the build inputs of v8.1.0'
+            { Assert-DocumentCacheAdminBackfillSource -ReleaseTag 'v8.1.0' } | Should -Not -Throw
         }
 
         It 'lists only the differing inputs, never the README or a file outside the inputs' {
