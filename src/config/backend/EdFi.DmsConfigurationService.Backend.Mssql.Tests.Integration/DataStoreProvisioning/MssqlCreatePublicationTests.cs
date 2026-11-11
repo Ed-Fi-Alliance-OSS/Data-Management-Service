@@ -424,14 +424,14 @@ public class MssqlCreatePublicationTests
         }
 
         [Test]
-        public void It_ends_as_lock_lost_for_inspection_at_the_rename()
+        public void It_reports_a_rename_found_done_as_an_unassigned_identity_for_inspection()
         {
             DmsProvisioningFailure failure = FailureOf(_result);
             (failure.Code, failure.Category, failure.Diagnostic.Operation)
                 .Should()
                 .Be(
                     (
-                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCode.IdentityAssignmentFailed,
                         DmsProvisioningFailureCategory.OperatorInspectionRequired,
                         DmsDataStoreProvisioningService.RenameIntoTargetStep
                     )
