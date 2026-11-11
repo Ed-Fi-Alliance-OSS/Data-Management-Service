@@ -353,7 +353,20 @@ public sealed partial class DmsDataStoreProvisioningService
                 scope.CallerToken.ThrowIfCancellationRequested();
                 throw StepFailed(code, failed.Failure.Diagnostic);
             case DmsCommandOutcome.Unknown:
-                throw new DmsProvisioningFailedException(scope.LockLostFailure());
+                // An engine may report the caller's cancellation of a dispatched fence as an unknown outcome. The
+                // cancellation wins: it leaves the fence in doubt in the ledger, so the delete settles it after the lock
+                // is released and then rethrows (6.10, AC 1).
+                scope.CallerToken.ThrowIfCancellationRequested();
+
+                // The fence's result was lost while the holder still holds the lock (loss would have ended the call
+                // above): the lock is given up, and what the fence did is read after it is released. Until then the
+                // outcome is unknown, which settlement reclassifies from what it reads.
+                DmsProvisioningFailure inDoubt = DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.OutcomeUnknown,
+                    DmsProvisioningDiagnostic.ForOperation(FenceStep)
+                );
+                deletion.RecordInDoubtFailure(inDoubt);
+                throw new DmsProvisioningFailedException(inDoubt);
             default:
                 throw new InvalidOperationException("Unknown fence outcome.");
         }
@@ -584,6 +597,7 @@ public sealed partial class DmsDataStoreProvisioningService
             );
         }
 
+        result = ReclassifyInDoubtFence(deletion, operation, state, ours, result);
         bool fencedOrUnknown = state is null || (ours && state is DmsLiveTargetState.Fenced);
         if (!fencedOrUnknown)
         {
@@ -606,6 +620,69 @@ public sealed partial class DmsDataStoreProvisioningService
                 )
             )
             : result;
+    }
+
+    /// <summary>
+    /// Reclassifies, from what settlement read, the one failure whose category the fence in doubt alone decided
+    /// (<see cref="Deletion.InDoubtFailure"/>, compared by reference); any other result is returned as it is. A retry is
+    /// allowed only when the read shows our instance online and accepting connections, so the fence left nothing in
+    /// place: the lost result of a fence the holder still held is <c>Unknown</c>, a declared loss stays
+    /// <c>LockLost</c>, both transient. A lost result over a fence found standing is
+    /// <c>ExclusiveAccessNotEstablished</c>, and over a name that no longer holds our instance <c>InstanceChanged</c>,
+    /// both for inspection; a declared loss over them keeps <c>LockLost</c> for inspection. An unread name, or our
+    /// instance in another state, keeps the failure as it is. The fenced-target residue is decided afterwards, from
+    /// the same read.
+    /// </summary>
+    private DmsDataStoreDeleteResult? ReclassifyInDoubtFence(
+        Deletion deletion,
+        DmsOperationId operation,
+        DmsLiveTargetState? state,
+        bool ours,
+        DmsDataStoreDeleteResult? result
+    )
+    {
+        if (
+            result is not DmsDataStoreDeleteResult.Failure failure
+            || !ReferenceEquals(failure.Detail, deletion.InDoubtFailure)
+        )
+        {
+            return result;
+        }
+
+        bool outcomeLost = failure.Detail.Code == DmsProvisioningFailureCode.OutcomeUnknown;
+        DmsProvisioningFailure? settled = state switch
+        {
+            null => null,
+            DmsLiveTargetState.Present { State: DmsDatabaseState.Online } when ours => outcomeLost
+                ? DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.Unknown,
+                    DmsProvisioningDiagnostic.ForOperation(FenceStep)
+                )
+                : DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.LockLost,
+                    DmsProvisioningFailureCategory.Transient,
+                    failure.Detail.Diagnostic
+                ),
+            DmsLiveTargetState.Fenced when ours && outcomeLost => DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                DmsProvisioningDiagnostic.ForOperation(FenceStep)
+            ),
+            _ when !ours && outcomeLost => DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.InstanceChanged,
+                DmsProvisioningDiagnostic.ForOperation(ResolveDeletionStep)
+            ),
+            _ => null,
+        };
+        return settled is null
+            ? result
+            : Fail(
+                static (detail, report) => new DmsDataStoreDeleteResult.Failure(detail, report),
+                operation,
+                DeleteOperationName,
+                settled,
+                failure.Cleanup
+            );
     }
 
     /// <summary>
@@ -709,6 +786,9 @@ public sealed partial class DmsDataStoreProvisioningService
 
         public bool IsFenced => State == DeletionState.Fenced;
 
+        /// <summary>The failure the fence in doubt alone made an inspection failure, for settlement to reclassify.</summary>
+        public DmsProvisioningFailure? InDoubtFailure { get; private set; }
+
         public void FenceDispatched(DmsInstanceIdentity instance, DmsServerSessionId holderSession)
         {
             Instance = instance;
@@ -778,12 +858,16 @@ public sealed partial class DmsDataStoreProvisioningService
         public void Displaced() => State = DeletionState.Displaced;
 
         /// <summary>
-        /// A delete does not reclassify its failures from settlement yet; whatever the ledger left in doubt keeps the
-        /// category it was given.
+        /// Kept only while the fence is in doubt. A reversal or a drop in doubt is never kept: a reversal is issued
+        /// because another failure or a cancellation ended the delete, whose reason a loss during it would hide, and a
+        /// drop in doubt is settled by its own rules.
         /// </summary>
         public void RecordInDoubtFailure(DmsProvisioningFailure failure)
         {
-            // Nothing is kept: SettleDeletionAsync reads state only to report what stands.
+            if (State == DeletionState.FenceInDoubt)
+            {
+                InDoubtFailure = failure;
+            }
         }
 
         private void Dispatch(DeletionState inDoubt)

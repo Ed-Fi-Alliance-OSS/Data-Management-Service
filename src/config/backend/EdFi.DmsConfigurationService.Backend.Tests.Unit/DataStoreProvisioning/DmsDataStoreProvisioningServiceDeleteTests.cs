@@ -1015,26 +1015,193 @@ public class DmsDataStoreProvisioningServiceDeleteTests
                 .Be((1, 1, 1, 1));
     }
 
+    /// <summary>
+    /// F-03: a fence whose result is lost while the holder still holds the lock is settled after the lock is released,
+    /// and only what the settlement read shows decides the category. Our instance online and accepting connections is a
+    /// retry (<c>Unknown</c>, transient); a fence found standing is <c>ExclusiveAccessNotEstablished</c> with the fenced
+    /// target reported; a name that no longer holds our instance is <c>InstanceChanged</c>; an unread name, or our
+    /// instance in another state, stays <c>OutcomeUnknown</c>.
+    /// </summary>
     [TestFixture]
     public class Given_the_fence_outcome_is_unknown
     {
         private static async Task<(OwnedTarget, DmsDataStoreDeleteResult)> FenceInDoubtAsync(
-            DmsLiveTargetState after
+            DmsLiveTargetState after,
+            bool settlementReadFails = false,
+            bool holderGone = true
         )
         {
             OwnedTarget target = new();
+            bool fenced = false;
             target.Harness.Engine.OnFence = (_, _, _, _) =>
             {
+                fenced = true;
                 target.State = after;
                 return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Unknown(Session));
             };
+            target.Harness.Engine.OnInspectByName = (_, _) =>
+                fenced && settlementReadFails
+                    ? throw new InvalidOperationException("The target name could not be read.")
+                    : Task.FromResult(target.State);
+            target.Harness.Engine.OnTerminateSession = (session, _, _) =>
+                Task.FromResult<DmsSessionTermination>(
+                    session == Session && !holderGone
+                        ? new DmsSessionTermination.NotTerminated(DmsSessionTerminationFailure.TimedOut)
+                        : new DmsSessionTermination.Terminated()
+                );
             return (target, await target.DeleteAsync());
         }
 
         [Test]
-        public async Task It_reports_lock_lost_for_inspection_and_the_fence_when_it_stands()
+        public async Task It_allows_a_retry_when_the_target_still_accepts_connections()
         {
             (OwnedTarget target, DmsDataStoreDeleteResult result) = await FenceInDoubtAsync(
+                new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online)
+            );
+            Verdict(result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.Unknown,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.FenceStep
+                    )
+                );
+            ResidueOf(result).Should().BeEmpty();
+            target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence, .. _settlementReads]));
+        }
+
+        [Test]
+        public async Task It_reports_a_fence_found_standing_for_inspection_with_the_fenced_target()
+        {
+            (OwnedTarget target, DmsDataStoreDeleteResult result) = await FenceInDoubtAsync(
+                new DmsLiveTargetState.Fenced(_instance)
+            );
+            Verdict(result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ExclusiveAccessNotEstablished,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.FenceStep
+                    )
+                );
+            ResidueOf(result).Should().Equal(_fencedResidue);
+            target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence, .. _settlementReads]));
+        }
+
+        [Test]
+        public async Task It_reports_another_instance_or_an_empty_name_as_an_instance_change()
+        {
+            foreach (
+                DmsLiveTargetState after in new DmsLiveTargetState[]
+                {
+                    new DmsLiveTargetState.Present(_otherInstance, DmsDatabaseState.Online),
+                    new DmsLiveTargetState.Absent(),
+                }
+            )
+            {
+                (_, DmsDataStoreDeleteResult result) = await FenceInDoubtAsync(after);
+                Verdict(result)
+                    .Should()
+                    .Be(
+                        (
+                            DmsProvisioningFailureCode.InstanceChanged,
+                            DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                            DmsDataStoreProvisioningService.ResolveDeletionStep
+                        )
+                    );
+                ResidueOf(result).Should().BeEmpty();
+            }
+        }
+
+        [Test]
+        public async Task It_keeps_the_outcome_unknown_with_the_target_reported_when_nothing_could_be_read()
+        {
+            (_, DmsDataStoreDeleteResult unreadable) = await FenceInDoubtAsync(
+                new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online),
+                settlementReadFails: true
+            );
+            (_, DmsDataStoreDeleteResult holderUnproven) = await FenceInDoubtAsync(
+                new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online),
+                holderGone: false
+            );
+            foreach (DmsDataStoreDeleteResult result in new[] { unreadable, holderUnproven })
+            {
+                Verdict(result)
+                    .Should()
+                    .Be(
+                        (
+                            DmsProvisioningFailureCode.OutcomeUnknown,
+                            DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                            DmsDataStoreProvisioningService.FenceStep
+                        )
+                    );
+                ResidueOf(result).Should().Equal(_fencedResidue);
+            }
+        }
+
+        [Test]
+        public async Task It_keeps_the_outcome_unknown_when_our_instance_is_not_online()
+        {
+            (_, DmsDataStoreDeleteResult result) = await FenceInDoubtAsync(
+                new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Other)
+            );
+            Verdict(result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.OutcomeUnknown,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.FenceStep
+                    )
+                );
+        }
+    }
+
+    /// <summary>
+    /// F-03: the holder is declared lost while the fence it carried is in doubt. The loss is real, so the code stays
+    /// <c>LockLost</c>; its category follows settlement: transient only when the read shows our instance online, an
+    /// inspection failure with the fenced target reported when the fence stands, and an inspection failure when the
+    /// name no longer holds our instance.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_is_lost_while_the_fence_is_in_doubt
+    {
+        private static async Task<DmsDataStoreDeleteResult> LostInDoubtAsync(DmsLiveTargetState after)
+        {
+            OwnedTarget target = new();
+            target.Harness.Engine.OnFence = (_, _, _, _) =>
+            {
+                target.Harness.OnlyHolder.Lose();
+                target.State = after;
+                return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Unknown(Session));
+            };
+            return await target.DeleteAsync();
+        }
+
+        [Test]
+        public async Task It_reports_loss_as_transient_when_the_target_still_accepts_connections()
+        {
+            DmsDataStoreDeleteResult result = await LostInDoubtAsync(
+                new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online)
+            );
+            Verdict(result)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsDataStoreProvisioningService.FenceStep
+                    )
+                );
+            ResidueOf(result).Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_keeps_loss_an_inspection_failure_with_the_fenced_target_when_the_fence_stands()
+        {
+            DmsDataStoreDeleteResult result = await LostInDoubtAsync(
                 new DmsLiveTargetState.Fenced(_instance)
             );
             Verdict(result)
@@ -1047,18 +1214,14 @@ public class DmsDataStoreProvisioningServiceDeleteTests
                     )
                 );
             ResidueOf(result).Should().Equal(_fencedResidue);
-            target.Members.Should().Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence, .. _settlementReads]));
         }
 
         [Test]
-        public async Task It_reports_no_fence_when_the_target_still_accepts_connections_but_still_requires_inspection()
+        public async Task It_keeps_loss_an_inspection_failure_when_the_name_no_longer_holds_our_instance()
         {
-            (_, DmsDataStoreDeleteResult result) = await FenceInDoubtAsync(
-                new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online)
+            DmsDataStoreDeleteResult result = await LostInDoubtAsync(
+                new DmsLiveTargetState.Present(_otherInstance, DmsDatabaseState.Online)
             );
-
-            // D-12: once a selected-target mutation was sent, loss is never transient, even when the read
-            // afterwards shows nothing standing.
             Verdict(result)
                 .Should()
                 .Be(
@@ -1068,7 +1231,104 @@ public class DmsDataStoreProvisioningServiceDeleteTests
                         DmsDataStoreProvisioningService.FenceStep
                     )
                 );
-            ResidueOf(result).Should().BeEmpty();
+        }
+    }
+
+    /// <summary>
+    /// F-03 independence: the reversal of a fence is issued because another failure ended the delete, here the fenced
+    /// identity re-read finding another identity (<c>TargetUnowned</c>). Whatever happens to that reversal, the delete
+    /// keeps requiring inspection even when the settlement read shows our instance online again: a loss during the
+    /// reversal hides the original reason and stays <c>LockLost</c> for inspection, and an unknown reversal keeps
+    /// <c>TargetUnowned</c>. Neither is ever reclassified as transient.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_fence_reversal_after_another_failure_ends_in_doubt
+    {
+        private static async Task<DmsDataStoreDeleteResult> UnownedThenReversalAsync(bool loseTheHolder)
+        {
+            OwnedTarget target = new();
+            target.IdentityOnRead(2, () => new DmsIdentityRead.Found(Guid.NewGuid()));
+            target.Harness.Engine.OnUnfence = (_, _, _) =>
+            {
+                if (loseTheHolder)
+                {
+                    target.Harness.OnlyHolder.Lose();
+                }
+
+                target.State = new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online);
+                return Task.FromResult<DmsCommandOutcome>(new DmsCommandOutcome.Unknown(Session));
+            };
+            return await target.DeleteAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_a_loss_during_the_reversal_an_inspection_failure() =>
+            Verdict(await UnownedThenReversalAsync(loseTheHolder: true))
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.LockLost,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.UnfenceStep
+                    )
+                );
+
+        [Test]
+        public async Task It_keeps_the_unowned_target_when_the_reversal_outcome_is_unknown() =>
+            Verdict(await UnownedThenReversalAsync(loseTheHolder: false))
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnowned,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.VerifyFencedStep
+                    )
+                );
+    }
+
+    /// <summary>
+    /// F-03: an engine may report the caller's cancellation of a dispatched fence as an unknown outcome. The
+    /// cancellation wins over any reclassification: the fence in doubt is settled after the lock is released (the
+    /// holder proven gone, the name read) before the caller receives <see cref="OperationCanceledException"/>, and
+    /// nothing is dropped.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_caller_cancels_while_the_fence_is_dispatched
+    {
+        private static async Task<(OwnedTarget Target, Exception? Outcome)> CancelledInDoubtAsync(
+            DmsLiveTargetState after
+        )
+        {
+            OwnedTarget target = new();
+            using CancellationTokenSource caller = new();
+            target.Harness.Engine.OnFence = async (_, _, _, _) =>
+            {
+                await caller.CancelAsync();
+                target.State = after;
+                return new DmsCommandOutcome.Unknown(Session);
+            };
+            Exception? outcome = await Record.ExceptionAsync(() => target.DeleteAsync(caller.Token));
+            return (target, outcome);
+        }
+
+        [Test]
+        public async Task It_propagates_the_cancellation_after_settling_the_fence()
+        {
+            foreach (
+                DmsLiveTargetState after in new DmsLiveTargetState[]
+                {
+                    new DmsLiveTargetState.Present(_instance, DmsDatabaseState.Online),
+                    new DmsLiveTargetState.Fenced(_instance),
+                }
+            )
+            {
+                (OwnedTarget target, Exception? outcome) = await CancelledInDoubtAsync(after);
+                outcome.Should().BeAssignableTo<OperationCanceledException>();
+                target.Releases.Should().Be(1);
+                target
+                    .Members.Should()
+                    .Equal(Seq([.. _owned, SpyDmsTargetEngine.Fence, .. _settlementReads]));
+            }
         }
     }
 

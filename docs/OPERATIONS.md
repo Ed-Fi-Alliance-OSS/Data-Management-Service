@@ -1678,7 +1678,7 @@ server message, or `psql` output. The category tells the caller whether to retry
 | `ProtectedTarget`, `AdminPrivilegeMissing`, `RoleStateUnsafe`, `EngineIncompatible`, `StagingNotVisible`, `ServerRejected` | `Permanent` |
 | `SecretResolutionFailed`, `ServerUnavailable`, `LockTimeout`, `LockUnavailable`, `TimedOut`, `StagingFailed`, `StagingNameCollision`, `Unknown` | `Transient` |
 | `RestoreFailed` | `Permanent`; `Transient` when the restore is known to have rolled back for a reason that can clear on its own: a lost connection, a PostgreSQL serialization failure, deadlock, unavailable lock, or temporary resource shortage, or a SQL Server deadlock victim (error 1205) or temporary memory shortage (error 701) |
-| `ExclusiveAccessNotEstablished`, `LockLost`, `DropFailed` | `Transient` before anything on the target changed; `OperatorInspectionRequired` after |
+| `ExclusiveAccessNotEstablished`, `LockLost`, `DropFailed` | `Transient` before anything on the target changed, or when the operation proved afterwards that its uncertain rename or fence left nothing in place (the rename did not happen and nothing holds the target name; the target is ours and accepts connections); `OperatorInspectionRequired` otherwise |
 | `ArtifactMissing`, `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
 | `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
 

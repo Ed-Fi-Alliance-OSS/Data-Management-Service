@@ -43,7 +43,8 @@ public enum DmsProvisioningFailureCode
     // Transient before any mutation; OperatorInspectionRequired after a fence or an unknown outcome
     ExclusiveAccessNotEstablished,
 
-    // Transient when no selected-target mutation was issued on the holder; OperatorInspectionRequired otherwise
+    // Transient when no selected-target mutation was issued on the holder, or when settlement proved the rename or
+    // fence in doubt left nothing in place; OperatorInspectionRequired otherwise
     LockLost,
 
     // OperatorInspectionRequired (artifact)
