@@ -476,8 +476,6 @@ jobs:
             throw "sbom-tool generate failed with exit code $LASTEXITCODE."
           }
 
-          cp _manifest/spdx_2.2/manifest.spdx.* .
-
       - name: Upload DocumentCacheAdmin SBOM
         if: success()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
