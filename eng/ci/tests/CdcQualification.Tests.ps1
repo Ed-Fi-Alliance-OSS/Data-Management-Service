@@ -223,6 +223,50 @@ exit $LASTEXITCODE
     }
 }
 
+Describe 'CDC qualification Kafka pin runner boundary' {
+    It 'reports mismatched pins as an actionable prerequisite failure before starting tools or suites' {
+        $harness = Join-Path $TestDrive 'pin-runner-harness.ps1'
+        $destination = Join-Path $TestDrive 'pin-runner-evidence'
+        $compose = Join-Path $TestDrive 'mismatched-broker.yml'
+        $invocations = Join-Path $TestDrive 'tool-invocations.txt'
+        $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
+        Set-Content $compose ("services:`n  kafka:`n    image: apache/kafka:other@sha256:" + ('a' * 64))
+        # Run the real entry point and image helper in a child process because the runner exits.
+        # Override only the helper's Compose input; leave the checkout and image authority intact.
+        Set-Content -LiteralPath $harness -Value @'
+param([string] $Runner, [string] $Destination, [string] $ComposeFile, [string] $Invocations)
+$ErrorActionPreference = 'Stop'
+$repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Runner) '../..'))
+$qualified = Get-Content (Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
+$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
+$env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'fixture-postgres:latest'
+$PSDefaultParameterValues['Get-CdcQualificationKafkaImage.ps1:ComposeFile'] = $ComposeFile
+$global:invocations = $Invocations
+function global:docker {
+    Add-Content $global:invocations 'docker'
+    throw 'Docker must not start after a pin mismatch.'
+}
+function global:dotnet {
+    Add-Content $global:invocations 'dotnet'
+    throw 'The test suite must not start after a pin mismatch.'
+}
+& $Runner -Lane Postgresql -Suite RecordSize -ResultsDirectory $Destination -PullImages
+exit $LASTEXITCODE
+'@
+        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination -ComposeFile $compose -Invocations $invocations 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 1
+        $reason = 'EnvironmentUnavailable: CDC qualification requires matching digest-pinned Apache Kafka images in Compose and CdcComposeBrokerSizeDeployment.BrokerImage.'
+        $report = Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $report.Count | Should -Be 1
+        $report[0].Name | Should -Be 'prerequisites-or-runner'
+        $report[0].Status | Should -Be 'EnvironmentUnavailable'
+        $report[0].Reason | Should -Be $reason
+        $report[0].Total | Should -Be 0
+        $output | Should -Match ([regex]::Escape($reason))
+        Test-Path $invocations | Should -BeFalse
+    }
+}
+
 Describe 'CDC qualification result boundary' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
@@ -2554,7 +2598,7 @@ Describe 'CDC qualification Kafka image' {
         Set-Content $source "internal const string BrokerImage = `"$image`";"
         foreach ($candidate in @('', 'apache/kafka:latest', ('apache/kafka:other@sha256:' + ('a' * 64)))) {
             Set-Content $compose "services:`n  kafka:`n    image: $candidate"
-            { & $script -ComposeFile $compose -BrokerSourceFile $source } | Should -Throw '*matching digest-pinned Apache Kafka*'
+            { & $script -ComposeFile $compose -BrokerSourceFile $source } | Should -Throw 'EnvironmentUnavailable:*matching digest-pinned Apache Kafka*'
         }
         Set-Content $compose "services:`n  kafka:`n    image: $image"
         (& $script -ComposeFile $compose -BrokerSourceFile $source) | Should -Be $image
