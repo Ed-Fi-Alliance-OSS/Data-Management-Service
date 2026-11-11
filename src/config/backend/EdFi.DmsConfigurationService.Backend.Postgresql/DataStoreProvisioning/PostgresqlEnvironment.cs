@@ -26,12 +26,12 @@ internal enum PostgresqlEnqueueOwnerState
 
 /// <summary>The server facts readiness judges (7.3 item 4), read on one maintenance connection.</summary>
 /// <param name="ServerVersionNum"><c>server_version_num</c>.</param>
-/// <param name="Template1Encoding">The encoding of <c>template1</c>, or null when it does not exist.</param>
+/// <param name="Template0Encoding">The encoding of <c>template0</c>, which every staging database copies, or null when it does not exist.</param>
 /// <param name="Privileges">The admin role's attributes and predefined-role privileges, or null when the server is below the floor and they were not read.</param>
 /// <param name="GssAuthenticated">Whether the server authenticated the reading session through GSSAPI (<c>pg_stat_gssapi</c>).</param>
 internal sealed record PostgresqlEnvironmentFacts(
     int ServerVersionNum,
-    string? Template1Encoding,
+    string? Template0Encoding,
     PostgresqlAdminPrivileges? Privileges,
     bool GssAuthenticated = false
 );
@@ -64,8 +64,8 @@ internal static class PostgresqlEnvironment
     /// <summary>D-9: <c>server_version_num &gt;= 180000</c>.</summary>
     public const string ServerVersionProbe = "ServerVersion";
 
-    /// <summary>D-9: <c>template1</c> is <c>UTF8</c>.</summary>
-    public const string Template1EncodingProbe = "Template1Encoding";
+    /// <summary>D-9, D-5: <c>template0</c>, the template of every staging database, is <c>UTF8</c>; <c>template1</c> is not read.</summary>
+    public const string Template0EncodingProbe = "Template0Encoding";
 
     /// <summary>
     /// The artifact's replay requires a superuser: it ends with <c>ALTER FUNCTION … OWNER TO
@@ -139,7 +139,7 @@ internal static class PostgresqlEnvironment
         "COALESCE((SELECT g.gss_authenticated FROM pg_catalog.pg_stat_gssapi g WHERE g.pid = pg_catalog.pg_backend_pid()), false)";
 
     private const string ServerQuery =
-        "SELECT pg_catalog.current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(d.encoding) FROM pg_catalog.pg_database d WHERE d.datname = 'template1'), "
+        "SELECT pg_catalog.current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(d.encoding) FROM pg_catalog.pg_database d WHERE d.datname = 'template0'), "
         + GssAuthenticatedExpression
         + ";";
 
@@ -183,7 +183,7 @@ internal static class PostgresqlEnvironment
     )
     {
         int serverVersionNum;
-        string? template1Encoding;
+        string? template0Encoding;
         bool gssAuthenticated;
         await using (NpgsqlCommand command = new(ServerQuery, connection))
         await using (NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken))
@@ -194,7 +194,7 @@ internal static class PostgresqlEnvironment
             }
 
             serverVersionNum = await reader.GetFieldValueAsync<int>(0, cancellationToken);
-            template1Encoding = await reader.IsDBNullAsync(1, cancellationToken)
+            template0Encoding = await reader.IsDBNullAsync(1, cancellationToken)
                 ? null
                 : await reader.GetFieldValueAsync<string>(1, cancellationToken);
             gssAuthenticated = await reader.GetFieldValueAsync<bool>(2, cancellationToken);
@@ -204,7 +204,7 @@ internal static class PostgresqlEnvironment
         {
             return new PostgresqlEnvironmentFacts(
                 serverVersionNum,
-                template1Encoding,
+                template0Encoding,
                 null,
                 gssAuthenticated
             );
@@ -231,7 +231,7 @@ internal static class PostgresqlEnvironment
         };
         return new PostgresqlEnvironmentFacts(
             serverVersionNum,
-            template1Encoding,
+            template0Encoding,
             new PostgresqlAdminPrivileges(
                 await privileges.GetFieldValueAsync<bool>(0, cancellationToken),
                 await privileges.GetFieldValueAsync<bool>(1, cancellationToken),
@@ -273,9 +273,9 @@ internal static class PostgresqlEnvironment
             reasons.Add(Reason(DmsProvisioningFailureCode.EngineIncompatible, ServerVersionProbe));
         }
 
-        if (!string.Equals(facts.Template1Encoding, RequiredEncoding, StringComparison.Ordinal))
+        if (!string.Equals(facts.Template0Encoding, RequiredEncoding, StringComparison.Ordinal))
         {
-            reasons.Add(Reason(DmsProvisioningFailureCode.EngineIncompatible, Template1EncodingProbe));
+            reasons.Add(Reason(DmsProvisioningFailureCode.EngineIncompatible, Template0EncodingProbe));
         }
 
         if (facts.GssAuthenticated)

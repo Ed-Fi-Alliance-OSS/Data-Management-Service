@@ -99,6 +99,99 @@ public class PostgresqlEnvironmentTests
     }
 
     /// <summary>
+    /// F-05 (D-5): readiness and the operation-time server facts read <c>template0</c>, the template of every
+    /// staging database, and never <c>template1</c>. With <c>template1</c> renamed aside (a reversible stand-in
+    /// for a <c>template1</c> that is not <c>UTF8</c>), the lane admin still passes every server probe and the
+    /// facts report <c>template0</c>'s <c>UTF8</c>. Teardown renames it back and asserts it is a template again;
+    /// setup first restores one left aside by an interrupted run. While it is aside, nothing on the server can
+    /// create a database from the default template, so the fixture runs alone.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_template1_is_absent
+    {
+        private const string AsidePrefix = "dms1438_template1_aside_";
+
+        private readonly string _aside =
+            AsidePrefix + Convert.ToHexStringLower(Guid.NewGuid().ToByteArray()[..6]);
+        private bool _template1Aside;
+        private DmsEngineEnvironment _environment = null!;
+        private DmsServerFacts _facts = null!;
+
+        private static Task<long> DatabaseCountAsync(string name) =>
+            ScalarOnServerAsync<long>(
+                "SELECT count(*) FROM pg_catalog.pg_database WHERE datname = @name;",
+                ("name", name)
+            );
+
+        private static async Task RenameAsync(string from, string to)
+        {
+            await ExecuteOnServerAsync(
+                $"ALTER DATABASE {PostgresqlIdentifiers.Quote(from)} RENAME TO {PostgresqlIdentifiers.Quote(to)};"
+            );
+        }
+
+        /// <summary>An interrupted run can leave <c>template1</c> under an aside name; it is renamed back first.</summary>
+        private static async Task RestoreLeftAsideAsync()
+        {
+            if (await DatabaseCountAsync("template1") == 1)
+            {
+                return;
+            }
+
+            string leftAside = await ScalarOnServerAsync<string>(
+                "SELECT datname FROM pg_catalog.pg_database WHERE datname LIKE @prefix ORDER BY oid LIMIT 1;",
+                ("prefix", AsidePrefix + "%")
+            );
+            await RenameAsync(leftAside, "template1");
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            await RequireSuperuserOrSkipAsync();
+            await EnsureEnqueueOwnerRoleAsync();
+            await RestoreLeftAsideAsync();
+            await WaitForNoSessionsOnAsync("template1");
+            await RenameAsync("template1", _aside);
+            _template1Aside = await DatabaseCountAsync("template1") == 0;
+            try
+            {
+                _environment = await Engine().ValidateEnvironmentAsync(default);
+                _facts = await Engine().ReadServerFactsAsync(default);
+            }
+            finally
+            {
+                await RenameAsync(_aside, "template1");
+            }
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            await RestoreLeftAsideAsync();
+            (
+                await ScalarOnServerAsync<bool>(
+                    "SELECT datistemplate FROM pg_catalog.pg_database WHERE datname = 'template1';"
+                )
+            )
+                .Should()
+                .BeTrue("teardown leaves template1 in place as a template");
+        }
+
+        [Test]
+        public void It_read_the_server_with_template1_aside() => _template1Aside.Should().BeTrue();
+
+        [Test]
+        public void It_passes_every_server_probe() => ServerReasonsOf(_environment).Should().BeEmpty();
+
+        [Test]
+        public void It_reports_the_template0_encoding_in_the_server_facts() =>
+            _facts.ServerEncoding.Should().Be("UTF8");
+    }
+
+    /// <summary>
     /// Review P2: this process names a client certificate in <c>PGSSLCERT</c>, which Npgsql would send and the replay
     /// cannot, so the lane admin, otherwise passing every server probe, is <c>NotReady</c> under <c>ClientCertificate</c>.
     /// The variable is process-wide, so the fixture runs alone and restores it.

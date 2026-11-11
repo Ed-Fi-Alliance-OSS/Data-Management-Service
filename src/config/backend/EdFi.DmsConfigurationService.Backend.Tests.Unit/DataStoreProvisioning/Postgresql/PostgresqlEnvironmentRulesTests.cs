@@ -31,8 +31,8 @@ public class PostgresqlEnvironmentRulesTests
     private static PostgresqlEnvironmentFacts Facts(
         PostgresqlAdminPrivileges? privileges,
         int serverVersionNum = 180006,
-        string? template1Encoding = "UTF8"
-    ) => new(serverVersionNum, template1Encoding, privileges);
+        string? template0Encoding = "UTF8"
+    ) => new(serverVersionNum, template0Encoding, privileges);
 
     private static DmsReadinessReason Reason(
         DmsProvisioningFailureCode code,
@@ -59,7 +59,7 @@ public class PostgresqlEnvironmentRulesTests
         private IReadOnlyList<DmsReadinessReason> _nothingGranted = null!;
         private IReadOnlyList<DmsReadinessReason> _belowFloor = null!;
         private IReadOnlyList<DmsReadinessReason> _latin1 = null!;
-        private IReadOnlyList<DmsReadinessReason> _noTemplate1 = null!;
+        private IReadOnlyList<DmsReadinessReason> _noTemplate0 = null!;
 
         [SetUp]
         public void Setup()
@@ -83,8 +83,8 @@ public class PostgresqlEnvironmentRulesTests
                 Facts(Privileges(createDatabase: false, signalBackend: false, readAllStats: false))
             );
             _belowFloor = Operational(Facts(null, serverVersionNum: 179999));
-            _latin1 = Operational(Facts(Privileges(), template1Encoding: "LATIN1"));
-            _noTemplate1 = Operational(Facts(Privileges(), template1Encoding: null));
+            _latin1 = Operational(Facts(Privileges(), template0Encoding: "LATIN1"));
+            _noTemplate0 = Operational(Facts(Privileges(), template0Encoding: null));
         }
 
         [Test]
@@ -150,21 +150,26 @@ public class PostgresqlEnvironmentRulesTests
                 );
 
         [Test]
-        public void It_refuses_a_template1_that_is_not_utf8_or_missing() =>
-            (_latin1.Single(), _noTemplate1.Single())
+        public void It_refuses_a_template0_that_is_not_utf8_or_missing() =>
+            (_latin1.Single(), _noTemplate0.Single())
                 .Should()
                 .Be(
                     (
                         Reason(
                             DmsProvisioningFailureCode.EngineIncompatible,
-                            PostgresqlEnvironment.Template1EncodingProbe
+                            PostgresqlEnvironment.Template0EncodingProbe
                         ),
                         Reason(
                             DmsProvisioningFailureCode.EngineIncompatible,
-                            PostgresqlEnvironment.Template1EncodingProbe
+                            PostgresqlEnvironment.Template0EncodingProbe
                         )
                     )
                 );
+
+        /// <summary>D-5b: the probe name is operator-visible in the <c>DMSPROV-</c> readiness line.</summary>
+        [Test]
+        public void It_names_the_encoding_probe_after_template0() =>
+            PostgresqlEnvironment.Template0EncodingProbe.Should().Be("Template0Encoding");
     }
 
     [TestFixture]

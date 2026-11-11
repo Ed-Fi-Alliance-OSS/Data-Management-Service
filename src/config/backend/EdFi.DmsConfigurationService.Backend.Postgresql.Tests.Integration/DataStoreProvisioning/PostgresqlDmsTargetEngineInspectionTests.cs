@@ -29,7 +29,7 @@ public class PostgresqlDmsTargetEngineInspectionTests
         private DmsServerFacts _facts = null!;
         private string _serverVersion = string.Empty;
         private int _serverVersionNum;
-        private string _template1Encoding = string.Empty;
+        private string _template0Encoding = string.Empty;
         private DateTime _serverNow;
 
         [OneTimeSetUp]
@@ -41,8 +41,8 @@ public class PostgresqlDmsTargetEngineInspectionTests
             _serverVersionNum = await ScalarOnServerAsync<int>(
                 "SELECT current_setting('server_version_num')::int;"
             );
-            _template1Encoding = await ScalarOnServerAsync<string>(
-                "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'template1';"
+            _template0Encoding = await ScalarOnServerAsync<string>(
+                "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'template0';"
             );
             _serverNow = await ScalarOnServerAsync<DateTime>("SELECT now();");
         }
@@ -55,8 +55,8 @@ public class PostgresqlDmsTargetEngineInspectionTests
             _facts.MajorVersion.Should().Be(_serverVersionNum / 10000);
 
         [Test]
-        public void It_reports_the_template1_encoding() =>
-            _facts.ServerEncoding.Should().Be(_template1Encoding);
+        public void It_reports_the_template0_encoding() =>
+            _facts.ServerEncoding.Should().Be(_template0Encoding);
 
         [Test]
         public void It_reports_no_default_paths() =>

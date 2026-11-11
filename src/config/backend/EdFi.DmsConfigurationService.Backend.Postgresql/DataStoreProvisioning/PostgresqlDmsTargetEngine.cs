@@ -42,7 +42,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     public const string ReadTargetFactsOperation = "ReadTargetFacts";
 
     private const string ServerFactsQuery =
-        "SELECT current_setting('server_version'), current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname = 'template1'), pg_catalog.now();";
+        "SELECT current_setting('server_version'), current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname = 'template0'), pg_catalog.now();";
 
     private const string InspectQuery =
         "SELECT d.oid, d.datistemplate, d.datallowconn, pg_catalog.shobj_description(d.oid, 'pg_database') FROM pg_catalog.pg_database d WHERE d.datname = @name;";

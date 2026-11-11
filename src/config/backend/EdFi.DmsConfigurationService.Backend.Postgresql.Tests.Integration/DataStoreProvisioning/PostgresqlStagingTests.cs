@@ -130,6 +130,135 @@ public class PostgresqlStagingTests
             _droppedAgain.Should().Be(new DmsCommandOutcome.Succeeded());
     }
 
+    /// <summary>
+    /// F-05 (D-5): <c>template1</c> holds local objects (a marker table and function) and an open session while a
+    /// staging database is created. The staging database is a copy of <c>template0</c>, so the create succeeds
+    /// (a copy of <c>template1</c> is refused with <c>55006</c> while another session is on it) and none of the
+    /// markers reach it. Teardown closes the session and removes the markers from <c>template1</c>, and asserts
+    /// they are gone; setup removes any left by an earlier run first.
+    /// </summary>
+    [TestFixture]
+    [NonParallelizable]
+    public class Given_template1_holds_local_objects_and_an_open_connection
+    {
+        private const string MarkerTable = "dms1438_template1_marker";
+        private const string MarkerFunction = "dms1438_template1_marker_fn";
+
+        private const string MarkerCount =
+            $"SELECT (SELECT count(*) FROM pg_catalog.pg_class WHERE relname = '{MarkerTable}') + (SELECT count(*) FROM pg_catalog.pg_proc WHERE proname = '{MarkerFunction}');";
+
+        private DmsOperationId _operation;
+        private IDmsTargetLockHolder? _holder;
+        private NpgsqlConnection? _template1Session;
+        private long _markersInTemplate1;
+        private long _template1SessionsDuringCreate;
+        private DmsCommandOutcome<DmsInstanceIdentity> _created = null!;
+        private long _markersInStaging = -1;
+        private DmsCommandOutcome? _dropped;
+
+        /// <summary>A session on <c>template1</c>, unpooled so that closing it ends the backend.</summary>
+        private static async Task<NpgsqlConnection> OpenTemplate1Async()
+        {
+            NpgsqlConnectionStringBuilder builder = new(AdminConnectionString)
+            {
+                Database = "template1",
+                Pooling = false,
+            };
+            NpgsqlConnection connection = new(builder.ConnectionString);
+            await connection.OpenAsync();
+            return connection;
+        }
+
+        private static async Task<long> ScalarInTemplate1Async(string sql)
+        {
+            await using NpgsqlConnection connection = await OpenTemplate1Async();
+            await using NpgsqlCommand command = new(sql, connection);
+            return (long)(await command.ExecuteScalarAsync())!;
+        }
+
+        private static async Task ExecuteInTemplate1Async(string sql)
+        {
+            await using NpgsqlConnection connection = await OpenTemplate1Async();
+            await using NpgsqlCommand command = new(sql, connection);
+            await command.ExecuteNonQueryAsync();
+        }
+
+        private static Task RemoveMarkersAsync() =>
+            ExecuteInTemplate1Async(
+                $"DROP FUNCTION IF EXISTS public.{MarkerFunction}(); DROP TABLE IF EXISTS public.{MarkerTable};"
+            );
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            await RemoveMarkersAsync();
+            await ExecuteInTemplate1Async(
+                $"CREATE TABLE public.{MarkerTable} (id int); CREATE FUNCTION public.{MarkerFunction}() RETURNS int LANGUAGE sql AS 'SELECT 1';"
+            );
+            _markersInTemplate1 = await ScalarInTemplate1Async(MarkerCount);
+            _template1Session = await OpenTemplate1Async();
+
+            _operation = DmsOperationId.New();
+            PostgresqlDmsTargetEngine engine = Engine();
+            _holder = await AcquireAsync(engine, TargetName("template0"), _operation);
+            DmsDatabaseName staging = _operation.StagingDatabaseName;
+            _template1SessionsDuringCreate = await ScalarOnServerAsync<long>(
+                "SELECT count(*) FROM pg_catalog.pg_stat_activity WHERE datname = 'template1';"
+            );
+            _created = await engine.CreateStagingAsync(
+                _holder,
+                staging,
+                new DmsProvisionClaim(_operation, Guid.NewGuid()),
+                default
+            );
+            if (_created is DmsCommandOutcome<DmsInstanceIdentity>.Succeeded succeeded)
+            {
+                _markersInStaging = await new TestDatabase(staging.Value).ScalarAsync<long>(MarkerCount);
+                await WaitForNoSessionsOnAsync(staging.Value);
+                _dropped = await engine.DropStagingAsync(staging, succeeded.Value, default);
+            }
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_holder is not null)
+            {
+                await _holder.DisposeAsync();
+            }
+
+            if (_template1Session is not null)
+            {
+                await _template1Session.DisposeAsync();
+            }
+
+            await DropByNameAsync(_operation.StagingDatabaseName);
+            await RemoveMarkersAsync();
+            (await ScalarInTemplate1Async(MarkerCount))
+                .Should()
+                .Be(0, "teardown removes the template1 markers");
+        }
+
+        [Test]
+        public void It_created_both_markers_in_template1() => _markersInTemplate1.Should().Be(2);
+
+        [Test]
+        public void It_held_a_template1_session_during_the_create() =>
+            _template1SessionsDuringCreate.Should().BeGreaterThanOrEqualTo(1);
+
+        [Test]
+        public void It_creates_the_staging_database() =>
+            _created.Should().BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Succeeded>();
+
+        [Test]
+        public void It_copies_nothing_local_to_template1() => _markersInStaging.Should().Be(0);
+
+        [Test]
+        public void It_drops_the_staging_database() =>
+            _dropped.Should().Be(new DmsCommandOutcome.Succeeded());
+    }
+
     [TestFixture]
     public class Given_the_staging_name_is_already_taken
     {

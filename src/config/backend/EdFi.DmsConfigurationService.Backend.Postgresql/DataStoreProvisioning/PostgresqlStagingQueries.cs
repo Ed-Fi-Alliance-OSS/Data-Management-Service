@@ -70,8 +70,13 @@ internal static class PostgresqlStagingQueries
         $$;
         """;
 
+    /// <summary>
+    /// F-05 (D-5): the staging database is a copy of the pristine <c>template0</c>, never of <c>template1</c>, so
+    /// no local object in <c>template1</c> reaches it and a session on <c>template1</c> cannot refuse the copy.
+    /// No locale clause: the database takes <c>template0</c>'s locale, the cluster's initdb locale.
+    /// </summary>
     public static string CreateDatabaseStatement(DmsDatabaseName name) =>
-        $"CREATE DATABASE {PostgresqlIdentifiers.Quote(name.Value)} ENCODING 'UTF8';";
+        $"CREATE DATABASE {PostgresqlIdentifiers.Quote(name.Value)} TEMPLATE template0 ENCODING 'UTF8';";
 
     public static string ClaimStatement(DmsDatabaseName name, DmsProvisionClaim claim) =>
         $"COMMENT ON DATABASE {PostgresqlIdentifiers.Quote(name.Value)} IS {PostgresqlIdentifiers.Literal(claim.Text)};";
