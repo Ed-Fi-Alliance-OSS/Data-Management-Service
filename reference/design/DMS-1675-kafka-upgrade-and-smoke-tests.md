@@ -43,16 +43,20 @@ recorded below. Live qualification found and corrected the runbook's obsolete JM
 tool class name. The refreshed security scan and disposition are recorded below.
 Qualification now targets only the shipped broker; historical-image fixtures and
 prerequisites have been removed. The three required live selections were rerun on
-the completed code revision on November 11, as recorded below. The broader
-November 8 results remain historical evidence for their original run scope.
+the November 11 PR head after the pin-mismatch classification fix, as recorded
+below. The broader November 8 results remain historical evidence for their
+original run scope.
 
 ## Head qualification — 2026-11-11
 
-Tested commit: `1b0b7180749644f71bc5228c1a6672f42c22f013`, matching PR #1440's
-head throughout the run. This includes the fixture cleanup, rebased inputs, and
-Linux process-tree cleanup fix. Tracked files were unchanged during qualification.
-Each selection ran once; no failures, fixes, or reruns were needed. The subsequent
-qualification-record update changes documentation only.
+Tested commit: `5b700f7c43b13426effbf79e01d98c1281e30459`, matching PR #1440's
+head before and after the run. This includes the pin-mismatch classification fix,
+fixture cleanup, rebased inputs, and Linux process-tree cleanup fix. This new run
+supersedes the earlier qualification at `1b0b718`; those earlier results are not
+used to qualify this head. Tracked files and HEAD were unchanged throughout the
+run, from 22:11 to 23:36 UTC on November 11. Each selection ran once; no failures,
+fixes, or reruns were needed. The subsequent qualification-record update changes
+documentation only.
 
 | Selection | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: |
@@ -92,8 +96,8 @@ The three selections used these commands from the repository root, with the
 image environment variables set to the pins above:
 
 ```powershell
-$archive = '/home/brad/work/dms-root/qualification-results/DMS-1675-20261111-head'
-$raw = '/tmp/dms-1675-qualification-20261111-head/ConnectorTemplateSmoke'
+$archive = '/home/brad/work/dms-root/qualification-results/DMS-1675-20261111-5b700f7'
+$raw = '/tmp/dms-1675-qualification-20261111-5b700f7/ConnectorTemplateSmoke'
 $project = 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Integration/EdFi.DataManagementService.Backend.Cdc.Tests.Integration.csproj'
 
 dotnet test $project -c Release --nologo --filter 'Category=CdcConnectorTemplateSmoke' `
@@ -113,18 +117,23 @@ required-case guard. Final TRX counts were independently checked against all
 three reports; every test outcome was `Passed`.
 
 Retained local evidence is under
-`/home/brad/work/dms-root/qualification-results/DMS-1675-20261111-head/`:
+`/home/brad/work/dms-root/qualification-results/DMS-1675-20261111-5b700f7/`:
 `ConnectorTemplateSmoke/qualification.json`, `Postgresql-RecordSize/qualification.json`,
 and `Mssql-RecordSize/qualification.json`, with sanitized TRX and structured
 attachments in those directories. `summary.json` records the tested commit/tree,
 times, counts and guards; `runtime-inputs.json` records exact image identities;
-`commands.ps1` and `invocations.txt` retain the exact invocation wrapper and commands.
-There are 197 files plus `SHA256SUMS`, whose fingerprint is
-`4aba8fbe272e334c8efec649e6891b28832361d9eaaac1f4a4325cf449925e8c`.
+`commands.ps1`, `run-all.ps1`, and `invocations.txt` retain the exact invocation
+wrappers and commands. `invocations.json` records unchanged-head checks after
+each selection; `pr-head.json` verifies the PR head after qualification.
+`finalize.py` independently checks TRX outcomes, required-case counts, both
+Compose persistence attachments, image identity, and container cleanup before
+writing the summary and checksums. There are 203 files plus `SHA256SUMS`, whose
+fingerprint is
+`c49d4223a2d813a8960893c6c470e257215ab05041f0f8abbc9cc7580b044860`.
 
-Private logs/TRX remain under `/tmp/dms-1675-qualification-20261111-head/`,
-`/tmp/cdc-qualification-638938232dd64e6c89ca74e5bce196fb/` (PostgreSQL), and
-`/tmp/cdc-qualification-2b0acf4263dd43ca8c9414f01db52fa7/` (MSSQL). These are local
+Private logs/TRX remain under `/tmp/dms-1675-qualification-20261111-5b700f7/`,
+`/tmp/cdc-qualification-83c72a3a815f443fa129dc588755b31f/` (PostgreSQL), and
+`/tmp/cdc-qualification-0caf0c419436448f81cd36b0b7df43ae/` (MSSQL). These are local
 runs, not GitHub Actions results or published CI artifacts. Generated diagnostics
 are not committed. All fixture containers were removed; the final container
 inventory exactly matched the two pre-existing containers.
