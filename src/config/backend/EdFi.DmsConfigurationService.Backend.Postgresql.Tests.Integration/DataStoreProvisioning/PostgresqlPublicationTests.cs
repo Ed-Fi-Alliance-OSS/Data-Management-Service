@@ -556,6 +556,71 @@ public class PostgresqlPublicationTests
                 .Be(((DmsCommandOutcome)new DmsCommandOutcome.Succeeded(), (Guid?)_staged!.Expected));
     }
 
+    /// <summary>
+    /// F-001: the marker's read-back never accepts the expected identity as the prefix of a longer value. A trigger
+    /// appends a space to every update, so the update commits and the read-back returns the expected identity's
+    /// 36 characters with the overlength verdict; the outcome is unknown for the session, not success.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_marker_read_back_finds_the_expected_identity_followed_by_a_space
+    {
+        private Staged? _staged;
+        private DmsCommandOutcome _outcome = null!;
+        private DmsServerSessionId _session;
+        private string? _stored;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _staged = await Staged.CreateAsync("markerpad", dmsShaped: true);
+            DmsInstanceIdentity.Postgresql renamed = (DmsInstanceIdentity.Postgresql)
+                ((DmsCommandOutcome<DmsInstanceIdentity>.Succeeded)await _staged.RenameAsync()).Value;
+            await _staged.ExecuteOnTargetAsync(
+                "ALTER TABLE \"dms\".\"DataStoreIdentity\" ALTER COLUMN \"SourceIdentity\" TYPE text; "
+                    + "CREATE FUNCTION \"dms\".\"PadIdentity\"() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN NEW.\"SourceIdentity\" := NEW.\"SourceIdentity\" || ' '; RETURN NEW; END $$; "
+                    + "CREATE TRIGGER \"PadIdentity\" BEFORE UPDATE ON \"dms\".\"DataStoreIdentity\" FOR EACH ROW EXECUTE FUNCTION \"dms\".\"PadIdentity\"();"
+            );
+
+            await using (
+                NpgsqlConnection connection = await AdminConnection()
+                    .OpenAsync(_staged.Target.Value, "dms1438-test", default)
+            )
+            {
+                _session = await OwnSessionAsync(connection);
+                _outcome = await PostgresqlPublicationQueries.AssignMarkerAsync(
+                    connection,
+                    renamed.Oid,
+                    _staged.Expected,
+                    _session,
+                    default
+                );
+                await using NpgsqlCommand read = new(
+                    "SELECT \"SourceIdentity\" FROM \"dms\".\"DataStoreIdentity\";",
+                    connection
+                );
+                _stored = await read.ExecuteScalarAsync() as string;
+            }
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_staged is not null)
+            {
+                await _staged.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_committed_the_expected_identity_followed_by_a_space() =>
+            _stored.Should().Be($"{_staged!.Expected:D} ");
+
+        [Test]
+        public void It_reports_the_outcome_unknown_for_the_session() =>
+            _outcome.Should().Be(new DmsCommandOutcome.Unknown(_session));
+    }
+
     [TestFixture]
     public class Given_a_renamed_target_is_compensated
     {

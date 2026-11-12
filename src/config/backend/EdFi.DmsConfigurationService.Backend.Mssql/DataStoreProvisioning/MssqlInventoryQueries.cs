@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
@@ -129,19 +130,29 @@ internal static class MssqlInventoryQueries
 
     /// <summary>
     /// The delivered identity read (<c>Get-SourceIdentitySelectSql</c>) as text, bounded by the spec's
-    /// <c>TOP (2)</c>. The text conversion is unbounded rather than the delivered <c>nvarchar(36)</c>: for the
-    /// DDL's <c>uniqueidentifier</c> column the result is identical, and a text column holding a GUID followed
-    /// by anything else is never truncated into a valid GUID.
+    /// <c>TOP (2)</c> and by length: each row carries at most the first 36 characters (a <c>D</c>-format GUID,
+    /// the delivered <c>nvarchar(36)</c>) and whether the stored text is longer. The length is
+    /// <c>DATALENGTH</c> of the full text, which counts trailing spaces that <c>LEN</c> ignores, so an oversized
+    /// value never reaches the service and a GUID followed by anything else is never read as its prefix
+    /// (<see cref="ReadSourceIdentityRow"/>). For the DDL's <c>uniqueidentifier</c> column the text is unchanged.
     /// </summary>
     public const string SourceIdentityRows =
-        "SET NOCOUNT ON; SELECT TOP (2) CONVERT(nvarchar(max), [SourceIdentity]) FROM [dms].[DataStoreIdentity];";
+        "SET NOCOUNT ON; SELECT TOP (2) " + SourceIdentityColumns + " FROM [dms].[DataStoreIdentity];";
 
     /// <summary>
     /// <see cref="SourceIdentityRows"/> through a three-part name, for the holder session in <c>master</c> that holds a
     /// fenced target's single-user slot. <c>NOCOUNT</c> is left as the holder has it.
     /// </summary>
     public static string SourceIdentityRowsIn(DmsDatabaseName database) =>
-        $"SELECT TOP (2) CONVERT(nvarchar(max), [SourceIdentity]) FROM {MssqlIdentifiers.Quote(database.Value)}.[dms].[DataStoreIdentity];";
+        $"SELECT TOP (2) {SourceIdentityColumns} FROM {MssqlIdentifiers.Quote(database.Value)}.[dms].[DataStoreIdentity];";
+
+    /// <summary>One <see cref="SourceIdentityRows"/> row: the bounded text (null for a NULL) and whether the stored text is longer.</summary>
+    public static (string? Text, bool Overlength) ReadSourceIdentityRow(DbDataReader reader) =>
+        (reader.IsDBNull(0) ? null : reader.GetString(0), reader.GetBoolean(1));
+
+    /// <summary>The bounded text and the overlength verdict (more than 36 UTF-16 code units, 72 bytes).</summary>
+    private const string SourceIdentityColumns =
+        "CONVERT(nvarchar(36), CONVERT(nvarchar(max), [SourceIdentity])), CONVERT(bit, CASE WHEN DATALENGTH(CONVERT(nvarchar(max), [SourceIdentity])) > 72 THEN 1 ELSE 0 END)";
 
     /// <summary>
     /// Every <c>DocumentJson</c> column in the <c>dms</c> schema with its type, declared length included

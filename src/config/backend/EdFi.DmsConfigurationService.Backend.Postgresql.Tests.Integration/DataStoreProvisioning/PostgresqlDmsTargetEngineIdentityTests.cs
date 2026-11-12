@@ -6,6 +6,7 @@
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using FluentAssertions;
+using Npgsql;
 using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
@@ -113,6 +114,129 @@ public class PostgresqlDmsTargetEngineIdentityTests
             DmsSessionOpenResult opened = await engine.OpenSessionAsync(
                 _database!.DatabaseName,
                 await _database.CatalogInstanceAsync(),
+                default
+            );
+            await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
+            return await engine.ReadIdentityAsync(session, default);
+        }
+    }
+
+    /// <summary>
+    /// F-001: the server returns at most a GUID's 36 characters of identity text with its own verdict on whether the
+    /// stored text is longer, so a 1 MiB value never reaches the service, and a GUID followed by anything, trailing
+    /// white space included, is refused as unparsable instead of being read as its prefix. Canonical text and the
+    /// DDL's native <c>uuid</c> column are still found.
+    /// </summary>
+    [TestFixture]
+    public class Given_identity_text_longer_than_a_guid
+    {
+        private static readonly Guid _valid = Guid.Parse("8a6f1c2e-3b4d-4e5f-9a1b-2c3d4e5f6a7b");
+
+        private static readonly (string Name, string Value)[] _longer =
+        [
+            ("oversized", $"'{_valid:D}' || pg_catalog.repeat('x', 1048576)"),
+            ("suffix", $"'{_valid:D}x'"),
+            ("trailing space", $"'{_valid:D} '"),
+        ];
+
+        private TestDatabase? _text;
+        private TestDatabase? _native;
+        private readonly Dictionary<
+            string,
+            (List<(string? Text, bool Overlength)> Rows, DmsIdentityRead Read)
+        > _observed = [];
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _text = await CreateDatabaseAsync("overlength");
+            await _text.ExecuteAsync(
+                "CREATE SCHEMA \"dms\"; CREATE TABLE \"dms\".\"DataStoreIdentity\" (\"DataStoreIdentitySingletonId\" smallint NOT NULL, \"SourceIdentity\" text NOT NULL); INSERT INTO \"dms\".\"DataStoreIdentity\" VALUES (1, '');"
+            );
+            foreach ((string name, string value) in _longer.Append(("canonical", $"'{_valid:D}'")))
+            {
+                await _text.ExecuteAsync(
+                    $"UPDATE \"dms\".\"DataStoreIdentity\" SET \"SourceIdentity\" = {value};"
+                );
+                _observed[name] = (await RowsAsync(_text), await ReadAsync(_text));
+            }
+
+            _native = await CreateDmsShapedDatabaseAsync("nativeuuid");
+            _observed["native"] = (await RowsAsync(_native), await ReadAsync(_native));
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (TestDatabase? database in new[] { _text, _native })
+            {
+                if (database is not null)
+                {
+                    await database.DisposeAsync();
+                }
+            }
+        }
+
+        [Test]
+        public void It_returns_at_most_a_guid_of_text_with_the_overlength_verdict()
+        {
+            foreach ((string name, _) in _longer)
+            {
+                _observed[name].Rows.Should().Equal([($"{_valid:D}", true)], name);
+            }
+        }
+
+        [Test]
+        public void It_refuses_every_longer_value_as_unparsable()
+        {
+            foreach ((string name, _) in _longer)
+            {
+                _observed[name]
+                    .Read.Should()
+                    .Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.Unparsable), name);
+            }
+        }
+
+        [Test]
+        public void It_finds_canonical_text()
+        {
+            _observed["canonical"].Rows.Should().Equal(($"{_valid:D}", false));
+            _observed["canonical"].Read.Should().Be(new DmsIdentityRead.Found(_valid));
+        }
+
+        [Test]
+        public void It_finds_the_native_uuid()
+        {
+            _observed["native"].Rows.Should().Equal(($"{DmsShapedManifest.SourceIdentity:D}", false));
+            _observed["native"].Read.Should().Be(new DmsIdentityRead.Found(DmsShapedManifest.SourceIdentity));
+        }
+
+        /// <summary>The identity query's rows exactly as the server returns them.</summary>
+        private static async Task<List<(string? Text, bool Overlength)>> RowsAsync(TestDatabase database)
+        {
+            await using NpgsqlConnection connection = await AdminConnection()
+                .OpenAsync(database.Name, "dms1438-test", default);
+            await using NpgsqlCommand command = new(
+                PostgresqlInventoryQueries.SourceIdentityRows,
+                connection
+            );
+            await using NpgsqlDataReader reader = await command.ExecuteReaderAsync();
+            List<(string? Text, bool Overlength)> rows = [];
+            while (await reader.ReadAsync())
+            {
+                rows.Add(PostgresqlInventoryQueries.ReadSourceIdentityRow(reader));
+            }
+
+            return rows;
+        }
+
+        private static async Task<DmsIdentityRead> ReadAsync(TestDatabase database)
+        {
+            PostgresqlDmsTargetEngine engine = Engine();
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                database.DatabaseName,
+                await database.CatalogInstanceAsync(),
                 default
             );
             await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;

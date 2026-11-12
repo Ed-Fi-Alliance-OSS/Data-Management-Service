@@ -167,6 +167,136 @@ public class MssqlDmsTargetEngineIdentityTests
     }
 
     /// <summary>
+    /// F-001: the server returns at most a GUID's 36 characters of identity text with its own verdict on whether the
+    /// stored text is longer, measured with <c>DATALENGTH</c> so trailing spaces count, so a 1 MiB value never reaches
+    /// the service, and a GUID followed by anything, a trailing space included, is refused as unparsable instead of
+    /// being read as its prefix. Canonical text and the DDL's native <c>uniqueidentifier</c> column are still found.
+    /// The holder's three-part read is pinned by <c>MssqlDeletionTests</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_identity_text_longer_than_a_guid
+    {
+        private static readonly Guid _valid = Guid.Parse("8a6f1c2e-3b4d-4e5f-9a1b-2c3d4e5f6a7b");
+
+        private static readonly (string Name, string Value)[] _longer =
+        [
+            ("oversized", $"N'{_valid:D}' + REPLICATE(CONVERT(nvarchar(max), N'x'), 1048576)"),
+            ("suffix", $"N'{_valid:D}x'"),
+            ("trailing space", $"N'{_valid:D} '"),
+        ];
+
+        private TestDatabase? _text;
+        private TestDatabase? _native;
+        private readonly Dictionary<
+            string,
+            (List<(string? Text, bool Overlength)> Rows, DmsIdentityRead Read)
+        > _observed = [];
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _text = await CreateDatabaseAsync("overlength");
+            await _text.ExecuteAsync("CREATE SCHEMA [dms];");
+            await _text.ExecuteAsync(
+                "CREATE TABLE [dms].[DataStoreIdentity] ([DataStoreIdentitySingletonId] smallint NOT NULL, [SourceIdentity] nvarchar(max) NOT NULL); INSERT INTO [dms].[DataStoreIdentity] VALUES (1, N'');"
+            );
+            foreach ((string name, string value) in _longer.Append(("canonical", $"N'{_valid:D}'")))
+            {
+                await _text.ExecuteAsync($"UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = {value};");
+                _observed[name] = (await RowsAsync(_text), await ReadAsync(_text));
+            }
+
+            _native = await CreateDmsShapedDatabaseAsync("nativeguid");
+            _observed["native"] = (await RowsAsync(_native), await ReadAsync(_native));
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (TestDatabase? database in new[] { _text, _native })
+            {
+                if (database is not null)
+                {
+                    await database.DisposeAsync();
+                }
+            }
+        }
+
+        [Test]
+        public void It_returns_at_most_a_guid_of_text_with_the_overlength_verdict()
+        {
+            foreach ((string name, _) in _longer)
+            {
+                _observed[name].Rows.Should().Equal([($"{_valid:D}", true)], name);
+            }
+        }
+
+        [Test]
+        public void It_refuses_every_longer_value_as_unparsable()
+        {
+            foreach ((string name, _) in _longer)
+            {
+                _observed[name]
+                    .Read.Should()
+                    .Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.Unparsable), name);
+            }
+        }
+
+        [Test]
+        public void It_finds_canonical_text()
+        {
+            _observed["canonical"].Rows.Should().Equal(($"{_valid:D}", false));
+            _observed["canonical"].Read.Should().Be(new DmsIdentityRead.Found(_valid));
+        }
+
+        [Test]
+        public void It_finds_the_native_uniqueidentifier()
+        {
+            // SQL Server writes a uniqueidentifier as upper-case text.
+            _observed["native"]
+                .Rows.Should()
+                .Equal((MssqlDmsShapedManifest.SourceIdentity.ToString("D").ToUpperInvariant(), false));
+            _observed["native"]
+                .Read.Should()
+                .Be(new DmsIdentityRead.Found(MssqlDmsShapedManifest.SourceIdentity));
+        }
+
+        /// <summary>The identity query's rows exactly as the server returns them.</summary>
+        private static async Task<List<(string? Text, bool Overlength)>> RowsAsync(TestDatabase database)
+        {
+            List<(string? Text, bool Overlength)> rows = [];
+            await using (
+                SqlConnection connection = await AdminConnection()
+                    .OpenAsync(database.Name, "dms1438-test", default)
+            )
+            {
+                await using SqlCommand command = new(MssqlInventoryQueries.SourceIdentityRows, connection);
+                await using SqlDataReader reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    rows.Add(MssqlInventoryQueries.ReadSourceIdentityRow(reader));
+                }
+            }
+
+            await WaitForNoSessionsOnAsync(database.Name);
+            return rows;
+        }
+
+        private static async Task<DmsIdentityRead> ReadAsync(TestDatabase database)
+        {
+            MssqlDmsTargetEngine engine = Engine();
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                database.DatabaseName,
+                await database.CatalogInstanceAsync(),
+                default
+            );
+            await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
+            return await engine.ReadIdentityAsync(session, default);
+        }
+    }
+
+    /// <summary>
     /// A lost connection is never read as malformed metadata: on a database whose identity column and an
     /// effective-schema column are both missing, the identity and facts reads on a killed work session, and the
     /// identity read on a killed holder session, raise the connection failure, which the orchestrator classifies as

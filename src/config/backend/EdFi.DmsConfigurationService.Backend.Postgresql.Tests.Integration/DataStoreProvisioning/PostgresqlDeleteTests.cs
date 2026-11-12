@@ -1165,6 +1165,11 @@ public class PostgresqlDeleteTests
         private (bool Exists, uint Oid, bool AllowsConnections) _unreadableAfter;
         private Guid _foreignIdentity;
         private Guid _identityAfter;
+        private Lane? _overlength;
+        private DmsDataStoreDeleteResult _overlengthResult = null!;
+        private (bool Exists, uint Oid, bool AllowsConnections) _overlengthBefore;
+        private (bool Exists, uint Oid, bool AllowsConnections) _overlengthAfter;
+        private string _overlengthIdentityAfter = "";
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -1197,12 +1202,27 @@ public class PostgresqlDeleteTests
             _columnMissingBefore = await _columnMissing.TargetCatalogAsync();
             _columnMissingResult = await _columnMissing.DeleteAsync();
             _columnMissingAfter = await _columnMissing.TargetCatalogAsync();
+
+            // F-001: the record's own identity followed by a space, which a read truncated to 36 characters
+            // without the overlength verdict would take for the record's identity and drop.
+            _overlength = await Lane.BuildAsync(Lane.ShapedSql(), new LaneHooks());
+            await _overlength.SeedTargetAsync();
+            TestDatabase overlength = new(_overlength.Target.Value);
+            await overlength.ExecuteAsync(
+                "ALTER TABLE \"dms\".\"DataStoreIdentity\" ALTER COLUMN \"SourceIdentity\" TYPE text; UPDATE \"dms\".\"DataStoreIdentity\" SET \"SourceIdentity\" = \"SourceIdentity\" || ' ';"
+            );
+            _overlengthBefore = await _overlength.TargetCatalogAsync();
+            _overlengthResult = await _overlength.DeleteAsync();
+            _overlengthAfter = await _overlength.TargetCatalogAsync();
+            _overlengthIdentityAfter = await overlength.ScalarAsync<string>(
+                "SELECT \"SourceIdentity\" FROM \"dms\".\"DataStoreIdentity\";"
+            );
         }
 
         [OneTimeTearDown]
         public async Task Teardown()
         {
-            foreach (Lane? lane in new[] { _absent, _unowned, _unreadable, _columnMissing })
+            foreach (Lane? lane in new[] { _absent, _unowned, _unreadable, _columnMissing, _overlength })
             {
                 if (lane is not null)
                 {
@@ -1263,9 +1283,27 @@ public class PostgresqlDeleteTests
         }
 
         [Test]
+        public void It_reports_the_identity_followed_by_a_space_as_unverifiable_and_leaves_it_untouched()
+        {
+            FailureOf(_overlengthResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.DeleteIdentityStep
+                    )
+                );
+            (_overlengthAfter, _overlengthBefore.Exists, _overlengthBefore.AllowsConnections)
+                .Should()
+                .Be((_overlengthBefore, true, true));
+            _overlengthIdentityAfter.Should().Be($"{_overlength!.Request.ExpectedSourceIdentity:D} ");
+        }
+
+        [Test]
         public void It_never_fences_or_drops()
         {
-            foreach (Lane lane in new[] { _absent!, _unowned!, _unreadable!, _columnMissing! })
+            foreach (Lane lane in new[] { _absent!, _unowned!, _unreadable!, _columnMissing!, _overlength! })
             {
                 MembersOf(lane.Engine)
                     .Should()

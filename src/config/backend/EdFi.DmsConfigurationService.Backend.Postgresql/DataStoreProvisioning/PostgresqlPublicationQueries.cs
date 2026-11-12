@@ -168,17 +168,17 @@ internal static class PostgresqlPublicationQueries
         {
             await using NpgsqlCommand read = new(PostgresqlInventoryQueries.SourceIdentityRows, connection);
             await using NpgsqlDataReader reader = await read.ExecuteReaderAsync(CancellationToken.None);
-            List<string?> values = [];
+            List<(string? Text, bool Overlength)> values = [];
             while (await reader.ReadAsync(CancellationToken.None))
             {
-                values.Add(
-                    await reader.IsDBNullAsync(0, CancellationToken.None) ? null : reader.GetString(0)
-                );
+                values.Add(PostgresqlInventoryQueries.ReadSourceIdentityRow(reader));
             }
 
+            // A longer stored value is never accepted as its expected prefix.
             return
                 values.Count == 1
-                && Guid.TryParseExact(values[0], "D", out Guid readBack)
+                && !values[0].Overlength
+                && Guid.TryParseExact(values[0].Text, "D", out Guid readBack)
                 && readBack == expectedSourceIdentity
                 ? new DmsCommandOutcome.Succeeded()
                 : new DmsCommandOutcome.Unknown(session);

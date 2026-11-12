@@ -133,13 +133,13 @@ public sealed partial class MssqlDmsTargetEngine
         return await session.RunAsync(
             async token =>
             {
-                List<string?> values;
+                List<(string? Text, bool Overlength)> values;
                 try
                 {
                     values = await ReadRowsAsync(
                         session.Connection,
                         MssqlInventoryQueries.SourceIdentityRowsIn(target),
-                        reader => reader.IsDBNull(0) ? null : reader.GetString(0),
+                        MssqlInventoryQueries.ReadSourceIdentityRow,
                         token
                     );
                 }

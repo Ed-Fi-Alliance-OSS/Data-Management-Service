@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
@@ -142,9 +143,18 @@ internal static class PostgresqlInventoryQueries
     public const string EffectiveSchemaRows =
         "SELECT \"ApiSchemaFormatVersion\", \"EffectiveSchemaHash\", \"ResourceKeyCount\", \"ResourceKeySeedHash\" FROM \"dms\".\"EffectiveSchema\" LIMIT 2;";
 
-    /// <summary>The delivered identity read (<c>Get-SourceIdentitySelectSql</c>) as text, bounded by the spec's <c>LIMIT 2</c>.</summary>
+    /// <summary>
+    /// The delivered identity read (<c>Get-SourceIdentitySelectSql</c>) as text, bounded by the spec's <c>LIMIT 2</c>
+    /// and by length: each row carries at most the first 36 characters (a <c>D</c>-format GUID) and whether the
+    /// stored text is longer, counted on the server with trailing whitespace, so an oversized value never reaches
+    /// the service and a longer value is never read as its prefix (<see cref="ReadSourceIdentityRow"/>).
+    /// </summary>
     public const string SourceIdentityRows =
-        "SELECT \"SourceIdentity\"::text FROM \"dms\".\"DataStoreIdentity\" LIMIT 2;";
+        "SELECT pg_catalog.substr(\"SourceIdentity\"::text, 1, 36), COALESCE(pg_catalog.length(\"SourceIdentity\"::text) > 36, false) FROM \"dms\".\"DataStoreIdentity\" LIMIT 2;";
+
+    /// <summary>One <see cref="SourceIdentityRows"/> row: the bounded text (null for a NULL) and whether the stored text is longer.</summary>
+    public static (string? Text, bool Overlength) ReadSourceIdentityRow(DbDataReader reader) =>
+        (reader.IsDBNull(0) ? null : reader.GetString(0), reader.GetBoolean(1));
 
     /// <summary>Every <c>DocumentJson</c> column in the <c>dms</c> schema with its type (<c>Get-DocumentJsonColumnTypeQuerySql</c>, columns separated).</summary>
     public const string DocumentJsonColumns =

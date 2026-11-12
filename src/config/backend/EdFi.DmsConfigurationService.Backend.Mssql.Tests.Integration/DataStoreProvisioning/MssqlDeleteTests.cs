@@ -180,6 +180,24 @@ public class MssqlDeleteTests
         private DmsDataStoreDeleteResult _fencedColumnMissingResult = null!;
         private (bool Exists, int DatabaseId, string UserAccess) _fencedColumnMissingBefore;
         private (bool Exists, int DatabaseId, string UserAccess) _fencedColumnMissingAfter;
+        private Lane? _overlength;
+        private DmsDataStoreDeleteResult _overlengthResult = null!;
+        private (bool Exists, int DatabaseId, string UserAccess) _overlengthBefore;
+        private (bool Exists, int DatabaseId, string UserAccess) _overlengthAfter;
+        private Lane? _fencedOverlength;
+        private DmsDataStoreDeleteResult _fencedOverlengthResult = null!;
+        private (bool Exists, int DatabaseId, string UserAccess) _fencedOverlengthBefore;
+        private (bool Exists, int DatabaseId, string UserAccess) _fencedOverlengthAfter;
+
+        /// <summary>
+        /// F-001: the record's own identity followed by a space, which a read truncated to 36 characters without the
+        /// overlength verdict would take for the record's identity.
+        /// </summary>
+        private const string PadIdentity =
+            "UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = [SourceIdentity] + N' ';";
+
+        private const string IdentityAsText =
+            "ALTER TABLE [dms].[DataStoreIdentity] ALTER COLUMN [SourceIdentity] nvarchar(max) NOT NULL;";
 
         [OneTimeSetUp]
         public async Task Setup()
@@ -232,13 +250,52 @@ public class MssqlDeleteTests
             _fencedColumnMissingBefore = await _fencedColumnMissing.TargetCatalogAsync();
             _fencedColumnMissingResult = await _fencedColumnMissing.DeleteAsync();
             _fencedColumnMissingAfter = await _fencedColumnMissing.TargetCatalogAsync();
+
+            // F-001 on the work session: the padded identity is there before the first read.
+            _overlength = await DeleteOnlyLaneAsync();
+            await _overlength.SeedTargetAsync();
+            // Separate batches: SQL Server binds a batch's statements before the first one changes the column type.
+            await new TestDatabase(_overlength.Target.Value).ExecuteAsync(IdentityAsText);
+            await new TestDatabase(_overlength.Target.Value).ExecuteAsync(PadIdentity);
+            await WaitForNoSessionsOnAsync(_overlength.Target.Value);
+            _overlengthBefore = await _overlength.TargetCatalogAsync();
+            _overlengthResult = await _overlength.DeleteAsync();
+            _overlengthAfter = await _overlength.TargetCatalogAsync();
+
+            // F-001 on the holder: the first read finds the record's identity as text; it is padded just before the
+            // fence, so only the fenced re-read on the holder session meets the longer value.
+            LaneHooks paddedHooks = new();
+            _fencedOverlength = await DeleteOnlyLaneAsync(paddedHooks);
+            await _fencedOverlength.SeedTargetAsync();
+            string paddedTarget = _fencedOverlength.Target.Value;
+            await new TestDatabase(paddedTarget).ExecuteAsync(IdentityAsText);
+            await WaitForNoSessionsOnAsync(paddedTarget);
+            paddedHooks.Probe = async (point, _) =>
+            {
+                if (point == DmsProvisioningHookPoint.BeforeFence)
+                {
+                    await new TestDatabase(paddedTarget).ExecuteAsync(PadIdentity);
+                }
+            };
+            _fencedOverlengthBefore = await _fencedOverlength.TargetCatalogAsync();
+            _fencedOverlengthResult = await _fencedOverlength.DeleteAsync();
+            _fencedOverlengthAfter = await _fencedOverlength.TargetCatalogAsync();
         }
 
         [OneTimeTearDown]
         public async Task Teardown()
         {
             foreach (
-                Lane? lane in new[] { _absent, _unowned, _unreadable, _columnMissing, _fencedColumnMissing }
+                Lane? lane in new[]
+                {
+                    _absent,
+                    _unowned,
+                    _unreadable,
+                    _columnMissing,
+                    _fencedColumnMissing,
+                    _overlength,
+                    _fencedOverlength,
+                }
             )
             {
                 if (lane is not null)
@@ -262,6 +319,50 @@ public class MssqlDeleteTests
                 .Be(DmsProvisioningFailureCode.TargetUnowned);
             (_unownedAfter, _unownedIdentityAfter).Should().Be((_unownedBefore, _otherIdentity));
             _unownedAfter.UserAccess.Should().Be("MULTI_USER");
+        }
+
+        [Test]
+        public void It_reports_the_identity_followed_by_a_space_as_unverifiable_and_leaves_it_untouched()
+        {
+            FailureOf(_overlengthResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.DeleteIdentityStep
+                    )
+                );
+            (_overlengthAfter, _overlengthBefore.UserAccess).Should().Be((_overlengthBefore, "MULTI_USER"));
+            MembersOf(_overlength!.Engine)
+                .Should()
+                .NotContain(nameof(IDmsTargetEngine.FenceAsync))
+                .And.NotContain(nameof(IDmsTargetEngine.DropInstanceAsync));
+        }
+
+        [Test]
+        public void It_reports_the_identity_padded_under_the_fence_as_unverifiable_and_reverses_the_fence()
+        {
+            FailureOf(_fencedOverlengthResult)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetUnverifiable,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.VerifyFencedStep
+                    )
+                );
+            (_fencedOverlengthAfter, _fencedOverlengthBefore.UserAccess)
+                .Should()
+                .Be((_fencedOverlengthBefore, "MULTI_USER"));
+            MembersOf(_fencedOverlength!.Engine)
+                .Should()
+                .ContainInOrder(
+                    nameof(IDmsTargetEngine.FenceAsync),
+                    nameof(IDmsTargetEngine.ReadIdentityOnHolderAsync),
+                    nameof(IDmsTargetEngine.UnfenceAsync)
+                )
+                .And.NotContain(nameof(IDmsTargetEngine.DropInstanceAsync));
         }
 
         [Test]

@@ -442,6 +442,131 @@ public class MssqlDeletionTests
                 .Be((new DmsCommandOutcome.Succeeded(), new DmsCommandOutcome.Succeeded(), "MULTI_USER"));
     }
 
+    /// <summary>
+    /// F-001 on the holder session: under the fence, the three-part identity read returns at most a GUID's 36
+    /// characters with the server's overlength verdict, as the work session's read does. The target's own identity
+    /// followed by a trailing space, and a 1 MiB value, are refused as unparsable rather than read as that identity;
+    /// the native <c>uniqueidentifier</c> is still found, and every fence is reversed on the same holder.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_holder_reads_identity_text_longer_than_a_guid
+    {
+        private static readonly Guid _identity = MssqlDmsShapedManifest.SourceIdentity;
+
+        private static readonly (string Name, string Value)[] _longer =
+        [
+            ("oversized", $"N'{_identity:D}' + REPLICATE(CONVERT(nvarchar(max), N'x'), 1048576)"),
+            ("trailing space", $"N'{_identity:D} '"),
+        ];
+
+        private TestDatabase? _database;
+        private DmsIdentityRead _native = null!;
+        private readonly Dictionary<
+            string,
+            (List<(string? Text, bool Overlength)> Rows, DmsIdentityRead Read)
+        > _observed = [];
+        private readonly List<DmsCommandOutcome> _fences = [];
+        private string _accessAfterUnfence = "";
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _database = await CreateDmsShapedDatabaseAsync("holderlong");
+            DmsTargetDatabaseName target = TargetNameOf(_database.Name);
+            DmsInstanceIdentity.Mssql instance = await _database.CatalogInstanceAsync();
+            MssqlDmsTargetEngine engine = Engine();
+            await using IDmsTargetLockHolder holder = await AcquireAsync(engine, target);
+
+            async Task<DmsIdentityRead> FencedReadAsync()
+            {
+                await WaitForNoSessionsOnAsync(_database.Name);
+                _fences.Add(await engine.FenceAsync(holder, target, instance, null, default));
+                DmsIdentityRead read = await engine.ReadIdentityOnHolderAsync(holder, target, default);
+                _fences.Add(await engine.UnfenceAsync(holder, target, instance, default));
+                return read;
+            }
+
+            _native = await FencedReadAsync();
+            await _database.ExecuteAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] ALTER COLUMN [SourceIdentity] nvarchar(max) NOT NULL;"
+            );
+            foreach ((string name, string value) in _longer)
+            {
+                await _database.ExecuteAsync(
+                    $"UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = {value};"
+                );
+                DmsIdentityRead read = await FencedReadAsync();
+                _observed[name] = (await HolderRowsAsync(target), read);
+            }
+
+            _accessAfterUnfence = await UserAccessOfAsync(_database.Name);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_database is not null)
+            {
+                await _database.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_finds_the_native_uniqueidentifier_on_the_holder() =>
+            _native.Should().Be(new DmsIdentityRead.Found(_identity));
+
+        [Test]
+        public void It_returns_at_most_a_guid_of_text_with_the_overlength_verdict_through_the_three_part_name()
+        {
+            foreach ((string name, _) in _longer)
+            {
+                _observed[name].Rows.Should().Equal([($"{_identity:D}", true)], name);
+            }
+        }
+
+        [Test]
+        public void It_refuses_every_longer_value_on_the_holder_as_unparsable()
+        {
+            foreach ((string name, _) in _longer)
+            {
+                _observed[name]
+                    .Read.Should()
+                    .Be(new DmsIdentityRead.Invalid(DmsIdentityReadProblem.Unparsable), name);
+            }
+        }
+
+        [Test]
+        public void It_fenced_and_reversed_the_fence_for_each_read()
+        {
+            _fences.Should().HaveCount(6).And.AllBeEquivalentTo(new DmsCommandOutcome.Succeeded());
+            _accessAfterUnfence.Should().Be("MULTI_USER");
+        }
+
+        /// <summary>The holder's three-part identity query, run on a side connection to <c>master</c> once the fence is reversed.</summary>
+        private static async Task<List<(string? Text, bool Overlength)>> HolderRowsAsync(
+            DmsTargetDatabaseName target
+        )
+        {
+            List<(string? Text, bool Overlength)> rows = [];
+            await using (SqlConnection connection = await AdminConnection().OpenMaintenanceAsync(default))
+            {
+                await using SqlCommand command = new(
+                    MssqlInventoryQueries.SourceIdentityRowsIn(target),
+                    connection
+                );
+                await using SqlDataReader reader = await command.ExecuteReaderAsync();
+                while (await reader.ReadAsync())
+                {
+                    rows.Add(MssqlInventoryQueries.ReadSourceIdentityRow(reader));
+                }
+            }
+
+            await WaitForNoSessionsOnAsync(target.Value);
+            return rows;
+        }
+    }
+
     [TestFixture]
     public class Given_the_fence_still_observes_a_session_at_the_bound
     {

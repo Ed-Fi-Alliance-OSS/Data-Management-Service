@@ -288,13 +288,13 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     )
     {
         SqlConnection connection = RequireSession(session).Connection;
-        List<string?> values;
+        List<(string? Text, bool Overlength)> values;
         try
         {
             values = await ReadRowsAsync(
                 connection,
                 MssqlInventoryQueries.SourceIdentityRows,
-                reader => reader.IsDBNull(0) ? null : reader.GetString(0),
+                MssqlInventoryQueries.ReadSourceIdentityRow,
                 cancellationToken
             );
         }
@@ -635,9 +635,10 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         }
     }
 
-    private static DmsIdentityRead ParseIdentity(string? text)
+    private static DmsIdentityRead ParseIdentity((string? Text, bool Overlength) row)
     {
-        if (!Guid.TryParseExact(text, "D", out Guid sourceIdentity))
+        // A value longer than a D-format GUID is refused before parsing: the text read is only its prefix.
+        if (row.Overlength || !Guid.TryParseExact(row.Text, "D", out Guid sourceIdentity))
         {
             return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.Unparsable);
         }

@@ -638,6 +638,73 @@ public class MssqlPublicationTests
                 .Be(((DmsCommandOutcome)new DmsCommandOutcome.Succeeded(), (Guid?)_staged!.Expected));
     }
 
+    /// <summary>
+    /// F-001: the marker's read-back never accepts the expected identity as the prefix of a longer value. A trigger
+    /// appends a space to every update, so the update commits and the read-back returns the expected identity's
+    /// 36 characters with the overlength verdict; the outcome is unknown for the session, not success.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_marker_read_back_finds_the_expected_identity_followed_by_a_space
+    {
+        private Staged? _staged;
+        private DmsCommandOutcome _outcome = null!;
+        private DmsServerSessionId _session;
+        private string? _stored;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            _staged = await Staged.CreateAsync("markerpad", dmsShaped: true);
+            DmsInstanceIdentity.Mssql renamed = await _staged.RenamedAsync();
+            await _staged.ExecuteOnTargetAsync(
+                "ALTER TABLE [dms].[DataStoreIdentity] ALTER COLUMN [SourceIdentity] nvarchar(max) NOT NULL;"
+            );
+            await _staged.ExecuteOnTargetAsync(
+                "CREATE TRIGGER [dms].[PadIdentity] ON [dms].[DataStoreIdentity] AFTER UPDATE AS BEGIN SET NOCOUNT ON; UPDATE [dms].[DataStoreIdentity] SET [SourceIdentity] = [SourceIdentity] + N' '; END"
+            );
+
+            await using (
+                SqlConnection connection = await AdminConnection()
+                    .OpenAsync(_staged.Target.Value, "dms1438-test", default)
+            )
+            {
+                _session = await MssqlStagingQueries.ReadOwnSessionAsync(connection, 30, default);
+                _outcome = await MssqlPublicationQueries.AssignMarkerAsync(
+                    connection,
+                    renamed,
+                    _staged.Expected,
+                    _session,
+                    30,
+                    default
+                );
+            }
+
+            await WaitForNoSessionsOnAsync(_staged.Target.Value);
+            _stored = await new TestDatabase(_staged.Target.Value).ScalarAsync<string?>(
+                "SELECT [SourceIdentity] FROM [dms].[DataStoreIdentity];"
+            );
+            await WaitForNoSessionsOnAsync(_staged.Target.Value);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_staged is not null)
+            {
+                await _staged.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_committed_the_expected_identity_followed_by_a_space() =>
+            _stored.Should().BeEquivalentTo($"{_staged!.Expected:D} ");
+
+        [Test]
+        public void It_reports_the_outcome_unknown_for_the_session() =>
+            _outcome.Should().Be(new DmsCommandOutcome.Unknown(_session));
+    }
+
     [TestFixture]
     public class Given_a_renamed_target_is_compensated
     {
