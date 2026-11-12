@@ -40,8 +40,9 @@ PostgreSQL it cut resource GET-many API p50 and p95 to 0.29–0.48× of `main` a
 time to 0.002–0.021×. It wrote no catalog rows or WAL and regressed no path. On SQL Server it
 helped the candidate batch (×1.9–×2.7 throughput at 32 sessions), although that batch's p99 at
 500 rows and 32 sessions rose from 71 to 314 ms in all three sessions while its p95 fell. It
-regressed the 500-row resource and fallback batches by 14–34%, because every statement re-parses
-the JSON carrier. So SQL Server keeps `#page` there. Correctness validation found no behavior change on either engine.
+regressed the 500-row resource and fallback batches by 11–37% in a single session, because every
+statement re-parses the JSON carrier, and under concurrency it cut the fallback batch's throughput
+at 32 sessions and the resource batch's at 8 sessions in two of three runs. So SQL Server keeps `#page` there. Correctness validation found no behavior change on either engine.
 
 ## Scope
 
@@ -96,6 +97,8 @@ Each edit is **mandated by DMS-1521's decision**
 | --- | --- | --- |
 | `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (≈849–904) | The keyset is per dialect. On PostgreSQL: the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server: `#page` for resource hydration and selected pages (the retained fallback and its selection conditions), and a JSON carrier for candidate metadata. Keep one round trip and the first-result-set contract |
 | `flattening-reconstitution.md` | § 7 sketches (≈1818–1828, ≈2576–2582) | `SelectByKeysetSql` "joins the page keyset relation" instead of "expects a keyset table". Reconstituter step 1 becomes "select the page keyset" |
+| `flattening-reconstitution.md` | § 6.1 "Single-document fast path" rationale (≈908–909) | The `CREATE`, `INSERT`, and `DROP` the fast path avoids are SQL Server's `#page` cost (P1, P3). On PostgreSQL the page keyset issues no DDL; the fast path still saves the carrier and a join per result set |
+| `flattening-reconstitution.md` | § 7.10 reconstitution inner-loop sketch (≈2595–2596) | "materialize page keyset" becomes "select the page keyset"; "joined to page" becomes "joined to the page keyset relation" |
 | `compiled-mapping-set.md` | step 3 (≈733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset |
 | `mpack-format-v1.md` | `KeysetTableContract` (≈89, 276, 295), `select_by_keyset_sql` (≈695) | Describe the per-dialect keyset: on PostgreSQL, a relation over the carrier, not a `page` table; on SQL Server, `#page` for P1 and P3. Pack emission is not implemented, so no pack was built with the old contract |
 | `change-queries.md` | keyset DDL example (≈2239–2262) | Replace the PostgreSQL `CREATE TEMP TABLE "page"` example with the carrier form, keeping the anchor and `Ordinal` semantics |
@@ -326,6 +329,12 @@ It is a starting point:
   cheap on `primary-500k`. Do not force a plan mode.
 - **Byte-identity check.** Before the PR, compare the SHA-256 of each captured batch (`cells.json`
   in R1 and R2) between `main` and the branch. SQL Server P1 and P3 must match exactly (E5).
+- **Existing carrier.** The write path already uses this mechanism: `PgsqlCompositeTargetCarrier`
+  and `MssqlCompositeTargetCarrier`
+  (`src/dms/backend/EdFi.DataManagementService.Backend/Composite/RelationalCompositeCommandDialect.cs`,
+  DMS-1332). Follow their conventions: a `dms.<purpose>` setting set with `set_config(…, true)`,
+  and SQL Server batch-local names reserved from the bound parameters, because SqlClient rejects a
+  batch-local that shares a bound parameter's name.
 - **Do not keep** `Dms1521KeysetVariant`, the environment switch, or the `pg-analyze` variant.
 
 ## Dependencies
@@ -345,6 +354,7 @@ It is a starting point:
   its own relation;
 - the guarded single-document decision;
 - about 60–70 updated unit pins and the golden regeneration;
-- four new integration tests (no temp tables, carrier reuse, read-only, binding);
-- nine design-document edits;
+- six new integration tests (no temp tables on each engine, three carrier tests, read-only) and
+  the binding unit tests;
+- eleven design-document edits;
 - one interleaved performance session set on each engine.

@@ -31,8 +31,10 @@ the four paths can drop theirs now. The other two keep `#page` until a replaceme
   at the first page's estimate (25), is reused at 500 rows and still seeks, and neither variant
   recompiled. Its cost is tempdb metadata latch contention under concurrency: 13–17
   `PAGELATCH` waits per request at 32 sessions. `inline` removes that cost on every path. On the
-  500-row hydration batches, though, it re-parses the JSON carrier in every statement and costs
-  14–34% more, which breaks AC5's third priority. So `inline` is recommended where it passes every
+  500-row hydration batches, though, it re-parses the JSON carrier in every statement. They cost
+  11–37% more in a single session in every run. Under concurrency the fallback batch regresses
+  (throughput ×0.79–×0.87 at 32 sessions), and the resource batch is mixed (×0.70–×0.78 at 8
+  sessions in two of three runs, ×0.99–×1.17 at 32). That breaks AC5's third priority. So `inline` is recommended where it passes every
   criterion, descriptor and candidate metadata (×1.9–×2.7 throughput at 32 sessions), and `#page`
   stays on P1 and P3 (AC6). A memory-optimized table variable passed every screening criterion
   for P1 and P3, but it needs DDL provisioning. It remains an unvalidated lead for the task 11
@@ -1161,6 +1163,26 @@ Absolute values for the failing cells (ms, mean ± SD):
 | Fallback | 500 | 1 | 21.0 ± 0.4 / 22.1 ± 0.4 | 28.0 ± 0.1 / 29.4 ± 0.1 | 47.1 → 35.5 |
 | Fallback | 500 | 32 | 137.5 ± 2.1 / 181.1 ± 4.9 | 108.6 ± 18.0 / 206.3 ± 24.8 | 226.8 → 180.0 |
 
+**Every concurrency level, 500 rows** (ratios `I / B`). Task 6 is the three sessions above. `t8`
+and `t8mem` are task 8's `inline` control (see [Alternatives](#sql-server-screening)), each the mean
+of 3 rounds against `baseline` in the same run. Concurrency 8 is replayed but is not a gate
+criterion:
+
+| Batch | Run | c = 1 p50 / p95 | c = 8 p95 / throughput | c = 32 p95 / throughput |
+|---|---|---|---|---|
+| Resource | task 6 | 1.17 / 1.15 | 1.25 / ×0.70 (`B` CV 23%) | 0.39 / ×1.17 (p99 ×1.69) |
+| Resource | `t8` | 1.18 / 1.11 | 1.23 / ×0.78 | 1.03 / ×0.99 |
+| Resource | `t8mem` | 1.22 / 1.19 | 0.83 / ×1.17 (baseline m 35%) | 0.93 / ×0.99 |
+| Fallback | task 6 | 1.34 / 1.33 | 1.25 / ×0.80 | 1.14 / ×0.79 (p99 ×7.9) |
+| Fallback | `t8` | 1.24 / 1.24 | 1.46 / ×0.69 | 1.19 / ×0.86 |
+| Fallback | `t8mem` | 1.36 / 1.37 | 0.94 / ×1.02 | 1.13 / ×0.87 |
+
+The single-session cost is the one result every run repeats. The fallback batch also regresses at
+32 sessions in every run. The resource batch is mixed under concurrency: two of three runs lose
+22–30% of their throughput at 8 sessions, and at 32 sessions it is neutral to better, with a heavier
+p99. `main`'s concurrency-8 cells are noisy (CV up to 23% in task 6, m 35% in `t8mem`), so those
+figures show a direction, not a bound.
+
 **Why 500 rows regress** (spike plans, `SET STATISTICS XML, IO, TIME`; identical in all three
 sessions):
 
@@ -1186,7 +1208,8 @@ sessions):
   descriptor projection) and 3–8% more logical reads, about +7.5 ms CPU per batch. At 25 rows the
   parse is cheap, and removing the create, drop, and insert outweighs it.
 - **At concurrency 32 the two effects compete.** Removing the latch contention wins for the
-  resource batch (p95 0.39, ×1.17 throughput) but not for the fallback batch (p95 1.14, ×0.79),
+  resource batch (p95 0.39, ×1.17 throughput; ×0.99 in task 8's control runs, and ×0.70–×0.78 at
+  8 sessions in two of three runs, see "Every concurrency level") but not for the fallback batch (p95 1.14, ×0.79),
   although `B`'s latch cost per request is similar on both. The run data does not explain the
   difference; the `I` fallback cell at 32 is also the least stable (CV 17% throughput, against 2%
   for `B`).
@@ -1560,8 +1583,8 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
 - **Re-planning falls.** `main` plans 0.91–1.02 statements per call, because each recreated temp
   table invalidates the prepared statements. `inline` plans 0.09–0.29 per call on the resource
   batch, 0.25–0.26 on the descriptor batch, and 0.50–0.65 on the candidate batch. The 25-row
-  fallback window reads 1.00 because no pooled connection had auto-prepared its statements yet
-  (see [Plans and planning](#plans-and-planning)); on one connection they go generic after five
+  fallback window reads 1.00, most likely because no pooled connection had auto-prepared its
+  statements yet (inferred, not probed; see [Plans and planning](#plans-and-planning)); on one connection they go generic after five
   executions, like the other parameterized readers. Plan time per request falls by 5–94%.
 - **The API path ran on a new backend per request** in both variants, so its plans were all custom
   plans. The cause was not established; it affects `B` and `I` equally. The pooled replays and the
@@ -1585,6 +1608,16 @@ for the task 11 review (resolved decision 2). Its evidence is in the task 4 prob
 task 7. A transaction-mode pooler is not a hazard for it: the setting is transaction-local and is
 always set before it is read within the same transaction. A session-level temp table would be a
 hazard there.
+
+The mechanism is not new to DMS. Since DMS-1332 (in `v8.1.0`), the write path's
+`PgsqlCompositeTargetCarrier` (`RelationalCompositeCommandDialect.cs`) carries a captured
+`DocumentId` in the transaction-local setting `dms.composite_target_documentid`, set with
+`set_config(…, true)` and read with `current_setting(…, true)`. Its predicate already reaches a
+hydration batch through `HydrationBatchBuilder.BuildGuardedSingleDocumentBatch`.
+`MssqlCompositeTargetCarrier` is the SQL Server counterpart, on batch-local variables whose names
+are reserved from the bound parameters. What the task 11 review accepts is therefore the read-path
+use: a list of up to 500 ids, folded into custom plans at planning time, read by about eleven
+statements per batch, and run in read-only transactions.
 
 ### SQL Server: `inline` on descriptor and candidate metadata; `#page` stays on P1 and P3
 
@@ -1617,10 +1650,15 @@ both through `AppendRelation` and gives no guidance on this point; story 1 desig
    statement seeks in both variants, and neither variant recompiled after warmup. The DMS-1248
    recompile concern did not occur on these paths.
 3. **P1 and P3 keep `#page` because `inline` fails this priority there.** At 500 rows every keyset
-   statement re-parses the JSON carrier, about 1–2 ms of CPU each. The resource batch costs
-   1.17/1.15× at concurrency 1, and the fallback batch 1.34/1.33× at concurrency 1 and 1.14× p95
-   with ×0.79 throughput at 32. Removing `#page` there would trade tempdb latch contention for a
-   CPU regression on the busiest path. AC5 allows an engine to keep its temp table when the evidence
+   statement re-parses the JSON carrier, about 1–2 ms of CPU each (see "Every concurrency level"
+   under [SQL Server results](#sql-server-results)). The fallback batch regresses at concurrency 1
+   (1.24–1.37) and at 32 sessions (p95 1.13–1.19, throughput ×0.79–×0.87) in every run. The
+   resource batch regresses at concurrency 1 in every run (1.11–1.22) and loses throughput at 8
+   sessions in two of three runs (×0.70–×0.78). At 32 sessions it is neutral to better
+   (×0.99–×1.17), with p99 ×1.7 in task 6. Neither batch preserves SQL Server performance across
+   concurrency levels, and the one cost every run repeats, single-session batch latency, falls on
+   the busiest path; end to end it stays within ±5% of API latency. Removing `#page` there would
+   trade tempdb latch contention for a CPU regression on the busiest path. AC5 allows an engine to keep its temp table when the evidence
    does not justify a fix, as long as the reason is explained. Here, the only measured removal that
    avoids the regression (`memtablevar`, below) is unvalidated and needs DDL.
 
@@ -1673,8 +1711,9 @@ Adopting it would also need:
   [What `memtablevar` costs](#sql-server-screening)). Existing databases would need
   re-provisioning or a migration step.
 - **A `RelationalMappingVersion` decision** under the AGENTS.md cadence when it lands, separate from
-  re-provisioning: `v3` if it lands before 8.1 ships, the `v4` candidate after, and never a second
-  bump within a release line. This spike prescribes no bump.
+  re-provisioning. 8.1 shipped with `v3` (`v8.1.0`, 2026-11-05), so it would land in a later
+  release line: `v4` if it is that line's first relational mapping change, otherwise that line's
+  existing value, and never a second bump within the line. This spike prescribes no bump.
 - **Memory:** 52.8 MB of XTP memory at 32 sessions × 500 rows.
 - **Availability:** In-Memory OLTP must be confirmed for every supported edition and hosting tier,
   and the RCSI and snapshot transaction paths must be exercised.
@@ -1737,11 +1776,15 @@ descriptor GET-many (P4) do not create it under the recommendation.
 | Child statement plans | index seek + key lookup; `#page` estimate 25 | identical; `OPENJSON` estimate 50 |
 | Resource batch, 500 rows, c = 1, p50 / p95 | 21.3 / 22.7 ms | 24.9 / 26.1 ms (1.17 / 1.15; bound 1.09 / 1.10) |
 | Fallback batch, 500 rows, c = 1, p50 / p95 | 21.0 / 22.1 ms | 28.0 / 29.4 ms (1.34 / 1.33; bound 1.05) |
+| Resource batch, 500 rows, c = 8, p95 / throughput | 52.9 ms / 213.8 per s | 66.1 ms / 149.2 per s (1.25 / ×0.70; ×0.78 and ×1.17 in task 8's control; not a gate) |
+| Resource batch, 500 rows, c = 32, p95 / throughput | 308.8 ms / 182.4 per s | 121.8 ms / 214.0 per s (0.39 / ×1.17; ×0.99 in task 8's control) |
+| Fallback batch, 500 rows, c = 8, p95 / throughput | 56.8 ms / 178.5 per s | 71.0 ms / 142.3 per s (1.25 / ×0.80; not a gate) |
 | Fallback batch, 500 rows, c = 32, p95 / throughput | 181.1 ms / 226.8 per s | 206.3 ms / 180.0 per s (1.14 / ×0.79; bounds 1.05 / 0.95) |
 | Batch CPU, 500 rows (resource / fallback) | 27.0 / 27.3 ms | 34.7 / 35.0 ms (×1.28) |
 | Resource API p50 at 500 rows (offset 0) | 128.2 ms | 129.3 ms (1.01) |
 
-`#page` is kept because the only measured removal that keeps its throughput, `memtablevar`, is an
+`#page` is kept because the only measured removal that keeps P1's and P3's single-session latency
+and their throughput at every concurrency level, `memtablevar`, is an
 unvalidated lead that needs provisioning. Its cost is real but concurrency-bound: at 32 sessions,
 `#page` costs about 15 contended latch waits per request on these paths. End to end at concurrency 1 it
 is invisible; resource GET-many API latency is within ±5% under either variant.
@@ -1850,6 +1893,8 @@ of `3621b1eb6`.
 |---|---|---|---|
 | `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (849–904) | Make the keyset per dialect. On PostgreSQL, the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server, `#page` for resource hydration and selected pages. Keep one round trip and the first-result-set contract | 1 |
 | `flattening-reconstitution.md` | § 7 sketches (1818–1828 `SelectByKeysetSql` "expects a keyset table"; 2576–2582 reconstituter step 1) | "joins the page keyset relation" instead of a materialized table; step 1 "select the page keyset" | 1 |
+| `flattening-reconstitution.md` | § 6.1 "Single-document fast path" rationale (908–909) | The `CREATE`, `INSERT`, and `DROP` the fast path avoids are SQL Server's `#page` cost (P1, P3). On PostgreSQL the page keyset issues no DDL; the fast path still saves the carrier and a join per result set | 1 |
+| `flattening-reconstitution.md` | § 7.10 reconstitution inner-loop sketch (2595–2596) | "materialize page keyset" becomes "select the page keyset"; "joined to page" becomes "joined to the page keyset relation" | 1 |
 | `compiled-mapping-set.md` | step 3 (733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset of § 6.1 | 1 |
 | `mpack-format-v1.md` | `KeysetTableContract` (89, 276, 295), `select_by_keyset_sql` (695) | Describe the per-dialect keyset: on PostgreSQL, a relation over the carrier, not a `page` table; on SQL Server, `#page` for P1 and P3. Pack emission is not implemented, so no pack was built with the old contract | 1 |
 | `change-queries.md` | keyset DDL example (2239–2262) | Replace the PostgreSQL `CREATE TEMP TABLE "page"` example with the carrier form, keeping the anchor and `Ordinal` semantics | 1 |
