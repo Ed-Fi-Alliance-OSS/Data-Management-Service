@@ -1761,7 +1761,7 @@ proportion, and plain `SELECT`s must read 0, before any zero counts):
 
 | Id | Engine | Metric | Bound | Spike result | Reproduce |
 |---|---|---|---|---|---|
-| E1 | PostgreSQL | Catalog `n_tup_ins` + `n_tup_del` (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`, `pg_index`, `pg_constraint`, `pg_statistic`) per request, net of idle, on the resource, candidate, fallback, and descriptor batches | = 0 (`main`: 44; 42 descriptor) | 0 in 24 of 24 windows | R1, and story 1's integration test |
+| E1 | PostgreSQL | Catalog `n_tup_ins` + `n_tup_del` (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`, `pg_index`, `pg_constraint`, `pg_statistic`) per request, net of idle, on the resource, candidate, fallback, and descriptor batches | = 0 (`main`: 44; 42 descriptor) | 0 in 24 of 24 windows | R1. The stories' CI tests use the transaction-local `pg_stat_xact_sys_tables` instead |
 | E2 | SQL Server | Temp tables per request on the candidate (P2) and descriptor (P4) batches: XE `object_created` (user table, tempdb, `ddl_phase = 1`, measured database) **and** `Temp Tables Creation Rate`. Both are needed, because a table variable increments only the second | = 0 on both (`main`: 1) | 0 in every P2 and P4 window | R2 |
 | E3 | SQL Server | `sql_statement_recompile` events and summed `plan_generation_num` change after warmup, all four batch kinds | = 0 | 0 in both variants | R2 |
 | E4 | PostgreSQL | GET-many on each of P1–P4 in a transaction with `default_transaction_read_only = on`, with `main`'s prelude failing with 25006 as the positive control | succeeds, exact rows | probe above (P1 and P3 shapes) | story 1 and story 2 integration tests |

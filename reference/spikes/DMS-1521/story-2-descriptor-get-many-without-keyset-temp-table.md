@@ -156,8 +156,14 @@ Ratios are story branch ÷ `main`, and `m = max(2 × CV, 5%)` from `main`'s thre
 
 **Integration** (`Backend.Postgresql.Tests.Integration`, `Backend.Mssql.Tests.Integration`):
 
-- **No temp tables** (E1, E2). Use the calibrated counter protocol with a positive control. The
-  test must fail if the change is reverted.
+- **No temp tables** (E1, E2). Use the deterministic, per-session signals of story 1. The
+  calibrated counter protocol stays in the R1 and R2 evidence only.
+  - PostgreSQL: run the descriptor batch inside a test-owned transaction. Before commit, the seven
+    catalog tables' `n_tup_ins` in `pg_stat_xact_sys_tables` reads 0. `main`'s `descriptor_page`
+    prelude, run the same way, is the positive control and reads more than 0.
+  - SQL Server: the descriptor batch text contains no `CREATE TABLE` and no `DECLARE … TABLE`.
+
+  Each test must fail if the change is reverted.
 - **Carrier** (PostgreSQL). On one pooled physical connection: non-empty, empty, non-empty pairs,
   and a failed batch followed by an empty page. Each returns exactly its own boundary, version
   ids, and owner rows.

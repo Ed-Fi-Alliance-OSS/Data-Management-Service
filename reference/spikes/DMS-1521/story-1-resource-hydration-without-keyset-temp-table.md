@@ -204,13 +204,21 @@ types (`Index Scan` expected) as supporting evidence; they are not a threshold.
 
 **Integration** (`Backend.Postgresql.Tests.Integration`, `Backend.Mssql.Tests.Integration`):
 
-- **No temp tables** (E1, E2). A GET-many request through the production executor creates and drops
-  no temp table, measured with the calibrated counter protocol:
-  - PostgreSQL: `pg_stat_sys_tables` `n_tup_ins` and `n_tup_del` after `pg_stat_clear_snapshot()`;
-  - SQL Server, candidate batch: the temp-table counter.
+- **No temp tables** (E1, E2). A GET-many request through the production executor creates no
+  temp table. The CI tests use deterministic, per-session signals. The calibrated counter protocol
+  stays in the R1 and R2 evidence only, for two reasons. It waits for statistics to flush, and its
+  SQL Server counter is server-wide, while `Backend.Mssql.Tests.Integration` runs fixtures in
+  parallel and P1 and P3 keep `#page`.
+  - PostgreSQL: run the hydration inside a test-owned transaction, as
+    `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction` does. Before commit, read
+    `n_tup_ins` for the seven catalog tables (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`,
+    `pg_index`, `pg_constraint`, `pg_statistic`) from `pg_stat_xact_sys_tables`, and expect 0. As
+    the positive control, `main`'s keyset prelude, run the same way, reads more than 0.
+  - SQL Server, candidate batch: the batch text contains no `CREATE TABLE` and no
+    `DECLARE … TABLE`. Only the server-wide counter sees a table variable, and a shared CI server
+    cannot isolate it.
 
-  A positive control proves that the observer registers a temp-table cycle. The test must fail if
-  the change is reverted.
+  Each test must fail if the change is reverted.
 - **Carrier.** On one pooled physical connection: non-empty pages of 1, 25, and 500 ids in
   sequence, an empty page between them, and a failed batch (`SELECT 1 / 0` after the carrier is
   set). Each returns exactly its own ids, and nothing leaks.

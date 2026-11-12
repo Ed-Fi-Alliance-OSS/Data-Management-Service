@@ -232,11 +232,15 @@ $env:PERF_STORAGE_NOTE = "docker volume $($container.Volume), not tmpfs"
 # Root-level DMS-1521 plan and review notes (DMS-1521.md, DMS-1521-task.json, review reports) cannot
 # affect the code under test; list them by exact name, because the guard matches whole path segments.
 $planNotes = @(Get-ChildItem -Path $repoRoot -File -Filter 'DMS-1521*' | ForEach-Object { $_.Name })
+# The overlay must cover every file prototype.patch touches: the harness guard rejects any other dirty
+# path. The two HydrationExecutorTests.cs files are task 7's test adaptation; the runner never runs them.
 $env:PERF_ALLOW_DIRTY_PREFIXES = (@('reference/spikes/DMS-1521') + $planNotes + @(
     'src/dms/backend/EdFi.DataManagementService.Backend.External/Plans',
     'src/dms/backend/EdFi.DataManagementService.Backend.Plans',
     'src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs',
     'src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs',
+    'src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs',
+    'src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs',
     'src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios'
 )) -join ';'
 if ($Smoke) {
