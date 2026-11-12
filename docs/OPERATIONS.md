@@ -1715,14 +1715,22 @@ with `StagingIntegrityViolation` if the file changed.
 A local, runnable version of the container topology with separate Linux identities is in
 [RUNNING-LOCALLY.md](./RUNNING-LOCALLY.md#cms-dms-template-provisioning-sql-server-staging-with-separate-identities).
 
-The administrative login needs:
+The administrative login must be a member of **`sysadmin`** (`CreateDatabasePrivilege`, operation
+`CreateDatabasePrivilege.Sysadmin`). A login that is not `sysadmin` is `NotReady`, whatever other privileges it
+holds. Startup also checks the privileges `sysadmin` carries and names each missing one separately:
 
-- membership in `dbcreator` or `sysadmin` (`CreateDatabasePrivilege`);
 - `ALTER ANY DATABASE` (`AlterAnyDatabasePrivilege`);
 - `ALTER ANY CONNECTION` (`AlterAnyConnectionPrivilege`), to end other sessions on a target;
 - `VIEW SERVER STATE`, or `VIEW SERVER PERFORMANCE STATE` where the server has it
   (`ViewServerStatePrivilege`);
 - visibility of `sys.master_files` (`FileCatalogVisibility`).
+
+The `sysadmin` requirement comes from this provisioner's restore path, not from `RESTORE` itself: SQL Server lets
+a `dbcreator` member restore a backup into a new database
+([RESTORE permissions](https://learn.microsoft.com/en-us/sql/t-sql/statements/restore-statements-transact-sql#permissions)).
+After such a restore, SQL Server records the login as the new database's owner, but the database's own `dbo`
+stays the owner recorded in the backup. The login then cannot open the staging database it has just restored
+(error `4060`), and the provisioner must open it to validate it. A `sysadmin` enters every database as `dbo`.
 
 The instance default data and log paths must be set (`DefaultDataPath`, `DefaultLogPath`). Restored files
 go there under generated names, never to the paths recorded in the backup.
@@ -1781,14 +1789,19 @@ passed since it was fetched, and a password written directly in `AdminConnection
 restart. See [How a rotation propagates](./SECRETS.md#how-a-rotation-propagates).
 
 - **Without failed operations:** neither PostgreSQL nor SQL Server keeps an old and a new password for one
-  login, so switch logins instead. Give a second administrative login the same privileges, point the secret
-  at it, and disable the first login only once both hold: the cache window has passed (or the Configuration
-  Service was restarted, which clears its cache), and every create or delete that started before the switch
-  has finished. Each operation keeps the credential it resolved when it started for its whole run, cleanup
-  and recovery included, so disabling the old login under a running operation can fail it or leave its
-  cleanup unfinished. On PostgreSQL, disable the first login with `NOLOGIN` and keep it a superuser: the
-  targets it created stay owned by it and are trusted only while it is one (see
-  [PostgreSQL](#postgresql)).
+  login, so switch logins instead. The second login must be a supported administrative login too: a superuser
+  on PostgreSQL, a member of `sysadmin` on SQL Server. Point the secret at it, and disable the first login only
+  once both hold: the cache window has passed (or the Configuration Service was restarted, which clears its
+  cache), and every create or delete that started before the switch has finished. Each operation keeps the
+  credential it resolved when it started for its whole run, cleanup and recovery included, so disabling the
+  old login under a running operation can fail it or leave its cleanup unfinished. On PostgreSQL, disable the
+  first login with `NOLOGIN` and keep it a superuser: the targets it created stay owned by it and are trusted
+  only while it is one (see [PostgreSQL](#postgresql)). On SQL Server, each target stays owned by the login
+  that created it. The second login reads those targets because a `sysadmin` enters every database as `dbo`.
+  Equal server privileges short of `sysadmin` would not be enough: `dbcreator`, `ALTER ANY DATABASE`,
+  `ALTER ANY CONNECTION`, and `VIEW SERVER STATE` let a login alter and drop a database, but not open one it
+  does not own, so the target's identity could not be verified
+  ([server-level roles](https://learn.microsoft.com/en-us/sql/relational-databases/security/authentication-access/server-level-roles)).
 - **Changing the password in place:** update the secret and the login together, then restart the
   Configuration Service or wait out the cache window. Operations in between fail as described above, and so
   can an operation already running with the old password when it opens its next connection.

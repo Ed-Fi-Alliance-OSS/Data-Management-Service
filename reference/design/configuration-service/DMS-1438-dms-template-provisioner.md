@@ -87,9 +87,11 @@ These were raised during review and accepted. They are reflected in the code and
 - **SQL Server floor and engine comparison.** The adapter's own floor is SQL Server 2022 (major 16). Startup
   also compares the server major with the `engineVersion` of both authenticated manifests, for either
   provider, so a server too old for the packages is `NotReady` at startup instead of failing every create.
-- **SQL Server role and permission rules are literal.** `dbcreator` (or `sysadmin`), `ALTER ANY DATABASE`,
+- **SQL Server role and permission rules are literal.** `sysadmin`, `ALTER ANY DATABASE`,
   `ALTER ANY CONNECTION`, `VIEW SERVER STATE` (or `VIEW SERVER PERFORMANCE STATE`), and visibility of
-  `sys.master_files` are each required and reported separately.
+  `sys.master_files` are each required and reported separately. `sysadmin` replaced the earlier `dbcreator`
+  rule: a `dbcreator` login can restore, but the restored database keeps the backup's `dbo`, so the login
+  cannot open the staging database to validate it (4060).
 - **Visibility probe error numbers.** SQL Server on Linux answers a readable zero-byte file with `3254`, not
   `3241`/`3242`, so `3254` counts as visible. `3201` covers both a missing path and a file the server
   identity cannot read.

@@ -11,7 +11,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// Step 4.9 reason codes: the server rules of 7.3 item 4 over read facts (the version floor and the default
-/// directories as <c>EngineIncompatible</c>; <c>dbcreator</c> or <c>sysadmin</c>, <c>ALTER ANY DATABASE</c>,
+/// directories as <c>EngineIncompatible</c>; <c>sysadmin</c>, <c>ALTER ANY DATABASE</c>,
 /// <c>ALTER ANY CONNECTION</c>, server-state visibility, and file-catalog visibility each as
 /// <c>AdminPrivilegeMissing</c>, every failing rule reported); the staging directory rules of item 6 (missing, or
 /// group or other write); the D-21 verdict mapping; and the probe lock resource.
@@ -57,8 +57,7 @@ public class MssqlEnvironmentRulesTests
             int productMajorVersion = 17,
             string? defaultDataPath = "/var/opt/mssql/data/",
             string? defaultLogPath = "/var/opt/mssql/log/",
-            bool sysadmin = false,
-            bool dbcreator = true,
+            bool sysadmin = true,
             bool alterAnyDatabase = true,
             bool alterAnyConnection = true,
             bool seesAllSessions = true,
@@ -69,7 +68,6 @@ public class MssqlEnvironmentRulesTests
                 defaultDataPath,
                 defaultLogPath,
                 sysadmin,
-                dbcreator,
                 alterAnyDatabase,
                 alterAnyConnection,
                 seesAllSessions,
@@ -77,16 +75,15 @@ public class MssqlEnvironmentRulesTests
             );
 
         [Test]
-        public void It_raises_nothing_for_a_granted_dbcreator() =>
-            MssqlEnvironment.Evaluate(Facts()).Should().BeEmpty();
+        public void It_raises_nothing_for_sysadmin() => MssqlEnvironment.Evaluate(Facts()).Should().BeEmpty();
 
+        /// <summary>
+        /// The previously documented privileges (<c>dbcreator</c>, <c>ALTER ANY DATABASE</c>, <c>ALTER ANY
+        /// CONNECTION</c>, server-state and file-catalog visibility) without <c>sysadmin</c>: only that is missing.
+        /// </summary>
         [Test]
-        public void It_accepts_sysadmin_in_place_of_dbcreator() =>
-            MssqlEnvironment.Evaluate(Facts(sysadmin: true, dbcreator: false)).Should().BeEmpty();
-
-        [Test]
-        public void It_requires_dbcreator_or_sysadmin() =>
-            MssqlEnvironment.Evaluate(Facts(dbcreator: false)).Should().Equal(_createDatabase);
+        public void It_requires_sysadmin_even_with_every_other_privilege() =>
+            MssqlEnvironment.Evaluate(Facts(sysadmin: false)).Should().Equal(_createDatabase);
 
         [Test]
         public void It_requires_alter_any_database() =>
@@ -109,7 +106,7 @@ public class MssqlEnvironmentRulesTests
             MssqlEnvironment
                 .Evaluate(
                     Facts(
-                        dbcreator: false,
+                        sysadmin: false,
                         alterAnyDatabase: false,
                         alterAnyConnection: false,
                         seesAllSessions: false,

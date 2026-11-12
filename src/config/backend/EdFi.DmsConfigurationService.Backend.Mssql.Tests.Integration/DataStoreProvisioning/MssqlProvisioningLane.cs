@@ -590,18 +590,19 @@ internal sealed class Lane : IAsyncDisposable
     /// <summary>
     /// The lane's own deployment (same options, catalog, allowlisted package and hooks, so the lane's request and pin
     /// apply) over <paramref name="inner"/> instead of the admin engine, behind a fresh recorder, with the orchestrator
-    /// logging to <paramref name="logger"/> when one is given.
+    /// logging to <paramref name="logger"/> and gated by <paramref name="readiness"/> when they are given.
     /// </summary>
     public Deployment WithEngine(
         MssqlDmsTargetEngine inner,
-        ILogger<DmsDataStoreProvisioningService>? logger = null
+        ILogger<DmsDataStoreProvisioningService>? logger = null,
+        IDmsDataStoreProvisionerReadiness? readiness = null
     )
     {
         RecordingEngine engine = new(inner);
         return _deployment with
         {
             Engine = engine,
-            Service = ServiceFor(engine, _deployment.Catalog, _deployment.Options, _hooks, logger),
+            Service = ServiceFor(engine, _deployment.Catalog, _deployment.Options, _hooks, logger, readiness),
         };
     }
 
@@ -801,10 +802,11 @@ internal sealed class Lane : IAsyncDisposable
         TemplateArtifactCatalog catalog,
         DmsDataStoreProvisioningOptions options,
         LaneHooks hooks,
-        ILogger<DmsDataStoreProvisioningService>? logger = null
+        ILogger<DmsDataStoreProvisioningService>? logger = null,
+        IDmsDataStoreProvisionerReadiness? readiness = null
     ) =>
         new(
-            new Ready(),
+            readiness ?? new Ready(),
             engine,
             catalog,
             Options.Create(options),

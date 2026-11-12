@@ -17,9 +17,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStore
 /// <summary>
 /// The SQL Server environmental validation against a live server (7.3 items 4, 6 and 7, Step 4.9): the lane admin
 /// passes every server probe and, with a staging server path the server cannot open, is <c>NotReady</c> only as
-/// <c>StagingNotVisible</c> (error 3201), with the probe file deleted and the probe lock released; a login without
-/// <c>dbcreator</c> is <c>NotReady</c> naming exactly that privilege, a login with no permission names every one,
-/// and a <c>dbcreator</c>-only login names the permissions the role does not carry; a server below the floor is
+/// <c>StagingNotVisible</c> (error 3201), with the probe file deleted and the probe lock released; a login that is
+/// not <c>sysadmin</c> is <c>NotReady</c> naming exactly that privilege, even with every other privilege, a login
+/// with no permission names every one, and a <c>dbcreator</c>-only login also names the permissions the role does
+/// not carry; a server below the floor is
 /// <c>EngineIncompatible</c>; a probe lock held by another session is <c>LockTimeout</c> with that holder untouched;
 /// the one-shot heartbeat answers held on a fresh holder and declares a holder lost once its lock is released;
 /// and, when the lane shares a staging directory with the server, the lane admin is <c>Ready</c>.
@@ -193,6 +194,8 @@ public class MssqlEnvironmentTests
         private DmsReadinessReason[] _withoutDbcreator = [];
         private DmsReadinessReason[] _withNothing = [];
         private DmsReadinessReason[] _dbcreatorOnly = [];
+        private DmsReadinessReason[] _everyPrivilegeButSysadmin = [];
+        private int _everyPrivilegeButSysadminIsSysadmin = -1;
 
         private async Task<DmsReadinessReason[]> ServerReasonsAsAsync(string login, string serverPath) =>
             ServerReasonsOf(
@@ -225,6 +228,19 @@ public class MssqlEnvironmentTests
                 $"ALTER SERVER ROLE [dbcreator] ADD MEMBER {MssqlIdentifiers.Quote(dbcreatorOnly)};"
             );
             _dbcreatorOnly = await ServerReasonsAsAsync(dbcreatorOnly, serverPath);
+
+            // Every privilege this provisioner documented before it required sysadmin.
+            string everyPrivilege = await CreateLoginAsync("nosysadmin");
+            _logins.Add(everyPrivilege);
+            string everyQuoted = MssqlIdentifiers.Quote(everyPrivilege);
+            await ExecuteOnServerAsync(
+                $"ALTER SERVER ROLE [dbcreator] ADD MEMBER {everyQuoted}; GRANT ALTER ANY DATABASE TO {everyQuoted}; GRANT ALTER ANY CONNECTION TO {everyQuoted}; GRANT VIEW SERVER STATE TO {everyQuoted};"
+            );
+            _everyPrivilegeButSysadminIsSysadmin = await ScalarOnServerAsync<int>(
+                "SELECT CONVERT(int, IS_SRVROLEMEMBER(N'sysadmin', @login));",
+                ("@login", everyPrivilege)
+            );
+            _everyPrivilegeButSysadmin = await ServerReasonsAsAsync(everyPrivilege, serverPath);
         }
 
         [OneTimeTearDown]
@@ -240,8 +256,15 @@ public class MssqlEnvironmentTests
         }
 
         [Test]
-        public void It_reports_exactly_the_missing_dbcreator() =>
+        public void It_reports_exactly_the_missing_sysadmin_without_dbcreator() =>
             _withoutDbcreator.Should().Equal(_createDatabase);
+
+        [Test]
+        public void It_reports_exactly_the_missing_sysadmin_for_every_other_documented_privilege()
+        {
+            _everyPrivilegeButSysadminIsSysadmin.Should().Be(0);
+            _everyPrivilegeButSysadmin.Should().Equal(_createDatabase);
+        }
 
         [Test]
         public void It_reports_every_missing_privilege_and_the_hidden_file_catalog() =>
@@ -256,10 +279,11 @@ public class MssqlEnvironmentTests
                 );
 
         [Test]
-        public void It_reports_the_permissions_dbcreator_does_not_carry() =>
+        public void It_reports_sysadmin_and_the_permissions_dbcreator_does_not_carry() =>
             _dbcreatorOnly
                 .Should()
                 .Equal(
+                    _createDatabase,
                     Missing(MssqlEnvironment.AlterAnyDatabasePrivilegeProbe),
                     Missing(MssqlEnvironment.AlterAnyConnectionPrivilegeProbe),
                     Missing(MssqlEnvironment.ViewServerStatePrivilegeProbe)
@@ -466,18 +490,24 @@ public class MssqlEnvironmentTests
     {
         private DmsEngineEnvironment _environment = null!;
         private string _stagingPath = string.Empty;
+        private int _sysadmin = -1;
 
         [OneTimeSetUp]
         public async Task Setup()
         {
             RequireSharedStagingOrSkip();
             _stagingPath = SharedStagingPath!;
+            _sysadmin = await ScalarOnServerAsync<int>("SELECT CONVERT(int, IS_SRVROLEMEMBER(N'sysadmin'));");
             _environment = await EngineWith(AdminConnection(), _stagingPath, SharedStagingServerPath!)
                 .ValidateEnvironmentAsync(default);
         }
 
         [Test]
-        public void It_is_ready() => _environment.Should().BeOfType<DmsEngineEnvironment.Ready>();
+        public void It_is_ready_as_sysadmin()
+        {
+            _sysadmin.Should().Be(1);
+            _environment.Should().BeOfType<DmsEngineEnvironment.Ready>();
+        }
 
         [Test]
         public void It_leaves_no_probe_file() =>

@@ -801,4 +801,114 @@ public class MssqlCreateReconcileTests
         [Test]
         public void It_left_the_target_exactly_as_it_was() => _after.Should().Be(_before);
     }
+
+    /// <summary>
+    /// F-002 and AC18: this provisioner requires <c>sysadmin</c> on SQL Server. A login with every other privilege it
+    /// once documented (<c>dbcreator</c>, <c>ALTER ANY DATABASE</c>, <c>ALTER ANY CONNECTION</c>,
+    /// <c>VIEW SERVER STATE</c>) gets a <c>NotReady</c> environment from the real engine naming exactly the missing
+    /// <c>sysadmin</c>. Recorded in the real readiness as startup records it, that verdict makes the provisioner's own
+    /// gate refuse a create and a delete of an existing target as <c>StartupValidationFailed</c> before any engine
+    /// call, so the target is untouched.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_admin_login_has_every_privilege_but_sysadmin
+    {
+        private Lane? _lane;
+        private string? _login;
+        private DmsEngineEnvironment _environment = null!;
+        private Evidence _before = null!;
+        private Evidence _after = null!;
+        private DmsDataStoreCreateResult _create = null!;
+        private DmsDataStoreDeleteResult _delete = null!;
+        private int _engineCalls = -1;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireSharedStagingOrSkip();
+            _lane = await CreatedAsync(await ShapedBackup.CreateAsync());
+            _before = await EvidenceAsync(_lane.Target);
+
+            _login = await CreateLoginAsync("nosysadmin");
+            string quoted = MssqlIdentifiers.Quote(_login);
+            await ExecuteOnServerAsync(
+                $"ALTER SERVER ROLE [dbcreator] ADD MEMBER {quoted}; GRANT ALTER ANY DATABASE TO {quoted}; GRANT ALTER ANY CONNECTION TO {quoted}; GRANT VIEW SERVER STATE TO {quoted};"
+            );
+
+            // The engine's verdict under that login, recorded as DmsDataStoreProvisioningStartup records it.
+            MssqlDmsTargetEngine engine = EngineAs(_login);
+            _environment = await engine.ValidateEnvironmentAsync(default);
+            DmsDataStoreProvisionerReadiness readiness = new();
+            readiness.Record(
+                _environment is DmsEngineEnvironment.NotReady notReady
+                    ? new DmsProvisionerReadiness.NotReady(notReady.Reasons)
+                    : new DmsProvisionerReadiness.Ready(engine.Provider, DateTimeOffset.UtcNow)
+            );
+
+            Lane.Deployment gated = _lane.WithEngine(engine, readiness: readiness);
+            _create = await gated.Service.CreateAsync(_lane.Request, default);
+            _delete = await gated.Service.DeleteAsync(_lane.DeleteRequest, default);
+            _engineCalls = gated.Engine.Calls.Count;
+            _after = await EvidenceAsync(_lane.Target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+
+            if (_login is not null)
+            {
+                SqlConnection.ClearAllPools();
+                await DropLoginAsync(_login);
+            }
+        }
+
+        private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) GateRefusal(
+            DmsProvisioningFailure failure
+        ) => (failure.Code, failure.Category, failure.Diagnostic.Operation);
+
+        private static (DmsProvisioningFailureCode, DmsProvisioningFailureCategory, string) NotReady =>
+            (
+                DmsProvisioningFailureCode.StartupValidationFailed,
+                DmsProvisioningFailureCategory.NotReady,
+                DisabledDmsDataStoreProvisioner.Operation
+            );
+
+        [Test]
+        public void It_is_not_ready_naming_exactly_the_missing_sysadmin() =>
+            _environment
+                .Should()
+                .BeOfType<DmsEngineEnvironment.NotReady>()
+                .Which.Reasons.Should()
+                .Equal(
+                    new DmsReadinessReason(
+                        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+                        MssqlEnvironment.CreateDatabasePrivilegeProbe,
+                        DmsProvisioningDiagnostic.ForOperation(MssqlEnvironment.CreateDatabaseRoleOperation)
+                    )
+                );
+
+        [Test]
+        public void It_refuses_the_create_at_the_readiness_gate() =>
+            GateRefusal(_create.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail)
+                .Should()
+                .Be(NotReady);
+
+        [Test]
+        public void It_refuses_the_delete_at_the_readiness_gate() =>
+            GateRefusal(_delete.Should().BeOfType<DmsDataStoreDeleteResult.Failure>().Subject.Detail)
+                .Should()
+                .Be(NotReady);
+
+        [Test]
+        public void It_calls_the_engine_for_nothing_and_leaves_the_target_as_it_was()
+        {
+            _engineCalls.Should().Be(0);
+            _after.Should().Be(_before);
+        }
+    }
 }

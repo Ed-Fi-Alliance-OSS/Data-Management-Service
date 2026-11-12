@@ -13,7 +13,6 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 /// <param name="DefaultDataPath"><c>SERVERPROPERTY('InstanceDefaultDataPath')</c>, or null.</param>
 /// <param name="DefaultLogPath"><c>SERVERPROPERTY('InstanceDefaultLogPath')</c>, or null.</param>
 /// <param name="IsSysadmin"><c>IS_SRVROLEMEMBER('sysadmin')</c>.</param>
-/// <param name="IsDbcreator"><c>IS_SRVROLEMEMBER('dbcreator')</c>.</param>
 /// <param name="HasAlterAnyDatabase"><c>ALTER ANY DATABASE</c>, implied permissions counted.</param>
 /// <param name="HasAlterAnyConnection"><c>ALTER ANY CONNECTION</c> (<c>KILL</c>), implied permissions counted.</param>
 /// <param name="SeesAllSessions"><c>VIEW SERVER PERFORMANCE STATE</c> where the server knows it, else <c>VIEW SERVER STATE</c>.</param>
@@ -23,7 +22,6 @@ internal sealed record MssqlEnvironmentFacts(
     string? DefaultDataPath,
     string? DefaultLogPath,
     bool IsSysadmin,
-    bool IsDbcreator,
     bool HasAlterAnyDatabase,
     bool HasAlterAnyConnection,
     bool SeesAllSessions,
@@ -49,7 +47,11 @@ internal static class MssqlEnvironment
 
     public const string DefaultLogPathProbe = "DefaultLogPath";
 
-    /// <summary><c>RESTORE</c> into a new database: <c>dbcreator</c> or <c>sysadmin</c>.</summary>
+    /// <summary>
+    /// Creating a target: <c>sysadmin</c>. <c>dbcreator</c> may run the <c>RESTORE</c>, but the restored database's
+    /// own <c>dbo</c> stays the owner recorded in the backup, so a login that is not <c>sysadmin</c> cannot open the
+    /// staging database it restored (4060) and every create would fail after the restore.
+    /// </summary>
     public const string CreateDatabasePrivilegeProbe = "CreateDatabasePrivilege";
 
     /// <summary>Rename, fence (<c>SINGLE_USER</c>), marker, and drop of databases the admin does not own: <c>ALTER ANY DATABASE</c>.</summary>
@@ -90,7 +92,7 @@ internal static class MssqlEnvironment
 
     public const string ConnectOperation = TargetServerProbe + ".Connect";
     public const string ReadFactsOperation = TargetServerProbe + ".ReadFacts";
-    public const string CreateDatabaseRoleOperation = CreateDatabasePrivilegeProbe + ".DbcreatorOrSysadmin";
+    public const string CreateDatabaseRoleOperation = CreateDatabasePrivilegeProbe + ".Sysadmin";
     public const string StagingDirectoryMissingOperation = StagingDirectoryProbe + ".Missing";
     public const string StagingDirectoryWritableOperation = StagingDirectoryProbe + ".GroupOrOtherWritable";
     public const string StagingDirectoryModeOperation = StagingDirectoryProbe + ".ReadMode";
@@ -112,7 +114,6 @@ internal static class MssqlEnvironment
         + "CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultDataPath')), "
         + "CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultLogPath')), "
         + "CONVERT(int, COALESCE(IS_SRVROLEMEMBER(N'sysadmin'), 0)), "
-        + "CONVERT(int, COALESCE(IS_SRVROLEMEMBER(N'dbcreator'), 0)), "
         + "CONVERT(int, COALESCE(HAS_PERMS_BY_NAME(NULL, NULL, N'ALTER ANY DATABASE'), 0)), "
         + "CONVERT(int, COALESCE(HAS_PERMS_BY_NAME(NULL, NULL, N'ALTER ANY CONNECTION'), 0)), "
         + $"COALESCE({MssqlSessionQueries.SessionsVisible}, 0), "
@@ -125,11 +126,7 @@ internal static class MssqlEnvironment
         Func<MssqlEnvironmentFacts, bool> Holds
     )[] _privilegeRules =
     [
-        (
-            CreateDatabasePrivilegeProbe,
-            CreateDatabaseRoleOperation,
-            facts => facts.IsSysadmin || facts.IsDbcreator
-        ),
+        (CreateDatabasePrivilegeProbe, CreateDatabaseRoleOperation, facts => facts.IsSysadmin),
         (AlterAnyDatabasePrivilegeProbe, AlterAnyDatabasePrivilegeProbe, facts => facts.HasAlterAnyDatabase),
         (
             AlterAnyConnectionPrivilegeProbe,
@@ -163,8 +160,7 @@ internal static class MssqlEnvironment
             reader.GetInt32(4) == 1,
             reader.GetInt32(5) == 1,
             reader.GetInt32(6) == 1,
-            reader.GetInt32(7) == 1,
-            reader.GetInt32(8) == 1
+            reader.GetInt32(7) == 1
         );
     }
 
