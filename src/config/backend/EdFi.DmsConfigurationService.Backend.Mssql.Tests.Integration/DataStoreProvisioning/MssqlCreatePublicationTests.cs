@@ -198,7 +198,7 @@ public class MssqlCreatePublicationTests
                     _staged = await StagedInstanceAsync(operation);
 
                     // datetime has a resolution of about 3 ms: the rename must fall in a later tick than the restore.
-                    await Task.Delay(TimeSpan.FromMilliseconds(50));
+                    await WaitForServerClockPastAsync(_staged);
                 }
             };
             _result = await _lane.CreateAsync();

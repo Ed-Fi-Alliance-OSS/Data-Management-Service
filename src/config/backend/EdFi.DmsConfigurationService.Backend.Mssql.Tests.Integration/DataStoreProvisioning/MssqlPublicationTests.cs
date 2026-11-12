@@ -156,7 +156,7 @@ public class MssqlPublicationTests
             _staged = await Staged.CreateAsync("rename");
 
             // datetime has a resolution of about 3 ms: the rename must fall in a later tick than the create.
-            await Task.Delay(TimeSpan.FromMilliseconds(50));
+            await WaitForServerClockPastAsync(_staged.Instance);
             _outcome = await _staged.RenameAsync();
             _catalogAfter = await new TestDatabase(_staged.Target.Value).CatalogInstanceAsync();
             _target = await Staged.InspectAsync(_staged.Target);

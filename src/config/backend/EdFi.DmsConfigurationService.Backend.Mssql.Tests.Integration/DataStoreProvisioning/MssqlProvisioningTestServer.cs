@@ -239,6 +239,30 @@ internal static partial class MssqlProvisioningTestServer
         }
     }
 
+    /// <summary>
+    /// Waits until the server's <c>datetime</c> clock reads later than <paramref name="instance"/>'s <c>create_date</c>
+    /// snapshot, so a rename issued afterwards stamps a <c>create_date</c> that differs from it. Both sides are compared
+    /// on the server at <c>datetime</c> precision (about 3 ms); the client clock is never consulted. Each read is bounded
+    /// by the admin command timeout and the wait by <c>WaitUntilAsync</c>, after which it fails.
+    /// </summary>
+    public static async Task WaitForServerClockPastAsync(DmsInstanceIdentity.Mssql instance)
+    {
+        bool passed = await WaitUntilAsync(
+            async () =>
+                await ScalarOnServerAsync<int>(
+                    "SELECT CASE WHEN GETDATE() > CONVERT(datetime, @createDate) THEN 1 ELSE 0 END;",
+                    ("@createDate", instance.CreateDateSnapshot.UtcDateTime)
+                ) == 1,
+            TimeSpan.FromSeconds(10)
+        );
+        if (!passed)
+        {
+            throw new InvalidOperationException(
+                "The server clock did not pass the captured create_date within 10 seconds."
+            );
+        }
+    }
+
     /// <summary>Creates an empty database and, when given, runs <paramref name="script"/> in it.</summary>
     public static async Task<TestDatabase> CreateDatabaseAsync(string purpose, string? script = null)
     {
