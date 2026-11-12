@@ -212,15 +212,7 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         }
     }
 
-    public static DmsServerFacts Facts() =>
-        new(
-            "PostgreSQL 18.1",
-            18,
-            "UTF8",
-            null,
-            null,
-            new DateTimeOffset(2026, 11, 5, 12, 0, 0, TimeSpan.Zero)
-        );
+    public static DmsServerFacts Facts() => new(18, null, null);
 
     public Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken) =>
         Refuse<DmsEngineEnvironment>(nameof(ValidateEnvironmentAsync), null);

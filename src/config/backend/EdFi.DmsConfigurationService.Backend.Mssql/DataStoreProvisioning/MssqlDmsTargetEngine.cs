@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
 /// The SQL Server adapter of the engine port: server facts with
-/// the default data and log paths and the server's UTC clock, inspection by name
+/// the major version and the default data and log paths, inspection by name
 /// with the instance identity <c>database_id</c> plus primary-file <c>physical_name</c> plus the
 /// <c>create_date</c> snapshot (D-13), instance-bound sessions that verify all three at open and
 /// capture <c>@@SPID</c> and <c>login_time</c> (D-7b), the delivered identity read, and the catalog facts the
@@ -50,7 +50,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     public const int HighestSystemDatabaseId = 4;
 
     private const string ServerFactsQuery =
-        "SELECT CONVERT(nvarchar(128), SERVERPROPERTY('ProductVersion')), CONVERT(int, SERVERPROPERTY('ProductMajorVersion')), CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultDataPath')), CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultLogPath')), SYSUTCDATETIME();";
+        "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion')), CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultDataPath')), CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultLogPath'));";
 
     private const string InspectQuery =
         "SELECT d.database_id, d.state_desc, d.user_access_desc, d.create_date, (SELECT f.physical_name FROM sys.master_files f WHERE f.database_id = d.database_id AND f.file_id = 1) FROM sys.databases d WHERE d.name = @name;";
@@ -129,19 +129,10 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
             throw new InvalidOperationException("The server facts query returned no row.");
         }
 
-        string productVersion = reader.GetString(0);
-        int majorVersion = reader.GetInt32(1);
-        string? defaultDataPath = await StringOrNullAsync(reader, 2, cancellationToken);
-        string? defaultLogPath = await StringOrNullAsync(reader, 3, cancellationToken);
-        DateTimeOffset serverUtcNow = AsUtc(await reader.GetFieldValueAsync<DateTime>(4, cancellationToken));
-        return new DmsServerFacts(
-            productVersion,
-            majorVersion,
-            null,
-            defaultDataPath,
-            defaultLogPath,
-            serverUtcNow
-        );
+        int majorVersion = reader.GetInt32(0);
+        string? defaultDataPath = await StringOrNullAsync(reader, 1, cancellationToken);
+        string? defaultLogPath = await StringOrNullAsync(reader, 2, cancellationToken);
+        return new DmsServerFacts(majorVersion, defaultDataPath, defaultLogPath);
     }
 
     public Task<DmsTargetLockResult> AcquireTargetLockAsync(
@@ -285,15 +276,31 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
     public async Task<DmsIdentityRead> ReadIdentityAsync(
         DmsSession session,
         CancellationToken cancellationToken
+    ) =>
+        await ReadIdentityRowsAsync(
+            RequireSession(session).Connection,
+            MssqlInventoryQueries.SourceIdentityRows,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// The identity query <paramref name="sql"/> on <paramref name="connection"/>, judged with the delivered rule
+    /// (<see cref="DmsIdentityRead.FromBoundedText"/>). A missing table, a missing or unconvertible identity column,
+    /// and a refusal for lack of a privilege are typed reads; every other error, including cancellation and a lost
+    /// connection, propagates unchanged.
+    /// </summary>
+    private async Task<DmsIdentityRead> ReadIdentityRowsAsync(
+        SqlConnection connection,
+        string sql,
+        CancellationToken cancellationToken
     )
     {
-        SqlConnection connection = RequireSession(session).Connection;
         List<(string? Text, bool Overlength)> values;
         try
         {
             values = await ReadRowsAsync(
                 connection,
-                MssqlInventoryQueries.SourceIdentityRows,
+                sql,
                 MssqlInventoryQueries.ReadSourceIdentityRow,
                 cancellationToken
             );
@@ -321,7 +328,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         return values.Count switch
         {
             0 => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.NoRows),
-            1 => ParseIdentity(values[0]),
+            1 => DmsIdentityRead.FromBoundedText(values[0].Text, values[0].Overlength),
             _ => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.MultipleRows),
         };
     }
@@ -656,19 +663,6 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         }
     }
 
-    private static DmsIdentityRead ParseIdentity((string? Text, bool Overlength) row)
-    {
-        // A value longer than a D-format GUID is refused before parsing: the text read is only its prefix.
-        if (row.Overlength || !Guid.TryParseExact(row.Text, "D", out Guid sourceIdentity))
-        {
-            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.Unparsable);
-        }
-
-        return sourceIdentity == Guid.Empty
-            ? new DmsIdentityRead.Invalid(DmsIdentityReadProblem.EmptyGuid)
-            : new DmsIdentityRead.Found(sourceIdentity);
-    }
-
     private SqlCommand Command(string sql, SqlConnection connection) =>
         new(sql, connection) { CommandTimeout = _adminConnection.CommandTimeoutSeconds };
 
@@ -764,8 +758,7 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
 
     /// <summary>
     /// A catalog <c>datetime</c> as an offset value without conversion: <c>create_date</c> and <c>login_time</c>
-    /// are server-local and serve only as equality guards against id reuse, never as a clock; <c>SYSUTCDATETIME()</c>
-    /// is already UTC.
+    /// are server-local and serve only as equality guards against id reuse, never as a clock.
     /// </summary>
     private static DateTimeOffset AsUtc(DateTime value) =>
         new(DateTime.SpecifyKind(value, DateTimeKind.Utc), TimeSpan.Zero);

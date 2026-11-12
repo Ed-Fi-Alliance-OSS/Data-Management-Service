@@ -35,6 +35,23 @@ public enum DmsIdentityReadProblem
 /// </summary>
 public abstract record DmsIdentityRead
 {
+    /// <summary>
+    /// The delivered rule applied to the one row read: <paramref name="text"/> is the stored value bounded to the
+    /// length of a <c>D</c>-format GUID (null for a NULL), and <paramref name="overlength"/> says the stored value is
+    /// longer. An overlength value is refused before parsing, because the text read is only its prefix.
+    /// </summary>
+    public static DmsIdentityRead FromBoundedText(string? text, bool overlength)
+    {
+        if (overlength || !Guid.TryParseExact(text, "D", out Guid sourceIdentity))
+        {
+            return new Invalid(DmsIdentityReadProblem.Unparsable);
+        }
+
+        return sourceIdentity == Guid.Empty
+            ? new Invalid(DmsIdentityReadProblem.EmptyGuid)
+            : new Found(sourceIdentity);
+    }
+
     public sealed record Found : DmsIdentityRead
     {
         public Found(Guid sourceIdentity)

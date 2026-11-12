@@ -11,8 +11,8 @@ using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataSt
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
 
 /// <summary>
-/// The engine's server-level reads against a live server: server facts with the default paths and the UTC
-/// clock (6.1 step 5, 6.4 step 2), inspection by name with the protected and fenced classifications and the
+/// The engine's server-level reads against a live server: server facts with the major version and the default
+/// paths (6.1 step 5, 6.4 step 2), inspection by name with the protected and fenced classifications and the
 /// <c>database_id</c> plus primary file plus <c>create_date</c> instance identity (6.1 step 6, D-13), the
 /// identity a rename keeps and the snapshot it changes (F-P17), and instance-bound sessions that verify the
 /// instance at open and capture <c>@@SPID</c> and <c>login_time</c> (D-7b).
@@ -24,20 +24,15 @@ public class MssqlDmsTargetEngineInspectionTests
     public class Given_server_facts
     {
         private DmsServerFacts _facts = null!;
-        private string _productVersion = string.Empty;
         private int _productMajor;
         private string _dataPath = string.Empty;
         private string _logPath = string.Empty;
-        private DateTime _serverUtcNow;
 
         [OneTimeSetUp]
         public async Task Setup()
         {
             RequireConfiguredOrSkip();
             _facts = await Engine().ReadServerFactsAsync(default);
-            _productVersion = await ScalarOnServerAsync<string>(
-                "SELECT CONVERT(nvarchar(128), SERVERPROPERTY('ProductVersion'));"
-            );
             _productMajor = await ScalarOnServerAsync<int>(
                 "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));"
             );
@@ -47,11 +42,7 @@ public class MssqlDmsTargetEngineInspectionTests
             _logPath = await ScalarOnServerAsync<string>(
                 "SELECT CONVERT(nvarchar(4000), SERVERPROPERTY('InstanceDefaultLogPath'));"
             );
-            _serverUtcNow = await ScalarOnServerAsync<DateTime>("SELECT SYSUTCDATETIME();");
         }
-
-        [Test]
-        public void It_reports_the_product_version() => _facts.ProductVersion.Should().Be(_productVersion);
 
         [Test]
         public void It_reports_the_product_major_version() => _facts.MajorVersion.Should().Be(_productMajor);
@@ -59,15 +50,6 @@ public class MssqlDmsTargetEngineInspectionTests
         [Test]
         public void It_reports_the_default_data_and_log_paths() =>
             (_facts.DefaultDataPath, _facts.DefaultLogPath).Should().Be((_dataPath, _logPath));
-
-        [Test]
-        public void It_reports_no_server_encoding() => _facts.ServerEncoding.Should().BeNull();
-
-        [Test]
-        public void It_reports_the_server_clock_in_utc() =>
-            _facts
-                .ServerUtcNow.Should()
-                .BeCloseTo(new DateTimeOffset(_serverUtcNow, TimeSpan.Zero), TimeSpan.FromMinutes(5));
     }
 
     [TestFixture]

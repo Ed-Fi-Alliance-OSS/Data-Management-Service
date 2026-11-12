@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
-using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
@@ -131,46 +130,12 @@ public sealed partial class MssqlDmsTargetEngine
     {
         MssqlTargetLockSession session = HolderOf(holder);
         return await session.RunAsync(
-            async token =>
-            {
-                List<(string? Text, bool Overlength)> values;
-                try
-                {
-                    values = await ReadRowsAsync(
-                        session.Connection,
-                        MssqlInventoryQueries.SourceIdentityRowsIn(target),
-                        MssqlInventoryQueries.ReadSourceIdentityRow,
-                        token
-                    );
-                }
-                catch (SqlException exception) when (MssqlErrorClassifier.IsMissingRelation(exception.Number))
-                {
-                    return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.TableMissing);
-                }
-                catch (SqlException exception) when (MssqlErrorClassifier.IsMissingColumn(exception.Number))
-                {
-                    return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing);
-                }
-                catch (SqlException exception)
-                    when (MssqlErrorClassifier.IsConversionRefused(exception.Number))
-                {
-                    return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnTypeInvalid);
-                }
-                catch (SqlException exception) when (MssqlErrorClassifier.IsAccessRefusal(exception.Number))
-                {
-                    return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied)
-                    {
-                        Diagnostic = MssqlErrorClassifier.Diagnostic(exception, ReadIdentityOperation),
-                    };
-                }
-
-                return values.Count switch
-                {
-                    0 => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.NoRows),
-                    1 => ParseIdentity(values[0]),
-                    _ => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.MultipleRows),
-                };
-            },
+            token =>
+                ReadIdentityRowsAsync(
+                    session.Connection,
+                    MssqlInventoryQueries.SourceIdentityRowsIn(target),
+                    token
+                ),
             _adminConnection.CommandTimeout,
             cancellationToken
         );

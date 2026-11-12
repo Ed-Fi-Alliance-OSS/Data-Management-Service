@@ -27,46 +27,25 @@ public class PostgresqlDmsTargetEngineInspectionTests
     public class Given_server_facts
     {
         private DmsServerFacts _facts = null!;
-        private string _serverVersion = string.Empty;
         private int _serverVersionNum;
-        private string _template0Encoding = string.Empty;
-        private DateTime _serverNow;
 
         [OneTimeSetUp]
         public async Task Setup()
         {
             RequireConfiguredOrSkip();
             _facts = await Engine().ReadServerFactsAsync(default);
-            _serverVersion = await ScalarOnServerAsync<string>("SELECT current_setting('server_version');");
             _serverVersionNum = await ScalarOnServerAsync<int>(
                 "SELECT current_setting('server_version_num')::int;"
             );
-            _template0Encoding = await ScalarOnServerAsync<string>(
-                "SELECT pg_encoding_to_char(encoding) FROM pg_database WHERE datname = 'template0';"
-            );
-            _serverNow = await ScalarOnServerAsync<DateTime>("SELECT now();");
         }
-
-        [Test]
-        public void It_reports_the_product_version() => _facts.ProductVersion.Should().Be(_serverVersion);
 
         [Test]
         public void It_derives_the_major_from_server_version_num() =>
             _facts.MajorVersion.Should().Be(_serverVersionNum / 10000);
 
         [Test]
-        public void It_reports_the_template0_encoding() =>
-            _facts.ServerEncoding.Should().Be(_template0Encoding);
-
-        [Test]
         public void It_reports_no_default_paths() =>
             (_facts.DefaultDataPath, _facts.DefaultLogPath).Should().Be((null, null));
-
-        [Test]
-        public void It_reports_the_server_clock_in_utc() =>
-            _facts
-                .ServerUtcNow.Should()
-                .BeCloseTo(new DateTimeOffset(_serverNow, TimeSpan.Zero), TimeSpan.FromMinutes(5));
     }
 
     [TestFixture]

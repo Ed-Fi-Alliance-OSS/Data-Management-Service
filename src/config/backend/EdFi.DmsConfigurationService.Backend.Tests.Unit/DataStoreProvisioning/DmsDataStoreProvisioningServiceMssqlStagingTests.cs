@@ -32,14 +32,7 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
     );
 
     private static DmsServerFacts MssqlFacts(string? dataPath = DataPath, string? logPath = DataPath) =>
-        new(
-            "17.0.4065.4",
-            18,
-            null,
-            dataPath,
-            logPath,
-            new DateTimeOffset(2026, 11, 7, 9, 0, 0, TimeSpan.Zero)
-        );
+        new(18, dataPath, logPath);
 
     /// <summary>The primary file name the spy reserves for <paramref name="staging"/>.</summary>
     private static string ReservedFileOf(DmsDatabaseName staging) => staging.Value + "__op.mdf";

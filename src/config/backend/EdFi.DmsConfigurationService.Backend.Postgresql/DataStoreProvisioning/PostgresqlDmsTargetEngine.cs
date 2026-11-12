@@ -43,8 +43,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     /// <summary>The <c>Diagnostic.Operation</c> of a facts read refused because a relation it reads is not trusted (<see cref="UntrustedRelationsQuery"/>).</summary>
     public const string RelationTrustStep = "RelationTrust";
 
-    private const string ServerFactsQuery =
-        "SELECT current_setting('server_version'), current_setting('server_version_num')::int, (SELECT pg_catalog.pg_encoding_to_char(encoding) FROM pg_catalog.pg_database WHERE datname = 'template0'), pg_catalog.now();";
+    private const string ServerFactsQuery = "SELECT current_setting('server_version_num')::int;";
 
     /// <summary>
     /// Whether the role whose oid is <paramref name="roleOid"/> is trusted: a superuser, or the administrative login
@@ -172,20 +171,8 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             throw new InvalidOperationException("The server facts query returned no row.");
         }
 
-        string productVersion = reader.GetString(0);
-        int serverVersionNum = reader.GetInt32(1);
-        string? serverEncoding = await reader.IsDBNullAsync(2, cancellationToken)
-            ? null
-            : reader.GetString(2);
-        DateTimeOffset serverUtcNow = ToUtc(await reader.GetFieldValueAsync<DateTime>(3, cancellationToken));
-        return new DmsServerFacts(
-            productVersion,
-            serverVersionNum / 10000,
-            serverEncoding,
-            null,
-            null,
-            serverUtcNow
-        );
+        int serverVersionNum = reader.GetInt32(0);
+        return new DmsServerFacts(serverVersionNum / 10000, null, null);
     }
 
     public Task<DmsTargetLockResult> AcquireTargetLockAsync(
@@ -344,7 +331,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         return values.Count switch
         {
             0 => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.NoRows),
-            1 => ParseIdentity(values[0]),
+            1 => DmsIdentityRead.FromBoundedText(values[0].Text, values[0].Overlength),
             _ => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.MultipleRows),
         };
     }
@@ -875,19 +862,6 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         {
             return (null, true);
         }
-    }
-
-    private static DmsIdentityRead ParseIdentity((string? Text, bool Overlength) row)
-    {
-        // A value longer than a D-format GUID is refused before parsing: the text read is only its prefix.
-        if (row.Overlength || !Guid.TryParseExact(row.Text, "D", out Guid sourceIdentity))
-        {
-            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.Unparsable);
-        }
-
-        return sourceIdentity == Guid.Empty
-            ? new DmsIdentityRead.Invalid(DmsIdentityReadProblem.EmptyGuid)
-            : new DmsIdentityRead.Found(sourceIdentity);
     }
 
     private static async Task<T> ReadScalarAsync<T>(

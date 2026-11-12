@@ -99,10 +99,10 @@ public class PostgresqlEnvironmentTests
     }
 
     /// <summary>
-    /// F-05 (D-5): readiness and the operation-time server facts read <c>template0</c>, the template of every
-    /// staging database, and never <c>template1</c>. With <c>template1</c> renamed aside (a reversible stand-in
-    /// for a <c>template1</c> that is not <c>UTF8</c>), the lane admin still passes every server probe and the
-    /// facts report <c>template0</c>'s <c>UTF8</c>. Teardown renames it back and asserts it is a template again,
+    /// F-05 (D-5): readiness reads the encoding of <c>template0</c>, the template of every staging database, and
+    /// never <c>template1</c>. With <c>template1</c> renamed aside (a reversible stand-in for a <c>template1</c>
+    /// that is not <c>UTF8</c>), the lane admin still passes every server probe. Teardown renames it back and
+    /// asserts it is a template again,
     /// only when setup reached the server; setup first restores one left aside by an interrupted run. While it is
     /// aside, nothing on the server can create a database from the default template, so the fixture runs alone.
     /// </summary>
@@ -117,7 +117,6 @@ public class PostgresqlEnvironmentTests
         private bool _renamingStarted;
         private bool _template1Aside;
         private DmsEngineEnvironment _environment = null!;
-        private DmsServerFacts _facts = null!;
 
         private static Task<long> DatabaseCountAsync(string name) =>
             ScalarOnServerAsync<long>(
@@ -161,7 +160,6 @@ public class PostgresqlEnvironmentTests
             try
             {
                 _environment = await Engine().ValidateEnvironmentAsync(default);
-                _facts = await Engine().ReadServerFactsAsync(default);
             }
             finally
             {
@@ -192,10 +190,6 @@ public class PostgresqlEnvironmentTests
 
         [Test]
         public void It_passes_every_server_probe() => ServerReasonsOf(_environment).Should().BeEmpty();
-
-        [Test]
-        public void It_reports_the_template0_encoding_in_the_server_facts() =>
-            _facts.ServerEncoding.Should().Be("UTF8");
     }
 
     /// <summary>

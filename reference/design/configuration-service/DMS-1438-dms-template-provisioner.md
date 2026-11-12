@@ -99,7 +99,7 @@ These were raised during review and accepted. They are reflected in the code and
   `template1`, so objects an operator had added there reached the staging database and failed the exact
   inventory check, and any session on `template1` made the create fail (`55006`). The statement is now
   `CREATE DATABASE … TEMPLATE template0 ENCODING 'UTF8'`, with no locale clause, so the staging database takes
-  the cluster's initialization locale. Readiness and the operation-time server facts read `template0`, and
+  the cluster's initialization locale. Readiness reads the encoding of `template0` (never `template1`), and
   the probe is `Template0Encoding` (formerly `Template1Encoding`). Compatibility consequence: a cluster whose
   `template1` is UTF-8 but whose `template0` is not, previously `Ready`, is now `NotReady`
   (`EngineIncompatible`, `Template0Encoding`) and must be initialized again with UTF-8 encoding.
