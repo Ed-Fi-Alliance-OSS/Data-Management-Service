@@ -9,7 +9,10 @@ GET-many request, on both engines. Carry the selected descriptor ids in the batc
 carrier that story 1 defines.
 
 - **Engines:** PostgreSQL and SQL Server.
-- **Path:** P4, descriptor GET-many (`DescriptorReadHandler.BuildQueryCommand`).
+- **Path:** P4, `DescriptorReadHandler.BuildQueryCommand`. It has two callers, and both change:
+  descriptor GET-many (`ReadQueryRowsAsync`, `DescriptorRowProjection.FullRow`) and descriptor
+  read-acceleration candidate selection (`ReadQueryCandidateRowsAsync`,
+  `DescriptorRowProjection.CandidateMetadata`).
 - **Reconciles** the design drift in `partitioned-cursor-paging.md`, and adapts the split-command
   consistency test double on SQL Server.
 - **Completes** the [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) fix on PostgreSQL (cloned from
@@ -124,8 +127,11 @@ Each edit is **mandated by DMS-1521's decision**
 
 ### Performance thresholds
 
-Measured with R1 (PostgreSQL) and R2 (SQL Server), descriptor fixture (`descriptors-25k`) at limits
-25 and 500. Three interleaved sessions: `main`, then the story branch, three times, on one machine.
+Measured with R1 (PostgreSQL) and R2 (SQL Server) run with `-Fixtures resource,descriptor`, judged
+on the descriptor fixture (`descriptors-25k`) at limits 25 and 500. The resource run is there to
+calibrate the observer: the run script calibrates only in the resource fixture, so a
+descriptor-only session would read E1 and E2 zeros from an unproven observer. Three interleaved
+sessions: `main`, then the story branch, three times, on one machine.
 Ratios are story branch ÷ `main`, and `m = min(max(2 × CV, 5%), 20%)` from `main`'s three runs.
 A cell whose `2 × CV` exceeds 20% is rerun; if it still exceeds 20%, the PR reports it as
 inconclusive for reviewer sign-off instead of counting it as met.
@@ -152,7 +158,8 @@ inconclusive for reviewer sign-off instead of counting it as met.
 
 - Update the 18 `Given_DescriptorReadHandler` SQL-text pins on both engines.
 - Add behavior tests for the result-set sequence and markers on non-empty, empty, zero-limit, and
-  `ContentVersion`-anchored pages.
+  `ContentVersion`-anchored pages, for both projections: `FullRow` (GET-many) and
+  `CandidateMetadata` (read-acceleration candidate selection).
 - Pin the order of operations (AGENTS.md):
   - the carrier is set before the leading fence reads it;
   - the boundary comes from selection, not from the owner rows.
@@ -176,18 +183,15 @@ inconclusive for reviewer sign-off instead of counting it as met.
   `set_config`, as `main`'s zero-limit shortcut skips selection (`DescriptorReadHandler.cs`
   ≈2047–2058). Separately, on one pooled physical connection, a failed batch followed by an empty
   page, with the carrier reading `''` after each, catches a session-level carrier.
-- **Residual estimate risk** (PostgreSQL). The descriptor readers have no parameters, so their
-  plan is always generic, and its keyset estimate is frozen at the first page planned on that
-  connection. Read a 1-row page and then a 500-row page on the same connection, and report the
-  500-row batch's time against a fresh connection. The spike did not measure this sequence.
 - **Read-only** (E4), with `main`'s DDL prelude failing with SQLSTATE 25006 as the positive
   control.
 - `*DescriptorReadQueryFilterTests` and `*DescriptorQueryOwnershipAuthorizationTests` pass on
   both engines.
 
 **API integration** (`Tests.Integration`, both engines, full suites): `DescriptorRuntimeScenario`,
-`CompactDescriptorResourceScenario`, `LimitZeroCountReadScenario`, the cursor scenarios, and
-`AuthoritativeTimestampReadConsistencyScenario` pass.
+`CompactDescriptorResourceScenario`, `LimitZeroCountReadScenario`, the cursor scenarios,
+`Given_*_DocumentCacheReadAcceleration_With_DescriptorRuntime` (the candidate-selection caller),
+and `AuthoritativeTimestampReadConsistencyScenario` pass.
 
 - **Type (d) adaptation**, SQL Server descriptor split site (≈644–690). The double re-executes the
   descriptor command as two commands at the `-- Descriptor acquisition:` markers. A batch-scoped
@@ -203,8 +207,13 @@ inconclusive for reviewer sign-off instead of counting it as met.
   runs in one transaction, so its carrier survives and needs no adaptation. The resource split
   site is story 1's concern; on SQL Server it is unchanged.
 
-**Performance evidence.** Attach R1 and R2 artifacts for the descriptor fixture (about 2–5 min per
-run on each engine), from three interleaved sessions on one machine.
+**Performance evidence.** Attach R1 and R2 artifacts from runs with `-Fixtures resource,descriptor`
+(the resource run calibrates the observer; the descriptor run itself takes about 2–5 min per
+engine), from three interleaved sessions on one machine. Also report the **residual estimate
+risk** on PostgreSQL: the descriptor readers have no parameters, so their plan is always generic,
+and its keyset estimate is frozen at the first page planned on that connection. On one connection,
+read a 1-row page and then a 500-row page, and report the 500-row batch's time against a fresh
+connection. This is reported evidence, not a CI test; the spike did not measure the sequence.
 
 ## Implementation guidance (non-binding)
 
@@ -238,5 +247,5 @@ test-adaptation section, passed every check on both engines:
 ## Estimate
 
 **3 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
-adaptation, four integration tests, two design-document edits, and a short performance session
+adaptation, three integration tests, two design-document edits, and a short performance session
 set on each engine.

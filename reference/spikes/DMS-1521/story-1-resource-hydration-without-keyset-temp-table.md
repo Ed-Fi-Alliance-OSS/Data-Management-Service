@@ -31,15 +31,17 @@ statement to it. DMS-1521 measured what that costs.
   WAL per request, and they invalidate the prepared statements, so almost every statement is
   re-planned. Because the batch starts with `DROP TABLE IF EXISTS`, GET-many fails in a read-only
   transaction (DMS-1687).
-- **SQL Server's** `#page` has correct statistics and caused no recompiles. Its cost is tempdb
+- **SQL Server's** `#page` has statistics (its plan, compiled at the first page's estimate of 25,
+  still seeks at 500 rows) and caused no recompiles. Its cost is tempdb
   metadata latch contention: 13–17 `PAGELATCH` waits per request at 32 sessions.
 
 The spike's `inline` prototype carries the ids in the batch and creates no catalog object. On
 PostgreSQL it cut resource GET-many API p50 and p95 to 0.29–0.48× of `main` and child-collection
 time to 0.002–0.021×. It wrote no catalog rows or WAL and regressed no path. On SQL Server it
-helped the candidate batch (×1.9–×2.7 throughput at 32 sessions). It regressed the 500-row
-resource and fallback batches by 14–34%, because every statement re-parses the JSON carrier. So
-SQL Server keeps `#page` there. Correctness validation found no behavior change on either engine.
+helped the candidate batch (×1.9–×2.7 throughput at 32 sessions), although that batch's p99 at
+500 rows and 32 sessions rose from 71 to 314 ms in all three sessions while its p95 fell. It
+regressed the 500-row resource and fallback batches by 14–34%, because every statement re-parses
+the JSON carrier. So SQL Server keeps `#page` there. Correctness validation found no behavior change on either engine.
 
 ## Scope
 
@@ -180,7 +182,11 @@ and deep.
 
 The PR reports child-collection cost under both PostgreSQL plan types: custom (the API window) and
 generic (the one-connection fallback window after five executions). It also reports the plan node
-types (`Index Scan` expected) as supporting evidence; they are not a threshold.
+types (`Index Scan` expected) as supporting evidence; they are not a threshold. Beside N8 it also
+reports the SQL Server candidate batch's p99 at concurrency 32, at 25 and 500 rows (reported, not
+gated): the prototype raised it from 70.8 to 314 ms at 500 rows. If the story's design keeps that
+tail, the PR names its cause (for example, memory-grant or parallelism waits on the `OPENJSON`
+statements).
 
 ## Test requirements
 

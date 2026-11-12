@@ -27,8 +27,9 @@ the four paths can drop theirs now. The other two keep `#page` until a replaceme
   rows (`main`: 44 catalog tuples and about 10 KB of WAL per request). No path regresses, and
   correctness validation found no behavior change. Because it issues no DDL, GET-many also works in
   a read-only transaction, which fixes the read-replica failure in EDFI-2956.
-- **SQL Server: `#page` is not a plan or recompile problem.** Its statistics are correct, and
-  neither variant recompiled. Its cost is tempdb metadata latch contention under concurrency: 13–17
+- **SQL Server: `#page` is not a plan or recompile problem.** It has statistics; its plan, compiled
+  at the first page's estimate (25), is reused at 500 rows and still seeks, and neither variant
+  recompiled. Its cost is tempdb metadata latch contention under concurrency: 13–17
   `PAGELATCH` waits per request at 32 sessions. `inline` removes that cost on every path. On the
   500-row hydration batches, though, it re-parses the JSON carrier in every statement and costs
   14–34% more, which breaks AC5's third priority. So `inline` is recommended where it passes every
@@ -56,7 +57,7 @@ nothing under `src/dms/backend` changed between the two commits.
 | P1 | Resource GET-many (query keyset, the default path) | `RelationalDocumentStoreRepository` -> `IDocumentHydrator` -> `ConsistentHydrationExecutor` -> `HydrationBatchBuilder` with `PageKeysetSpec.Query` (built by `RelationalQueryPageKeysetPlanner`) | `page` / `#page` | Page selection inside the batch (`WITH page_ids AS (...) INSERT ... RETURNING` / `OUTPUT INSERTED`) |
 | P2 | Read-acceleration candidate metadata (only when `DocumentCache:ReadAcceleration:Enabled`, default `false`) | `RelationalDocumentStoreRepository.cs:2104` -> `HydrationBatchBuilder.BuildCandidateMetadataBatch` (`HydrationBatchBuilder.cs:149`, DDL at line 162) | `page` / `#page` | Page selection inside the batch |
 | P3 | Read-acceleration fallback on cache misses (selected page) | `RelationalDocumentStoreRepository.cs:1998`, `PageKeysetSpec.SelectedPage` | `page` / `#page` with `Ordinal` | The client: PostgreSQL binds 2 parameters per id into a `VALUES` insert; SQL Server binds one JSON parameter and inserts from `OPENJSON` |
-| P4 | Descriptor GET-many | `DescriptorReadHandler.BuildQueryCommand` (`DescriptorReadHandler.cs:2025`), added by DMS-1401 (`8a4eda2f6`, 2026-10-14) | `descriptor_page` / `#descriptor_page` | Page selection inside the batch (`INSERT INTO ... <PageDocumentIdSql>`); both version fences, the owner rows, and the `MAX(...)` boundary read it |
+| P4 | Descriptor GET-many, and descriptor read-acceleration candidate selection (only when read acceleration is enabled) | `DescriptorReadHandler.BuildQueryCommand` (`DescriptorReadHandler.cs:2025`), added by DMS-1401 (`8a4eda2f6`, 2026-10-14). Two callers: `ReadQueryRowsAsync` (`DescriptorRowProjection.FullRow`) and `ReadQueryCandidateRowsAsync` (`DescriptorRowProjection.CandidateMetadata`, line 1729). The spike measured the GET-many caller; the candidate caller issues the same DDL and passed task 7 through `Given_*_DocumentCacheReadAcceleration_With_DescriptorRuntime` | `descriptor_page` / `#descriptor_page` | Page selection inside the batch (`INSERT INTO ... <PageDocumentIdSql>`); both version fences, the owner rows, and the `MAX(...)` boundary read it |
 
 The shared DDL for P1-P3 is `IPlanSqlDialect.AppendCreateKeysetTempTable`:
 
@@ -1032,8 +1033,14 @@ because every request scans about 2 million child rows. Under `I`, throughput ke
   statement, so almost every call is planned. `I`: resource 0.29 (25) and 0.09 (500); fallback
   1.00 (25) and 0.10 (500); candidate 0.65 and 0.50; descriptor 0.26 and 0.25. Plan time per
   request drops by 5–94%: resource 1.94 → 0.56 ms and 2.22 → 0.13 ms; fallback 4.94 → 4.70 ms
-  (25) and 2.20 → 0.33 ms (500). The 25-row fallback statements stay on custom plans (planned
-  every call, under `plan_cache_mode = auto`) and still run 11.3 ms against 99.9 ms.
+  (25) and 2.20 → 0.33 ms (500). The 25-row fallback window planned every call, and still ran
+  11.3 ms against 99.9 ms. That is a property of the window, not of the plan cache: the replay
+  pool is shared across batches, and this c = 1 replay ran right after the candidate batch's
+  c = 32 replay, so its sequential executions most likely spread over the pool's ~32 idle
+  connections and none reached `AutoPrepareMinUsages = 3` (inferred, not probed). On one
+  connection (the fallback `auto_explain` window above) the same statements switched to the
+  generic plan after about five executions. The 500-row fallback, the same text already prepared
+  on every connection, reads 0.10.
 - **Observation: the API path ran each request on a new backend.** In every API `auto_explain`
   window, under both variants, the 20 sequential requests ran on 20 different backend pids (the
   two commands of a cache-hit request share one pid). Prepared statements therefore never reached
@@ -1553,8 +1560,9 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
 - **Re-planning falls.** `main` plans 0.91–1.02 statements per call, because each recreated temp
   table invalidates the prepared statements. `inline` plans 0.09–0.29 per call on the resource
   batch, 0.25–0.26 on the descriptor batch, and 0.50–0.65 on the candidate batch. The 25-row
-  fallback batch stays at 1.00, because its statements remain on custom plans. Plan time per
-  request falls by 5–94%.
+  fallback window reads 1.00 because no pooled connection had auto-prepared its statements yet
+  (see [Plans and planning](#plans-and-planning)); on one connection they go generic after five
+  executions, like the other parameterized readers. Plan time per request falls by 5–94%.
 - **The API path ran on a new backend per request** in both variants, so its plans were all custom
   plans. The cause was not established; it affects `B` and `I` equally. The pooled replays and the
   one-connection fallback window supply the generic-plan evidence. Story 1's evidence must show
@@ -1562,7 +1570,7 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
 - **Residual risk, descriptor path.** A connection whose first descriptor page is small keeps that
   estimate for later pages. The descriptor statements join small descriptor tables by key, and no
   measured cell regressed, but no run planned a 1-row page and then read a 500-row page on the same
-  connection. Story 2 adds that sequence to its evidence.
+  connection. Story 2 adds that sequence to its performance evidence (reported, not a CI test).
 
 **Correctness.** No type (b) failure (task 7): 486 of 486 PostgreSQL API integration tests, and the
 backend read-path suite except 2 type (d) and 1 type (a). Carrier probes: 113 of 113. These cover
@@ -1601,7 +1609,10 @@ both through `AppendRelation` and gives no guidance on this point; story 1 desig
    waits and 8–62 ms per request at 32 sessions) is gone. Replay p50 and p95 at concurrency 1 fall
    to 0.45–0.93×, throughput at 32 rises ×1.89–×2.68, and logical reads fall (descriptor 6,607 →
    5,755 at 500 rows; candidate 4,066 → 3,276). Every API cell stays within its non-regression
-   bound.
+   bound. One cost is not gated: the candidate batch's p99 at 500 rows and 32 sessions rises from
+   70.8 to 314 ms (×4.4, consistent across the three sessions, CV 16%) while its p95 falls to
+   0.31×. Story 1 reports that p99 beside N8, so its PR shows whether the production design keeps
+   the tail.
 2. **Hydration is not a SQL Server problem.** `#page` has statistics (estimate 25), every child
    statement seeks in both variants, and neither variant recompiled after warmup. The DMS-1248
    recompile concern did not occur on these paths.
@@ -1690,7 +1701,7 @@ supports that limit.
 | Story | Scope | Sized from | Proposed estimate |
 |---|---|---|---|
 | 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement or remove; the prototype throws), goldens, and design docs | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 8 |
-| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam), the 18 descriptor text pins, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change because the markers stay. Reconciles the design drift | Task 4 (c), task 7; descriptor evidence at about 2–5 min per run on each engine | 3 |
+| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change because the markers stay. Reconciles the design drift | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 3 |
 | 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3 | 2, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
 
@@ -1855,8 +1866,14 @@ of `3621b1eb6`.
 
 ## Appendix: reproduction
 
-Everything runs from the repository root on the recorded subject commit `3621b1eb6`, one engine at a
-time. Raw evidence lands in `C:\perf\dms-1521\<run id>\` and is attached to DMS-1521 with a checksum
+Everything runs from the repository root, one engine at a time. The recorded subject commit
+`3621b1eb6` identifies the code under test (its `src/dms/backend` is identical to `main` at
+`3774fc844`); it holds only the findings skeleton, and every run manifest lists `experiments/` as a
+dirty path. To reproduce, run the `experiments/` folder from the DMS-1521 branch head, or the
+spike's merge commit, against that backend. The runner received the review-round fixes after the
+runs (exact batch-text writes, the dirty-path allow-list, binding capture with the batch text, the
+enforced calibration verdict); none of them changes a measurement. Raw evidence lands in
+`C:\perf\dms-1521\<run id>\` and is attached to DMS-1521 with a checksum
 index (task 12).
 
 **Patch procedure** (variants `A`, `B`, `I`): record `git status --porcelain` and the SHA-256 of
