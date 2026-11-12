@@ -1432,8 +1432,12 @@ Waiting for the Configuration Service does not clear a consumer's cache.
    question. The `kid` is in the token's first segment (base64url-encoded JSON). The
    `SigningKeys: {n}` count in the startup log line is a diagnostic only. It does not
    identify the keys.
-3. A restart also discards the token DMS caches for its own Configuration Service calls
-   (`CacheSettings:TokenCacheExpirationSeconds`, default 1500 s, held in memory).
+3. A restart also discards the token DMS holds in memory for its own Configuration Service
+   calls. Without a restart, DMS replaces that token at the end of its reuse window: the
+   issuer's lifetime less `min(60 s, 10%)`, or 300 s when the grant reports no positive
+   lifetime. A deprecated 8.x `CacheSettings:TokenCacheExpirationSeconds`, when set, can only
+   shorten that window. A Configuration Service read that rejects the token with 401 also
+   makes DMS obtain a replacement and replay that read once.
 
 #### Adding the first key
 

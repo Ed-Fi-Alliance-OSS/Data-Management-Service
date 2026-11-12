@@ -5,7 +5,6 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -87,27 +86,15 @@ public class ConfigurationServiceDataStoreProvider(
     )
     {
         logger.LogInformation(
-            "Requesting authentication token from Configuration Service at {BaseUrl}",
+            "Loading from Configuration Service at {BaseUrl}",
             configurationServiceApiClient.Client.BaseAddress
         );
 
         try
         {
-            // Get token for the Configuration Service API
-            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope,
-                cancellationToken
-            );
-
             logger.LogInformation("Fetching data stores from Configuration Service");
 
-            IList<DataStore> instances = await FetchDataStores(
-                configurationServiceToken,
-                tenant,
-                cancellationToken
-            );
+            IList<DataStore> instances = await FetchDataStores(tenant, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             logger.LogInformation("Successfully fetched {InstanceCount} data stores", instances.Count);
@@ -366,23 +353,15 @@ public class ConfigurationServiceDataStoreProvider(
     public async Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "Requesting authentication token from Configuration Service at {BaseUrl}",
+            "Loading from Configuration Service at {BaseUrl}",
             configurationServiceApiClient.Client.BaseAddress
         );
 
         try
         {
-            // Get token for the Configuration Service API
-            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope,
-                cancellationToken
-            );
-
             logger.LogInformation("Fetching tenants from Configuration Service");
 
-            IList<string> tenants = await FetchTenants(configurationServiceToken, cancellationToken);
+            IList<string> tenants = await FetchTenants(cancellationToken);
 
             logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
 
@@ -427,20 +406,17 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches tenant names from the Configuration Service API
     /// </summary>
-    private async Task<IList<string>> FetchTenants(
-        string configurationServiceToken,
-        CancellationToken cancellationToken
-    )
+    private async Task<IList<string>> FetchTenants(CancellationToken cancellationToken)
     {
         const string TenantsEndpoint = "v3/tenants/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", TenantsEndpoint);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
         // No tenant header needed for tenants endpoint
-        using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
-            request,
+        using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+            configurationServiceTokenHandler,
+            configurationServiceContext,
+            () => new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint),
             cancellationToken
         );
 
@@ -454,19 +430,13 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string tenantsJson = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        logger.LogDebug(
-            "Received response from Configuration Service, deserializing {ByteCount} bytes",
-            tenantsJson.Length
+        List<TenantResponse>? tenantResponses = await ConfigurationServiceApiClient.ReadResponseAsync(
+            response,
+            body => JsonSerializer.Deserialize<List<TenantResponse>>(body, _jsonOptions),
+            cancellationToken
         );
 
-        List<TenantResponse>? tenantResponses = JsonSerializer.Deserialize<List<TenantResponse>>(
-            tenantsJson,
-            _jsonOptions
-        );
-
-        if (tenantResponses == null)
+        if (tenantResponses is null)
         {
             throw new JsonException(
                 $"Configuration Service {TenantsEndpoint} response deserialized to null."
@@ -489,24 +459,28 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches data stores from the Configuration Service API
     /// </summary>
-    private async Task<IList<DataStore>> FetchDataStores(
-        string configurationServiceToken,
-        string? tenant,
-        CancellationToken cancellationToken
-    )
+    private async Task<IList<DataStore>> FetchDataStores(string? tenant, CancellationToken cancellationToken)
     {
         const string DataStoresEndpoint = "v3/dataStores/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", DataStoresEndpoint);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, DataStoresEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
-        if (!string.IsNullOrEmpty(tenant))
-        {
-            request.Headers.Add(TenantHeaderName, tenant);
-        }
-        HttpResponseMessage response = await configurationServiceApiClient
-            .Client.SendAsync(request, cancellationToken)
+        using HttpResponseMessage response = await configurationServiceApiClient
+            .SendAuthenticatedAsync(
+                configurationServiceTokenHandler,
+                configurationServiceContext,
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, DataStoresEndpoint);
+                    if (!string.IsNullOrEmpty(tenant))
+                    {
+                        request.Headers.Add(TenantHeaderName, tenant);
+                    }
+
+                    return request;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -519,20 +493,13 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string dataStoresJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        logger.LogDebug(
-            "Received response from Configuration Service, deserializing {ByteCount} bytes",
-            dataStoresJson.Length
+        List<DataStoreResponse>? dataStoreResponses = await ConfigurationServiceApiClient.ReadResponseAsync(
+            response,
+            body => JsonSerializer.Deserialize<List<DataStoreResponse>>(body, _jsonOptions),
+            cancellationToken
         );
 
-        List<DataStoreResponse>? dataStoreResponses = JsonSerializer.Deserialize<List<DataStoreResponse>>(
-            dataStoresJson,
-            _jsonOptions
-        );
-
-        if (dataStoreResponses == null)
+        if (dataStoreResponses is null)
         {
             logger.LogWarning("Deserialization returned null - treating as empty instance list");
             return [];
