@@ -1749,9 +1749,15 @@ Written by task 9 (AC7). Each story's acceptance criteria use these thresholds a
 
 - **Ratio:** candidate ÷ baseline. The candidate is the story branch, the baseline is `main`, and
   both are measured on the same machine in the same interleaved session set.
-- **Margin:** m = max(2 × CV, 5%), where CV is the baseline's run-to-run coefficient of variation
-  for that metric across three sessions. A story computes m from its own baseline runs. The spike's
-  values are shown for orientation.
+- **Margin:** m = min(max(2 × CV, 5%), 20%), where CV is the baseline's run-to-run coefficient of
+  variation for that metric across three sessions. A story computes m from its own baseline runs.
+  The spike's values are shown for orientation.
+- **Noisy baseline cells.** The 20% cap keeps every bound a guard. Without it, `main`'s own
+  variability decides the bound: on SQL Server, `main`'s latch contention gave the spike a
+  cache-hit p95 bound of 3.09 and a c = 8 throughput bound of 0.51, and a rate bound stops being
+  falsifiable once 2 × CV reaches 100%. When `main`'s 2 × CV for a gated cell exceeds 20%, the
+  story reruns its three-session set. If the rerun still exceeds 20%, the PR reports that cell as
+  inconclusive, with both variants' values, for reviewer sign-off; it does not count as met.
 - **Cost metrics**, where lower is better (latency, child time, buffers, logical reads, WAL bytes,
   plan time): improvement means ratio ≤ T − m, and non-regression means ratio ≤ 1 + m.
 - **Rate metrics**, where higher is better (throughput at concurrency 8 and 32): improvement means
@@ -1783,13 +1789,15 @@ cells at offset 0, shallow, and deep):
 | P2 | Resource GET-many API p95 | 0.48 | 0.74 | ≤ 0.69 (0.65 at the spike's largest m, 8.8%) | 0.30–0.48 | R1 `cells.json` |
 | P3 | Child-collection execution time, summed per request (resource and fallback, driver path `auto_explain`) | 0.021 | 0.52 | ≤ 0.47 | 0.002–0.021 | R1 `autoexplain/` |
 | P4 | Child-collection buffers, summed per request (resource and fallback) | 0.466 | 0.74 | ≤ 0.69 | 0.023–0.466 | R1 `autoexplain/` |
-| P5 | Fallback batch replay p50 and p95 at concurrency 1, and p95 at 32 | 0.17 | 0.59 | ≤ T − m (spike m up to 31%, so ≤ 0.28 at worst) | 0.02–0.17 | R1 `replays.json` |
+| P5 | Fallback batch replay p50 and p95 at concurrency 1, and p95 at 32 | 0.17 | 0.59 | ≤ T − m (m capped at 20%, so ≤ 0.39 at worst) | 0.02–0.17 | R1 `replays.json` |
 
 Child statements must be shown under both custom and generic plans: the API window and the
 one-connection fallback window. Their node types (`Index Scan` expected) are reported as supporting
 evidence, not as a threshold.
 
-**Non-regression thresholds** (ratio ≤ 1 + m for cost, ≥ 1 − m for rate):
+**Non-regression thresholds** (ratio ≤ 1 + m for cost, ≥ 1 − m for rate). The "Spike `1 + m`"
+column shows the spike's uncapped values; under the cap no bound exceeds 1.20, and a cell whose
+`main` CV would exceed it is rerun or reported as inconclusive (see Definitions):
 
 | Id | Engine | Path and metric | Spike ratio | Spike `1 + m` | Reproduce |
 |---|---|---|---|---|---|

@@ -149,8 +149,9 @@ Each edit is **mandated by DMS-1521's decision**
 
 Measured with R1 (PostgreSQL) and R2 (SQL Server, read-acceleration fixture plus the resource
 fixture for N11). Three interleaved sessions: `main`, then the story branch, three times, on one
-machine. Ratios are story branch ÷ `main`, and `m = max(2 × CV, 5%)` from `main`'s three runs.
-PostgreSQL cells are on `primary-500k` at 25 and 500 rows; resource cells at offset 0, shallow,
+machine. Ratios are story branch ÷ `main`, and `m = min(max(2 × CV, 5%), 20%)` from `main`'s
+three runs. A cell whose `2 × CV` exceeds 20% is rerun; if it still exceeds 20%, the PR reports it
+as inconclusive for reviewer sign-off instead of counting it as met. PostgreSQL cells are on `primary-500k` at 25 and 500 rows; resource cells at offset 0, shallow,
 and deep.
 
 | Id | Metric | Bound | Spike result |

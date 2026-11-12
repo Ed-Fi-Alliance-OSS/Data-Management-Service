@@ -78,7 +78,8 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 - **Acceptance criteria are normative.** They state the observable behavior, the correctness
   requirements C1–C6, and the performance thresholds. Thresholds are written in the findings'
   directional form: metric, ratio (story branch ÷ `main`, same machine), and bound, with
-  `m = max(2 × CV, 5%)` computed from the story's own three baseline runs. Threshold ids (E*, P*,
+  `m = min(max(2 × CV, 5%), 20%)` computed from the story's own three baseline runs; a cell whose
+  `2 × CV` exceeds 20% is rerun, then reported as inconclusive, never passed. Threshold ids (E*, P*,
   N*) and reproduction commands (R*) refer to
   [Thresholds](keyset-temp-table-findings.md#thresholds).
 - **Design-document edits are normative.** Each carries the warrant "mandated by DMS-1521's
