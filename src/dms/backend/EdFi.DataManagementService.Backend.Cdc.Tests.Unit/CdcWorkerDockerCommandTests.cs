@@ -296,6 +296,10 @@ public sealed class Given_CdcWorkerDockerCommand
         {
             return true;
         }
+        catch (IOException exception) when (exception.HResult == 3)
+        {
+            return true; // Linux ESRCH: the process exited after its proc file was opened.
+        }
     }
 
     // The parent waits while its child writes indefinitely, filling the abandoned pipe on overflow.
