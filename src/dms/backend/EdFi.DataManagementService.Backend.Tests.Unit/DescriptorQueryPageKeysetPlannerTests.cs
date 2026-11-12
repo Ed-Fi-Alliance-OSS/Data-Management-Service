@@ -123,6 +123,61 @@ public class Given_DescriptorQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_declare_descriptor_string_filters_with_their_column_lengths_and_leave_dates_untyped()
+    {
+        var keyset = new DescriptorQueryPageKeysetPlanner(SqlDialect.Mssql).Plan(
+            RelationalAccessTestData.CreateMappingSet(_requestResource),
+            _descriptorResource,
+            new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "codeValue",
+                        "$.codeValue",
+                        "Alternative",
+                        "string",
+                        new DescriptorQueryFieldTarget.CodeValue(new DbColumnName("CodeValue")),
+                        new PreprocessedDescriptorQueryValue.Raw("Alternative")
+                    ),
+                    CreateElement(
+                        "description",
+                        "$.description",
+                        "Alternative description",
+                        "string",
+                        new DescriptorQueryFieldTarget.Description(new DbColumnName("Description")),
+                        new PreprocessedDescriptorQueryValue.Raw("Alternative description")
+                    ),
+                    CreateElement(
+                        "effectiveBeginDate",
+                        "$.effectiveBeginDate",
+                        "2026-01-15",
+                        "date",
+                        new DescriptorQueryFieldTarget.EffectiveBeginDate(
+                            new DbColumnName("EffectiveBeginDate")
+                        ),
+                        new PreprocessedDescriptorQueryValue.DateOnlyValue(new DateOnly(2026, 1, 15))
+                    ),
+                ]
+            ),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: 25, Offset: 0, TotalCount: true, MaximumPageSize: 500)
+            )
+        );
+
+        QuerySqlParameterBinding BindingOf(string parameterName) =>
+            keyset
+                .Plan.TotalCountParametersInOrder!.Value.Single(parameter =>
+                    parameter.ParameterName == parameterName
+                )
+                .Binding;
+
+        BindingOf("codeValue").Should().Be(QuerySqlParameterBinding.CreateString(50));
+        BindingOf("description").Should().Be(QuerySqlParameterBinding.CreateString(1024));
+        BindingOf("effectiveBeginDate").Should().Be(QuerySqlParameterBinding.Scalar);
+        BindingOf("resourceKeyId").Should().Be(QuerySqlParameterBinding.Scalar);
+    }
+
+    [Test]
     public void It_should_emit_identical_sql_and_parameter_names_across_query_element_order_permutations()
     {
         var planner = new DescriptorQueryPageKeysetPlanner(SqlDialect.Pgsql);

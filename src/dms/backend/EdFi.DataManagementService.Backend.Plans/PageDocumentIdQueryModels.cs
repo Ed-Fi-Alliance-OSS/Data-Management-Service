@@ -34,17 +34,26 @@ public abstract record QueryPredicateTarget
 /// <param name="Target">The SQL-side predicate target.</param>
 /// <param name="Operator">The value-comparison operator.</param>
 /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
+/// <param name="StringContract">
+/// The declared contract of the compared string column, or null when the value is not a string.
+/// </param>
 public sealed record QueryValuePredicate(
     QueryPredicateTarget Target,
     QueryComparisonOperator Operator,
-    string ParameterName
+    string ParameterName,
+    QuerySqlStringContract? StringContract = null
 )
 {
     /// <summary>
     /// Initializes a root-column predicate.
     /// </summary>
-    public QueryValuePredicate(DbColumnName Column, QueryComparisonOperator Operator, string ParameterName)
-        : this(new QueryPredicateTarget.RootColumn(Column), Operator, ParameterName) { }
+    public QueryValuePredicate(
+        DbColumnName Column,
+        QueryComparisonOperator Operator,
+        string ParameterName,
+        QuerySqlStringContract? StringContract = null
+    )
+        : this(new QueryPredicateTarget.RootColumn(Column), Operator, ParameterName, StringContract) { }
 }
 
 /// <summary>
