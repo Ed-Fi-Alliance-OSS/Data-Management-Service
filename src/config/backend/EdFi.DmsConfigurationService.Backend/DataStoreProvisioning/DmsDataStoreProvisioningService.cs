@@ -822,6 +822,11 @@ public sealed partial class DmsDataStoreProvisioningService(
     /// The engine reports a cancellation of the token it was given, which links the caller's token, the
     /// holder's loss, and the scope's deadline; loss was already checked when the call returned, so a
     /// cancellation the caller did not request is the deadline's, and is <c>TimedOut</c>.
+    /// Any other failure is <c>AdminPrivilegeMissing</c> for a privilege refusal, and otherwise
+    /// <c>RestoreFailed</c>: <c>Transient</c> when the provider classified the rejection retryable
+    /// (<see cref="DmsCommandFailure.Retryable"/>), such as a request before the restore the server refused
+    /// for lack of memory, and <c>Permanent</c> otherwise. The named operations and prefixes above are
+    /// matched first, so retryability never turns a safety, staging, or backup refusal transient.
     /// </summary>
     private static void ThrowRestoreFailure(DmsCommandFailure failure, CancellationToken callerToken)
     {
@@ -869,11 +874,22 @@ public sealed partial class DmsDataStoreProvisioningService(
                 when operation.StartsWith(DmsEngineOperations.PlanRestorePrefix, StringComparison.Ordinal):
                 throw StepFailed(DmsProvisioningFailureCode.BackupInvalid, failure.Diagnostic);
             default:
-                throw StepFailed(
-                    failure.Class == DmsCommandFailureClass.PrivilegeMissing
-                        ? DmsProvisioningFailureCode.AdminPrivilegeMissing
-                        : DmsProvisioningFailureCode.RestoreFailed,
-                    failure.Diagnostic
+                if (failure.Class == DmsCommandFailureClass.PrivilegeMissing)
+                {
+                    throw StepFailed(DmsProvisioningFailureCode.AdminPrivilegeMissing, failure.Diagnostic);
+                }
+
+                throw new DmsProvisioningFailedException(
+                    failure.Retryable
+                        ? DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.RestoreFailed,
+                            DmsProvisioningFailureCategory.Transient,
+                            failure.Diagnostic
+                        )
+                        : DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.RestoreFailed,
+                            failure.Diagnostic
+                        )
                 );
         }
     }

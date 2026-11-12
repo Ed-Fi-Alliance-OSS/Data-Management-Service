@@ -278,14 +278,27 @@ internal static class PostgresqlStagingQueries
         catch (Exception exception)
             when (exception is not OperationCanceledException || IsAfterSend(exception))
         {
-            string step =
-                PostgresqlErrorClassifier.SqlStateOf(exception) == RoleStateUnsafeSqlState
-                    ? DmsEngineOperations.RoleStateUnsafe
-                    : EnsureEnqueueOwnerStep;
-            return Classify<DmsInstanceIdentity>(exception, session, step);
+            return ClassifyEnqueueOwnerFailure(exception, session);
         }
 
         return await EnsureEnqueueOwnerAsync(connection, session, afterCollision: true, cancellationToken);
+    }
+
+    /// <summary>
+    /// A failure of the D-16 block: an unsafe role (<c>55000</c>) is named <see cref="DmsEngineOperations.RoleStateUnsafe"/>
+    /// and any other error <see cref="EnsureEnqueueOwnerStep"/>, both classified by <see cref="Classify{T}"/>, which
+    /// keeps whether a retry can succeed (<see cref="DmsCommandFailure.Retryable"/>).
+    /// </summary>
+    internal static DmsCommandOutcome<DmsInstanceIdentity> ClassifyEnqueueOwnerFailure(
+        Exception exception,
+        DmsServerSessionId session
+    )
+    {
+        string step =
+            PostgresqlErrorClassifier.SqlStateOf(exception) == RoleStateUnsafeSqlState
+                ? DmsEngineOperations.RoleStateUnsafe
+                : EnsureEnqueueOwnerStep;
+        return Classify<DmsInstanceIdentity>(exception, session, step);
     }
 
     /// <summary>The <c>oid</c> and claim comment under <paramref name="name"/>, or null when no database has the name.</summary>

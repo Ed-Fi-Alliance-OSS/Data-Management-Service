@@ -766,6 +766,68 @@ public class DmsDataStoreProvisioningServiceStagingTests
     }
 
     /// <summary>
+    /// AC 11 (F1): the D-16 enqueue-owner check before the replay is rejected by the server. The engine's own
+    /// classification (<see cref="PostgresqlStagingQueries.ClassifyEnqueueOwnerFailure"/>) feeds the real
+    /// orchestrator: a rejection a retry can outlive (an out-of-memory or a deadlock) ends as a transient
+    /// <c>RestoreFailed</c>; an unsafe role stays <c>RoleStateUnsafe</c>, a missing privilege stays a permanent
+    /// <c>AdminPrivilegeMissing</c>, and any other rejection stays a permanent <c>RestoreFailed</c>. Cleanup is the
+    /// same for every one: the staging database is dropped once, without validation, and no residue is reported.
+    /// </summary>
+    [TestFixture("53200", DmsProvisioningFailureCode.RestoreFailed, DmsProvisioningFailureCategory.Transient)]
+    [TestFixture("40P01", DmsProvisioningFailureCode.RestoreFailed, DmsProvisioningFailureCategory.Transient)]
+    [TestFixture(
+        "55000",
+        DmsProvisioningFailureCode.RoleStateUnsafe,
+        DmsProvisioningFailureCategory.Permanent
+    )]
+    [TestFixture(
+        "42501",
+        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+        DmsProvisioningFailureCategory.Permanent
+    )]
+    [TestFixture("22023", DmsProvisioningFailureCode.RestoreFailed, DmsProvisioningFailureCategory.Permanent)]
+    public class Given_the_enqueue_owner_check_is_rejected_before_the_replay(
+        string sqlState,
+        DmsProvisioningFailureCode code,
+        DmsProvisioningFailureCategory category
+    )
+    {
+        private Harness _harness = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            DmsCommandOutcome<DmsInstanceIdentity> refused =
+                PostgresqlStagingQueries.ClassifyEnqueueOwnerFailure(
+                    new PostgresException("rejected", "ERROR", "ERROR", sqlState),
+                    new DmsServerSessionId(42, DateTimeOffset.UnixEpoch)
+                );
+            _harness = Scripted();
+            _harness.Engine.OnRestoreIntoStaging = (_, _, _) => Task.FromResult(refused);
+            _result = await CreateAsync(_harness);
+        }
+
+        [Test]
+        public void It_reports_the_code_and_category_the_rejection_allows() =>
+            (FailureOf(_result).Code, FailureOf(_result).Category).Should().Be((code, category));
+
+        [Test]
+        public void It_keeps_the_sqlstate_in_the_diagnostic() =>
+            FailureOf(_result).Diagnostic.ProviderErrorCode.Should().Be(sqlState);
+
+        [Test]
+        public void It_drops_the_staging_database_without_validating_and_reports_no_residue() =>
+            (
+                CountOf(_harness, SpyDmsTargetEngine.DropStaging),
+                _harness.Engine.Members.Contains(SpyDmsTargetEngine.OpenSession),
+                CleanupOf(_result).HasResidue
+            )
+                .Should()
+                .Be((1, false, false));
+    }
+
+    /// <summary>
     /// AC 11: SQL Server rejected the <c>RESTORE</c> in its own response, which proves nothing committed. The
     /// engine's own classification feeds the real orchestrator: a deadlock victim (<c>1205</c>) or a temporary
     /// memory shortage (<c>701</c>) is a transient <c>RestoreFailed</c>; any other rejection, such as a logical file

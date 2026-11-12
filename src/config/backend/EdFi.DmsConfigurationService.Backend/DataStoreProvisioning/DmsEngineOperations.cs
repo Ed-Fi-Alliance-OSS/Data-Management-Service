@@ -55,7 +55,8 @@ public static class DmsEngineOperations
 
     /// <summary>
     /// The prefix of every refusal of the SQL Server backup itself (D-11), including a backup the server
-    /// refuses to read: <c>BackupInvalid</c>, inspection. The defect after the prefix names the rule.
+    /// refuses to read: <c>BackupInvalid</c>, inspection. The defect after the prefix names the rule. A read the
+    /// server rejects for a reason a retry can outlive is not a refusal of the backup and never carries it.
     /// </summary>
     public const string PlanRestorePrefix = "PlanRestore.";
 

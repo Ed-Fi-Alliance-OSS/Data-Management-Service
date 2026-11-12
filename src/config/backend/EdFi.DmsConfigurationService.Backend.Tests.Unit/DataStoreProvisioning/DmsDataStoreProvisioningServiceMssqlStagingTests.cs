@@ -5,7 +5,9 @@
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Mssql;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using static EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.ProvisioningTestValues;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
@@ -382,6 +384,99 @@ public class DmsDataStoreProvisioningServiceMssqlStagingTests
             await CreateRefusedAsync(operation);
             (_lane.Opened.Count, _lane.Renamed.Count).Should().Be((0, 0));
         }
+    }
+
+    /// <summary>
+    /// AC 11 (F1): the server rejects the backup header read on the work session, before any <c>RESTORE</c> is sent.
+    /// The engine's own decision (<see cref="MssqlDmsTargetEngine.BackupReadRefused"/>) over a real
+    /// <see cref="SqlException"/> feeds the real orchestrator: a temporary memory shortage (<c>701</c>) or a deadlock
+    /// victim (<c>1205</c>) ends as a transient <c>RestoreFailed</c>, never as an invalid backup; a malformed backup
+    /// stays <c>BackupInvalid</c> for inspection, a missing privilege stays a permanent <c>AdminPrivilegeMissing</c>,
+    /// and a file the server cannot open stays the staging failure it was. Cleanup is the same for every one: the
+    /// staging name is dropped by the reservation, no residue is reported, and the target is never addressed.
+    /// </summary>
+    [TestFixture(
+        MssqlErrorClassifier.InsufficientMemory,
+        DmsProvisioningFailureCode.RestoreFailed,
+        DmsProvisioningFailureCategory.Transient,
+        MssqlDmsTargetEngine.ReadBackupStep
+    )]
+    [TestFixture(
+        MssqlErrorClassifier.DeadlockVictim,
+        DmsProvisioningFailureCode.RestoreFailed,
+        DmsProvisioningFailureCategory.Transient,
+        MssqlDmsTargetEngine.ReadBackupStep
+    )]
+    [TestFixture(
+        MssqlErrorClassifier.BackupMediaFamilyMalformed,
+        DmsProvisioningFailureCode.BackupInvalid,
+        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+        MssqlDmsTargetEngine.BackupUnreadableStep
+    )]
+    [TestFixture(
+        MssqlErrorClassifier.RestoreNoPermission,
+        DmsProvisioningFailureCode.AdminPrivilegeMissing,
+        DmsProvisioningFailureCategory.Permanent,
+        MssqlDmsTargetEngine.ReadBackupStep
+    )]
+    [TestFixture(
+        MssqlErrorClassifier.BackupDeviceCannotOpen,
+        DmsProvisioningFailureCode.StagingFailed,
+        DmsProvisioningFailureCategory.Transient,
+        MssqlBackupStager.NotVisibleStep
+    )]
+    public class Given_the_server_rejects_the_backup_header_read(
+        int number,
+        DmsProvisioningFailureCode code,
+        DmsProvisioningFailureCategory category,
+        string operation
+    )
+    {
+        private MssqlLane _lane = null!;
+        private DmsDataStoreCreateResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            SqlException exception =
+                MssqlErrorClassifierTests.Given_a_server_error_from_a_rename_or_a_fence.Rejected(number);
+            DmsCommandOutcome<DmsInstanceIdentity> refused = MssqlDmsTargetEngine.BackupReadRefused(
+                exception,
+                MssqlErrorClassifier.FailureClassOf(exception)
+                    ?? throw new InvalidOperationException("The number must be a definite failure.")
+            );
+            _lane = new MssqlLane();
+            _lane.Engine.OnRestoreIntoStaging = (_, _, _) => Task.FromResult(refused);
+            _result = await _lane.CreateAsync();
+        }
+
+        [Test]
+        public void It_reports_the_code_and_category_the_rejection_allows()
+        {
+            DmsProvisioningFailure failure = FailureOf(_result);
+            (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                .Should()
+                .Be((code, category, operation));
+        }
+
+        [Test]
+        public void It_keeps_the_error_number_in_the_diagnostic() =>
+            FailureOf(_result)
+                .Diagnostic.ProviderErrorCode.Should()
+                .Be(number.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+        [Test]
+        public void It_drops_the_staging_name_by_the_reservation_and_reports_no_residue()
+        {
+            _lane
+                .Dropped.Should()
+                .Equal(new DmsInstanceIdentity.MssqlReservation(ReservedFileOf(_lane.Staging)));
+            CleanupOf(_result).HasResidue.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_never_validates_or_addresses_the_target() =>
+            (_lane.Opened.Count, _lane.Renamed.Count).Should().Be((0, 0));
     }
 
     [TestFixture]

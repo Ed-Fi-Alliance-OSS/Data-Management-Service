@@ -843,9 +843,12 @@ public sealed partial class MssqlDmsTargetEngine
 
     /// <summary>
     /// The server refused to read the staged backup: a file it cannot open is not visible to it (a staging
-    /// failure), a privilege refusal is the admin's, and any other refusal is the backup's own (D-11).
+    /// failure), a privilege refusal is the admin's, a rejection a retry can outlive
+    /// (<see cref="MssqlErrorClassifier.IsRetryableRejection(Exception)"/>, such as a temporary memory shortage) is
+    /// a retryable rejection under <see cref="ReadBackupStep"/>, which the orchestrator reports as a transient
+    /// <c>RestoreFailed</c>, and any other refusal is the backup's own (D-11).
     /// </summary>
-    private static DmsCommandOutcome<DmsInstanceIdentity> BackupReadRefused(
+    internal static DmsCommandOutcome<DmsInstanceIdentity> BackupReadRefused(
         SqlException exception,
         DmsCommandFailureClass failureClass
     )
@@ -859,14 +862,30 @@ public sealed partial class MssqlDmsTargetEngine
             return NotRestored(MssqlErrorClassifier.Diagnostic(exception, MssqlBackupStager.NotVisibleStep));
         }
 
-        return failureClass == DmsCommandFailureClass.PrivilegeMissing
-            ? new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+        if (failureClass == DmsCommandFailureClass.PrivilegeMissing)
+        {
+            return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
                 new DmsCommandFailure(
                     DmsCommandFailureClass.PrivilegeMissing,
                     MssqlErrorClassifier.Diagnostic(exception, ReadBackupStep)
                 )
-            )
-            : NotRestored(MssqlErrorClassifier.Diagnostic(exception, BackupUnreadableStep));
+            );
+        }
+
+        if (MssqlErrorClassifier.IsRetryableRejection(exception))
+        {
+            return new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                new DmsCommandFailure(
+                    failureClass,
+                    MssqlErrorClassifier.Diagnostic(exception, ReadBackupStep)
+                )
+                {
+                    Retryable = true,
+                }
+            );
+        }
+
+        return NotRestored(MssqlErrorClassifier.Diagnostic(exception, BackupUnreadableStep));
     }
 
     private static DmsCommandOutcome<DmsInstanceIdentity> NotRestored(DmsProvisioningDiagnostic diagnostic) =>

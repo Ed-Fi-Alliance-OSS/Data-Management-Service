@@ -306,7 +306,7 @@ public class MssqlErrorClassifierTests
     {
         private static readonly DmsServerSessionId _session = new(51, DateTimeOffset.UnixEpoch);
 
-        private static SqlException Rejected(int number)
+        internal static SqlException Rejected(int number)
         {
             ConstructorInfo errorConstructor = typeof(SqlError)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
