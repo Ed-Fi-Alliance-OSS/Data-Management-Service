@@ -11,7 +11,8 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 
 /// <summary>
 /// A throw-away file system for one fixture: a catalog directory the builder writes packages into and an
-/// operations root the stager creates operation directories under. Disposal removes everything.
+/// operations root the workspace claims operation directories under, as the catalog does. Disposal removes
+/// everything.
 /// </summary>
 internal sealed class StagerWorkspace : IDisposable
 {
@@ -30,8 +31,6 @@ internal sealed class StagerWorkspace : IDisposable
 
     public string OperationsRoot => Path.Combine(_root, "operations");
 
-    public TemplatePackageStager Stager => new(OperationsRoot);
-
     public DmsOperationId OperationId { get; } = DmsOperationId.New();
 
     public string OperationDirectoryPath =>
@@ -41,24 +40,39 @@ internal sealed class StagerWorkspace : IDisposable
 
     public TestTemplatePackage Build() => Build(new TestTemplatePackageBuilder());
 
-    /// <summary>Stages <paramref name="package"/> with its own attestation and policy unless overridden.</summary>
-    public Task<StagedTemplatePackage> StageAsync(
+    /// <summary>
+    /// Claims the operation directory and stages <paramref name="package"/> into it with its own attestation and
+    /// policy unless overridden. As the directory's owner, the workspace deletes it when staging fails or is
+    /// cancelled; on success the returned package owns it.
+    /// </summary>
+    public async Task<StagedTemplatePackage> StageAsync(
         TestTemplatePackage package,
         string? attestationJson = null,
         string? expectedPackageId = null,
         string? expectedPackageVersion = null,
         TemplateTrustPolicy? policy = null,
         CancellationToken cancellationToken = default
-    ) =>
-        Stager.StageAsync(
-            package.PackagePath,
-            attestationJson ?? package.AttestationJson,
-            expectedPackageId ?? package.PackageId,
-            expectedPackageVersion ?? package.PackageVersion,
-            policy ?? package.Policy,
-            OperationId,
-            cancellationToken
-        );
+    )
+    {
+        PrivateOperationDirectory directory = PrivateOperationDirectory.Create(OperationsRoot, OperationId);
+        try
+        {
+            return await TemplatePackageStager.StageAsync(
+                directory,
+                package.PackagePath,
+                attestationJson ?? package.AttestationJson,
+                expectedPackageId ?? package.PackageId,
+                expectedPackageVersion ?? package.PackageVersion,
+                policy ?? package.Policy,
+                cancellationToken
+            );
+        }
+        catch
+        {
+            directory.Dispose();
+            throw;
+        }
+    }
 
     /// <summary>The exception staging <paramref name="package"/> throws.</summary>
     public async Task<Exception> StagingFailureOf(

@@ -12,7 +12,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 /// <summary>
 /// D-9 and 6.4 step 2 as one rule (Step 4.9 review): the manifest's major is read from <c>engineVersion</c> as the
-/// delivered restore core reads it, an unparsable one is never reached, a server accepts a template whose major it
+/// delivered restore core reads it, an unparsable one is refused, a server accepts a template whose major it
 /// reaches, and readiness reports one <c>EngineIncompatible</c> reason per template that needs a newer engine.
 /// Readiness, the operation precheck, and target validation agree on every vector (V4-05).
 /// </summary>
@@ -29,16 +29,18 @@ public class DmsEngineCompatibilityTests
         [TestCase("16.8 (Debian 16.8-1.pgdg120+1)", 16)]
         [TestCase("18beta1", 18)]
         [TestCase("018.1", 18)]
-        [TestCase("+18.1", int.MaxValue)]
-        [TestCase("-18.1", int.MaxValue)]
-        [TestCase(".18", int.MaxValue)]
-        [TestCase("   ", int.MaxValue)]
-        [TestCase("99999999999.0", int.MaxValue)]
-        [TestCase("١٨.1", int.MaxValue)]
-        [TestCase("latest", int.MaxValue)]
-        [TestCase("", int.MaxValue)]
-        public void It_reads_the_leading_major(string engineVersion, int expected) =>
-            DmsEngineCompatibility.RequiredMajorOf(engineVersion).Should().Be(expected);
+        [TestCase("+18.1", null)]
+        [TestCase("-18.1", null)]
+        [TestCase(".18", null)]
+        [TestCase("   ", null)]
+        [TestCase("99999999999.0", null)]
+        [TestCase("١٨.1", null)]
+        [TestCase("latest", null)]
+        [TestCase("", null)]
+        public void It_reads_the_leading_major_or_refuses(string engineVersion, int? expected) =>
+            (DmsEngineCompatibility.TryParseRequiredMajor(engineVersion, out int major) ? major : (int?)null)
+                .Should()
+                .Be(expected);
 
         [TestCase(16, "16.8", true)]
         [TestCase(17, "16.8", true)]

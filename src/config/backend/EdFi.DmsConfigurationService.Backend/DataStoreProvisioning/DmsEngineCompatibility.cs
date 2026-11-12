@@ -54,13 +54,6 @@ public static class DmsEngineCompatibility
     }
 
     /// <summary>
-    /// The major <see cref="TryParseRequiredMajor"/> reads, or <see cref="int.MaxValue"/> when it reads none, which
-    /// no server reaches: an uninterpretable version is refused rather than guessed.
-    /// </summary>
-    public static int RequiredMajorOf(string engineVersion) =>
-        TryParseRequiredMajor(engineVersion, out int major) ? major : int.MaxValue;
-
-    /// <summary>
     /// Whether a server of <paramref name="serverMajor"/> can restore a template whose manifest names
     /// <paramref name="engineVersion"/>; never for a version whose major cannot be read.
     /// </summary>

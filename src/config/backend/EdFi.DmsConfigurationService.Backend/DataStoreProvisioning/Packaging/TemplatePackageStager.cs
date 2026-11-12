@@ -13,8 +13,8 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 
 /// <summary>
-/// Immutable private staging of a template package (D-5), in this order: create the operation
-/// directory (<c>0700</c>); copy the catalog nupkg into it (<c>0600</c>) and never read the catalog file again;
+/// Immutable private staging of a template package (D-5) into an operation directory (<c>0700</c>) the caller
+/// claimed, in this order: copy the catalog nupkg into it (<c>0600</c>) and never read the catalog file again;
 /// hash the private copy by reading it back through the one handle that stays open for the package's lifetime;
 /// verify the attestation against that hash, the allowlisted identity and the trust policy exactly in the delivered
 /// order, before the archive is opened; then open the copy as a zip and enforce the delivered consumer's entry
@@ -22,15 +22,15 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
 /// satisfies the version-1 contract and names the resolved package identity, exactly one <c>.nuspec</c> that
 /// names the same identity, exactly one entry named by the manifest's <c>artifactFileName</c>, and no other
 /// <c>.sql</c> or <c>.bak</c> entry. No artifact content is read here: <see cref="StagedTemplatePackage"/>
-/// extracts and hashes it on the create path only. Every failure deletes the operation directory
-/// before the exception leaves. Refusals are <see cref="TemplatePackageException"/>, including every malformed
+/// extracts and hashes it on the create path only. Every failure closes the stager's handles before the exception
+/// leaves and leaves the directory to its owner. Refusals are <see cref="TemplatePackageException"/>, including every malformed
 /// container the zip reader reports (<see cref="InvalidDataException"/>) at any of its boundaries: opening the
 /// archive, enumerating the central directory, which the reader defers until the entries are first asked for,
 /// and opening or decompressing an entry. Cancellation and ordinary file system failures pass through unchanged;
 /// a missing catalog file surfaces as the file system's <see cref="FileNotFoundException"/> for the catalog to
 /// classify.
 /// </summary>
-public sealed class TemplatePackageStager
+public static class TemplatePackageStager
 {
     /// <summary>The largest <c>restore-manifest.json</c> entry accepted; real manifests are far smaller.</summary>
     public const long MaxManifestEntryBytes = 16L * 1024 * 1024;
@@ -44,73 +44,11 @@ public sealed class TemplatePackageStager
 
     private static readonly string[] _artifactExtensions = [".sql", ".bak"];
 
-    private readonly string _operationRootDirectory;
-
-    /// <param name="operationRootDirectory">The fully qualified directory under which every operation directory is created.</param>
-    public TemplatePackageStager(string operationRootDirectory)
-    {
-        ArgumentException.ThrowIfNullOrWhiteSpace(operationRootDirectory);
-        if (!Path.IsPathFullyQualified(operationRootDirectory))
-        {
-            throw new ArgumentException(
-                "The operation directory root must be a fully qualified path.",
-                nameof(operationRootDirectory)
-            );
-        }
-
-        _operationRootDirectory = operationRootDirectory;
-    }
-
-    /// <summary>
-    /// Claims the operation directory under the configured root and stages into it; every failure, cancellation
-    /// included, deletes that directory before the exception leaves.
-    /// </summary>
-    /// <param name="packagePath">The catalog nupkg, located by the catalog from allowlist-derived names.</param>
-    /// <param name="attestationJson">The sibling attestation document's text; null or blank is an untrusted verdict.</param>
-    /// <param name="expectedPackageId">The allowlisted package id.</param>
-    /// <param name="expectedPackageVersion">The allowlisted package version.</param>
-    /// <param name="policy">The operator trust policy.</param>
-    /// <param name="operationId">The operation whose private directory is created.</param>
-    /// <param name="cancellationToken">Cancels the copy and the reads; the directory is deleted on cancellation too.</param>
-    public async Task<StagedTemplatePackage> StageAsync(
-        string packagePath,
-        string? attestationJson,
-        string expectedPackageId,
-        string expectedPackageVersion,
-        TemplateTrustPolicy policy,
-        DmsOperationId operationId,
-        CancellationToken cancellationToken
-    )
-    {
-        PrivateOperationDirectory directory = PrivateOperationDirectory.Create(
-            _operationRootDirectory,
-            operationId
-        );
-        try
-        {
-            return await StageAsync(
-                directory,
-                packagePath,
-                attestationJson,
-                expectedPackageId,
-                expectedPackageVersion,
-                policy,
-                cancellationToken
-            );
-        }
-        catch
-        {
-            directory.Dispose();
-            throw;
-        }
-    }
-
     /// <summary>
     /// Stages into a directory the caller claimed and owns. On failure, cancellation included, every handle the
     /// stager opened is closed before the exception leaves, and the directory, with whatever the stager wrote
     /// into it, is left to its owner to delete and to account for as residue: the owner, not the stager, knows
-    /// the claim was its own. On success the returned package takes the directory over. Static: nothing about
-    /// the configured root applies once the caller holds the directory.
+    /// the claim was its own. On success the returned package takes the directory over.
     /// </summary>
     public static async Task<StagedTemplatePackage> StageAsync(
         PrivateOperationDirectory directory,
