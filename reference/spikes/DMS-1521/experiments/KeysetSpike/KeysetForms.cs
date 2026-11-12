@@ -159,7 +159,8 @@ public static class KeysetForms
             if (forms.Contains("memtablevar"))
             {
                 // The provisioning a memory-optimized table variable needs: a MEMORY_OPTIMIZED_DATA
-                // filegroup (which can never be removed from the database) and a memory-optimized type.
+                // filegroup (SQL Server 2022 and older can never remove it; SQL Server 2025 can, after the
+                // type is dropped, through the In-Memory OLTP undeploy procedure) and a memory-optimized type.
                 Stopwatch provisioning = Stopwatch.StartNew();
                 await ExecuteNonQueryAsync(connection, MemoryOptimizedProvisioningSql);
                 run.Manifest["memoryOptimizedProvisioningSeconds"] = provisioning.Elapsed.TotalSeconds;

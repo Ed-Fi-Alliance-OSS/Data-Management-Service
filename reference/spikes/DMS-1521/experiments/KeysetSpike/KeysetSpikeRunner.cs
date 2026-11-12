@@ -645,7 +645,8 @@ public static class KeysetSpikeRunner
                 $"{batch.Kind}.{batch.PageSize}: the captured binding selects {boundPageSize} rows, not {batch.PageSize}"
             );
             string prefix = $"batches/{batch.Kind}.{batch.PageSize}";
-            run.WriteText($"{prefix}.sql", batch.Text);
+            // Exact text: the sidecar's sha256 and length, and cells.json's batchSha256, describe it.
+            run.WriteExactText($"{prefix}.sql", batch.Text);
             run.WriteJson(
                 $"{prefix}.params.json",
                 new JsonObject
@@ -1020,11 +1021,14 @@ public sealed class RunArtifacts
         );
     }
 
-    public void WriteText(string relativePath, string content)
+    public void WriteText(string relativePath, string content) =>
+        WriteExactText(relativePath, content.Replace("\r\n", "\n"));
+
+    public void WriteExactText(string relativePath, string content)
     {
         string path = Path.Combine(Directory, relativePath);
         System.IO.Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-        File.WriteAllText(path, content.Replace("\r\n", "\n"), new UTF8Encoding(false));
+        File.WriteAllText(path, content, new UTF8Encoding(false));
     }
 
     public void WriteJson(string relativePath, JsonNode node) =>

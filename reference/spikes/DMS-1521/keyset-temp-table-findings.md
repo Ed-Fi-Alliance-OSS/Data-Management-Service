@@ -1322,8 +1322,26 @@ ordered, which is the property task 6 found `inline` lacks.
 
 - **Provisioning (DDL).** Every database needs a `MEMORY_OPTIMIZED_DATA` filegroup with a file, plus
   `CREATE TYPE … AS TABLE (…) WITH (MEMORY_OPTIMIZED = ON)`. The run's provisioning took 1.2 s on an
-  empty filegroup. A memory-optimized filegroup cannot be removed from a database once added. This
-  is a provisioning change, so the AGENTS.md `RelationalMappingVersion` cadence applies when it
+  empty filegroup. Whether the filegroup can be removed again depends on the version:
+  - **SQL Server 2022 and older:** only by dropping the database.
+  - **SQL Server 2025 and later:** only after every In-Memory OLTP object is dropped (here, the
+    table type). Removing the last container is an undeploy that waits for the log to advance:
+    `CHECKPOINT`, plus log backups under full recovery. Every availability replica must apply the
+    undeploy record, and the database must have no snapshots. `REMOVE FILEGROUP` follows. See
+    Microsoft Learn,
+    [The memory-optimized filegroup](https://learn.microsoft.com/en-us/sql/relational-databases/in-memory-oltp/the-memory-optimized-filegroup?view=sql-server-ver17)
+    and
+    [Memory-optimized container and filegroup removal](https://learn.microsoft.com/en-us/sql/relational-databases/in-memory-oltp/memory-optimized-container-filegroup-removal?view=sql-server-ver17).
+  - **Probe** on `dms-1521-mssql` (SQL Server 2025 RTM-CU7, 17.0.4065.4; 2026-11-12), using the
+    runner's provisioning SQL:
+    - With the type present, `REMOVE FILE` failed with Msg 41880 ("There are in-memory database
+      objects present").
+    - After `DROP TYPE`, it waited in undeploy state 3 until `CHECKPOINT`s issued from another
+      session advanced the log.
+    - It then removed the file, the engine reported "not deployed", and `REMOVE FILEGROUP`
+      succeeded.
+
+  This is a provisioning change, so the AGENTS.md `RelationalMappingVersion` cadence applies when it
   lands (task 9), and existing databases would need re-provisioning or a migration step.
 - **Memory.** The XTP memory clerks held 52,848 KB after the run, with 32 concurrent sessions at
   500 rows.
@@ -1351,12 +1369,17 @@ Screening proves only that the transformed SQL is fast and returns the same rows
 Until then it is an unvalidated lead, and no story adopts it.
 
 **Decision (2026-11-12, the spike owner):** `memtablevar` is recorded as an unvalidated lead, and
-steps 1–3 are not run in this spike. Its provisioning (an irreversible filegroup and a new type),
+steps 1–3 are not run in this spike. Its provisioning (a filegroup, which SQL Server 2022 and older
+can never remove and SQL Server 2025 can remove only through the undeploy procedure, and a new type),
 its memory, and its availability across supported editions and tiers are product decisions to take
 at the task 11 review before more machine time is spent. SQL Server therefore ends this spike
 with **no validated replacement**: `#page` stays, and task 9 gives the AC5 explanation and the AC6
 documentation of the retained temp table, with `memtablevar` listed as the lead together with its
 screening numbers and the three missing steps. Task 8 is complete.
+
+Task 9 later narrowed this. `inline` passed every criterion on SQL Server's candidate-metadata (P2)
+and descriptor (P4) paths, so it is recommended there. "No validated replacement" applies to P1
+and P3, where `#page` stays (see [Recommendation](#recommendation)).
 
 ## Correctness validation
 
@@ -1627,8 +1650,10 @@ steps under
 [Status and the validation `memtablevar` still needs](#status-and-the-validation-memtablevar-still-needs).
 Adopting it would also need:
 
-- **Re-provisioning:** every database needs a `MEMORY_OPTIMIZED_DATA` filegroup, which cannot be
-  removed once added, and a memory-optimized table type. Existing databases would need
+- **Re-provisioning:** every database needs a `MEMORY_OPTIMIZED_DATA` filegroup and a
+  memory-optimized table type. SQL Server 2022 and older can never remove the filegroup; SQL Server
+  2025 can, only after dropping the type and completing the undeploy procedure (see
+  [What `memtablevar` costs](#sql-server-screening)). Existing databases would need
   re-provisioning or a migration step.
 - **A `RelationalMappingVersion` decision** under the AGENTS.md cadence when it lands, separate from
   re-provisioning: `v3` if it lands before 8.1 ships, the `v4` candidate after, and never a second
@@ -1835,6 +1860,15 @@ read-only `git apply --check -R` and never applies or removes the patch itself.
 
 The analysis scripts, lane scripts, and reports live beside the runs in `C:\perf\dms-1521\` and are
 attached with them.
+
+Each `batches/<kind>.<size>.sql` holds the exact command text. Its `.params.json` records that
+text's `sha256` and `length`, and `cells.json` records the same hash as `batchSha256`. The
+descriptor batches contain CRLF projection separators, because the batches were captured on
+Windows and `DescriptorReadHandler` joins its columns with `Environment.NewLine`. Until
+2026-11-12, the runner wrote these files with LF line endings, so the 42 descriptor files no
+longer matched their hashes. They were restored by turning each `,\n` back into `,\r\n`, and each
+file was written only after its restored hash matched the recorded one. All 283 batch files now
+match their `.params.json`.
 
 Prior-evidence extraction used the three DMS-1392 attachments and the DMS-1269 zip listed under
 [Prior evidence](#prior-evidence). The figures there come from the `pg-statement-cost` rows for
