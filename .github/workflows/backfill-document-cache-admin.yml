@@ -1,0 +1,390 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# One-time backfill of EdFi.Api.DocumentCacheAdmin for releases cut before the DocumentCacheAdmin
+# release chain existed. Like Pkg EdFi.Api.SecurityMetadataTools.yml, it builds the dispatch commit,
+# so the SBOM and the provenance describe the commit actually built. The package version comes from
+# the named stable release tag, never from MinVer, and the run refuses unless the dispatch commit's
+# build inputs equal the tag's, the tool README excepted so the package carries the current install
+# guidance (Get-DocumentCacheAdminBackfillSourceInput in eng/ci/DocumentCacheAdminBackfill.psm1 lists
+# the inputs). Main's build inputs no longer equal v8.1.0's, so it publishes only from the
+# backfill/document-cache-admin-8.1.0 branch: main plus one commit, made with
+# Restore-DocumentCacheAdminBackfillSource, that restores the tag's build inputs.
+#
+# docs/CI-PUBLISHING-CREDENTIALS.md describes how to run it: a dry run first, then the publishing run.
+#
+# Once 8.1.0 is backfilled, delete this workflow, eng/ci/DocumentCacheAdminBackfill.psm1,
+# eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1, the 'backfill-document-cache-admin.yml publishing
+# credentials' Describe in eng/ci/tests/ReleasePublishingCredentials.Tests.ps1, the
+# DocumentCacheAdminBackfill.Tests.ps1 entry in the Pester allowlist in
+# .github/workflows/on-dms-pullrequest.yml, and from docs/CI-PUBLISHING-CREDENTIALS.md both the
+# backfill lines and the 'The one-time DocumentCacheAdmin backfill' section. Keep
+# eng/ci/release-assets.psm1, which the release workflows attach with too. The provenance names the
+# backfill branch's commit, so replace that branch with the document-cache-admin-backfill-8.1.0 tag on
+# the same commit rather than only deleting it.
+
+name: Backfill EdFi.Api.DocumentCacheAdmin
+on:
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Stable release tag to backfill, for example v8.1.0
+        type: string
+        required: true
+      publish_package:
+        description: Publish the package, promote it to Release, and attach the SBOM and provenance
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
+  DOCUMENT_CACHE_ADMIN_PACKAGE_NAME: EdFi.Api.DocumentCacheAdmin
+  MANIFEST_FILE: manifest.spdx.json
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    name: Build and validate DocumentCacheAdmin at the release tag's version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.package.outputs.version }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+      hash-code: ${{ steps.package.outputs.hash-code }}
+    steps:
+      # The dispatch commit is what is built. Every tag is fetched, so the release tag's commit can be
+      # compared with it.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Validate release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1
+          Assert-DocumentCacheAdminBackfillTag -ReleaseTag $env:RELEASE_TAG
+
+      - name: Require the build inputs of the release tag
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1
+          Write-Output "Build inputs compared with ${env:RELEASE_TAG}:"
+          Get-DocumentCacheAdminBackfillSourceInput | ForEach-Object { Write-Output "  $_" }
+          Assert-DocumentCacheAdminBackfillSource -ReleaseTag $env:RELEASE_TAG -InformationAction Continue
+
+      - name: Stamp the version of the release tag
+        id: version
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1
+          $version = Get-DocumentCacheAdminBackfillVersion -ReleaseTag $env:RELEASE_TAG
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Build DMS .NET Assemblies
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./build-dms.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $env:APP_VERSION `
+              -LockedMode
+
+      - name: Create DocumentCacheAdmin NuGet Package
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./build-dms.ps1 -Command Package `
+              -DMSVersion $env:APP_VERSION `
+              -Configuration Release `
+              -PackageTarget DocumentCacheAdmin `
+              -LockedMode
+
+      - name: Verify Installed DocumentCacheAdmin Package
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          ./eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1 `
+              -DMSVersion $env:APP_VERSION `
+              -Configuration Release `
+              -SkipPackageBuild
+
+      - name: Record package version, hash and provenance subject
+        id: package
+        env:
+          APP_VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          $packageFile = "$env:DOCUMENT_CACHE_ADMIN_PACKAGE_NAME.$env:APP_VERSION.nupkg"
+          if (-not (Test-Path -LiteralPath $packageFile)) {
+            throw "Expected DocumentCacheAdmin package was not found: $packageFile"
+          }
+          $sha256 = (Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash.ToLowerInvariant()
+          "version=$env:APP_VERSION" >> $env:GITHUB_OUTPUT
+          "sha256=$sha256" >> $env:GITHUB_OUTPUT
+          $subject = "$sha256  $([IO.Path]::GetFileName($packageFile))"
+          "hash-code=$([Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($subject)))" >> $env:GITHUB_OUTPUT
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: EdFi.Api.DocumentCacheAdmin-NuGet
+          path: EdFi.Api.DocumentCacheAdmin.${{ steps.package.outputs.version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom-create-document-cache-admin:
+    name: Create DocumentCacheAdmin SBOM
+    runs-on: ubuntu-latest
+    needs: [build]
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      # The commit the build job built, so sbom-tool scans the source of the package.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Get DocumentCacheAdmin Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-NuGet
+
+      - name: Generate DocumentCacheAdmin Software Bill of Materials (SBOM)
+        env:
+          PACKAGE_VERSION: ${{ needs.build.outputs.version }}
+          PACKAGE_SHA256: ${{ needs.build.outputs.sha256 }}
+        run: |
+          $packageName = $env:DOCUMENT_CACHE_ADMIN_PACKAGE_NAME
+          $packageFile = "$packageName.$env:PACKAGE_VERSION.nupkg"
+          if (-not (Test-Path -LiteralPath $packageFile)) {
+            throw "Expected DocumentCacheAdmin package was not found: $packageFile"
+          }
+          if ((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash -ine $env:PACKAGE_SHA256) {
+            throw "DocumentCacheAdmin package hash differs from the build output: $packageFile"
+          }
+          (Resolve-Path -LiteralPath $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installing Microsoft.Sbom.DotNetTool failed ($LASTEXITCODE)."
+          }
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $env:PACKAGE_VERSION `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+          if ($LASTEXITCODE -ne 0) {
+            throw "sbom-tool generate failed ($LASTEXITCODE)."
+          }
+
+          Copy-Item _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload DocumentCacheAdmin SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate DocumentCacheAdmin hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum "./$MANIFEST_FILE" | awk '{print $1}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-document-cache-admin:
+    name: Create DocumentCacheAdmin Provenance
+    needs: build
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.build.outputs.hash-code }}
+      provenance-name: edfiApiDocumentCacheAdmin.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  publish:
+    name: Publish exact DocumentCacheAdmin artifact
+    needs: [build, sbom-create-document-cache-admin, provenance-create-document-cache-admin]
+    # Runs only from the backfill/document-cache-admin-8.1.0 branch, never from main or another branch,
+    # and only in the 'publishing' environment, whose protection rules GitHub checks before it
+    # releases the token; the token reaches only the step that pushes or promotes.
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
+    concurrency:
+      group: publish-package-document-cache-admin-backfill
+      cancel-in-progress: false
+    environment: publishing
+    runs-on: ubuntu-latest
+    env:
+      TOOL_VERSION: ${{ needs.build.outputs.version }}
+      TOOL_SHA256: ${{ needs.build.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: EdFi.Api.DocumentCacheAdmin-NuGet
+      # Re-running the failed jobs of this same run reuses its artifact, so a push that landed before
+      # the job failed is recognized by its bytes and not pushed again, and promote and attach
+      # continue. A new dispatch builds new bytes, because the dispatch commit's SHA is stamped into
+      # the assemblies and the package archive is not reproducible, so it refuses once the version
+      # is on the feed.
+      - name: Verify and Push DocumentCacheAdmin Backfill Package
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          # The credential provider authenticates the push to ARTIFACTS_FEED_URL through this, as in
+          # the on-prerelease.yml push steps.
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
+        run: |
+          Import-Module ./package-helpers.psm1
+          Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1
+          InstallCredentialHandler
+          Publish-DocumentCacheAdminBackfill -Version $env:TOOL_VERSION `
+              -PackageFile "EdFi.Api.DocumentCacheAdmin.$env:TOOL_VERSION.nupkg" `
+              -Sha256 $env:TOOL_SHA256 -ServiceIndexUrl $env:ARTIFACTS_FEED_URL -ApiKey $env:ARTIFACTS_API_KEY `
+              -InformationAction Continue
+
+  promote:
+    name: Promote backfilled DocumentCacheAdmin version to Release
+    # Retry only this failed job in the same run after a successful push.
+    needs: [build, publish]
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
+    environment: publishing
+    runs-on: ubuntu-latest
+    env:
+      TOOL_VERSION: ${{ needs.build.outputs.version }}
+      ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Promote DocumentCacheAdmin Backfill Package
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+        run: |
+          Import-Module ./package-helpers.psm1
+          Invoke-ContractPromotion -PackagesURL $env:ARTIFACTS_PACKAGES_URL `
+              -Username $env:ARTIFACTS_USERNAME `
+              -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
+              -ServiceIndexUrl $env:ARTIFACTS_FEED_URL -ApiKey $env:ARTIFACTS_API_KEY `
+              -PackageName 'EdFi.Api.DocumentCacheAdmin' -Version $env:TOOL_VERSION
+
+  attach:
+    name: Attach DocumentCacheAdmin SBOM and Provenance to the GitHub Release
+    # Attaches only after the version reached the Release view. An asset the release already has is
+    # left as it is when its content matches and refused when it differs, so a re-run completes a
+    # partial attach and never replaces an asset.
+    needs: [build, publish, promote, sbom-create-document-cache-admin, provenance-create-document-cache-admin]
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      # Supplies the module that attaches. It runs first, because a checkout cleans the workspace.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Download DocumentCacheAdmin SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-document-cache-admin.outputs.sbom-hash-code }}"
+
+      - name: Download DocumentCacheAdmin Provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: edfiApiDocumentCacheAdmin.intoto.jsonl
+
+      - name: Attach DocumentCacheAdmin SBOM and Provenance to release
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Import-Module ./eng/ci/release-assets.psm1
+          Publish-ReleaseAsset -Repository $env:GITHUB_REPOSITORY -ReleaseTag $env:RELEASE_TAG -Token $env:GITHUB_TOKEN -Asset @(
+              @{ Name = 'EdFi.Api.DocumentCacheAdmin-SBOM.zip'; Path = $env:MANIFEST_FILE; Comparison = 'ZipEntry' }
+              @{ Name = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Path = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Comparison = 'Bytes' }
+          ) -InformationAction Continue
+
+  verify:
+    name: Install the promoted DocumentCacheAdmin from the Release view
+    # Installs the promoted version as the tool README documents, reading the Release view
+    # anonymously, and runs its help. It binds no environment and reads no secret.
+    needs: [build, promote]
+    if: ${{ inputs.publish_package && github.ref_type == 'branch' && github.ref == 'refs/heads/backfill/document-cache-admin-8.1.0' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Install the promoted DocumentCacheAdmin and run its help
+        env:
+          TOOL_VERSION: ${{ needs.build.outputs.version }}
+          RELEASE_VIEW_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
+        run: |
+          $toolPath = Join-Path $env:RUNNER_TEMP 'dms-document-cache-release'
+          # A private global-packages folder, so nothing already on the runner can satisfy the install.
+          $env:NUGET_PACKAGES = Join-Path $env:RUNNER_TEMP 'nuget-packages-release'
+
+          # A version promoted moments ago can take a while to appear in the Release view. Each attempt
+          # skips the HTTP cache, so it reads the view again.
+          $attempts = 10
+          for ($attempt = 1; $attempt -le $attempts; $attempt++) {
+              dotnet tool install EdFi.Api.DocumentCacheAdmin --tool-path $toolPath --version $env:TOOL_VERSION `
+                  --source $env:RELEASE_VIEW_URL --no-http-cache
+              if ($LASTEXITCODE -eq 0) { break }
+              if ($attempt -eq $attempts) {
+                  throw "Installing EdFi.Api.DocumentCacheAdmin $env:TOOL_VERSION from the Release view failed $attempts times (exit $LASTEXITCODE)."
+              }
+              Write-Output "Install attempt $attempt of $attempts failed (exit $LASTEXITCODE). Retrying in 30 seconds."
+              Start-Sleep -Seconds 30
+          }
+
+          $help = & (Join-Path $toolPath 'dms-document-cache') --help | Out-String
+          $helpExit = $LASTEXITCODE
+          Write-Output $help
+          if ($helpExit -ne 0) { throw "dms-document-cache --help exited $helpExit." }
+          foreach ($expected in 'Usage:', 'status') {
+              if (-not $help.Contains($expected)) { throw "dms-document-cache --help did not print '$expected'." }
+          }

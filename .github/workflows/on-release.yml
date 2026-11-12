@@ -281,6 +281,29 @@ jobs:
             -PackageName "EdFi.Api.Secrets" `
             -Version (Get-SecretsContractVersion)
 
+      # Last on purpose: the promote steps run in sequence in this one job, so a release whose tool
+      # chain failed fails here, loudly, after the other eight promotions ran. Invoke-ContractPromotion
+      # does nothing when the version is already in the Release view, promotes it when it is on the
+      # feed, and refuses a version that is on neither.
+      - name: Promote EdFi.Api.DocumentCacheAdmin Package
+        shell: pwsh
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+
+          Invoke-ContractPromotion `
+            -PackagesURL "${{ env.ARTIFACTS_PACKAGES_URL }}" `
+            -Username $env:ARTIFACTS_USERNAME `
+            -Password (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force) `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+            -ApiKey $env:ARTIFACTS_API_KEY `
+            -PackageName "EdFi.Api.DocumentCacheAdmin" `
+            -Version ($env:RELEASE_REF -replace '^v', '')
+
   tag-dms-image:
     name: Release Tag DMS Image
     # Only on a v* release tag, never a manual run from a branch or a prerelease tag; the
