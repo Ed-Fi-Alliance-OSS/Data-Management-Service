@@ -179,16 +179,17 @@ and deep.
 | N6 | PostgreSQL WAL bytes per request, clean windows | ratio ≤ 1 + m | 0 |
 | N7 | SQL Server cache-hit and forced-miss complete API p50 / p95 | ratio ≤ 1 + m | 0.37–1.00 |
 | N8 | SQL Server candidate replay p50 / p95 at c = 1, p95 at c = 32 | ratio ≤ 1 + m | 0.06–0.78 |
-| N9 | SQL Server candidate replay throughput at c = 8 and 32 | ratio ≥ 1 − m | ×1.89–×2.68 at 32 |
+| N9 | SQL Server candidate replay throughput at c = 8 and 32 | ratio ≥ 1 − m | ×1.89–×2.68 at 32; ×1.20–×1.30 at 8 (`main` CV 22–24%: rerun under the noisy-cell rule) |
 | N10 | SQL Server candidate logical reads per request | ratio ≤ 1 + m | 0.81 |
 | N11 | SQL Server resource GET-many API p50 / p95 (P1 unchanged) | ratio ≤ 1 + m | 0.94–1.02 |
 
 The PR reports child-collection cost under both PostgreSQL plan types: custom (the API window) and
 generic (the one-connection fallback window after five executions). It also reports the plan node
 types (`Index Scan` expected) as supporting evidence; they are not a threshold. Beside N8 it also
-reports the SQL Server candidate batch's p99 at concurrency 32, at 25 and 500 rows (reported, not
-gated): the prototype raised it from 70.8 to 314 ms at 500 rows. If the story's design keeps that
-tail, the PR names its cause (for example, memory-grant or parallelism waits on the `OPENJSON`
+reports the SQL Server candidate batch's p95 and p99 at concurrency 8 and 32, at 25 and 500 rows
+(reported, not gated): the prototype raised the p99 at 32 sessions from 70.8 to 314 ms at 500 rows,
+and in one of three sessions its p95 at 8 sessions and 25 rows from 5.9 to 63.2 ms. If the story's
+design keeps either tail, the PR names its cause (for example, memory-grant or parallelism waits on the `OPENJSON`
 statements).
 
 ## Test requirements
@@ -225,19 +226,21 @@ statements).
     `n_tup_ins` for the seven catalog tables (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`,
     `pg_index`, `pg_constraint`, `pg_statistic`) from `pg_stat_xact_sys_tables`, and expect 0. As
     the positive control, `main`'s keyset prelude, run the same way, reads more than 0.
-  - SQL Server, candidate batch: the batch text contains no `CREATE TABLE` and no
-    `DECLARE … TABLE`. Only the server-wide counter sees a table variable, and a shared CI server
-    cannot isolate it.
+  - SQL Server, candidate batch: the batch text names no `#` temp table (no `#`-prefixed
+    identifier, which also covers `SELECT … INTO #`) and contains no `DECLARE … TABLE`. Only the
+    server-wide counter sees a table variable, and a shared CI server cannot isolate it.
 
   Each test must fail if the change is reverted.
 - **Carrier.** The setting is transaction-local, so a commit or rollback discards it, and a batch
   can read another batch's ids only inside one transaction. The leak tests therefore share one
   test-owned transaction:
   - `Given_Postgresql_Query_Keysets_In_One_Transaction`: a 25-id query keyset, then a zero-size
-    page (`limit = 0`), then a page whose offset is past the end, then a 1-id page. Each returns
-    exactly its own documents and selected keys, and the two empty pages return none. It fails if
-    the empty or zero-size path skips `set_config`, for example by copying `main`'s zero-page
-    shortcut (`AppendEmptyKeysetMaterialization`).
+    page (`limit = 0`), then a 1-id page, then a page whose offset is past the end. Each empty
+    page directly follows a non-empty one, so a skipped `set_config` would return the previous
+    page's documents. Each page returns exactly its own documents and selected keys, and the two
+    empty pages return none. It fails if the empty or zero-size path skips `set_config`, for
+    example by copying `main`'s zero-page shortcut (`AppendEmptyKeysetMaterialization`) or by
+    evaluating `set_config` per selected row instead of in a one-row aggregate.
   - `Given_A_Query_Keyset_Then_An_Empty_Selected_Page_In_One_Transaction`: a 25-id query keyset,
     then an empty selected page. The second hydration returns no documents. A `NULL` parameter
     makes the relation read the carrier, so an empty selected page bound as `NULL` would return

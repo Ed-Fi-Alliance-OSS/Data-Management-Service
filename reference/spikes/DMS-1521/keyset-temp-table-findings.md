@@ -1246,6 +1246,22 @@ sessions):
   than the create, drop, insert, and latch they lose: 0.45–0.93 at
   concurrency 1, and ×1.9–×2.7 throughput at 32. Their logical reads fall (descriptor 6,607 →
   5,755 at 500; candidate 4,066 → 3,276), because the `#page` pages are gone.
+- **Concurrency 8** (not a gate; shown because the P1 and P3 decision uses it). Ratios `I / B`,
+  mean of the three task 6 sessions, with `B`'s throughput CV:
+
+  | Batch | Rows | c = 8 throughput | `B` CV | c = 8 p95 |
+  |---|---|---|---|---|
+  | Candidate | 25 | ×1.20 | 24.3% | ×3.83 (`I` 23.3 ± 34.5 ms) |
+  | Candidate | 500 | ×1.30 | 21.9% | 0.75 |
+  | Descriptor | 25 | ×1.49 | 24.2% | 0.27 |
+  | Descriptor | 500 | ×1.20 | 13.4% | 0.83 |
+
+  Throughput improves in every cell. The candidate-25 p95 comes from one session: in `t6s2`, `I`
+  read 63.2 ms against `B`'s 5.9 ms, with throughput 684 against 940 per second; the other two
+  sessions improve (3.5 and 3.3 ms against 4.8 and 7.6 ms). That is the same kind of tail as the
+  candidate batch's p99 at 32 sessions (below), so story 1 reports both. `B`'s 2 × CV exceeds 20% in
+  all four cells, so under the stories' noisy-cell rule (see [Thresholds](#thresholds)) each c = 8
+  throughput cell is rerun before it counts.
 - **Tail latency at 32 sessions.** p99 is not a gate, but it is reported: `I`'s p99 at 32 is higher
   than `B`'s on the 500-row candidate (314 against 71 ms), resource (1,317 against 778 ms), and
   fallback (1,572 against 199 ms) batches, while its p95 is lower on all but the fallback. Every
@@ -1828,7 +1844,7 @@ proportion, and plain `SELECT`s must read 0, before any zero counts):
 | Id | Engine | Metric | Bound | Spike result | Reproduce |
 |---|---|---|---|---|---|
 | E1 | PostgreSQL | Catalog `n_tup_ins` + `n_tup_del` (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`, `pg_index`, `pg_constraint`, `pg_statistic`) per request, net of idle, on the resource, candidate, fallback, and descriptor batches | = 0 (`main`: 44; 42 descriptor) | 0 in 24 of 24 windows | R1. The stories' CI tests use the transaction-local `pg_stat_xact_sys_tables` instead |
-| E2 | SQL Server | Temp tables per request on the candidate (P2) and descriptor (P4) batches: XE `object_created` (user table, tempdb, `ddl_phase = 1`, measured database). `Temp Tables Creation Rate` is reported beside it but does not gate: it is server-wide and picks up background temp tables (task 4). A table variable increments only that counter, so the stories' CI batch-text check (no `CREATE TABLE`, no `DECLARE … TABLE`) is the table-variable guard | XE = 0 in every window (`main`: 1); a window whose server counter reads non-zero is repeated, not failed | 0 in every P2 and P4 window, on both counters | R2 |
+| E2 | SQL Server | Temp tables per request on the candidate (P2) and descriptor (P4) batches: XE `object_created` (user table, tempdb, `ddl_phase = 1`, measured database). `Temp Tables Creation Rate` is reported beside it but does not gate: it is server-wide and picks up background temp tables (task 4). A table variable increments only that counter, so the stories' CI batch-text check (no `#` temp-table name, which also covers `SELECT … INTO #`, and no `DECLARE … TABLE`) is the table-variable guard | XE = 0 in every window (`main`: 1); a window whose server counter reads non-zero is repeated, not failed | 0 in every P2 and P4 window, on both counters | R2 |
 | E3 | SQL Server | `sql_statement_recompile` events and summed `plan_generation_num` change after warmup, all four batch kinds | = 0 | 0 in both variants | R2 |
 | E4 | PostgreSQL | GET-many on each of P1–P4 in a transaction with `default_transaction_read_only = on`, with `main`'s prelude failing with 25006 as the positive control | succeeds, exact rows | probe above (P1 and P3 shapes) | story 1 and story 2 integration tests |
 | E5 | SQL Server | SHA-256 of the P1 and P3 batch texts at 25 and 500 rows | equal to `main`'s | – (recommendation) | R2 `cells.json` and `batches/` |
@@ -1858,12 +1874,12 @@ column shows the spike's uncapped values; under the cap no bound exceeds 1.20, a
 | N1 | PostgreSQL | Descriptor API p50 / p95, 25 and 500 | 0.73–0.99 | 1.05–1.07 | R1 |
 | N2 | PostgreSQL | Cache-hit API p50 / p95, 25 and 500 | 0.84–0.88 | 1.05–1.15 | R1 |
 | N3 | PostgreSQL | Forced-miss complete API p50 / p95, 25 and 500 | 0.69–0.90 | 1.15–1.26 | R1 |
-| N4 | PostgreSQL | Descriptor and candidate replay p50 at c = 1, p95 at c = 32; throughput at c = 8 and 32 | latency 0.09–0.59; ×1.8–×8.8 | per cell | R1 |
+| N4 | PostgreSQL | Descriptor and candidate replay p50 at c = 1, p95 at c = 32; throughput at c = 8 and 32 | latency 0.12–0.46; ×1.8–×8.8 | per cell | R1 |
 | N5 | PostgreSQL | Plan time per request (`pg_stat_statements`, c = 1 window), all four batches | 0.06–0.95 (resource and fallback) | per cell | R1 |
 | N6 | PostgreSQL | WAL bytes per request in clean windows, all four batches | 0 | – | R1 |
 | N7 | SQL Server | Descriptor and cache-hit API p50 / p95, 25 and 500; forced-miss complete API p50 / p95 | 0.37–1.01 | 1.05–3.09 | R2 |
 | N8 | SQL Server | Descriptor and candidate replay p50 / p95 at c = 1, p95 at c = 32 | 0.05–0.93 | per cell | R2 |
-| N9 | SQL Server | Descriptor and candidate replay throughput at c = 8 and 32 | ×1.89–×2.68 at 32 | per cell | R2 |
+| N9 | SQL Server | Descriptor and candidate replay throughput at c = 8 and 32 | ×1.89–×2.68 at 32; ×1.20–×1.49 at 8 (`main` CV 13–24%, so every c = 8 cell is rerun under the noisy-cell rule) | per cell | R2 |
 | N10 | SQL Server | Logical reads per request, descriptor and candidate batches (`SET STATISTICS IO`) | 0.81–0.87 | 1.05 | R2 `plans/` |
 | N11 | SQL Server | Resource GET-many API p50 / p95 (P1 unchanged; guards the shared-contract work) | 0.94–1.02 | 1.07–1.23 | R2 |
 
@@ -1879,8 +1895,8 @@ updates this one call site before running R1.
 
 | Id | Command (repeat three times, alternating `main` and the story branch, from a clean tree) | Analysis |
 |---|---|---|
-| R1 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t5_analyze.py` (attached to DMS-1521), with its session and label lists pointed at the new run ids |
-| R2 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine mssql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t6_analyze.py`, adapted the same way |
+| R1 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t5_analyze.py` (attached to DMS-1521), adapted in two ways. Run selection: it picks runs by the labels `B1` and `I2`, while R1 labels both sides `B01`, so select by the `-SequenceId` suffix (`-main`, `-story`). Bounds: it prints the spike's uncapped `m = max(2 × CV, 5%)` and no improvement bound, so the story computes the capped m, T − m, and the inconclusive rule from its printed mean and CV (see Definitions) |
+| R2 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine mssql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t6_analyze.py`, adapted the same way (its run glob `{variant}[0-9]-2*` does not match `B01`) |
 | R3 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence I -Fixtures probes,descriptorprobes` (prototype) | Carrier probes against the prototype only. `-Sequence I` needs `prototype.patch` applied and the probes require `DMS1521_KEYSET_VARIANT=inline`, so neither runs on a story branch; the stories' own carrier tests (one transaction) take their place there |
 
 ## Design-document impact

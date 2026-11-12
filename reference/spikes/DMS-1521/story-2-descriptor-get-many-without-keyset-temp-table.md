@@ -149,7 +149,7 @@ inconclusive for reviewer sign-off instead of counting it as met.
 | N6 | PostgreSQL WAL bytes per descriptor request | ratio ≤ 1 + m | 0 |
 | N7 | SQL Server descriptor API p50 / p95 | ratio ≤ 1 + m | 0.98–1.01 |
 | N8 | SQL Server descriptor replay p50 / p95 at c = 1, p95 at c = 32 | ratio ≤ 1 + m | 0.05–0.93 |
-| N9 | SQL Server descriptor replay throughput at c = 8 and 32 | ratio ≥ 1 − m | ×2.15–×2.25 at 32 |
+| N9 | SQL Server descriptor replay throughput at c = 8 and 32 | ratio ≥ 1 − m | ×2.15–×2.25 at 32; ×1.20–×1.49 at 8 (`main` CV 13–24%: rerun under the noisy-cell rule) |
 | N10 | SQL Server descriptor logical reads per request | ratio ≤ 1 + m | 0.87 at 500 rows |
 
 ## Test requirements
@@ -173,15 +173,17 @@ inconclusive for reviewer sign-off instead of counting it as met.
   - PostgreSQL: run the descriptor batch inside a test-owned transaction. Before commit, the seven
     catalog tables' `n_tup_ins` in `pg_stat_xact_sys_tables` reads 0. `main`'s `descriptor_page`
     prelude, run the same way, is the positive control and reads more than 0.
-  - SQL Server: the descriptor batch text contains no `CREATE TABLE` and no `DECLARE … TABLE`.
+  - SQL Server: the descriptor batch text names no `#` temp table (no `#`-prefixed identifier,
+    which also covers `SELECT … INTO #`) and contains no `DECLARE … TABLE`.
 
   Each test must fail if the change is reverted.
 - **Carrier** (PostgreSQL). The setting is transaction-local, so the leak test shares one
-  test-owned transaction: a non-empty page, an empty page (offset past the end), a zero-limit
-  page, and a non-empty page again. Each returns exactly its own boundary, version ids, and owner
-  rows, and the empty and zero-limit pages return none. It fails if the zero-limit path skips
-  `set_config`, as `main`'s zero-limit shortcut skips selection (`DescriptorReadHandler.cs`
-  ≈2047–2058). Separately, on one pooled physical connection, a failed batch followed by an empty
+  test-owned transaction: a non-empty page, a zero-limit page, a non-empty page, then an empty
+  page (offset past the end). Each empty page directly follows a non-empty one, so a skipped
+  `set_config` would return the previous page's rows. Each page returns exactly its own boundary,
+  version ids, and owner rows, and the zero-limit and empty pages return none. It fails if either
+  path skips `set_config`, for example by copying `main`'s zero-limit shortcut, which skips
+  selection (`DescriptorReadHandler.cs` ≈2047–2058). Separately, on one pooled physical connection, a failed batch followed by an empty
   page, with the carrier reading `''` after each, catches a session-level carrier.
 - **Read-only** (E4), with `main`'s DDL prelude failing with SQLSTATE 25006 as the positive
   control.
