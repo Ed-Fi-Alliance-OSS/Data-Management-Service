@@ -1885,7 +1885,7 @@ jobs:
         run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -TaggedRelease $env:TAGGED_RELEASE -ImageName $env:IMAGE_NAME
 
       - name: Set up DMS QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up DMS Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -2713,7 +2713,7 @@ jobs:
           echo "VERSION=$SEMVERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Config QEMU
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
 
       - name: Set up Config Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
