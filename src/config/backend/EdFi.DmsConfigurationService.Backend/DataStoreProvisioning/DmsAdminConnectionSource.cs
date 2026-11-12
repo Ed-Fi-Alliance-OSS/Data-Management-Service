@@ -284,50 +284,22 @@ public sealed class DmsAdminConnectionSource(
     }
 
     /// <summary>
-    /// Calls the resolver on a task the host owns and races it against <paramref name="allowance"/>, so a
-    /// resolver that blocks before returning its <see cref="ValueTask{TResult}"/> is bounded as well as one that
-    /// returns an incomplete one. At the deadline the resolver's token is cancelled and the fetch fails, which
-    /// releases the cache's flight for the next caller; the late outcome is observed and dropped, so nothing
-    /// the call returns afterwards can reach the cache. The deadline is armed before the resolver is invoked.
+    /// One resolver call bounded by <see cref="BoundedSecretFetch"/> with what remains of this resolution's
+    /// allowance. At that deadline it fails with <see cref="FetchTimedOutException"/>, which releases the cache's
+    /// flight for the next caller, so nothing the call returns afterwards can reach the cache.
     /// </summary>
-    private async Task<string> FetchAsync(
+    private Task<string> FetchAsync(
         ISecretResolver resolver,
         SecretReference reference,
         TimeSpan allowance
-    )
-    {
-        using CancellationTokenSource deadlineCancellation = new();
-        Task deadline = Task.Delay(allowance, timeProvider, deadlineCancellation.Token);
-
-        CancellationTokenSource cancellation = new();
-        Task<string> call = Task.Run(
-            () => resolver.ResolveAsync(reference, cancellation.Token).AsTask(),
-            cancellation.Token
+    ) =>
+        BoundedSecretFetch.FetchAsync<FetchTimedOutException>(
+            resolver,
+            reference,
+            allowance,
+            timeProvider,
+            () => AbandonedCallSignal().TrySetResult()
         );
-
-        if (await Task.WhenAny(call, deadline) == call)
-        {
-            await deadlineCancellation.CancelAsync();
-            cancellation.Dispose();
-            return await call;
-        }
-
-        Task cancelled = cancellation.CancelAsync();
-        _ = Task.WhenAll(call, cancelled)
-            .ContinueWith(
-                completed =>
-                {
-                    _ = completed.Exception;
-                    cancellation.Dispose();
-                    AbandonedCallSignal().TrySetResult();
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.None,
-                TaskScheduler.Default
-            );
-
-        throw new FetchTimedOutException();
-    }
 
     private TaskCompletionSource AbandonedCallSignal() =>
         LazyInitializer.EnsureInitialized(

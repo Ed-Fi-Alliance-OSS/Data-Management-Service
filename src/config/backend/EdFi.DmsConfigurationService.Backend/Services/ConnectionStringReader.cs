@@ -464,53 +464,19 @@ public sealed class ConnectionStringReader(
     }
 
     /// <summary>
-    /// Calls the resolver on a task the host owns and races that task against the timeout, so a
-    /// resolver that blocks before returning its <see cref="ValueTask{TResult}"/> is bounded as well as
-    /// one that returns an incomplete one. The token passed to the resolver is cancelled at the
-    /// deadline so a cooperative resolver stops work nobody is waiting for; a thread an uncooperative
-    /// one blocks is released only when it returns. A call still queued when the deadline passes is
-    /// never started.
+    /// One resolver call bounded by <see cref="BoundedSecretFetch"/> with the full timeout: the fetch may be
+    /// shared with other reads, so its own deadline is never shortened to this read's remaining allowance.
+    /// At that deadline it fails with <see cref="SecretResolveTimeoutException"/>, so nothing the call
+    /// returns afterwards can reach the cache.
     /// </summary>
-    private async Task<string> FetchAsync(ISecretResolver resolver, SecretReference reference)
-    {
-        // The deadline is armed before the resolver is invoked, so the window covers the whole call.
-        using CancellationTokenSource deadlineCancellation = new();
-        Task deadline = Task.Delay(_resolveTimeout, _timeProvider, deadlineCancellation.Token);
-
-        CancellationTokenSource cancellation = new();
-        Task<string> call = Task.Run(
-            () => resolver.ResolveAsync(reference, cancellation.Token).AsTask(),
-            cancellation.Token
+    private Task<string> FetchAsync(ISecretResolver resolver, SecretReference reference) =>
+        BoundedSecretFetch.FetchAsync<SecretResolveTimeoutException>(
+            resolver,
+            reference,
+            _resolveTimeout,
+            _timeProvider,
+            () => AbandonedCallSignal().TrySetResult()
         );
-
-        if (await Task.WhenAny(call, deadline) == call)
-        {
-            await deadlineCancellation.CancelAsync();
-            cancellation.Dispose();
-            return await call;
-        }
-
-        // Cancellation callbacks are the resolver's, so they run off this path and cannot delay the
-        // timeout. The late outcome is observed and dropped: this fetch has already failed, so nothing
-        // the call returns can reach the cache. The source is disposed only once both the call and its
-        // callbacks are done with it. Until a call that never completes does, this continuation, the
-        // source and the call's state stay reachable from whatever the resolver keeps pending.
-        Task cancelled = cancellation.CancelAsync();
-        _ = Task.WhenAll(call, cancelled)
-            .ContinueWith(
-                completed =>
-                {
-                    _ = completed.Exception;
-                    cancellation.Dispose();
-                    AbandonedCallSignal().TrySetResult();
-                },
-                CancellationToken.None,
-                TaskContinuationOptions.None,
-                TaskScheduler.Default
-            );
-
-        throw new SecretResolveTimeoutException();
-    }
 
     private TaskCompletionSource? _abandonedCallObserved;
 
