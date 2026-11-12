@@ -36,7 +36,7 @@ future specification or gap reviews must not re-flag them as unresolved differen
 | --- | --- |
 | `connectionString` in `DataStore` and `DataStoreDerivative` responses, including nested `dataStoreDerivatives[].connectionString` | CMS returns encrypted connection strings so DMS can resolve and connect to the backend selected for a client's requests. It is an additional response field outside the shared response contract. CMS must retain it, and neither the shared contract nor Admin API is expected to adopt it. |
 | `clientUuid` in `ApiClient` resource responses, alongside `clientId` | CMS retains the identity-provider-associated UUID for provider client management and for DMS application context. It is excluded from the shared contract. `id` is the numeric management identifier, `clientId` is the OAuth client key, and `clientUuid` is the provider-associated UUID. The field applies to ApiClient resource responses only, not to credential-issuance or credential-reset responses. |
-| `edfi_admin_api/readonly_access` | CMS provides restricted administrative reads without granting administrative writes. This extra scope is not required or expected on Admin API. |
+| `edfi_admin_api/readonly_access` | CMS provides read-only access to every secured GET endpoint, including `/v3/tenants` for multi-tenant DMS, without administrative writes. This extra scope is not required or expected on Admin API. |
 | `edfi_admin_api/authMetadata_readonly_access` | CMS provides the configuration and authorization reads DMS uses to resolve client access and backend routing. This extra scope is not required or expected on Admin API. |
 
 The two scope rows are one extension group. `edfi_admin_api/full_access` is the shared
@@ -45,10 +45,14 @@ matrix.
 
 Qualifications:
 
-- **Connection strings.** Stored values, secret references, and read failures are described in
-  [secret references in stored connection strings](./SECRETS.md#secret-references-in-stored-connection-strings).
-- **Scopes.** Scope matching and the tenant requirements of a multi-tenant DMS are described in
-  [Roles and Scopes](./ROLES-SCOPES.md#how-the-configuration-service-evaluates-token-scopes).
+- **Connection strings.** Response values are Base64-encoded ciphertext or `null`. This extension
+  concerns responses; the shared contract accepts `connectionString` on writes. Do not submit
+  GET ciphertext in POST/PUT. On PUT, omit `connectionString` or use `null` to preserve its stored
+  value. See [secret references in stored connection strings](./SECRETS.md#secret-references-in-stored-connection-strings)
+  for resolved and re-encrypted values and read failures.
+- **Scopes.** See [scope matching](./ROLES-SCOPES.md#how-the-configuration-service-evaluates-token-scopes),
+  [multi-tenant DMS requirements](./ROLES-SCOPES.md#supported-scopes), and
+  [tenant selection and scope boundaries](./ROLES-SCOPES.md#configuration-service-scopes-are-not-tenant-scoped).
 - **Compatibility.** These differences are not an exhaustive CMS-versus-shared-schema inventory
   or an executable validation profile. The relevant shared response schemas forbid additional
   properties, so strict shared-schema validation does not accept CMS responses. Consumers must

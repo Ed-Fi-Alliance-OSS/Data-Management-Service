@@ -26,7 +26,8 @@ public class DataStoreDerivativeResponse
     public required string DerivativeType { get; set; }
 
     /// <summary>
-    /// The connection string for the derivative instance (decrypted)
+    /// The Base64-encoded encrypted connection string that DMS decrypts, or null when none is
+    /// configured or a derivative read as part of its data store cannot be decrypted or resolved.
     /// </summary>
     public string? ConnectionString { get; set; }
 }
