@@ -97,6 +97,13 @@ public sealed record QuerySqlParameterBinding
         string structuredColumnName
     ) => new(QuerySqlParameterBindingKind.MssqlStructured, structuredTypeName, structuredColumnName);
 
+    /// <summary>
+    /// A scalar parameter that supplies a string compared against a column of the given declared length.
+    /// </summary>
+    /// <param name="maxLength">The declared length, or null when the column is unbounded.</param>
+    public static QuerySqlParameterBinding CreateString(int? maxLength) =>
+        new(QuerySqlParameterBindingKind.Scalar) { StringContract = new QuerySqlStringContract(maxLength) };
+
     public QuerySqlParameterBinding(
         QuerySqlParameterBindingKind Kind,
         string? StructuredTypeName = null,
@@ -126,6 +133,52 @@ public sealed record QuerySqlParameterBinding
     public string? StructuredTypeName { get; init; }
 
     public string? StructuredColumnName { get; init; }
+
+    /// <summary>
+    /// The declared string contract of a scalar parameter, or null for a scalar of any other type. It is
+    /// carried by the plan rather than read off the bound value, so a null value keeps it.
+    /// </summary>
+    public QuerySqlStringContract? StringContract
+    {
+        get;
+        init
+        {
+            if (value is not null && Kind is not QuerySqlParameterBindingKind.Scalar)
+            {
+                throw new ArgumentException(
+                    $"{nameof(StringContract)} is only valid for {nameof(QuerySqlParameterBindingKind.Scalar)}.",
+                    nameof(value)
+                );
+            }
+
+            field = value;
+        }
+    }
+}
+
+/// <summary>
+/// The declared contract of a string query parameter.
+/// </summary>
+public sealed record QuerySqlStringContract
+{
+    /// <param name="MaxLength">
+    /// The declared length of the compared column, or null when the column is unbounded.
+    /// </param>
+    public QuerySqlStringContract(int? MaxLength)
+    {
+        if (MaxLength is <= 0)
+        {
+            throw new ArgumentOutOfRangeException(
+                nameof(MaxLength),
+                MaxLength,
+                "A declared string length must be positive."
+            );
+        }
+
+        this.MaxLength = MaxLength;
+    }
+
+    public int? MaxLength { get; init; }
 }
 
 /// <summary>

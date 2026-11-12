@@ -257,7 +257,14 @@ internal sealed class DescriptorQueryPageKeysetPlanner(SqlDialect dialect)
                     + $"'{supportedField.QueryFieldName}' with value kind '{supportedField.ValueKind}'."
             );
         // Descriptor columns live on the dms.Descriptor page keyset root itself.
-        return new QueryValuePredicate(descriptorColumn, QueryComparisonOperator.Equal, parameterName);
+        return new QueryValuePredicate(
+            descriptorColumn,
+            QueryComparisonOperator.Equal,
+            parameterName,
+            supportedField.ValueKind is DescriptorQueryValueKind.String
+                ? new QuerySqlStringContract(supportedField.StringMaxLength)
+                : null
+        );
     }
 
     private static void ValidatePreprocessedValueKindOrThrow(PreprocessedDescriptorQueryElement queryElement)

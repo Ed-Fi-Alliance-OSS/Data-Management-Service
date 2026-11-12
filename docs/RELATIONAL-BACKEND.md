@@ -711,6 +711,29 @@ item again. Incremental extraction clients should treat change-query windows as 
 deduplicate by the appropriate resource identity and change version, or advance their lower bound
 according to their own resume policy.
 
+### SQL Server string filter parameters (DMS-1563)
+
+SqlClient sizes an unsized string parameter from its current value, so one filtered query was
+declared `nvarchar(4)`, `nvarchar(6)`, `nvarchar(7)`, and so on, and SQL Server compiled a plan for
+each declaration. Filtered reads therefore declare every string parameter from its plan contract,
+never from its value:
+
+- A resource property filter carries its mapped column length, and a descriptor endpoint filter
+  carries the `dms.Descriptor` column length (`DescriptorStringColumnLengths`). The planners attach
+  that `QuerySqlStringContract` to the predicate, and it travels through the page, total-count,
+  partition-boundary and hydration parameter inventories.
+- `PlannedQueryParameterBinder` declares the parameter `nvarchar(n)` for a contract of up to 4,000
+  characters and `nvarchar(max)` for a longer or unbounded one. A null value takes the same
+  declaration.
+- SQL Server namespace authorization prefix patterns are claim data, lengthened by escaping and
+  the appended wildcard, so they have no bounded contract and are declared `nvarchar(max)`.
+- A value wider than its contract, in UTF-16 code units, is refused with an exception rather than
+  silently truncated by `SqlParameter.Size`, including for a bounded contract declared `max`.
+  Client filters never reach that: they are rejected with HTTP 400 beforehand (see
+  [Data strictness](DATA-STRICTNESS.md#query-filter-values-longer-than-the-fields-maxlength)).
+- PostgreSQL parameters, structured table-valued parameters and the selected-page JSON parameter
+  are configured exactly as before.
+
 ## 5. Mapping packs (optional)
 
 A "mapping pack" (`.mpack`) is a planned ahead-of-time-compiled artifact that would let DMS load
