@@ -72,6 +72,12 @@ BeforeAll {
                 continue
             }
 
+            # These fixtures use the .NET 10 layout; .NET 11 moved Configuration.Abstractions
+            # from the ASP.NET Core shared framework into the base runtime.
+            if ($parsed.Major -ne 10 -or $parsed.Minor -ne 0) {
+                continue
+            }
+
             $candidates += [pscustomobject]@{
                 Version = $parsed
                 Path = Join-Path $Matches[3] $Matches[2]
