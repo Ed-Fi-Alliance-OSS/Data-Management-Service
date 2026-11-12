@@ -220,13 +220,22 @@ types (`Index Scan` expected) as supporting evidence; they are not a threshold.
     cannot isolate it.
 
   Each test must fail if the change is reverted.
-- **Carrier.** On one pooled physical connection: non-empty pages of 1, 25, and 500 ids in
-  sequence, an empty page between them, and a failed batch (`SELECT 1 / 0` after the carrier is
-  set). Each returns exactly its own ids, and nothing leaks. Then, in one transaction, run a
-  query keyset of 25 ids followed by an empty selected page
-  (`Given_A_Query_Keyset_Then_An_Empty_Selected_Page_In_One_Transaction`). The second hydration
-  returns no documents. A `NULL` parameter makes the relation read the carrier, so an empty
-  selected page bound as `NULL` would return the first page's documents.
+- **Carrier.** The setting is transaction-local, so a commit or rollback discards it, and a batch
+  can read another batch's ids only inside one transaction. The leak tests therefore share one
+  test-owned transaction:
+  - `Given_Postgresql_Query_Keysets_In_One_Transaction`: a 25-id query keyset, then a zero-size
+    page (`limit = 0`), then a page whose offset is past the end, then a 1-id page. Each returns
+    exactly its own documents and selected keys, and the two empty pages return none. It fails if
+    the empty or zero-size path skips `set_config`, for example by copying `main`'s zero-page
+    shortcut (`AppendEmptyKeysetMaterialization`).
+  - `Given_A_Query_Keyset_Then_An_Empty_Selected_Page_In_One_Transaction`: a 25-id query keyset,
+    then an empty selected page. The second hydration returns no documents. A `NULL` parameter
+    makes the relation read the carrier, so an empty selected page bound as `NULL` would return
+    the first page's documents.
+
+  Outside a shared transaction, on one pooled physical connection: a non-empty page, a failed
+  batch (`SELECT 1 / 0` after the carrier is set), then an empty page. The carrier reads `''`
+  after each commit or rollback, which catches a session-level (`is_local = false`) carrier.
 - **Read-only** (E4). Resource GET-many, candidate selection, and a selected page in a transaction
   with `default_transaction_read_only = on`. `main`'s DDL prelude, run as a positive control,
   fails with SQLSTATE 25006.
@@ -236,10 +245,11 @@ types (`Index Scan` expected) as supporting evidence; they are not a threshold.
   deleted-before-hydration tests. The test splices `DELETE`s after the temp-table
   `INSERT … RETURNING`. Move the splice to after the statement that selects the page and sets the
   carrier, which is still between selection and hydration. Its SQL Server twin stays unchanged.
-- **Type (a) pin.** Replace
-  `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls`
-  with a behavior assertion: two hydrations in one transaction each return their own documents.
-  Its sibling test already does this.
+- **Type (a) pin.** Delete
+  `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls`.
+  `Given_Postgresql_Query_Keysets_In_One_Transaction` (above) replaces it. The fixture's
+  behavioral sibling stays, but it is not carrier coverage: it hydrates `PageKeysetSpec.Single`
+  with the fast path off, which binds the `bigint[]` and never sets or reads the carrier.
 - **C5.** `RelationalWriteSmokeTests`, the `DocumentCacheMaterializer*Tests` classes, the
   `*Single_Document_Fast_Path*` classes, and `MssqlWriteSessionCommandStreamTests` pass unchanged.
 

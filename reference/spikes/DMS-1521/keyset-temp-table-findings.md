@@ -793,6 +793,11 @@ order, the carrier read back afterwards on the same connection, and the backend 
 | 8 executions each of a 25-row query keyset and a 25-row selected page under `plan_cache_mode` `auto`, `force_custom_plan`, and `force_generic_plan` (fresh connection per mode) | 48 of 48 exact |
 | Descriptor batch, 8 non-empty/empty pairs per mode on one connection | 48 of 48 exact: boundary, leading and trailing version ids, owner-row count; no stale ids on the empty page |
 
+Each probe batch runs in its own transaction, and the carrier is transaction-local. These probes
+therefore show that nothing survives a commit or rollback, and the `''` reading rules out a
+session-level carrier. They do not run two batches in one transaction, which is the only place a
+batch could read another's ids; both stories add that test.
+
 **Plans actually used** (from `pg_prepared_statements` on the probe's own connection, and
 `auto_explain` on its last executions; keyset estimate is the `unnest` function scan's row estimate
 against the actual count):
@@ -1431,7 +1436,7 @@ had not restarted.
 | 109 of the 112 unit failures (69 batch and dialect text pins, 18 descriptor text pins, 14 parameter-count pins, 8 goldens) | – | (a) | Pins of the old SQL text or parameter list; the same classes and counts as task 4 (c) |
 | 3 unit tests of a guarded single-document keyset without the fast path (`Given_HydrationBatchBuilder_With_A_Single_Document_Keyset` ×2, `…With_Mssql_Single_Document_Fast_Path` flag-disabled) | – | (a), story scope | The prototype throws `NotSupportedException` on this non-production path (every production `PageKeysetSpec.Single` caller passes the fast path, C5); the story implements or removes it |
 | `Given_A_{Pgsql,Mssql}_Query_Keyset_That_Returns_Its_Selected_Ids.It_returns_the_maximum_when_every_selected_row_was_deleted_before_hydration`, and the `content_version` variant | both | (d) | The test splices `DELETE`s after the temp-table `INSERT … RETURNING` / `OUTPUT` text, which `inline` does not emit. Adapted (below); passes under both variants |
-| `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls` | PostgreSQL | (a) | Asserts that `page` exists in `pg_class` mid-transaction: a pin of the removed mechanism. Its behavioral sibling in the same fixture (two hydrations in one transaction each return their own document) passes, which also shows the carrier does not leak between batches in one transaction |
+| `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls` | PostgreSQL | (a) | Asserts that `page` exists in `pg_class` mid-transaction: a pin of the removed mechanism. Its behavioral sibling in the same fixture (two hydrations in one transaction each return their own document) passes. It hydrates `PageKeysetSpec.Single` with the fast path off, which binds the `bigint[]` and never sets or reads the carrier, so it says nothing about the carrier within one transaction; the stories add that test |
 | `Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorProjection_And_DocumentReferenceLookup_Mssql.It_generates_a_keyset_batch_that_does_use_the_page_temp_table` | SQL Server | (a) | Pins the `#page` text of the comparison (non-fast-path) batch. The class's behavior tests pass, including `It_matches_the_existing_keyset_hydration_result` |
 
 **Type (d) adaptations** (the patch's test section, marked `DMS-1521 inline (test adaptation)`):

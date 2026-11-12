@@ -165,9 +165,13 @@ Ratios are story branch ÷ `main`, and `m = max(2 × CV, 5%)` from `main`'s thre
   - SQL Server: the descriptor batch text contains no `CREATE TABLE` and no `DECLARE … TABLE`.
 
   Each test must fail if the change is reverted.
-- **Carrier** (PostgreSQL). On one pooled physical connection: non-empty, empty, non-empty pairs,
-  and a failed batch followed by an empty page. Each returns exactly its own boundary, version
-  ids, and owner rows.
+- **Carrier** (PostgreSQL). The setting is transaction-local, so the leak test shares one
+  test-owned transaction: a non-empty page, an empty page (offset past the end), a zero-limit
+  page, and a non-empty page again. Each returns exactly its own boundary, version ids, and owner
+  rows, and the empty and zero-limit pages return none. It fails if the zero-limit path skips
+  `set_config`, as `main`'s zero-limit shortcut skips selection (`DescriptorReadHandler.cs`
+  ≈2047–2058). Separately, on one pooled physical connection, a failed batch followed by an empty
+  page, with the carrier reading `''` after each, catches a session-level carrier.
 - **Residual estimate risk** (PostgreSQL). The descriptor readers have no parameters, so their
   plan is always generic, and its keyset estimate is frozen at the first page planned on that
   connection. Read a 1-row page and then a 500-row page on the same connection, and report the
