@@ -58,6 +58,9 @@ Qualifications:
   properties, so strict shared-schema validation does not accept CMS responses. Consumers must
   account for the actual CMS response shapes.
 
+For ownership-token administration, see the
+[ownership contract](../reference/design/backend-redesign/design-docs/ownership-token-maintenance.md#post-approval-implementation-handoff).
+
 ## Ed-Fi DMS Data Stores
 
 ### Data Store Storage and Security
