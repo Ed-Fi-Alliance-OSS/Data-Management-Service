@@ -1211,8 +1211,9 @@ sessions):
 - Every API cell meets non-regression. The forced-miss cells sit at the 5 s direct-fill timeout in
   both variants (see [Method and environment](#method-and-environment)); the cache-hit 500-row
   `B` p95 (734 ms, CV 104%) comes from one session's outliers.
-- The descriptor and candidate batches select their page in the batch, so they keep only one
-  parse of the carrier per reader and lose the create, drop, insert, and latch: 0.45–0.93 at
+- The descriptor and candidate batches read the carrier in only four and two statements, against
+  about eleven in the hydration batches (statement counts above), so their extra parses cost less
+  than the create, drop, insert, and latch they lose: 0.45–0.93 at
   concurrency 1, and ×1.9–×2.7 throughput at 32. Their logical reads fall (descriptor 6,607 →
   5,755 at 500; candidate 4,066 → 3,276), because the `#page` pages are gone.
 - **Tail latency at 32 sessions.** p99 is not a gate, but it is reported: `I`'s p99 at 32 is higher
@@ -1688,7 +1689,7 @@ supports that limit.
 
 | Story | Scope | Sized from | Proposed estimate |
 |---|---|---|---|
-| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement or remove; the prototype throws), goldens, and design docs | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: the calibrated no-temp-table integration test with a positive control, carrier reuse and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: one PostgreSQL `B, I` × 3 session set (about 2.5 h of machine time) and the SQL Server read-acceleration fixture | 8 |
+| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement or remove; the prototype throws), goldens, and design docs | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 8 |
 | 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam), the 18 descriptor text pins, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change because the markers stay. Reconciles the design drift | Task 4 (c), task 7; descriptor evidence at about 2–5 min per run on each engine | 3 |
 | 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3 | 2, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
@@ -1767,7 +1768,7 @@ proportion, and plain `SELECT`s must read 0, before any zero counts):
 | Id | Engine | Metric | Bound | Spike result | Reproduce |
 |---|---|---|---|---|---|
 | E1 | PostgreSQL | Catalog `n_tup_ins` + `n_tup_del` (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`, `pg_index`, `pg_constraint`, `pg_statistic`) per request, net of idle, on the resource, candidate, fallback, and descriptor batches | = 0 (`main`: 44; 42 descriptor) | 0 in 24 of 24 windows | R1. The stories' CI tests use the transaction-local `pg_stat_xact_sys_tables` instead |
-| E2 | SQL Server | Temp tables per request on the candidate (P2) and descriptor (P4) batches: XE `object_created` (user table, tempdb, `ddl_phase = 1`, measured database) **and** `Temp Tables Creation Rate`. Both are needed, because a table variable increments only the second | = 0 on both (`main`: 1) | 0 in every P2 and P4 window | R2 |
+| E2 | SQL Server | Temp tables per request on the candidate (P2) and descriptor (P4) batches: XE `object_created` (user table, tempdb, `ddl_phase = 1`, measured database). `Temp Tables Creation Rate` is reported beside it but does not gate: it is server-wide and picks up background temp tables (task 4). A table variable increments only that counter, so the stories' CI batch-text check (no `CREATE TABLE`, no `DECLARE … TABLE`) is the table-variable guard | XE = 0 in every window (`main`: 1); a window whose server counter reads non-zero is repeated, not failed | 0 in every P2 and P4 window, on both counters | R2 |
 | E3 | SQL Server | `sql_statement_recompile` events and summed `plan_generation_num` change after warmup, all four batch kinds | = 0 | 0 in both variants | R2 |
 | E4 | PostgreSQL | GET-many on each of P1–P4 in a transaction with `default_transaction_read_only = on`, with `main`'s prelude failing with 25006 as the positive control | succeeds, exact rows | probe above (P1 and P3 shapes) | story 1 and story 2 integration tests |
 | E5 | SQL Server | SHA-256 of the P1 and P3 batch texts at 25 and 500 rows | equal to `main`'s | – (recommendation) | R2 `cells.json` and `batches/` |
@@ -1809,14 +1810,16 @@ evidence, not as a threshold.
 do not apply, so each session runs the runner's `B0` label twice: once on `main`, once on the
 story branch. The runner recognizes a selected page's `bigint[]` by its type, whatever the story
 names it. It captures PostgreSQL bindings through the public
-`HydrationBatchBuilder.AddParameters(DbCommand, PageKeysetSpec)` (`SpikeCommandCapture.cs`). A story
-that changes that signature updates this one call site before running R1.
+`HydrationBatchBuilder.AddParameters(DbCommand, PageKeysetSpec)` (`SpikeCommandCapture.cs`), on a
+command that already carries the captured batch text, as production does, so a binder that binds
+the array only when the text reads it is captured correctly. A story that changes that signature
+updates this one call site before running R1.
 
 | Id | Command (repeat three times, alternating `main` and the story branch, from a clean tree) | Analysis |
 |---|---|---|
 | R1 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t5_analyze.py` (attached to DMS-1521), with its session and label lists pointed at the new run ids |
 | R2 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine mssql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t6_analyze.py`, adapted the same way |
-| R3 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence I -Fixtures probes,descriptorprobes` (prototype) | Carrier probes, adapted to the story's carrier name before they run against a story branch |
+| R3 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence I -Fixtures probes,descriptorprobes` (prototype) | Carrier probes against the prototype only. `-Sequence I` needs `prototype.patch` applied and the probes require `DMS1521_KEYSET_VARIANT=inline`, so neither runs on a story branch; the stories' own carrier tests (one transaction) take their place there |
 
 ## Design-document impact
 
@@ -1834,7 +1837,7 @@ of `3621b1eb6`.
 | `link-injection.md` | keyset join sketch (164–217) | "materialized page keyset" becomes "page keyset relation" | 1 |
 | `summary.md` | Query reconstitution (282) | "materialize a page keyset" becomes "select a page keyset" | 1 |
 | `transactions-and-concurrency.md` | standalone hydration (644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, resource GET-many and the read-acceleration batches issue no DDL, so they run in read-only transactions (DMS-1687, from EDFI-2956) | 1 |
-| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (687) | The anchor travels in the carrier: PostgreSQL's setting or SQL Server's JSON, or in `#page` where it stays. Invariant 3 (89) is preserved and needs no change | 1 |
+| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (687) | On PostgreSQL the selecting statement returns the anchor beside the ids in the first result set, and the carrier holds ids only. On SQL Server the anchor travels in `#page` where it stays (P1, P3) or in the JSON carrier (P2). Invariant 3 (89) is preserved and needs no change | 1 |
 | `partitioned-cursor-paging.md` | descriptor paragraph (711) | Reconcile the [drift](#design-drift-descriptor_page): descriptor selection is carried in the carrier on both engines, with no keyset temp table | 2 |
 | `transactions-and-concurrency.md` | descriptor acquisition (660) | "materializes its authorized DocumentId keyset once" becomes "selects … once and carries it in the batch" | 2 |
 

@@ -124,7 +124,9 @@ public static class KeysetSpikeRunner
 
         if (settings.Calibrate)
         {
-            run.WriteJson("calibration.json", await ObserverCalibration.RunAsync(counters, target));
+            JsonObject calibration = await ObserverCalibration.RunAsync(counters, target);
+            run.WriteJson("calibration.json", calibration);
+            ObserverCalibration.RequireCalibrated(calibration);
         }
 
         PerfFixtureDefinition definition = new(settings.Fixture);
@@ -507,21 +509,24 @@ public static class KeysetSpikeRunner
 
         /// <summary>
         /// The last request's hydration batch: the capture whose parameter names are exactly the ones the
-        /// production binder gives the recorded keyset.
+        /// production binder gives the recorded keyset for that capture's own text (never an empty set).
         /// </summary>
-        public SpikeCapturedCommand KeysetBatch(PerfProvider provider)
-        {
-            HashSet<string> names =
-            [
-                .. SpikeCommandCapture
-                    .FromProductionKeysetBinding(provider, Last.Keysets[0])
-                    .Select(parameter => parameter.BareName),
-            ];
-            return Last.Commands.First(command =>
-                command.Parameters is not null
-                && names.SetEquals(command.Parameters.Select(parameter => parameter.BareName))
-            );
-        }
+        public SpikeCapturedCommand KeysetBatch(PerfProvider provider) =>
+            Last.Commands.First(command =>
+            {
+                if (command.Parameters is not { Count: > 0 })
+                {
+                    return false;
+                }
+
+                HashSet<string> names =
+                [
+                    .. SpikeCommandCapture
+                        .FromProductionKeysetBinding(provider, Last.Keysets[0], command.CommandText)
+                        .Select(parameter => parameter.BareName),
+                ];
+                return names.SetEquals(command.Parameters.Select(parameter => parameter.BareName));
+            });
 
         public JsonObject ToJson(string cell, SpikeCapturedCommand batch) =>
             new()

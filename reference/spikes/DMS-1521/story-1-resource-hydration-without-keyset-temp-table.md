@@ -100,7 +100,7 @@ Each edit is **mandated by DMS-1521's decision**
 | `link-injection.md` | keyset join sketch (≈164–217) | "materialized page keyset" becomes "page keyset relation" |
 | `summary.md` | Query reconstitution (≈282) | "materialize a page keyset" becomes "select a page keyset" |
 | `transactions-and-concurrency.md` | standalone hydration (≈644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, resource GET-many and the read-acceleration batches issue no DDL and run in read-only transactions |
-| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (≈687) | The anchor travels with the selected keys, in the carrier on PostgreSQL and in `#page` or the JSON carrier on SQL Server. Invariant 3, "No extra roundtrip" (≈89), holds unchanged |
+| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (≈687) | On PostgreSQL the selecting statement returns the anchor beside the ids in the first result set; the carrier holds ids only. On SQL Server the anchor travels in `#page` (P1, P3) or the JSON carrier (P2). Invariant 3, "No extra roundtrip" (≈89), holds unchanged |
 
 ## Acceptance criteria
 
@@ -156,7 +156,7 @@ and deep.
 | Id | Metric | Bound | Spike result |
 | --- | --- | --- | --- |
 | E1 | PostgreSQL catalog `n_tup_ins` + `n_tup_del` per request on the resource, candidate, and fallback batches (calibrated observer) | = 0 | 0 (`main` 44) |
-| E2 | SQL Server temp tables per candidate batch: XE `object_created` **and** `Temp Tables Creation Rate` | = 0 on both | 0 (`main` 1) |
+| E2 | SQL Server temp tables per candidate batch: XE `object_created`. `Temp Tables Creation Rate` is reported, not gated (server-wide); the CI batch-text check guards against table variables | XE = 0 in every window; a window whose server counter reads non-zero is repeated | 0 (`main` 1) |
 | E3 | SQL Server `sql_statement_recompile` events and `plan_generation_num` change after warmup | = 0 | 0 |
 | E4 | PostgreSQL P1–P3 under `default_transaction_read_only = on` | succeed, exact rows | probe passed |
 | E5 | SHA-256 of the SQL Server P1 and P3 batch texts | equal to `main` | – |

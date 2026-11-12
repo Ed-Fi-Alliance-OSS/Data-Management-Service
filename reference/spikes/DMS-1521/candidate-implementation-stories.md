@@ -30,7 +30,8 @@ folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.m
 
 ## Dependency and delivery order
 
-- Story 1 can start now. It defines the shared keyset contract: how a keyset that is not a table
+- Story 1 depends on no other story; it starts when the task 11 review accepts the PostgreSQL
+  carrier (see Ready-to-start gates). It defines the shared keyset contract: how a keyset that is not a table
   is rendered and bound, the PostgreSQL carrier and its set-before-read rule, and the SQL Server
   JSON carrier for a batch that selects its own page.
 - Story 2 is blocked by story 1. It reuses the carrier name and rules on PostgreSQL, and the JSON

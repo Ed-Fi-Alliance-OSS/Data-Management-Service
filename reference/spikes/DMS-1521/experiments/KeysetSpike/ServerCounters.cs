@@ -581,6 +581,21 @@ public static class ObserverCalibration
     public const int SmallCycles = 10;
     public const int LargeCycles = 20;
 
+    /// <summary>
+    /// Fails the run unless calibration proved the observer, so no zero is ever read from an
+    /// uncalibrated one; the run script then never marks the session calibrated.
+    /// </summary>
+    public static void RequireCalibrated(JsonObject calibration)
+    {
+        if (calibration["calibrated"]?.GetValue<bool>() is not true)
+        {
+            throw new InvalidOperationException(
+                "Observer calibration failed (temp-table cycles not proportional, or plain SELECTs not "
+                    + "zero); see calibration.json. No counter zero from this run can be used."
+            );
+        }
+    }
+
     public static async Task<JsonObject> RunAsync(ServerCounters counters, ReplayTarget target)
     {
         PerfProvider provider = target.Provider;

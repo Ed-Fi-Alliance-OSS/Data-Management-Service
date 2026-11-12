@@ -42,7 +42,9 @@ against `main`:
 
 Correctness validation found no behavior change on either engine. The descriptor and
 candidate-metadata paths are the two where SQL Server's `inline` passed every criterion at both page
-sizes, because each batch selects its own page and each reader parses the carrier only once.
+sizes, because they read the carrier in only four (descriptor) or two (candidate) statements, against
+about eleven in the hydration batches, so the extra parses cost less than the create, drop,
+insert, and latch they replace.
 
 ## Scope
 
@@ -129,7 +131,7 @@ Ratios are story branch ÷ `main`, and `m = max(2 × CV, 5%)` from `main`'s thre
 | Id | Metric | Bound | Spike result |
 | --- | --- | --- | --- |
 | E1 | PostgreSQL catalog `n_tup_ins` + `n_tup_del` per descriptor request (calibrated observer) | = 0 | 0 (`main` 42) |
-| E2 | SQL Server temp tables per descriptor request: XE `object_created` **and** `Temp Tables Creation Rate` | = 0 on both | 0 (`main` 1) |
+| E2 | SQL Server temp tables per descriptor request: XE `object_created`. `Temp Tables Creation Rate` is reported, not gated (server-wide); the CI batch-text check guards against table variables | XE = 0 in every window; a window whose server counter reads non-zero is repeated | 0 (`main` 1) |
 | E3 | SQL Server `sql_statement_recompile` events and `plan_generation_num` change after warmup | = 0 | 0 |
 | E4 | PostgreSQL descriptor GET-many under `default_transaction_read_only = on` | succeeds, exact rows | – |
 | E6 | Database commands per request | 1, equal to `main` | 1 |

@@ -281,8 +281,16 @@ public sealed class SpikeCommandCapture : IDisposable
 
                 if (pendingKeysets.TryPeek(out PageKeysetSpec? keyset))
                 {
-                    IReadOnlyList<SpikeParameterSpec> specs = FromProductionKeysetBinding(_provider, keyset);
-                    if (specs.All(spec => ReferencesParameter(command.CommandText, spec.BareName)))
+                    IReadOnlyList<SpikeParameterSpec> specs = FromProductionKeysetBinding(
+                        _provider,
+                        keyset,
+                        command.CommandText
+                    );
+                    // An empty list would match any command, so it never claims one.
+                    if (
+                        specs.Count > 0
+                        && specs.All(spec => ReferencesParameter(command.CommandText, spec.BareName))
+                    )
                     {
                         pendingKeysets.Dequeue();
                         _commands[index] = command with
@@ -296,12 +304,19 @@ public sealed class SpikeCommandCapture : IDisposable
         }
     }
 
+    /// <summary>
+    /// The parameters the production binder gives <paramref name="keyset" /> for the batch text
+    /// <paramref name="commandText" />. Production sets the text before it binds, and a binder may
+    /// bind a parameter only when the text reads it, so the capture sets the same text first.
+    /// </summary>
     public static IReadOnlyList<SpikeParameterSpec> FromProductionKeysetBinding(
         PerfProvider provider,
-        PageKeysetSpec keyset
+        PageKeysetSpec keyset,
+        string commandText
     )
     {
         using DbCommand command = CreateProviderCommand(provider);
+        command.CommandText = commandText;
         HydrationBatchBuilder.AddParameters(command, keyset);
         return [.. command.Parameters.Cast<DbParameter>().Select(SpikeParameterSpec.From)];
     }

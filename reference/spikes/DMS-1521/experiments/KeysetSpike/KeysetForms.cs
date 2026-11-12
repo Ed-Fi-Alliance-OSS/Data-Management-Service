@@ -134,7 +134,10 @@ public static class KeysetForms
         await using ServerCounters counters = await KeysetSpikeRunner.StartCountersAsync(settings, context);
         if (settings.Calibrate)
         {
-            run.WriteJson("calibration.json", await ObserverCalibration.RunAsync(counters, target));
+            JsonObject calibration = await ObserverCalibration.RunAsync(counters, target);
+            run.WriteJson("calibration.json", calibration);
+            ObserverCalibration.RequireCalibrated(calibration);
+            // Informational: a table variable registers only in the server-wide counter, not proportionally.
             run.WriteJson("calibration-tablevar.json", await CalibrateTableVariablesAsync(counters, target));
         }
 
