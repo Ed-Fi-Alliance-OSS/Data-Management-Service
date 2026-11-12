@@ -72,7 +72,7 @@ $script:StandardPackageVersion = "1.0.335"
 $script:KnownExtensionClaimsMetadata = [System.Collections.Generic.Dictionary[string, object]]::new([System.StringComparer]::Ordinal)
 
 $script:KnownExtensionClaimsMetadata["Sample"] = @{
-    FragmentFileName = "004-sample-extension-claimset.json"
+    FragmentFileName = "004-sample-extension-claims.json"
     NamespacePrefix  = "uri://sample.ed-fi.org"
 }
 
@@ -80,7 +80,7 @@ $script:KnownExtensionClaimsMetadata["Homograph"] = @{
     # No NamespacePrefix by design: Homograph resources use the core uri://ed-fi.org namespace
     # (see the block comment above). Recording uri://homograph.ed-fi.org would authorize a
     # namespace no Homograph resource uses and would violate the "must not infer prefixes" rule.
-    FragmentFileName = "005-homograph-extension-claimset.json"
+    FragmentFileName = "005-homograph-extension-claims.json"
 }
 
 $script:KnownExtensionClaimsMetadata["TPDM"] = @{

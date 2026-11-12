@@ -19,6 +19,6 @@ public class Given_Postgresql_PerfFixtureLoaderSmoke : PostgresqlApiIntegrationT
     [Test]
     public async Task It_loads_verifies_and_serves_the_smoke_fixture()
     {
-        await PerfFixtureSmokeScenario.RunAsync(Harness, PerfProvider.Postgresql);
+        await PerfFixtureSmokeScenario.RunAsync(Harness, PerfProvider.Postgresql, PrimaryConnectionString);
     }
 }

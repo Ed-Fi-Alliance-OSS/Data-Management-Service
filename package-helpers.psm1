@@ -259,6 +259,123 @@ function Get-DeclaredVersionElement {
 
 <#
 .DESCRIPTION
+Calculates the tool version from the app release version produced by Get-VersionNumber (MinVer)
+and the selected checkout's committed SecurityMetadataToolsPatchVersion. AppVersion is that
+existing release source, not src/config/Directory.Build.props or a tool version override.
+StableRelease removes prerelease/build labels for independent dispatch; publication switches
+never affect the calculation. This function only reads the project, including for prereleases.
+
+Policy: src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md
+#>
+function Get-SecurityMetadataToolsVersion {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param (
+        [Parameter(Mandatory)]
+        [string]
+        $AppVersion,
+
+        [string]
+        $ProjectPath = (Join-Path $PSScriptRoot "src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/EdFi.DmsConfigurationService.SecurityMetadataTools.csproj"),
+
+        [switch]
+        $StableRelease
+    )
+
+    $sourceVersion = $null
+    if (
+        -not [System.Management.Automation.SemanticVersion]::TryParse($AppVersion, [ref] $sourceVersion) -or
+        $sourceVersion.ToString() -cne $AppVersion
+    ) {
+        throw "Cannot calculate the Security Metadata Tools version: AppVersion '$AppVersion' must be a semantic version from Get-VersionNumber (MinVer)."
+    }
+
+    $property = "SecurityMetadataToolsPatchVersion"
+    $patch = Get-DeclaredVersionElement -Path $ProjectPath -ElementName $property -ContractDescription "Security Metadata Tools"
+    $declaration = ([xml] (Get-Content -LiteralPath $ProjectPath -Raw)).SelectSingleNode("/Project/PropertyGroup/$property")
+    if ($null -eq $declaration -or $declaration.SelectNodes("ancestor-or-self::*[@Condition]").Count -gt 0) {
+        throw "Cannot calculate the Security Metadata Tools version: $ProjectPath must declare one unconditional $property in a Project/PropertyGroup."
+    }
+
+    $patchNumber = 0
+    if ($patch -cnotmatch '^(0|[1-9][0-9]*)$' -or -not [int]::TryParse($patch, [ref] $patchNumber)) {
+        throw "Cannot calculate the Security Metadata Tools version: $ProjectPath $property must be a nonnegative integer from 0 to 2147483647, without leading zeros; found '$patch'."
+    }
+
+    $version = "$($sourceVersion.Major).$($sourceVersion.Minor).$patchNumber"
+    if (-not $StableRelease) {
+        if ($sourceVersion.PreReleaseLabel) {
+            $version += "-$($sourceVersion.PreReleaseLabel)"
+        }
+        if ($sourceVersion.BuildLabel) {
+            $version += "+$($sourceVersion.BuildLabel)"
+        }
+    }
+
+    return $version
+}
+
+<#
+.DESCRIPTION
+Publishes the exact, verified Security Metadata Tools artifact from a completed build.
+A feed read failure is fatal. An existing version requires a committed patch increment;
+no skip-duplicate option is used, including for a race after the read-only check.
+#>
+function Publish-SecurityMetadataToolsPackage {
+    [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'Medium')]
+    param(
+        [Parameter(Mandatory)]
+        [string] $Version,
+
+        [Parameter(Mandatory)]
+        [string] $PackageFile,
+
+        [Parameter(Mandatory)]
+        [ValidatePattern('^[a-fA-F0-9]{64}$')]
+        [string] $Sha256,
+
+        [Parameter(Mandatory)]
+        [string] $ServiceIndexUrl,
+
+        [Parameter(Mandatory)]
+        [string] $ApiKey
+    )
+
+    $packageName = "EdFi.Api.SecurityMetadataTools"
+    $normalizedVersion = ConvertTo-NormalizedPackageVersion -Version $Version
+    if ((Get-FileHash -LiteralPath $PackageFile -Algorithm SHA256).Hash -ine $Sha256) {
+        throw "Security Metadata Tools package hash differs from the build artifact: $PackageFile"
+    }
+
+    $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $PackageFile).Path)
+    try {
+        $nuspec = $archive.GetEntry("$packageName.nuspec")
+        if ($null -eq $nuspec) { throw "Missing $packageName.nuspec in $PackageFile" }
+        $reader = [IO.StreamReader]::new($nuspec.Open())
+        try { $metadata = ([xml] $reader.ReadToEnd()).package.metadata }
+        finally { $reader.Dispose() }
+        if ($metadata.id -cne $packageName -or
+            (ConvertTo-NormalizedPackageVersion -Version $metadata.version) -cne $normalizedVersion) {
+            throw "Security Metadata Tools package identity does not match $packageName $Version."
+        }
+    }
+    finally { $archive.Dispose() }
+
+    if (Test-PackageInView -ServiceIndexUrl $ServiceIndexUrl -ViewName Local `
+        -PackageName $packageName -Version $Version -ApiKey $ApiKey) {
+        throw "$packageName $Version is already published. Commit a new SecurityMetadataToolsPatchVersion on the intended source ref before starting a new publication."
+    }
+
+    if ($PSCmdlet.ShouldProcess("$packageName $Version", "Publish to $ServiceIndexUrl")) {
+        & dotnet nuget push $PackageFile --api-key $ApiKey --source $ServiceIndexUrl | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Security Metadata Tools package push failed ($LASTEXITCODE)."
+        }
+    }
+}
+
+<#
+.DESCRIPTION
 Reads the plugin contract's own declared version out of src/plugins/Directory.Build.props.
 
 The contract package is versioned on its own and deliberately outside SetDMSAssemblyInfo's reach,
@@ -715,6 +832,8 @@ Export-ModuleMember -Function `
     Invoke-Promote, `
     InstallCredentialHandler, `
     Convert-ToAssemblyVersion, `
+    Get-SecurityMetadataToolsVersion, `
+    Publish-SecurityMetadataToolsPackage, `
     Get-PluginsContractVersion, `
     Get-CustomValidationContractVersion, `
     Get-IdentityContractVersion, `

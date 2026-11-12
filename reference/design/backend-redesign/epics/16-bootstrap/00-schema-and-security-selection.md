@@ -30,7 +30,7 @@ flow, but they require asset-only ApiSchema packages and are implemented in Stor
 after the MetaEd packaging work in Story 05.
 
 It also covers the matching CMS claims-loading behavior, including additive staging of extension-derived and
-developer-supplied `*-claimset.json` fragments into one workspace directory. The selected schema set must be
+developer-supplied `*-claims.json` fragments into one workspace directory. The selected schema set must be
 materialized once into the normalized file-based ApiSchema asset container at
 `eng/docker-compose/.bootstrap/ApiSchema/`. Direct filesystem ApiSchema loading through `-ApiSchemaPath` is
 the stable core contract. Later package-backed selection is an input-materialization path that must produce
@@ -141,7 +141,7 @@ schema contract and claims-staging contract rather than introducing a second pat
 - Extension-derived and developer-supplied claimset fragments are staged into one workspace directory with
   fail-fast validation for:
   - missing directory,
-  - no `*-claimset.json` files,
+  - no `*-claims.json` files,
   - malformed JSON,
   - filename collisions,
   - unknown effective claim set references in staged fragments.
@@ -180,15 +180,15 @@ schema contract and claims-staging contract rather than introducing a second pat
   The command holds a short in-script lookup keyed by extension project identity from the staged schema set
   (`projectName` from each non-core `ApiSchema*.json`) that records, per built-in extension, how bootstrap
   handles its security metadata: an optional shipped fragment filename under
-  `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaimsets/`, an optional seed
+  `src/config/backend/EdFi.DmsConfigurationService.Backend/Deploy/AdditionalClaims/`, an optional seed
   namespace prefix, and optional leaf readiness checks. For v1: `Sample` stages
-  `004-sample-extension-claimset.json` and records `uri://sample.ed-fi.org`; `Homograph` stages
-  `005-homograph-extension-claimset.json` (no distinct namespace); and `TPDM` stages no fragment (its claims
+  `004-sample-extension-claims.json` and records `uri://sample.ed-fi.org`; `Homograph` stages
+  `005-homograph-extension-claims.json` (no distinct namespace); and `TPDM` stages no fragment (its claims
   ship in the embedded DS 5.2 `Claims.json`), records `uri://tpdm.ed-fi.org`, and contributes leaf readiness
   checks. Entries without a known built-in seed namespace prefix write no prefix to the root bootstrap
   manifest, and bootstrap must not infer prefixes from arbitrary direct filesystem schema content.
-  The E2E fragments (`001-namespace-claimset.json`, `002-nofurtherauth-claimset.json`,
-  `003-edorgsonly-claimset.json` and the `003a`–`003c` variants) are test-owned: they live under the CMS E2E
+  The E2E fragments (`001-namespace-claims.json`, `002-nofurtherauth-claims.json`,
+  `003-edorgsonly-claims.json` and the `003a`–`003c` variants) are test-owned: they live under the CMS E2E
   project's `TestData/Claims/Fragments/`, define the E2E claim sets that the embedded `Claims.json` does not
   declare, and are staged only by the test-only `-IncludeE2EClaimSets` path. Staged extensions whose `projectName` is not in the lookup are treated as
   unmapped: `-ClaimsDirectoryPath` is required and the caller-supplied fragments are the only security

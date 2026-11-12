@@ -765,9 +765,9 @@ function Get-OccupiedHostResource {
 
     .DESCRIPTION
     The published stack claims resources whose names are fixed, so a project rename buys nothing:
-    postgresql.yml declares container_name dms-postgresql, published-config.yml declares
-    ed-fi-api-config-service, swagger-ui.yml declares ed-fi-api-swagger-ui and keycloak.yml declares
-    dms-keycloak. ed-fi-api is reserved as well: local-dms.yml gives DMS that name, and it is not in
+    postgresql.compose.yml declares container_name dms-postgresql, published-config.compose.yml declares
+    ed-fi-api-config-service, swagger-ui.compose.yml declares ed-fi-api-swagger-ui and keycloak.compose.yml declares
+    dms-keycloak. ed-fi-api is reserved as well: local-dms.compose.yml gives DMS that name, and it is not in
     the published set, but a local stack holding it is a live neighbour. It also claims a compose project, that project's named volumes, host ports, the
     shared external dms network, and eng/docker-compose/.bootstrap, which is one fixed path shared
     with the local stack.
@@ -1372,11 +1372,11 @@ function Get-GovernedEnvironmentKey {
     #>
     return @(
         'DMS_STOCK_IMAGE_REFERENCE'
-        'DMS_CONFIG_DOCKER_IMAGE'
+        'CONFIGURATION_SERVICE_DOCKER_IMAGE'
         'DMS_IMAGE_TAG'
-        'DMS_CONFIG_DATA_STANDARD_VERSION'
+        'CONFIGURATION_SERVICE_DATA_STANDARD_VERSION'
         'SCHEMA_PACKAGES'
-        # No port key is governed. DMS_HTTP_PORTS and DMS_CONFIG_ASPNETCORE_HTTP_PORTS publish
+        # No port key is governed. DMS_HTTP_PORTS and CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS publish
         # '127.0.0.1:${VAR}:${VAR}', one variable on both sides, so moving either would move the
         # port the container itself listens on while six addresses in the base file name
         # ed-fi-api-config:8081 directly. The run therefore uses the ports the environment file
@@ -1405,7 +1405,7 @@ function Get-AmbientRefusedKey {
     #>
     return @(Get-GovernedEnvironmentKey) + @(
         'DMS_HTTP_PORTS'
-        'DMS_CONFIG_ASPNETCORE_HTTP_PORTS'
+        'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS'
         'POSTGRES_PORT'
     )
 }
@@ -1457,7 +1457,7 @@ function Get-AmbientOverride {
 
     .DESCRIPTION
     Compose reads a process variable in preference to the same key in an --env-file, so an ambient
-    SCHEMA_PACKAGES or DMS_CONFIG_DOCKER_IMAGE would decide what this proof runs against and the
+    SCHEMA_PACKAGES or CONFIGURATION_SERVICE_DOCKER_IMAGE would decide what this proof runs against and the
     pin would be a description of something else. Presence is what matters, not the value: an
     ambient empty string still wins.
     #>
@@ -1680,8 +1680,8 @@ function Get-StockProofEnvironmentContent {
     $configurationService = "$($Pin.configurationService.repository)@$($Pin.configurationService.digest)"
 
     $line.Add("DMS_STOCK_IMAGE_REFERENCE=$edFiApi")
-    $line.Add("DMS_CONFIG_DOCKER_IMAGE=$configurationService")
-    $line.Add("DMS_CONFIG_DATA_STANDARD_VERSION=$($Pin.provisioning.dataStandardVersion)")
+    $line.Add("CONFIGURATION_SERVICE_DOCKER_IMAGE=$configurationService")
+    $line.Add("CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=$($Pin.provisioning.dataStandardVersion)")
 
     # Single line and single quoted, which is the form .env.bootstrap.ds52 uses and the form Compose
     # hands to the container verbatim.

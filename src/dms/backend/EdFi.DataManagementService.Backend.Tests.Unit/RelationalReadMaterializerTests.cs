@@ -229,8 +229,8 @@ public class Given_RelationalReadMaterializer
                     contentVersion: 91L,
                     contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
                 ),
-                CreateHydratedDescriptorTableRows(readPlan, (345L, 601L)),
-                CreateHydratedDescriptorRows((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
+                CreateHydratedDescriptorTableRows(readPlan, (345L, 601)),
+                CreateHydratedDescriptorRows((601, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
                 RelationalReadMaterializationMode.StoredDocument
             )
         );
@@ -255,8 +255,8 @@ public class Given_RelationalReadMaterializer
                     contentVersion: 91L,
                     contentLastModifiedAt: new DateTimeOffset(2026, 4, 3, 14, 10, 11, TimeSpan.Zero)
                 ),
-                CreateHydratedDescriptorTableRows(readPlan, (345L, 601L)),
-                CreateHydratedDescriptorRows((601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
+                CreateHydratedDescriptorTableRows(readPlan, (345L, 601)),
+                CreateHydratedDescriptorRows((601, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")),
                 RelationalReadMaterializationMode.CacheProjection
             )
             {
@@ -347,10 +347,8 @@ public class Given_RelationalReadMaterializer
                 readPlan,
                 CreateHydratedPage(
                     [firstDocumentMetadata, secondDocumentMetadata],
-                    CreateHydratedDescriptorTableRows(readPlan, (678L, 601L), (345L, 601L)),
-                    CreateHydratedDescriptorRows(
-                        (601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade")
-                    )
+                    CreateHydratedDescriptorTableRows(readPlan, (678L, 601), (345L, 601)),
+                    CreateHydratedDescriptorRows((601, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"))
                 ),
                 RelationalReadMaterializationMode.StoredDocument
             )
@@ -521,7 +519,7 @@ public class Given_RelationalReadMaterializer
                 new DbColumnModel(
                     new DbColumnName("EntryGradeLevelDescriptor_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     false,
                     null,
                     descriptorResource
@@ -621,7 +619,7 @@ public class Given_RelationalReadMaterializer
 
     private static IReadOnlyList<HydratedTableRows> CreateHydratedDescriptorTableRows(
         ResourceReadPlan readPlan,
-        params (long DocumentId, long DescriptorId)[] rows
+        params (long DocumentId, int DescriptorId)[] rows
     )
     {
         return
@@ -634,7 +632,7 @@ public class Given_RelationalReadMaterializer
     }
 
     private static IReadOnlyList<HydratedDescriptorRows> CreateHydratedDescriptorRows(
-        params (long DescriptorId, string Uri)[] rows
+        params (int DescriptorId, string Uri)[] rows
     )
     {
         return

@@ -30,6 +30,7 @@ public static class MaterializedDocumentFixtureAssertions
         AssertEqual(expected.ResourceVersion, candidate.ResourceVersion, fixture, "ResourceVersion");
         AssertEqual(expected.ContentVersion, candidate.ContentVersion, fixture, "ContentVersion");
         AssertEqual(expected.LastModifiedAt, candidate.LastModifiedAt, fixture, "LastModifiedAt");
+        AssertEqual(expected.ContentCreatedAt, candidate.ContentCreatedAt, fixture, "ContentCreatedAt");
         AssertEqual(expected.StreamEtag, candidate.StreamEtag, fixture, "StreamEtag");
 
         if (candidate.DocumentJson.ContainsKey("_etag"))
@@ -94,6 +95,7 @@ public sealed record MaterializedDocumentFixtureActualCacheRow(
     string ResourceVersion,
     long ContentVersion,
     DateTimeOffset LastModifiedAt,
+    DateTimeOffset ContentCreatedAt,
     string StreamEtag,
     JsonObject DocumentJson
 );

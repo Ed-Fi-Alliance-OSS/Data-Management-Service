@@ -154,7 +154,8 @@ public class CursorRequestValidatorTests
     }
 
     /// <summary>
-    /// Every row of the design's worked precedence table. Each returns exactly one message.
+    /// Every row of the design's worked precedence table. Each rejected row returns exactly one message;
+    /// row 07 is not a cursor request.
     /// </summary>
     [TestFixture]
     [Parallelizable]
@@ -205,11 +206,11 @@ public class CursorRequestValidatorTests
         }
 
         [Test]
-        public void Row_07_page_size_with_limit_and_no_token_requires_a_token()
+        public void Row_07_page_size_with_limit_and_no_token_pages_traditionally()
         {
-            ErrorFrom(("pageSize", "5"), ("limit", "10"))
+            Validate(("pageSize", "5"), ("limit", "10"))
                 .Should()
-                .Be(CursorRequestValidator.PageTokenRequired);
+                .BeOfType<CursorValidationResult.NotCursorRequest>();
         }
 
         [Test]
@@ -262,20 +263,81 @@ public class CursorRequestValidatorTests
     }
 
     /// <summary>
-    /// The wrong-paging-mode message belongs to a request that supplied offset and no limit. A
-    /// request that supplied both traditional parameters alongside pageSize is missing its page
-    /// token, not using the wrong page-size parameter, so the required-relationship rule answers it.
+    /// A request that supplies limit without a page token pages traditionally and ignores pageSize,
+    /// as ODS/API 7.3.2 does, so a client sending both parameters, as ODS clients may, is served.
+    /// pageSize is ignored whatever its value, so its range is not checked, and limit is handed to the
+    /// traditional path whatever its value, which validates it there.
     /// </summary>
     [TestFixture]
     [Parallelizable]
-    public class Given_Page_Size_With_Both_Offset_And_Limit : CursorRequestValidatorTests
+    public class Given_Page_Size_With_Limit_And_No_Token : CursorRequestValidatorTests
     {
-        [Test]
-        public void It_requires_a_token_rather_than_reporting_the_wrong_paging_mode()
+        [TestCase("500", "500", TestName = "{m}(both at the maximum page size)")]
+        [TestCase("10", "5", TestName = "{m}(limit larger than pageSize)")]
+        [TestCase("5", "10", TestName = "{m}(limit smaller than pageSize)")]
+        [TestCase("10", "99999", TestName = "{m}(pageSize above the maximum)")]
+        [TestCase("10", "-1", TestName = "{m}(negative pageSize)")]
+        [TestCase("10", "abc", TestName = "{m}(non-numeric pageSize)")]
+        [TestCase("10", "", TestName = "{m}(blank pageSize)")]
+        [TestCase("", "5", TestName = "{m}(blank limit)")]
+        [TestCase("abc", "5", TestName = "{m}(non-numeric limit)")]
+        [TestCase("99999", "5", TestName = "{m}(limit above the maximum)")]
+        public void It_is_not_a_cursor_request(string limit, string pageSize)
         {
-            ErrorFrom(("pageSize", "5"), ("offset", "3"), ("limit", "10"))
+            Validate(("limit", limit), ("pageSize", pageSize))
+                .Should()
+                .BeOfType<CursorValidationResult.NotCursorRequest>();
+        }
+
+        [Test]
+        public void It_is_not_a_cursor_request_with_offset_and_total_count()
+        {
+            Validate(("pageSize", "5"), ("offset", "3"), ("limit", "10"), ("totalCount", "true"))
+                .Should()
+                .BeOfType<CursorValidationResult.NotCursorRequest>();
+        }
+
+        [Test]
+        public void It_still_requires_a_token_for_page_size_without_limit()
+        {
+            ErrorFrom(("pageSize", "5"), ("totalCount", "false"))
                 .Should()
                 .Be(CursorRequestValidator.PageTokenRequired);
+        }
+
+        [Test]
+        public void It_still_reports_the_wrong_paging_mode_for_page_size_with_offset_and_no_limit()
+        {
+            ErrorFrom(("pageSize", "5"), ("offset", "3"))
+                .Should()
+                .Be(CursorRequestValidator.PageSizeWithOffset);
+        }
+    }
+
+    /// <summary>
+    /// A page token selects the cursor path whatever accompanies it, so limit beside both cursor
+    /// parameters is still the mixed-mode conflict rather than a traditional request, and an
+    /// undecodable token is still reported as one rather than ignored alongside pageSize.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Page_Size_With_Limit_And_A_Token : CursorRequestValidatorTests
+    {
+        [Test]
+        public void It_reports_the_limit_conflict_for_a_valid_token()
+        {
+            ErrorFrom(("pageToken", ValidToken), ("pageSize", "5"), ("limit", "10"))
+                .Should()
+                .Be(CursorRequestValidator.LimitWithPageToken);
+        }
+
+        [TestCase(UndecodableToken)]
+        [TestCase("")]
+        public void It_reports_an_invalid_token(string pageToken)
+        {
+            ErrorFrom(("pageToken", pageToken), ("pageSize", "5"), ("limit", "10"))
+                .Should()
+                .Be(CursorRequestValidator.InvalidPageToken);
         }
     }
 

@@ -24,7 +24,7 @@ Feature: Jobs endpoint
                   """
                   {
                       "detail": "Job not found.",
-                      "type": "urn:ed-fi:api:not-found",
+                      "type": "urn:ed-fi:management-api:not-found",
                       "title": "Not Found",
                       "status": 404,
                       "validationErrors": {},
@@ -50,7 +50,7 @@ Feature: Jobs endpoint
                   """
                   {
                       "detail": "The 'Tenant' header is required when multi-tenancy is enabled",
-                      "type": "urn:ed-fi:api:bad-request",
+                      "type": "urn:ed-fi:management-api:bad-request",
                       "title": "Bad Request",
                       "status": 400,
                       "validationErrors": {},

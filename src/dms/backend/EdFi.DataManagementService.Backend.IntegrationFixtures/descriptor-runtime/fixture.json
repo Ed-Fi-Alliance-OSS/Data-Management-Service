@@ -1,4 +1,10 @@
 {
-  "apiSchemaFiles": ["ApiSchema.json"],
-  "dialects": ["pgsql", "mssql"]
+  "apiSchemaFiles": [
+    "ApiSchema.json",
+    "ApiSchema-Sample.json"
+  ],
+  "dialects": [
+    "pgsql",
+    "mssql"
+  ]
 }

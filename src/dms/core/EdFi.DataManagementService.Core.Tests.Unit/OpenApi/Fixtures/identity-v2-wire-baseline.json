@@ -45,7 +45,7 @@
                   "title": "Data Validation Failed",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "validationErrors": {
-                    "$.firstName": [
+                    "$.FirstName": [
                       "First name is required."
                     ]
                   }
@@ -75,7 +75,7 @@
                   "title": "Data Validation Failed",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "validationErrors": {
-                    "$[2].firstName": [
+                    "$[2].FirstName": [
                       "First name is required for item 2."
                     ]
                   }
@@ -91,7 +91,7 @@
                   "title": "Data Validation Failed",
                   "type": "urn:ed-fi:api:bad-request:data-validation-failed",
                   "validationErrors": {
-                    "$.firstName": [
+                    "$.FirstName": [
                       "First name is required.",
                       "First name must not exceed 75 characters."
                     ]

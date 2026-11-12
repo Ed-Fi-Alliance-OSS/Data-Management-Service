@@ -35,7 +35,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var tokenUrl = await ResolveDmsTokenUrlAsync(context.CurrentTenant);
 
-        context.DmsToken = await TokenHelper.GetDmsTokenAsync(
+        context.DmsToken = await TokenHelper.GetReusableDmsTokenAsync(
             tokenUrl,
             context.ClientKey!,
             context.ClientSecret!
@@ -60,7 +60,7 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         var tokenUrl = await ResolveDmsTokenUrlAsync(tenantName);
 
-        context.DmsToken = await TokenHelper.GetDmsTokenAsync(tokenUrl, key, secret);
+        context.DmsToken = await TokenHelper.GetReusableDmsTokenAsync(tokenUrl, key, secret);
 
         // Set current tenant for the DMS client
         context.CurrentTenant = tenantName;
@@ -259,6 +259,17 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         content.Should().NotContain(unexpectedContent);
     }
 
+    [Then("the response body should contain {string}")]
+    public async Task ThenTheResponseBodyShouldContain(string expectedContent)
+    {
+        // Unlike "the response should contain", this step does not require a success status, so it can
+        // check the body of an error response.
+        context.LastResponse.Should().NotBeNull();
+
+        var content = await context.LastResponse!.Content.ReadAsStringAsync();
+        content.Should().Contain(expectedContent);
+    }
+
     [When("I GET resource {string} by location")]
     public async Task WhenIGetResourceByLocation(string key)
     {
@@ -299,13 +310,14 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         context.LastResponse.Should().NotBeNull("Discovery response must be available");
 
         var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
-        var responseDoc = JsonDocument.Parse(responseBody);
+        using var responseDoc = JsonDocument.Parse(responseBody);
         var oauthUrl = responseDoc.RootElement.GetProperty("urls").GetProperty("oauth").GetString();
 
         oauthUrl.Should().NotBeNullOrWhiteSpace("Discovery must advertise an oauth url");
         context.ClientKey.Should().NotBeNullOrEmpty("Application must be created first");
         context.ClientSecret.Should().NotBeNullOrEmpty("Application must be created first");
 
+        // Exercise the advertised endpoint even when another scenario has cached a token.
         context.DmsToken = await TokenHelper.GetDmsTokenAsync(
             oauthUrl!,
             context.ClientKey!,
@@ -327,16 +339,15 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
 
         foreach (string metadataUrlKey in metadataUrlKeys)
         {
-            urls
-                .TryGetProperty(metadataUrlKey, out var metadataUrlProperty)
+            urls.TryGetProperty(metadataUrlKey, out var metadataUrlProperty)
                 .Should()
                 .BeTrue($"Discovery response should include urls.{metadataUrlKey}");
 
             metadataUrlProperty.ValueKind.Should().Be(JsonValueKind.String);
             var metadataUrl = metadataUrlProperty.GetString();
-            metadataUrl.Should().NotBeNullOrWhiteSpace(
-                $"Discovery response should include a usable urls.{metadataUrlKey}"
-            );
+            metadataUrl
+                .Should()
+                .NotBeNullOrWhiteSpace($"Discovery response should include a usable urls.{metadataUrlKey}");
 
             context.LastResponse = await metadataClient.GetByLocationAsync(metadataUrl!);
             context

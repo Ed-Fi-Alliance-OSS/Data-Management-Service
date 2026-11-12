@@ -600,10 +600,8 @@ public class TrackedChangeQueryRequestHandlerTests
                         ShortDescription: null,
                         Description: null,
                         EffectiveBeginDate: null,
-                        EffectiveEndDate: null,
-                        Discriminator: new DbColumnName("Discriminator")
-                    ),
-                    DiscriminatorStrategy.DescriptorColumn
+                        EffectiveEndDate: null
+                    )
                 )
                 : null;
 
@@ -645,9 +643,9 @@ public class TrackedChangeQueryRequestHandlerTests
         {
             systemColumns.Add(
                 new TrackedChangeSystemColumnInfo(
-                    Role: TrackedChangeSystemColumnRole.Discriminator,
-                    ColumnName: new DbColumnName("Discriminator"),
-                    ScalarType: new RelationalScalarType(ScalarKind.String, MaxLength: 128),
+                    Role: TrackedChangeSystemColumnRole.ResourceKeyId,
+                    ColumnName: new DbColumnName("ResourceKeyId"),
+                    ScalarType: null,
                     IsNullable: false,
                     IsPrimaryKey: false
                 )

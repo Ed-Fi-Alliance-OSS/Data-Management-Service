@@ -1207,6 +1207,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
                 };
             }
             case AbstractUnionViewProjectionExpression.StringLiteral:
+            case AbstractUnionViewProjectionExpression.Int16Literal:
                 changed = false;
                 return expression;
             default:
@@ -1276,11 +1277,11 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             dialectRules,
             out var parametersChanged
         );
-        // The mirror-stamp target is another table reference (the resource root the trigger stamps)
+        // The stamp target is another table reference (the resource root the trigger stamps)
         // and must be shortened alongside the trigger's own table; for child / extension triggers it
         // points at a different table than Table, so its change must be tracked independently.
-        var updatedMirrorStampTargetTable = trigger.MirrorStampTargetTable is { } mirrorStampTargetTable
-            ? ShortenTable(mirrorStampTargetTable, dialectRules)
+        var updatedStampTargetTable = trigger.StampTargetTable is { } stampTargetTable
+            ? ShortenTable(stampTargetTable, dialectRules)
             : (DbTableName?)null;
 
         changed =
@@ -1289,7 +1290,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             || parametersChanged
             || !updatedTable.Equals(trigger.Table)
             || !updatedName.Equals(trigger.Name)
-            || !Equals(updatedMirrorStampTargetTable, trigger.MirrorStampTargetTable);
+            || !Equals(updatedStampTargetTable, trigger.StampTargetTable);
 
         if (!changed)
         {
@@ -1303,7 +1304,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             KeyColumns = updatedColumns,
             IdentityProjectionColumns = updatedIdentityColumns,
             Parameters = updatedParameters,
-            MirrorStampTargetTable = updatedMirrorStampTargetTable,
+            StampTargetTable = updatedStampTargetTable,
         };
     }
 
@@ -1497,27 +1498,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
     {
         switch (parameters)
         {
-            case TriggerKindParameters.ReferentialIdentityMaintenance refId:
-            {
-                var updatedElements = ShortenIdentityElementMappings(
-                    refId.IdentityElements,
-                    dialectRules,
-                    out var elementsChanged
-                );
-                var updatedAlias = ShortenSuperclassAlias(
-                    refId.SuperclassAlias,
-                    dialectRules,
-                    out var aliasChanged
-                );
-                changed = elementsChanged || aliasChanged;
-                return changed
-                    ? refId with
-                    {
-                        IdentityElements = updatedElements,
-                        SuperclassAlias = updatedAlias,
-                    }
-                    : parameters;
-            }
             case TriggerKindParameters.AbstractIdentityMaintenance abstractId:
             {
                 var updatedTargetTable = ShortenTable(abstractId.TargetTable, dialectRules);
@@ -1544,7 +1524,7 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
             case TriggerKindParameters.DocumentStamping stamping:
             {
                 // Shorten the change-tracking table reference consistently with the tracked-change table
-                // it points at, mirroring the MirrorStampTargetTable handling.
+                // it points at, mirroring the StampTargetTable handling.
                 if (stamping.ChangeTracking is null)
                 {
                     changed = false;
@@ -1598,58 +1578,6 @@ public sealed class ApplyDialectIdentifierShorteningPass : IRelationalModelSetPa
         }
 
         return changed ? updated : mappings;
-    }
-
-    /// <summary>
-    /// Shortens column names in identity element mappings using dialect rules.
-    /// </summary>
-    private static IReadOnlyList<IdentityElementMapping> ShortenIdentityElementMappings(
-        IReadOnlyList<IdentityElementMapping> elements,
-        ISqlDialectRules dialectRules,
-        out bool changed
-    )
-    {
-        changed = false;
-        var updated = new IdentityElementMapping[elements.Count];
-
-        for (var i = 0; i < elements.Count; i++)
-        {
-            var element = elements[i];
-            var updatedColumn = ShortenColumn(element.Column, dialectRules);
-
-            if (!updatedColumn.Equals(element.Column))
-            {
-                changed = true;
-            }
-
-            updated[i] = element with { Column = updatedColumn };
-        }
-
-        return changed ? updated : elements;
-    }
-
-    /// <summary>
-    /// Shortens column names in a superclass alias's identity elements using dialect rules.
-    /// </summary>
-    private static SuperclassAliasInfo? ShortenSuperclassAlias(
-        SuperclassAliasInfo? alias,
-        ISqlDialectRules dialectRules,
-        out bool changed
-    )
-    {
-        if (alias is null)
-        {
-            changed = false;
-            return null;
-        }
-
-        var updatedElements = ShortenIdentityElementMappings(
-            alias.IdentityElements,
-            dialectRules,
-            out changed
-        );
-
-        return changed ? alias with { IdentityElements = updatedElements } : alias;
     }
 
     /// <summary>

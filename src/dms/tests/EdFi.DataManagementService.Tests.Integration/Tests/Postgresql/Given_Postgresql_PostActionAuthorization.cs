@@ -67,6 +67,24 @@ public sealed class Given_Postgresql_PostActionAuthorization : PostgresqlApiInte
         );
 
     [Test]
+    public Task It_refuses_a_case_variant_descriptor_repost_with_the_update_denial_for_a_create_only_client() =>
+        PostActionAuthorizationScenario.It_refuses_a_case_variant_descriptor_repost_with_the_update_denial_for_a_create_only_client(
+            Harness
+        );
+
+    [Test]
+    public Task It_updates_through_a_case_variant_descriptor_repost_for_an_update_only_client() =>
+        PostActionAuthorizationScenario.It_updates_through_a_case_variant_descriptor_repost_for_an_update_only_client(
+            Harness
+        );
+
+    [Test]
+    public Task It_applies_the_update_namespace_check_to_the_stored_namespace_of_a_case_variant_descriptor_repost() =>
+        PostActionAuthorizationScenario.It_applies_the_update_namespace_check_to_the_stored_namespace_of_a_case_variant_descriptor_repost(
+            Harness
+        );
+
+    [Test]
     public Task It_keeps_put_on_the_update_action() =>
         PostActionAuthorizationScenario.It_keeps_put_on_the_update_action(Harness);
 

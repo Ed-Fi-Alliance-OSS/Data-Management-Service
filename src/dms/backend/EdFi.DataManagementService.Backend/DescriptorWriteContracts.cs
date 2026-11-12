@@ -20,7 +20,6 @@ public sealed record DescriptorWriteRequest
         QualifiedResourceName resource,
         JsonNode requestBody,
         DocumentUuid documentUuid,
-        ReferentialId? referentialId,
         TraceId traceId,
         AuthorizationStrategyEvaluator[]? authorizationStrategyEvaluators = null,
         RelationalAuthorizationContext? relationalAuthorizationContext = null,
@@ -31,7 +30,6 @@ public sealed record DescriptorWriteRequest
         Resource = resource;
         RequestBody = requestBody ?? throw new ArgumentNullException(nameof(requestBody));
         DocumentUuid = documentUuid;
-        ReferentialId = referentialId;
         TraceId = traceId;
         TenantKey = tenantKey ?? throw new ArgumentNullException(nameof(tenantKey));
         AuthorizationStrategyEvaluators = authorizationStrategyEvaluators ?? [];
@@ -58,11 +56,6 @@ public sealed record DescriptorWriteRequest
     /// The document UUID: a candidate for POST inserts or the existing UUID for PUT.
     /// </summary>
     public DocumentUuid DocumentUuid { get; init; }
-
-    /// <summary>
-    /// The referential id for POST target context resolution. <c>null</c> for PUT requests.
-    /// </summary>
-    public ReferentialId? ReferentialId { get; init; }
 
     /// <summary>
     /// The request trace id for diagnostics.

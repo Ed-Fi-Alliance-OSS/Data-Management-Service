@@ -92,6 +92,19 @@ public class Given_MssqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
+        await using (var connection = new SqlConnection(_database.ConnectionString))
+        {
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                UPDATE descriptor SET [ContentLastModifiedAt] = '2000-01-01'
+                FROM [dms].[Descriptor] descriptor
+                JOIN [dms].[Document] doc ON doc.[DocumentId] = descriptor.[DocumentId]
+                WHERE doc.[DocumentUuid] = @documentUuid;
+                """;
+            command.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
+            await command.ExecuteNonQueryAsync();
+        }
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
 
         var putRequest = CreatePutRequest(
@@ -111,7 +124,7 @@ public class Given_MssqlDescriptorWriteHandler
         var stampsAfterUpdate = await ReadTrackingStampsAsync(documentUuid);
 
         stampsAfterUpdate.ContentVersion.Should().BeGreaterThan(stampsAfterInsert.ContentVersion);
-        stampsAfterUpdate.ContentLastModifiedAt.Should().BeOnOrAfter(stampsAfterInsert.ContentLastModifiedAt);
+        stampsAfterUpdate.ContentLastModifiedAt.Should().BeAfter(stampsAfterInsert.ContentLastModifiedAt);
     }
 
     [Test]
@@ -151,6 +164,77 @@ public class Given_MssqlDescriptorWriteHandler
 
         stampsAfterNoOp.ContentVersion.Should().Be(stampsAfterInsert.ContentVersion);
         stampsAfterNoOp.ContentLastModifiedAt.Should().Be(stampsAfterInsert.ContentLastModifiedAt);
+    }
+
+    [Test]
+    public async Task It_keeps_the_stored_descriptor_for_a_sql_server_collation_alias()
+    {
+        var handler = ResolveHandler();
+        var create = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """{ "namespace": "uri://ed-fi.org/SchoolTypeDescriptor", "codeValue": "Strasse", "shortDescription": "Strasse" }"""
+        );
+        var inserted = (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(create))
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>()
+            .Subject;
+        var descriptorsBefore = await CountDescriptorsAsync();
+        const string AliasBody =
+            """{ "namespace": "uri://ed-fi.org/SchoolTypeDescriptor", "codeValue": "Stra\u00DFe", "shortDescription": "Strasse" }""";
+
+        // The identity collation equates ss and the sharp s although OrdinalIgnoreCase does not, so only the
+        // database's verdict can recognize the stored descriptor: both writes keep "Strasse" and change nothing.
+        var post = (
+            await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, AliasBody)
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.UpdateSuccess>()
+            .Subject;
+        post.ExistingDocumentUuid.Should().Be(create.DocumentUuid);
+        post.ETag.Should().Be(inserted.ETag);
+        var put = (
+            await handler.HandlePutAsync(
+                CreatePutRequest(
+                    _database.Fixture.SchoolTypeDescriptorResource,
+                    create.DocumentUuid,
+                    AliasBody
+                )
+            )
+        )
+            .Should()
+            .BeOfType<UpdateResult.UpdateSuccess>()
+            .Subject;
+        put.ETag.Should().Be(inserted.ETag);
+        (await ReadStoredCodeValueAsync(create.DocumentUuid)).Should().Be("Strasse");
+        (await CountDescriptorsAsync()).Should().Be(descriptorsBefore);
+    }
+
+    private async Task<string> ReadStoredCodeValueAsync(DocumentUuid documentUuid)
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT descriptor.[CodeValue]
+            FROM [dms].[Descriptor] descriptor
+            INNER JOIN [dms].[Document] document ON document.[DocumentId] = descriptor.[DocumentId]
+            WHERE document.[DocumentUuid] = @documentUuid;
+            """;
+        command.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
+
+        return (string)(await command.ExecuteScalarAsync())!;
+    }
+
+    private async Task<long> CountDescriptorsAsync()
+    {
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT COUNT_BIG(*) FROM [dms].[Descriptor];";
+
+        return Convert.ToInt64(await command.ExecuteScalarAsync(), CultureInfo.InvariantCulture);
     }
 
     [Test]
@@ -551,14 +635,16 @@ public class Given_MssqlDescriptorWriteHandler
         await connection.OpenAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT [ContentVersion], [ContentLastModifiedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentUuid] = @documentUuid;
+            SELECT doc.[ContentVersion], descriptor.[ContentLastModifiedAt], descriptor.[ContentVersion]
+            FROM [dms].[Document] doc
+            JOIN [dms].[Descriptor] descriptor ON descriptor.[DocumentId] = doc.[DocumentId]
+            WHERE doc.[DocumentUuid] = @documentUuid;
             """;
         command.Parameters.Add(new SqlParameter("@documentUuid", documentUuid.Value));
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue("document should exist");
 
+        reader.GetInt64(2).Should().Be(reader.GetInt64(0));
         return new DocumentTrackingStamps(reader.GetInt64(0), reader.GetDateTime(1));
     }
 
@@ -594,22 +680,11 @@ public class Given_MssqlDescriptorWriteHandler
         string? profileName = null
     )
     {
-        var body = JsonNode.Parse(bodyJson)!;
-        var descriptorDoc = new Core.Model.DescriptorDocument(body);
-        var resourceInfo = new BaseResourceInfo(
-            new ProjectName(resource.ProjectName),
-            new ResourceName(resource.ResourceName),
-            true
-        );
-        var identity = descriptorDoc.ToDocumentIdentity();
-        var referentialId = Core.Extraction.ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity);
-
         return new DescriptorWriteRequest(
             _database.MappingSet,
             resource,
-            body,
+            JsonNode.Parse(bodyJson)!,
             new DocumentUuid(Guid.NewGuid()),
-            referentialId,
             new TraceId("test-trace")
         )
         {
@@ -629,12 +704,77 @@ public class Given_MssqlDescriptorWriteHandler
             resource,
             JsonNode.Parse(bodyJson)!,
             documentUuid,
-            referentialId: null,
             new TraceId("test-trace")
         )
         {
             ProfileName = profileName,
         };
+    }
+
+    [Test]
+    public async Task It_keeps_DocumentCacheMaterializer_Descriptor_updates_and_work_on_the_owning_document()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_stored_compact_descriptor_identity_across_its_lifecycle()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_DocumentCacheMaterializer_Descriptor_stored_casing_after_a_case_variant_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteCasingUpdateAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_stored_casing_for_a_case_variant_compact_descriptor_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new SqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteCasingUpdateAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
     }
 
     private static ServiceProvider CreateServiceProvider()

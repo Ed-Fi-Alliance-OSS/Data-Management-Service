@@ -123,7 +123,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:parameter",
+                "urn:ed-fi:management-api:bad-request:parameter",
                 "Parameter Validation Failed",
                 "Parameter validation failed. See 'errors' for details."
             );
@@ -170,7 +170,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -238,7 +238,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:parameter",
+                "urn:ed-fi:management-api:bad-request:parameter",
                 "Parameter Validation Failed",
                 "Parameter validation failed. See 'errors' for details."
             );
@@ -306,7 +306,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -352,7 +352,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request",
+                "urn:ed-fi:management-api:bad-request",
                 "Bad Request",
                 "The request could not be processed. See 'errors' for details."
             );
@@ -404,7 +404,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:data",
+                "urn:ed-fi:management-api:bad-request:data",
                 "Data Validation Failed",
                 "Data validation failed. See 'validationErrors' for details."
             );
@@ -452,7 +452,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:parameter",
+                "urn:ed-fi:management-api:bad-request:parameter",
                 "Parameter Validation Failed",
                 "Parameter validation failed. See 'errors' for details."
             );
@@ -495,7 +495,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 415,
-                "urn:ed-fi:api:unsupported-media-type",
+                "urn:ed-fi:management-api:unsupported-media-type",
                 "Unsupported Media Type",
                 "The value specified in the 'Content-Type' header is not supported by this host."
             );
@@ -573,7 +573,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 400,
-                "urn:ed-fi:api:bad-request:data",
+                "urn:ed-fi:management-api:bad-request:data",
                 "Data Validation Failed",
                 "Data validation failed. See 'validationErrors' for details."
             );
@@ -618,7 +618,7 @@ public class GlobalExceptionHandlerTests
                 _context,
                 _body,
                 500,
-                "urn:ed-fi:api:internal-server-error",
+                "urn:ed-fi:management-api:internal-server-error",
                 "Internal Server Error",
                 ""
             );
@@ -632,5 +632,221 @@ public class GlobalExceptionHandlerTests
             _body["validationErrors"]!.AsObject().Count.Should().Be(0);
             _body["errors"]!.AsArray().Count.Should().Be(0);
         }
+    }
+
+    private static Endpoint CreateEndpoint(params object[] metadata) =>
+        new(_ => Task.CompletedTask, new EndpointMetadataCollection(metadata), "test-endpoint");
+
+    private const string OAuthSentinel = "SENTINEL_OAUTH_HANDLER_3c1e_must_not_leak";
+
+    public static IEnumerable<TestFixtureData> OAuthMappedExceptions()
+    {
+        foreach ((string route, _, string serverErrorDescription) in OAuthRoutes)
+        {
+            foreach (TestFixtureData row in OAuthMappedExceptionsFor(route, serverErrorDescription))
+            {
+                yield return row;
+            }
+        }
+    }
+
+    private static readonly (
+        string Route,
+        OAuthErrorContractMetadata Marker,
+        string ServerErrorDescription
+    )[] OAuthRoutes =
+    [
+        ("revoke", OAuthErrorContractMetadata.Revocation, "The revocation request could not be processed."),
+        ("token", OAuthErrorContractMetadata.Token, "The token request could not be processed."),
+    ];
+
+    private static IEnumerable<TestFixtureData> OAuthMappedExceptionsFor(
+        string route,
+        string serverErrorDescription
+    )
+    {
+        yield return new TestFixtureData(
+            new InvalidDataException(OAuthSentinel),
+            400,
+            "invalid_request",
+            "The request form payload is malformed.",
+            route
+        ).SetArgDisplayNames($"InvalidDataException on {route}");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status400BadRequest),
+            400,
+            "invalid_request",
+            "The request form payload is malformed.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 400 on {route}");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(
+                OAuthSentinel,
+                StatusCodes.Status400BadRequest,
+                new JsonException(OAuthSentinel)
+            ),
+            400,
+            "invalid_request",
+            "The request form payload is malformed.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 400 with a JSON inner exception on {route}");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status413PayloadTooLarge),
+            413,
+            "invalid_request",
+            "The request body is too large.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 413 on {route}");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status415UnsupportedMediaType),
+            415,
+            "invalid_request",
+            "The request body must be application/x-www-form-urlencoded.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 415 on {route}");
+        yield return new TestFixtureData(
+            new BadHttpRequestException(OAuthSentinel, StatusCodes.Status408RequestTimeout),
+            408,
+            "invalid_request",
+            "The request could not be read.",
+            route
+        ).SetArgDisplayNames($"BadHttpRequestException 408 on {route}");
+        yield return new TestFixtureData(
+            new InvalidOperationException(OAuthSentinel),
+            500,
+            "server_error",
+            serverErrorDescription,
+            route
+        ).SetArgDisplayNames($"InvalidOperationException on {route}");
+        yield return new TestFixtureData(
+            new ValidationException(OAuthSentinel),
+            500,
+            "server_error",
+            serverErrorDescription,
+            route
+        ).SetArgDisplayNames($"ValidationException on {route}");
+    }
+
+    /// <summary>
+    /// DMS-1327 D-17: an endpoint carrying <see cref="OAuthErrorContractMetadata"/> gets the RFC 6749
+    /// §5.2 body for every exception, with client statuses kept for unreadable bodies and 500
+    /// <c>server_error</c> for everything else.
+    /// </summary>
+    [TestFixtureSource(typeof(GlobalExceptionHandlerTests), nameof(OAuthMappedExceptions))]
+    public class Given_an_exception_on_an_endpoint_with_the_oauth_error_contract(
+        Exception exception,
+        int status,
+        string error,
+        string description,
+        string route
+    )
+    {
+        private bool _handled;
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_handled, _context, _content, _body) = await HandleAsync(
+                exception,
+                "trace-oauth",
+                CreateEndpoint(OAuthRoutes.Single(r => r.Route == route).Marker)
+            );
+
+        [Test]
+        public void It_reports_the_exception_as_handled() => _handled.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_mapped_status() => _context.Response.StatusCode.Should().Be(status);
+
+        [Test]
+        public void It_uses_the_json_content_type() =>
+            _context.Response.ContentType.Should().StartWith("application/json");
+
+        [Test]
+        public void It_returns_only_the_oauth_members()
+        {
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be(error);
+            _body["error_description"]!.GetValue<string>().Should().Be(description);
+        }
+
+        [Test]
+        public void It_keeps_the_trace_id_header() =>
+            _context.Response.Headers["TraceId"].ToString().Should().Be("trace-oauth");
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(OAuthSentinel);
+    }
+
+    /// <summary>
+    /// The 500 <c>server_error</c> description comes from the route's marker, so an unexpected fault on
+    /// the introspection endpoint names introspection rather than revocation.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_unexpected_exception_on_the_introspection_endpoint
+    {
+        private DefaultHttpContext _context = null!;
+        private string _content = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_, _context, _content, _body) = await HandleAsync(
+                new InvalidOperationException(OAuthSentinel),
+                "trace-introspection",
+                CreateEndpoint(OAuthErrorContractMetadata.Introspection)
+            );
+
+        [Test]
+        public void It_returns_500() => _context.Response.StatusCode.Should().Be(500);
+
+        [Test]
+        public void It_names_introspection_in_the_server_error()
+        {
+            _body.Select(member => member.Key).Should().BeEquivalentTo("error", "error_description");
+            _body["error"]!.GetValue<string>().Should().Be("server_error");
+            _body["error_description"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The introspection request could not be processed.");
+        }
+
+        [Test]
+        public void It_does_not_leak_the_exception_text() => _content.Should().NotContain(OAuthSentinel);
+    }
+
+    /// <summary>
+    /// The marker, not the presence of an endpoint, selects the OAuth writer: any other endpoint
+    /// keeps the Ed-Fi contract.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_invalid_data_exception_on_an_endpoint_without_the_oauth_error_contract
+    {
+        private DefaultHttpContext _context = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            (_, _context, _, _body) = await HandleAsync(
+                new InvalidDataException(OAuthSentinel),
+                "trace-ed-fi",
+                CreateEndpoint()
+            );
+
+        [Test]
+        public void It_returns_the_ed_fi_bad_request_contract() =>
+            AssertHandledContract(
+                _context,
+                _body,
+                400,
+                "urn:ed-fi:management-api:bad-request",
+                "Bad Request",
+                "The request could not be processed. See 'errors' for details."
+            );
+
+        [Test]
+        public void It_has_no_oauth_members() => _body.ContainsKey("error").Should().BeFalse();
     }
 }

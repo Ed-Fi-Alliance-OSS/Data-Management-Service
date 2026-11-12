@@ -240,11 +240,23 @@ public sealed class NamespaceAuthorizationSqlCompiler(SqlDialect dialect)
             );
             writer.AppendLine();
 
-            // Proposed value matches at least one prefix → authorized.
+            // Proposed value matches at least one prefix → authorized. Two parameters compare under the
+            // database default, so a proposed value checked against an identity-collated column takes that
+            // column's collation and agrees with the stored-row check on any database default.
+            var identityCollation = check.NamespaceColumnUsesIdentityCollation
+                ? _sqlDialect.Rules.IdentityEquality.IdentityTextCollation
+                : null;
             writer.Append("WHEN ");
             NamespacePrefixSqlHelper.AppendLikeMatch(
                 writer,
-                lhsWriter => lhsWriter.AppendParameter(spec.ProposedNamespaceParameterName),
+                lhsWriter =>
+                {
+                    lhsWriter.AppendParameter(spec.ProposedNamespaceParameterName);
+                    if (identityCollation is not null)
+                    {
+                        lhsWriter.Append($" COLLATE {identityCollation}");
+                    }
+                },
                 spec.NamespacePrefixParameterization
             );
             writer.AppendLine(" THEN 1");

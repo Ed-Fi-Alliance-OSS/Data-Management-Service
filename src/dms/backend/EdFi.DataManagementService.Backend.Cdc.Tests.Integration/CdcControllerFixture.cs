@@ -284,7 +284,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 heapBytes: checked(
                     (long)CdcTelemetryQualification.Scalar(metrics, "edfi_cdc_worker_heap_max_bytes")
                 ),
-                digest: CdcQualifiedWorkerImage.Digest,
+                // The image under test, which is the embedded pin only after it has been qualified.
+                digest: ConnectImageDigest,
                 offsetTopic: _resourcePrefix + ".connect.offsets",
                 workerKey: _resourcePrefix
             ),
@@ -293,6 +294,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             new(TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(5), TimeSpan.FromMilliseconds(250))
         );
     }
+
+    internal string ConnectImageDigest => _settings.ConnectImage[(_settings.ConnectImage.IndexOf('@') + 1)..];
 
     internal string ControllerKafkaBootstrapServers =>
         _controllerBrokerPort > 0

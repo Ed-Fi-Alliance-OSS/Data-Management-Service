@@ -57,7 +57,8 @@ public abstract record CustomViewAuthorizationCheckTarget
     /// <summary>
     /// The proposed request body. The resolved path's first hop is bound as a parameter taken from the
     /// finalized root row — reference resolution has already turned the submitted reference into a
-    /// <c>..._DocumentId</c> value by then — and any remaining hops are joined in SQL.
+    /// <c>..._DocumentId</c> or compact <c>..._DescriptorId</c> value by then — and any remaining hops
+    /// are joined in SQL, including the descriptor-to-document bridge.
     /// </summary>
     public sealed record Proposed(DbTableName RootTable, CustomViewAuthorizationProposedValueBinding Binding)
         : CustomViewAuthorizationCheckTarget;
@@ -98,11 +99,13 @@ public abstract record CustomViewAuthorizationCheckTarget
 /// <param name="Column">The root-table column holding the first hop of the resolved basis path.</param>
 /// <param name="LogicalKey">Stable identity for the binding, used in diagnostics.</param>
 /// <param name="ParameterSeed">Seed the SQL compiler derives a collision-free parameter name from.</param>
+/// <param name="KeyScalarKind">Storage type of the first hop: Int32 for a compact descriptor key, Int64 for a document key.</param>
 public sealed record CustomViewAuthorizationProposedValueBinding(
     DbTableName Table,
     DbColumnName Column,
     string LogicalKey,
-    string ParameterSeed
+    string ParameterSeed,
+    ScalarKind KeyScalarKind = ScalarKind.Int64
 );
 
 /// <summary>

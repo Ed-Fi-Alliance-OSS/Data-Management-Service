@@ -70,10 +70,10 @@ Describe "DMS-1152 API seed delivery bootstrap" {
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $exampleEnvFile -Encoding utf8
             }
         }
@@ -843,25 +843,25 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 
     Context "Data Standard ref tag resolution" {
         It "maps Data Standard 5.2 to the v5.2.0 seed ref tag" {
-            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "5.2" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATA_STANDARD_VERSION = "5.2" }
 
             Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v5.2.0"
         }
 
         It "maps Data Standard 6.1 to the v6.1.0 seed ref tag" {
-            $envValues = @{ DMS_CONFIG_DATA_STANDARD_VERSION = "6.1" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATA_STANDARD_VERSION = "6.1" }
 
             Resolve-SeedDataStandardRefTag -EnvValues $envValues | Should -Be "v6.1.0"
         }
 
         It "falls back to v5.2.0 when the Data Standard version is absent or blank" {
             Resolve-SeedDataStandardRefTag -EnvValues @{} | Should -Be "v5.2.0"
-            Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = " " } | Should -Be "v5.2.0"
+            Resolve-SeedDataStandardRefTag -EnvValues @{ CONFIGURATION_SERVICE_DATA_STANDARD_VERSION = " " } | Should -Be "v5.2.0"
         }
 
         It "throws on an unrecognized non-blank Data Standard version instead of materializing v5.2.0 seeds" {
-            { Resolve-SeedDataStandardRefTag -EnvValues @{ DMS_CONFIG_DATA_STANDARD_VERSION = "9.9" } } |
-                Should -Throw "*DMS_CONFIG_DATA_STANDARD_VERSION*9.9*"
+            { Resolve-SeedDataStandardRefTag -EnvValues @{ CONFIGURATION_SERVICE_DATA_STANDARD_VERSION = "9.9" } } |
+                Should -Throw "*CONFIGURATION_SERVICE_DATA_STANDARD_VERSION*9.9*"
         }
     }
 
@@ -1694,9 +1694,9 @@ SCHEMA_PACKAGES='[
         It "resolves env file and derives CMS URL, DMS URL, identity provider from local settings" {
             $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
             @"
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=9999
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=9999
 DMS_HTTP_PORTS=8888
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             try {
@@ -1710,6 +1710,30 @@ DMS_CONFIG_IDENTITY_PROVIDER=self-contained
                 $idp | Should -Be "self-contained"
             }
             finally {
+                Remove-Item -LiteralPath $envFile -Force -ErrorAction SilentlyContinue
+            }
+        }
+
+        It "derives the Docker-local DMS URL from DMS_HTTP_PORTS as Compose resolves it (<Case>)" -ForEach @(
+            @{ Case = "ambient value over a different env-file value"; FileLines = @("DMS_HTTP_PORTS=8888"); Ambient = "19090"; Expected = "http://localhost:19090" }
+            @{ Case = "quoted env-file value"; FileLines = @('DMS_HTTP_PORTS="18181"'); Ambient = $null; Expected = "http://localhost:18181" }
+            @{ Case = "interpolated env-file value"; FileLines = @("DMS_PORT_SOURCE=18282", 'DMS_HTTP_PORTS=${DMS_PORT_SOURCE}'); Ambient = $null; Expected = "http://localhost:18282" }
+            @{ Case = "absent from the env file"; FileLines = @("CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=9999"); Ambient = $null; Expected = "http://localhost:8080" }
+        ) {
+            $envFile = Join-Path ([System.IO.Path]::GetTempPath()) "test-$([Guid]::NewGuid().ToString('N')).env"
+            $FileLines | Set-Content -LiteralPath $envFile -Encoding utf8
+            $savedAmbient = [Environment]::GetEnvironmentVariable("DMS_HTTP_PORTS")
+
+            try {
+                # A $null passed to SetEnvironmentVariable leaves the variable defined as ""; remove it instead.
+                if ($null -eq $Ambient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $Ambient }
+
+                Resolve-DockerLocalDmsBaseUrl -EnvValues (ReadValuesFromEnvFile -EnvironmentFile $envFile) | Should -BeExactly $Expected
+            }
+            finally {
+                if ($null -eq $savedAmbient) { Remove-Item -Path Env:DMS_HTTP_PORTS -ErrorAction SilentlyContinue }
+                else { Set-Item -Path Env:DMS_HTTP_PORTS -Value $savedAmbient }
                 Remove-Item -LiteralPath $envFile -Force -ErrorAction SilentlyContinue
             }
         }
@@ -1736,7 +1760,7 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
 
         It "builds host-side OAuth token URLs from port env-vars for self-contained and keycloak" {
             $envValues = @{
-                DMS_CONFIG_ASPNETCORE_HTTP_PORTS = "8081"
+                CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8081"
                 KEYCLOAK_PORT                    = "8045"
             }
 
@@ -1871,7 +1895,7 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
                 { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(11) } |
                     Should -Throw -ExpectedMessage "*route context*schoolYear*"
                 { Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(999) } |
-                    Should -Throw -ExpectedMessage "*was not found in CMS*"
+                    Should -Throw -ExpectedMessage "*was not found in the Configuration Service*"
 
                 # Plain instance still resolves
                 $result = Resolve-SeedTargetDataStores -CmsUrl "http://unused" -AccessToken "unused" -DataStoreId @(12)
@@ -1929,14 +1953,14 @@ CONNECTION_STRING=Server=localhost;Password=a=b;TrustServerCertificate=true
             }
         }
 
-        It "orchestrator reads CONFIG_SERVICE_TENANT from env and forwards it to Resolve-SeedTargetDataStores and New-SeedLoaderCredentials" {
-            # Regression: a prior implementation never read CONFIG_SERVICE_TENANT from envValues,
+        It "orchestrator reads DMS_CONFIGURATION_SERVICE_TENANT from env and forwards it to Resolve-SeedTargetDataStores and New-SeedLoaderCredentials" {
+            # Regression: a prior implementation never read DMS_CONFIGURATION_SERVICE_TENANT from envValues,
             # so in multi-tenant local stacks the seed flow could not see tenant-scoped instances
             # and created seed credentials in the wrong tenant context.
             $scriptPath = Join-Path $script:sourceDockerComposeRoot "load-dms-seed-data.ps1"
             $content = Get-Content -LiteralPath $scriptPath -Raw
 
-            $content | Should -Match '\$tenant\s*=.*CONFIG_SERVICE_TENANT'
+            $content | Should -Match '\$tenant\s*=.*DMS_CONFIGURATION_SERVICE_TENANT'
             $content | Should -Match '(?s)Resolve-SeedTargetDataStores\b[^#]*?-Tenant\s+\$tenant'
             $content | Should -Match '(?s)New-SeedLoaderCredentials\b[^#]*?-Tenant\s+\$tenant'
         }
@@ -2549,7 +2573,7 @@ EdFi.BulkLoadClient.Console fake
 
             # School-year loop: one invocation per year
             $counter.count = 0
-            $envValues = @{ DMS_CONFIG_ASPNETCORE_HTTP_PORTS = "8081" }
+            $envValues = @{ CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8081" }
             foreach ($year in @(2024, 2025)) {
                 $perYearBase = "http://localhost:8080/$year"
                 $perYearOAuth = Resolve-OAuthTokenUrl -EnvValues $envValues -IdentityProvider "self-contained" -SchoolYear $year
@@ -2580,7 +2604,7 @@ EdFi.BulkLoadClient.Console fake
                 return 0
             }.GetNewClosure()
 
-            $envValues = @{ DMS_CONFIG_ASPNETCORE_HTTP_PORTS = "8081" }
+            $envValues = @{ CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS = "8081" }
             $dmsBase = "http://localhost:8080"
 
             foreach ($year in @(2024, 2025)) {
@@ -2844,7 +2868,7 @@ EdFi.BulkLoadClient.Console fake
             '{"schema":{"selectionMode":"Standard"}}' | Set-Content -LiteralPath (Join-Path $bootstrapDir "bootstrap-manifest.json") -Encoding utf8
 
             $envFile = Join-Path $tmpRoot "bad-idp.env"
-            "DMS_CONFIG_IDENTITY_PROVIDER=oauth`n" | Set-Content -LiteralPath $envFile -Encoding utf8
+            "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=oauth`n" | Set-Content -LiteralPath $envFile -Encoding utf8
 
             $startProbe = Join-Path $tmpRoot "start-invoked.txt"
             $seedProbe = Join-Path $tmpRoot "seed-invoked.txt"
@@ -3157,13 +3181,13 @@ EdFi.BulkLoadClient.Console fake
 
         It "start-(local|published)-dms.ps1 derive CMS URL from env-utility's Resolve-CmsBaseUrl" {
             # Regression guard: hard-coded http://localhost:8081 in the start scripts diverges from
-            # the seed phase's env-derived CMS URL when DMS_CONFIG_ASPNETCORE_HTTP_PORTS is overridden,
+            # the seed phase's env-derived CMS URL when CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS is overridden,
             # silently splitting credential creation and seed authentication across two CMS endpoints.
             foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
                 $startScript = Join-Path $script:sourceDockerComposeRoot $name
                 Test-Path -LiteralPath $startScript | Should -BeTrue
                 $content = Get-Content -LiteralPath $startScript -Raw
-                $content | Should -Match 'Resolve-CmsBaseUrl\s+-EnvValues\s+\$envValues' -Because "$name must resolve CMS URL via Resolve-CmsBaseUrl so a custom DMS_CONFIG_ASPNETCORE_HTTP_PORTS is honored"
+                $content | Should -Match 'Resolve-CmsBaseUrl\s+-EnvValues\s+\$envValues' -Because "$name must resolve CMS URL via Resolve-CmsBaseUrl so a custom CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS is honored"
                 $content | Should -Not -Match '"http://localhost:8081"' -Because "$name must not hard-code the default CMS URL; the resolver fallback already returns http://localhost:8081 when the env override is absent"
             }
         }
@@ -3210,8 +3234,8 @@ MSSQL_DB_NAME=edfi_datamanagementservice
 MSSQL_PORT=1435
 DMS_DATASTORE=mssql
 DATABASE_CONNECTION_STRING_ADMIN=Server=dms-mssql;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=sa;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 "@ -NoNewline
             }
 
@@ -3263,8 +3287,8 @@ MSSQL_DB_NAME=custom_database
 MSSQL_PORT=1999
 DMS_DATASTORE=mssql
 DATABASE_CONNECTION_STRING_ADMIN=Server=custom-mssql;Database=`${MSSQL_DB_NAME};User Id=custom;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=custom-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=custom;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=custom-mssql,1433;Database=`${MSSQL_DB_NAME};User Id=custom;Password=`${MSSQL_SA_PASSWORD};TrustServerCertificate=true;
 DATABASE_TEMPLATE_PACKAGE=EdFi.Api.Minimal.Template.PostgreSql.5.2.0
 CUSTOM_KEY=preserved
 "@
@@ -3279,7 +3303,7 @@ CUSTOM_KEY=preserved
                 $correctedValues["MSSQL_DB_NAME"] | Should -Be "custom_database"
                 $correctedValues["MSSQL_PORT"] | Should -Be "1999"
                 $correctedValues["DATABASE_CONNECTION_STRING_ADMIN"] | Should -Match "^Server=custom-mssql;"
-                $correctedValues["DMS_CONFIG_DATABASE_CONNECTION_STRING"] | Should -Match "^Server=custom-mssql,1433;"
+                $correctedValues["CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"] | Should -Match "^Server=custom-mssql,1433;"
                 $correctedValues["CUSTOM_KEY"] | Should -Be "preserved"
 
                 # The source file must be untouched.
@@ -3681,8 +3705,8 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
     # Both halves of the exact-ownership invariant, proven AFTER Invoke-Pester returns: owned
     # staged instances are gone, and caller-owned modules beneath LOOKALIKE-named directories -
     # one per namespace this file stages under - survive untouched. The children exclude this
-    # tag, so there is no recursion; launches go through [Environment]::ProcessPath, never a
-    # literal executable name.
+    # tag, so there is no recursion. Resolve the pwsh application explicitly: when PowerShell
+    # runs as a .NET tool, [Environment]::ProcessPath points to dotnet instead of pwsh.
 
     BeforeAll {
         $script:ownershipChildWork = Join-Path ([System.IO.Path]::GetTempPath()) "dms-seed-ownership-child-$([Guid]::NewGuid().ToString('N'))"
@@ -3733,7 +3757,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "}"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: both family probes must have RUN and PASSED - discovery counts
         # prove nothing, and probes that never reached their staged imports make survival vacuous.
         $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly around the caller's modules"
@@ -3776,7 +3800,7 @@ Describe "whole-file module-table ownership (post-Invoke-Pester, isolated childr
             "} | ConvertTo-Json -Compress"
         ) -join "`n" | Set-Content -LiteralPath $childScript
 
-        $childState = (& ([Environment]::ProcessPath) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
+        $childState = (& ((Get-Command pwsh -CommandType Application | Select-Object -First 1).Source) -NoProfile -File $childScript | Select-Object -Last 1) | ConvertFrom-Json
         # Execution proof first: the residue check is meaningful only if both family probes
         # really ran and passed - a run that never imported staged modules has nothing to clean.
         $childState.Failed | Should -Be 0 -Because "both staged-import probes must complete cleanly"

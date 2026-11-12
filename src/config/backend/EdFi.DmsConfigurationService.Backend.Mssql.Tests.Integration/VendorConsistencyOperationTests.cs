@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -42,7 +43,8 @@ public abstract class VendorConsistencyOperationTestBase : DatabaseTest
         MssqlTestConfiguration.DatabaseOptions,
         NullLogger<ApiClientRepository>.Instance,
         new TestAuditContext(),
-        new TenantContextProvider()
+        new TenantContextProvider(),
+        new NoOpUnapprovalTokenRevocation()
     );
 
     protected int _vendorId;

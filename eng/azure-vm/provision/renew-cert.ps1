@@ -44,7 +44,7 @@ try {
         Write-Output "Restarting gateway..."
         # Do not start gateway dependencies here. During the documented pre-DMS state, following
         # depends_on would bypass the ApiSchema guard and start st-dms/mt-dms too early.
-        docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps gateway
+        docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps gateway
         $script:gatewayUp = ($LASTEXITCODE -eq 0)
         if (-not $script:gatewayUp) { Write-Warning "gateway restart failed ($LASTEXITCODE); run ./up.sh gateway." }
     }

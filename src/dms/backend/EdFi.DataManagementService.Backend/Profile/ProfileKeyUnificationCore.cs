@@ -309,6 +309,7 @@ internal static class ProfileKeyUnificationCore
     {
         object? canonicalValue = null;
         KeyUnificationMemberWritePlan? firstPresentMember = null;
+        var hasDeferredMissingReferenceMember = false;
 
         foreach (var member in keyUnificationPlan.MembersInOrder)
         {
@@ -322,6 +323,7 @@ internal static class ProfileKeyUnificationCore
                 resolvedReferenceLookups,
                 ordinalPath
             );
+            hasDeferredMissingReferenceMember |= evaluation.IsAbsentBecauseDeferredMissingReference;
 
             if (member.PresenceIsSynthetic && member.PresenceBindingIndex is int presenceBindingIndex)
             {
@@ -379,12 +381,18 @@ internal static class ProfileKeyUnificationCore
         );
         valueAssigned[keyUnificationPlan.CanonicalBindingIndex] = true;
 
+        // Matches the no-profile flattener: a canonical that no member supplied, null only because a
+        // member's submitted reference was deferred as missing, may stay null long enough for proposed
+        // authorization. That write never reaches DML. A resolved or hidden member still supplies the value.
         ProfileKeyUnificationGuardrails.Validate(
             tableWritePlan,
             keyUnificationPlan,
             canonicalValue,
             mergedRowValuesMutable,
-            valueAssigned
+            valueAssigned,
+            allowNullCanonicalForDeferredMissingReference: canonicalValue is null
+                && firstPresentMember is null
+                && hasDeferredMissingReferenceMember
         );
     }
 

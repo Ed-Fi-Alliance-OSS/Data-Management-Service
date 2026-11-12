@@ -27,6 +27,17 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
 
+    // Whole microseconds, so the value round-trips exactly through timestamp with time zone.
+    private static readonly DateTime CreatedAtSentinel = new DateTime(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTimeKind.Utc
+    ).AddTicks(1_234_560);
+
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
     {
@@ -38,6 +49,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     public async Task Setup()
     {
         await _database.ResetAsync();
+        await _database.ExecuteNonQueryAsync(
+            """UPDATE "dms"."DocumentCacheState" SET "ProjectionLifecycleState" = 'Tracking';"""
+        );
     }
 
     [OneTimeTearDown]
@@ -50,13 +64,135 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     }
 
     [Test]
+    public async Task It_provisions_only_authoritative_owner_timestamps_and_retains_document_versions()
+    {
+        var columns = await _database.QueryRowsAsync(
+            """
+            SELECT table_schema, table_name, column_name, data_type, is_nullable
+            FROM information_schema.columns
+            WHERE (table_schema, table_name) IN (('dms', 'Document'), ('dms', 'Descriptor'), ('edfi', 'School'))
+              AND column_name IN ('ContentVersion', 'ContentLastModifiedAt', 'ContentCreatedAt')
+            ORDER BY table_schema, table_name, column_name;
+            """
+        );
+        columns
+            .Select(row =>
+                $"{row["table_schema"]}.{row["table_name"]}.{row["column_name"]}:{row["data_type"]}:{row["is_nullable"]}"
+            )
+            .Should()
+            .Equal(
+                "dms.Descriptor.ContentCreatedAt:timestamp with time zone:NO",
+                "dms.Descriptor.ContentLastModifiedAt:timestamp with time zone:NO",
+                "dms.Descriptor.ContentVersion:bigint:NO",
+                "dms.Document.ContentVersion:bigint:NO",
+                "edfi.School.ContentCreatedAt:timestamp with time zone:NO",
+                "edfi.School.ContentLastModifiedAt:timestamp with time zone:NO",
+                "edfi.School.ContentVersion:bigint:NO"
+            );
+    }
+
+    [Test]
+    public async Task It_initializes_the_root_timestamp_without_allocating_an_extra_document_version()
+    {
+        var documentId = await InsertDocumentAsync("Ed-Fi", "School");
+        var version = await ReadDocumentContentVersionAsync(documentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        var insertTimestamp = await _database.ExecuteScalarAsync<DateTime>(
+            """
+            INSERT INTO "edfi"."School" ("DocumentId", "SchoolId", "ContentLastModifiedAt", "ContentCreatedAt")
+            VALUES (@documentId, 900, '2000-01-01T00:00:00Z', '2000-01-01T00:00:00Z')
+            RETURNING now();
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+        var after = await ReadStampPairAsync(documentId);
+        after.DocumentVersion.Should().Be(version);
+        // The trigger overrides both supplied timestamps with the inserting transaction's now().
+        after.Owner.Should().Be(new StampValues(version, insertTimestamp, insertTimestamp));
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+    }
+
+    [TestCase("edfi", "School", "SchoolId", "DocumentId", "\"SchoolId\" + 1")]
+    [TestCase(
+        "edfi",
+        "SchoolAddressPeriod",
+        "PeriodName",
+        "School_DocumentId",
+        "\"PeriodName\" || '-changed'"
+    )]
+    [TestCase("sample", "SchoolExtension", "CampusCode", "DocumentId", "\"CampusCode\" || '-changed'")]
+    public async Task It_stamps_root_nested_child_and_root_extension_changes_once(
+        string schema,
+        string table,
+        string column,
+        string ownerColumn,
+        string value
+    )
+    {
+        var documentId = await SeedSchoolWithFullDescendantGraphAsync(800, 3);
+        await BackdateOwnerTimestampAsync(documentId);
+        await SetOwnerCreatedAtSentinelAsync(documentId);
+        var before = await ReadStampPairAsync(documentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE "{schema}"."{table}" SET "{column}" = {value} WHERE "{ownerColumn}" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+        var after = await ReadStampPairAsync(documentId);
+        after.DocumentVersion.Should().Be(watermark + 1);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 1);
+    }
+
+    [TestCase("edfi", "School", "SchoolId", "DocumentId")]
+    [TestCase("edfi", "SchoolAddress", "City", "School_DocumentId")]
+    [TestCase("edfi", "SchoolAddressPeriod", "PeriodName", "School_DocumentId")]
+    [TestCase("sample", "SchoolExtension", "CampusCode", "DocumentId")]
+    [TestCase("sample", "SchoolExtensionAddress", "Zone", "School_DocumentId")]
+    public async Task It_preserves_exact_stamps_and_projection_work_on_no_op_updates(
+        string schema,
+        string table,
+        string column,
+        string ownerColumn
+    )
+    {
+        var documentId = await SeedSchoolWithFullDescendantGraphAsync(700, 3);
+        await BackdateOwnerTimestampAsync(documentId);
+        await SetOwnerCreatedAtSentinelAsync(documentId);
+        var before = await ReadStampPairAsync(documentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        var beforeWork = await _database.QueryRowsAsync(
+            """SELECT * FROM "dms"."DocumentProjectionWork" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", documentId)
+        );
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE "{schema}"."{table}" SET "{column}" = "{column}" WHERE "{ownerColumn}" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+        (await ReadStampPairAsync(documentId)).Should().Be(before);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+        var afterWork = await _database.QueryRowsAsync(
+            """SELECT * FROM "dms"."DocumentProjectionWork" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", documentId)
+        );
+        afterWork.Should().BeEquivalentTo(beforeWork);
+    }
+
+    [Test]
     public async Task It_should_allocate_one_content_version_for_a_multi_row_single_statement_child_insert()
     {
         var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
         await InsertSchoolAsync(schoolDocumentId, schoolId: 170);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
+        await SetOwnerCreatedAtSentinelAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         // Multiple child rows for the same root in one INSERT statement exercise the ins-trigger
         // SELECT DISTINCT dedupe — the seed helpers insert one row per statement, so this is the only
@@ -81,26 +217,42 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
                 1L,
                 "a multi-row single-statement child insert touching one root must allocate exactly one content version, not one per inserted row"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
         after
-            .Mirror.ContentVersion.Should()
-            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
+            .Owner.ContentVersion.Should()
+            .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
         after
-            .Mirror.ContentLastModifiedAt.Should()
-            .Be(
-                after.Document.ContentLastModifiedAt,
-                "the root mirror ContentLastModifiedAt must equal dms.Document"
-            );
+            .Owner.ContentCreatedAt.Should()
+            .Be(CreatedAtSentinel, "a child insert stamps an existing root and never restarts its lifetime");
+    }
+
+    [Test]
+    public async Task It_should_preserve_the_root_creation_timestamp_on_a_root_extension_insert()
+    {
+        var schoolDocumentId = await InsertDocumentAsync("Ed-Fi", "School");
+        await InsertSchoolAsync(schoolDocumentId, schoolId: 175);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
+        await SetOwnerCreatedAtSentinelAsync(schoolDocumentId);
+        var before = await ReadStampPairAsync(schoolDocumentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+
+        await InsertSchoolExtensionAsync(schoolDocumentId, "Campus-175");
+
+        var after = await ReadStampPairAsync(schoolDocumentId);
+        after.DocumentVersion.Should().Be(watermark + 1);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
     }
 
     [Test]
     public async Task It_should_allocate_one_content_version_for_a_multi_row_child_update()
     {
         var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 100, addressCount: 3);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         var changedRows = await _database.ExecuteNonQueryAsync(
             """
@@ -121,26 +273,20 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
                 1L,
                 "a multi-row child update touching one root must allocate exactly one content version, not one per row"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
         after
-            .Mirror.ContentVersion.Should()
-            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
-        after
-            .Mirror.ContentLastModifiedAt.Should()
-            .Be(
-                after.Document.ContentLastModifiedAt,
-                "the root mirror ContentLastModifiedAt must equal dms.Document"
-            );
+            .Owner.ContentVersion.Should()
+            .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
     }
 
     [Test]
     public async Task It_should_allocate_one_content_version_for_a_multi_row_collection_aligned_extension_update()
     {
         var schoolDocumentId = await SeedSchoolWithExtensionAddressesAsync(schoolId: 110, addressCount: 3);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         var changedRows = await _database.ExecuteNonQueryAsync(
             """
@@ -161,16 +307,16 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
                 1L,
                 "a multi-row collection-aligned _ext update touching one root must allocate exactly one content version"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
-        after.Mirror.ContentVersion.Should().Be(after.Document.ContentVersion);
-        after.Mirror.ContentLastModifiedAt.Should().Be(after.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
     }
 
     [Test]
     public async Task It_should_not_allocate_a_content_version_for_a_no_op_child_update()
     {
         var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 120, addressCount: 3);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
@@ -189,9 +335,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(0L, "a no-op update whose stored values do not change must not allocate a content version");
-        after.Document.ContentVersion.Should().Be(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().Be(before.Document.ContentLastModifiedAt);
-        after.Mirror.ContentVersion.Should().Be(after.Document.ContentVersion);
+        after.DocumentVersion.Should().Be(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().Be(before.Owner.ContentLastModifiedAt);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
     }
 
     [Test]
@@ -199,10 +345,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     {
         var oldRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 130, addressCount: 2);
         var newRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 131, addressCount: 0);
+        await BackdateOwnerTimestampAsync(oldRootDocumentId);
         var beforeOld = await ReadStampPairAsync(oldRootDocumentId);
+        await BackdateOwnerTimestampAsync(newRootDocumentId);
         var beforeNew = await ReadStampPairAsync(newRootDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         // Reparent both child rows from the old root to the new root in one statement.
         var changedRows = await _database.ExecuteNonQueryAsync(
@@ -223,16 +370,15 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(2L, "a locator change must stamp the old and the new owning root exactly once each");
-        afterOld.Document.ContentVersion.Should().BeGreaterThan(beforeOld.Document.ContentVersion);
-        afterNew.Document.ContentVersion.Should().BeGreaterThan(beforeNew.Document.ContentVersion);
-        afterOld.Mirror.ContentVersion.Should().Be(afterOld.Document.ContentVersion);
-        afterNew.Mirror.ContentVersion.Should().Be(afterNew.Document.ContentVersion);
+        afterOld.DocumentVersion.Should().BeGreaterThan(beforeOld.DocumentVersion);
+        afterNew.DocumentVersion.Should().BeGreaterThan(beforeNew.DocumentVersion);
+        afterOld.Owner.ContentLastModifiedAt.Should().BeAfter(beforeOld.Owner.ContentLastModifiedAt);
+        afterNew.Owner.ContentLastModifiedAt.Should().BeAfter(beforeNew.Owner.ContentLastModifiedAt);
+        afterOld.Owner.ContentVersion.Should().Be(afterOld.DocumentVersion);
+        afterNew.Owner.ContentVersion.Should().Be(afterNew.DocumentVersion);
         afterOld
-            .Document.ContentVersion.Should()
-            .NotBe(
-                afterNew.Document.ContentVersion,
-                "each distinct root must receive a distinct content version"
-            );
+            .DocumentVersion.Should()
+            .NotBe(afterNew.DocumentVersion, "each distinct root must receive a distinct content version");
     }
 
     [Test]
@@ -240,8 +386,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     {
         var firstRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 140, addressCount: 2);
         var secondRootDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 141, addressCount: 2);
+        await BackdateOwnerTimestampAsync(firstRootDocumentId);
+        await BackdateOwnerTimestampAsync(secondRootDocumentId);
+        var beforeFirst = await ReadStampPairAsync(firstRootDocumentId);
+        var beforeSecond = await ReadStampPairAsync(secondRootDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         // One statement changes child rows belonging to two different roots.
         var changedRows = await _database.ExecuteNonQueryAsync(
@@ -262,12 +411,14 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(2L, "two distinct affected roots must each receive exactly one content version");
-        afterFirst.Mirror.ContentVersion.Should().Be(afterFirst.Document.ContentVersion);
-        afterSecond.Mirror.ContentVersion.Should().Be(afterSecond.Document.ContentVersion);
+        afterFirst.Owner.ContentLastModifiedAt.Should().BeAfter(beforeFirst.Owner.ContentLastModifiedAt);
+        afterSecond.Owner.ContentLastModifiedAt.Should().BeAfter(beforeSecond.Owner.ContentLastModifiedAt);
+        afterFirst.Owner.ContentVersion.Should().Be(afterFirst.DocumentVersion);
+        afterSecond.Owner.ContentVersion.Should().Be(afterSecond.DocumentVersion);
         afterFirst
-            .Document.ContentVersion.Should()
+            .DocumentVersion.Should()
             .NotBe(
-                afterSecond.Document.ContentVersion,
+                afterSecond.DocumentVersion,
                 "each root must pull a distinct nextval — a per-statement cache would collide"
             );
     }
@@ -276,9 +427,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
     public async Task It_should_allocate_one_content_version_for_a_multi_row_child_delete()
     {
         var schoolDocumentId = await SeedSchoolWithAddressesAsync(schoolId: 150, addressCount: 3);
+        await BackdateOwnerTimestampAsync(schoolDocumentId);
         var before = await ReadStampPairAsync(schoolDocumentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        await DelayForDistinctTimestampsAsync();
 
         var deletedRows = await _database.ExecuteNonQueryAsync(
             """
@@ -298,17 +449,11 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
                 1L,
                 "a multi-row child delete against one surviving root must allocate exactly one content version, not one per deleted row"
             );
-        after.Document.ContentVersion.Should().BeGreaterThan(before.Document.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(before.Document.ContentLastModifiedAt);
+        after.DocumentVersion.Should().BeGreaterThan(before.DocumentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(before.Owner.ContentLastModifiedAt);
         after
-            .Mirror.ContentVersion.Should()
-            .Be(after.Document.ContentVersion, "the root mirror ContentVersion must equal dms.Document");
-        after
-            .Mirror.ContentLastModifiedAt.Should()
-            .Be(
-                after.Document.ContentLastModifiedAt,
-                "the root mirror ContentLastModifiedAt must equal dms.Document"
-            );
+            .Owner.ContentVersion.Should()
+            .Be(after.DocumentVersion, "the root mirror ContentVersion must equal dms.Document");
     }
 
     [Test]
@@ -560,9 +705,9 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
             """
             SELECT
                 doc."ContentVersion" AS "DocumentContentVersion",
-                doc."ContentLastModifiedAt" AS "DocumentContentLastModifiedAt",
-                school."ContentVersion" AS "MirrorContentVersion",
-                school."ContentLastModifiedAt" AS "MirrorContentLastModifiedAt"
+                school."ContentVersion" AS "OwnerContentVersion",
+                school."ContentLastModifiedAt" AS "OwnerContentLastModifiedAt",
+                school."ContentCreatedAt" AS "OwnerContentCreatedAt"
             FROM "dms"."Document" doc
             INNER JOIN "edfi"."School" school ON school."DocumentId" = doc."DocumentId"
             WHERE doc."DocumentId" = @documentId;
@@ -570,26 +715,52 @@ public class Given_A_Provisioned_Postgresql_Database_With_NonRoot_Statement_Leve
             new NpgsqlParameter("documentId", documentId)
         );
         var row = rows.Single();
+        var requiredVersion = await _database.ExecuteScalarAsync<long>(
+            """SELECT "RequiredContentVersion" FROM "dms"."DocumentProjectionWork" WHERE "DocumentId" = @documentId;""",
+            new NpgsqlParameter("documentId", documentId)
+        );
+        requiredVersion.Should().Be(Convert.ToInt64(row["DocumentContentVersion"]));
         return new StampPair(
+            Convert.ToInt64(row["DocumentContentVersion"]),
             new StampValues(
-                Convert.ToInt64(row["DocumentContentVersion"]),
-                Convert.ToDateTime(row["DocumentContentLastModifiedAt"])
-            ),
-            new StampValues(
-                Convert.ToInt64(row["MirrorContentVersion"]),
-                Convert.ToDateTime(row["MirrorContentLastModifiedAt"])
+                Convert.ToInt64(row["OwnerContentVersion"]),
+                Convert.ToDateTime(row["OwnerContentLastModifiedAt"]),
+                Convert.ToDateTime(row["OwnerContentCreatedAt"])
             )
         );
     }
 
-    private async Task DelayForDistinctTimestampsAsync()
+    private async Task SetOwnerCreatedAtSentinelAsync(long documentId)
     {
-        // Server-side delay so a post-write ContentLastModifiedAt is strictly greater than the seed
-        // stamp, letting assertions use BeAfter instead of the weaker BeOnOrAfter.
-        await _database.ExecuteNonQueryAsync("SELECT pg_sleep(0.02);");
+        // Stamp-only maintenance is excluded from representation stamping.
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "ContentCreatedAt" = @createdAt
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("createdAt", CreatedAtSentinel),
+            new NpgsqlParameter("documentId", documentId)
+        );
     }
 
-    private sealed record StampPair(StampValues Document, StampValues Mirror);
+    private async Task BackdateOwnerTimestampAsync(long documentId)
+    {
+        await _database.ExecuteNonQueryAsync(
+            """
+            UPDATE "edfi"."School"
+            SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z'
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", documentId)
+        );
+    }
 
-    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+    private sealed record StampPair(long DocumentVersion, StampValues Owner);
+
+    private sealed record StampValues(
+        long ContentVersion,
+        DateTime ContentLastModifiedAt,
+        DateTime ContentCreatedAt
+    );
 }

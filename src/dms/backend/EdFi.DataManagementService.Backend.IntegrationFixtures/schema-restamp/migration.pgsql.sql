@@ -1,0 +1,1 @@
+ALTER TABLE "testproject"."Widget" ADD COLUMN IF NOT EXISTS "WidgetNote" varchar(120) NULL;

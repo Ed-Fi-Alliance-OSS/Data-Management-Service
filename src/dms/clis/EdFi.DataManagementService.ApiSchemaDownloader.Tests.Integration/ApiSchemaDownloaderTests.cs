@@ -7,6 +7,7 @@ using EdFi.DataManagementService.ApiSchemaDownloader.Services;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
+using NuGet.Protocol;
 
 namespace EdFi.DataManagementService.ApiSchemaDownloader.Tests.Unit;
 
@@ -73,6 +74,22 @@ public class ApiSchemaDownloaderTests
                 .WithParameterName("packageId")
                 .WithMessage("*packageId is invalid*");
             Directory.GetFiles(_tempDirectory, "*.nupkg", SearchOption.AllDirectories).Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_enables_the_nuget_credential_service_before_contacting_the_feed()
+        {
+            Assert.ThrowsAsync<Exception>(async () =>
+                await _downloader.DownloadNuGetPackageAsync(
+                    "NonExistentPackage",
+                    "1.0.0",
+                    "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json",
+                    _tempDirectory
+                )
+            );
+
+            HttpHandlerResourceV3.CredentialService.Should().NotBeNull();
+            HttpHandlerResourceV3.CredentialService!.Value.Should().NotBeNull();
         }
     }
 

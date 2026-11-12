@@ -71,8 +71,16 @@ public class OpenIdConfigurationModule : IEndpointModule
             request_uri_parameter_supported = enhancedConfig.RequestUriParameterSupported,
             require_request_uri_registration = enhancedConfig.RequireRequestUriRegistration,
             claims_parameter_supported = enhancedConfig.ClaimsParameterSupported,
-            introspection_endpoint_auth_methods_supported = new[] { "client_secret_basic" },
-            revocation_endpoint_auth_methods_supported = new[] { "client_secret_basic" },
+            introspection_endpoint_auth_methods_supported = new[]
+            {
+                "client_secret_basic",
+                "client_secret_post",
+            },
+            revocation_endpoint_auth_methods_supported = new[]
+            {
+                "client_secret_basic",
+                "client_secret_post",
+            },
         };
 
         httpContext.Response.Headers.CacheControl = "no-store";

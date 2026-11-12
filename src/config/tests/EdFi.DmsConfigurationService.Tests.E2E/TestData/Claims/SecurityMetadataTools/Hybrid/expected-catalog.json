@@ -1,0 +1,18 @@
+[
+  "ABConnect",
+  "AssessmentRead",
+  "AssessmentVendor",
+  "BootstrapDescriptorsandEdOrgs",
+  "DistrictHostedSISVendor",
+  "EdFiAPIPublisherReader",
+  "EdFiAPIPublisherWriter",
+  "EdFiODSAdminApp",
+  "EdFiSandbox",
+  "EducationPreparationProgram",
+  "FinanceVendor",
+  "HybridEmpty",
+  "HybridPolicy",
+  "RosterVendor",
+  "SISVendor",
+  "SeedLoader"
+]

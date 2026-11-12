@@ -65,8 +65,15 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         success.Candidate.ResourceVersion.Should().Be("5.2.0");
         success.Candidate.ContentVersion.Should().Be(ContentVersion);
         success.Candidate.LastModifiedAt.Should().Be(LastModifiedAt);
+        success.Candidate.ContentCreatedAt.Should().Be(source.ContentCreatedAt);
+        success.Candidate.ContentCreatedAt.Should().NotBe(success.Candidate.LastModifiedAt);
         success.Candidate.StreamEtag.Should().Be("stream-etag");
         success.Candidate.DocumentJson.Should().BeSameAs(expectedDocumentJson);
+        // Creation time is cache-row metadata only; nothing adds it to the reconstituted body.
+        success
+            .Candidate.DocumentJson.Select(property => property.Key)
+            .Should()
+            .Equal("id", "_lastModifiedDate", "nameOfInstitution");
 
         sourceReader.CapturedRequest.Should().NotBeNull();
         sourceReader.CapturedRequest!.SelectedRequiredContentVersion.Should().Be(1);
@@ -135,6 +142,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             [
                 new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
                 new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
+                new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
+                new InMemoryRelationalCommandExecution([CreateSourceMetadataResultSet(source)]),
             ],
             hydratedPages: [CreateHydratedPage(testContext.ReadPlan, source)],
             bindRequest: currentRequest =>
@@ -171,7 +180,7 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
         result.Should().BeOfType<DocumentCacheMaterializationResult.Success>();
         dataStore.BindRequests.Should().ContainSingle().Which.Should().BeSameAs(request);
         targetConnectionStrings.Should().ContainSingle().Which.Should().Be("Host=replacement");
-        dataStore.CommandRequests.Should().HaveCount(2);
+        dataStore.CommandRequests.Should().HaveCount(4);
         dataStore
             .CommandRequests.Should()
             .AllSatisfy(capturedRequest =>
@@ -303,7 +312,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                     source.DocumentUuid,
                     source.ResourceKeyId,
                     source.ContentVersion + 1,
-                    source.ContentLastModifiedAt
+                    source.ContentLastModifiedAt,
+                    source.ContentCreatedAt
                 )
             )
         );
@@ -402,6 +412,7 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             testContext.ConcreteResourceModel,
             ContentVersion,
             LastModifiedAt,
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             testContext.ReadPlan
         );
 
@@ -432,7 +443,7 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
             DescriptorRowsInPlanOrder:
             [
                 new HydratedDescriptorRows([
-                    new DescriptorUriRow(601L, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"),
+                    new DescriptorUriRow(601, "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade"),
                 ]),
             ]
         )
@@ -453,6 +464,7 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                 ["ResourceKeyId"] = source.ResourceKeyId,
                 ["ContentVersion"] = source.ContentVersion,
                 ["ContentLastModifiedAt"] = source.ContentLastModifiedAt,
+                ["ContentCreatedAt"] = source.ContentCreatedAt,
             }
         );
 
@@ -611,7 +623,8 @@ public class Given_DocumentCacheMaterializer_With_Ordinary_ResourceHydration
                             found.Metadata.DocumentUuid,
                             found.Metadata.ResourceKeyId,
                             found.Metadata.ContentVersion,
-                            found.Metadata.ContentLastModifiedAt
+                            found.Metadata.ContentLastModifiedAt,
+                            found.Metadata.ContentCreatedAt
                         )
                     ),
                 _ => throw new InvalidOperationException(

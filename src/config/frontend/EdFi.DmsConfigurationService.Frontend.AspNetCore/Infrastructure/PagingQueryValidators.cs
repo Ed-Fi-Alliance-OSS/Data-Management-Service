@@ -54,7 +54,7 @@ public abstract class PagingQueryValidator<T> : AbstractValidator<T>
 /// validator</c>), so C# overload resolution selects this overload automatically for all such call
 /// sites — no per-endpoint changes are needed. Throws <see cref="ParameterValidationException"/> instead
 /// of the generic <see cref="ValidationException"/>, so <c>GlobalExceptionHandler</c> can classify
-/// query/pagination failures as urn:ed-fi:api:bad-request:parameter without message parsing.
+/// query/pagination failures as urn:ed-fi:management-api:bad-request:parameter without message parsing.
 /// </summary>
 public static class PagingQueryValidatorExtensions
 {

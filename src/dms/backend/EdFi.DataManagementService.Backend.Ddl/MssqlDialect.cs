@@ -60,8 +60,10 @@ public sealed class MssqlDialect : SqlDialectBase
     /// <inheritdoc />
     /// <remarks>
     /// One batch on one session covers the whole script: <c>ddl provision</c> runs every GO-split batch
-    /// on a single connection, and sqlcmd does the same, so these settings govern the filtered
+    /// on a single connection, and sqlcmd does the same, so these settings govern the computed and filtered
     /// <c>CREATE INDEX</c> and are captured into every <c>CREATE OR ALTER TRIGGER</c> that follows.
+    /// At supported database compatibility levels (90 and above), <c>ANSI_WARNINGS ON</c> makes
+    /// <c>ARITHABORT</c> effectively ON, including on ordinary SqlClient runtime connections.
     /// </remarks>
     public override string RenderScriptPrologue() =>
         """
@@ -237,6 +239,17 @@ public sealed class MssqlDialect : SqlDialectBase
             """;
     }
 
+    /// <summary>
+    /// SQL Server has no <c>RESTRICT</c> keyword. Its <c>NO ACTION</c> is already an immediate
+    /// single-probe check compiled into the parent's DELETE/UPDATE plan (there is no deferred
+    /// end-of-statement re-check as on PostgreSQL), so the logical
+    /// <see cref="ReferentialAction.Restrict"/> renders as <c>NO ACTION</c>.
+    /// </summary>
+    public override string RenderReferentialAction(ReferentialAction action)
+    {
+        return action == ReferentialAction.Restrict ? "NO ACTION" : base.RenderReferentialAction(action);
+    }
+
     /// <inheritdoc />
     public override string AddUniqueConstraint(
         DbTableName table,
@@ -301,59 +314,6 @@ public sealed class MssqlDialect : SqlDialectBase
 
         // SQL Server does not have a database extension concept.
         return string.Empty;
-    }
-
-    /// <inheritdoc />
-    public override string CreateUuidv5Function(DbSchemaName schema)
-    {
-        var qualifiedName = $"{QuoteIdentifier(schema.Value)}.{QuoteIdentifier("uuidv5")}";
-
-        return $"""
-            CREATE OR ALTER FUNCTION {qualifiedName}(@namespace_uuid uniqueidentifier, @name_text nvarchar(max))
-            RETURNS uniqueidentifier
-            WITH SCHEMABINDING
-            AS
-            BEGIN
-                DECLARE @ns_bytes varbinary(16) = CAST(@namespace_uuid AS varbinary(16));
-
-                -- Convert SQL Server mixed-endian to RFC 4122 big-endian for hashing
-                DECLARE @ns_be varbinary(16) =
-                    SUBSTRING(@ns_bytes, 4, 1) + SUBSTRING(@ns_bytes, 3, 1)
-                    + SUBSTRING(@ns_bytes, 2, 1) + SUBSTRING(@ns_bytes, 1, 1)
-                    + SUBSTRING(@ns_bytes, 6, 1) + SUBSTRING(@ns_bytes, 5, 1)
-                    + SUBSTRING(@ns_bytes, 8, 1) + SUBSTRING(@ns_bytes, 7, 1)
-                    + SUBSTRING(@ns_bytes, 9, 8);
-
-                -- Apply UTF-8 collation to the nvarchar source before casting to varchar so the
-                -- conversion uses code page 65001 directly, matching Core (Encoding.UTF8) and
-                -- PostgreSQL (convert_to ... 'UTF8') for non-ASCII characters.
-                DECLARE @name_bytes varbinary(max) = CAST(CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max)) AS varbinary(max));
-
-                DECLARE @hash varbinary(20) = HASHBYTES('SHA1', @ns_be + @name_bytes);
-
-                -- Take first 16 bytes and set version/variant bits
-                DECLARE @result varbinary(16) = SUBSTRING(@hash, 1, 16);
-
-                DECLARE @byte6 int = CAST(SUBSTRING(@result, 7, 1) AS int);
-                SET @result = SUBSTRING(@result, 1, 6)
-                    + CAST((@byte6 & 0x0F) | 0x50 AS binary(1))
-                    + SUBSTRING(@result, 8, 9);
-
-                DECLARE @byte8 int = CAST(SUBSTRING(@result, 9, 1) AS int);
-                SET @result = SUBSTRING(@result, 1, 8)
-                    + CAST((@byte8 & 0x3F) | 0x80 AS binary(1))
-                    + SUBSTRING(@result, 10, 7);
-
-                -- Convert big-endian result back to SQL Server mixed-endian
-                RETURN CAST(
-                    SUBSTRING(@result, 4, 1) + SUBSTRING(@result, 3, 1)
-                    + SUBSTRING(@result, 2, 1) + SUBSTRING(@result, 1, 1)
-                    + SUBSTRING(@result, 6, 1) + SUBSTRING(@result, 5, 1)
-                    + SUBSTRING(@result, 8, 1) + SUBSTRING(@result, 7, 1)
-                    + SUBSTRING(@result, 9, 8)
-                    AS uniqueidentifier);
-            END;
-            """;
     }
 
     /// <inheritdoc />
@@ -469,6 +429,9 @@ public sealed class MssqlDialect : SqlDialectBase
 
     /// <inheritdoc />
     public override string JsonColumnType => "nvarchar(max)";
+
+    /// <inheritdoc />
+    public override string IdentityIntColumnType => "int IDENTITY(1,1)";
 
     /// <inheritdoc />
     public override string IdentityBigintColumnType => "bigint IDENTITY(1,1)";

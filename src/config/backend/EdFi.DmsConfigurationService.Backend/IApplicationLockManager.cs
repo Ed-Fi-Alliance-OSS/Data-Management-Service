@@ -9,7 +9,8 @@ namespace EdFi.DmsConfigurationService.Backend;
 
 /// <summary>
 /// Serializes every workflow that mutates an existing identity-provider client belonging to an
-/// Application aggregate. The lock is database-backed, so it coordinates all CMS instances that
+/// Application aggregate, and API client creation, which provisions a client from the
+/// Application's current state. The lock is database-backed, so it coordinates all CMS instances that
 /// share one CMS database; deployments pointing multiple CMS databases at a single identity
 /// provider fall outside this guarantee. Acquisition must precede every read the workflow relies
 /// on; the returned handle is the sole release point and must be disposed on every path.

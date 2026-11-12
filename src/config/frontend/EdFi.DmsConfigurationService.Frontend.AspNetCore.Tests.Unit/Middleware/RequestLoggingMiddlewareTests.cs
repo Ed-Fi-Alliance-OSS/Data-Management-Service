@@ -11,6 +11,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
 using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using FluentAssertions;
 using Microsoft.AspNetCore.Diagnostics;
@@ -117,7 +118,7 @@ internal class Given_RequestLoggingMiddleware
             .State.GetStructuredProperty("{OriginalFormat}")
             .Should()
             .Be(
-                "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
+                "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
             );
         entry.State.ContainStructuredProperty("StatusCode", 204);
         entry
@@ -177,7 +178,7 @@ internal class Given_RequestLoggingMiddleware
             .State.GetStructuredProperty("{OriginalFormat}")
             .Should()
             .Be(
-                "{EventName}: CMS request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
+                "{EventName}: Configuration Service request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}"
             );
         entry.State.ContainStructuredProperty("StatusCode", 500);
         entry.State.ContainKey("DurationMs");
@@ -351,6 +352,122 @@ internal class Given_RequestLoggingMiddleware
         entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError);
     }
 
+    // ----- Routes marked ExceptionTypeOnlyLoggingMetadata (DMS-1327 D-15, D-17) -----
+
+    private const string Sentinel = "SECRET-LOGGING-SENTINEL";
+
+    private const string TypeOnlyFailedTemplate =
+        "{EventName}: Configuration Service request failed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId} ({ExceptionTypes})";
+
+    private static readonly string _sentinelTypeChain =
+        $"{typeof(InvalidOperationException).FullName} -> {typeof(TimeoutException).FullName}";
+
+    private static Endpoint TypeOnlyEndpoint() =>
+        new(
+            _ => Task.CompletedTask,
+            new EndpointMetadataCollection(ExceptionTypeOnlyLoggingMetadata.Instance),
+            "type-only route"
+        );
+
+    private static InvalidOperationException SentinelException()
+    {
+        InvalidOperationException exception = new(
+            $"outer {Sentinel}",
+            new TimeoutException($"inner {Sentinel}")
+        );
+        exception.Data["connection"] = Sentinel;
+        return exception;
+    }
+
+    private static string RenderedState(TestLogger<RequestLoggingMiddleware>.LogEntry entry) =>
+        string.Join(
+            '\n',
+            ((IEnumerable<KeyValuePair<string, object?>>)entry.State!).Select(pair =>
+                $"{pair.Key}={pair.Value}"
+            )
+        );
+
+    [Test]
+    public async Task It_logs_a_handled_500_on_a_type_only_route_by_exception_type_names_alone()
+    {
+        var httpContext = new DefaultHttpContext();
+        httpContext.Request.Method = "POST";
+        httpContext.Request.Path = "/connect/revoke";
+        var logger = new TestLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(context =>
+        {
+            context.Features.Set<IExceptionHandlerFeature>(
+                new ExceptionHandlerFeature { Error = SentinelException(), Endpoint = TypeOnlyEndpoint() }
+            );
+            context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+            return Task.CompletedTask;
+        });
+
+        await middleware.Invoke(httpContext, logger);
+
+        var entry = logger.Entries.Should().ContainSingle(e => e.EventId.Name == "HttpRequestFailed").Subject;
+        entry.Level.Should().Be(LogLevel.Error);
+        entry.Exception.Should().BeNull();
+        entry.State.GetStructuredProperty("{OriginalFormat}").Should().Be(TypeOnlyFailedTemplate);
+        entry.State.ContainStructuredProperty("ExceptionTypes", _sentinelTypeChain);
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError);
+        entry.State.ContainStructuredProperty("TraceId", httpContext.TraceIdentifier);
+        entry
+            .ActiveScopes.Should()
+            .ContainSingle()
+            .Which.ContainStructuredProperty("Path", "/connect/revoke");
+        RenderedState(entry).Should().NotContain(Sentinel);
+    }
+
+    [Test]
+    public void It_replaces_an_exception_escaping_a_type_only_route_and_logs_its_type_names_alone()
+    {
+        var exception = SentinelException();
+        var httpContext = new DefaultHttpContext();
+        httpContext.SetEndpoint(TypeOnlyEndpoint());
+        var logger = new TestLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(_ => throw exception);
+
+        Action act = () => middleware.Invoke(httpContext, logger).GetAwaiter().GetResult();
+
+        var thrown = act.Should().Throw<InvalidOperationException>().Which;
+        thrown.Should().NotBeSameAs(exception);
+        thrown.InnerException.Should().BeNull();
+        thrown.Data.Count.Should().Be(0);
+        thrown.Message.Should().Contain(_sentinelTypeChain).And.NotContain(Sentinel);
+
+        var entry = logger.Entries.Should().ContainSingle(e => e.EventId.Name == "HttpRequestFailed").Subject;
+        entry.Exception.Should().BeNull();
+        entry.State.ContainStructuredProperty("ExceptionTypes", _sentinelTypeChain);
+        entry.State.ContainStructuredProperty("StatusCode", StatusCodes.Status500InternalServerError);
+        RenderedState(entry).Should().NotContain(Sentinel);
+    }
+
+    [Test]
+    public void It_keeps_a_caller_cancellation_on_a_type_only_route_a_cancellation_without_its_content()
+    {
+        using CancellationTokenSource aborted = new();
+        aborted.Cancel();
+        var exception = new OperationCanceledException($"cancelled {Sentinel}", SentinelException());
+        var httpContext = new DefaultHttpContext { RequestAborted = aborted.Token };
+        httpContext.SetEndpoint(TypeOnlyEndpoint());
+        var logger = new TestLogger<RequestLoggingMiddleware>();
+        var middleware = new RequestLoggingMiddleware(_ => throw exception);
+
+        Action act = () => middleware.Invoke(httpContext, logger).GetAwaiter().GetResult();
+
+        var thrown = act.Should().Throw<OperationCanceledException>().Which;
+        thrown.Should().NotBeSameAs(exception);
+        thrown.InnerException.Should().BeNull();
+        thrown.CancellationToken.Should().Be(aborted.Token);
+        thrown.Message.Should().NotContain(Sentinel);
+        logger
+            .Entries.Should()
+            .ContainSingle(e => e.EventId.Name == "HttpRequestFailed")
+            .Which.Exception.Should()
+            .BeNull();
+    }
+
     [Test]
     public async Task It_excludes_request_body_authorization_header_and_raw_query_string_from_log_state()
     {
@@ -454,7 +571,7 @@ internal class Given_RequestLoggingMiddleware
         logger.Log(
             LogLevel.Information,
             RequestLoggingEventIds.HttpRequestCompleted,
-            "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+            "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
             RequestLoggingEventIds.HttpRequestCompleted.Name,
             "GET",
             "/v3/vendors",
@@ -477,7 +594,9 @@ internal class Given_RequestLoggingMiddleware
         (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
         (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
         (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
-        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("CMS request completed");
+        (json?["RenderedMessage"]?.GetValue<string>())
+            .Should()
+            .Contain("Configuration Service request completed");
         // JsonFormatter omits the Exception field when no exception is attached; the
         // docs/LOGGING.md collector contract documents the field as absent, not null.
         (json?.AsObject().ContainsKey("Exception"))
@@ -540,7 +659,7 @@ internal class Given_RequestLoggingMiddleware
             logger.Log(
                 LogLevel.Information,
                 RequestLoggingEventIds.HttpRequestCompleted,
-                "{EventName}: CMS request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
+                "{EventName}: Configuration Service request completed: {Method} {Path} responded {StatusCode} in {DurationMs} ms with TraceId {TraceId}",
                 RequestLoggingEventIds.HttpRequestCompleted.Name,
                 "GET",
                 "/v3/vendors",
@@ -575,7 +694,9 @@ internal class Given_RequestLoggingMiddleware
         (properties?["Path"]?.GetValue<string>()).Should().Be("/v3/vendors");
         (properties?["StatusCode"]?.GetValue<int>()).Should().Be(200);
         (properties?["DurationMs"]?.GetValue<long>()).Should().Be(42L);
-        (json?["RenderedMessage"]?.GetValue<string>()).Should().Contain("CMS request completed");
+        (json?["RenderedMessage"]?.GetValue<string>())
+            .Should()
+            .Contain("Configuration Service request completed");
         // JsonFormatter omits the Exception field when no exception is attached; the
         // docs/LOGGING.md collector contract documents the field as absent, not null.
         (json?.AsObject().ContainsKey("Exception"))

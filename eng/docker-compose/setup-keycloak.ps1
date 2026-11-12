@@ -154,10 +154,12 @@ function Check_RealmExists () {
 function Create_Realm() {
     # Define the new realm configuration
     $RealmData = @{
-        id          = $script:Realm
-        realm       = $script:Realm
-        displayName = $script:Realm
-        enabled     = $true
+        id                   = $script:Realm
+        realm                = $script:Realm
+        displayName          = $script:Realm
+        enabled              = $true
+        # Explicit, so the realm does not depend on Keycloak's default for password recovery.
+        resetPasswordAllowed = $false
     }
     # Create the new realm
     try {
@@ -201,7 +203,7 @@ function Get_Client () {
     }
 }
 
-# The role names are configured values (DMS_CONFIG_IDENTITY_SERVICE_ROLE / _CLIENT_ROLE, routed here
+# The role names are configured values (CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE / _CLIENT_ROLE, routed here
 # by the start scripts) and travel as one path segment, so they are percent-encoded: a space, '#',
 # '?' or '/' pasted raw would end the path, start a fragment or query, or add a segment, the lookup
 # would answer 404 for a role that exists, and Create_Role would create it again under the raw name.
@@ -420,6 +422,72 @@ function Add_Custom_Claim([string] $ClientId) {
     Write-Output "Custom claim added to client '$script:NewClientName'."
 }
 
+function Add_Self_Audience([string] $ClientId) {
+    # From Keycloak 26.6.2 token introspection answers active:false unless the introspecting client
+    # is in the token's audience, so the client names itself there, as the Configuration Service does
+    # for the clients it creates.
+    $selfAudienceProtocolMapperPayload = @{
+        name           = "Client's own audience"
+        protocol       = "openid-connect"
+        protocolMapper = "oidc-audience-mapper"
+        config         = @{
+            "included.client.audience"  = $script:NewClientId
+            "id.token.claim"            = "false"
+            "access.token.claim"        = "true"
+            "introspection.token.claim" = "true"
+            "lightweight.claim"         = "false"
+        }
+    } | ConvertTo-Json
+
+    Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/clients/$ClientId/protocol-mappers/models" `
+        -Method Post `
+        -Headers @{ "Authorization" = "Bearer $access_token" } `
+        -Body $selfAudienceProtocolMapperPayload `
+        -ContentType "application/json"
+
+    Write-Output "Own audience added to client '$script:NewClientName'."
+}
+
+function Test_GivesOwnAudience([object] $Mapper) {
+    # The criteria the Configuration Service applies to the clients it manages: an OpenID Connect
+    # audience mapper adding this client -- its included client audience, or its included custom
+    # audience when it has none -- to access tokens satisfies it, whatever that mapper is called.
+    if ($Mapper.protocol -cne "openid-connect" -or $Mapper.protocolMapper -cne "oidc-audience-mapper" -or $null -eq $Mapper.config) {
+        return $false
+    }
+
+    $audience = $Mapper.config.'included.client.audience'
+    if ($null -eq $audience) {
+        $audience = $Mapper.config.'included.custom.audience'
+    }
+
+    return ($audience -ceq $script:NewClientId) -and ($Mapper.config.'access.token.claim' -ceq "true")
+}
+
+function Repair_Self_Audience([string] $ClientId) {
+    # An existing client may predate its own-audience mapper. The mapper is added only when no mapper
+    # already gives the client its own audience, and every other mapper is left as it is. Only tokens
+    # issued after the mapper is added carry the audience; tokens issued before keep theirs.
+    $protocolMappers = Invoke-RestMethod -Uri "$script:KeycloakServer/admin/realms/$script:Realm/clients/$ClientId/protocol-mappers/models" `
+        -Method Get `
+        -Headers @{ "Authorization" = "Bearer $access_token" }
+
+    if ($protocolMappers | Where-Object { Test_GivesOwnAudience $_ }) {
+        Write-Output "Client '$script:NewClientId' already puts itself into its access tokens' audience."
+        return
+    }
+
+    # Keycloak allows one mapper per name and protocol, and overwriting a mapper changed by an operator
+    # could remove an audience something else relies on, so a conflicting mapper is kept as it is.
+    if ($protocolMappers | Where-Object { $_.protocol -ceq "openid-connect" -and $_.name -ceq "Client's own audience" }) {
+        Write-Warning "Client '$script:NewClientId' was NOT repaired: its OpenID Connect protocol mapper named 'Client's own audience' does not put the client into its access tokens' audience and was left unchanged. On Keycloak 26.6.2 or later, introspecting the client's own tokens reports them inactive until an operator corrects or removes that mapper and reruns this script."
+        return
+    }
+
+    Add_Self_Audience $ClientId
+    Write-Output "Tokens issued to client '$script:NewClientId' before this keep their audience; request a new token."
+}
+
 function Create_Client() {
     # Define the new client configuration
     $ClientData = @{
@@ -472,7 +540,9 @@ else {
 # Check and create client
 $client = Get_Client
 if ($client) {
-    Write-Warning "Client '$script:NewClientId' already exists. Please provide new client id."
+    Write-Output "Client '$script:NewClientId' already exists; checking its own audience."
+    # Its credentials, roles and scopes are left as they are; only its own audience is repaired.
+    Repair_Self_Audience $client[0].id
 }
 else {
     Test_ClientSecretLength -ClientSecret $script:NewClientSecret
@@ -498,4 +568,5 @@ else {
     $clientScope = Get_ClientScope $script:ClientScopeName
     Add_Scope $clientScope.id
     Add_Custom_Claim $clientId
+    Add_Self_Audience $clientId
 }

@@ -1,0 +1,250 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "Alpha",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "Beta",
+      "isSystemReserved": false
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "first",
+      "claimSets": [
+        {
+          "name": "Alpha",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Z"
+                },
+                {
+                  "name": "A"
+                }
+              ]
+            },
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "C"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Z"
+                },
+                {
+                  "name": "A"
+                }
+              ]
+            },
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "C"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "reordered",
+      "claimSets": [
+        {
+          "name": "Alpha",
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "C"
+                }
+              ]
+            },
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "A"
+                },
+                {
+                  "name": "Z"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta",
+          "actions": [
+            {
+              "name": "Create",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "C"
+                }
+              ]
+            },
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "A"
+                },
+                {
+                  "name": "Z"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "different-strategy",
+      "claimSets": [
+        {
+          "name": "Alpha",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Other"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Other"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "action-case",
+      "claimSets": [
+        {
+          "name": "Alpha",
+          "actions": [
+            {
+              "name": "read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Other"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta",
+          "actions": [
+            {
+              "name": "read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Other"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "strategy-case",
+      "claimSets": [
+        {
+          "name": "Alpha",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "other"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "other"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "multiplicity",
+      "claimSets": [
+        {
+          "name": "Alpha",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Other"
+                },
+                {
+                  "name": "Other"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "Beta",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "Other"
+                },
+                {
+                  "name": "Other"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

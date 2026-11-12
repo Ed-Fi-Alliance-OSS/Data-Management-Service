@@ -71,7 +71,11 @@ internal static class DerivativeTrackedChangeScenario
     /// Creates and then deletes documents, which is what puts rows on the tracked-delete surface. Each
     /// database gets a different count, so the two are distinguishable from the response alone.
     /// </summary>
-    private static async Task SeedTrackedDeletesAsync(ApiIntegrationHarness harness, int count, string prefix)
+    internal static async Task SeedTrackedDeletesAsync(
+        ApiIntegrationHarness harness,
+        int count,
+        string prefix
+    )
     {
         for (int index = 0; index < count; index++)
         {
@@ -101,7 +105,7 @@ internal static class DerivativeTrackedChangeScenario
     /// key-change surface. The new unique id carries the database's prefix and the word "renamed", so
     /// the response body names both the database and the fact that this was a key change.
     /// </summary>
-    private static async Task SeedTrackedKeyChangesAsync(
+    internal static async Task SeedTrackedKeyChangesAsync(
         ApiIntegrationHarness harness,
         int count,
         string prefix

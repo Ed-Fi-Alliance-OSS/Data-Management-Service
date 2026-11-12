@@ -267,7 +267,7 @@ public class JobModuleTests
         [Test]
         public void It_returns_the_cms_not_found_problem_details()
         {
-            Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
             Body["title"]!.GetValue<string>().Should().Be("Not Found");
             Body["status"]!.GetValue<int>().Should().Be(404);
             Body["detail"]!.GetValue<string>().Should().Be("Job not found.");
@@ -299,7 +299,7 @@ public class JobModuleTests
 
         [Test]
         public void It_returns_the_unknown_failure_contract() =>
-            Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
 
         [Test]
         public void It_keeps_the_diagnostic_out_of_the_response()

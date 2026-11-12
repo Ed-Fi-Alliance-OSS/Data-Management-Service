@@ -143,51 +143,6 @@ BEGIN
     RETURN @Result;
 END;
 GO
-CREATE OR ALTER FUNCTION [dms].[uuidv5](@namespace_uuid uniqueidentifier, @name_text nvarchar(max))
-RETURNS uniqueidentifier
-WITH SCHEMABINDING
-AS
-BEGIN
-    DECLARE @ns_bytes varbinary(16) = CAST(@namespace_uuid AS varbinary(16));
-
-    -- Convert SQL Server mixed-endian to RFC 4122 big-endian for hashing
-    DECLARE @ns_be varbinary(16) =
-        SUBSTRING(@ns_bytes, 4, 1) + SUBSTRING(@ns_bytes, 3, 1)
-        + SUBSTRING(@ns_bytes, 2, 1) + SUBSTRING(@ns_bytes, 1, 1)
-        + SUBSTRING(@ns_bytes, 6, 1) + SUBSTRING(@ns_bytes, 5, 1)
-        + SUBSTRING(@ns_bytes, 8, 1) + SUBSTRING(@ns_bytes, 7, 1)
-        + SUBSTRING(@ns_bytes, 9, 8);
-
-    -- Apply UTF-8 collation to the nvarchar source before casting to varchar so the
-    -- conversion uses code page 65001 directly, matching Core (Encoding.UTF8) and
-    -- PostgreSQL (convert_to ... 'UTF8') for non-ASCII characters.
-    DECLARE @name_bytes varbinary(max) = CAST(CAST(@name_text COLLATE Latin1_General_100_CI_AS_SC_UTF8 AS varchar(max)) AS varbinary(max));
-
-    DECLARE @hash varbinary(20) = HASHBYTES('SHA1', @ns_be + @name_bytes);
-
-    -- Take first 16 bytes and set version/variant bits
-    DECLARE @result varbinary(16) = SUBSTRING(@hash, 1, 16);
-
-    DECLARE @byte6 int = CAST(SUBSTRING(@result, 7, 1) AS int);
-    SET @result = SUBSTRING(@result, 1, 6)
-        + CAST((@byte6 & 0x0F) | 0x50 AS binary(1))
-        + SUBSTRING(@result, 8, 9);
-
-    DECLARE @byte8 int = CAST(SUBSTRING(@result, 9, 1) AS int);
-    SET @result = SUBSTRING(@result, 1, 8)
-        + CAST((@byte8 & 0x3F) | 0x80 AS binary(1))
-        + SUBSTRING(@result, 10, 7);
-
-    -- Convert big-endian result back to SQL Server mixed-endian
-    RETURN CAST(
-        SUBSTRING(@result, 4, 1) + SUBSTRING(@result, 3, 1)
-        + SUBSTRING(@result, 2, 1) + SUBSTRING(@result, 1, 1)
-        + SUBSTRING(@result, 6, 1) + SUBSTRING(@result, 5, 1)
-        + SUBSTRING(@result, 8, 1) + SUBSTRING(@result, 7, 1)
-        + SUBSTRING(@result, 9, 8)
-        AS uniqueidentifier);
-END;
-GO
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.types t
@@ -233,27 +188,29 @@ ADD CONSTRAINT [CK_DataStoreIdentity_Singleton] CHECK ([DataStoreIdentitySinglet
 IF OBJECT_ID(N'dms.Descriptor', N'U') IS NULL
 CREATE TABLE [dms].[Descriptor]
 (
+    [DescriptorId] int IDENTITY(1,1) NOT NULL,
     [DocumentId] bigint NOT NULL,
     [ResourceKeyId] smallint NOT NULL,
-    [Namespace] nvarchar(255) NOT NULL,
-    [CodeValue] nvarchar(50) NOT NULL,
+    [Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
     [ShortDescription] nvarchar(75) NOT NULL,
     [Description] nvarchar(1024) NULL,
     [EffectiveBeginDate] date NULL,
     [EffectiveEndDate] date NULL,
-    [Discriminator] nvarchar(128) NOT NULL,
-    [Uri] nvarchar(306) NOT NULL,
+    [Uri] AS ([Namespace] + N'#' + [CodeValue]),
+    [UriLowered] AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Descriptor_ContentVersion] DEFAULT 0,
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DocumentId])
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Descriptor_ContentCreatedAt] DEFAULT (sysutcdatetime()),
+    CONSTRAINT [PK_Descriptor] PRIMARY KEY CLUSTERED ([DescriptorId])
 );
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.key_constraints
-    WHERE name = N'UX_Descriptor_Uri_Discriminator' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+    WHERE name = N'UX_Descriptor_DocumentId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [UX_Descriptor_Uri_Discriminator] UNIQUE ([Uri], [Discriminator]);
+ADD CONSTRAINT [UX_Descriptor_DocumentId] UNIQUE ([DocumentId]);
 
 IF OBJECT_ID(N'dms.Document', N'U') IS NULL
 CREATE TABLE [dms].[Document]
@@ -263,8 +220,6 @@ CREATE TABLE [dms].[Document]
     [ResourceKeyId] smallint NOT NULL,
     [CreatedByOwnershipTokenId] smallint NULL,
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_Document_ContentVersion] DEFAULT (NEXT VALUE FOR [dms].[ChangeVersionSequence]),
-    [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
-    [CreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_Document_CreatedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_Document] PRIMARY KEY CLUSTERED ([DocumentId])
 );
 
@@ -274,6 +229,13 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[Document]
 ADD CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.key_constraints
+    WHERE name = N'UX_Document_DocumentId_ResourceKeyId' AND type = 'UQ' AND parent_object_id = OBJECT_ID(N'dms.Document')
+)
+ALTER TABLE [dms].[Document]
+ADD CONSTRAINT [UX_Document_DocumentId_ResourceKeyId] UNIQUE ([DocumentId], [ResourceKeyId]);
 
 IF OBJECT_ID(N'dms.DocumentCache', N'U') IS NULL
 CREATE TABLE [dms].[DocumentCache]
@@ -286,6 +248,7 @@ CREATE TABLE [dms].[DocumentCache]
     [ContentVersion] bigint NOT NULL,
     [StreamEtag] varchar(64) NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL,
     [DocumentJson] nvarchar(max) NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId])
@@ -363,16 +326,6 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[EffectiveSchema]
 ADD CONSTRAINT [UX_EffectiveSchema_EffectiveSchemaHash] UNIQUE ([EffectiveSchemaHash]);
-
-IF OBJECT_ID(N'dms.ReferentialIdentity', N'U') IS NULL
-CREATE TABLE [dms].[ReferentialIdentity]
-(
-    [ReferentialId] uniqueidentifier NOT NULL,
-    [DocumentId] bigint NOT NULL,
-    [ResourceKeyId] smallint NOT NULL,
-    CONSTRAINT [PK_ReferentialIdentity] PRIMARY KEY NONCLUSTERED ([ReferentialId]),
-    CONSTRAINT [UX_ReferentialIdentity_DocumentId_ResourceKeyId] UNIQUE CLUSTERED ([DocumentId], [ResourceKeyId])
-);
 
 IF OBJECT_ID(N'dms.RepresentationRestampOperation', N'U') IS NULL
 CREATE TABLE [dms].[RepresentationRestampOperation]
@@ -463,23 +416,12 @@ CREATE TABLE [dms].[SchemaComponent]
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_Document' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
+    WHERE name = N'FK_Descriptor_DocumentResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
 )
 ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_Descriptor_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.Descriptor')
-)
-ALTER TABLE [dms].[Descriptor]
-ADD CONSTRAINT [FK_Descriptor_ResourceKey]
-FOREIGN KEY ([ResourceKeyId])
-REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
+ADD CONSTRAINT [FK_Descriptor_DocumentResourceKey]
+FOREIGN KEY ([DocumentId], [ResourceKeyId])
+REFERENCES [dms].[Document] ([DocumentId], [ResourceKeyId])
 ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
@@ -518,28 +460,6 @@ ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReferentialIdentity_Document' AND parent_object_id = OBJECT_ID(N'dms.ReferentialIdentity')
-)
-ALTER TABLE [dms].[ReferentialIdentity]
-ADD CONSTRAINT [FK_ReferentialIdentity_Document]
-FOREIGN KEY ([DocumentId])
-REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
-    WHERE name = N'FK_ReferentialIdentity_ResourceKey' AND parent_object_id = OBJECT_ID(N'dms.ReferentialIdentity')
-)
-ALTER TABLE [dms].[ReferentialIdentity]
-ADD CONSTRAINT [FK_ReferentialIdentity_ResourceKey]
-FOREIGN KEY ([ResourceKeyId])
-REFERENCES [dms].[ResourceKey] ([ResourceKeyId])
-ON DELETE NO ACTION
-ON UPDATE NO ACTION;
-
-IF NOT EXISTS (
-    SELECT 1 FROM sys.foreign_keys
     WHERE name = N'FK_SchemaComponent_EffectiveSchemaHash' AND parent_object_id = OBJECT_ID(N'dms.SchemaComponent')
 )
 ALTER TABLE [dms].[SchemaComponent]
@@ -560,6 +480,14 @@ IF NOT EXISTS (
     WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'IX_Descriptor_ResourceKeyId_DocumentId'
 )
 CREATE INDEX [IX_Descriptor_ResourceKeyId_DocumentId] ON [dms].[Descriptor] ([ResourceKeyId], [DocumentId]);
+
+IF NOT EXISTS (
+    SELECT 1 FROM sys.indexes i
+    JOIN sys.tables t ON i.object_id = t.object_id
+    JOIN sys.schemas s ON t.schema_id = s.schema_id
+    WHERE s.name = N'dms' AND t.name = N'Descriptor' AND i.name = N'UX_Descriptor_UriLowered_ResourceKeyId'
+)
+CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId] ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
 
 IF NOT EXISTS (
     SELECT 1 FROM sys.indexes i
@@ -588,52 +516,65 @@ AFTER INSERT, UPDATE, DELETE
 AS
 BEGIN
     SET NOCOUNT ON;
-    IF EXISTS (
-        SELECT 1
-        FROM inserted i
-        INNER JOIN [dms].[Document] d ON d.[DocumentId] = i.[DocumentId]
-        WHERE i.[ResourceKeyId] <> d.[ResourceKeyId]
-    )
-    BEGIN
-        THROW 50000, N'dms.Descriptor.ResourceKeyId diverges from the owning dms.Document row.', 1;
-    END
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
-    LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-    WHERE del.[DocumentId] IS NULL;
-    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]) OR UPDATE([Discriminator]) OR UPDATE([Uri]))
+    LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
+    WHERE del.[DescriptorId] IS NULL;
+    IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([Namespace]) OR UPDATE([CodeValue]) OR UPDATE([ShortDescription]) OR UPDATE([Description]) OR UPDATE([EffectiveBeginDate]) OR UPDATE([EffectiveEndDate]))
     BEGIN
         ;WITH affectedDocs AS (
             SELECT i.[DocumentId]
             FROM inserted i
-            LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
-            WHERE del.[DocumentId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)) OR (CAST(i.[Discriminator] AS varbinary(max)) <> CAST(del.[Discriminator] AS varbinary(max)) OR (i.[Discriminator] IS NULL AND del.[Discriminator] IS NOT NULL) OR (i.[Discriminator] IS NOT NULL AND del.[Discriminator] IS NULL)) OR (CAST(i.[Uri] AS varbinary(max)) <> CAST(del.[Uri] AS varbinary(max)) OR (i.[Uri] IS NULL AND del.[Uri] IS NOT NULL) OR (i.[Uri] IS NOT NULL AND del.[Uri] IS NULL)))
+            LEFT JOIN deleted del ON del.[DescriptorId] = i.[DescriptorId]
+            WHERE del.[DescriptorId] IS NOT NULL AND ((CAST(i.[Namespace] AS varbinary(max)) <> CAST(del.[Namespace] AS varbinary(max)) OR (i.[Namespace] IS NULL AND del.[Namespace] IS NOT NULL) OR (i.[Namespace] IS NOT NULL AND del.[Namespace] IS NULL)) OR (CAST(i.[CodeValue] AS varbinary(max)) <> CAST(del.[CodeValue] AS varbinary(max)) OR (i.[CodeValue] IS NULL AND del.[CodeValue] IS NOT NULL) OR (i.[CodeValue] IS NOT NULL AND del.[CodeValue] IS NULL)) OR (CAST(i.[ShortDescription] AS varbinary(max)) <> CAST(del.[ShortDescription] AS varbinary(max)) OR (i.[ShortDescription] IS NULL AND del.[ShortDescription] IS NOT NULL) OR (i.[ShortDescription] IS NOT NULL AND del.[ShortDescription] IS NULL)) OR (CAST(i.[Description] AS varbinary(max)) <> CAST(del.[Description] AS varbinary(max)) OR (i.[Description] IS NULL AND del.[Description] IS NOT NULL) OR (i.[Description] IS NOT NULL AND del.[Description] IS NULL)) OR (i.[EffectiveBeginDate] <> del.[EffectiveBeginDate] OR (i.[EffectiveBeginDate] IS NULL AND del.[EffectiveBeginDate] IS NOT NULL) OR (i.[EffectiveBeginDate] IS NOT NULL AND del.[EffectiveBeginDate] IS NULL)) OR (i.[EffectiveEndDate] <> del.[EffectiveEndDate] OR (i.[EffectiveEndDate] IS NULL AND del.[EffectiveEndDate] IS NOT NULL) OR (i.[EffectiveEndDate] IS NOT NULL AND del.[EffectiveEndDate] IS NULL)))
             UNION ALL
             SELECT del.[DocumentId]
             FROM deleted del
-            LEFT JOIN inserted i ON i.[DocumentId] = del.[DocumentId]
-            WHERE i.[DocumentId] IS NULL
+            LEFT JOIN inserted i ON i.[DescriptorId] = del.[DescriptorId]
+            WHERE i.[DescriptorId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [dms].[Descriptor] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt
+            FROM [dms].[Descriptor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
+            FROM [dms].[Descriptor] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
 END;
 GO
@@ -733,6 +674,7 @@ IF OBJECT_ID(N'edfi.ParentResource', N'U') IS NULL
 CREATE TABLE [edfi].[ParentResource]
 (
     [DocumentId] bigint NOT NULL,
+    [ContentCreatedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentCreatedAt] DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL CONSTRAINT [DF_ParentResource_ContentLastModifiedAt] DEFAULT (sysutcdatetime()),
     [ContentVersion] bigint NOT NULL CONSTRAINT [DF_ParentResource_ContentVersion] DEFAULT 0,
     [ParentResourceId] int NOT NULL,
@@ -755,7 +697,7 @@ CREATE TABLE [rootext].[ParentResourceExtensionRootExtChildren]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
-    [RootExtChildCode] nvarchar(30) NULL,
+    [RootExtChildCode] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [RootExtChildValue] nvarchar(100) NULL,
     CONSTRAINT [PK_ParentResourceExtensionRootExtChildren] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ParentResourceExtensionRootExtChildren_Ordinal_ParentResource_DocumentId] UNIQUE ([ParentResource_DocumentId], [Ordinal]),
@@ -768,7 +710,7 @@ CREATE TABLE [edfi].[ParentResourceParent]
     [CollectionItemId] bigint NOT NULL DEFAULT (NEXT VALUE FOR [dms].[CollectionItemIdSequence]),
     [Ordinal] int NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
-    [ParentCode] nvarchar(30) NULL,
+    [ParentCode] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ParentName] nvarchar(100) NULL,
     CONSTRAINT [PK_ParentResourceParent] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ParentResourceParent_CollectionItemId_ParentResource_DocumentId] UNIQUE ([CollectionItemId], [ParentResource_DocumentId]),
@@ -783,7 +725,7 @@ CREATE TABLE [edfi].[ParentResourceParentChildren]
     [Ordinal] int NOT NULL,
     [ParentCollectionItemId] bigint NOT NULL,
     [ParentResource_DocumentId] bigint NOT NULL,
-    [ChildCode] nvarchar(30) NULL,
+    [ChildCode] nvarchar(30) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [ChildValue] nvarchar(100) NULL,
     CONSTRAINT [PK_ParentResourceParentChildren] PRIMARY KEY ([CollectionItemId]),
     CONSTRAINT [UX_ParentResourceParentChildren_ChildCode_ParentCollectionItemId] UNIQUE ([ParentCollectionItemId], [ChildCode]),
@@ -810,7 +752,7 @@ ALTER TABLE [edfi].[ParentResource]
 ADD CONSTRAINT [FK_ParentResource_Document]
 FOREIGN KEY ([DocumentId])
 REFERENCES [dms].[Document] ([DocumentId])
-ON DELETE CASCADE
+ON DELETE NO ACTION
 ON UPDATE NO ACTION;
 
 IF NOT EXISTS (
@@ -874,39 +816,6 @@ IF NOT EXISTS (
 CREATE INDEX [IX_ParentResourceParentChildren_ParentCollectionItemId_ParentResource_DocumentId] ON [edfi].[ParentResourceParentChildren] ([ParentCollectionItemId], [ParentResource_DocumentId]);
 
 GO
-CREATE OR ALTER TRIGGER [edfi].[TR_ParentResource_ReferentialIdentity]
-ON [edfi].[ParentResource]
-AFTER INSERT, UPDATE
-AS
-BEGIN
-    SET NOCOUNT ON;
-    IF NOT EXISTS (SELECT 1 FROM deleted)
-    BEGIN
-        DELETE FROM [dms].[ReferentialIdentity]
-        WHERE [DocumentId] IN (SELECT [DocumentId] FROM inserted) AND [ResourceKeyId] = 1;
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiParentResource' AS nvarchar(max)) + N'$.parentResourceId=' + CAST(i.[ParentResourceId] AS nvarchar(max))), i.[DocumentId], 1
-        FROM inserted i;
-    END
-    ELSE IF (UPDATE([ParentResourceId]))
-    BEGIN
-        DECLARE @changedDocs TABLE ([DocumentId] bigint NOT NULL PRIMARY KEY);
-        INSERT INTO @changedDocs ([DocumentId])
-        SELECT i.[DocumentId]
-        FROM inserted i INNER JOIN deleted d ON d.[DocumentId] = i.[DocumentId]
-        WHERE (i.[ParentResourceId] <> d.[ParentResourceId] OR (i.[ParentResourceId] IS NULL AND d.[ParentResourceId] IS NOT NULL) OR (i.[ParentResourceId] IS NOT NULL AND d.[ParentResourceId] IS NULL));
-        IF EXISTS (SELECT 1 FROM @changedDocs)
-        BEGIN
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] IN (SELECT [DocumentId] FROM @changedDocs) AND [ResourceKeyId] = 1;
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            SELECT [dms].[uuidv5]('edf1edf1-3df1-3df1-3df1-3df1edf1edf1', CAST(N'Ed-FiParentResource' AS nvarchar(max)) + N'$.parentResourceId=' + CAST(i.[ParentResourceId] AS nvarchar(max))), i.[DocumentId], 1
-            FROM inserted i INNER JOIN @changedDocs cd ON cd.[DocumentId] = i.[DocumentId];
-        END
-    END
-END;
-GO
-
 CREATE OR ALTER TRIGGER [edfi].[TR_ParentResource_Stamp]
 ON [edfi].[ParentResource]
 AFTER INSERT, UPDATE, DELETE
@@ -915,11 +824,10 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -938,18 +846,41 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[ParentResource] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt
+            FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
+            FROM [edfi].[ParentResource] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
     BEGIN
@@ -1006,8 +937,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[ParentResource_DocumentId]
@@ -1021,16 +951,27 @@ BEGIN
         WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[ParentResource_DocumentId] <> del.[ParentResource_DocumentId] OR (i.[ParentResource_DocumentId] IS NULL AND del.[ParentResource_DocumentId] IS NOT NULL) OR (i.[ParentResource_DocumentId] IS NOT NULL AND del.[ParentResource_DocumentId] IS NULL)) OR (CAST(i.[ParentCode] AS varbinary(max)) <> CAST(del.[ParentCode] AS varbinary(max)) OR (i.[ParentCode] IS NULL AND del.[ParentCode] IS NOT NULL) OR (i.[ParentCode] IS NOT NULL AND del.[ParentCode] IS NULL)) OR (CAST(i.[ParentName] AS varbinary(max)) <> CAST(del.[ParentName] AS varbinary(max)) OR (i.[ParentName] IS NULL AND del.[ParentName] IS NOT NULL) OR (i.[ParentName] IS NOT NULL AND del.[ParentName] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[ParentResource_DocumentId]
     INNER JOIN [edfi].[ParentResource] stampTarget ON stampTarget.[DocumentId] = a.[ParentResource_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ParentResource] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1045,8 +986,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[ParentResource_DocumentId]
@@ -1060,16 +1000,27 @@ BEGIN
         WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[ParentCollectionItemId] <> del.[ParentCollectionItemId] OR (i.[ParentCollectionItemId] IS NULL AND del.[ParentCollectionItemId] IS NOT NULL) OR (i.[ParentCollectionItemId] IS NOT NULL AND del.[ParentCollectionItemId] IS NULL)) OR (i.[ParentResource_DocumentId] <> del.[ParentResource_DocumentId] OR (i.[ParentResource_DocumentId] IS NULL AND del.[ParentResource_DocumentId] IS NOT NULL) OR (i.[ParentResource_DocumentId] IS NOT NULL AND del.[ParentResource_DocumentId] IS NULL)) OR (CAST(i.[ChildCode] AS varbinary(max)) <> CAST(del.[ChildCode] AS varbinary(max)) OR (i.[ChildCode] IS NULL AND del.[ChildCode] IS NOT NULL) OR (i.[ChildCode] IS NOT NULL AND del.[ChildCode] IS NULL)) OR (CAST(i.[ChildValue] AS varbinary(max)) <> CAST(del.[ChildValue] AS varbinary(max)) OR (i.[ChildValue] IS NULL AND del.[ChildValue] IS NOT NULL) OR (i.[ChildValue] IS NOT NULL AND del.[ChildValue] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[ParentResource_DocumentId]
     INNER JOIN [edfi].[ParentResource] stampTarget ON stampTarget.[DocumentId] = a.[ParentResource_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ParentResource] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1084,8 +1035,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[DocumentId]
@@ -1099,16 +1049,27 @@ BEGIN
         WHERE i.[DocumentId] IS NULL OR (i.[DocumentId] <> del.[DocumentId] OR (i.[DocumentId] IS NULL AND del.[DocumentId] IS NOT NULL) OR (i.[DocumentId] IS NOT NULL AND del.[DocumentId] IS NULL)) OR (CAST(i.[RootExtHiddenScalar] AS varbinary(max)) <> CAST(del.[RootExtHiddenScalar] AS varbinary(max)) OR (i.[RootExtHiddenScalar] IS NULL AND del.[RootExtHiddenScalar] IS NOT NULL) OR (i.[RootExtHiddenScalar] IS NOT NULL AND del.[RootExtHiddenScalar] IS NULL)) OR (CAST(i.[RootExtVisibleScalar] AS varbinary(max)) <> CAST(del.[RootExtVisibleScalar] AS varbinary(max)) OR (i.[RootExtVisibleScalar] IS NULL AND del.[RootExtVisibleScalar] IS NOT NULL) OR (i.[RootExtVisibleScalar] IS NOT NULL AND del.[RootExtVisibleScalar] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId]
     INNER JOIN [edfi].[ParentResource] stampTarget ON stampTarget.[DocumentId] = a.[DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ParentResource] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END
@@ -1123,8 +1084,7 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
     ;WITH affectedDocs AS (
         SELECT i.[ParentResource_DocumentId]
@@ -1138,16 +1098,27 @@ BEGIN
         WHERE i.[CollectionItemId] IS NULL OR (i.[CollectionItemId] <> del.[CollectionItemId] OR (i.[CollectionItemId] IS NULL AND del.[CollectionItemId] IS NOT NULL) OR (i.[CollectionItemId] IS NOT NULL AND del.[CollectionItemId] IS NULL)) OR (i.[Ordinal] <> del.[Ordinal] OR (i.[Ordinal] IS NULL AND del.[Ordinal] IS NOT NULL) OR (i.[Ordinal] IS NOT NULL AND del.[Ordinal] IS NULL)) OR (i.[ParentResource_DocumentId] <> del.[ParentResource_DocumentId] OR (i.[ParentResource_DocumentId] IS NULL AND del.[ParentResource_DocumentId] IS NOT NULL) OR (i.[ParentResource_DocumentId] IS NOT NULL AND del.[ParentResource_DocumentId] IS NULL)) OR (CAST(i.[RootExtChildCode] AS varbinary(max)) <> CAST(del.[RootExtChildCode] AS varbinary(max)) OR (i.[RootExtChildCode] IS NULL AND del.[RootExtChildCode] IS NOT NULL) OR (i.[RootExtChildCode] IS NOT NULL AND del.[RootExtChildCode] IS NULL)) OR (CAST(i.[RootExtChildValue] AS varbinary(max)) <> CAST(del.[RootExtChildValue] AS varbinary(max)) OR (i.[RootExtChildValue] IS NULL AND del.[RootExtChildValue] IS NOT NULL) OR (i.[RootExtChildValue] IS NOT NULL AND del.[RootExtChildValue] IS NULL))
     )
     UPDATE d
-    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-    OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+    SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+    OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
     FROM [dms].[Document] d
     INNER JOIN affectedDocs a ON d.[DocumentId] = a.[ParentResource_DocumentId]
     INNER JOIN [edfi].[ParentResource] stampTarget ON stampTarget.[DocumentId] = a.[ParentResource_DocumentId];
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
         UPDATE r
         SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
+            r.[ContentLastModifiedAt] = @stampedAt
         FROM [edfi].[ParentResource] r WITH (FORCESEEK)
         INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
     END

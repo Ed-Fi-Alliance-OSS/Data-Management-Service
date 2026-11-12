@@ -70,8 +70,7 @@ public class Given_a_valid_manifest_workspace
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -195,8 +194,7 @@ public class Given_a_manifest_with_declared_missing_xsd_directory
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -267,8 +265,7 @@ public class Given_a_manifest_with_nested_xsd_files
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -335,8 +332,7 @@ public class Given_package_manifests_without_a_bootstrap_manifest
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -398,8 +394,7 @@ public class Given_a_manifest_with_explicit_null_optional_fields
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -585,8 +580,7 @@ public class Given_a_manifest_with_invalid_project_fields
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -628,8 +622,7 @@ public class Given_a_missing_manifest_file
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -678,8 +671,7 @@ public class Given_a_malformed_manifest_file
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -736,8 +728,7 @@ public class Given_a_manifest_with_unsupported_version
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -787,8 +778,7 @@ public class Given_a_manifest_with_zero_projects
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -850,8 +840,7 @@ public class Given_path_validation_in_manifest_provider
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );
@@ -938,8 +927,7 @@ public class Given_manifest_paths_that_are_symbolic_links
         var appSettings = Options.Create(
             new AppSettings
             {
-                ApiSchemaPath = _workspaceRoot,
-                UseApiSchemaPath = true,
+                ApiSchema = new() { UseCustomPath = true, Path = _workspaceRoot },
                 AllowIdentityUpdateOverrides = "",
             }
         );

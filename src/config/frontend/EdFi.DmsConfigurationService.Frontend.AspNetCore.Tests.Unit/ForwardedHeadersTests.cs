@@ -5,8 +5,8 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FluentAssertions;
-using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
@@ -33,12 +33,22 @@ public class Given_A_Reverse_Proxy_Configuration
     private const string KnownProxiesEnv = "AppSettings__ReverseProxy__KnownProxies";
     private const string KnownNetworksEnv = "AppSettings__ReverseProxy__KnownNetworks";
 
+    private EnvironmentVariableScope _reverseProxyEnvironment = null!;
+
+    [SetUp]
+    public void SetUp()
+    {
+        _reverseProxyEnvironment = new EnvironmentVariableScope(
+            UseForwardedHeadersEnv,
+            KnownProxiesEnv,
+            KnownNetworksEnv
+        );
+    }
+
     [TearDown]
     public void TearDown()
     {
-        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, null);
-        Environment.SetEnvironmentVariable(KnownProxiesEnv, null);
-        Environment.SetEnvironmentVariable(KnownNetworksEnv, null);
+        _reverseProxyEnvironment.Dispose();
     }
 
     private static WebApplicationFactory<Program> CreateFactory()
@@ -72,6 +82,20 @@ public class Given_A_Reverse_Proxy_Configuration
             info?["urls"]?["openApiMetadata"]?.GetValue<string>() ?? string.Empty,
             info?["urls"]?["tenancy"]?.GetValue<string>() ?? string.Empty
         );
+    }
+
+    private static async Task<string> GetOpenApiTokenUrl(HttpClient client, string remoteIp)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, "/openapi/v1.json");
+        request.Headers.Add("X-Forwarded-Host", ForwardedHost);
+        request.Headers.Add("X-Forwarded-Proto", "https");
+        request.Headers.Add("X-Test-Remote-Ip", remoteIp);
+
+        var response = await client.SendAsync(request);
+        var document = JsonNode.Parse(await response.Content.ReadAsStringAsync());
+        return document?["components"]?["securitySchemes"]?["oauth2_client_credentials"]?["flows"]?[
+                "clientCredentials"
+            ]?["tokenUrl"]?.GetValue<string>() ?? string.Empty;
     }
 
     [Test]
@@ -134,6 +158,34 @@ public class Given_A_Reverse_Proxy_Configuration
     }
 
     [Test]
+    public async Task It_advertises_the_forwarded_address_as_the_openapi_token_url_for_a_trusted_proxy()
+    {
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var tokenUrl = await GetOpenApiTokenUrl(client, remoteIp: "10.0.0.5");
+
+        tokenUrl.Should().Be($"https://{ForwardedHost}/connect/token");
+    }
+
+    [Test]
+    public async Task It_ignores_forwarded_headers_from_an_untrusted_source_in_the_openapi_token_url()
+    {
+        Environment.SetEnvironmentVariable(UseForwardedHeadersEnv, "true");
+        Environment.SetEnvironmentVariable(KnownProxiesEnv, "10.0.0.5");
+
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        var tokenUrl = await GetOpenApiTokenUrl(client, remoteIp: "203.0.113.99");
+
+        tokenUrl.Should().Be("http://localhost/connect/token");
+    }
+
+    [Test]
     public async Task It_fails_startup_when_a_trusted_proxy_ip_is_malformed()
     {
         // Drives the real application startup: the host forces IOptions<ReverseProxySettings>
@@ -162,32 +214,5 @@ public class Given_A_Reverse_Proxy_Configuration
         var response = await client.GetAsync("/");
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-    }
-
-    /// <summary>
-    /// Runs before the application's UseForwardedHeaders middleware and sets the connection
-    /// remote IP from the X-Test-Remote-Ip header so trusted/untrusted peers can be simulated.
-    /// </summary>
-    private sealed class RemoteIpStartupFilter : IStartupFilter
-    {
-        public Action<IApplicationBuilder> Configure(Action<IApplicationBuilder> next) =>
-            app =>
-            {
-                app.Use(
-                    async (context, nextMiddleware) =>
-                    {
-                        if (
-                            context.Request.Headers.TryGetValue("X-Test-Remote-Ip", out var value)
-                            && IPAddress.TryParse(value.ToString(), out var ip)
-                        )
-                        {
-                            context.Connection.RemoteIpAddress = ip;
-                        }
-
-                        await nextMiddleware();
-                    }
-                );
-                next(app);
-            };
     }
 }

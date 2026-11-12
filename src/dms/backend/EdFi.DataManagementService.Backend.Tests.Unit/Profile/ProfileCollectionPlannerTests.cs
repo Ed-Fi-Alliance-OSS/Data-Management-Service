@@ -2874,3 +2874,108 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
         success.Plan.Sequence[0].Should().BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
     }
 }
+
+// ────────────────────────────────────────────────────────────────────────────────
+// Case-variant request item: matched only under the scope's identity equality
+// ────────────────────────────────────────────────────────────────────────────────
+
+internal static class ProfileCollectionPlannerCaseVariantSupport
+{
+    public static ProfileCollectionPlanResult Plan(CollectionSemanticIdentityEquality? equality)
+    {
+        var storedIdentity = ProfileCollectionMergeTestDoubles.BuildSemanticIdentity("city", "Austin");
+        var requestIdentity = ProfileCollectionMergeTestDoubles.BuildSemanticIdentity("city", "AUSTIN");
+        var input = new ProfileCollectionScopeInput(
+            JsonScope: "$.addresses[*]",
+            ParentScopeAddress: ProfileCollectionMergeTestDoubles.RootScopeAddress(),
+            RequestCandidates:
+            [
+                ProfileCollectionMergeTestDoubles.BuildCollectionWriteCandidate(
+                    "$.addresses[*]",
+                    requestIdentity,
+                    requestOrder: 0
+                ),
+            ],
+            VisibleRequestItems:
+            [
+                ProfileCollectionMergeTestDoubles.BuildVisibleRequestCollectionItem(
+                    "$.addresses[*]",
+                    requestIdentity,
+                    creatable: true,
+                    requestJsonPath: "$.addresses[0]"
+                ),
+            ],
+            VisibleStoredRows:
+            [
+                ProfileCollectionMergeTestDoubles.BuildVisibleStoredCollectionRow(
+                    "$.addresses[*]",
+                    storedIdentity,
+                    ["addressTypeDescriptor"]
+                ),
+            ],
+            CurrentRows:
+            [
+                ProfileCollectionMergeTestDoubles.BuildCurrentCollectionRowSnapshot(
+                    storedIdentity,
+                    storedOrdinal: 0,
+                    stableRowIdentity: 42L
+                ),
+            ]
+        );
+
+        return ProfileCollectionPlanner.Plan(
+            equality is null ? input : input with { SemanticIdentityEquality = equality }
+        );
+    }
+}
+
+[TestFixture]
+public class Given_Planner_with_a_case_variant_request_item_under_a_case_insensitive_identity_equality
+{
+    private ProfileCollectionPlanEntry.MatchedUpdateEntry _entry = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var result = ProfileCollectionPlannerCaseVariantSupport.Plan(
+            CollectionSemanticIdentityEquality.For(
+                CollectionSemanticIdentityEqualityTestPlans.Create(cityUsesSqlServerIdentityCollation: true)
+            )
+        );
+
+        _entry = (ProfileCollectionPlanEntry.MatchedUpdateEntry)
+            result.Should().BeOfType<ProfileCollectionPlanResult.Success>().Subject.Plan.Sequence.Single();
+    }
+
+    [Test]
+    public void It_matches_the_stored_row() => _entry.StoredRow.StableRowIdentity.Should().Be(42L);
+
+    [Test]
+    public void It_pairs_the_request_candidate() =>
+        _entry.RequestCandidate.SemanticIdentityValues.Should().Equal("AUSTIN");
+
+    [Test]
+    public void It_reads_hidden_paths_through_the_matched_stored_row() =>
+        _entry.HiddenMemberPaths.Should().Equal("addressTypeDescriptor");
+}
+
+[TestFixture]
+public class Given_Planner_with_a_case_variant_request_item_under_the_default_ordinal_equality
+{
+    private ProfileCollectionPlanResult _result = null!;
+
+    [SetUp]
+    public void Setup() => _result = ProfileCollectionPlannerCaseVariantSupport.Plan(equality: null);
+
+    [Test]
+    public void It_inserts_the_request_item_and_omits_the_stored_row()
+    {
+        var sequence = _result.Should().BeOfType<ProfileCollectionPlanResult.Success>().Subject.Plan.Sequence;
+
+        sequence
+            .Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeOfType<ProfileCollectionPlanEntry.VisibleInsertEntry>();
+    }
+}

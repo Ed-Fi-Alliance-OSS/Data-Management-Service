@@ -24,27 +24,6 @@ public sealed record ProjectSchemaInfo(
 );
 
 /// <summary>
-/// Classifies the discriminator strategy for descriptor resources.
-/// </summary>
-public enum DiscriminatorStrategy
-{
-    /// <summary>
-    /// Use <c>dms.Document.ResourceKeyId</c> as the primary resource-type discriminator.
-    /// </summary>
-    ResourceKeyId,
-
-    /// <summary>
-    /// Use <c>dms.Descriptor.Discriminator</c> column as a secondary discriminator.
-    /// </summary>
-    DescriptorColumn,
-
-    /// <summary>
-    /// Both discriminator strategies are recorded for flexibility.
-    /// </summary>
-    Both,
-}
-
-/// <summary>
 /// Defines the canonical descriptor column contract for the shared <c>dms.Descriptor</c> table.
 /// </summary>
 /// <param name="Namespace">The namespace column name.</param>
@@ -53,26 +32,44 @@ public enum DiscriminatorStrategy
 /// <param name="Description">The description column name (optional).</param>
 /// <param name="EffectiveBeginDate">The effective begin date column name (optional).</param>
 /// <param name="EffectiveEndDate">The effective end date column name (optional).</param>
-/// <param name="Discriminator">The discriminator column name (optional).</param>
 public sealed record DescriptorColumnContract(
     DbColumnName Namespace,
     DbColumnName CodeValue,
     DbColumnName? ShortDescription,
     DbColumnName? Description,
     DbColumnName? EffectiveBeginDate,
-    DbColumnName? EffectiveEndDate,
-    DbColumnName? Discriminator
+    DbColumnName? EffectiveEndDate
 );
+
+/// <summary>
+/// The <c>dms.Descriptor</c> columns that store descriptor identity text. This is the single list read by
+/// both model derivation (identity-text role on the derived descriptor model) and core DDL emission (the
+/// SQL Server identity collation on the core-owned table), so the two cannot drift.
+/// </summary>
+public static class DescriptorIdentityTextColumns
+{
+    /// <summary>
+    /// The descriptor namespace column.
+    /// </summary>
+    public static readonly DbColumnName Namespace = new("Namespace");
+
+    /// <summary>
+    /// The descriptor code value column.
+    /// </summary>
+    public static readonly DbColumnName CodeValue = new("CodeValue");
+
+    /// <summary>
+    /// Every stored descriptor identity text column. The SQL Server computed <c>Uri</c>
+    /// (<c>namespace#codeValue</c>) is reconstructed from them and inherits their collation.
+    /// </summary>
+    public static IReadOnlyList<DbColumnName> All { get; } = [Namespace, CodeValue];
+}
 
 /// <summary>
 /// Metadata for descriptor resources stored in the shared <c>dms.Descriptor</c> table.
 /// </summary>
 /// <param name="ColumnContract">The descriptor column contract.</param>
-/// <param name="DiscriminatorStrategy">The discriminator strategy for resource-type identification.</param>
-public sealed record DescriptorMetadata(
-    DescriptorColumnContract ColumnContract,
-    DiscriminatorStrategy DiscriminatorStrategy
-);
+public sealed record DescriptorMetadata(DescriptorColumnContract ColumnContract);
 
 /// <summary>
 /// The derived relational model for a concrete resource.
@@ -113,6 +110,12 @@ public sealed record ConcreteResourceModel(
     /// query field paths against schema metadata.
     /// </summary>
     public QualifiedResourceName? SuperclassResource { get; init; }
+
+    /// <summary>
+    /// The resource's <c>identityJsonPaths</c> in ApiSchema.json order. Natural-key probe compilation
+    /// uses this as the semantic identity order.
+    /// </summary>
+    public IReadOnlyList<JsonPathExpression> IdentityJsonPaths { get; init; } = [];
 }
 
 /// <summary>
@@ -152,7 +155,7 @@ public sealed record AbstractUnionViewInfo(
 /// Optional referenced resource type for diagnostics when the column models reference/descriptors.
 /// </param>
 /// <param name="IsDescriptorReference">
-/// Whether the output column stores a descriptor document id that must be projected as the descriptor URI when
+/// Whether the output column stores a compact DescriptorId that must be projected as the descriptor URI when
 /// used as an API identity value.
 /// </param>
 public sealed record AbstractUnionViewOutputColumn(
@@ -199,6 +202,12 @@ public abstract record AbstractUnionViewProjectionExpression
     /// </summary>
     /// <param name="Value">The literal string value.</param>
     public sealed record StringLiteral(string Value) : AbstractUnionViewProjectionExpression;
+
+    /// <summary>
+    /// Projects a 16-bit integer literal, such as the arm's compile-time <c>ResourceKeyId</c>.
+    /// </summary>
+    /// <param name="Value">The literal value.</param>
+    public sealed record Int16Literal(short Value) : AbstractUnionViewProjectionExpression;
 }
 
 /// <summary>
@@ -283,32 +292,19 @@ public abstract record TriggerKindParameters
         : TriggerKindParameters;
 
     /// <summary>
-    /// Parameters for triggers that maintain referential identity for concrete resources.
-    /// </summary>
-    /// <param name="ResourceKeyId">The resource key ID for UUIDv5 computation.</param>
-    /// <param name="ProjectName">The project name for UUIDv5 computation.</param>
-    /// <param name="ResourceName">The resource name for UUIDv5 computation.</param>
-    /// <param name="IdentityElements">Identity element mappings for UUIDv5 computation.</param>
-    /// <param name="SuperclassAlias">
-    /// Superclass alias information for subclass resources. <c>null</c> for non-subclass resources.
-    /// </param>
-    public sealed record ReferentialIdentityMaintenance(
-        short ResourceKeyId,
-        string ProjectName,
-        string ResourceName,
-        IReadOnlyList<IdentityElementMapping> IdentityElements,
-        SuperclassAliasInfo? SuperclassAlias = null
-    ) : TriggerKindParameters;
-
-    /// <summary>
     /// Parameters for triggers that maintain abstract identity tables from concrete roots.
     /// </summary>
     /// <param name="TargetTable">The abstract identity table being maintained.</param>
     /// <param name="TargetColumnMappings">Column mappings from the source table to the target table.</param>
+    /// <param name="ResourceKeyIdValue">
+    /// The concrete member's compile-time <c>dms.ResourceKey</c> id written to the abstract identity
+    /// table's <c>ResourceKeyId</c> payload column. Never derived from the discriminator or the source row.
+    /// </param>
     /// <param name="DiscriminatorValue">The discriminator value written to the abstract identity table.</param>
     public sealed record AbstractIdentityMaintenance(
         DbTableName TargetTable,
         IReadOnlyList<TriggerColumnMapping> TargetColumnMappings,
+        short ResourceKeyIdValue,
         string DiscriminatorValue
     ) : TriggerKindParameters;
 
@@ -331,36 +327,11 @@ public abstract record TriggerKindParameters
 public readonly record struct DbTriggerName(string Value);
 
 /// <summary>
-/// Maps a root table column to its identity JSON path for UUIDv5 computation.
+/// Maps a root table column to its canonical identity JSON path.
 /// </summary>
 /// <param name="Column">The physical column on the root table.</param>
-/// <param name="IdentityJsonPath">The canonical JSON path label used in the UUIDv5 hash string.</param>
-/// <param name="ScalarType">The scalar type metadata for type-aware string formatting in hash expressions.</param>
-/// <param name="IsDescriptorReference">
-/// Indicates that <paramref name="Column"/> stores a descriptor document ID that must be converted back
-/// to the descriptor URI before UUIDv5 hash computation.
-/// </param>
-public sealed record IdentityElementMapping(
-    DbColumnName Column,
-    string IdentityJsonPath,
-    RelationalScalarType ScalarType,
-    bool IsDescriptorReference = false
-);
-
-/// <summary>
-/// Superclass alias information for subclass resources that must also maintain referential identity
-/// under their superclass resource key.
-/// </summary>
-/// <param name="ResourceKeyId">The superclass resource key ID.</param>
-/// <param name="ProjectName">The superclass project name.</param>
-/// <param name="ResourceName">The superclass resource name.</param>
-/// <param name="IdentityElements">Identity element mappings for the superclass identity.</param>
-public sealed record SuperclassAliasInfo(
-    short ResourceKeyId,
-    string ProjectName,
-    string ResourceName,
-    IReadOnlyList<IdentityElementMapping> IdentityElements
-);
+/// <param name="IdentityJsonPath">The canonical JSON path of the identity element.</param>
+public sealed record IdentityElementMapping(DbColumnName Column, string IdentityJsonPath);
 
 /// <summary>
 /// Maps a source column on the trigger's owning table to a target column on the maintenance table.
@@ -379,14 +350,13 @@ public sealed record TriggerColumnMapping(DbColumnName SourceColumn, DbColumnNam
 /// Columns whose change affects the resource identity projection. For
 /// <see cref="TriggerKindParameters.DocumentStamping"/> triggers on root tables, these determine
 /// key-change eligibility for Resource tracked-change attachments. For
-/// <see cref="TriggerKindParameters.ReferentialIdentityMaintenance"/> and
 /// <see cref="TriggerKindParameters.AbstractIdentityMaintenance"/> triggers, these are the columns that
 /// trigger recomputation. Empty for child/extension table stamping triggers.
 /// </param>
 /// <param name="Parameters">The trigger-kind-specific parameters.</param>
-/// <param name="MirrorStampTargetTable">
-/// The table whose <c>ContentVersion</c> / <c>ContentLastModifiedAt</c> mirror columns this trigger
-/// stamps. Non-null for every <see cref="TriggerKindParameters.DocumentStamping"/> entry: the owning
+/// <param name="StampTargetTable">
+/// The table whose <c>ContentVersion</c> mirror and authoritative <c>ContentLastModifiedAt</c> this trigger
+/// maintains. Non-null for every <see cref="TriggerKindParameters.DocumentStamping"/> entry: the owning
 /// resource root table (the source table itself for root-table triggers; the owning resource root for
 /// child / collection / <c>_ext</c> triggers). Null for non-stamping trigger kinds.
 /// </param>
@@ -396,13 +366,13 @@ public sealed record DbTriggerInfo(
     IReadOnlyList<DbColumnName> KeyColumns,
     IReadOnlyList<DbColumnName> IdentityProjectionColumns,
     TriggerKindParameters Parameters,
-    DbTableName? MirrorStampTargetTable = null
+    DbTableName? StampTargetTable = null
 );
 
 /// <summary>
 /// Change-tracking attachment for a <see cref="TriggerKindParameters.DocumentStamping"/> trigger that
 /// also writes tombstones and key-change rows. References the tracked-change table by name (mirroring
-/// <see cref="DbTriggerInfo.MirrorStampTargetTable"/>) rather than embedding the
+/// <see cref="DbTriggerInfo.StampTargetTable"/>) rather than embedding the
 /// <see cref="TrackedChangeTableInfo"/>, keeping the manifest acyclic.
 /// </summary>
 /// <param name="TrackedChangeTable">The <c>tracked_changes_*</c> table this trigger populates.</param>
@@ -410,7 +380,7 @@ public sealed record TrackedChangeAttachment(DbTableName TrackedChangeTable);
 
 /// <summary>
 /// Fixed-by-role system column on a tracked-change table (<c>Id</c>, <c>ChangeVersion</c>,
-/// <c>DocumentId</c>, <c>CreatedAt</c>, and—on the shared descriptor table—<c>Discriminator</c>). These are determined by
+/// <c>DocumentId</c>, <c>CreatedAt</c>, and—on the shared descriptor table—<c>ResourceKeyId</c>). These are determined by
 /// role rather than by ApiSchema value metadata; dialect emitters render the appropriate type/default.
 /// </summary>
 /// <param name="Role">The system column role.</param>
@@ -419,7 +389,8 @@ public sealed record TrackedChangeAttachment(DbTableName TrackedChangeTable);
 /// The scalar type metadata, or <c>null</c> when the type is determined entirely by
 /// <paramref name="Role"/> and has no <see cref="ScalarKind"/> representation. This is the case for
 /// <see cref="TrackedChangeSystemColumnRole.Id"/>, whose type is PostgreSQL <c>uuid</c> / SQL Server
-/// <c>uniqueidentifier</c>; dialect emitters render it by role.
+/// <c>uniqueidentifier</c>, and <see cref="TrackedChangeSystemColumnRole.ResourceKeyId"/>, whose type
+/// is <c>smallint</c> on both providers; dialect emitters render them by role.
 /// </param>
 /// <param name="IsNullable">Whether the column is nullable.</param>
 /// <param name="IsPrimaryKey">Whether the column participates in the table's primary key.</param>
@@ -460,6 +431,11 @@ public sealed record TrackedChangeSystemColumnInfo(
 /// The <see cref="TrackedChangePersonJoinInfo.PersonJoinName"/> this column resolves through, when
 /// <paramref name="Role"/> is <see cref="TrackedChangeColumnRole.PersonDocumentId"/>; null otherwise.
 /// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True when the dialect declares an identity text collation and this is a string column whose
+/// <paramref name="Origin"/> includes <see cref="TrackedChangeColumnOrigin.Identity"/>. DDL generation
+/// applies the collation to both the <c>Old*</c> and <c>New*</c> columns.
+/// </param>
 public sealed record TrackedChangeColumnInfo(
     DbColumnName OldColumnName,
     DbColumnName NewColumnName,
@@ -471,7 +447,8 @@ public sealed record TrackedChangeColumnInfo(
     TrackedChangeColumnRole Role,
     TrackedChangeColumnOrigin Origin,
     string? DescriptorJoinName = null,
-    string? PersonJoinName = null
+    string? PersonJoinName = null,
+    bool UsesSqlServerIdentityCollation = false
 );
 
 /// <summary>
@@ -481,7 +458,10 @@ public sealed record TrackedChangeColumnInfo(
 /// rather than duplicating the join definition.
 /// </summary>
 /// <param name="DescriptorJoinName">The stable join name referenced by descriptor value columns.</param>
-/// <param name="SourceColumn">The descriptor FK column on the live source table (e.g. <c>*_DescriptorId</c>).</param>
+/// <param name="SourceColumn">
+/// The compact Int32 descriptor FK column on the live source table (e.g. <c>*_DescriptorId</c>),
+/// joined to <c>dms.Descriptor.DescriptorId</c> rather than its owning <c>DocumentId</c>.
+/// </param>
 /// <param name="DescriptorResource">The descriptor resource type expected at this join.</param>
 public sealed record TrackedChangeDescriptorJoinInfo(
     string DescriptorJoinName,
@@ -536,7 +516,7 @@ public sealed record TrackedChangePersonJoinInfo(
 /// <param name="ValueColumnsInTableOrder">The tracked old/new value columns in table order.</param>
 /// <param name="SystemColumns">
 /// The fixed-by-role system columns (<c>Id</c>, <c>ChangeVersion</c>, <c>DocumentId</c>, <c>CreatedAt</c>,
-/// and <c>Discriminator</c> for the shared descriptor table).
+/// and <c>ResourceKeyId</c> for the shared descriptor table).
 /// </param>
 /// <param name="PrimaryKeyColumns">
 /// The primary-key columns. <c>[ChangeVersion]</c> in the current design; carried here so renderers do

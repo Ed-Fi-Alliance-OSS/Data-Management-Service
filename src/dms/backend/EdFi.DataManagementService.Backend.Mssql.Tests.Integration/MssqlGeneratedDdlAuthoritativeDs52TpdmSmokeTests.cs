@@ -113,6 +113,22 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_Ds
     }
 
     [Test]
+    public async Task It_should_cascade_section_and_evaluation_rating_key_changes_to_their_tpdm_referrers()
+    {
+        // DMS-1624: Section allows identity updates, so pruning keeps the EvaluationRating edge
+        // from Section. The EvaluationObjectiveRating edge from EvaluationRating is kept too,
+        // because Section, which can change its key, sits on that edge's cascade path.
+        var updateActions = (await _database.GetForeignKeyMetadataAsync("tpdm", "EvaluationRating"))
+            .Concat(await _database.GetForeignKeyMetadataAsync("tpdm", "EvaluationObjectiveRating"))
+            .ToDictionary(foreignKey => foreignKey.ConstraintName, foreignKey => foreignKey.UpdateAction);
+
+        updateActions["FK_EvaluationRating_Section_RefKey"].Should().Be("CASCADE");
+        updateActions["FK_EvaluationRating_PerformanceEvaluationRating_RefKey"].Should().Be("NO ACTION");
+        updateActions["FK_EvaluationObjectiveRating_EvaluationRating_RefKey"].Should().Be("CASCADE");
+        updateActions["FK_EvaluationObjectiveRating_EvaluationObjective_RefKey"].Should().Be("NO ACTION");
+    }
+
+    [Test]
     public void It_records_the_ds52_tpdm_effective_schema_components()
     {
         _schemaComponentRows.Should().HaveCount(2);

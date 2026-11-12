@@ -132,6 +132,12 @@ Feature: JWT Token Introspection
         }
         """
       Then it should respond with 200
+      And the response headers include
+        """
+        {
+          "Cache-Control": "no-store"
+        }
+        """
       And the token_info response body is
         """
         {

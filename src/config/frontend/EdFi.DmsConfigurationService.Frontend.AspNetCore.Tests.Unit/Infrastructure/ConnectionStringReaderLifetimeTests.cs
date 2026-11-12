@@ -38,7 +38,7 @@ public class Given_the_host_booted_in_the_development_environment(string datasto
         ["AppSettings:DeployDatabaseOnStartup"] = "false",
         ["DatabaseSettings:EncryptionKey"] = "TestEncryptionKey32CharactersLong1",
         ["IdentitySettings:AllowRegistration"] = "true",
-        ["IdentitySettings:TokenCleanupEnabled"] = "false",
+        ["IdentitySettings:TokenCleanup:Enabled"] = "false",
         ["IdentitySettings:ConfigServiceRole"] = "test-role",
         ["IdentitySettings:ClientRole"] = "dms-client",
         ["IdentitySettings:Authority"] = "http://localhost/realms/dms",

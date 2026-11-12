@@ -10,13 +10,16 @@
     "EncryptionKey": "<dms-config-database-encryption-key>"
   },
   "AppSettings": {
-    "UseApiSchemaPath": true,
-    "ApiSchemaPath": "<repo-root>/eng/docker-compose/.bootstrap/ApiSchema",
+    "ApiSchema": {
+      "UseCustomPath": true,
+      "Path": "<repo-root>/eng/docker-compose/.bootstrap/ApiSchema"
+    },
     "AuthenticationService": "http://localhost:8081/connect/token"
   },
   "JwtAuthentication": {
     "Authority": "http://localhost:8081",
     "MetadataAddress": "http://localhost:8081/.well-known/openid-configuration",
+    "RequireHttpsMetadata": false,
     "ClientRole": "dms-client",
     "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
   },

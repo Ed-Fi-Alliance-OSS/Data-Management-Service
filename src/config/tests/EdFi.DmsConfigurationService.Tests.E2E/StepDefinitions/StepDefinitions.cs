@@ -16,9 +16,19 @@ using static EdFi.DmsConfigurationService.Tests.E2E.Management.JsonComparer;
 namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
 
 [Binding]
-public partial class StepDefinitions(PlaywrightContext playwrightContext, ScenarioContext scenarioContext)
+public partial class StepDefinitions(
+    PlaywrightContext playwrightContext,
+    ScenarioContext scenarioContext,
+    FeatureContext featureContext
+)
 {
+    /// <summary>The Configuration Service's own client, whose credentials "valid credentials" uses.</summary>
+    public const string SystemClientId = "DmsConfigurationService";
+
+    internal const string SystemClientSecret = "ValidClientSecret1234567890!Abcd";
+
     private IAPIResponse _apiResponse = null!;
+    internal IAPIResponse LastApiResponse => _apiResponse;
     private string _token = string.Empty;
 
     // The client_id/client_secret last used to obtain _token, so a step revoking "the current
@@ -36,6 +46,13 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     /// client's current key and secret at the same time and refresh one of them after a reset.
     /// </summary>
     private readonly Dictionary<string, (string Key, string Secret)> _credentialSlots = new();
+
+    /// <summary>
+    /// Access tokens captured under caller-chosen names, so a scenario can keep using a client's
+    /// earlier token after the administrator acts on that client. Kept apart from the id pool
+    /// because a token is never substituted into a URL or body.
+    /// </summary>
+    private readonly Dictionary<string, string> _capturedTokens = new();
 
     private IDictionary<string, string> _authHeaders =>
         new Dictionary<string, string>
@@ -59,11 +76,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [Given("valid credentials")]
     public async Task GivenValidCredentials()
     {
-        await GetClientAccessToken(
-            "DmsConfigurationService",
-            "ValidClientSecret1234567890!Abcd",
-            "edfi_admin_api/full_access"
-        );
+        await GetClientAccessToken(SystemClientId, SystemClientSecret, "edfi_admin_api/full_access");
     }
 
     [Given("client {string} credentials with {string} scope")]
@@ -77,25 +90,14 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _lastClientId = key;
         _lastClientSecret = secret;
 
-        var urlEncodedData = new Dictionary<string, string>
+        if (playwrightContext.ApiRequestContext is not null)
         {
-            { "client_id", key },
-            { "client_secret", secret },
-            { "grant_type", "client_credentials" },
-            { "scope", scope },
-        };
-        var content = new FormUrlEncodedContent(urlEncodedData);
-        APIRequestContextOptions? options = new()
-        {
-            Headers = new Dictionary<string, string>
-            {
-                { "Content-Type", "application/x-www-form-urlencoded" },
-            },
-            Data = await content.ReadAsStringAsync(),
-        };
-        if (playwrightContext.ApiRequestContext != null)
-        {
-            _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+            _apiResponse = await CmsTestRequests.GetClientAccessTokenAsync(
+                playwrightContext.ApiRequestContext,
+                key,
+                secret,
+                scope
+            );
         }
     }
 
@@ -153,6 +155,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     #endregion
 
     [When("a PUT request is made to {string} with")]
+    [Given("a PUT request is made to {string} with")]
     public async Task WhenAPUTRequestIsMadeToWith(string url, string body)
     {
         url = await ReplaceIdsAsync(url);
@@ -194,6 +197,29 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a security GET request is made to {string} with header {string} value {string}")]
     public async Task WhenASecurityGetRequestIsMadeToWithHeader(string url, string header, string value) =>
         await WhenAGETRequestIsMadeToWithHeader(url, header, value);
+
+    /// <summary>
+    /// Sends the request with a captured token as its bearer instead of the administrator's
+    /// token, which stays the current token for the steps that follow.
+    /// </summary>
+    [When("a GET request is made to {string} with the token captured as {string}")]
+    public async Task WhenAGETRequestIsMadeToWithTheTokenCapturedAs(string url, string name)
+    {
+        url = await ReplaceIdsAsync(url);
+        string capturedToken = CapturedToken(name);
+
+        _apiResponse = await playwrightContext.ApiRequestContext!.GetAsync(
+            url,
+            new()
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    { "Content-Type", "application/json" },
+                    { "Authorization", $"Bearer {capturedToken}" },
+                },
+            }
+        );
+    }
 
     [When("an unauthenticated GET request is made to {string}")]
     public async Task WhenAnUnauthenticatedGetRequestIsMadeTo(string url)
@@ -317,10 +343,23 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     /// </summary>
     public async Task PostVerbatimBodyAsync(string url, string body)
     {
-        _apiResponse = await playwrightContext.ApiRequestContext?.PostAsync(
+        _apiResponse = await CmsTestRequests.PostVerbatimBodyAsync(
+            playwrightContext.ApiRequestContext!,
             url,
-            new() { Headers = _authHeaders, Data = body }
-        )!;
+            _token,
+            body
+        );
+    }
+
+    /// <summary>POSTs file bytes without decoding, reserialization or placeholder substitution.</summary>
+    public async Task PostVerbatimBodyAsync(string url, byte[] body)
+    {
+        _apiResponse = await CmsTestRequests.PostVerbatimBodyAsync(
+            playwrightContext.ApiRequestContext!,
+            url,
+            _token,
+            body
+        );
     }
 
     [When("an unauthenticated POST request is made to {string} with header {string} value {string} and")]
@@ -395,15 +434,12 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         // the bearer token being revoked, and only revokes tokens carrying the caller's own
         // client_id. Here the caller authenticates as the same client that owns _token, so
         // revocation proceeds.
-        var basicAuth = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{_lastClientId}:{_lastClientSecret}")
-        );
         APIRequestContextOptions options = new()
         {
             Headers = new Dictionary<string, string>
             {
                 { "Content-Type", "application/x-www-form-urlencoded" },
-                { "Authorization", $"Basic {basicAuth}" },
+                { "Authorization", BasicAuthorization(_lastClientId, _lastClientSecret) },
             },
             Data = await content.ReadAsStringAsync(),
         };
@@ -411,6 +447,7 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     }
 
     [When("a DELETE request is made to {string}")]
+    [Given("a DELETE request is made to {string}")]
     public async Task WhenADELETERequestIsMadeTo(string url)
     {
         url = await ReplaceIdsAsync(url);
@@ -764,6 +801,31 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .BeTrue($"the token should carry '{namespacePrefix}' in its namespacePrefixes claim");
     }
 
+    [Then("the token has an empty namespacePrefixes claim")]
+    public async Task ThenTheTokenHasAnEmptyNamespacePrefixesClaim()
+    {
+        JsonNode responseJson = JsonNode.Parse(await _apiResponse.TextAsync())!;
+        responseJson["access_token"].Should().NotBeNull("response should include an access_token");
+        string accessToken = responseJson["access_token"]!.GetValue<string>();
+
+        string payload = accessToken.Split('.')[1].Replace('-', '+').Replace('_', '/');
+        payload = payload.PadRight(payload.Length + (4 - payload.Length % 4) % 4, '=');
+        using JsonDocument tokenPayload = JsonDocument.Parse(Convert.FromBase64String(payload));
+        JsonElement payloadRoot = tokenPayload.RootElement;
+
+        JsonProperty namespacePrefixes = payloadRoot
+            .EnumerateObject()
+            .Where(property => property.NameEquals("namespacePrefixes"))
+            .Should()
+            .ContainSingle(
+                $"the token should contain exactly one namespacePrefixes claim; payload: {payloadRoot}"
+            )
+            .Which;
+        JsonElement namespacePrefixValue = namespacePrefixes.Value;
+        namespacePrefixValue.ValueKind.Should().Be(JsonValueKind.String);
+        namespacePrefixValue.GetString().Should().BeEmpty();
+    }
+
     [Then("the response body credentials are captured as {string}")]
     [Given("the response body credentials are captured as {string}")]
     public async Task ThenTheResponseBodyCredentialsAreCapturedAs(string slot)
@@ -779,11 +841,36 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
         _ids[$"{slot}Key"] = key;
     }
 
-    // The scope must be the client's own claim set name, which is the scope both identity
-    // providers register for an application's client. Omitting it is not portable: the token
-    // endpoint forwards an empty scope parameter, which Keycloak rejects as invalid_scope while
-    // the self-contained provider falls back to the client's default permissions.
+    /// <summary>
+    /// Captures the access token of the current token response under a caller-chosen name. The
+    /// administrator's token is left as the current token.
+    /// </summary>
+    [Then("the access token in the response is captured as {string}")]
+    [Given("the access token in the response is captured as {string}")]
+    public async Task ThenTheAccessTokenInTheResponseIsCapturedAs(string name)
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonNode? accessToken = JsonNode.Parse(content)?["access_token"];
+        accessToken.Should().NotBeNull($"the previous response should include an access_token: {content}");
+        accessToken!
+            .GetValueKind()
+            .Should()
+            .Be(JsonValueKind.String, $"the access_token should be a string: {content}");
+        string token = accessToken.GetValue<string>();
+        token.Should().NotBeNullOrWhiteSpace("the access_token should be non-empty");
+        _capturedTokens[name] = token;
+    }
+
+    private string CapturedToken(string name)
+    {
+        _capturedTokens.Should().ContainKey(name, $"an access token should have been captured as '{name}'");
+        return _capturedTokens[name];
+    }
+
+    // This step passes the client's own claim set name as the scope because the scope scenarios
+    // assert on it: the token's scope claim and role are what they verify.
     [When("a token is requested with the credentials captured as {string} and scope {string}")]
+    [Given("a token is requested with the credentials captured as {string} and scope {string}")]
     public async Task WhenATokenIsRequestedWithTheCredentialsCapturedAs(string slot, string scope)
     {
         _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
@@ -807,6 +894,20 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             Data = await content.ReadAsStringAsync(),
         };
         _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    /// <summary>
+    /// Unlike the step above, the captured client becomes the scenario's current client: its key and
+    /// secret are what the "current client" and "its owner" steps authenticate with, and the token
+    /// issued to it is the current token.
+    /// </summary>
+    [When("the credentials captured as {string} obtain the current token with scope {string}")]
+    public async Task WhenTheCredentialsCapturedAsObtainTheCurrentToken(string slot, string scope)
+    {
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await GetClientAccessToken(key, secret, scope);
+        await TokenReceived();
     }
 
     [Then("the token has an empty dataStoreIds claim")]
@@ -860,12 +961,125 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
     [When("a token is requested using raw HTTP Basic auth with the captured credentials")]
     public async Task WhenATokenIsRequestedUsingRawHttpBasicAuthWithTheCapturedCredentials()
     {
-        var credentials = Convert.ToBase64String(
-            System.Text.Encoding.UTF8.GetBytes($"{_applicationKey}:{_applicationSecret}")
-        );
-        var content = new FormUrlEncodedContent(
+        await PostBasicTokenRequest(
+            _applicationKey,
+            _applicationSecret,
             new Dictionary<string, string> { { "grant_type", "client_credentials" } }
         );
+    }
+
+    // Exactly what Swagger UI sends for a client_credentials flow: the credentials only in the Basic
+    // header, with grant_type and scope in the form.
+    [When("a token is requested using HTTP Basic auth with the system credentials and scope {string}")]
+    public async Task WhenATokenIsRequestedUsingHttpBasicAuthWithTheSystemCredentialsAndScope(string scope)
+    {
+        await PostBasicTokenRequest(
+            SystemClientId,
+            SystemClientSecret,
+            new Dictionary<string, string> { { "grant_type", "client_credentials" }, { "scope", scope } }
+        );
+    }
+
+    [When("a token is requested without a scope using the system credentials")]
+    public async Task WhenATokenIsRequestedWithoutAScopeUsingTheSystemCredentials()
+    {
+        var content = new FormUrlEncodedContent(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "grant_type", "client_credentials" },
+            }
+        );
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    // A secret over Keycloak's form attribute limit, so Keycloak refuses the request with 413 before it
+    // authenticates anyone. The current client and token are left as they were.
+    [When("a token is requested by the system client with a {int}-character client secret")]
+    public async Task WhenATokenIsRequestedByTheSystemClientWithAClientSecretOfALength(int length)
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", new string('A', length) },
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested using HTTP Basic auth with client {string} and secret {string}")]
+    public async Task WhenATokenIsRequestedUsingHttpBasicAuthWithClientAndSecret(
+        string clientId,
+        string secret
+    )
+    {
+        await PostBasicTokenRequest(
+            clientId.Replace("{scenarioRunId}", scenarioContext["ScenarioRunId"].ToString()),
+            secret,
+            new Dictionary<string, string>
+            {
+                { "grant_type", "client_credentials" },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested with grant_type {string} using the system credentials")]
+    public async Task WhenATokenIsRequestedWithGrantTypeUsingTheSystemCredentials(string grantType)
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "grant_type", grantType },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    [When("a token is requested without a grant_type using the system credentials")]
+    public async Task WhenATokenIsRequestedWithoutAGrantTypeUsingTheSystemCredentials()
+    {
+        await PostSystemFormTokenRequest(
+            new Dictionary<string, string>
+            {
+                { "client_id", SystemClientId },
+                { "client_secret", SystemClientSecret },
+                { "scope", "edfi_admin_api/full_access" },
+            }
+        );
+    }
+
+    private async Task PostSystemFormTokenRequest(Dictionary<string, string> form)
+    {
+        var content = new FormUrlEncodedContent(form);
+        APIRequestContextOptions options = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await content.ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/token", options);
+    }
+
+    private async Task PostBasicTokenRequest(string key, string secret, Dictionary<string, string> form)
+    {
+        var credentials = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{key}:{secret}"));
+        var content = new FormUrlEncodedContent(form);
         APIRequestContextOptions? options = new()
         {
             Headers = new Dictionary<string, string>
@@ -892,6 +1106,14 @@ public partial class StepDefinitions(PlaywrightContext playwrightContext, Scenar
             .GetValue<string>()
             .Should()
             .NotBeNullOrWhiteSpace("access_token should be non-empty");
+    }
+
+    [Then("the token response scope is {string}")]
+    public async Task ThenTheTokenResponseScopeIs(string expectedScope)
+    {
+        string content = await _apiResponse.TextAsync();
+        string? scope = JsonNode.Parse(content)!["scope"]?.GetValue<string>();
+        scope.Should().Be(expectedScope, content);
     }
 
     [Then("the token response body is valid")]

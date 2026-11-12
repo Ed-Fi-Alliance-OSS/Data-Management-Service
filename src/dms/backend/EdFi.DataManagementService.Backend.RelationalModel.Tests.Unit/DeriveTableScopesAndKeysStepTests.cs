@@ -247,7 +247,11 @@ public class Given_A_JsonSchema_With_Nested_Collections
             .TargetColumns.Select(column => column.Value)
             .Should()
             .Equal(RelationalNameConventions.DocumentIdColumnName.Value);
-        rootFk.OnDelete.Should().Be(ReferentialAction.Cascade);
+        // The root -> dms.Document FK is a safety net (the write path deletes the root row first), so it
+        // must not cascade: CASCADE compiles every root delete into the SQL Server Document DELETE plan
+        // (16x slower at volume) and NO ACTION double-probes on PostgreSQL. Restrict is the single-probe
+        // action on both engines.
+        rootFk.OnDelete.Should().Be(ReferentialAction.Restrict);
         rootFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
 
@@ -406,7 +410,24 @@ public class Given_A_Descriptor_Resource
     }
 
     /// <summary>
-    /// It should assign deterministic descriptor primary key constraint name.
+    /// It should create the dms.Descriptor -> dms.Document foreign key with the Restrict delete action.
+    /// </summary>
+    [Test]
+    public void It_should_create_the_descriptor_document_foreign_key_with_restrict_delete_action()
+    {
+        var descriptorFk = _resourceModel
+            .TablesInDependencyOrder.Single()
+            .Constraints.OfType<TableConstraint.ForeignKey>()
+            .Single();
+
+        descriptorFk.TargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Document"));
+        // dms.Descriptor follows the resource-root rule: its FK to dms.Document is a safety net, not a cascade path.
+        descriptorFk.OnDelete.Should().Be(ReferentialAction.Restrict);
+        descriptorFk.OnUpdate.Should().Be(ReferentialAction.NoAction);
+    }
+
+    /// <summary>
+    /// It should assign a deterministic descriptor primary key constraint name.
     /// </summary>
     [Test]
     public void It_should_assign_deterministic_descriptor_primary_key_constraint_name()

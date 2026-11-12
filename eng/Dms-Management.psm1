@@ -372,7 +372,7 @@ function Get-CmsToken {
 
 <#
     .SYNOPSIS
-        Polls the CMS OAuth token endpoint with a freshly-created client_credentials grant until
+        Polls the Configuration Service OAuth token endpoint with a freshly-created client_credentials grant until
         OpenIddict has surfaced the new application and returns a 200, or until the budget is
         exhausted.
 
@@ -380,7 +380,7 @@ function Get-CmsToken {
         Application creation through `Add-Application` writes to `dmscs.application` /
         `dmscs.openiddictapplication`, but OpenIddict's runtime view of the application store
         catches up asynchronously. The first OAuth grant immediately after `Add-Application`
-        typically returns 401 ("Invalid client or Invalid client credentials") on a cold stack
+        typically fails ("Invalid client or Invalid client credentials") on a cold stack
         before settling. This helper closes that race by polling `/connect/token` until the
         grant succeeds, so callers of `New-SeedLoaderCredentials` and similar receive credentials
         that are usable on first call.
@@ -462,7 +462,7 @@ function Wait-CmsClientAvailable {
     }
 
     $waitSeconds = [math]::Round(($MaxAttempts * $DelayMs) / 1000.0, 1)
-    throw "CMS client '$ClientId' did not become available at $uri within ${waitSeconds}s ($MaxAttempts attempts). Last status: $lastStatus."
+    throw "Configuration Service client '$ClientId' did not become available at $uri within ${waitSeconds}s ($MaxAttempts attempts). Last status: $lastStatus."
 }
 
 <#
@@ -552,7 +552,7 @@ function Add-Vendor {
     $webResponse = Invoke-WebRequest @webRequestParams
     $location = $webResponse.Headers['Location']
     if ($location -is [array]) { $location = $location[0] }
-    if (-not $location) { throw "CMS Add-Vendor response missing Location header" }
+    if (-not $location) { throw "Configuration Service Add-Vendor response missing Location header" }
     return [long]($location -split '/')[-1]
 }
 
@@ -998,7 +998,8 @@ function Get-E2EStartupPhasePlan {
     The name of the data store. Defaults to "Local Data Store".
 
 .PARAMETER PostgresCredential
-    The PostgreSQL credential (mandatory).
+    The PostgreSQL credential used to build the connection string. Required when -ConnectionString
+    is not supplied; ignored (and optional) when it is.
 
 .PARAMETER PostgresDbName
     The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
@@ -1048,8 +1049,9 @@ function Add-DataStore {
         [ValidateNotNullOrEmpty()]
         [string]$Name = "Local Data Store",
 
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNull()]
+        # Required only when -ConnectionString is not supplied; see .PARAMETER PostgresCredential.
+        # Not [Parameter(Mandatory)]: with a pre-built -ConnectionString it is never read, and a
+        # caller registering an MSSQL data store has no PostgreSQL credential to give.
         [System.Management.Automation.PSCredential]$PostgresCredential,
 
         [ValidateNotNullOrEmpty()]
@@ -1098,6 +1100,9 @@ function Add-DataStore {
     if (-not $hasPrebuiltConnectionString) {
         if ($DatabaseEngine -eq "mssql") {
             throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
+        }
+        if ($null -eq $PostgresCredential) {
+            throw "-PostgresCredential is required when -ConnectionString is not supplied."
         }
 
         # ConvertTo-PostgresCredential deliberately accepts an empty secret, and the serializer
@@ -1305,7 +1310,8 @@ function Add-DataStoreContext {
     The last school year in the range (mandatory).
 
 .PARAMETER PostgresCredential
-    The PostgreSQL credential (mandatory).
+    The PostgreSQL credential used to build the connection string. Required when -ConnectionString
+    is not supplied; ignored (and optional) when it is.
 
 .PARAMETER PostgresDbName
     The PostgreSQL database name. Defaults to "edfi_datamanagementservice".
@@ -1352,8 +1358,9 @@ function Add-DmsSchoolYearInstances {
         [Parameter(Mandatory = $true)]
         [int]$EndYear,
 
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNull()]
+        # Required only when -ConnectionString is not supplied; see .PARAMETER PostgresCredential.
+        # Not [Parameter(Mandatory)]: with a pre-built -ConnectionString it is never read, and a
+        # caller registering an MSSQL data store has no PostgreSQL credential to give.
         [System.Management.Automation.PSCredential]$PostgresCredential,
 
         [ValidateNotNullOrEmpty()]
@@ -1389,6 +1396,12 @@ function Add-DmsSchoolYearInstances {
 
     if (-not $hasPrebuiltConnectionString -and $DatabaseEngine -eq "mssql") {
         throw "-ConnectionString is required when -DatabaseEngine is 'mssql'."
+    }
+
+    # Checked up front rather than left to the first Add-DataStore call, so a missing credential
+    # fails before any year of the range has been registered.
+    if (-not $hasPrebuiltConnectionString -and $null -eq $PostgresCredential) {
+        throw "-PostgresCredential is required when -ConnectionString is not supplied."
     }
 
     $createdDataStores = @()
@@ -1550,7 +1563,7 @@ function Get-SeedLoaderNamespacePrefixes {
 
 <#
 .SYNOPSIS
-    Looks up an existing CMS vendor by company name.
+    Looks up an existing Configuration Service vendor by company name.
 
 .DESCRIPTION
     GETs v3/vendors?company={company} in the caller's tenant. The Configuration Service compares
@@ -1610,7 +1623,7 @@ function Find-CmsVendorByCompany {
 
 <#
 .SYNOPSIS
-    Looks up an existing CMS application by name and vendor ID.
+    Looks up an existing Configuration Service application by name and vendor ID.
 
 .DESCRIPTION
     GETs v3/vendors/{vendorId}/applications and filters by applicationName client-side.
@@ -1678,7 +1691,7 @@ function Find-CmsApplicationIdsByNameAndVendor {
 
 <#
 .SYNOPSIS
-    Deletes a CMS application by ID.
+    Deletes a Configuration Service application by ID.
 
 .DESCRIPTION
     Sends DELETE v3/applications/{id}. Treats 404 as already-deleted (warns instead of throwing).
@@ -1739,9 +1752,9 @@ function Remove-CmsApplication {
     Creates a fresh SeedLoader vendor/application and returns in-memory credentials.
 
 .DESCRIPTION
-    Orchestrates the CMS bootstrap steps required for seed delivery:
+    Orchestrates the Configuration Service bootstrap steps required for seed delivery:
       1. Registers the admin client (idempotent).
-      2. Obtains a CMS bearer token.
+      2. Obtains a Configuration Service bearer token.
       3. Creates the SeedLoader vendor, or reuses it and replaces its namespace prefixes.
       4. Deletes any existing Seed Loader application for that vendor so fresh credentials are returned.
       5. Creates a new application with ClaimSetName="SeedLoader" bound to the supplied DMS instance IDs.
@@ -1753,7 +1766,7 @@ function Remove-CmsApplication {
     The base URL of the Config server. Defaults to http://localhost:8081.
 
 .PARAMETER AdminClientId
-    The admin client ID used to obtain a CMS token.
+    The admin client ID used to obtain a Configuration Service token.
 
 .PARAMETER AdminClientSecret
     The admin client secret.
@@ -1910,7 +1923,7 @@ function New-SeedLoaderCredentials {
 
     # Close the OpenIddict CDC race: on a cold stack the just-created application is in the DB
     # but not yet surfaced into OpenIddict's runtime application store, so the first OAuth grant
-    # returns 401. Polling /connect/token confirms the client is usable before we hand
+    # fails. Polling /connect/token confirms the client is usable before we hand
     # credentials back to the caller.
     Wait-CmsClientAvailable -CmsUrl $CmsUrl -ClientId $result.Key -ClientSecret $result.Secret
 
@@ -1924,10 +1937,10 @@ function New-SeedLoaderCredentials {
 
 <#
 .SYNOPSIS
-    Confirms CMS has the 'SeedLoader' claim set loaded before SeedLoader credentials are minted.
+    Confirms the Configuration Service has the 'SeedLoader' claim set loaded before SeedLoader credentials are minted.
 
 .DESCRIPTION
-    Add-Application stores the ClaimSetName as a string. A stale Config image that predates
+    Add-Application stores the ClaimSetName as a string. A stale Configuration Service image that predates
     DMS-1152's embedded Claims.json would accept the application creation but then BulkLoadClient
     would surface confusing 401/403 noise on the first call because the runtime grant resolution
     can't find the SeedLoader claim set. This fail-fast preflight queries /v3/claimSets and throws
@@ -1986,7 +1999,7 @@ function Assert-CmsSeedLoaderClaimSetLoaded {
             | Where-Object { $_.name -eq "SeedLoader" -or $_.claimSetName -eq "SeedLoader" }
         )
     ) {
-        throw "CMS does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Config image and re-run."
+        throw "The Configuration Service does not have the 'SeedLoader' claim set loaded at $CmsUrl. The Configuration Service image likely predates DMS-1152's embedded Claims.json. Rebuild or pull a current Configuration Service image and re-run."
     }
 }
 

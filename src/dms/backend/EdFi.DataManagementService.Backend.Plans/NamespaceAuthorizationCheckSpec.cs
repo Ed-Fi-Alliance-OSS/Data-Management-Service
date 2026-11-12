@@ -30,11 +30,18 @@ namespace EdFi.DataManagementService.Backend.Plans;
 /// ordering model exists to prevent. Treat the default as "configured first", never as "unknown".
 /// </para>
 /// </param>
+/// <param name="NamespaceColumnUsesIdentityCollation">
+/// Whether <paramref name="NamespaceColumn"/> carries <see cref="DbColumnModel.UsesSqlServerIdentityCollation"/>.
+/// A stored-row check compares under the column's collation, so a proposed-value check applies the same
+/// identity collation to its parameter; otherwise the two checks could disagree on a database whose default
+/// collation differs from the identity collation.
+/// </param>
 public sealed record NamespaceAuthorizationCheckSpec(
     int Index,
     NamespaceAuthorizationCheckValueSource ValueSource,
     DbTableName RootTable,
     DbColumnName NamespaceColumn,
     string StrategyName = AuthorizationStrategyNameConstants.NamespaceBased,
-    int RawConfiguredIndex = 0
+    int RawConfiguredIndex = 0,
+    bool NamespaceColumnUsesIdentityCollation = false
 );

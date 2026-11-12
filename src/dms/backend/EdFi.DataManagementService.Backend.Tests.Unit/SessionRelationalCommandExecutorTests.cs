@@ -62,12 +62,9 @@ public class Given_SessionRelationalCommandExecutor
 
         var result = await sut.ExecuteReaderAsync(
             new RelationalCommand(
-                "select * from dms.lookup where referential_id = @referentialId and soft_deleted = @softDeleted",
+                "select * from dms.lookup where lookup_id = @lookupId and soft_deleted = @softDeleted",
                 [
-                    new RelationalParameter(
-                        "@referentialId",
-                        Guid.Parse("00000000-0000-0000-0000-000000000123")
-                    ),
+                    new RelationalParameter("@lookupId", Guid.Parse("00000000-0000-0000-0000-000000000123")),
                     new RelationalParameter(
                         "@softDeleted",
                         null,
@@ -86,12 +83,10 @@ public class Given_SessionRelationalCommandExecutor
         connection.CreateCommandCallCount.Should().Be(1);
         connection
             .Command.CommandText.Should()
-            .Be(
-                "select * from dms.lookup where referential_id = @referentialId and soft_deleted = @softDeleted"
-            );
+            .Be("select * from dms.lookup where lookup_id = @lookupId and soft_deleted = @softDeleted");
         connection.Command.BoundTransaction.Should().BeSameAs(transaction);
         connection.Command.Parameters.Should().HaveCount(2);
-        connection.Command.Parameters[0].ParameterName.Should().Be("@referentialId");
+        connection.Command.Parameters[0].ParameterName.Should().Be("@lookupId");
         connection
             .Command.Parameters[0]
             .Value.Should()

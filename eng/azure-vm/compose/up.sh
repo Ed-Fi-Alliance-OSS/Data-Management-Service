@@ -6,13 +6,18 @@
 # the relational schema already exist. For a FIRST-TIME stand-up the DMS services start AFTER bootstrap +
 # schema, so use provision/setup-env.ps1 (or pass an explicit subset -- note --no-deps, without
 # which `gateway` pulls the DMS services up via depends_on):
-#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin gateway   # then bootstrap + schema
+#   ./up.sh --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway   # then bootstrap + schema
 #   ./up.sh st-dms mt-dms                                                      # finally the DMS services
 # Extra args are passed through to `docker compose up` (e.g. a single service name).
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 [ -f .env ] || { echo "ERROR: .env not found. Copy .env.example to .env and customize."; exit 1; }
+
+# Name any retired variable before Compose fails on its missing replacement.
+# shellcheck source=legacy-env-warning.sh
+source ./legacy-env-warning.sh
+warn_legacy_env_names .env
 
 # Refuse to deploy the .env.example placeholder secrets: they satisfy the complexity checks,
 # so nothing downstream would reject them, and 443 is Internet-open on the VM.
@@ -22,7 +27,7 @@ if grep -qE '=.*CHANGEME' .env; then
   exit 1
 fi
 
-# External network shared by docker-compose.yml and keycloak.yml.
+# External network shared by docker-compose.yml and keycloak.compose.yml.
 docker network inspect dms-sec >/dev/null 2>&1 || docker network create dms-sec
 
 # Self-signed cert for local use if none present (replace with Let's Encrypt on the VM).
@@ -46,7 +51,7 @@ wait_for_infrastructure() {
   [[ "$interval" =~ ^[0-9]+$ ]] || { echo "ERROR: DMS_STARTUP_POLL_SECONDS must be a non-negative integer." >&2; return 1; }
   deadline=$((SECONDS + timeout))
 
-  echo "Waiting for Keycloak + config services to accept requests..."
+  echo "Waiting for Keycloak and Configuration Service instances to accept requests..."
   while :; do
     st_code="$(curl -s -k --connect-timeout 5 --max-time 10 -o /dev/null -w '%{http_code}' \
       https://localhost/st-config/health || true)"
@@ -65,11 +70,11 @@ wait_for_infrastructure() {
     fi
 
     if [ "$st_code" = "200" ] && [ "$kc_code" = "200" ] && [ "$mt_ready" = true ]; then
-      echo "Keycloak + config services ready."
+      echo "Keycloak and Configuration Service instances ready."
       return 0
     fi
     if [ "$SECONDS" -ge "$deadline" ]; then
-      echo "ERROR: Keycloak/config services were not ready within ${timeout}s" >&2
+      echo "ERROR: Keycloak and Configuration Service instances were not ready within ${timeout}s" >&2
       echo "       (st-config=$st_code, mt-config=$mt_code, keycloak=$kc_code). Check './logs.sh'." >&2
       return 1
     fi
@@ -110,12 +115,12 @@ if [ "$starts_dms" = true ] && ! find .bootstrap/ApiSchema -type f -name '*.json
   exit 1
 fi
 
-compose=(docker compose -f docker-compose.yml -f keycloak.yml --env-file .env)
+compose=(docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env)
 if [ "$#" -eq 0 ]; then
   echo "Stopping DMS services before dependency restart/update..."
   "${compose[@]}" stop st-dms mt-dms
   echo "Starting infrastructure before DMS..."
-  "${compose[@]}" up -d --no-deps postgres keycloak st-config mt-config pgadmin gateway
+  "${compose[@]}" up -d --no-deps postgres keycloak st-config mt-config pgadmin swagger-ui gateway
   ./record-keycloak-image.sh
   wait_for_infrastructure
   echo "Starting DMS services..."

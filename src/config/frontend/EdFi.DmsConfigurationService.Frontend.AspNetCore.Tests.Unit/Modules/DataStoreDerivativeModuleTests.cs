@@ -162,7 +162,10 @@ public class DataStoreDerivativeModuleTests
 
         [Test]
         public void It_uses_the_unresolved_reference_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+            _body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:conflict:unresolved-reference");
 
         [Test]
         public void It_has_the_unresolved_reference_title() =>
@@ -218,7 +221,10 @@ public class DataStoreDerivativeModuleTests
 
         [Test]
         public void It_uses_the_unresolved_reference_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+            _body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:conflict:unresolved-reference");
 
         [Test]
         public void It_has_the_unresolved_reference_title() =>
@@ -328,7 +334,7 @@ public class DataStoreDerivativeModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -384,7 +390,7 @@ public class DataStoreDerivativeModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -479,7 +485,7 @@ public class DataStoreDerivativeModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
             JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
             body["validationErrors"]!.AsObject().Should().ContainKey("ConnectionString");
         }
 

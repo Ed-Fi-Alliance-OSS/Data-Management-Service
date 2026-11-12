@@ -24,8 +24,7 @@ public class Given_DescriptorDocumentMaterializer
             contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 9, 30, 45, 987, TimeSpan.FromHours(-5)),
             description: null,
             effectiveBeginDate: new DateOnly(2025, 1, 15),
-            effectiveEndDate: new DateOnly(2025, 12, 31),
-            discriminator: "SchoolTypeDescriptor"
+            effectiveEndDate: new DateOnly(2025, 12, 31)
         );
         var composedEtag = EtagComposer.Compose(row.ContentVersion, _descriptorVariantKey);
 
@@ -57,8 +56,7 @@ public class Given_DescriptorDocumentMaterializer
             contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
             description: "Alternative school type",
             effectiveBeginDate: null,
-            effectiveEndDate: null,
-            discriminator: null
+            effectiveEndDate: null
         );
 
         var result = DescriptorDocumentMaterializer.Materialize(
@@ -90,7 +88,6 @@ public class Given_DescriptorDocumentMaterializer
             description: "Alternative school type",
             effectiveBeginDate: new DateOnly(2025, 1, 15),
             effectiveEndDate: null,
-            discriminator: "SchoolTypeDescriptor",
             contentVersion: 7L
         );
 
@@ -114,8 +111,7 @@ public class Given_DescriptorDocumentMaterializer
             contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
             description: "Alternative school type",
             effectiveBeginDate: null,
-            effectiveEndDate: null,
-            discriminator: "SchoolTypeDescriptor"
+            effectiveEndDate: null
         );
 
         var act = () =>
@@ -136,8 +132,7 @@ public class Given_DescriptorDocumentMaterializer
             contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 9, 30, 45, 987, TimeSpan.FromHours(-5)),
             description: "Alternative school type",
             effectiveBeginDate: new DateOnly(2025, 1, 15),
-            effectiveEndDate: new DateOnly(2025, 12, 31),
-            discriminator: "SchoolTypeDescriptor"
+            effectiveEndDate: new DateOnly(2025, 12, 31)
         );
 
         var result = DescriptorDocumentMaterializer.Materialize(
@@ -168,8 +163,7 @@ public class Given_DescriptorDocumentMaterializer
             contentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
             description: null,
             effectiveBeginDate: null,
-            effectiveEndDate: null,
-            discriminator: null
+            effectiveEndDate: null
         );
 
         var result = DescriptorDocumentMaterializer.Materialize(
@@ -193,7 +187,6 @@ public class Given_DescriptorDocumentMaterializer
         string? description,
         DateOnly? effectiveBeginDate,
         DateOnly? effectiveEndDate,
-        string? discriminator,
         long contentVersion = 42L
     )
     {
@@ -208,8 +201,7 @@ public class Given_DescriptorDocumentMaterializer
             ShortDescription: "Alternative",
             Description: description,
             EffectiveBeginDate: effectiveBeginDate,
-            EffectiveEndDate: effectiveEndDate,
-            Discriminator: discriminator
+            EffectiveEndDate: effectiveEndDate
         );
     }
 }

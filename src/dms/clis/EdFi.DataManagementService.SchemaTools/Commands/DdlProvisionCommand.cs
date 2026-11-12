@@ -30,6 +30,14 @@ public static class DdlProvisionCommand
         ILogger logger,
         IApiSchemaFileLoader fileLoader,
         EffectiveSchemaSetBuilder schemaSetBuilder
+    ) => Create(logger, fileLoader, schemaSetBuilder, CreateProvisioner);
+
+    /// <summary>Test seam: supplies the provisioner whose connections a test scripts.</summary>
+    internal static Command Create(
+        ILogger logger,
+        IApiSchemaFileLoader fileLoader,
+        EffectiveSchemaSetBuilder schemaSetBuilder,
+        Func<SqlDialect, ILogger, IDatabaseProvisioner> provisionerFactory
     )
     {
         var schemaOption = new Option<string[]>("--schema", "-s")
@@ -121,6 +129,7 @@ public static class DdlProvisionCommand
                         logger,
                         fileLoader,
                         schemaSetBuilder,
+                        provisionerFactory,
                         schemas,
                         connectionString,
                         dialect,
@@ -161,6 +170,7 @@ public static class DdlProvisionCommand
         ILogger logger,
         IApiSchemaFileLoader fileLoader,
         EffectiveSchemaSetBuilder schemaSetBuilder,
+        Func<SqlDialect, ILogger, IDatabaseProvisioner> provisionerFactory,
         string[] schemaPaths,
         string connectionString,
         string dialectName,
@@ -246,7 +256,7 @@ public static class DdlProvisionCommand
                 var effectiveSchemaInfo = result.EffectiveSchemaSet.EffectiveSchema;
 
                 // Create the appropriate provisioner
-                var provisioner = CreateProvisioner(dialect, logger);
+                var provisioner = provisionerFactory(dialect, logger);
 
                 if (managed)
                 {
@@ -302,6 +312,12 @@ public static class DdlProvisionCommand
                         Console.Error.WriteLine(exception.Message);
                         return 1;
                     }
+                    catch (PostgresqlPlatformCompatibilityException exception)
+                    {
+                        // Fixed requirement text plus a server-reported value; never a physical name.
+                        Console.Error.WriteLine(exception.Message);
+                        return 1;
+                    }
                     catch (Exception exception)
                     {
                         Console.Error.WriteLine(
@@ -317,6 +333,8 @@ public static class DdlProvisionCommand
                 var databaseWasCreated = false;
                 if (createDatabase)
                 {
+                    // Check the server first: an incompatible server must not be left with an empty database.
+                    provisioner.CheckPlatformPreconditions(connectionString);
                     databaseWasCreated = provisioner.CreateDatabaseIfNotExists(connectionString);
                 }
 

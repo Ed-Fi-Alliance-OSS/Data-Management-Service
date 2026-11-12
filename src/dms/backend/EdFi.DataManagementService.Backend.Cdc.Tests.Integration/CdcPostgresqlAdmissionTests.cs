@@ -177,7 +177,7 @@ public sealed class Given_Postgresql_Controller_Admission
             "canonical" =>
                 "INSERT INTO dms.\"Document\" (\"DocumentUuid\", \"ResourceKeyId\") SELECT gen_random_uuid(), \"ResourceKeyId\" FROM dms.\"ResourceKey\" LIMIT 1",
             "cache" =>
-                "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"DocumentJson\") SELECT 42, \"DocumentUuid\", 'Test', 'School', '1', 1, 'test', now(), '{}' FROM dms.\"Document\" WHERE \"DocumentId\" = 42",
+                "INSERT INTO dms.\"DocumentCache\" (\"DocumentId\", \"DocumentUuid\", \"ProjectName\", \"ResourceName\", \"ResourceVersion\", \"ContentVersion\", \"StreamEtag\", \"LastModifiedAt\", \"ContentCreatedAt\", \"DocumentJson\") SELECT 42, \"DocumentUuid\", 'Test', 'School', '1', 1, 'test', now(), '2001-02-03T04:05:06.123456Z', '{}' FROM dms.\"Document\" WHERE \"DocumentId\" = 42",
             "work" => "INSERT INTO dms.\"DocumentProjectionWork\" VALUES (42, 1, now(), now())",
             _ => throw new ArgumentOutOfRangeException(nameof(mutation)),
         };
@@ -602,6 +602,8 @@ public sealed class Given_Postgresql_Controller_Admission
     private sealed class CreationBoundary(ICdcManagedDatabaseProvisioner inner, Action afterCreate)
         : ICdcManagedDatabaseProvisioner
     {
+        public void CheckPlatformPreconditions() => inner.CheckPlatformPreconditions();
+
         public bool CreateDatabase()
         {
             bool result = inner.CreateDatabase();

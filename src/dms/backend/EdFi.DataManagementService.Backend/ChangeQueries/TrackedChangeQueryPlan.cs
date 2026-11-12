@@ -10,7 +10,8 @@ internal sealed record TrackedChangeQueryPlan(
     IReadOnlyList<ChangeQueryResponseField> Fields,
     bool IncludesTotalCount,
     bool IsEmpty,
-    long? TotalCount
+    long? TotalCount,
+    bool SelectsNoRows = false
 )
 {
     public static TrackedChangeQueryPlan Empty(long? totalCount) =>

@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.RelationalModel.Naming;
 using Reason = EdFi.DataManagementService.Backend.External.EducationOrganizationProjectionMappingIncompatibilityReason;
 
 namespace EdFi.DataManagementService.Backend.Plans;
@@ -157,12 +158,18 @@ public sealed class EducationOrganizationProjectionSqlCompiler(SqlDialect dialec
         ];
     }
 
+    /// <summary>
+    /// The identity output is the one view column that is none of <c>DocumentId</c>,
+    /// <c>ResourceKeyId</c> or <c>Discriminator</c>. Any other additional column leaves more than one
+    /// candidate, which is reported as <see cref="Reason.IdentityOutputUnresolved"/> rather than guessed.
+    /// </summary>
     private static int ResolveIdentityOutputIndex(AbstractUnionViewInfo unionView)
     {
         return ResolveSingleOutputIndex(
             unionView,
             static column =>
-                column.ColumnName.Value is not DocumentIdColumnName and not DiscriminatorColumnName,
+                column.ColumnName.Value is not DocumentIdColumnName and not DiscriminatorColumnName
+                && column.ColumnName != RelationalNameConventions.ResourceKeyIdColumnName,
             Reason.IdentityOutputUnresolved
         );
     }

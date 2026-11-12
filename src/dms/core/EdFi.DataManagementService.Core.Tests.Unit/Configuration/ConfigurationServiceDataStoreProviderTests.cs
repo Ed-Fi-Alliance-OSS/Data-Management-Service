@@ -23,7 +23,8 @@ public class ConfigurationServiceDataStoreProviderTests
     private const string TestEncryptionKey = "TestEncryptionKey123456789012345678901234567890";
 
     /// <summary>
-    /// Mirrors the CMS ConnectionStringEncryptionService.Encrypt() method exactly.
+    /// Produces the legacy AES-CBC form the CMS wrote before connection string envelopes, which DMS
+    /// still reads.
     /// </summary>
     private static string EncryptToBase64(string plainText, string encryptionKey)
     {
@@ -56,7 +57,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var dataStoresResponse = new[]
@@ -197,7 +198,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var dataStoresResponse = new object[]
@@ -462,7 +463,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
@@ -510,7 +511,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("invalid-token");
+                .Returns(new ConfigurationServiceTokenLease("invalid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.Unauthorized, "");
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
@@ -535,7 +536,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.InternalServerError, "");
             var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://api.example.com/") };
@@ -566,7 +567,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
 
@@ -668,7 +669,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var firstResponse = new[]
@@ -743,7 +744,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
 
@@ -814,7 +815,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var dataStoresResponse = new[]
@@ -980,7 +981,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var dataStoresResponse = new[]
@@ -1033,7 +1034,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var dataStoresResponse = new[]
@@ -1092,7 +1093,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             var dataStoresResponse = new[]
@@ -1157,7 +1158,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
 
@@ -1195,7 +1196,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
 
@@ -1230,7 +1231,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
 
@@ -1272,7 +1273,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
 
@@ -1317,7 +1318,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             var handler = new TestHttpMessageHandler(HttpStatusCode.OK, "[]");
 
@@ -1356,7 +1357,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             _handler.SetResponse(
@@ -1436,7 +1437,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             _handler.SetResponse(
@@ -1516,7 +1517,7 @@ public class ConfigurationServiceDataStoreProviderTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("valid-token");
+                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
 
             _handler = new TestHttpMessageHandler(HttpStatusCode.OK, "");
             _handler.SetResponse(
@@ -1915,7 +1916,9 @@ public class ConfigurationServiceDataStoreProviderTests
 
     private sealed class StaticTokenHandler : IConfigurationServiceTokenHandler
     {
-        public Task<string> GetTokenAsync(
+        private static readonly ConfigurationServiceTokenLease _lease = new("valid-token", 1);
+
+        public Task<ConfigurationServiceTokenLease> GetTokenAsync(
             string clientId,
             string clientSecret,
             string scope,
@@ -1923,8 +1926,16 @@ public class ConfigurationServiceDataStoreProviderTests
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return Task.FromResult("valid-token");
+            return Task.FromResult(_lease);
         }
+
+        public Task<ConfigurationServiceTokenLease> RefreshRejectedTokenAsync(
+            ConfigurationServiceTokenLease rejected,
+            string clientId,
+            string clientSecret,
+            string scope,
+            CancellationToken cancellationToken = default
+        ) => GetTokenAsync(clientId, clientSecret, scope, cancellationToken);
     }
 
     private sealed class BlockingTokenHandler : IConfigurationServiceTokenHandler
@@ -1932,7 +1943,7 @@ public class ConfigurationServiceDataStoreProviderTests
         public TaskCompletionSource<CancellationToken> ObservedToken { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        public async Task<string> GetTokenAsync(
+        public async Task<ConfigurationServiceTokenLease> GetTokenAsync(
             string clientId,
             string clientSecret,
             string scope,
@@ -1943,6 +1954,14 @@ public class ConfigurationServiceDataStoreProviderTests
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
             throw new AssertionException("Token acquisition should be cancelled.");
         }
+
+        public Task<ConfigurationServiceTokenLease> RefreshRejectedTokenAsync(
+            ConfigurationServiceTokenLease rejected,
+            string clientId,
+            string clientSecret,
+            string scope,
+            CancellationToken cancellationToken = default
+        ) => throw new AssertionException("No protected read is sent, so none can be rejected.");
     }
 
     private sealed class BlockingDataStoreHttpMessageHandler : HttpMessageHandler

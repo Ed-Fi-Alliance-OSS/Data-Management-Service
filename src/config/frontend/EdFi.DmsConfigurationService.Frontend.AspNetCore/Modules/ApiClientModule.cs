@@ -5,7 +5,6 @@
 
 using System.Globalization;
 using System.Net;
-using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel;
@@ -18,9 +17,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
-using FluentValidation.Results;
 using Microsoft.Extensions.Options;
-using Microsoft.OpenApi;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -29,10 +26,45 @@ public class ApiClientModule : IEndpointModule
     private const string DuplicateNameError =
         "An API client with this name already exists for the application.";
 
+    private static IResult EducationOrganizationScopeConflict(
+        int applicationId,
+        long[] missingEducationOrganizationIds,
+        HttpContext httpContext
+    ) =>
+        Results.Json(
+            FailureResponse.ForEducationOrganizationScopeConflict(
+                $"The API client is narrowed to education organizations that are not on Application {applicationId}: {string.Join(", ", missingEducationOrganizationIds)}. To move it, send educationOrganizationIds on that Application or inheritsApplicationEducationOrganizations true.",
+                httpContext.TraceIdentifier
+            ),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+
+    // A 409 for a name already used by another API client of the Application, as the Management
+    // API specification and ODS Admin API answer it
     private static IResult DuplicateName(HttpContext httpContext) =>
-        FailureResults.DataValidation(
-            [new ValidationFailure("Name", DuplicateNameError)],
-            httpContext.TraceIdentifier
+        Results.Json(
+            FailureResponse.ForConflict(DuplicateNameError, httpContext.TraceIdentifier),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+
+    /// <summary>
+    /// Fixed 409 details for the identifier constraints. Neither names a row, key, or UUID: the
+    /// key is generated per request, so a collision is retriable by the caller and nothing in
+    /// the response may identify the row that holds the identifier.
+    /// </summary>
+    private const string DuplicateClientIdConflict =
+        "The generated client key is already in use. Retry the request.";
+
+    private const string DuplicateClientUuidConflict =
+        "The identity provider client is already associated with another API client.";
+
+    private static IResult IdentifierConflict(string detail, HttpContext httpContext) =>
+        Results.Json(
+            FailureResponse.ForConflict(detail, httpContext.TraceIdentifier),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
         );
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -40,49 +72,139 @@ public class ApiClientModule : IEndpointModule
         endpoints
             .MapSecuredPost("/v3/apiClients/", InsertApiClient)
             .Produces<ApiClientCredentialsResponse>(201)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(ApiClientOpenApiMetadata.InsertDescription)
             .AddOpenApiOperationTransformer(
                 (operation, context, ct) =>
                 {
-                    SetEmptyDataStoreAssignmentExample(
+                    ApiClientOpenApiMetadata.SetInsertExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
                         operation,
-                        """
-                        {
-                          "applicationId": 1,
-                          "name": "Identity Only Client",
-                          "isApproved": true,
-                          "dataStoreIds": []
-                        }
-                        """
+                        ("400", ApiClientOpenApiMetadata.InsertBadRequest),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("409", ApiClientOpenApiMetadata.InsertConflict),
+                        ("500", ApiClientOpenApiMetadata.ServerError),
+                        ("502", ApiClientOpenApiMetadata.InsertBadGateway)
                     );
                     return Task.CompletedTask;
                 }
             );
         endpoints
             .MapSecuredPut($"/v3/apiClients/{{id}}", UpdateApiClient)
+            .Produces(204)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(ApiClientOpenApiMetadata.UpdateDescription)
             .AddOpenApiOperationTransformer(
                 (operation, context, ct) =>
                 {
-                    SetEmptyDataStoreAssignmentExample(
+                    ApiClientOpenApiMetadata.SetUpdateExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
                         operation,
-                        """
-                        {
-                          "id": 1,
-                          "applicationId": 1,
-                          "name": "Identity Only Client",
-                          "isApproved": true,
-                          "dataStoreIds": []
-                        }
-                        """
+                        ("400", ApiClientOpenApiMetadata.UpdateBadRequest),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("409", ApiClientOpenApiMetadata.UpdateConflict),
+                        ("500", ApiClientOpenApiMetadata.UpdateServerError),
+                        ("502", ApiClientOpenApiMetadata.UpdateBadGateway)
                     );
                     return Task.CompletedTask;
                 }
             );
-        endpoints.MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient);
+        endpoints
+            .MapSecuredDelete($"/v3/apiClients/{{id}}", DeleteApiClient)
+            .Produces(204)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(
+                "Deletes the API client. Deleting an Application's last API client keeps the "
+                    + "Application, which then has no API clients: it reports enabled false and "
+                    + "dataStoreIds [], and its reset-credential returns 409. Create another API client "
+                    + "with POST /v3/apiClients."
+            )
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("400", ApiClientOpenApiMetadata.InvalidId),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("409", ApiClientOpenApiMetadata.ConcurrentChange),
+                        ("500", ApiClientOpenApiMetadata.ServerError),
+                        ("502", ApiClientOpenApiMetadata.DeleteBadGateway)
+                    );
+                    return Task.CompletedTask;
+                }
+            );
         endpoints
             .MapSecuredPut($"/v3/apiClients/{{id}}/reset-credential", ResetCredential)
-            .Produces<ApiClientCredentialsResponse>(200);
+            .Produces<ApiClientCredentialsResponse>(200)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(409)
+            .ProducesProblem(500)
+            .ProducesProblem(502)
+            .WithDescription(ApiClientOpenApiMetadata.ResetDescription)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("400", ApiClientOpenApiMetadata.InvalidId),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("409", ApiClientOpenApiMetadata.ConcurrentChange),
+                        ("500", ApiClientOpenApiMetadata.ServerError),
+                        ("502", ApiClientOpenApiMetadata.ResetBadGateway)
+                    );
+                    return Task.CompletedTask;
+                }
+            );
         // Limited access endpoints - accessible by service accounts for internal DMS operations
-        endpoints.MapLimitedAccess("/v3/apiClients/", GetAll).Produces<List<ApiClientResponse>>(200);
+        endpoints
+            .MapLimitedAccess("/v3/apiClients/", GetAll)
+            .Produces<List<ApiClientResponse>>(200)
+            .ProducesProblem(400)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(500)
+            .WithDescription(ApiClientOpenApiMetadata.ReadDescription)
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetReadCollectionExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("400", ApiClientOpenApiMetadata.CollectionBadRequest),
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("500", ApiClientOpenApiMetadata.ServerError)
+                    );
+                    return Task.CompletedTask;
+                }
+            );
         // One route carries both identifier forms. The OAuth client key is resolved first and wins
         // outright, because ClientId has no format constraint: a stored key of "12345" is possible
         // and must never be shadowed by the unrelated row whose primary key is 12345. Registering a
@@ -91,30 +213,33 @@ public class ApiClientModule : IEndpointModule
         endpoints
             .MapLimitedAccess("/v3/apiClients/{id}", GetByIdentifier)
             .Produces<ApiClientResponse>(200)
+            .ProducesProblem(401)
+            .ProducesProblem(403)
+            .ProducesProblem(404)
+            .ProducesProblem(500)
             .WithSummary("Retrieves a specific apiClient by OAuth client key or by numeric identifier.")
             .WithDescription(
                 "The path segment is resolved key-first. It is matched against the OAuth client key "
                     + "('clientId' in responses, 'key' when credentials are issued), and that match "
                     + "wins whenever it exists. Only when no client key matches, and the segment is a "
                     + "valid 32-bit integer, is it resolved as the numeric ApiClient identifier ('id' "
-                    + "in responses)."
+                    + "in responses). "
+                    + ApiClientOpenApiMetadata.ReadDescription
+            )
+            .AddOpenApiOperationTransformer(
+                (operation, context, ct) =>
+                {
+                    ApiClientOpenApiMetadata.SetReadItemExamples(operation);
+                    ApiClientOpenApiMetadata.SetResponseDescriptions(
+                        operation,
+                        ("401", ApiClientOpenApiMetadata.Unauthorized),
+                        ("403", ApiClientOpenApiMetadata.Forbidden),
+                        ("404", ApiClientOpenApiMetadata.NotFound),
+                        ("500", ApiClientOpenApiMetadata.ServerError)
+                    );
+                    return Task.CompletedTask;
+                }
             );
-    }
-
-    /// <summary>
-    /// Publishes a request example whose dataStoreIds is empty, so the documented default for an
-    /// API client is the identity-only shape rather than an assignment callers must invent.
-    /// </summary>
-    private static void SetEmptyDataStoreAssignmentExample(OpenApiOperation operation, string example)
-    {
-        if (
-            operation.RequestBody is OpenApiRequestBody requestBody
-            && requestBody.Content is not null
-            && requestBody.Content.TryGetValue("application/json", out var mediaType)
-        )
-        {
-            mediaType.Example = JsonNode.Parse(example);
-        }
     }
 
     private async Task<IResult> InsertApiClient(
@@ -126,6 +251,7 @@ public class ApiClientModule : IEndpointModule
         IVendorRepository vendorRepository,
         IDataStoreRepository dataStoreRepository,
         IIdentityProviderRepository clientRepository,
+        IApplicationLockManager lockManager,
         IOptions<IdentitySettings> identitySettings,
         IOptions<ClientSecretValidationOptions> clientSecretValidationOptionsAccessor,
         ILogger<ApiClientModule> logger
@@ -133,6 +259,21 @@ public class ApiClientModule : IEndpointModule
     {
         logger.LogDebug("Entering InsertApiClient");
         await validator.GuardAsync(command);
+
+        // The Application read, the provider client built from it and the row insert all happen
+        // under the Application's aggregate lock. Without it, an Application save could commit and
+        // sync its existing clients between the read and the insert, and this client would keep the
+        // pre-save claims without being marked pending. Invalid input above never consumes a lock.
+        ApplicationLockResult lockResult = await lockManager.AcquireAsync(
+            command.ApplicationId,
+            httpContext.RequestAborted
+        );
+        if (LockFailureResult(lockResult, httpContext, logger) is { } lockFailure)
+        {
+            return lockFailure;
+        }
+
+        await using var applicationLock = ((ApplicationLockResult.Acquired)lockResult).Handle;
 
         // Validate Application exists and get application details
         ApplicationGetResult applicationResult = await applicationRepository.GetApplication(
@@ -220,6 +361,28 @@ public class ApiClientModule : IEndpointModule
             return nameFailure;
         }
 
+        // The rules that need the Application are applied before the identity provider is touched,
+        // so a rejected scope never provisions a provider client
+        ApiClientEducationOrganizationScopeResolution resolution =
+            ApiClientEducationOrganizationScopeResolver.Resolve(
+                command.EducationOrganizationIdsSupplied ? command.EducationOrganizationIds : null,
+                command.InheritsApplicationEducationOrganizations,
+                application.EducationOrganizationIds,
+                current: null
+            );
+        if (resolution is ApiClientEducationOrganizationScopeResolution.Invalid invalid)
+        {
+            return FailureResults.DataValidation([invalid.Failure], httpContext.TraceIdentifier);
+        }
+
+        // A create has no current scope to conflict with, so a valid request always resolves
+        if (resolution is not ApiClientEducationOrganizationScopeResolution.Resolved scope)
+        {
+            return FailureResults.Unknown(httpContext.TraceIdentifier);
+        }
+
+        command.EducationOrganizationScope = scope.Scope;
+
         var clientId = Guid.NewGuid().ToString();
         var clientSecret = ClientSecretValidation.GenerateSecretWithMinimumLength(
             clientSecretValidationOptionsAccessor.Value
@@ -235,7 +398,7 @@ public class ApiClientModule : IEndpointModule
             application.ApplicationName,
             application.ClaimSetName,
             namespacePrefixes,
-            string.Join(",", application.EducationOrganizationIds),
+            scope.Claim,
             command.DataStoreIds,
             command.IsApproved
         );
@@ -257,6 +420,14 @@ public class ApiClientModule : IEndpointModule
                     "Identity provider error during client creation",
                     httpContext.TraceIdentifier
                 );
+            case ClientCreateResult.FailureDuplicateClientId:
+                // The provider already holds a client under the generated key and created nothing,
+                // so there is no client to delete and no row is written.
+                logger.LogWarning(
+                    "The generated client key for client {ClientId} is already registered at the identity provider; no client was created and nothing was written",
+                    SanitizeForLog(clientId)
+                );
+                return IdentifierConflict(DuplicateClientIdConflict, httpContext);
             case ClientCreateResult.Success clientSuccess:
                 clientUuid = clientSuccess.ClientUuid;
                 break;
@@ -291,7 +462,15 @@ public class ApiClientModule : IEndpointModule
                     }
                 );
             case ApiClientInsertResult.FailureApplicationNotFound:
-                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                // No row was written, so the constraints never judged the reported UUID; it is
+                // deleted only once the check proves no row holds it.
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
                         $"Application with ID {command.ApplicationId} not found.",
@@ -300,7 +479,21 @@ public class ApiClientModule : IEndpointModule
                     contentType: "application/problem+json",
                     statusCode: (int)HttpStatusCode.Conflict
                 );
+            case ApiClientInsertResult.FailureRequestedEducationOrganizationsNotOnApplication notOnApplication:
+                // Reached only after the row was inserted, which proved no row held the reported
+                // UUID. The Application lost one of the requested education organizations after
+                // the rules were applied.
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return FailureResults.DataValidation(
+                    [
+                        ApiClientEducationOrganizationScopeResolver
+                            .NotOnApplication(notOnApplication.EducationOrganizationIds)
+                            .Failure,
+                    ],
+                    httpContext.TraceIdentifier
+                );
             case ApiClientInsertResult.FailureDataStoreNotFound:
+                // Reached only after the row was inserted, which proved no row held the reported UUID.
                 await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
                 return Results.Json(
                     FailureResponse.ForUnresolvedReference(
@@ -311,14 +504,54 @@ public class ApiClientModule : IEndpointModule
                     statusCode: (int)HttpStatusCode.Conflict
                 );
             case ApiClientInsertResult.FailureDuplicateName:
-                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                // A row violating both the name and the UUID constraint can be reported as either,
+                // so the name conflict does not prove the reported UUID is this request's own.
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
                 return DuplicateName(httpContext);
+            case ApiClientInsertResult.FailureDuplicateClientId:
+                // The generated key collided with another row's. The provider client this
+                // request created is deleted only once the reference check proves no row holds
+                // its UUID; the 409 stands whatever the check and the cleanup report.
+                logger.LogWarning(
+                    "The generated client key for client {ClientId} is already in use; nothing was written",
+                    SanitizeForLog(clientId)
+                );
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
+                return IdentifierConflict(DuplicateClientIdConflict, httpContext);
+            case ApiClientInsertResult.FailureDuplicateClientUuid:
+                // Another row already references the UUID the provider reported, so the provider
+                // client is provably in use and is never deleted.
+                logger.LogError(
+                    "Provider client {ClientUuid} (client {ClientId}) is already associated with another API client; left in place; review manually",
+                    clientUuid,
+                    SanitizeForLog(clientId)
+                );
+                return IdentifierConflict(DuplicateClientUuidConflict, httpContext);
             case ApiClientInsertResult.FailureUnknown failure:
                 logger.LogError(
                     "Failure inserting the API client row: {FailureMessage}",
                     SanitizeForLog(failure.FailureMessage)
                 );
-                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                // An unclassified failure says nothing about the reported UUID.
+                await CleanUpProvisionedClientWhenUnreferencedAsync(
+                    apiClientRepository,
+                    clientRepository,
+                    clientUuid,
+                    clientId,
+                    logger
+                );
                 return FailureResults.Unknown(httpContext.TraceIdentifier);
         }
 
@@ -430,6 +663,66 @@ public class ApiClientModule : IEndpointModule
             logger.LogError(
                 exception,
                 "Could not confirm deletion of provider client {ClientUuid} (client {ClientId}) after the database insert failed; cleanup outcome {Outcome}; the client may remain and must be reviewed manually",
+                clientUuid,
+                SanitizeForLog(clientId),
+                outcome
+            );
+    }
+
+    /// <summary>
+    /// Removes the identity-provider client this request provisioned after a database insert
+    /// failure that does not prove the UUID is this request's own (a key or name conflict, a
+    /// missing application, or an unclassified failure), but only once the reference check proves
+    /// no ApiClient row holds its UUID. The check is deliberately cross-tenant, so a referenced
+    /// UUID, a failed or unrecognized check, or a check that throws all leave the client in place
+    /// and report it at Error with the identifiers needed to find it. A thrown check is reported by
+    /// exception type only: its message can carry provider or database text that the sanitizer
+    /// never sees, so the exception itself is not attached. The caller's response is never
+    /// replaced by what happens here.
+    /// </summary>
+    private static async Task CleanUpProvisionedClientWhenUnreferencedAsync(
+        IApiClientRepository apiClientRepository,
+        IIdentityProviderRepository clientRepository,
+        Guid clientUuid,
+        string clientId,
+        ILogger logger
+    )
+    {
+        ApiClientUuidReferenceResult referenceResult;
+        try
+        {
+            referenceResult = await apiClientRepository.HasApiClientUuidReference(clientUuid);
+        }
+        catch (Exception ex)
+        {
+            LogLeftInPlace(ex.GetType().Name);
+            return;
+        }
+
+        switch (referenceResult)
+        {
+            case ApiClientUuidReferenceResult.None:
+                await CleanUpProvisionedClientAsync(clientRepository, clientUuid, clientId, logger);
+                return;
+
+            case ApiClientUuidReferenceResult.Referenced:
+                LogLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+                return;
+
+            case ApiClientUuidReferenceResult.FailureUnknown referenceFailure:
+                LogLeftInPlace(
+                    $"{nameof(ApiClientUuidReferenceResult.FailureUnknown)}: {SanitizeForLog(referenceFailure.FailureMessage)}"
+                );
+                return;
+
+            default:
+                LogLeftInPlace(referenceResult.GetType().Name);
+                return;
+        }
+
+        void LogLeftInPlace(string outcome) =>
+            logger.LogError(
+                "Could not prove provider client {ClientUuid} (client {ClientId}) is unreferenced after the database insert failed; reference check outcome {Outcome}; left in place; review manually",
                 clientUuid,
                 SanitizeForLog(clientId),
                 outcome
@@ -661,12 +954,76 @@ public class ApiClientModule : IEndpointModule
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
             }
 
+            // The client's scope, read under the aggregate locks, resolves the request and is
+            // what a failed update restores in the identity provider.
+            ApiClientEducationOrganizationState originalScope;
+            switch (await apiClientRepository.GetApiClientEducationOrganizationState(id))
+            {
+                case ApiClientEducationOrganizationStateResult.Success stateSuccess:
+                    originalScope = stateSuccess.State;
+                    break;
+                case ApiClientEducationOrganizationStateResult.FailureNotFound:
+                    return FailureResults.NotFound("ApiClient not found", httpContext.TraceIdentifier);
+                case ApiClientEducationOrganizationStateResult.FailureUnknown stateFailure:
+                    logger.LogError(
+                        "Error reading the education organization scope of ApiClient {Id}: {Message}",
+                        id,
+                        SanitizeForLog(stateFailure.FailureMessage)
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+                default:
+                    logger.LogError(
+                        "The education organization scope of ApiClient {Id} could not be resolved",
+                        id
+                    );
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            // An inheriting client's effective list is its original Application's list
+            string originalClaim = string.Join(
+                ",",
+                originalScope.InheritsApplicationEducationOrganizations
+                    ? originalApplication.EducationOrganizationIds.Order()
+                    : originalScope.StoredEducationOrganizationIds.Order()
+            );
+
+            // The rules are applied against the destination Application before the identity
+            // provider is touched, so a rejected scope or move changes nothing
+            ApiClientEducationOrganizationScopeResolution.Resolved scope;
+            switch (
+                ApiClientEducationOrganizationScopeResolver.Resolve(
+                    command.EducationOrganizationIdsSupplied ? command.EducationOrganizationIds : null,
+                    command.InheritsApplicationEducationOrganizations,
+                    application.EducationOrganizationIds,
+                    originalScope,
+                    moves: command.ApplicationId != existingApiClient.ApplicationId
+                )
+            )
+            {
+                case ApiClientEducationOrganizationScopeResolution.Resolved resolved:
+                    scope = resolved;
+                    break;
+                case ApiClientEducationOrganizationScopeResolution.ScopeConflict conflict:
+                    return EducationOrganizationScopeConflict(
+                        command.ApplicationId,
+                        conflict.MissingEducationOrganizationIds,
+                        httpContext
+                    );
+                case ApiClientEducationOrganizationScopeResolution.Invalid invalid:
+                    return FailureResults.DataValidation([invalid.Failure], httpContext.TraceIdentifier);
+                default:
+                    return FailureResults.Unknown(httpContext.TraceIdentifier);
+            }
+
+            command.EducationOrganizationScope = scope.Scope;
+
             // Update client in identity provider FIRST
+            // The display name is the Application's, as on create and an Application update.
             var clientUpdateResult = await identityProviderRepository.UpdateClientAsync(
                 existingApiClient.ClientUuid.ToString(),
-                command.Name,
+                application.ApplicationName,
                 application.ClaimSetName,
-                string.Join(",", application.EducationOrganizationIds),
+                scope.Claim,
                 command.DataStoreIds,
                 command.IsApproved,
                 identitySettings.Value.ClientRole
@@ -697,8 +1054,14 @@ public class ApiClientModule : IEndpointModule
                     return FailureResults.Unknown(httpContext.TraceIdentifier);
                 case ClientUpdateResult.Success updateSuccess:
                     // Persist the client UUID the provider reports: unchanged when it updated the
-                    // client in place, or a replacement when it recreated the client.
+                    // client in place, or a replacement when it recreated the client. The provider
+                    // now holds this client's current settings, so the save also completes any
+                    // pending identity provider synchronization of the client (DMS-1642), unless a
+                    // claim set rename has committed since the Application was read above; then it
+                    // leaves the client pending, even one moving into the renamed Application.
                     command.ClientUuid = updateSuccess.ClientUuid;
+                    command.CompletesIdentityProviderSync = true;
+                    command.SentClaimSetName = application.ClaimSetName;
 
                     ApiClientUpdateResult repositoryResult;
                     try
@@ -723,6 +1086,18 @@ public class ApiClientModule : IEndpointModule
                     // one that must be persisted.
                     async Task<bool> TryCompensateAsync()
                     {
+                        // The rollback addresses the UUID the provider reported for this update.
+                        // The stored UUID is this client's own; a replacement is this request's
+                        // only while no ApiClient row holds it. Whichever constraint the database
+                        // reported, a replacement another row holds is never addressed.
+                        if (
+                            updateSuccess.ClientUuid != existingApiClient.ClientUuid
+                            && !await IsUnreferencedReplacementAsync(updateSuccess.ClientUuid)
+                        )
+                        {
+                            return false;
+                        }
+
                         logger.LogWarning(
                             "Repository update failed for ApiClient {Id}; rolling back the identity provider",
                             id
@@ -732,9 +1107,9 @@ public class ApiClientModule : IEndpointModule
                         {
                             rollbackResult = await identityProviderRepository.UpdateClientAsync(
                                 updateSuccess.ClientUuid.ToString(),
-                                existingApiClient.Name,
+                                originalApplication.ApplicationName,
                                 originalApplication.ClaimSetName,
-                                string.Join(",", originalApplication.EducationOrganizationIds),
+                                originalClaim,
                                 [.. existingApiClient.DataStoreIds],
                                 existingApiClient.IsApproved,
                                 identitySettings.Value.ClientRole
@@ -786,6 +1161,16 @@ public class ApiClientModule : IEndpointModule
                                     id
                                 );
                                 return false;
+                            case ApiClientUuidSyncResult.FailureNewUuidInUse:
+                                // The rollback UUID the provider reported is already held by another
+                                // ApiClient row: a provider inconsistency. That provider client belongs
+                                // to the other row, so it is not deleted.
+                                logger.LogError(
+                                    "The rollback client UUID {ClientUuid} for ApiClient {Id} is already held by another API client; stored client state is inconsistent; nothing was deleted",
+                                    rollbackSuccess.ClientUuid,
+                                    id
+                                );
+                                return false;
                             case ApiClientUuidSyncResult.FailureUnknown syncFailure:
                                 logger.LogError(
                                     "Failed to persist the rolled-back client UUID for ApiClient {Id}: {Message}; stored client state is inconsistent",
@@ -800,6 +1185,49 @@ public class ApiClientModule : IEndpointModule
                                 );
                                 return false;
                         }
+                    }
+
+                    // True only when the reference check proves no ApiClient row holds the
+                    // replacement UUID. A referenced UUID, a failed or unrecognized check, or a
+                    // check that throws all refuse compensation and report it at Error; a thrown
+                    // check is reported by exception type only, since its message is never
+                    // sanitized.
+                    async Task<bool> IsUnreferencedReplacementAsync(Guid replacementUuid)
+                    {
+                        string outcome;
+                        try
+                        {
+                            switch (await apiClientRepository.HasApiClientUuidReference(replacementUuid))
+                            {
+                                case ApiClientUuidReferenceResult.None:
+                                    return true;
+                                case ApiClientUuidReferenceResult.Referenced:
+                                    logger.LogError(
+                                        "The identity provider reported a client UUID {ClientUuid} already held by another API client for ApiClient {Id}; stored client state is inconsistent; no compensation attempted",
+                                        replacementUuid,
+                                        id
+                                    );
+                                    return false;
+                                case ApiClientUuidReferenceResult.FailureUnknown referenceFailure:
+                                    outcome = SanitizeForLog(referenceFailure.FailureMessage);
+                                    break;
+                                case var unrecognized:
+                                    outcome = unrecognized.GetType().Name;
+                                    break;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            outcome = ex.GetType().Name;
+                        }
+
+                        logger.LogError(
+                            "Could not verify the identity provider client {ClientUuid} reported for ApiClient {Id} is unreferenced: {Outcome}; stored client state is inconsistent; no compensation attempted",
+                            replacementUuid,
+                            id,
+                            outcome
+                        );
+                        return false;
                     }
 
                     // Removes the identity provider client left by the update of a vanished
@@ -872,7 +1300,17 @@ public class ApiClientModule : IEndpointModule
                         && resolved.IsApproved == command.IsApproved
                         && SetEquals(resolved.DataStoreIds, command.DataStoreIds)
                         && resolved.ClientId == existingApiClient.ClientId
-                        && resolved.ClientUuid == updateSuccess.ClientUuid;
+                        && resolved.ClientUuid == updateSuccess.ClientUuid
+                        && resolved.InheritsApplicationEducationOrganizations == scope.Inherits
+                        && SetEquals(
+                            resolved.StoredEducationOrganizationIds,
+                            scope.StoredEducationOrganizationIds
+                        )
+                        // The committed update cleared the pending marker; a still-pending client
+                        // whose other fields already matched (an unchanged request) did not commit.
+                        // A claim set rename committed alongside it leaves the client pending, which
+                        // resolves as a partial match and leaves the rename's marker in place.
+                        && resolved.IdentityProviderSyncPendingSince is null;
 
                     bool MatchesOriginal(ApiClientResolutionState resolved) =>
                         resolved.Name == existingApiClient.Name
@@ -880,7 +1318,15 @@ public class ApiClientModule : IEndpointModule
                         && resolved.IsApproved == existingApiClient.IsApproved
                         && SetEquals(resolved.DataStoreIds, existingApiClient.DataStoreIds)
                         && resolved.ClientId == existingApiClient.ClientId
-                        && resolved.ClientUuid == existingApiClient.ClientUuid;
+                        && resolved.ClientUuid == existingApiClient.ClientUuid
+                        && resolved.InheritsApplicationEducationOrganizations
+                            == originalScope.InheritsApplicationEducationOrganizations
+                        && SetEquals(
+                            resolved.StoredEducationOrganizationIds,
+                            originalScope.StoredEducationOrganizationIds
+                        )
+                        && resolved.IdentityProviderSyncPendingSince
+                            == originalScope.IdentityProviderSyncPendingSince;
 
                     // An unknown or thrown repository outcome is resolved with the authoritative
                     // row-locking read, which waits out any in-flight commit before classifying
@@ -889,6 +1335,20 @@ public class ApiClientModule : IEndpointModule
                     {
                         switch (await apiClientRepository.GetApiClientResolutionState(id))
                         {
+                            case ApiClientResolutionResult.Success resolution
+                                when !command.IsApproved
+                                    && MatchesCommand(resolution.State)
+                                    && MatchesOriginal(resolution.State):
+                                // An un-approval revokes the client's tokens in its transaction,
+                                // and no stored field records that. A client that already held the
+                                // requested state reads the same whether the transaction committed
+                                // or rolled back, so the revocation is unconfirmed; there is no
+                                // change to compensate.
+                                logger.LogError(
+                                    "Could not confirm the token revocation of the failed un-approval of ApiClient {Id}; retry the un-approval",
+                                    id
+                                );
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
                             case ApiClientResolutionResult.Success resolution
                                 when MatchesCommand(resolution.State):
                                 // The ambiguous transaction committed completely; the provider
@@ -977,6 +1437,43 @@ public class ApiClientModule : IEndpointModule
                             }
 
                             return DuplicateName(httpContext);
+                        case ApiClientUpdateResult.FailureRequestedEducationOrganizationsNotOnApplication notOnApplication:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return FailureResults.DataValidation(
+                                [
+                                    ApiClientEducationOrganizationScopeResolver
+                                        .NotOnApplication(notOnApplication.EducationOrganizationIds)
+                                        .Failure,
+                                ],
+                                httpContext.TraceIdentifier
+                            );
+                        case ApiClientUpdateResult.FailureEducationOrganizationsNotOnApplication notOnApplication:
+                            if (!await TryCompensateAsync())
+                            {
+                                return FailureResults.Unknown(httpContext.TraceIdentifier);
+                            }
+
+                            return EducationOrganizationScopeConflict(
+                                command.ApplicationId,
+                                notOnApplication.EducationOrganizationIds,
+                                httpContext
+                            );
+                        case ApiClientUpdateResult.FailureDuplicateClientUuid:
+                            // The provider reported a replacement UUID that another ApiClient row
+                            // already holds: a provider inconsistency. Compensating would call
+                            // UpdateClientAsync on that UUID, mutating the other row's provider
+                            // object, so no compensation, synchronization, deletion or outcome
+                            // resolution is attempted.
+                            logger.LogError(
+                                "The identity provider reported a client UUID {ClientUuid} already held by another API client for ApiClient {Id}; stored client state is inconsistent; no compensation attempted",
+                                updateSuccess.ClientUuid,
+                                id
+                            );
+                            return FailureResults.Unknown(httpContext.TraceIdentifier);
                         case ApiClientUpdateResult.FailureUnknown updateFailure:
                             logger.LogError(
                                 "Repository update failed for ApiClient {Id}: {Message}",
@@ -1174,7 +1671,7 @@ public class ApiClientModule : IEndpointModule
         }
     }
 
-    private static bool SetEquals(IEnumerable<int> first, IEnumerable<int> second) =>
+    private static bool SetEquals<T>(IEnumerable<T> first, IEnumerable<T> second) =>
         first.ToHashSet().SetEquals(second);
 
     private static async Task<IResult> DeleteApiClient(

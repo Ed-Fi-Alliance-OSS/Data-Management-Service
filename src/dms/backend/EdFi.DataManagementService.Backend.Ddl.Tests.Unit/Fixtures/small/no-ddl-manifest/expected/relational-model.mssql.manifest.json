@@ -71,33 +71,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       }
-    },
-    {
-      "name": "TR_Person_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Person"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "PersonId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "Person",
-      "identity_elements": [
-        {
-          "column": "PersonId",
-          "identity_json_path": "$.personId"
-        }
-      ]
     },
     {
       "name": "TR_Person_Stamp",
@@ -112,7 +89,7 @@
       "identity_projection_columns": [
         "PersonId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Person"
       },
@@ -225,8 +202,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -295,7 +284,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]

@@ -1,0 +1,19 @@
+{
+  "name": "Policy\nName",
+  "resourceClaims": [
+    {
+      "name": "edfi/domain",
+      "isParent": true
+    },
+    {
+      "name": "edfi/parent\u2028name",
+      "isParent": true,
+      "children": [
+        {
+          "name": "edfi/valid"
+        },
+        null
+      ]
+    }
+  ]
+}

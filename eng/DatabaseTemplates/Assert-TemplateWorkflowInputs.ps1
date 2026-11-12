@@ -129,12 +129,12 @@ foreach ($schemaPackage in $schemaPackages) {
     }
 }
 
-$configuredDataStandardSeries = [string]$environmentValues["DMS_CONFIG_DATA_STANDARD_VERSION"]
+$configuredDataStandardSeries = [string]$environmentValues["CONFIGURATION_SERVICE_DATA_STANDARD_VERSION"]
 if ([string]::IsNullOrWhiteSpace($configuredDataStandardSeries)) {
     $configuredDataStandardSeries = "5.2"
 }
 if ($configuredDataStandardSeries -ne $standardSeries) {
-    throw "DMS_CONFIG_DATA_STANDARD_VERSION '$configuredDataStandardSeries' in '$EnvironmentFile' does not match requested standard_version '$StandardVersion'."
+    throw "CONFIGURATION_SERVICE_DATA_STANDARD_VERSION '$configuredDataStandardSeries' in '$EnvironmentFile' does not match requested standard_version '$StandardVersion'."
 }
 
 $isSmoke = [bool]$environmentContract.IsSmoke

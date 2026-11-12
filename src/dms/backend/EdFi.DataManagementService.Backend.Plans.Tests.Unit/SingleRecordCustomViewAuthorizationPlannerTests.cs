@@ -541,7 +541,9 @@ public class Given_SingleRecordCustomViewAuthorizationPlanner
         );
 
         checks.Should().HaveCount(2);
-        checks[0].PathToBasisResource[^1].TargetTable.Should().Be(new DbTableName(DmsSchema, "Descriptor"));
+        checks[0].PathToBasisResource[0].TargetTable.Should().Be(new DbTableName(DmsSchema, "Descriptor"));
+        checks[0].PathToBasisResource[0].TargetColumnName.Should().Be(Col("DescriptorId"));
+        checks[0].PathToBasisResource[^1].SourceColumnName.Should().Be(Col("DocumentId"));
         checks[0].ReadableSecurableElements.Should().Equal("TransportationTypeDescriptor");
         checks[0].FailureHint.Should().Be("You may need a Transportation Type Descriptor with a Bus.");
         checks[1]

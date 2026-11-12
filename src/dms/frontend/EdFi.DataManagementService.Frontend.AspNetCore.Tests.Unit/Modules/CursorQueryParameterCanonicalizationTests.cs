@@ -232,6 +232,24 @@ public class CursorQueryParameterCanonicalizationTests
     }
 
     /// <summary>
+    /// The ignored-parameter warning lists names in the order the dictionary enumerates them, so that
+    /// order has to be the order each name first appears. Case variants merge into one entry at the
+    /// first variant's position, carrying the last variant's value. Which spelling the merged key
+    /// keeps is ASP.NET Core's choice, so it is not asserted.
+    /// </summary>
+    [Test]
+    public async Task It_keeps_first_appearance_order_for_merged_case_variants()
+    {
+        var queryParameters = await CapturedQueryParameters("/data/ed-fi/schools?B=1&a=2&b=3&x=4&B=5");
+
+        queryParameters.Keys.Should().Equal(["b", "a", "x"], StringComparer.OrdinalIgnoreCase.Equals);
+        queryParameters
+            .Single(entry => entry.Key.Equals("b", StringComparison.OrdinalIgnoreCase))
+            .Value.Should()
+            .Be("5");
+    }
+
+    /// <summary>
     /// The partition count is generic enough to collide with a resource query field, so its spelling
     /// is only rewritten where it is a paging control.
     /// </summary>
@@ -281,7 +299,7 @@ public class CursorQueryParameterCanonicalizationTests
     /// Two segments name a resource collection, not a partitions operation, even when the resource
     /// segment happens to be spelled <c>partitions</c>. On such a collection <c>number</c> is an
     /// ordinary resource query field, and rewriting its spelling would change which field is
-    /// filtered on or which name an unknown-field error reports.
+    /// filtered on or which name the ignored-parameter warning reports.
     /// </summary>
     [TestCase("/data/ed-fi/partitions", "NUMBER")]
     [TestCase("/data/partitions", "Number")]

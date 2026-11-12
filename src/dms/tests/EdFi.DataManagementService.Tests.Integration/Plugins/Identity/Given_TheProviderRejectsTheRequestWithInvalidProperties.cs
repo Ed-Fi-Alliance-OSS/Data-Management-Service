@@ -118,7 +118,7 @@ public sealed class Given_TheProviderRejectsTheRequestWithInvalidProperties
     public void It_would_fail_the_comparison_if_one_message_differed()
     {
         JsonNode altered = Pinned("twoMessagesOneKey").DeepClone();
-        altered["validationErrors"]!["$.firstName"]![1] = "First name must not exceed 76 characters.";
+        altered["validationErrors"]!["$.FirstName"]![1] = "First name must not exceed 76 characters.";
 
         IdentityServedOpenApi
             .AreCanonicallyEqual(

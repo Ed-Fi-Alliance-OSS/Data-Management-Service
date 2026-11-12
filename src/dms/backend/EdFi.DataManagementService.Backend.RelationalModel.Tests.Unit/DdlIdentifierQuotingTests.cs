@@ -200,7 +200,7 @@ internal static class ReservedIdentifierFixture
                     [column],
                     [],
                     new TriggerKindParameters.DocumentStamping(),
-                    MirrorStampTargetTable: table
+                    StampTargetTable: table
                 ),
             ]
         );

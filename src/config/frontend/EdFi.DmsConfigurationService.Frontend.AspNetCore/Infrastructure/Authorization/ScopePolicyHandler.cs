@@ -19,16 +19,22 @@ public class ScopePolicyHandler : AuthorizationHandler<ScopePolicy>
         ScopePolicy requirement
     )
     {
-        var scopeClaim = context.User.Claims.FirstOrDefault(c => c.Type == "scope");
-
-        if (scopeClaim != null)
+        // A token's scope may be a space-delimited string or an array; an array arrives as one "scope" claim per
+        // element, so every scope claim is considered, and each is split on ASCII spaces. The claim type is matched
+        // exactly: FindAll(string) compares types case-insensitively, so claims typed "SCOPE" would otherwise count.
+        HashSet<string> userScopes = new(StringComparer.Ordinal);
+        foreach (
+            var scopeClaim in context.User.Claims.Where(claim =>
+                string.Equals(claim.Type, "scope", StringComparison.Ordinal)
+            )
+        )
         {
-            var userScopes = scopeClaim.Value.Split(' ');
+            userScopes.UnionWith(scopeClaim.Value.Split(' ', StringSplitOptions.RemoveEmptyEntries));
+        }
 
-            if (requirement.AllowedScopes.Exists(scope => userScopes.Contains(scope)))
-            {
-                context.Succeed(requirement);
-            }
+        if (requirement.AllowedScopes.Exists(userScopes.Contains))
+        {
+            context.Succeed(requirement);
         }
 
         return Task.CompletedTask;

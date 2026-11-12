@@ -6,6 +6,7 @@
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
@@ -22,7 +23,10 @@ public class OpenIddictKeyCryptoTests : DatabaseTest
         [SetUp]
         public async Task Setup()
         {
-            _repository = new OpenIddictDataRepository(MssqlTestConfiguration.DatabaseOptions);
+            _repository = new OpenIddictDataRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<OpenIddictDataRepository>.Instance
+            );
             _privateKeyBase64 = Convert.ToBase64String(
                 System.Security.Cryptography.RandomNumberGenerator.GetBytes(1200)
             );

@@ -21,7 +21,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         )
         {
             return await dataRepository.StoreTokenAsync(
@@ -29,7 +31,9 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 applicationId,
                 subject,
                 expiration,
-                maxActiveTokens
+                maxActiveTokens,
+                expectedClientSecret,
+                expectedApiClientApproval
             );
         }
 
@@ -38,9 +42,14 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             return await dataRepository.GetTokenStatusAsync(tokenId);
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        public async Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId)
         {
-            return await dataRepository.RevokeTokenAsync(tokenId);
+            return await dataRepository.GetTokenStatusForApplicationAsync(tokenId, applicationId);
+        }
+
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
+        {
+            return await dataRepository.RevokeTokenAsync(tokenId, applicationId);
         }
 
         public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)
@@ -77,6 +86,21 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
         public async Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId)
         {
             return await dataRepository.GetClientRolesAsync(clientId);
+        }
+
+        public async Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId)
+        {
+            return await dataRepository.GetApplicationScopesAsync(applicationId);
+        }
+
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            return await dataRepository.RoleNamesShareARoleRowAsync(firstRoleName, secondRoleName);
+        }
+
+        public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
+        {
+            return await dataRepository.GetClientCredentialAsync(clientId);
         }
     }
 }

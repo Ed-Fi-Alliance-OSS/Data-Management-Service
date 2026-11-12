@@ -21,7 +21,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -135,7 +134,6 @@ internal static class MssqlProfileSeparateTableMergeSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(ItemResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -418,28 +416,7 @@ internal static class MssqlProfileSeparateTableMergeSupport
         );
     }
 
-    public static async Task InsertReferentialIdentityRowAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dms].[ReferentialIdentity] WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    public static async Task<long> SeedSchoolTypeDescriptorAsync(
+    public static async Task<int> SeedSchoolTypeDescriptorAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string @namespace,
@@ -448,56 +425,38 @@ internal static class MssqlProfileSeparateTableMergeSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
-        var uri = $"{@namespace}#{codeValue}";
-        const string discriminator = "Ed-Fi:SchoolTypeDescriptor";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @shortDescription,
-                @discriminator,
-                @uri
+                @shortDescription
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@shortDescription", shortDescription)
         );
 
-        var descriptorResourceInfo = new BaseResourceInfo(
-            new ProjectName("Ed-Fi"),
-            new ResourceName("SchoolTypeDescriptor"),
-            true
-        );
-        var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
-        ]);
-        var referentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
-        await InsertReferentialIdentityRowAsync(database, referentialId.Value, documentId, resourceKeyId);
-
-        return documentId;
+        return descriptorId;
     }
 
     /// <summary>

@@ -24,7 +24,13 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
         await using CdcConnectorTemplatePinnedImageFixture fixture =
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
-        CdcConnectorTemplateRequest request = await fixture.CreateRequestAsync(cancellation.Token);
+        CdcConnectorTemplateRequest request = await CdcGeneratedSchemaFixture.CreateRequestAsync(
+            fixture,
+            Provider == CdcProvider.Postgresql
+                ? new PostgresqlCdcStateProviderOperations()
+                : new SqlServerCdcStateProviderOperations(),
+            cancellation.Token
+        );
         CdcConnectorTemplateResult rendered = fixture.Render(request);
 
         await fixture.AssertRuntimeLoadsRequiredClassesAsync(rendered, cancellation.Token);
@@ -41,7 +47,13 @@ public abstract class Given_PinnedImageConnectorTemplateFixture
         await using CdcConnectorTemplatePinnedImageFixture fixture =
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(Provider, cancellation.Token);
 
-        CdcConnectorTemplateRequest request = await fixture.CreateRequestAsync(cancellation.Token);
+        CdcConnectorTemplateRequest request = await CdcGeneratedSchemaFixture.CreateRequestAsync(
+            fixture,
+            Provider == CdcProvider.Postgresql
+                ? new PostgresqlCdcStateProviderOperations()
+                : new SqlServerCdcStateProviderOperations(),
+            cancellation.Token
+        );
         CdcConnectorTemplateResult rendered = fixture.Render(request);
 
         await fixture.AssertConnectorConfigValidatesAsync(rendered, cancellation.Token);

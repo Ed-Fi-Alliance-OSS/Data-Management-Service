@@ -161,8 +161,18 @@ Extension fields may include:
 
 The mapping for references/descriptors inside `_ext` is identical to core:
 
-- document references become `..._DocumentId` FK columns (resolved via the generated natural-key resolver)
-- descriptor references become `..._DescriptorId` FK columns to `dms.Descriptor` (resolved via the descriptor lowered-URI + `ResourceKeyId` probe, validated via `dms.Descriptor`)
+- document references become `bigint ..._DocumentId` FK columns, resolved through the batched natural-key resolver.
+- descriptor references become `int ..._DescriptorId` FK columns to `dms.Descriptor(DescriptorId)`.
+  The same natural-key command returns the independent `int DescriptorId` and owning `bigint DocumentId`;
+  extension writes, filters, collection matching, and copied descriptor identity parts bind the compact key.
+  Hydration joins that key to `dms.Descriptor.DescriptorId` and reconstructs the original-case
+  `Namespace + '#' + CodeValue`. Resolution carries the raw validated whole URI and folds case in
+  SQL, without splitting it or trimming its components.
+
+Root/parent document locators, metadata, locks, cache work, and authorization-view membership
+retain `DocumentId`. Extension collection keys retain `bigint CollectionItemId`. Descriptor history
+captures namespace/code values through the compact join; reading those snapshots after deletion
+does not require a live descriptor.
 
 `documentPathsMapping` remains the authoritative source for “this is a reference/descriptor” and for identity mapping.
 

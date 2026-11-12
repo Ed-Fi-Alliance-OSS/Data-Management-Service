@@ -5,7 +5,7 @@
 
 # Regression coverage for DMS-1171: the local startup scripts must register the CMS
 # identity clients with the same secrets DMS/CMS authenticate with, so that overriding
-# CONFIG_SERVICE_CLIENT_SECRET (or DMS_CONFIG_IDENTITY_CLIENT_SECRET) does not produce a
+# DMS_CONFIGURATION_SERVICE_CLIENT_SECRET (or CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET) does not produce a
 # secret mismatch that breaks CMS token acquisition.
 
 BeforeAll {
@@ -16,20 +16,20 @@ BeforeAll {
 
 Describe "Resolve-IdentityClientSecretConfiguration" {
     Context "when env-file values are provided" {
-        It "returns CONFIG_SERVICE_CLIENT_SECRET for the CMSReadOnlyAccess client" {
-            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "OverrideReadOnly1234567890!Abcd" }
+        It "returns DMS_CONFIGURATION_SERVICE_CLIENT_SECRET for the CMSReadOnlyAccess client" {
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "OverrideReadOnly1234567890!Abcd" }
             $result.CmsReadOnlyAccessClientSecret | Should -Be "OverrideReadOnly1234567890!Abcd"
         }
 
-        It "returns DMS_CONFIG_IDENTITY_CLIENT_SECRET for the DmsConfigurationService client" {
-            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIG_IDENTITY_CLIENT_SECRET = "OverrideFullAccess123456789!Abcd" }
+        It "returns CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET for the DmsConfigurationService client" {
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET = "OverrideFullAccess123456789!Abcd" }
             $result.DmsConfigurationServiceClientSecret | Should -Be "OverrideFullAccess123456789!Abcd"
         }
 
         It "resolves both clients independently" {
             $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{
-                CONFIG_SERVICE_CLIENT_SECRET     = "ReadOnlySecret1234567890!Abcdef"
-                DMS_CONFIG_IDENTITY_CLIENT_SECRET = "FullAccessSecret1234567890!Abcd"
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET     = "ReadOnlySecret1234567890!Abcdef"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET = "FullAccessSecret1234567890!Abcd"
             }
             $result.CmsReadOnlyAccessClientSecret | Should -Be "ReadOnlySecret1234567890!Abcdef"
             $result.DmsConfigurationServiceClientSecret | Should -Be "FullAccessSecret1234567890!Abcd"
@@ -37,8 +37,8 @@ Describe "Resolve-IdentityClientSecretConfiguration" {
 
         It "resolves custom client-secret length bounds from the env file" {
             $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{
-                DMS_CONFIG_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH = "10"
-                DMS_CONFIG_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH = "200"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MINIMUM_LENGTH = "10"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET_MAXIMUM_LENGTH = "200"
             }
             $result.ClientSecretMinimumLength | Should -Be 10
             $result.ClientSecretMaximumLength | Should -Be 200
@@ -53,7 +53,7 @@ Describe "Resolve-IdentityClientSecretConfiguration" {
         }
 
         It "treats a whitespace-only value as missing" {
-            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ CONFIG_SERVICE_CLIENT_SECRET = "   " }
+            $result = Resolve-IdentityClientSecretConfiguration -EnvValues @{ DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "   " }
             $result.CmsReadOnlyAccessClientSecret | Should -Be $script:defaultSecret
         }
 
@@ -83,8 +83,8 @@ Describe "Start scripts register identity clients with env-file secrets" {
         # A presence-only check (does the line contain -NewClientSecret?) is not enough: it would
         # still pass with a hard-coded value, with the same secret reused for both clients, or with
         # the two resolved secrets swapped. Assert the exact resolved property each client requires:
-        #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (CONFIG_SERVICE_CLIENT_SECRET)
-        #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (DMS_CONFIG_IDENTITY_CLIENT_SECRET)
+        #   - CMSReadOnlyAccess           -> CmsReadOnlyAccessClientSecret        (DMS_CONFIGURATION_SERVICE_CLIENT_SECRET)
+        #   - DmsConfigurationService     -> DmsConfigurationServiceClientSecret  (CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET)
         #   - CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret and keeps the default.
         # Both operator-secret clients must also pass the env-file length bounds so a CMS-valid
         # secret is not rejected by the setup scripts' default 32/128 validation.
@@ -103,13 +103,13 @@ Describe "Start scripts register identity clients with env-file secrets" {
                 $line | Should -Not -Match '\$identityClientSecrets\.' -Because "CMSAuthMetadataReadOnlyAccess has no dedicated env-file secret: $line"
             }
             elseif ($line -match '-NewClientId\s+"CMSReadOnlyAccess"') {
-                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register CONFIG_SERVICE_CLIENT_SECRET: $line"
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.CmsReadOnlyAccessClientSecret\b' -Because "CMSReadOnlyAccess must register DMS_CONFIGURATION_SERVICE_CLIENT_SECRET: $line"
                 $line | Should -Match $minBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file minimum length: $line"
                 $line | Should -Match $maxBoundPattern -Because "CMSReadOnlyAccess must validate with the env-file maximum length: $line"
             }
             else {
                 # No -NewClientId => the default DmsConfigurationService (full_access) client.
-                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DmsConfigurationServiceClientSecret\b' -Because "DmsConfigurationService must register DMS_CONFIG_IDENTITY_CLIENT_SECRET: $line"
+                $line | Should -Match '-NewClientSecret\s+\$identityClientSecrets\.DmsConfigurationServiceClientSecret\b' -Because "DmsConfigurationService must register CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET: $line"
                 $line | Should -Match $minBoundPattern -Because "DmsConfigurationService must validate with the env-file minimum length: $line"
                 $line | Should -Match $maxBoundPattern -Because "DmsConfigurationService must validate with the env-file maximum length: $line"
             }
@@ -123,8 +123,8 @@ Describe "Start scripts pass the resolved database identity and role names to th
     # (postgres), and BOTH setup-openiddict.ps1 and setup-keycloak.ps1 carry their own defaults for
     # the two role names (cms-client / dms-client), so a caller that omits them silently overrides a
     # configured stack -- under either identity provider. POSTGRES_USER is a supported override --
-    # postgresql.yml passes ${POSTGRES_USER:-postgres} to the container -- and the role names are
-    # mapped by local-config.yml and published-config.yml onto IdentitySettings:ConfigServiceRole /
+    # postgresql.compose.yml passes ${POSTGRES_USER:-postgres} to the container -- and the role names are
+    # mapped by local-config.compose.yml and published-config.compose.yml onto IdentitySettings:ConfigServiceRole /
     # :ClientRole.
 
     # Discovery-time cases: $PSScriptRoot is available during discovery in Pester v5.
@@ -142,7 +142,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
         # resolves to. Removed rather than blanked: a blank ambient value is not the same thing as
         # an absent one.
         $script:ambientBackup = @{}
-        foreach ($key in @("POSTGRES_USER", "DMS_CONFIG_IDENTITY_SERVICE_ROLE", "DMS_CONFIG_IDENTITY_CLIENT_ROLE")) {
+        foreach ($key in @("POSTGRES_USER", "CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE", "CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE")) {
             $script:ambientBackup[$key] = [System.Environment]::GetEnvironmentVariable($key)
             if (Test-Path -LiteralPath "Env:\$key") { Remove-Item -LiteralPath "Env:\$key" }
         }
@@ -246,7 +246,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
             envValues      = @{ POSTGRES_USER = "northridge_super" }
         }
         $resolved.DbUser | Should -Be "northridge_super"
-        $resolved.DbName | Should -Be "ENV:DMS_CONFIG_DATABASE_NAME" -Because "the CMS database seam must be unchanged"
+        $resolved.DbName | Should -Be "ENV:CONFIGURATION_SERVICE_DATABASE_NAME" -Because "the CMS database seam must be unchanged"
     }
 
     It "keeps the postgres default when POSTGRES_USER is unset in <Name>" -ForEach $dmsCases {
@@ -258,7 +258,7 @@ Describe "Start scripts pass the resolved database identity and role names to th
     }
 
     It "leaves the SQL Server branch on the sa login in <Name>" -ForEach $dmsCases {
-        # mssql.yml has no POSTGRES_USER equivalent; the engine authenticates as the fixed sa account.
+        # mssql.compose.yml has no POSTGRES_USER equivalent; the engine authenticates as the fixed sa account.
         $resolved = Get-ResolvedAssignment -ScriptPath $ScriptPath -VariableName "identityDbParams" -Variable @{
             DatabaseEngine = "mssql"
             envValues      = @{ POSTGRES_USER = "northridge_super" }
@@ -293,8 +293,8 @@ Describe "Start scripts pass the resolved database identity and role names to th
         # DMS unable to read claim sets.
         $resolved = Get-ResolvedAssignment -ScriptPath $ScriptPath -VariableName "identityRoleParams" -Variable @{
             envValues = @{
-                DMS_CONFIG_IDENTITY_SERVICE_ROLE = "cms-operator"
-                DMS_CONFIG_IDENTITY_CLIENT_ROLE  = "dms-operator"
+                CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE = "cms-operator"
+                CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE  = "dms-operator"
             }
         }
         $resolved.ConfigServiceRole | Should -Be "cms-operator"
@@ -465,5 +465,103 @@ Describe "setup-keycloak.ps1 percent-encodes the role name in both role lookup U
         $text = Get-Content -Raw -LiteralPath $keycloakScript
         @([regex]::Matches($text, '/roles/\$\(\[uri\]::EscapeDataString\(\$roleName\)\)"')).Count | Should -Be 2 -Because "the realm role and the realm-management client role lookups both take the name as a segment"
         $text | Should -Not -Match '/roles/\$roleName' -Because "a raw interpolation is the shape this closes"
+    }
+}
+
+Describe "setup-keycloak.ps1 rerun against an existing client" {
+    # From Keycloak 26.6.2 introspection answers active:false unless the introspecting client is in the
+    # token's audience. Rerunning the script repairs the selected existing client's missing own-audience
+    # mapper and touches nothing else: the fake Keycloak below answers only the reads the script makes
+    # and the mapper POST, so any credential, role or scope write fails the run.
+    BeforeAll {
+        $script:keycloakScript = Join-Path ([System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))) "setup-keycloak.ps1"
+
+        function Invoke-SetupKeycloak {
+            & $script:keycloakScript -KeycloakServer "http://keycloak.test:8045" -NewClientId "DmsConfigurationService" 3>&1
+        }
+    }
+
+    BeforeEach {
+        # The mock runs inside the script, where $script: is the script's own scope, so the fake's state
+        # is a variable of this test's scope that the mock reaches dynamically.
+        $fakeKeycloak = @{
+            Mappers = [System.Collections.Generic.List[object]]::new()
+            Posted  = [System.Collections.Generic.List[object]]::new()
+        }
+        Mock Invoke-WebRequest { [pscustomobject]@{ StatusCode = 200 } }
+        Mock Invoke-RestMethod {
+            $target = "$Method $($Uri.AbsoluteUri)"
+            switch ($target) {
+                "Post http://keycloak.test:8045/realms/master/protocol/openid-connect/token" { return [pscustomobject]@{ access_token = "token" } }
+                "Get http://keycloak.test:8045/admin/realms/edfi" { return [pscustomobject]@{ realm = "edfi" } }
+                "Get http://keycloak.test:8045/admin/realms/edfi/clients?clientId=DmsConfigurationService" {
+                    return , @([pscustomobject]@{ id = "client-uuid"; clientId = "DmsConfigurationService" })
+                }
+                "Get http://keycloak.test:8045/admin/realms/edfi/clients/client-uuid/protocol-mappers/models" { return $fakeKeycloak.Mappers.ToArray() }
+                "Post http://keycloak.test:8045/admin/realms/edfi/clients/client-uuid/protocol-mappers/models" {
+                    $mapper = $Body | ConvertFrom-Json
+                    $fakeKeycloak.Posted.Add($mapper)
+                    $fakeKeycloak.Mappers.Add($mapper)
+                    return
+                }
+                default { throw "Unexpected Keycloak request: $target" }
+            }
+        }
+    }
+
+    It "adds the own-audience mapper once and adds nothing on a second run" {
+        $roleMapper = [pscustomobject]@{ name = "Dms service role mapper"; protocol = "openid-connect"; protocolMapper = "oidc-usermodel-realm-role-mapper"; config = [pscustomobject]@{ "access.token.claim" = "true" } }
+        $fakeKeycloak.Mappers.AddRange([object[]]@($roleMapper))
+
+        $firstRun = Invoke-SetupKeycloak
+
+        $fakeKeycloak.Posted.Count | Should -Be 1
+        $fakeKeycloak.Posted[0].name | Should -Be "Client's own audience"
+        $fakeKeycloak.Posted[0].protocol | Should -Be "openid-connect"
+        $fakeKeycloak.Posted[0].protocolMapper | Should -Be "oidc-audience-mapper"
+        $fakeKeycloak.Posted[0].config.'included.client.audience' | Should -Be "DmsConfigurationService"
+        $fakeKeycloak.Posted[0].config.'access.token.claim' | Should -Be "true"
+        $firstRun | Should -Contain "Own audience added to client 'DMS Configuration Service'."
+
+        $secondRun = Invoke-SetupKeycloak
+
+        $fakeKeycloak.Posted.Count | Should -Be 1 -Because "the mapper added by the first run already gives the client its own audience"
+        $secondRun | Should -Contain "Client 'DmsConfigurationService' already puts itself into its access tokens' audience."
+        $fakeKeycloak.Mappers.Count | Should -Be 2
+        $fakeKeycloak.Mappers[0] | Should -Be $roleMapper
+    }
+
+    It "recognizes an equivalent mapper under another name through its custom audience" {
+        $fakeKeycloak.Mappers.AddRange([object[]]@(
+                [pscustomobject]@{ name = "Operator audience"; protocol = "openid-connect"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.custom.audience" = "DmsConfigurationService"; "access.token.claim" = "true" } }
+            ))
+
+        Invoke-SetupKeycloak | Out-Null
+
+        $fakeKeycloak.Posted.Count | Should -Be 0
+    }
+
+    It "does not count a mapper left out of access tokens or of another protocol" {
+        $fakeKeycloak.Mappers.AddRange([object[]]@(
+                [pscustomobject]@{ name = "Id token audience"; protocol = "openid-connect"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.client.audience" = "DmsConfigurationService"; "access.token.claim" = "false" } },
+                [pscustomobject]@{ name = "Client's own audience"; protocol = "saml"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.client.audience" = "DmsConfigurationService"; "access.token.claim" = "true" } }
+            ))
+
+        Invoke-SetupKeycloak | Out-Null
+
+        $fakeKeycloak.Posted.Count | Should -Be 1
+    }
+
+    It "keeps a conflicting mapper under the reserved name and reports the client as not repaired" {
+        $fakeKeycloak.Mappers.AddRange([object[]]@(
+                [pscustomobject]@{ name = "Client's own audience"; protocol = "openid-connect"; protocolMapper = "oidc-audience-mapper"; config = [pscustomobject]@{ "included.client.audience" = "SomeOtherClient"; "access.token.claim" = "true" } }
+            ))
+
+        $run = Invoke-SetupKeycloak
+
+        $fakeKeycloak.Posted.Count | Should -Be 0
+        $warnings = @($run | Where-Object { $_ -is [System.Management.Automation.WarningRecord] } | ForEach-Object Message)
+        $warnings | Should -Contain "Client 'DmsConfigurationService' was NOT repaired: its OpenID Connect protocol mapper named 'Client's own audience' does not put the client into its access tokens' audience and was left unchanged. On Keycloak 26.6.2 or later, introspecting the client's own tokens reports them inactive until an operator corrects or removes that mapper and reruns this script."
+        $run | Should -Not -Contain "Own audience added to client 'DMS Configuration Service'."
     }
 }

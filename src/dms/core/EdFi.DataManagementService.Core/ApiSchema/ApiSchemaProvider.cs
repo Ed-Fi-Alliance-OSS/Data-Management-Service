@@ -98,7 +98,7 @@ internal class ApiSchemaProvider(
     {
         _logger.LogInformation("Loading API schemas from configured source...");
 
-        if (appSettings.Value.UseApiSchemaPath)
+        if (appSettings.Value.ApiSchema.UseCustomPath)
         {
             return LoadSchemaFromFileSystem();
         }
@@ -111,14 +111,17 @@ internal class ApiSchemaProvider(
     /// </summary>
     private ApiSchemaLoadResult LoadSchemaFromFileSystem()
     {
-        if (appSettings.Value.ApiSchemaPath is null)
+        if (appSettings.Value.ApiSchema.Path is null)
         {
-            ApiSchemaFailure failure = new("Configuration", "No ApiSchemaPath configuration is set");
+            ApiSchemaFailure failure = new(
+                "Configuration",
+                "No AppSettings:ApiSchema:Path configuration is set"
+            );
             _logger.LogError(failure.Message);
             return new(null, [failure]);
         }
 
-        return LoadSchemaFromDirectory(appSettings.Value.ApiSchemaPath);
+        return LoadSchemaFromDirectory(appSettings.Value.ApiSchema.Path);
     }
 
     /// <summary>

@@ -191,7 +191,6 @@ public class InvalidResourceSchemasTests
                 A.Fake<IEffectiveApiSchemaProvider>(),
                 new NoClaimsClaimSetProvider(NullLogger.Instance),
                 new DocumentValidator(new CompiledSchemaCache()),
-                new MatchingDocumentUuidsValidator(),
                 new EqualityConstraintValidator(),
                 new DecimalValidator(),
                 NullLogger<ApiService>.Instance,

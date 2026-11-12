@@ -36,17 +36,17 @@ public class TokenCleanupService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_identityOptions.Value.TokenCleanupEnabled)
+        if (!_identityOptions.Value.TokenCleanup.Enabled)
         {
             _logger.LogInformation("Token cleanup is disabled; the sweep will not run.");
             return;
         }
 
-        int intervalMinutes = _identityOptions.Value.TokenCleanupIntervalMinutes;
+        int intervalMinutes = _identityOptions.Value.TokenCleanup.IntervalMinutes;
         if (intervalMinutes < 1 || intervalMinutes > MaxIntervalMinutes)
         {
             _logger.LogWarning(
-                "IdentitySettings:TokenCleanupIntervalMinutes is {ConfiguredIntervalMinutes} but must be between 1 and {MaxIntervalMinutes}; using default of {DefaultIntervalMinutes}.",
+                "IdentitySettings:TokenCleanup:IntervalMinutes is {ConfiguredIntervalMinutes} but must be between 1 and {MaxIntervalMinutes}; using default of {DefaultIntervalMinutes}.",
                 intervalMinutes,
                 MaxIntervalMinutes,
                 DefaultIntervalMinutes

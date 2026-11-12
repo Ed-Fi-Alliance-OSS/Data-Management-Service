@@ -31,6 +31,17 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
 
     private static readonly DateTimeOffset ObservedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset FirstEnqueuedAt = ObservedAt.AddMinutes(-5);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create("TenantA", 1);
     private static readonly DocumentCacheAdministrativeTargetKey AdministrativeTargetKey =
@@ -403,21 +414,18 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         var source = new SourceDocument(
@@ -490,6 +498,7 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -502,6 +511,7 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -526,6 +536,10 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
                 Value = $"etag-{source.ContentVersion}",
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = ObservedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
                 Value = new JsonObject { ["value"] = $"{jsonPrefix}-{source.DocumentId}" }.ToJsonString(),
@@ -678,6 +692,7 @@ public class Given_A_Postgresql_DocumentCacheOnlineCacheRebuild_Command
                         resourceKey.ResourceVersion,
                         source.ContentVersion,
                         ObservedAt,
+                        new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                         $"etag-{source.ContentVersion}",
                         new JsonObject { ["value"] = $"rebuilt-{source.DocumentId}" }
                     )

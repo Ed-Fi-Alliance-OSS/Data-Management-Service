@@ -21,6 +21,13 @@ public class Given_E2E_Feature_File_Guardrails
     private const string DedicatedSizingLaneTag = "@CursorPartitionSizing";
 
     /// <summary>
+    /// The token contract lane starts a provider proxy and configures root and qualified token
+    /// routes in separate passes. Its scenarios run through the dedicated launcher, outside the
+    /// default-version shards.
+    /// </summary>
+    private const string DedicatedTokenContractLaneTag = "@TokenContractProxy";
+
+    /// <summary>
     /// The dedicated identity plugin lane. Its scenarios need a deployment with the identity fixture
     /// plugin mounted and allowlisted, so they run in their own job against a generated environment
     /// file rather than in the sharded instance management lane, whose deployment answers every
@@ -28,6 +35,13 @@ public class Given_E2E_Feature_File_Guardrails
     /// </summary>
     private const string DedicatedIdentityPluginLaneTag = "@instance-management-identity-plugin";
     private const string InstanceManagementShardTagPrefix = "@instance-management-ci-shard-";
+
+    /// <summary>
+    /// Engine-category tags. Every PostgreSQL lane excludes @MssqlOnly and every SQL Server lane
+    /// excludes @PostgresqlOnly, so each tag confines a scenario to one engine.
+    /// </summary>
+    private const string MssqlOnlyTag = "@MssqlOnly";
+    private const string PostgresqlOnlyTag = "@PostgresqlOnly";
     private static readonly string RemovedBackendLaneTag = "@relational-" + "backend";
     private static readonly string RemovedRelationalShardTagPrefix = "@relational-" + "ci-shard-";
 
@@ -103,6 +117,7 @@ public class Given_E2E_Feature_File_Guardrails
             // than one partition, which the default-version stack is not, so they run only in their own
             // job against their own environment file.
             .Where(s => !s.Tags.Contains(DedicatedSizingLaneTag, StringComparer.OrdinalIgnoreCase))
+            .Where(s => !s.Tags.Contains(DedicatedTokenContractLaneTag, StringComparer.OrdinalIgnoreCase))
             .Where(s =>
                 s.Tags.Count(t => t.StartsWith(E2EShardTagPrefix, StringComparison.OrdinalIgnoreCase)) != 1
             )
@@ -112,7 +127,7 @@ public class Given_E2E_Feature_File_Guardrails
         offendingScenarios
             .Should()
             .BeEmpty(
-                "each default-version DMS E2E scenario must carry exactly one @e2e-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN> scenarios run in their own lane and are exempt)"
+                "each default-version DMS E2E scenario must carry exactly one @e2e-ci-shard-N tag so PR CI shards balance and never overlap (version-coupled @StandardVersion-<NN>, @CursorPartitionSizing, and @TokenContractProxy scenarios run in dedicated lanes and are exempt)"
             );
     }
 
@@ -161,6 +176,26 @@ public class Given_E2E_Feature_File_Guardrails
             .Should()
             .BeEmpty(
                 "each @CursorPartitionSizing scenario must carry neither an @e2e-ci-shard-N nor a @StandardVersion-<NN> tag, since it runs in its own lane against a differently configured deployment"
+            );
+    }
+
+    [Test]
+    public void It_never_tags_a_scenario_for_both_database_engines()
+    {
+        // The PostgreSQL lanes filter out @MssqlOnly and the SQL Server lanes filter out
+        // @PostgresqlOnly, so a scenario carrying both is selected by no lane and silently never runs.
+        string[] offendingScenarios = EnumerateScenariosWithTags(_dmsFeaturesDirectory)
+            .Where(s =>
+                s.Tags.Contains(MssqlOnlyTag, StringComparer.OrdinalIgnoreCase)
+                && s.Tags.Contains(PostgresqlOnlyTag, StringComparer.OrdinalIgnoreCase)
+            )
+            .Select(s => $"{s.RelativePath}:{s.LineNumber} ({s.Title})")
+            .ToArray();
+
+        offendingScenarios
+            .Should()
+            .BeEmpty(
+                "a scenario tagged both @MssqlOnly and @PostgresqlOnly is excluded by every E2E lane and never runs"
             );
     }
 

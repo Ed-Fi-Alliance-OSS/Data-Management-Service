@@ -39,6 +39,15 @@ DMS-1151 also restricts schema provisioning to PostgreSQL: `provision-dms-schema
 provisioning is out of scope for this story; the bootstrap epic may revisit dialect support in a
 successor story.
 
+## Later Exception: DMS-1271 Template Restore
+
+DMS-1271 later added a bootstrap restore mode (`-RestoreTemplate`). In that mode the wrapper skips
+`provision-dms-schema.ps1` for the restored target only, because the authenticated database-template package
+supplies that target's schema after restore has validated the package against the candidate workspace
+(including `EffectiveSchemaHash`) and in a scratch database. Ordinary bootstrap runs keep the provisioning
+behavior this story defines, and the acceptance criteria below remain the DMS-1151 contract as written. See
+[`../17-mssql-gap-closure/02-database-template-restore-workflow.md`](../17-mssql-gap-closure/02-database-template-restore-workflow.md).
+
 ## Acceptance Criteria
 
 - Before any DMS host starts, `provision-dms-schema.ps1` consumes the selected `ApiSchema*.json` files

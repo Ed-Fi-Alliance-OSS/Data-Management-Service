@@ -45,6 +45,10 @@ server {
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     add_header X-Content-Type-Options "nosniff" always;
     add_header X-Frame-Options "DENY" always;
+    # The applications send their own HSTS when they see HTTPS. nginx appends rather than replaces,
+    # and browsers honor only the first field, so drop the upstream value to keep this gateway's
+    # includeSubDomains policy authoritative.
+    proxy_hide_header Strict-Transport-Security;
 
     client_max_body_size 20M;
     server_tokens off;   # don't leak the nginx version in headers / error pages
@@ -131,9 +135,22 @@ server {
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
+    # ----- Swagger UI (static; the specs it loads go through the routes above) -----
+    location = /swagger {
+        return 301 /swagger/;
+    }
+    location /swagger/ {
+        resolver 127.0.0.11 valid=10s;
+        set $u_swagger swagger-ui;
+        # proxy_pass with a variable forwards the URI unchanged, so strip the /swagger prefix here.
+        rewrite ^/swagger/(.*)$ /$1 break;
+        proxy_pass http://$u_swagger:80;
+        proxy_set_header Host ${PUBLIC_HOST};
+    }
+
     # ----- Landing page -----
     location = / {
         default_type text/html;
-        return 200 '<!doctype html><title>DMS Security Review</title><h1>Ed-Fi DMS Security Review</h1><ul><li><a href="/st-dms">/st-dms</a> - single-tenant DMS API</li><li><a href="/st-config">/st-config</a> - single-tenant Config Service</li><li><a href="/mt-dms">/mt-dms</a> - multi-tenant DMS API</li><li><a href="/mt-config">/mt-config</a> - multi-tenant Config Service</li><li><a href="/auth">/auth</a> - Keycloak</li><li><a href="/pgadmin">/pgadmin</a> - pgAdmin</li></ul>';
+        return 200 '<!doctype html><title>DMS Security Review</title><h1>Ed-Fi DMS Security Review</h1><ul><li><a href="/st-dms">/st-dms</a> - single-tenant DMS API</li><li><a href="/st-config">/st-config</a> - single-tenant Configuration Service</li><li><a href="/mt-dms">/mt-dms</a> - multi-tenant DMS API</li><li><a href="/mt-config">/mt-config</a> - multi-tenant Configuration Service</li><li><a href="/auth">/auth</a> - Keycloak</li><li><a href="/pgadmin">/pgadmin</a> - pgAdmin</li><li><a href="/swagger/">/swagger/</a> - Swagger UI for every API</li></ul>';
     }
 }

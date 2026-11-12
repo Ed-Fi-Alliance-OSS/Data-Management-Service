@@ -5,7 +5,11 @@
 
 Set-StrictMode -Version Latest
 
-Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1") -Force
+# Without -Force: a forced nested import strips the already-loaded bootstrap-manifest instance
+# from the caller's session, hiding its functions (including the DMS-1271 restore-override
+# guards) from the phase scripts that imported it -Global first. The outermost importer owns
+# freshness; this nested import only guarantees availability inside this module's scope.
+Import-Module (Join-Path $PSScriptRoot "bootstrap-manifest.psm1")
 
 function Get-BootstrapSchemaProperty {
     param(

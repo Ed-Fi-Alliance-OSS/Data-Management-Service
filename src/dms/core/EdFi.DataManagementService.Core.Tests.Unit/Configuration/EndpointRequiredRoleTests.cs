@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Configuration;
 [Parallelizable]
 public class Given_EndpointRequiredRole
 {
-    [TestCase("dms-management-operator")]
+    [TestCase("cms-client")]
     [TestCase("DMS.cache-status:Operator")]
     [TestCase("a")]
     public void It_accepts_a_single_role_token(string requiredRole)
@@ -29,7 +29,7 @@ public class Given_EndpointRequiredRole
     }
 
     [TestCase(" ")]
-    [TestCase("dms management operator")]
+    [TestCase("cms client")]
     [TestCase("dms\toperator")]
     [TestCase("dms-a,dms-b")]
     [TestCase("dms-a;dms-b")]

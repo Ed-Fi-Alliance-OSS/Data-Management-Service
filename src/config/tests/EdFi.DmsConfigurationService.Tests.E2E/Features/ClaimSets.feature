@@ -105,7 +105,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "ClaimSet 999 not found. It may have been recently deleted.",
-                      "type": "urn:ed-fi:api:not-found",
+                      "type": "urn:ed-fi:management-api:not-found",
                       "title": "Not Found",
                       "status": 404,
                       "validationErrors": {},
@@ -128,7 +128,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -153,7 +153,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "The specified claim set is system-reserved and cannot be updated.",
-                      "type": "urn:ed-fi:api:bad-request",
+                      "type": "urn:ed-fi:management-api:bad-request",
                       "title": "Bad Request",
                       "status": 400,
                       "validationErrors": {},
@@ -168,7 +168,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "The specified claim set is system-reserved and cannot be deleted.",
-                      "type": "urn:ed-fi:api:bad-request",
+                      "type": "urn:ed-fi:management-api:bad-request",
                       "title": "Bad Request",
                       "status": 400,
                       "validationErrors": {},
@@ -202,7 +202,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -276,7 +276,7 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -300,12 +300,12 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
                           "Name": [
-                              "Claim set name must not contain white spaces."
+                              "Claim set name must not contain white spaces or commas."
                           ]
                       },
                       "errors": []
@@ -322,12 +322,12 @@ Feature: ClaimSets endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
                           "Name": [
-                              "Claim set name must not contain white spaces."
+                              "Claim set name must not contain white spaces or commas."
                           ]
                       },
                       "errors": []

@@ -9,9 +9,7 @@ internal sealed record AuthorizationDocumentState(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTime ContentLastModifiedAt,
-    DateTime CreatedAt
+    long ContentVersion
 );
 
 internal sealed record AuthorizationResourceTableState(
@@ -21,6 +19,5 @@ internal sealed record AuthorizationResourceTableState(
 
 internal sealed record AuthorizationWriteSideEffectState(
     AuthorizationDocumentState Document,
-    IReadOnlyList<AuthorizationResourceTableState> ResourceTables,
-    IReadOnlyList<ReferentialIdentityRow> ReferentialIdentities
+    IReadOnlyList<AuthorizationResourceTableState> ResourceTables
 );

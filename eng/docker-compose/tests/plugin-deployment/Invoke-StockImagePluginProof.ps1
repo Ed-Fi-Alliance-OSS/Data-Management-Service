@@ -14,7 +14,7 @@
     to anything it did not create. It deploys under the ordinary published Compose project,
     dms-published, whose compose files hard-code container names that no project name can move:
     dms-postgresql, ed-fi-api-config-service, ed-fi-api-swagger-ui and dms-keycloak, and the
-    preflight also reserves ed-fi-api, the name local-dms.yml gives DMS. It also uses the
+    preflight also reserves ed-fi-api, the name local-dms.compose.yml gives DMS. It also uses the
     one shared eng/docker-compose/.bootstrap path. So the preflight refuses when any of those, or a
     leftover container or volume of that project, or a foreign container on the shared external
     network, or a required host port, is already in use. There is no override switch: when something
@@ -178,7 +178,7 @@ $BaseEnvironmentFile = [IO.Path]::GetFullPath($BaseEnvironmentFile)
 # the container's own listening port as well as the host's - so what the base declares is what the
 # deployment takes, and the preflight has to guard exactly those.
 $baseEnvironment = ReadValuesFromEnvFile $BaseEnvironmentFile
-$portKey = @('DMS_HTTP_PORTS', 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT')
+$portKey = @('DMS_HTTP_PORTS', 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS', 'POSTGRES_PORT')
 $portVerdict = Test-ProofPort -EnvironmentValue $baseEnvironment -Key $portKey
 
 if (-not $portVerdict.Valid) {
@@ -187,7 +187,7 @@ if (-not $portVerdict.Valid) {
 }
 
 $dmsPort = $portVerdict.Port['DMS_HTTP_PORTS']
-$configurationServicePort = $portVerdict.Port['DMS_CONFIG_ASPNETCORE_HTTP_PORTS']
+$configurationServicePort = $portVerdict.Port['CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS']
 $requiredPort = @($portKey | ForEach-Object { $portVerdict.Port[$_] })
 
 # The path base the stack serves under, so the addresses this run requests are the ones it exposes
@@ -893,7 +893,7 @@ function Get-ContainerFact([string]$name) {
     }
 }
 
-# A container that has stopped and stayed stopped, of its own accord. published-dms.yml carries
+# A container that has stopped and stayed stopped, of its own accord. published-dms.compose.yml carries
 # restart: unless-stopped, so a DMS that refuses to start would otherwise be restarted for as long
 # as the stack is up and an exit code read once could be any attempt's. The test-owned pin overlay
 # sets restart: "no" for the DMS service, which is what lets the first failure be the final state.
@@ -1340,9 +1340,9 @@ function Invoke-ProofScenario {
 # The client this proof posts with, and the one data store it is bound to.
 #
 # Created here rather than read from disk. configure-local-data-store.ps1's
-# -AddSmokeTestCredentials calls Get-SmokeTestCredential and pipes the result to Out-Null: the key
-# and secret are RETURNED to the caller and never written to a file, so there is nothing on disk for
-# this harness to read. Calling the same module directly is how a caller obtains them.
+# -AddSmokeTestCredentials returns the key and secret only in its structured result and never writes
+# them to a file, so there is nothing on disk for this harness to read. Calling the same module
+# directly is how this harness obtains them.
 #
 # The data store is chosen, not taken. Get-SmokeTestCredential with no -DataStoreIds falls back to
 # the first store the Configuration Service lists, which in a stack holding more than one binds the
@@ -1399,7 +1399,7 @@ function New-ProofSmokeClient {
     $script:secret += @($client.Secret)
 
     # A client the Configuration Service just created is not yet one its token endpoint will
-    # accept; the first exchange can 401. New-SeedLoaderCredentials waits for the same reason.
+    # accept; the first exchange can fail. New-SeedLoaderCredentials waits for the same reason.
     Write-ProofLog "Wait-CmsClientAvailable $ConfigurationServiceUrl"
     Wait-CmsClientAvailable -CmsUrl $ConfigurationServiceUrl -ClientId $client.Key -ClientSecret $client.Secret
 
@@ -1620,10 +1620,10 @@ try {
         -PluginMountSource $fixture.PublishRoot -AllowedPlugins $script:pluginName `
         -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
 
-    # Recipe 2: the committed plugins-fetch-dms.yml, run unedited, fetching over HTTP from the
+    # Recipe 2: the committed plugins-fetch-dms.compose.yml, run unedited, fetching over HTTP from the
     # digest-pinned static-file container in the test-owned feed overlay.
     $result.recipe2 = Invoke-ProofScenario -Name 'recipe2' -Pin $pin -BaseContent $baseContent `
-        -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
+        -PluginComposeFiles "plugins-fetch-dms.compose.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 $package.Sha256 -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
         -Scenario { param($environmentFile) Invoke-HappyPath -BaseUrl $baseUrl -ConfigurationServiceUrl $configurationServiceUrl -EnvironmentFile $environmentFile -Pin $pin }
@@ -1631,7 +1631,7 @@ try {
     # A digest that does not match the served package: the fetch must fail on the comparison
     # specifically, and DMS must never start.
     $result.wrongDigest = Invoke-ProofScenario -Name 'wrong-digest' -Pin $pin -BaseContent $baseContent `
-        -PluginComposeFiles "plugins-fetch-dms.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
+        -PluginComposeFiles "plugins-fetch-dms.compose.yml;$feedOverlay;$pinOverlay;$allowedOverlay" `
         -PluginFeedSource $package.FeedRoot -PluginPackageUrl $package.Url `
         -PluginPackageSha256 ('0' * 64) -PluginName $script:pluginName -AllowedPlugins $script:pluginName `
         -ExpectStartFailure -Scenario { param($environmentFile) Invoke-WrongDigestCheck -Pin $pin }

@@ -78,6 +78,14 @@ public abstract record PartitionResult
     ) : PartitionResult;
 
     /// <summary>
+    /// A failure because a query value violated a backend validation rule, for example a
+    /// descriptor-valued filter containing NUL.
+    /// </summary>
+    /// <param name="ValidationFailures">Concrete validation failures keyed by the query field's document path</param>
+    public sealed record PartitionFailureValidation(WriteValidationFailure[] ValidationFailures)
+        : PartitionResult;
+
+    /// <summary>
     /// A transient failure due to a retryable condition, for example a serialization issue.
     /// </summary>
     public sealed record PartitionFailureRetryable : PartitionResult;

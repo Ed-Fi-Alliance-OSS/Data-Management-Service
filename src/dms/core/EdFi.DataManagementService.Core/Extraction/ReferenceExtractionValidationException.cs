@@ -7,6 +7,11 @@ using EdFi.DataManagementService.Core.External.Backend;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
+/// <summary>
+/// Carries path-attributed validation failures found while extracting document information from a
+/// request body: identities, document references and descriptor values. The pipeline answers it with a
+/// 400 keyed by each failure's concrete JSON path.
+/// </summary>
 public sealed class ReferenceExtractionValidationException : Exception
 {
     public ReferenceExtractionValidationException(WriteValidationFailure[] validationFailures)

@@ -147,8 +147,8 @@ BeforeAll {
 
         # The invoked start scripts write these identity variables and nothing restores them.
         $identityEnvironmentName = @(
-            'DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
-            'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY'
+            'CONFIGURATION_SERVICE_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+            'DMS_JWT_METADATA_ADDRESS', 'CONFIGURATION_SERVICE_IDENTITY_AUTHORITY'
         )
         $identityEnvironmentState = @{}
         foreach ($name in $identityEnvironmentName) {
@@ -355,9 +355,9 @@ BeforeAll {
         $lines = @(
             'POSTGRES_PASSWORD=abcdefgh1!',
             'POSTGRES_DB_NAME=edfi_datamanagementservice',
-            'DMS_CONFIG_IDENTITY_PROVIDER=self-contained',
+            'CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained',
             # Keycloak starts refuse an env file without it.
-            'KEYCLOAK_DMS_CONFIG_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
+            'KEYCLOAK_CONFIGURATION_SERVICE_IDENTITY_AUTHORITY=http://dms-keycloak:8080/realms/edfi'
         ) + $AdditionalLines
         Set-Content -LiteralPath $path -NoNewline -Value ($lines -join "`n")
         return $path
@@ -388,8 +388,8 @@ Describe "MSSQL physical-distinctness wiring" {
     # present-but-blank variable in this environment).
     $script:wiringAmbientKeys = @(
         "POSTGRES_DB_NAME", "POSTGRES_PASSWORD", "MSSQL_DB_NAME", "MSSQL_SA_PASSWORD",
-        "DMS_DATASTORE", "DMS_CONFIG_DATASTORE", "DMS_CONFIG_IDENTITY_PROVIDER",
-        "DMS_CONFIG_DATABASE_NAME", "DMS_CONFIG_DATABASE_CONNECTION_STRING",
+        "DMS_DATASTORE", "CONFIGURATION_SERVICE_DATASTORE", "CONFIGURATION_SERVICE_IDENTITY_PROVIDER",
+        "CONFIGURATION_SERVICE_DATABASE_NAME", "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING",
         "DMS_TOPOLOGY_SEPARATE_CONFIG_DATABASE"
     )
     $script:wiringAmbientSnapshot = @{}

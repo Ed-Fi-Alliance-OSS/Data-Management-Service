@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -179,6 +178,18 @@ internal sealed class ThrowingRelationalReadTargetLookupService : IRelationalRea
             "Relational query execution should not route through get-by-id read target lookup."
         );
     }
+
+    public Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        throw new AssertionException(
+            "Relational query execution should not route through get-by-id read target lookup."
+        );
+    }
 }
 
 /// <summary>
@@ -207,6 +218,22 @@ internal sealed class InterceptingRelationalReadTargetLookupService(
     {
         var lookupResult = await _inner
             .ResolveForGetByIdAsync(mappingSet, resource, documentUuid, cancellationToken)
+            .ConfigureAwait(false);
+
+        await _recorder.InvokeAfterTargetLookupAsync(cancellationToken);
+
+        return lookupResult;
+    }
+
+    public async Task<RelationalReadTargetLookupResult> ResolveForCacheCandidateAsync(
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        var lookupResult = await _inner
+            .ResolveForCacheCandidateAsync(mappingSet, resource, documentUuid, cancellationToken)
             .ConfigureAwait(false);
 
         await _recorder.InvokeAfterTargetLookupAsync(cancellationToken);
@@ -262,12 +289,12 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private MssqlRelationalQueryExecutionRecorder _recorder = null!;
     private ResourceInfo _resourceInfo = null!;
     private IReadOnlyList<PersistedQuerySchool> _persistedSchoolsInDocumentOrder = null!;
-    private long _physicalAddressTypeDescriptorId;
-    private long _mailingAddressTypeDescriptorId;
-    private long _stateAbbreviationDescriptorId;
-    private long _educationOrganizationCategoryDescriptorId;
-    private long _ninthGradeLevelDescriptorId;
-    private long _tenthGradeLevelDescriptorId;
+    private int _physicalAddressTypeDescriptorId;
+    private int _mailingAddressTypeDescriptorId;
+    private int _stateAbbreviationDescriptorId;
+    private int _educationOrganizationCategoryDescriptorId;
+    private int _ninthGradeLevelDescriptorId;
+    private int _tenthGradeLevelDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -444,8 +471,13 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
+    /// <summary>
+    /// SQL Server string filters carry no query-side collation (DMS-1443) and follow the column collation.
+    /// NameOfInstitution is not an identity column, so it follows the database default, which is
+    /// case-insensitive on the integration test server; a lower-cased value therefore matches.
+    /// </summary>
     [Test]
-    public async Task It_enforces_case_sensitive_string_filtering_for_sql_server()
+    public async Task It_follows_the_column_collation_for_string_filtering_on_sql_server()
     {
         var expectedSchool = _persistedSchoolsInDocumentOrder[0];
 
@@ -460,16 +492,17 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             limit: 25,
             offset: 0,
             totalCount: true,
-            traceId: "mssql-query-case-sensitive-filter"
+            traceId: "mssql-query-column-collation-filter"
         );
 
         var success = result.Should().BeOfType<QueryResult.QuerySuccess>().Subject;
 
-        success.TotalCount.Should().Be(0);
-        success.EdfiDocs.Should().BeEmpty();
-        AssertSingleQueryHydration().Plan.TotalCountSql.Should().NotBeNull();
-        _recorder.PageMaterializedDocumentIds.Should().BeEmpty();
-        _recorder.SingleDocumentMaterializationCallCount.Should().Be(0);
+        success.TotalCount.Should().Be(1);
+        success.EdfiDocs.Should().HaveCount(1);
+        success.EdfiDocs[0]!["id"]!.GetValue<string>().Should().Be(expectedSchool.DocumentUuid.ToString());
+
+        AssertSingleQueryHydration();
+        AssertPageMaterialization(expectedSchool.DocumentId);
     }
 
     [Test]
@@ -1074,10 +1107,18 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
             "GradeLevelDescriptor"
         );
         var descriptorResourceInfo = CreateResourceInfo(descriptorProjectSchema, descriptorResourceSchema);
-        IReadOnlyList<long> expectedDocumentIds =
-        [
-            .. new[] { _ninthGradeLevelDescriptorId, _tenthGradeLevelDescriptorId }.Order(),
-        ];
+        var descriptorRows = await _database.QueryRowsAsync(
+            """
+            SELECT [DocumentId]
+            FROM [dms].[Descriptor]
+            WHERE [DescriptorId] IN (@ninthGradeLevelDescriptorId, @tenthGradeLevelDescriptorId)
+            ORDER BY [DocumentId];
+            """,
+            new SqlParameter("@ninthGradeLevelDescriptorId", _ninthGradeLevelDescriptorId),
+            new SqlParameter("@tenthGradeLevelDescriptorId", _tenthGradeLevelDescriptorId)
+        );
+        var expectedDocumentIds = descriptorRows.Select(row => (long)row["DocumentId"]!).ToArray();
+        expectedDocumentIds.Should().HaveCount(2);
 
         var result = await ExecutePartitionsAsync(
             descriptorResourceInfo,
@@ -1299,8 +1340,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _physicalAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("10111111-1111-1111-1111-111111111111"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Physical",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Physical",
             "Physical"
@@ -1308,8 +1347,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _mailingAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("20222222-2222-2222-2222-222222222222"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Mailing",
             "Mailing"
@@ -1317,8 +1354,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _stateAbbreviationDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("30333333-3333-3333-3333-333333333333"),
             "StateAbbreviationDescriptor",
-            "Ed-Fi:StateAbbreviationDescriptor",
-            "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
             "Texas"
@@ -1326,8 +1361,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _educationOrganizationCategoryDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("40444444-4444-4444-4444-444444444444"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -1335,8 +1368,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _ninthGradeLevelDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("50555555-5555-5555-5555-555555555555"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -1344,42 +1375,30 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         _tenthGradeLevelDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("60666666-6666-6666-6666-666666666666"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
             "Tenth grade"
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        var documentId = await InsertDescriptorAsync(
+        var descriptor = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
         );
 
-        await UpsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
-
-        return documentId;
+        return descriptor.DescriptorId;
     }
 
     private async Task SeedSchoolAsync(QuerySchoolSeed schoolSeed)
@@ -1563,7 +1582,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private async Task InsertSchoolEducationOrganizationCategoryAsync(
         long documentId,
         int ordinal,
-        long educationOrganizationCategoryDescriptorId
+        int educationOrganizationCategoryDescriptorId
     )
     {
         await _database.ExecuteNonQueryAsync(
@@ -1581,7 +1600,7 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
     }
 
-    private async Task InsertSchoolGradeLevelAsync(long documentId, int ordinal, long gradeLevelDescriptorId)
+    private async Task InsertSchoolGradeLevelAsync(long documentId, int ordinal, int gradeLevelDescriptorId)
     {
         await _database.ExecuteNonQueryAsync(
             """
@@ -1601,8 +1620,8 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
     private async Task InsertSchoolAddressAsync(
         long documentId,
         int ordinal,
-        long addressTypeDescriptorId,
-        long stateAbbreviationDescriptorId,
+        int addressTypeDescriptorId,
+        int stateAbbreviationDescriptorId,
         string city,
         string postalCode,
         string streetNumberName,
@@ -1643,76 +1662,48 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
-    }
-
-    private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [ReferentialId] = @referentialId;
-
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
+        return new(descriptorId, documentId);
     }
 
     private async Task ExecuteWithTriggersTemporarilyDisabledAsync(
@@ -1731,23 +1722,6 @@ public class Given_A_Mssql_Relational_Query_With_The_Authoritative_Sample_School
         {
             await _database.ExecuteNonQueryAsync($"""ENABLE TRIGGER ALL ON [{schema}].[{table}];""");
         }
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 
     private static QueryElement CreateQueryElement(string queryFieldName, string path, string value)

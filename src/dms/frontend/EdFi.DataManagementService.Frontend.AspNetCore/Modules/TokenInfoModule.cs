@@ -23,5 +23,6 @@ public class TokenInfoModule(IOptions<AppSettings> appSettings) : IEndpointModul
         );
 
         endpoints.MapPost($"{routePattern}/oauth/token_info", GetTokenInfo);
+        endpoints.MapMethodNotAllowed($"{routePattern}/oauth/token_info", HttpMethods.Post);
     }
 }

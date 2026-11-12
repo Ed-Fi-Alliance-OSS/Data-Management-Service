@@ -20,7 +20,6 @@ using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -348,8 +347,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             Guid.Parse("40444444-4444-4444-4444-444444444444"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -357,8 +354,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             Guid.Parse("60666666-6666-6666-6666-666666666666"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
             "Tenth grade"
@@ -521,7 +516,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             seed.StudentUniqueId,
             seed.TermDescriptor
         );
-        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
+        var termDescriptorId = await GetDescriptorIdAsync("TermDescriptor", seed.TermDescriptor);
 
         await Database.ExecuteNonQueryAsync(
             """
@@ -559,19 +554,14 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("name", seed.Name)
         );
 
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                "Authz",
-                "AuthorizationStudentAcademicRecordResource",
-                (
-                    "$.authorizationStudentAcademicRecordId",
-                    seed.AuthorizationStudentAcademicRecordId.ToString(CultureInfo.InvariantCulture)
-                )
-            ),
-            documentId,
-            resourceKeyId
-        );
-
+        (
+            await Database.ExecuteScalarAsync<int>(
+                """SELECT "StudentAcademicRecord_TermDescriptor_DescriptorId" FROM "authz"."AuthorizationStudentAcademicRecordResource" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
         return new UpsertResult.InsertSuccess(seed.DocumentUuid, "\"test-etag\"");
     }
 
@@ -751,8 +741,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "TermDescriptor",
-            "Ed-Fi:TermDescriptor",
-            termDescriptor,
             "uri://ed-fi.org/TermDescriptor",
             termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..],
             termDescriptor[(termDescriptor.LastIndexOf('#') + 1)..]
@@ -798,8 +786,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             resourceName,
-            $"Ed-Fi:{resourceName}",
-            descriptorUri,
             descriptorUri[..fragmentIndex],
             codeValue,
             codeValue
@@ -811,8 +797,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "StaffClassificationDescriptor",
-            "Ed-Fi:StaffClassificationDescriptor",
-            descriptor,
             "uri://ed-fi.org/StaffClassificationDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],
             descriptor[(descriptor.LastIndexOf('#') + 1)..]
@@ -824,8 +808,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "EmploymentStatusDescriptor",
-            "Ed-Fi:EmploymentStatusDescriptor",
-            descriptor,
             "uri://ed-fi.org/EmploymentStatusDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],
             descriptor[(descriptor.LastIndexOf('#') + 1)..]
@@ -837,8 +819,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         await SeedDescriptorAsync(
             documentUuid,
             "ResponsibilityDescriptor",
-            "Ed-Fi:ResponsibilityDescriptor",
-            descriptor,
             "uri://ed-fi.org/ResponsibilityDescriptor",
             descriptor[(descriptor.LastIndexOf('#') + 1)..],
             descriptor[(descriptor.LastIndexOf('#') + 1)..]
@@ -870,16 +850,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("schoolYear", seed.SchoolYear),
             new NpgsqlParameter("schoolYearDescription", seed.SchoolYearDescription)
         );
-
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                "Ed-Fi",
-                "SchoolYearType",
-                ("$.schoolYear", seed.SchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            documentId,
-            resourceKeyId
-        );
     }
 
     public async Task SeedStudentAsync(StudentSeed seed)
@@ -910,12 +880,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("lastSurname", seed.LastSurname),
             new NpgsqlParameter("studentUniqueId", seed.StudentUniqueId)
         );
-
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId("Ed-Fi", "Student", ("$.studentUniqueId", seed.StudentUniqueId)),
-            documentId,
-            resourceKeyId
-        );
     }
 
     public async Task SeedStudentSchoolAssociationAsync(StudentSchoolAssociationSeed seed)
@@ -924,7 +888,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var documentId = await InsertDocumentAsync(seed.DocumentUuid.Value, resourceKeyId);
         var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.SchoolId);
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
-        var entryGradeLevelDescriptorId = await GetDescriptorDocumentIdAsync(
+        var entryGradeLevelDescriptorId = await GetDescriptorIdAsync(
             "GradeLevelDescriptor",
             seed.EntryGradeLevelDescriptor
         );
@@ -958,6 +922,15 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("entryGradeLevelDescriptorId", entryGradeLevelDescriptorId),
             new NpgsqlParameter("entryDate", seed.EntryDate)
         );
+
+        (
+            await Database.ExecuteScalarAsync<int>(
+                """SELECT "EntryGradeLevelDescriptor_DescriptorId" FROM "edfi"."StudentSchoolAssociation" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(entryGradeLevelDescriptorId);
     }
 
     public async Task SeedStudentAcademicRecordAsync(StudentAcademicRecordSeed seed)
@@ -967,7 +940,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         var schoolDocumentId = await GetSchoolDocumentIdAsync(seed.EducationOrganizationId);
         var schoolYearDocumentId = await GetSchoolYearDocumentIdAsync(seed.SchoolYear);
         var studentDocumentId = await GetStudentDocumentIdAsync(seed.StudentUniqueId);
-        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
+        var termDescriptorId = await GetDescriptorIdAsync("TermDescriptor", seed.TermDescriptor);
 
         await Database.ExecuteNonQueryAsync(
             """
@@ -1002,18 +975,18 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("termDescriptorId", termDescriptorId)
         );
 
-        await InsertReferentialIdentityAsync(
-            CreateStudentAcademicRecordReferentialId(seed),
-            documentId,
-            resourceKeyId
-        );
+        (
+            await Database.ExecuteScalarAsync<int>(
+                """SELECT "TermDescriptor_DescriptorId" FROM "edfi"."StudentAcademicRecord" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
     }
 
     /// <summary>
-    /// Course and CourseTranscript are seeded for the transitive person pathway. Unlike the older helpers here,
-    /// neither writes <c>dms.ReferentialIdentity</c> by hand: the table's own FOR EACH ROW
-    /// <c>TR_&lt;Table&gt;_ReferentialIdentity</c> trigger computes it from the natural key, which is the value
-    /// the product would store.
+    /// Course and CourseTranscript are seeded for the transitive person pathway.
     /// </summary>
     public async Task SeedCourseAsync(CourseSeed seed)
     {
@@ -1062,8 +1035,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             seed.StudentUniqueId,
             seed.TermDescriptor
         );
-        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", seed.TermDescriptor);
-        var courseAttemptResultDescriptorId = await GetDescriptorDocumentIdAsync(
+        var termDescriptorId = await GetDescriptorIdAsync("TermDescriptor", seed.TermDescriptor);
+        var courseAttemptResultDescriptorId = await GetDescriptorIdAsync(
             "CourseAttemptResultDescriptor",
             seed.CourseAttemptResultDescriptor
         );
@@ -1109,6 +1082,23 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new NpgsqlParameter("termDescriptorId", termDescriptorId),
             new NpgsqlParameter("courseAttemptResultDescriptorId", courseAttemptResultDescriptorId)
         );
+
+        (
+            await Database.ExecuteScalarAsync<int>(
+                """SELECT "StudentAcademicRecord_TermDescriptor_DescriptorId" FROM "edfi"."CourseTranscript" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
+        (
+            await Database.ExecuteScalarAsync<int>(
+                """SELECT "CourseAttemptResultDescriptor_DescriptorId" FROM "edfi"."CourseTranscript" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(courseAttemptResultDescriptorId);
     }
 
     public async Task<UpsertResult> UpsertAuthorizationNullableAsync(
@@ -1711,21 +1701,21 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         return rowCount;
     }
 
-    public async Task<long> CountReferentialIdentityRowsForAuthorizationRootChildAsync(
+    /// <summary>
+    /// Counts the <c>authz.AuthorizationRootChildResource</c> root rows carrying the seed's natural key, the
+    /// resource's own identity, so a create is observed by key rather than by document id.
+    /// </summary>
+    public async Task<long> CountAuthorizationRootChildRowsByNaturalKeyAsync(
         AuthorizationRootChildSeed seed
-    )
-    {
-        var referentialId = CreateAuthorizationRootChildDocumentInfo(seed).ReferentialId;
-
-        return await Database.ExecuteScalarAsync<long>(
+    ) =>
+        await Database.ExecuteScalarAsync<long>(
             """
             SELECT COUNT(*)::bigint
-            FROM "dms"."ReferentialIdentity"
-            WHERE "ReferentialId" = @referentialId;
+            FROM "authz"."AuthorizationRootChildResource"
+            WHERE "AuthorizationRootChildId" = @authorizationRootChildId;
             """,
-            new NpgsqlParameter("referentialId", referentialId.Value)
+            new NpgsqlParameter("authorizationRootChildId", seed.AuthorizationRootChildId)
         );
-    }
 
     public async Task<AuthorizationWriteSideEffectState> ReadAuthorizationRootChildSideEffectStateAsync(
         DocumentUuid documentUuid
@@ -1740,10 +1730,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationRootChildResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1804,8 +1790,8 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     }
 
     /// <summary>
-    /// Snapshots the document row, every mapped resource table (the descriptor row for a descriptor), and the
-    /// referential identities of one document, so a denied write can be shown to have moved nothing.
+    /// Snapshots the document row and every mapped resource table (the descriptor row for a descriptor) of one
+    /// document, so a denied write can be shown to have moved nothing.
     /// </summary>
     public async Task<AuthorizationWriteSideEffectState> ReadSideEffectStateAsync(
         string projectEndpointName,
@@ -1820,11 +1806,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             Document: document,
             ResourceTables: GetResourceHandle(projectEndpointName, resourceName).ResourceInfo.IsDescriptor
                 ? await ReadDescriptorTableStatesAsync(document.DocumentId)
-                : await ReadResourceTableStatesAsync(projectEndpointName, resourceName, document.DocumentId),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
-            )
+                : await ReadResourceTableStatesAsync(projectEndpointName, resourceName, document.DocumentId)
         );
     }
 
@@ -1930,11 +1912,12 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             new("ShortDescription"),
             new("Description"),
             new("Uri"),
-            new("Discriminator"),
+            new("DescriptorId"),
+            new("ResourceKeyId"),
         ];
         var rows = await Database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "Namespace", "CodeValue", "ShortDescription", "Description", "Uri", "Discriminator"
+            SELECT "DocumentId", "Namespace", "CodeValue", "ShortDescription", "Description", "Namespace" || '#' || "CodeValue" AS "Uri", "DescriptorId", "ResourceKeyId"
             FROM "dms"."Descriptor"
             WHERE "DocumentId" = @documentId;
             """,
@@ -1957,10 +1940,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationNullableResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1978,10 +1957,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationStudentAcademicRecordResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -1999,10 +1974,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "authz",
                 "AuthorizationStudentSchoolResource",
                 document.DocumentId
-            ),
-            ReferentialIdentities: await ReadReferentialIdentityRowsForDocumentAsync(
-                document.DocumentId,
-                resourceKeyId
             )
         );
     }
@@ -2273,9 +2244,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 "DocumentId",
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt",
-                "CreatedAt"
+                "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid
               AND "ResourceKeyId" = @resourceKeyId;
@@ -2289,9 +2258,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
                 GetRequiredInt64(rows[0], "DocumentId"),
                 GetRequiredGuid(rows[0], "DocumentUuid"),
                 GetRequiredInt16(rows[0], "ResourceKeyId"),
-                GetRequiredInt64(rows[0], "ContentVersion"),
-                GetRequiredDateTime(rows[0], "ContentLastModifiedAt"),
-                GetRequiredDateTime(rows[0], "CreatedAt")
+                GetRequiredInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected one AuthorizationRootChildResource document row for '{documentUuid.Value}', but found {rows.Count}."
@@ -2349,45 +2316,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         }
 
         return states;
-    }
-
-    private async Task<IReadOnlyList<ReferentialIdentityRow>> ReadReferentialIdentityRowsForDocumentAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await Database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId
-            ORDER BY "ResourceKeyId", "ReferentialId";
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return
-        [
-            .. rows.Select(row => new ReferentialIdentityRow(
-                GetRequiredGuid(row, "ReferentialId"),
-                GetRequiredInt64(row, "DocumentId"),
-                GetRequiredInt16(row, "ResourceKeyId")
-            )),
-        ];
-    }
-
-    private DocumentInfo CreateAuthorizationRootChildDocumentInfo(AuthorizationRootChildSeed seed)
-    {
-        var resourceHandle = GetResourceHandle("authz", "AuthorizationRootChildResource");
-
-        return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
-            RelationalQueryAuthorizationRequestBodies.CreateAuthorizationRootChildRequestBody(seed),
-            resourceHandle.ResourceInfo,
-            resourceHandle.ResourceSchema,
-            MappingSet
-        );
     }
 
     private ResourceWritePlan GetWritePlan(string projectEndpointName, string resourceName)
@@ -2551,29 +2479,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        var documentId = await InsertDescriptorAsync(
-            documentUuid,
-            resourceKeyId,
-            discriminator,
-            uri,
-            @namespace,
-            codeValue,
-            shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
+        await InsertDescriptorAsync(documentUuid, resourceKeyId, @namespace, codeValue, shortDescription);
     }
 
     private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
@@ -2645,7 +2557,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         string termDescriptor
     )
     {
-        var termDescriptorId = await GetDescriptorDocumentIdAsync("TermDescriptor", termDescriptor);
+        var termDescriptorId = await GetDescriptorIdAsync("TermDescriptor", termDescriptor);
 
         return await Database.ExecuteScalarAsync<long>(
             """
@@ -2677,18 +2589,18 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    private async Task<long> GetDescriptorDocumentIdAsync(string resourceName, string uri)
+    private async Task<int> GetDescriptorIdAsync(string resourceName, string uri)
     {
         var resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
 
-        return await Database.ExecuteScalarAsync<long>(
+        return await Database.ExecuteScalarAsync<int>(
             """
-            SELECT descriptor."DocumentId"
+            SELECT descriptor."DescriptorId"
             FROM "dms"."Descriptor" descriptor
             INNER JOIN "dms"."Document" document
                 ON document."DocumentId" = descriptor."DocumentId"
             WHERE document."ResourceKeyId" = @resourceKeyId
-              AND descriptor."Uri" = @uri;
+              AND (descriptor."Namespace" || '#' || descriptor."CodeValue") = @uri;
             """,
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("uri", uri)
@@ -2697,6 +2609,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
     {
+        await Database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         return await Database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
@@ -2708,118 +2621,37 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await Database.ExecuteNonQueryAsync(
+        var descriptorId = await Database.ExecuteScalarAsync<int>(
             """
-            INSERT INTO "dms"."Descriptor" (
-                "DocumentId",
-                "ResourceKeyId",
-                "Namespace",
-                "CodeValue",
-                "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
-            )
-            VALUES (
-                @documentId,
-                @resourceKeyId,
-                @namespace,
-                @codeValue,
-                @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+            INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Description")
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @shortDescription)
+            RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
-            new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("shortDescription", shortDescription)
         );
-
-        return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await Database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("DocumentId", "ResourceKeyId") DO UPDATE
-            SET "ReferentialId" = EXCLUDED."ReferentialId";
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
-    }
-
-    private static ReferentialId CreateStudentAcademicRecordReferentialId(StudentAcademicRecordSeed seed) =>
-        CreateReferentialId(
-            "Ed-Fi",
-            "StudentAcademicRecord",
-            (
-                "$.educationOrganizationReference.educationOrganizationId",
-                seed.EducationOrganizationId.ToString(CultureInfo.InvariantCulture)
-            ),
-            ("$.schoolYearTypeReference.schoolYear", seed.SchoolYear.ToString(CultureInfo.InvariantCulture)),
-            ("$.studentReference.studentUniqueId", seed.StudentUniqueId),
-            ("$.termDescriptor", seed.TermDescriptor.ToLowerInvariant())
-        );
-
-    private static ReferentialId CreateReferentialId(
-        string projectName,
-        string resourceName,
-        params (string JsonPath, string Value)[] identityElements
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), false),
-            new DocumentIdentity([
-                .. identityElements.Select(static identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.JsonPath),
-                    identityElement.Value
-                )),
-            ])
-        );
+        ((long)descriptorId).Should().NotBe(documentId);
+        (
+            await Database.ExecuteScalarAsync<int>(
+                """SELECT "DescriptorId" FROM "dms"."Descriptor" WHERE "DocumentId" = @documentId;""",
+                new NpgsqlParameter("documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(descriptorId);
+        return new(descriptorId, documentId);
     }
 
     private sealed record ResourceHandle(
@@ -2855,15 +2687,6 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
 
     private static int GetRequiredInt32(IReadOnlyDictionary<string, object?> row, string columnName) =>
         Convert.ToInt32(GetRequiredValue(row, columnName), CultureInfo.InvariantCulture);
-
-    private static DateTime GetRequiredDateTime(IReadOnlyDictionary<string, object?> row, string columnName)
-    {
-        return GetRequiredValue(row, columnName) is DateTime value
-            ? value
-            : throw new InvalidOperationException(
-                $"Expected column '{columnName}' to contain a DateTime value."
-            );
-    }
 
     private static Guid GetRequiredGuid(IReadOnlyDictionary<string, object?> row, string columnName)
     {

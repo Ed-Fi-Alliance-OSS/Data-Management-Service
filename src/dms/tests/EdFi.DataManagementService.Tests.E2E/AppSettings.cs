@@ -44,11 +44,14 @@ public static class AppSettings
     /// <summary>
     /// The name of the running DMS container, for the harness Docker operations that copy the API
     /// schema out of it and stop/start it. Compose names it "ed-fi-api" for the local image
-    /// (local-dms.yml sets container_name) and "dms-published-dms-1" for the published image
-    /// (published-dms.yml sets none). build-dms.ps1's E2E process context sets this from the startup
+    /// (local-dms.compose.yml sets container_name) and "dms-published-dms-1" for the published image
+    /// (published-dms.compose.yml sets none). build-dms.ps1's E2E process context sets this from the startup
     /// phase plan; the default keeps direct setup and direct dotnet test runs working unchanged.
     /// </summary>
     public static string DmsContainerName => _settings.DmsContainerName;
+
+    // An explicit host JSON log file replaces Docker logs for token correlation assertions.
+    public static string DmsLogFilePath => _settings.DmsLogFilePath;
 
     public static int MaxRequestBodySizeMegabytes => _settings.MaxRequestBodySizeMegabytes;
 
@@ -64,6 +67,7 @@ public static class AppSettings
             GetString(configuration, nameof(DataStoreConnectionString), string.Empty),
             GetString(configuration, nameof(DataStoreSnapshotConnectionString), string.Empty),
             GetString(configuration, nameof(DmsContainerName), DefaultDmsContainerName),
+            GetString(configuration, nameof(DmsLogFilePath), string.Empty),
             GetInt(configuration, nameof(MaxRequestBodySizeMegabytes), DefaultMaxRequestBodySizeMegabytes)
         );
     }
@@ -102,5 +106,6 @@ internal sealed record AppSettingsValues(
     string DataStoreConnectionString,
     string DataStoreSnapshotConnectionString,
     string DmsContainerName,
+    string DmsLogFilePath,
     int MaxRequestBodySizeMegabytes
 );

@@ -7,6 +7,7 @@ using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
@@ -21,7 +22,8 @@ public class OpenIddictPublicKeyCancellationTests : DatabaseTest
 {
     private const string KeyIdPrefix = "dms1556-cancellation-";
 
-    protected OpenIddictDataRepository Repository { get; } = new(Configuration.DatabaseOptions);
+    protected OpenIddictDataRepository Repository { get; } =
+        new(Configuration.DatabaseOptions, NullLogger<OpenIddictDataRepository>.Instance);
 
     protected async Task InsertKeyAsync(string keyId, bool isActive) =>
         await Connection!.ExecuteAsync(

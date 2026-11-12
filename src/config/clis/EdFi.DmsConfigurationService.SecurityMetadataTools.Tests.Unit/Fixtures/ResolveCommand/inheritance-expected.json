@@ -1,0 +1,110 @@
+[
+  {
+    "claimSetName": "Alpha",
+    "claims": [
+      {
+        "name": "Zebra",
+        "authorizationId": 1
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RootRead"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "claimSetName": "Empty",
+    "claims": [],
+    "authorizations": []
+  },
+  {
+    "claimSetName": "Zoo",
+    "claims": [
+      {
+        "name": "Alpha",
+        "authorizationId": 3
+      },
+      {
+        "name": "Beta",
+        "authorizationId": 3
+      },
+      {
+        "name": "Zebra",
+        "authorizationId": 2
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 2,
+        "actions": [
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "LeafCreate"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RootDelete"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Second"
+              },
+              {
+                "name": "First"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "actions": [
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RootDelete"
+              }
+            ]
+          },
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NearSecond"
+              },
+              {
+                "name": "NearFirst"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": []
+          }
+        ]
+      }
+    ]
+  }
+]

@@ -99,7 +99,6 @@ public class Given_MssqlDatabaseFingerprintReaderTests_A_Provisioned_Core_Dms_Sc
                 "DocumentCacheState",
                 "DocumentProjectionWork",
                 "EffectiveSchema",
-                "ReferentialIdentity",
                 "RepresentationRestampOperation",
                 "ResourceKey",
                 "SchemaComponent"

@@ -39,9 +39,9 @@ public sealed record HydratedTableRows(DbTableModel TableModel, IReadOnlyList<ob
 /// <summary>
 /// One resolved descriptor URI row from a descriptor projection result set.
 /// </summary>
-/// <param name="DescriptorId">The descriptor <c>DocumentId</c> referenced by hydrated rows.</param>
+/// <param name="DescriptorId">The compact descriptor identity referenced by hydrated rows.</param>
 /// <param name="Uri">The canonical descriptor URI.</param>
-public sealed record DescriptorUriRow(long DescriptorId, string Uri);
+public sealed record DescriptorUriRow(int DescriptorId, string Uri);
 
 /// <summary>
 /// Hydrated descriptor URI rows for a single descriptor projection plan.

@@ -18,6 +18,9 @@ env:
 jobs:
   visual-studio-build:
     name: Build DMS with Visual Studio MSBuild
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: windows-2025-vs2026
     defaults:
       run:
@@ -58,7 +61,7 @@ jobs:
           }
 
           $visualStudio = $visualStudioInstallations[0]
-          $msbuildPath = Join-Path $visualStudio.installationPath "MSBuild\Current\Bin\MSBuild.exe"
+          $msbuildPath = Join-Path $visualStudio.installationPath "MSBuild\Current\Bin\amd64\MSBuild.exe"
           if (-not (Test-Path -LiteralPath $msbuildPath)) {
               throw "MSBuild.exe was not found at '$msbuildPath'."
           }
@@ -98,6 +101,7 @@ jobs:
 
   build-and-test:
     name: Build and Run Tests (${{ matrix.identityprovider }})
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -169,7 +173,7 @@ jobs:
         # under which a collection an E2E scenario can seed over HTTP is cut into more than one
         # partition, and runs per-PR in run-e2e-tests-partition-sizing.
         # The non-empty filter writes the filtered TRX uploaded by the following step.
-        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)'
+        run: ./build-dms.ps1 E2ETest -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@CursorPartitionSizing)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e.outcome == 'failure'
@@ -250,6 +254,7 @@ jobs:
 
   build-and-start-dms:
     name: Build and Start DMS, Download OpenAPI Specs
+    if: (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -458,7 +463,7 @@ jobs:
         validate-descriptors-spec,
         validate-discovery-spec,
       ]
-    if: always()
+    if: always() && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     steps:
       - name: Notify Slack on success
         if: >-

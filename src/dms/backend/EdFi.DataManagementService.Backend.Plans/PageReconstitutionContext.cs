@@ -171,7 +171,7 @@ internal sealed class PageReconstitutionContext
 
     private PageReconstitutionContext(
         CompiledReconstitutionPlan compiledPlan,
-        IReadOnlyDictionary<long, string> descriptorUrisById,
+        IReadOnlyDictionary<int, string> descriptorUrisById,
         IReadOnlyDictionary<long, DocumentLinkLookupEntry> documentLinkLookupById,
         LinkEmissionContext? linkEmission,
         ImmutableArray<DocumentPageNode> documentsInOrder,
@@ -196,7 +196,7 @@ internal sealed class PageReconstitutionContext
 
     public CompiledReconstitutionPlan CompiledPlan { get; }
 
-    public IReadOnlyDictionary<long, string> DescriptorUrisById { get; }
+    public IReadOnlyDictionary<int, string> DescriptorUrisById { get; }
 
     /// <summary>
     /// Page-scoped <c>DocumentId → (DocumentUuid, ResourceKeyId)</c> map sourced from
@@ -248,7 +248,7 @@ internal sealed class PageReconstitutionContext
         CompiledReconstitutionPlan compiledPlan,
         IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
-        IReadOnlyDictionary<long, string> descriptorUrisById
+        IReadOnlyDictionary<int, string> descriptorUrisById
     ) =>
         Build(
             compiledPlan,
@@ -263,7 +263,7 @@ internal sealed class PageReconstitutionContext
         CompiledReconstitutionPlan compiledPlan,
         IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
         IReadOnlyList<HydratedTableRows> tableRowsInDependencyOrder,
-        IReadOnlyDictionary<long, string> descriptorUrisById,
+        IReadOnlyDictionary<int, string> descriptorUrisById,
         IReadOnlyDictionary<long, DocumentLinkLookupEntry> documentLinkLookupById,
         LinkEmissionContext? linkEmission
     )
@@ -387,7 +387,7 @@ internal sealed class PageReconstitutionContext
         );
     }
 
-    public string GetDescriptorUriOrThrow(long descriptorId)
+    public string GetDescriptorUriOrThrow(int descriptorId)
     {
         if (DescriptorUrisById.TryGetValue(descriptorId, out var descriptorUri))
         {
@@ -408,7 +408,7 @@ internal sealed class PageReconstitutionContext
 
     private static PageReconstitutionContext CreateContextOrThrow(
         CompiledReconstitutionPlan compiledPlan,
-        IReadOnlyDictionary<long, string> descriptorUrisById,
+        IReadOnlyDictionary<int, string> descriptorUrisById,
         IReadOnlyDictionary<long, DocumentLinkLookupEntry> documentLinkLookupById,
         LinkEmissionContext? linkEmission,
         IReadOnlyList<DocumentMetadataRow> documentMetadataRows,
@@ -505,7 +505,7 @@ internal sealed class PageReconstitutionContext
         return lookup;
     }
 
-    private static IReadOnlyDictionary<long, string> BuildDescriptorUriLookup(
+    private static IReadOnlyDictionary<int, string> BuildDescriptorUriLookup(
         IReadOnlyList<HydratedDescriptorRows> descriptorRowsInPlanOrder
     )
     {
@@ -518,7 +518,7 @@ internal sealed class PageReconstitutionContext
             descriptorRowCount += descriptorRows.Rows.Count;
         }
 
-        Dictionary<long, string> descriptorUrisById = new(descriptorRowCount);
+        Dictionary<int, string> descriptorUrisById = new(descriptorRowCount);
 
         foreach (var descriptorRows in descriptorRowsInPlanOrder)
         {

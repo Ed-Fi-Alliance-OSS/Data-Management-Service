@@ -84,7 +84,7 @@ public sealed class DescriptorResourceMappingPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Builds descriptor metadata using the canonical column contract and discriminator strategy.
+    /// Builds descriptor metadata using the canonical column contract.
     /// </summary>
     /// <returns>Descriptor metadata for the resource.</returns>
     private static DescriptorMetadata BuildDescriptorMetadata()
@@ -95,10 +95,9 @@ public sealed class DescriptorResourceMappingPass : IRelationalModelSetPass
             ShortDescription: new DbColumnName("ShortDescription"),
             Description: new DbColumnName("Description"),
             EffectiveBeginDate: new DbColumnName("EffectiveBeginDate"),
-            EffectiveEndDate: new DbColumnName("EffectiveEndDate"),
-            Discriminator: null
+            EffectiveEndDate: new DbColumnName("EffectiveEndDate")
         );
 
-        return new DescriptorMetadata(columnContract, DiscriminatorStrategy.ResourceKeyId);
+        return new DescriptorMetadata(columnContract);
     }
 }

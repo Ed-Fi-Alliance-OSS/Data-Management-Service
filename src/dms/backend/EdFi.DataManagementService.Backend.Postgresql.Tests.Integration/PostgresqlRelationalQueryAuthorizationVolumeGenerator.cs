@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Model;
+using FluentAssertions;
 using Npgsql;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -18,18 +19,15 @@ namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
 /// </summary>
 /// <remarks>
 /// <para>
-/// What this does NOT bypass: every generated <c>edfi</c> table carries a FOR EACH ROW
-/// <c>TR_&lt;Table&gt;_ReferentialIdentity</c> trigger that hashes the natural key into
-/// <c>dms.ReferentialIdentity</c>, whose <c>ReferentialId</c> is the primary key. Two generated rows whose
-/// hashed columns coincide therefore fail on a primary-key violation. Every root table in this inventory
-/// hashes the student unique id (directly, or through the StudentSectionAssociation / StudentAcademicRecord it
-/// points at), so varying Student per row satisfies all of them. A second FOR EACH ROW trigger stamps
-/// <c>dms.Document."ContentVersion"</c> and writes <c>tracked_changes_edfi.*</c>, which is why this is not the
-/// pure bulk insert one statement per table suggests, and why the 150k lane is [Explicit].
+/// What this does NOT bypass: every generated <c>edfi</c> root table carries its natural-key unique constraint,
+/// so two generated rows with the same natural key fail. Every root table in this inventory keys on the student
+/// (directly, or through the StudentSectionAssociation / StudentAcademicRecord it points at), so varying Student
+/// per row satisfies all of them. A FOR EACH ROW trigger stamps <c>dms.Document."ContentVersion"</c> and writes
+/// <c>tracked_changes_edfi.*</c>, which is why this is not the pure bulk insert one statement per table
+/// suggests, and why the 150k lane is [Explicit].
 /// </para>
 /// <para>
-/// Generated rows carry no JSON payload, so they cannot be hydrated. That is the one thing missing, not the
-/// referential identities.
+/// Generated rows carry no JSON payload, so they cannot be hydrated. That is the one thing missing.
 /// </para>
 /// <para>
 /// Referential foreign keys stay enabled throughout — no dropped constraints, no disabled triggers. An
@@ -60,7 +58,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
 {
     /// <summary>
     /// Generation runs with a longer statement timeout than the harness default. One set-based INSERT per table
-    /// is still one statement, but it fires the referential-identity and stamp triggers once per row, so at the
+    /// is still one statement, but it fires the stamp triggers once per row, so at the
     /// [Explicit] 150,000-row scale a single statement runs well past the shared 300-second default. The
     /// timeout is restored afterwards, so every other statement against this database keeps the shorter one
     /// that makes a genuinely hung statement fail fast.
@@ -87,6 +85,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 RelationshipAuthorizationVolumeIdentifiers.ReachableSchoolId
             );
             await GenerateVolumeRowsAsync(context.Database, counts);
+            await AssertGeneratedDescriptorReferencesAsync(context.Database);
             await AnalyzeGeneratedTablesAsync(context.Database);
 
             return await ReadGenerationResultAsync(context.Database);
@@ -223,7 +222,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 @schoolYear,
                 {SchoolDocumentIdSql("@reachableSchoolId")},
                 @reachableSchoolId,
-                {DescriptorDocumentIdSql("TermDescriptor", "@termDescriptorUri")},
+                {DescriptorIdSql("TermDescriptor", "@termDescriptorUri")},
                 DATE '2024-08-01',
                 DATE '2024-12-20',
                 @sessionName,
@@ -351,7 +350,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 @schoolYear,
                 {SchoolDocumentIdSql("@reachableSchoolId")},
                 @reachableSchoolId,
-                {DescriptorDocumentIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
+                {DescriptorIdSql("GradingPeriodDescriptor", "@gradingPeriodDescriptorUri")},
                 DATE '2024-08-01',
                 DATE '2024-09-13',
                 @gradingPeriodName,
@@ -492,7 +491,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 END,
                 students."DocumentId",
                 students."StudentUniqueId",
-                {DescriptorDocumentIdSql("GradeLevelDescriptor", "@gradeLevelDescriptorUri")},
+                {DescriptorIdSql("GradeLevelDescriptor", "@gradeLevelDescriptorUri")},
                 DATE '2024-08-15'
             FROM numbered
             INNER JOIN students ON students.ordinal = numbered.ordinal;
@@ -542,7 +541,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 @schoolYear,
                 students."DocumentId",
                 students."StudentUniqueId",
-                {DescriptorDocumentIdSql("TermDescriptor", "@termDescriptorUri")}
+                {DescriptorIdSql("TermDescriptor", "@termDescriptorUri")}
             FROM numbered
             INNER JOIN students ON students.ordinal = numbered.ordinal;
             """,
@@ -644,7 +643,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 section."SectionIdentifier",
                 students."DocumentId",
                 students."StudentUniqueId",
-                {DescriptorDocumentIdSql(
+                {DescriptorIdSql(
                 "AttendanceEventCategoryDescriptor",
                 "@attendanceEventCategoryDescriptorUri"
             )},
@@ -754,7 +753,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 associations."Section_SectionIdentifier",
                 associations."Section_SessionName",
                 associations."Student_StudentUniqueId",
-                {DescriptorDocumentIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
+                {DescriptorIdSql("GradeTypeDescriptor", "@gradeTypeDescriptorUri")}
             FROM numbered
             INNER JOIN associations ON associations.ordinal = numbered.ordinal
             CROSS JOIN "edfi"."GradingPeriod" gradingPeriod;
@@ -810,7 +809,7 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
                 records."SchoolYear_SchoolYear",
                 records."Student_StudentUniqueId",
                 records."TermDescriptor_DescriptorId",
-                {DescriptorDocumentIdSql(
+                {DescriptorIdSql(
                 "CourseAttemptResultDescriptor",
                 "@courseAttemptResultDescriptorUri"
             )}
@@ -838,7 +837,6 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
             """
             ANALYZE "dms"."Document";
             ANALYZE "dms"."Descriptor";
-            ANALYZE "dms"."ReferentialIdentity";
             ANALYZE "auth"."EducationOrganizationIdToEducationOrganizationId";
             ANALYZE "edfi"."School";
             ANALYZE "edfi"."SchoolYearType";
@@ -919,13 +917,91 @@ internal static class PostgresqlRelationalQueryAuthorizationVolumeGenerator
     private static string SchoolYearDocumentIdSql() =>
         """(SELECT schoolYear."DocumentId" FROM "edfi"."SchoolYearType" schoolYear WHERE schoolYear."SchoolYear" = @schoolYear)""";
 
-    private static string DescriptorDocumentIdSql(string resourceName, string uriParameter) =>
+    private static async Task AssertGeneratedDescriptorReferencesAsync(
+        PostgresqlGeneratedDdlTestDatabase database
+    )
+    {
+        (string Table, string Column, string Resource, string Uri)[] inventory =
+        [
+            (
+                "Session",
+                "TermDescriptor_DescriptorId",
+                "TermDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.TermDescriptorUri
+            ),
+            (
+                "GradingPeriod",
+                "GradingPeriodDescriptor_DescriptorId",
+                "GradingPeriodDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradingPeriodDescriptorUri
+            ),
+            (
+                "StudentSchoolAssociation",
+                "EntryGradeLevelDescriptor_DescriptorId",
+                "GradeLevelDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradeLevelDescriptorUri
+            ),
+            (
+                "StudentAcademicRecord",
+                "TermDescriptor_DescriptorId",
+                "TermDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.TermDescriptorUri
+            ),
+            (
+                "StudentSectionAttendanceEvent",
+                "AttendanceEventCategoryDescriptor_DescriptorId",
+                "AttendanceEventCategoryDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.AttendanceEventCategoryDescriptorUri
+            ),
+            (
+                "Grade",
+                "GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId",
+                "GradingPeriodDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradingPeriodDescriptorUri
+            ),
+            (
+                "Grade",
+                "GradeTypeDescriptor_DescriptorId",
+                "GradeTypeDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.GradeTypeDescriptorUri
+            ),
+            (
+                "CourseTranscript",
+                "StudentAcademicRecord_TermDescriptor_DescriptorId",
+                "TermDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.TermDescriptorUri
+            ),
+            (
+                "CourseTranscript",
+                "CourseAttemptResultDescriptor_DescriptorId",
+                "CourseAttemptResultDescriptor",
+                RelationshipAuthorizationVolumeIdentifiers.CourseAttemptResultDescriptorUri
+            ),
+        ];
+        foreach (var (table, column, resource, uri) in inventory)
+        {
+            var descriptorId = await database.ExecuteScalarAsync<int>(
+                $"""SELECT {DescriptorIdSql(resource, "@uri")};""",
+                new NpgsqlParameter("uri", uri)
+            );
+            (
+                await database.ExecuteScalarAsync<long>(
+                    $$"""SELECT COUNT(*) FROM "edfi"."{{table}}" WHERE "{{column}}" IS DISTINCT FROM @descriptorId;""",
+                    new NpgsqlParameter("descriptorId", descriptorId)
+                )
+            )
+                .Should()
+                .Be(0, $"{table}.{column} must contain the generated compact descriptor key");
+        }
+    }
+
+    private static string DescriptorIdSql(string resourceName, string uriParameter) =>
         $"""
-            (SELECT descriptor."DocumentId"
+            (SELECT descriptor."DescriptorId"
                          FROM "dms"."Descriptor" descriptor
                          INNER JOIN "dms"."Document" document ON document."DocumentId" = descriptor."DocumentId"
                          WHERE document."ResourceKeyId" = {ResourceKeyIdSql(resourceName)}
-                           AND descriptor."Uri" = {uriParameter})
+                           AND (descriptor."Namespace" || '#' || descriptor."CodeValue") = {uriParameter})
             """;
 
     private static NpgsqlParameter TotalRowsParameter(RelationshipAuthorizationVolumeCounts counts) =>

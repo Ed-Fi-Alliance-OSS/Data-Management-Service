@@ -55,10 +55,11 @@ COPY --from=parentdir plugins/EdFi.Api.Plugins.Hosting/*.csproj plugins/EdFi.Api
 
 WORKDIR /source/config
 
-COPY Directory.Build.props ./
+COPY Directory.Build.props Directory.Build.targets ./
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/*.csproj frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/packages.lock.json ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/*.csproj backend/EdFi.DmsConfigurationService.Backend/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend/
+COPY backend/EdFi.DmsConfigurationService.Claims/*.csproj backend/EdFi.DmsConfigurationService.Claims/packages.lock.json ./backend/EdFi.DmsConfigurationService.Claims/
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/*.csproj backend/EdFi.DmsConfigurationService.Backend.Keycloak/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.Keycloak/
 COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/*.csproj backend/EdFi.DmsConfigurationService.Backend.OpenIddict/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.OpenIddict/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/*.csproj backend/EdFi.DmsConfigurationService.Backend.Mssql/packages.lock.json ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
@@ -75,6 +76,7 @@ RUN dotnet restore frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/EdF
 
 COPY frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/ ./frontend/EdFi.DmsConfigurationService.Frontend.AspNetCore/
 COPY backend/EdFi.DmsConfigurationService.Backend/ ./backend/EdFi.DmsConfigurationService.Backend/
+COPY backend/EdFi.DmsConfigurationService.Claims/ ./backend/EdFi.DmsConfigurationService.Claims/
 COPY backend/EdFi.DmsConfigurationService.Backend.Keycloak/ ./backend/EdFi.DmsConfigurationService.Backend.Keycloak/
 COPY backend/EdFi.DmsConfigurationService.Backend.OpenIddict/ ./backend/EdFi.DmsConfigurationService.Backend.OpenIddict/
 COPY backend/EdFi.DmsConfigurationService.Backend.Mssql/ ./backend/EdFi.DmsConfigurationService.Backend.Mssql/
@@ -107,11 +109,11 @@ RUN version_args=""; \
         -c Release --no-restore --self-contained false -o /app/Frontend \
         $version_args
 
-FROM mcr.microsoft.com/dotnet/aspnet:10.0.3-alpine3.23@sha256:258b939d6d684ff05ad7ea16782b4bee55260de4acc6f99bec897fd11de7640c AS runtimebase
+FROM mcr.microsoft.com/dotnet/aspnet:10.0.13-alpine3.24@sha256:819bd3649d8bf53f35527c68d62e17b348ef6f24ae73073f497f00a878348062 AS runtimebase
 
 # Install OpenSSL on the 3.5 line and runtime helpers; ICU because
 # Microsoft.Data.SqlClient does not support globalization-invariant mode
-RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql16-client=~16 icu-libs=~76 icu-data-full=~76
+RUN apk add --no-cache openssl=~3.5 bash=~5 postgresql18-client=~18 icu-libs=~78 icu-data-full=~78
 
 ENV DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 

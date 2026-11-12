@@ -9,6 +9,11 @@
 set -euo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
+# Name any retired variable before Compose fails on its missing replacement.
+# shellcheck source=legacy-env-warning.sh
+source ./legacy-env-warning.sh
+warn_legacy_env_names .env
+
 # Guard the destructive `down -v`: it permanently wipes every app/database volume and the Keycloak
 # realm. Require explicit confirmation so a stray ./reset.sh cannot nuke deployment state --
 # type 'reset' at the interactive prompt, or pass -y/--force (e.g. for automation).
@@ -33,7 +38,7 @@ echo "Dropping app/database volumes and the Keycloak realm..."
 mkdir -p .bootstrap
 : > .bootstrap/reset-pending
 rm -f .bootstrap/bootstrap-attempted .bootstrap/bootstrap-complete
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env down -v
+docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env down -v
 # Volumes are gone: clear the sentinel and the recorded Keycloak image reference (update.sh's
 # pin guard) -- a fresh volume may be created under any pin.
 rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
@@ -43,14 +48,14 @@ rm -f .bootstrap/reset-pending .bootstrap/keycloak-image
 # against an unprovisioned data DB / a CMS with no data stores). They must come up LAST, after
 # bootstrap + schema, exactly like a first stand-up. --no-deps stops the gateway (which depends_on
 # the DMS services) from pulling them up early; it resolves upstreams at request time.
-docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps \
-  postgres keycloak st-config mt-config pgadmin gateway
+docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps \
+  postgres keycloak st-config mt-config pgadmin swagger-ui gateway
 ./record-keycloak-image.sh
 
 echo
 echo "Reset complete. All prior review credentials were revoked with the Keycloak realm; rebuild in order:"
-echo "  1. Re-create the realm/clients plus CMS tenants/data stores. Wait until"
-echo "     https://localhost/st-config/health and /mt-config/health return 200 (the CMS"
+echo "  1. Re-create the realm/clients plus Configuration Service tenants/data stores. Wait until"
+echo "     https://localhost/st-config/health and /mt-config/health return 200 (the Configuration Service"
 echo "     containers were just recreated), then:"
 echo "         pwsh ./bootstrap/bootstrap.ps1 -BaseUrl https://localhost -Insecure"
 echo "  2. Provision the relational schema into edfi_st / edfi_mt / edfi_mt_t2"

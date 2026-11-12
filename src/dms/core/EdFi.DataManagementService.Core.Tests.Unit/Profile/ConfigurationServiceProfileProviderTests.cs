@@ -199,7 +199,17 @@ internal sealed class CmsProfileHttpDouble : HttpMessageHandler
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns("cms-token");
+                .Returns(new ConfigurationServiceTokenLease("cms-token", 1));
+            A.CallTo(() =>
+                    tokenHandler.RefreshRejectedTokenAsync(
+                        A<ConfigurationServiceTokenLease>._,
+                        A<string>._,
+                        A<string>._,
+                        A<string>._,
+                        A<CancellationToken>._
+                    )
+                )
+                .Returns(new ConfigurationServiceTokenLease("cms-token-replacement", 2));
         }
 
         return new ConfigurationServiceProfileProvider(
@@ -776,7 +786,7 @@ public class ConfigurationServiceProfileProviderTests
         }
 
         [Test]
-        public void It_keeps_the_cause()
+        public void It_keeps_the_failure_category_and_safe_cause()
         {
             Exception? inner = _thrown!.InnerException;
 
@@ -787,12 +797,22 @@ public class ConfigurationServiceProfileProviderTests
                 case ProfileCmsFailure.Unauthorized:
                 case ProfileCmsFailure.NotFound:
                     // Thrown by the production response handler for the non-success status.
-                    inner.Should().BeOfType<HttpRequestException>();
-                    inner!.Message.Should().Contain($"StatusCode: {ExpectedStatusCode()}");
+                    inner
+                        .Should()
+                        .BeOfType<HttpRequestException>()
+                        .Which.StatusCode.Should()
+                        .Be(ExpectedStatusCode());
+                    inner!.Message.Should().Contain(((int)ExpectedStatusCode()).ToString());
                     break;
                 case ProfileCmsFailure.Timeout:
                     inner.Should().BeOfType<TaskCanceledException>();
-                    inner!.InnerException.Should().BeOfType<TimeoutException>();
+                    inner!.InnerException.Should().BeNull();
+                    break;
+                case ProfileCmsFailure.Transport:
+                    inner.Should().BeOfType<HttpRequestException>();
+                    inner.Should().NotBeSameAs(_cause);
+                    inner!.InnerException.Should().BeNull();
+                    inner.Message.Should().NotContain("cms.example");
                     break;
                 case ProfileCmsFailure.MalformedJson:
                     inner.Should().BeAssignableTo<JsonException>();
@@ -821,5 +841,160 @@ public class ConfigurationServiceProfileProviderTests
                 ProfileCmsFailure.Unauthorized => HttpStatusCode.Unauthorized,
                 _ => HttpStatusCode.NotFound,
             };
+    }
+}
+
+// A CMS behind a reverse proxy is reached through a base address WITH a path, e.g.
+// ConfigurationServiceSettings:BaseUrl = https://gateway/edfi/config/saas/v8.0/ds5.2/core/.
+// Every request must resolve under that path. A request URI with a leading slash is an
+// absolute-path reference, which replaces the base path instead of appending to it, so the
+// request reaches the proxy root and 404s. A base address without a path cannot detect this,
+// because "/v3/x" and "v3/x" resolve identically against "https://host/".
+public class ConfigurationServiceProfileProviderBasePathTests
+{
+    private const string BaseAddressWithPath = "https://gateway.example/edfi/config/saas/v8.0/ds5.2/core/";
+    private const string BasePath = "/edfi/config/saas/v8.0/ds5.2/core/";
+
+    private static (ConfigurationServiceProfileProvider Provider, CapturingHandler Handler) CreateProvider(
+        string responseBody
+    )
+    {
+        var handler = new CapturingHandler(responseBody);
+        var client = new HttpClient(handler) { BaseAddress = new Uri(BaseAddressWithPath) };
+
+        var tokenHandler = A.Fake<IConfigurationServiceTokenHandler>();
+        A.CallTo(() =>
+                tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
+            )
+            .Returns(new ConfigurationServiceTokenLease("cms-token", 1));
+
+        var provider = new ConfigurationServiceProfileProvider(
+            new ConfigurationServiceApiClient(client),
+            tokenHandler,
+            new ConfigurationServiceContext("cms-client", "cms-secret", "cms-scope"),
+            NullLogger<ConfigurationServiceProfileProvider>.Instance
+        );
+        return (provider, handler);
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Base_Address_With_A_Path_When_Fetching_Application_Profile_Info
+        : ConfigurationServiceProfileProviderBasePathTests
+    {
+        private CapturingHandler _handler = null!;
+        private ApplicationProfileInfo? _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (ConfigurationServiceProfileProvider provider, _handler) = CreateProvider(
+                """
+                {
+                  "id": 42,
+                  "applicationName": "app",
+                  "vendorId": 1,
+                  "claimSetName": "SISVendor",
+                  "educationOrganizationIds": [],
+                  "dataStoreIds": [1],
+                  "profileIds": [7]
+                }
+                """
+            );
+            _result = await provider.GetApplicationProfileInfoAsync(42, tenantId: null);
+        }
+
+        [Test]
+        public void It_requests_the_application_under_the_base_path()
+        {
+            _handler.Request!.RequestUri!.AbsolutePath.Should().Be($"{BasePath}v3/applications/42");
+        }
+
+        [Test]
+        public void It_returns_the_application_profile_ids()
+        {
+            _result.Should().NotBeNull();
+            _result!.ProfileIds.Should().Equal(7L);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Base_Address_With_A_Path_When_Fetching_A_Profile
+        : ConfigurationServiceProfileProviderBasePathTests
+    {
+        private CapturingHandler _handler = null!;
+        private CmsProfileResponse? _result;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (ConfigurationServiceProfileProvider provider, _handler) = CreateProvider(
+                """{ "id": 7, "name": "Read-Only", "definition": "<Profile name=\"Read-Only\"/>" }"""
+            );
+            _result = await provider.GetProfileAsync(7, tenantId: null);
+        }
+
+        [Test]
+        public void It_requests_the_profile_under_the_base_path()
+        {
+            _handler.Request!.RequestUri!.AbsolutePath.Should().Be($"{BasePath}v3/profiles/7");
+        }
+
+        [Test]
+        public void It_returns_the_profile()
+        {
+            _result.Should().NotBeNull();
+            _result!.Name.Should().Be("Read-Only");
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Base_Address_With_A_Path_When_Fetching_All_Profiles
+        : ConfigurationServiceProfileProviderBasePathTests
+    {
+        private CapturingHandler _handler = null!;
+        private IReadOnlyList<CmsProfileResponse> _result = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            (ConfigurationServiceProfileProvider provider, _handler) = CreateProvider(
+                """[{ "id": 7, "name": "Read-Only", "definition": "<Profile name=\"Read-Only\"/>" }]"""
+            );
+            _result = await provider.GetProfilesAsync(tenantId: null);
+        }
+
+        [Test]
+        public void It_requests_the_profiles_under_the_base_path()
+        {
+            _handler.Request!.RequestUri!.AbsolutePath.Should().Be($"{BasePath}v3/profiles");
+        }
+
+        [Test]
+        public void It_returns_the_profiles()
+        {
+            _result.Should().ContainSingle().Which.Id.Should().Be(7);
+        }
+    }
+
+    protected sealed class CapturingHandler(string responseBody) : HttpMessageHandler
+    {
+        public HttpRequestMessage? Request { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken
+        )
+        {
+            Request = request;
+            return Task.FromResult(
+                new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(responseBody, Encoding.UTF8, "application/json"),
+                }
+            );
+        }
     }
 }

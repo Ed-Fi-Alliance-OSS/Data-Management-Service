@@ -7,7 +7,7 @@ Draft.
 This document is the transactions/concurrency deep dive for `overview.md`, focusing on:
 - reference validation,
 - write-time identity propagation and derived maintenance (abstract identity tables and update-tracking stamps),
-- update-tracking stamping (`dms.Document`), and
+- update tracking (document versions and authoritative root/descriptor timestamps), and
 - operational caching patterns.
 
 - Overview: [overview.md](overview.md)
@@ -18,7 +18,7 @@ This document is the transactions/concurrency deep dive for `overview.md`, focus
 - Key unification (canonical columns + generated aliases): [key-unification.md](key-unification.md)
 - Extensions: [extensions.md](extensions.md)
 - DDL Generation: [ddl-generation.md](ddl-generation.md)
-- Natural-key reference resolution: [natural-key-resolution.md](natural-key-resolution.md)
+- Future natural-key reference resolution: [natural-key-resolution.md](natural-key-resolution.md)
 - AOT compilation (optional mapping pack distribution): [aot-compilation.md](aot-compilation.md)
 - Strengths and risks: [strengths-risks.md](strengths-risks.md)
 
@@ -42,18 +42,24 @@ Reference validation is provided by **two layers**:
 ### 1) Write-time validation (application-level)
 
 During POST/PUT processing, the backend:
-- Resolves each extracted reference (`DocumentReference` / `DescriptorReference`) to a target `DocumentId` using an ApiSchema-derived “natural-key resolver”.
+- Resolves each extracted reference through the batched natural-key resolver. Document references
+  return `bigint DocumentId`; descriptor references return both independent `int DescriptorId`
+  and owning `bigint DocumentId` from the same command.
 - Fails the request if any referenced identity does not exist (same semantics as today: descriptor failures vs resource reference failures).
 
-This is required because relational tables store **stable `DocumentId` foreign keys**, and we cannot write those without resolving them.
+Relational tables store document references as `bigint DocumentId` FKs and descriptor references as
+`int DescriptorId` FKs. Resolving both roles before flattening prevents accidental interchange.
 
-#### ApiSchema-derived natural-key resolver
+#### Natural-key reference resolver
 
-The **natural-key resolver** is the backend service that converts a `(Project, Resource, DocumentIdentity)` triple into a persisted `DocumentId` **without per-resource code**.
+The resolver consumes Core-extracted `DocumentIdentity` values and probes the compiled natural-key
+targets described in
+[natural-key-resolution.md](natural-key-resolution.md#the-natural-key-reference-resolver).
+Resource POST upsert existence detection uses the generated own-natural-key capture, and
+descriptor writes detect their target through the lowered-URI descriptor probe.
 
 It is used for:
-- resolving extracted `DocumentReference` / `DescriptorReference` instances during writes,
-- POST upsert existence detection, and
+- resolving extracted `DocumentReference` / `DescriptorReference` instances during writes, and
 - query-time resolution when a filter targets a referenced identity but does not have a direct column mapping.
 
 **Inputs**
@@ -62,51 +68,44 @@ It is used for:
 - optional “location” info for error reporting (e.g., concrete JSON path instance from Core extraction)
 
 **Outputs**
-- `DocumentId` when found
+- `bigint DocumentId` when found, plus `int DescriptorId` for descriptor targets
 - concrete `ResourceKeyId` when the target can resolve polymorphically
 - “not found” when no matching row exists (write-time: validation failure; query-time: empty-match behavior)
 
 ##### Resolution algorithm (bulk, request-scoped)
 
-1. Dedupe references with a request-local structural key over `(target resource, ordered DocumentIdentity values)`.
-2. Convert identity strings to typed scalar values with the same scalar-literal parser the write flattener uses.
-3. Group by target resource and resolve in one batched command:
-   - concrete targets probe the target root's `UX_<R>_RefKey`;
-   - abstract targets probe `{AbstractResource}Identity` by its `RefKey` shape and project concrete `ResourceKeyId`;
-   - descriptor targets probe `dms.Descriptor` by the raw validated URI + `ResourceKeyId`; the
-     probe folds the URI in SQL under the engine's descriptor identity collation contract.
-4. Map results back by explicit request ordinal so not-found failures preserve request JSON locations.
+1. Dedupe and memoize extracted references by a structural key over the target resource and the
+   ordered `DocumentIdentity` elements, comparing every value ordinally. A descriptor URI is a raw
+   key member, so case variants stay separate entries that the engine resolves to one `DescriptorId`.
+2. Convert identity strings to typed values with the write flattener's scalar-literal parser, group
+   the references by target resource, and emit **one command** with one statement and one result set
+   per group: PostgreSQL binds typed parallel arrays through `unnest`, and SQL Server shreds one
+   `OPENJSON` parameter per group with `OPTION (FORCE ORDER)`.
+3. Concrete targets probe their `RefKey` index; abstract targets probe the abstract identity table
+   and return the concrete `ResourceKeyId`, which is compared with the target's allowed concrete
+   resource keys. Descriptor targets probe `UX_Descriptor_UriLowered_ResourceKeyId` with the
+   descriptor type's `ResourceKeyId`, so a wrong-type URI is a miss, and project `DescriptorId` and
+   the owning `DocumentId` in the same row. Descriptor-valued identity parts join `dms.Descriptor`
+   inline on the lowered URI. Every probe folds the raw URI parameter in SQL under the engine's
+   descriptor identity collation.
+4. Map result rows to the original request locations by explicit ordinal (`Entries[ordinal-1]`,
+   never row position); unmatched ordinals become the existing reference validation failures.
+   Document and descriptor IDs remain separate in the result; a missing descriptor identity does
+   not become a valid document-only hit.
 
 ##### Descriptor URI validation boundary
 
-Descriptor URI validation is request validation, not lookup miss handling. After ordinary request
-canonicalization, every client-supplied descriptor URI must be well-formed: U+0000 NUL is invalid
-(PostgreSQL `text`/`varchar` cannot store it) and is rejected by the shared descriptor validator;
-malformed UTF-16 (an unpaired surrogate from a JSON `\uD800`-class escape, which PostgreSQL would
-reject as invalid UTF-8) never reaches a C# string — STJ throws on first read — and is rejected
-body-wide at parse by `ParseBodyMiddleware`, not by descriptor validation. Non-ASCII
-values are accepted; the application never lowercases a descriptor value — case folding is
-engine-owned and happens only in descriptor probe SQL (see `natural-key-resolution.md`). The
-validation boundary depends on the entry point:
-
-- During write identity/reference extraction, Core validates each descriptor reference at its
-  concrete request JSON path before constructing its `DocumentIdentity`. For a descriptor
-  resource POST/PUT, Core first derives the identity URI from the canonicalized `$.namespace` + `#` +
-  `$.codeValue`; it validates the two client-supplied components and attributes failures to
-  `$.namespace` and/or `$.codeValue`. It does not lowercase the derived URI.
-- During relational query preprocessing, `RelationalQueryRequestPreprocessor` uses the selected
-  `RelationalQueryCapability` to identify query elements whose backend-compiled target is
-  `RelationalQueryFieldTarget.DescriptorIdColumn`, validates those values, and rejects NUL or
-  malformed input before it creates a descriptor reference or calls `IReferenceResolver.ResolveAsync`.
-  Core query validation remains responsible for generic field/type validation and does not own
-  backend compiled target metadata. Invalid descriptor query input produces the existing
-  path-attributed query-validation 400, not an empty result page.
-
-Any validation failure terminates the operation before a descriptor natural-key resolver or
-descriptor target lookup is issued. Resolver batching, request-local memoization, the write
-flattener, and key-unification logic therefore consume validated well-formed-without-NUL raw
-descriptor keys, compared ordinally. Their helpers must assert the well-formed-without-NUL
-precondition and must never lowercase the value.
+Descriptor references and descriptor-valued filters are whole URI strings. Core validates every
+descriptor reference, and a descriptor resource's own `namespace` and `codeValue`, as well-formed
+without NUL, and rejects a NUL with a path-attributed 400 before any lookup or write command. The
+relational query preprocessor applies the same check to every filter whose compiled target is a
+descriptor-id column, before any resolver call, so a NUL-bearing filter returns 400 instead of an
+empty page; a valid URI that does not resolve still returns an empty page. C# never lowercases a
+descriptor value: extraction, memoization, and flattening carry the raw validated URI and compare it
+ordinally, and the probes fold it in SQL. Response materialization preserves stored casing; PUT
+compares reconstructed whole-URI text ordinally. No path splits on `#`, adds delimiter restrictions,
+trims individual components, or introduces Unicode normalization. A space immediately before `#`
+remains part of the reference/filter value.
 
 ##### Caching
 
@@ -163,7 +162,37 @@ semantics.
 
 #### Descriptor references (`..._DescriptorId`)
 
-Descriptor references are stored as `..._DescriptorId` FKs to `dms.Descriptor` for existence enforcement and URI reconstitution. Descriptor identity/URI is immutable and does not participate in propagation; descriptor metadata fields are mutable and affect only the descriptor resource's own representation.
+Descriptor references are stored as `int ..._DescriptorId` FKs to
+`dms.Descriptor(DescriptorId)` with `NO ACTION`, including copied reference identity parts,
+unified storage, collections, and extensions. Both descriptor IDs remain stable on updates.
+URI consumers reconstruct `Namespace + '#' + CodeValue` before their existing comparisons.
+
+The current descriptor behavior on both providers is:
+
+- Create allocates an independent compact identity and a document identity. POST detects an
+  existing descriptor with the lowered-URI probe on `UX_Descriptor_UriLowered_ResourceKeyId`,
+  which projects both keys and binds the owning `DocumentId`. A probe result that is stale by the
+  time the row is locked fails closed to a retryable conflict, and a unique violation on a racing
+  create remains a conflict.
+- Stored wins. A POST matched by the probe binds the persisted `Namespace`/`CodeValue` before the
+  proposed-namespace authorization check and the DML, preserving both IDs. A case-variant re-POST,
+  a SQL Server collation alias (for example `ß`/`ss`) or a component re-split reconstructing the
+  same URI therefore keeps the stored components.
+- PUT by document UUID follows the database's descriptor-identity verdict: an ordinally equal
+  whole URI is unchanged without a probe; otherwise the identity is unchanged only when the probe
+  resolves to the locked document. An unchanged identity keeps the stored components; a different
+  identity returns immutable-identity 400, leaving values and stamps unchanged.
+- Identity equality is the engine verdict above; descriptive fields compare ordinally. An
+  unchanged POST, including a casing-only re-POST, returns HTTP 200 and an unchanged PUT returns
+  HTTP 204; both preserve IDs, ETag, content stamps, and change-query state.
+  Stored/proposed authorization keeps its order and precedence (403 before 412 before 400).
+- `dms.Document.ContentVersion` remains the concurrency authority. Descriptor triggers advance
+  that version through the owning `DocumentId`, mirror the version and generate the authoritative
+  `dms.Descriptor.ContentLastModifiedAt` in the same transaction.
+  Representation restamping, cache work, and custom-view membership also retain `DocumentId`.
+
+Abstract identity
+discriminators and regular-resource identity-update behavior remain unchanged.
 
 #### How polymorphic (abstract) references work end-to-end
 
@@ -241,31 +270,30 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
 1. Core validates JSON and extracts:
    - `DocumentIdentity`
    - document references with target resource, fully-flattened identity values, and request paths
-   - descriptor references with target resource, concrete request paths, and URI values validated
-     as well-formed without NUL (never lowercased by the application)
+   - descriptor references with target resource, concrete request paths, and the raw validated URI
    - for descriptor resource writes, the URI derived from canonicalized `namespace` + `#` +
-     `codeValue`, validated as well-formed without NUL with any failures attributed to the source
-     fields
+     `codeValue`, under the existing validation rules
 2. Backend resolves references in bulk:
-   - Use an ApiSchema-derived resolver to turn references into `DocumentId`s via generated natural-key probes, including:
-     - self-contained identities
-     - reference-bearing identities (kept current via cascades and flattened `RefKey` columns)
-     - polymorphic/abstract identities via `{AbstractResource}Identity`
-   - Descriptor refs resolve through the lowered-URI + `ResourceKeyId` descriptor index.
+   - Use the natural-key resolver for concrete, reference-bearing, and abstract targets.
+   - Descriptor results carry `int DescriptorId` for stored bindings and owning `bigint DocumentId`
+     for document operations; descriptor-valued identity parts join `dms.Descriptor` on the lowered URI.
 3. Backend plans and writes within a single transaction:
-   - For update flows, load the current document state needed for authorization, merge, stored-identity rebind,
+   - For update flows, load the current document state needed for authorization, merge,
      and guarded no-op detection.
-   - Materialize the request-derived candidate rows after reference and descriptor ids have been populated. Before
-     storage binding, no-op synthesis, or collection-table DML, run the storage-resolved collection duplicate
-     validator from [natural-key-resolution.md](natural-key-resolution.md#collection-duplicate-detection).
-   - Bind candidates against current rows to produce the post-merge rowset.
-   - Before authorization-on-proposed-values and no-op detection, apply the stored-identity rebind required by
-     [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server)
-     for SQL Server regular-resource writes and for descriptor writes. The rebound rowset is the proposed state used
-     by downstream authorization, no-op comparison, and DML.
-   - Run authorization checks against stored values and the rebound proposed rowset before any data-modifying
+   - Materialize the request-derived candidate rows after reference and descriptor ids have been populated. While
+     materializing, and so before storage binding, no-op synthesis, or collection-table DML, the flattener rejects
+     sibling duplicates that collide only after storage resolution
+     ([natural-key-resolution.md](natural-key-resolution.md#collection-duplicate-detection)).
+   - Bind candidates against current rows to produce the post-merge rowset. On SQL Server, matched
+     collection rows take the stored values of semantic-key members equal under the identity comparer.
+   - On SQL Server regular-resource writes, rebind root identity values equal under the identity
+     comparer to their stored values before authorization/no-op detection, as described in
+     [natural-key-resolution.md](natural-key-resolution.md#how-the-write-path-will-preserve-stored-casing-sql-server).
+     Descriptor writes bind the stored `Namespace`/`CodeValue` of the probe-matched row on both
+     engines before proposed authorization and no-op detection, as described above.
+   - Run authorization checks against stored values and the finalized proposed rowset before any data-modifying
      statements.
-   - Compare the rebound post-merge rowset to the current persisted rowset before issuing DML. If they are equal,
+   - Compare the post-merge rowset to the current persisted rowset before issuing DML. If they are equal,
      treat the request as a successful no-op and skip data-modifying statements (see “No-op update detection” below).
    - Insert/update `dms.Document` (allocate `DocumentId`; persist `DocumentUuid` and `ResourceKeyId`).
    - Write resource root + child + extension tables (merge strategy for collections).
@@ -277,7 +305,8 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
    - If key unification introduces synthetic presence flags for optional non-reference paths, writers MUST set those
      flags deterministically (`NULL` when absent; true/1 when present). There is no “keep previous” behavior based on
      missing inputs.
-   - `dms.Descriptor` upsert if the resource is a descriptor.
+   - Descriptor resources use their descriptor handler: insert omits the generated `DescriptorId`,
+     and updates preserve both IDs; there is no stored Uri or live Discriminator payload.
 4. Database enforces propagation and maintains derived artifacts (in-transaction):
    - Composite FK propagation is dialect-specific: PostgreSQL uses `ON UPDATE CASCADE` for eligible edges; SQL Server
      retains native cascades where legal and uses safe full-composite `NO ACTION` cuts under
@@ -285,7 +314,7 @@ Deep dive on flattening execution and write-planning: [flattening-reconstitution
      recompute).
    - Generated triggers maintain abstract identity tables on identity-projection value-diff changes.
      `DbTriggerInfo.IdentityProjectionColumns` are null-safe compare inputs, not `UPDATE(column)` gates.
-   - The `*_Stamp` triggers stamp `dms.Document.ContentVersion` / `ContentLastModifiedAt`, mirror `ContentVersion` / `ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) via `MirrorStampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
+   - The `*_Stamp` triggers advance `dms.Document.ContentVersion`, mirror that version and generate authoritative `ContentLastModifiedAt` on the resource root (or `dms.Descriptor`) via `StampTargetTable`, and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable (see [update-tracking.md](update-tracking.md) for stamping rules and [change-queries.md](change-queries.md) for the mirror and tracked-change tables).
    - The set-based `dms.Document` projection-enqueue trigger observes every insert and
      every real `ContentVersion` change. In lifecycle `Tracking`, `Resetting`, or
      `Rebuilding`, it inserts or advances the coalesced
@@ -303,8 +332,8 @@ Authorization is enforced for all writes and MUST be applied before executing an
 
 Integration points:
 - Authentication occurs before the write path begins and produces a token-derived authorization context (EdOrgIds, namespace prefixes, ownership tokens, and any claim-set-derived strategy configuration).
-- Authorization checks run after reference resolution (so checks can use already-resolved `DocumentId`s) and after
-  any stored-identity rebind needed to form the proposed rowset; they still run before inserts/updates/deletes.
+- Authorization checks run after reference resolution and final merge. Descriptor namespace checks
+  dereference compact keys; custom views bridge to the owning `DocumentId`. Checks still precede DML.
 - For update operations, authorization is evaluated against:
   - **stored values** (to authorize the current state), and
   - **new values** (to authorize the requested state) when identifying values change (see [auth.md](auth.md) for the execution order and error semantics).
@@ -334,7 +363,10 @@ Engine considerations:
 
 ### Insert vs update detection
 
-- **Upsert (POST)**: detect an existing row with the target resource's generated natural-key probe. The composite write path uses a natural-key capture predicate; fallback paths probe the resource root's `UX_<R>_NK`.
+- **Upsert (POST)**: detect an existing document through the generated own-natural-key capture
+  predicate over the root natural-key columns (served by `UX_<R>_NK`), described in
+  [natural-key-resolution.md](natural-key-resolution.md). Descriptor POSTs detect through the
+  lowered-URI descriptor probe.
   - The resource root table’s natural-key unique constraint is the identity-uniqueness enforcement and remains the race detector (unique violation → 409) if two writers attempt to create the same natural key concurrently.
 - **Update by id (PUT)**: detect by `DocumentUuid`:
   - Find `DocumentId` from `dms.Document` by `DocumentUuid`.
@@ -344,7 +376,7 @@ Engine considerations:
 For `PUT`, and for `POST` when upsert resolves to an existing document, the write path SHOULD support a
 whole-document no-op fast path:
 
-- Compare the rebound request-derived relational rowset to the current persisted rowset using the stored/writable columns
+- Compare the finalized request-derived relational rowset to the current persisted rowset using the stored/writable columns
   that the normal write executor would bind, after applying the same collection merge rules and storage-resolved
   duplicate-validation boundary the write path would execute.
 - Reuse the update flow’s existing “load current document” roundtrip for this comparison. Do not add a dedicated
@@ -385,7 +417,8 @@ identity rows and stamps), and is handled in the database:
   - Composite FK enforcement guarantees the canonical/storage identity-part values match the referenced target.
 
 - **Representation update tracking (`_etag/_lastModifiedDate`, `ChangeVersion`)**
-  - `_lastModifiedDate` and `ChangeVersion` are served from stored stamps on `dms.Document`. `_etag`
+  - `_lastModifiedDate` is served from the authoritative root/descriptor timestamp and
+    `ChangeVersion` from `dms.Document.ContentVersion`. `_etag`
     is composed as `"{ContentVersion}-{variantKey}"` (see `update-tracking.md`, "Serving API
     metadata") — a strong validator that is representation-sensitive, composed with no document
     hashing or representation readback (the write path does read the final scalar `ContentVersion` in
@@ -529,11 +562,12 @@ Ordering/paging contract:
 
 Query compilation patterns:
 - **Scalar query fields**: `queryFieldMapping` JSON path → derived root-table column → `r.Column = @value`
-- **Descriptor query fields**: validate the URI as well-formed without NUL → on failure return a
-  path-attributed 400 before lookup → resolve `DescriptorId` by probing the descriptor
-  lowered-URI + `ResourceKeyId` index with the raw validated URI (the probe folds it in SQL) →
-  `r.DescriptorIdColumn = @descriptorId`. A valid URI that does not resolve still has the existing
-  empty-match behavior.
+- **Descriptor query fields**: apply the NUL check from the
+  [descriptor URI validation boundary](#descriptor-uri-validation-boundary) (400), resolve the raw
+  URI through the natural-key resolver, then bind `int DescriptorId` to
+  `r.DescriptorIdColumn = @descriptorId`. This includes descriptor-valued document-reference
+  identity fields. An unresolved URI keeps empty-match behavior; original-case output and spaces
+  inside the whole URI retain their existing semantics.
 - **Document reference identity query fields**: compile to predicates on local per-site identity binding columns (stored
   or alias), e.g.:
   - `r.Student_StudentUniqueId = @StudentUniqueId`
@@ -562,7 +596,9 @@ Indexing:
      - avoid caching across tenants/instances (include `DataStoreId` in the cache key).
 
 3. **Descriptor expansion lookups** (optional)
-   - Cache `DescriptorId → Uri` (and optionally `Discriminator`) to reconstitute descriptor strings without repeated joins.
+   - An optional expansion cache maps `int DescriptorId` to reconstructed original-case URI and
+     qualified type/ResourceKeyId. Component changes require invalidation; there is no live descriptor
+     Discriminator. This map is distinct from document-cache entries keyed by `bigint DocumentId`.
 
 4. **`DocumentUuid → DocumentId`**
    - Cache GET/PUT/DELETE resolution.
@@ -592,7 +628,56 @@ Invalidation approaches:
 
 ---
 
+## Authoritative response metadata
+
+GET-by-id target lookup is split in two. The uncached lookup reads `dms.Document` only (identity,
+`ResourceKeyId`, and `ContentVersion`); the response timestamp comes from the hydrated metadata, so
+this lookup never touches the owning root. Only cache-candidate selection needs the stamp before
+hydration: its lookup left joins the compiled root by `DocumentId`, gated on the expected
+`ResourceKeyId`, so a wrong-resource document row is still returned and the existing resource check
+still returns 404. Descriptor GET-by-id does not use either lookup; it reads through the descriptor
+read handler's own `dms.Descriptor` path (below). PUT version checks and descriptor delete-target
+lookup select document identity/version only; they do not join or query an owner just to satisfy a
+shared timestamp contract.
+
+Ordinary hydration obtains owner timestamps in the existing metadata SELECT for the full keyset.
+Standalone hydration captures document-only baseline versions after keyset materialization and before
+any owner metadata or content SELECT, then captures document-only versions again after all representation
+queries. Baseline, joined metadata, and final versions must agree for every returned document; missing
+boundary versions or drift retry the whole acquisition, up to three attempts. Both checks stay inside
+the existing batch and share one version-select emitter. Exhaustion fails rather than serving mixed
+metadata/content. The leading check is necessary under SQL Server locking `READ COMMITTED` with
+`READ_COMMITTED_SNAPSHOT OFF`: the metadata join alone can observe an old owner timestamp and a new
+document version across a committed write. A matching joined and final version does not bracket
+acquisition of the owner timestamp. RCSI remains optional for relational-only reads. GET-by-id uses the hydrated metadata, not stale pre-hydration lookup stamps.
+These rules apply to meaningful writes and representation restamps. Session-scoped write
+hydration retains its existing transactional locking contract.
+
+Descriptor GET-by-id, query pages, cache candidate selection, and selected-page fallback use the
+same three-attempt acquisition policy: document-only versions precede the joined descriptor
+metadata/body projection and follow it. Leading, joined, and trailing versions must agree before
+serving rows; a plain joined SELECT is insufficient under SQL Server locking READ COMMITTED.
+Each page attempt materializes its authorized DocumentId keyset once, retaining selection-time
+continuation anchors, and batches both version checks over those same IDs. Concurrent deletion
+retries acquisition; a stable document with missing owner fields remains an invariant failure after
+the trailing check. The existing selected-page fallback reselects when its candidates have changed.
+
+Representation restamping first allocates document versions, then groups owners by mapped root
+or descriptor table and updates them by `DocumentId` in the same transaction. PostgreSQL captures
+persisted owner timestamps with `RETURNING`; SQL Server uses `OUTPUT INTO` for both updates so
+triggers remain enabled. Missing-owner/row-count failures roll back the page, including projection
+work. Normal no-op writes still preserve stamps; explicit restamping deliberately changes them
+without changing body, identity or tracked history.
+
 ## Optional Database Projection Behavior: `dms.DocumentCache`
+
+For descriptors, UUID resolution, cache keys, `DocumentProjectionWork`, and resource/UUID-scope
+representation restamps use the owning `bigint DocumentId`, never the compact key. For example,
+`DescriptorId = 42` with `DocumentId = 5000000042` materializes the row selected by its document
+association, reconstructs original-case URI/body fields, and reads the document version with
+the authoritative descriptor timestamp. Restamping document `5000000042` advances its version,
+updates that descriptor's version mirror and timestamp, and enqueues work for `5000000042` when
+projection is enabled. The compact value `42` remains the resource-FK and expansion-lookup key.
 
 The `dms.DocumentCache` table is always provisioned. Populating and reading its
 **materialized JSON projection** remain optional behaviors intended for:
@@ -723,7 +808,7 @@ remains best effort and never fails an otherwise successful relational response.
    [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#cache-backed-reads-and-domain-lifecycle).
 4. Rely on FK constraints from referencing resource tables to prevent deleting referenced records.
 
-Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first and relying on `ON DELETE CASCADE` to remove the resource row) would silently lose `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger would fire after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
+Steps 2 and 3 execute in this order within the same transaction. The reverse order (deleting `dms.Document` first) is rejected by the resource row’s `ON DELETE RESTRICT` (`NO ACTION` on SQL Server) foreign key. When that key still cascaded, the reverse order silently lost `/deletes` tombstones because the resource row’s `AFTER DELETE` stamping trigger fired after `dms.Document` was already gone, causing its `INNER JOIN dms.Document` to match no rows. See `change-queries.md` §"Cascade-ordering requirement for deletes" and DMS-1180 (`epics/10-update-tracking-change-queries/17-delete-by-id-tombstone-ordering.md`) for the rationale.
 
 Error reporting:
 - SQL Server and PostgreSQL will report FK constraint violations. DMS should map the violated constraint name back to the referencing resource (deterministic FK naming) to produce a conflict response comparable to today’s `DeleteFailureReference`.

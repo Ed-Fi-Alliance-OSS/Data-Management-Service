@@ -59,10 +59,55 @@ internal static class CursorPublicContractScenario
         ArgumentNullException.ThrowIfNull(harness);
 
         using var response = await harness.HttpClient.GetAsync(
-            $"{CursorContractSupport.MergeItemsEndpoint}?pageSize=5&limit=10"
+            $"{CursorContractSupport.MergeItemsEndpoint}?pageSize=5&totalCount=true"
         );
 
         await ParameterValidationProblemDetails.AssertShellAsync(response, PageTokenRequired);
+    }
+
+    /// <summary>
+    /// Without a page token, a pageSize sent beside limit is ignored, as ODS/API 7.3.2 ignores it, so
+    /// clients that send both parameters, as ODS clients may, are served the page the same request
+    /// without pageSize returns.
+    /// </summary>
+    /// <remarks>
+    /// The page sizes disagree in both directions and one is out of range, so a page selected by
+    /// pageSize, a range check applied to it, or a cursor path taken for it would each produce a page,
+    /// count, or status that differs from the request without it.
+    /// </remarks>
+    public static async Task It_ignores_a_page_size_beside_limit_without_a_page_token(
+        ApiIntegrationHarness harness
+    )
+    {
+        ArgumentNullException.ThrowIfNull(harness);
+
+        await CursorContractSupport.SeedMergeItemsAsync(harness, "ignored-page-size", SeededDocumentCount);
+
+        const string TraditionalQuery = "?limit=2&offset=1&totalCount=true";
+
+        var withoutPageSize = await CursorContractSupport.ReadPageAsync(
+            harness,
+            $"{CursorContractSupport.MergeItemsEndpoint}{TraditionalQuery}"
+        );
+
+        withoutPageSize.DocumentIds.Should().HaveCount(2);
+
+        foreach (string pageSize in new[] { "1", "4", "99999" })
+        {
+            var withPageSize = await CursorContractSupport.ReadPageAsync(
+                harness,
+                $"{CursorContractSupport.MergeItemsEndpoint}{TraditionalQuery}&pageSize={pageSize}"
+            );
+
+            withPageSize
+                .Should()
+                .BeEquivalentTo(
+                    withoutPageSize,
+                    options => options.WithStrictOrdering(),
+                    "pageSize={0} beside limit without a page token is ignored",
+                    pageSize
+                );
+        }
     }
 
     /// <summary>

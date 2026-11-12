@@ -45,6 +45,7 @@ public abstract class DatabaseTestBase
                     new("dmscs", "OwnershipToken"),
                     new("dmscs", "ApiClient"),
                     new("dmscs", "ApiClientDataStore"),
+                    new("dmscs", "ApiClientEducationOrganization"),
                     new("dmscs", "ClaimSet"),
                     new("dmscs", "ClaimsHierarchy"),
                     new("dmscs", "DataStore"),

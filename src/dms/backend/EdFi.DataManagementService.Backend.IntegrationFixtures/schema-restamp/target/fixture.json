@@ -1,0 +1,1 @@
+{"apiSchemaFiles":["repo:src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target/api-schema.json"],"dialects":["pgsql","mssql"]}

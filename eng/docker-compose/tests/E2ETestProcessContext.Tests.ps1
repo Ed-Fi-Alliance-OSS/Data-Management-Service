@@ -356,7 +356,7 @@ Describe "Invoke-WithDmsEnvironmentFileSchemaAuthority makes the environment fil
     # that collapses present-but-empty to absent, or a finally that does not run on exit each fail here.
     #
     # Docker Compose gives process environment variables precedence over --env-file entries, and
-    # local-dms.yml resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES with
+    # local-dms.compose.yml resolves USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and SCHEMA_PACKAGES with
     # ${VAR:-default} fallbacks. Because ':-' substitutes the default for an empty value as well as an
     # unset one, an ambient blank value silently wins over the selected environment file: DMS starts on
     # the image-baked schemas while provisioning already stamped the file's full package surface, and
@@ -886,7 +886,7 @@ Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
     ./start-local-dms.ps1 -InfraOnly
 }
 
-docker compose -p dms-local --env-file ./.env.e2e -f local-dms.yml up -d dms
+docker compose -p dms-local --env-file ./.env.e2e -f local-dms.compose.yml up -d dms
 '@
 
         $invocations = @(Get-GuardedPhaseInvocation -ScriptPath $fixturePath)
@@ -1089,11 +1089,11 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
             $containerEnvironment = @{ "AppSettings__Datastore" = "postgresql" }
 
             if (-not $OmitUseApiSchemaPath) {
-                $containerEnvironment["AppSettings__UseApiSchemaPath"] = $UseApiSchemaPath
+                $containerEnvironment["AppSettings__ApiSchema__UseCustomPath"] = $UseApiSchemaPath
             }
 
             if (-not $OmitApiSchemaPath) {
-                $containerEnvironment["AppSettings__ApiSchemaPath"] = $ApiSchemaPath
+                $containerEnvironment["AppSettings__ApiSchema__Path"] = $ApiSchemaPath
             }
 
             if (-not $OmitSchemaPackages) {
@@ -1133,9 +1133,9 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.Reason | Should -BeNullOrEmpty
     }
 
-    It "fails on the reported compose-fallback shape, naming AppSettings__UseApiSchemaPath" {
+    It "fails on the reported compose-fallback shape, naming AppSettings__ApiSchema__UseCustomPath" {
         # The exact container state DMS-1300 reported: false plus two blanks, which is what
-        # local-dms.yml's ${VAR:-default} produces when the process carries blank schema variables.
+        # local-dms.compose.yml's ${VAR:-default} produces when the process carries blank schema variables.
         $verdict = Get-DmsSchemaEnvironmentVerdict `
             -ContainerEnvironment (Get-ContainerEnvironmentFixture -UseApiSchemaPath "false" -ApiSchemaPath "" -RawSchemaPackages "") `
             -ExpectedPackageIdentity $script:fixturePackageIdentity `
@@ -1143,7 +1143,7 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
             -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
 
         $verdict.ShouldFail | Should -BeTrue
-        $verdict.Reason | Should -Match "AppSettings__UseApiSchemaPath is false"
+        $verdict.Reason | Should -Match "AppSettings__ApiSchema__UseCustomPath is false"
         $verdict.Reason | Should -Match "4 ApiSchema package"
         # The remediation names actions that reach the causes this verdict can actually have. It used to
         # ask for a re-run "from a shell that does not set USE_API_SCHEMA_PATH, API_SCHEMA_PATH, and
@@ -1159,12 +1159,12 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $verdict.Remediation | Should -Not -Match "\./teardown-local-dms\.ps1"
     }
 
-    It "fails when AppSettings__UseApiSchemaPath is <Label>, reporting a fixed token" -ForEach @(
+    It "fails when AppSettings__ApiSchema__UseCustomPath is <Label>, reporting a fixed token" -ForEach @(
         @{ Label = "absent"; Container = @{ OmitUseApiSchemaPath = $true }; ExpectedToken = "<absent>" }
         @{ Label = "blank"; Container = @{ UseApiSchemaPath = "" }; ExpectedToken = "<blank>" }
         @{ Label = "whitespace"; Container = @{ UseApiSchemaPath = "   " }; ExpectedToken = "<blank>" }
         @{ Label = "an unrecognized value"; Container = @{ UseApiSchemaPath = "yes" }; ExpectedToken = "<set>" }
-        # run.sh:28 gates the package download on a byte-exact [ "$AppSettings__UseApiSchemaPath" = true ],
+        # run.sh:28 gates the package download on a byte-exact [ "$AppSettings__ApiSchema__UseCustomPath" = true ],
         # so an uppercase or title-case value downloads nothing while the database is already stamped for
         # the file's packages. Accepting it here passed a container that could only 503.
         @{ Label = "uppercase TRUE"; Container = @{ UseApiSchemaPath = "TRUE" }; ExpectedToken = "<set>" }
@@ -1177,10 +1177,10 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
             -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
 
         $verdict.ShouldFail | Should -BeTrue
-        $verdict.Reason | Should -Match "AppSettings__UseApiSchemaPath is $([regex]::Escape($ExpectedToken))"
+        $verdict.Reason | Should -Match "AppSettings__ApiSchema__UseCustomPath is $([regex]::Escape($ExpectedToken))"
     }
 
-    It "fails when AppSettings__ApiSchemaPath is <Label>, so declared packages have nowhere to land" -ForEach @(
+    It "fails when AppSettings__ApiSchema__Path is <Label>, so declared packages have nowhere to land" -ForEach @(
         @{ Label = "absent"; Container = @{ OmitApiSchemaPath = $true }; ExpectedToken = "<absent>" }
         @{ Label = "blank"; Container = @{ ApiSchemaPath = "" }; ExpectedToken = "<blank>" }
         @{ Label = "whitespace"; Container = @{ ApiSchemaPath = "   " }; ExpectedToken = "<blank>" }
@@ -1192,7 +1192,7 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
             -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
 
         $verdict.ShouldFail | Should -BeTrue
-        $verdict.Reason | Should -Match "AppSettings__ApiSchemaPath is $([regex]::Escape($ExpectedToken))"
+        $verdict.Reason | Should -Match "AppSettings__ApiSchema__Path is $([regex]::Escape($ExpectedToken))"
     }
 
     It "fails when the container's package count differs from the provisioned surface" {
@@ -1353,7 +1353,7 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
         $script:verdict.Reason | Should -Match "SCHEMA_PACKAGES is absent, blank, or not a JSON array"
     }
 
-    It "fails when the container's ApiSchemaPath is present but not the path the environment file selected" {
+    It "fails when the container's ApiSchema__Path is present but not the path the environment file selected" {
         # The token check only proves the path is non-blank. A container pointed at a different path is
         # materializing packages somewhere other than where the environment file said, which no other
         # check in the verdict can see.
@@ -1364,7 +1364,7 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
             -EnvironmentFileApiSchemaPath $script:fixtureApiSchemaPath
 
         $verdict.ShouldFail | Should -BeTrue
-        $verdict.Reason | Should -Match "AppSettings__ApiSchemaPath differs from the environment file's API_SCHEMA_PATH"
+        $verdict.Reason | Should -Match "AppSettings__ApiSchema__Path differs from the environment file's API_SCHEMA_PATH"
         # Neither path is echoed, so a container-supplied value cannot reach the message.
         "$($verdict.Reason) $($verdict.Remediation)" | Should -Not -Match "/somewhere/else"
     }
@@ -1441,9 +1441,9 @@ Describe "Get-DmsSchemaEnvironmentVerdict fails setup when the DMS container dis
     }
 
     It "answers every container-side branch with the teardown-and-re-run remediation and no stale shell advice" -ForEach @(
-        @{ Label = "UseApiSchemaPath false"; Container = @{ UseApiSchemaPath = "false" } }
-        @{ Label = "a blank ApiSchemaPath"; Container = @{ ApiSchemaPath = "" } }
-        @{ Label = "a different ApiSchemaPath"; Container = @{ ApiSchemaPath = "/somewhere/else" } }
+        @{ Label = "ApiSchema__UseCustomPath false"; Container = @{ UseApiSchemaPath = "false" } }
+        @{ Label = "a blank ApiSchema__Path"; Container = @{ ApiSchemaPath = "" } }
+        @{ Label = "a different ApiSchema__Path"; Container = @{ ApiSchemaPath = "/somewhere/else" } }
         @{ Label = "a non-array SCHEMA_PACKAGES"; Container = @{ RawSchemaPackages = "not-json" } }
         @{ Label = "a different package count"; Container = @{ PackageCount = 2 } }
         @{ Label = "the same count at a different version"; Container = @{ Package = @(1..4 | ForEach-Object {
@@ -1598,9 +1598,9 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             "API_SCHEMA_PATH=/app/ApiSchema"
         )
         $script:stubContainerEnvironment = @{
-            "AppSettings__UseApiSchemaPath" = "true"
-            "AppSettings__ApiSchemaPath"    = "/app/ApiSchema"
-            "SCHEMA_PACKAGES"               = ConvertTo-Json -InputObject $script:stubDeclaredPackages -Compress -Depth 5
+            "AppSettings__ApiSchema__UseCustomPath" = "true"
+            "AppSettings__ApiSchema__Path"          = "/app/ApiSchema"
+            "SCHEMA_PACKAGES"                       = ConvertTo-Json -InputObject $script:stubDeclaredPackages -Compress -Depth 5
         }
     }
 
@@ -1611,9 +1611,9 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
     }
 
     It "throws with the setup-mismatch prefix when the container <Label>" -ForEach @(
-        @{ Label = "has UseApiSchemaPath false"; Mutate = { $script:stubContainerEnvironment["AppSettings__UseApiSchemaPath"] = "false" } }
-        @{ Label = "has a blank ApiSchemaPath"; Mutate = { $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "" } }
-        @{ Label = "points at a different ApiSchemaPath"; Mutate = { $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/somewhere/else" } }
+        @{ Label = "has ApiSchema__UseCustomPath false"; Mutate = { $script:stubContainerEnvironment["AppSettings__ApiSchema__UseCustomPath"] = "false" } }
+        @{ Label = "has a blank ApiSchema__Path"; Mutate = { $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "" } }
+        @{ Label = "points at a different ApiSchema__Path"; Mutate = { $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/somewhere/else" } }
         @{ Label = "received a different package count"; Mutate = { $script:stubContainerEnvironment["SCHEMA_PACKAGES"] = '[{"name":"Package1"}]' } }
         @{ Label = "received the same number of packages at a different version"; Mutate = {
                 $script:stubContainerEnvironment["SCHEMA_PACKAGES"] = ConvertTo-Json -Compress -Depth 5 -InputObject @(
@@ -1701,7 +1701,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             "USE_API_SCHEMA_PATH=true"
             "API_SCHEMA_PATH=/custom/ApiSchema"
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/custom/ApiSchema"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/custom/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1722,7 +1722,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             "USE_API_SCHEMA_PATH=true"
             "API_SCHEMA_PATH=$RawValue"
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/custom/ApiSchema"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/custom/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1735,7 +1735,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             "USE_API_SCHEMA_PATH=true"
             'API_SCHEMA_PATH="/custom/ApiSchema"'
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/somewhere/else"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/somewhere/else"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1769,7 +1769,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             "SCHEMA_ROOT=/app"
             'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/app/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1799,7 +1799,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             "SCHEMA_ROOT=/somewhere/else"
             'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/app/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1817,7 +1817,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
             "SCHEMA_ROOT=/other"
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/app/ApiSchema"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/app/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1834,7 +1834,7 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
             'API_SCHEMA_PATH=${SCHEMA_ROOT}/ApiSchema'
             "SCHEMA_ROOT=/other"
         )
-        $script:stubContainerEnvironment["AppSettings__ApiSchemaPath"] = "/other/ApiSchema"
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__Path"] = "/other/ApiSchema"
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1941,13 +1941,13 @@ Describe "Assert-DmsContainerSchemaEnvironment throws on a mismatch and returns 
                 -ContainerName "ed-fi-api" } | Should -Throw -ExpectedMessage "DMS E2E setup mismatch: *"
     }
 
-    It "throws when the container's AppSettings__UseApiSchemaPath is <Label>" -ForEach @(
+    It "throws when the container's AppSettings__ApiSchema__UseCustomPath is <Label>" -ForEach @(
         @{ Label = "uppercase TRUE"; Value = "TRUE" }
         @{ Label = "title-case True"; Value = "True" }
     ) {
         # The container side of the same rule: an ambient TRUE reaching Compose produces a container
         # that run.sh treats as "not set", so the gate must not accept it as agreement.
-        $script:stubContainerEnvironment["AppSettings__UseApiSchemaPath"] = $Value
+        $script:stubContainerEnvironment["AppSettings__ApiSchema__UseCustomPath"] = $Value
 
         { Assert-DmsContainerSchemaEnvironment `
                 -EnvironmentFilePath (New-EnvironmentFileFixture) `
@@ -1974,7 +1974,7 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
 
     BeforeEach {
         $script:stubDockerExitCode = 0
-        $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @("AppSettings__UseApiSchemaPath=true")
+        $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @("AppSettings__ApiSchema__UseCustomPath=true")
         $script:stubDockerArguments = @()
     }
 
@@ -1986,14 +1986,14 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
 
     It "reads each entry into a key and value" {
         $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @(
-            "AppSettings__UseApiSchemaPath=true",
-            "AppSettings__ApiSchemaPath=/app/ApiSchema"
+            "AppSettings__ApiSchema__UseCustomPath=true",
+            "AppSettings__ApiSchema__Path=/app/ApiSchema"
         )
 
         $containerEnvironment = Get-DmsContainerEnvironment -ContainerName "ed-fi-api"
 
-        $containerEnvironment["AppSettings__UseApiSchemaPath"] | Should -Be "true"
-        $containerEnvironment["AppSettings__ApiSchemaPath"] | Should -Be "/app/ApiSchema"
+        $containerEnvironment["AppSettings__ApiSchema__UseCustomPath"] | Should -Be "true"
+        $containerEnvironment["AppSettings__ApiSchema__Path"] | Should -Be "/app/ApiSchema"
     }
 
     It "keeps every '=' after the first inside the value" {
@@ -2034,24 +2034,24 @@ Describe "Get-DmsContainerEnvironment reads the container environment and fails 
     It "keeps an entry whose value is empty, so a blank container value stays distinguishable from an absent one" {
         # Get-DmsSchemaEnvironmentToken reports <blank> and <absent> as different findings, which only
         # works if the reader preserves the difference.
-        $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @("AppSettings__ApiSchemaPath=")
+        $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @("AppSettings__ApiSchema__Path=")
 
         $containerEnvironment = Get-DmsContainerEnvironment -ContainerName "ed-fi-api"
 
-        $containerEnvironment.ContainsKey("AppSettings__ApiSchemaPath") | Should -BeTrue
-        $containerEnvironment["AppSettings__ApiSchemaPath"] | Should -Be ""
+        $containerEnvironment.ContainsKey("AppSettings__ApiSchema__Path") | Should -BeTrue
+        $containerEnvironment["AppSettings__ApiSchema__Path"] | Should -Be ""
     }
 
     It "skips an entry that has no '=' rather than failing or inventing a key" {
         $script:stubDockerOutput = ConvertTo-Json -Compress -InputObject @(
             "MALFORMED_ENTRY",
-            "AppSettings__ApiSchemaPath=/app/ApiSchema"
+            "AppSettings__ApiSchema__Path=/app/ApiSchema"
         )
 
         $containerEnvironment = Get-DmsContainerEnvironment -ContainerName "ed-fi-api"
 
         $containerEnvironment.ContainsKey("MALFORMED_ENTRY") | Should -BeFalse
-        $containerEnvironment["AppSettings__ApiSchemaPath"] | Should -Be "/app/ApiSchema"
+        $containerEnvironment["AppSettings__ApiSchema__Path"] | Should -Be "/app/ApiSchema"
     }
 
     It "throws when docker inspect fails, so an inability to verify is never read as a pass" {
@@ -2286,6 +2286,7 @@ $importBlock
 
 foreach (`$commandName in @(
         'Assert-E2EDatabaseIsDedicated',
+        'Assert-UnambiguousProtectedDeclaration',
         'Get-ComposeResolvedEnvValue',
         'Resolve-DotenvFileSequentially',
         'Assert-DmsContainerSchemaEnvironment',
@@ -2324,9 +2325,11 @@ catch {
         $LASTEXITCODE | Should -Be 0 -Because "the $Label import sequence must not fail"
 
         $observations = @(Get-Content -LiteralPath $observationPath)
-        # The three the wrappers call after importing this module: the up-front dedicated-database gate,
-        # the Compose-equivalent scalar reader, and the sequential env-file resolver.
+        # The four the wrappers call after importing this module: the up-front dedicated-database gate
+        # and the declaration check before it, the Compose-equivalent scalar reader, and the sequential
+        # env-file resolver.
         $observations | Should -Contain "Assert-E2EDatabaseIsDedicated=True" -Because "the Instance Management wrapper's up-front dedicated-database gate runs after this import"
+        $observations | Should -Contain "Assert-UnambiguousProtectedDeclaration=True" -Because "the Instance Management wrapper's declaration check runs after this import"
         $observations | Should -Contain "Get-ComposeResolvedEnvValue=True" -Because "both wrappers read a scalar through it after this import"
         $observations | Should -Contain "Resolve-DotenvFileSequentially=True" -Because "no import may strip the caller's sequential env-file resolver"
         # The import still has to do its own job, so this is not satisfiable by removing it outright.
@@ -2505,9 +2508,9 @@ Describe "The container schema gate accepts the repository's own tracked environ
         # asserting each other into agreement. SCHEMA_PACKAGES is passed through verbatim.
         $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
         $script:stubContainerEnvironment = @{
-            "AppSettings__UseApiSchemaPath" = [string]$sequential.Effective["USE_API_SCHEMA_PATH"]
-            "AppSettings__ApiSchemaPath"    = [string]$sequential.Effective["API_SCHEMA_PATH"]
-            "SCHEMA_PACKAGES"               = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
+            "AppSettings__ApiSchema__UseCustomPath" = [string]$sequential.Effective["USE_API_SCHEMA_PATH"]
+            "AppSettings__ApiSchema__Path"          = [string]$sequential.Effective["API_SCHEMA_PATH"]
+            "SCHEMA_PACKAGES"                       = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
         }
 
         { Assert-DmsContainerSchemaEnvironment `
@@ -2546,9 +2549,9 @@ Describe "The container schema gate accepts the repository's own tracked environ
         $sequential = Resolve-DotenvFileSequentially -Path $environmentFilePath
         [string]$sequential.Effective["USE_API_SCHEMA_PATH"] | Should -BeExactly "true"
         $script:stubContainerEnvironment = @{
-            "AppSettings__UseApiSchemaPath" = [string]$sequential.Effective["USE_API_SCHEMA_PATH"]
-            "AppSettings__ApiSchemaPath"    = [string]$sequential.Effective["API_SCHEMA_PATH"]
-            "SCHEMA_PACKAGES"               = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
+            "AppSettings__ApiSchema__UseCustomPath" = [string]$sequential.Effective["USE_API_SCHEMA_PATH"]
+            "AppSettings__ApiSchema__Path"          = [string]$sequential.Effective["API_SCHEMA_PATH"]
+            "SCHEMA_PACKAGES"                       = Get-TrackedSchemaPackagesRawValue -EnvironmentFilePath $environmentFilePath
         }
 
         { Assert-DmsContainerSchemaEnvironment `
@@ -2612,10 +2615,10 @@ Describe "The container schema gate accepts the repository's own tracked environ
     }
 }
 
-Describe "The guard removes exactly the names local-dms.yml resolves for the DMS schema surface (DMS-1300)" {
+Describe "The guard removes exactly the names local-dms.compose.yml resolves for the DMS schema surface (DMS-1300)" {
     # The guard's variable list and the compose file's ${VAR:-default} references are two halves of one
     # contract, and nothing in this suite held them together. The guard removes names so Compose has to
-    # fall back to the --env-file; a name local-dms.yml resolves for one of the three DMS schema
+    # fall back to the --env-file; a name local-dms.compose.yml resolves for one of the three DMS schema
     # settings but the guard does not remove is resolved ambient-first again, which is the whole defect.
     # A rename on either side, or a fourth schema setting added to the compose file, would leave the
     # guard silently short while every behavioral test above still passed - they arrange the names the
@@ -2627,14 +2630,14 @@ Describe "The guard removes exactly the names local-dms.yml resolves for the DMS
     # list stops being a literal can turn this into an empty-equals-empty pass.
 
     BeforeAll {
-        $script:composeFilePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../local-dms.yml"))
+        $script:composeFilePath = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../local-dms.compose.yml"))
         $script:schemaEnvironmentModule = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../dms-schema-environment.psm1"))
 
         # The compose keys the DMS container's schema surface is delivered through: the two
         # AppSettings__* names run.sh and DMS read, and SCHEMA_PACKAGES, which run.sh downloads from.
         $script:schemaComposeKey = @(
-            "AppSettings__UseApiSchemaPath",
-            "AppSettings__ApiSchemaPath",
+            "AppSettings__ApiSchema__UseCustomPath",
+            "AppSettings__ApiSchema__Path",
             "SCHEMA_PACKAGES"
         )
 
@@ -2757,16 +2760,16 @@ Describe "The guard removes exactly the names local-dms.yml resolves for the DMS
         }
     }
 
-    It "names the same set local-dms.yml resolves for the dms service's schema settings" {
+    It "names the same set local-dms.compose.yml resolves for the dms service's schema settings" {
         $dmsEnvironment = Get-ComposeServiceEnvironmentEntry -ComposeFilePath $script:composeFilePath -ServiceName "dms"
 
         $dmsEnvironment.Count |
-            Should -BeGreaterThan 0 -Because "the reader must have found the dms service's environment block in local-dms.yml"
+            Should -BeGreaterThan 0 -Because "the reader must have found the dms service's environment block in local-dms.compose.yml"
 
         $composeReferencedName = @(
             foreach ($key in $script:schemaComposeKey) {
                 $dmsEnvironment.Contains($key) |
-                    Should -BeTrue -Because "local-dms.yml's dms service must still deliver $key, which is what the gate reads off the container"
+                    Should -BeTrue -Because "local-dms.compose.yml's dms service must still deliver $key, which is what the gate reads off the container"
 
                 $referenced = @(Get-ComposeInterpolatedName -Value ([string]$dmsEnvironment[$key]))
                 $referenced.Count |
@@ -2781,6 +2784,6 @@ Describe "The guard removes exactly the names local-dms.yml resolves for the DMS
         # Set equality, sorted Ordinal so the comparison cannot vary with the host's culture, and
         # -BeExactly because a dotenv name is case-sensitive on the Linux runtime path these resolve on.
         @($guardVariableName | Sort-Object -CaseSensitive) |
-            Should -BeExactly @($composeReferencedName | Sort-Object -CaseSensitive) -Because "the guard must remove exactly the names local-dms.yml resolves for the DMS schema surface: one it misses is resolved ambient-first again, and one it removes that compose does not read is a name it clears for no reason"
+            Should -BeExactly @($composeReferencedName | Sort-Object -CaseSensitive) -Because "the guard must remove exactly the names local-dms.compose.yml resolves for the DMS schema surface: one it misses is resolved ambient-first again, and one it removes that compose does not read is a name it clears for no reason"
     }
 }

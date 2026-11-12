@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.DataModel;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static EdFi.DmsConfigurationService.Backend.Services.ConnectionStringCipherText;
 
 namespace EdFi.DmsConfigurationService.Backend.Services;
 
@@ -81,6 +82,9 @@ public interface IConnectionStringReader
 /// through the text, because the builder applies the provider's own quoting to a value an operator
 /// chose, and a resolved value is never scanned again.
 ///
+/// Each legacy value read logs a warning naming its row. A legacy value refused because legacy values
+/// are disallowed is reported as that, not as a value that could not be decrypted.
+///
 /// Transient, like the repositories that call it, because it reads the request's tenant from the
 /// scoped tenant provider. The cache it consults is the singleton, and takes the tenant as an
 /// argument.
@@ -135,10 +139,30 @@ public sealed class ConnectionStringReader(
         {
             plainText = encryptionService.Decrypt(stored);
         }
+        catch (LegacyConnectionStringRejectedException)
+        {
+            // Kept apart from the catch-all, so a value awaiting re-encryption does not read as a key
+            // problem.
+            return Unreadable(
+                row,
+                "is in the legacy AES-CBC format, which is rejected because DatabaseSettings:AllowLegacyConnectionStrings is false"
+            );
+        }
         catch (Exception)
         {
             // The exception says nothing an operator can act on beyond this, and its text is not ours.
             return Unreadable(row, "could not be decrypted");
+        }
+
+        if (HasLegacyLength(stored.Length) && !IsEnvelopeCandidate(stored))
+        {
+            // Decrypted, so legacy reads are allowed. Logged on every read, so an operator can tell
+            // when the setting can be turned off, and notice a legacy value that reappears after it.
+            logger.LogWarning(
+                "The stored connection string for {Row} in tenant {Tenant} is in the legacy AES-CBC format, which has no integrity protection. Run the connection string re-encryption pass before setting DatabaseSettings:AllowLegacyConnectionStrings to false",
+                row.ToString(),
+                TenantForLog(Tenant)
+            );
         }
 
         IReadOnlyList<SecretReferenceToken> tokens = plainText is null

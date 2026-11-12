@@ -5,6 +5,11 @@
 
 using System.Collections.Generic;
 using System.Net;
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Hosting.Server;
@@ -101,6 +106,7 @@ public class MetadataModuleTests
         "ApiClientCredentialsResponse.applicationId int32",
         "ApiClientInsertCommand.applicationId int32",
         "ApiClientInsertCommand.dataStoreIds int32",
+        "ApiClientInsertCommand.educationOrganizationIds int64",
         "ApiClientOwnershipResponse.creatorOwnershipTokenId int32",
         "ApiClientOwnershipResponse.ownershipTokenIds int32",
         "ApiClientOwnershipUpdateCommand.apiClientId int32",
@@ -111,13 +117,17 @@ public class MetadataModuleTests
         "ApiClientResponse.creatorOwnershipTokenId int32",
         "ApiClientResponse.ownershipTokenIds int32",
         "ApiClientResponse.dataStoreIds int32",
+        "ApiClientResponse.educationOrganizationIds int64",
         "ApiClientUpdateCommand.id int32",
         "ApiClientUpdateCommand.applicationId int32",
         "ApiClientUpdateCommand.dataStoreIds int32",
+        "ApiClientUpdateCommand.educationOrganizationIds int64",
+        "ApplicationCredentialsResponse.id int32",
         "ApplicationInsertCommand.vendorId int32",
         "ApplicationInsertCommand.educationOrganizationIds int64",
         "ApplicationInsertCommand.dataStoreIds int32",
         "ApplicationInsertCommand.profileIds int32",
+        "ApplicationInsertResponse.id int32",
         "ApplicationResponse.id int32",
         "ApplicationResponse.vendorId int32",
         "ApplicationResponse.educationOrganizationIds int64",
@@ -126,7 +136,6 @@ public class MetadataModuleTests
         "ApplicationUpdateCommand.id int32",
         "ApplicationUpdateCommand.vendorId int32",
         "ApplicationUpdateCommand.educationOrganizationIds int64",
-        "ApplicationUpdateCommand.dataStoreIds int32",
         "ApplicationUpdateCommand.profileIds int32",
         "AuthorizationStrategy.id int32",
         "ClaimSetCopyCommand.originalId int32",
@@ -403,11 +412,51 @@ public class MetadataModuleTests
         schema.GetProperty("format").GetString().Should().Be("int64");
     }
 
+    [TestCase("/")]
+    [TestCase("/metadata/specifications")]
+    [TestCase("/openapi/v1.json")]
+    public async Task Service_Description_Is_Served_Without_A_Tenant_Header_When_MultiTenancy_Is_Enabled(
+        string path
+    )
+    {
+        // Arrange
+        await using var factory = CreateFactory(multiTenancy: true);
+        using var client = factory.CreateClient();
+
+        // Act
+        var response = await client.GetAsync(path);
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    [Test]
+    public async Task Specifications_Are_Served_With_A_Tenant_Header_When_MultiTenancy_Is_Enabled()
+    {
+        // Arrange
+        // /metadata/specifications builds its document by requesting /openapi/v1.json from this same
+        // service, and that inner request carries no Tenant header whatever the caller sent. While
+        // the inner request needed one, this answered 500 even to a caller with a valid tenant.
+        var tenantRepository = A.Fake<ITenantRepository>();
+        A.CallTo(() => tenantRepository.GetTenantByName("test-tenant"))
+            .Returns(new TenantGetByNameResult.Success(new TenantResponse { Id = 1, Name = "test-tenant" }));
+
+        await using var factory = CreateFactory(multiTenancy: true, tenantRepository: tenantRepository);
+        using var client = factory.CreateClient();
+        client.DefaultRequestHeaders.Add("Tenant", "test-tenant");
+
+        // Act
+        var response = await client.GetAsync("/metadata/specifications");
+
+        // Assert
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
     [Test]
     public async Task MetadataSpecifications_Declares_Tenancy_As_Anonymous()
     {
         // Arrange
-        // DMS-1508: GET /tenancy is anonymous. MetadataModule adds a document-wide OAuth requirement,
+        // DMS-1508: GET /tenancy is anonymous. The document carries a document-wide OAuth requirement,
         // so without an empty operation-level security array the operation would inherit it.
         await using var factory = CreateFactory();
         using var client = factory.CreateClient();
@@ -476,6 +525,30 @@ public class MetadataModuleTests
             .BeTrue();
     }
 
+    [Test]
+    public async Task It_marks_the_application_response_enabled_property_read_only()
+    {
+        // Arrange
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        // Act
+        using var doc = await FetchOpenApiDocumentAsync(client);
+
+        // Assert
+        // enabled is an aggregate computed across the application's API clients; no
+        // application-level write sets it.
+        doc.RootElement.GetProperty("components")
+            .GetProperty("schemas")
+            .GetProperty("ApplicationResponse")
+            .GetProperty("properties")
+            .GetProperty("enabled")
+            .GetProperty("readOnly")
+            .GetBoolean()
+            .Should()
+            .BeTrue();
+    }
+
     private static async Task<System.Text.Json.JsonDocument> FetchMetadataSpecificationsAsync(
         HttpClient client
     )
@@ -540,6 +613,164 @@ public class MetadataModuleTests
             using var doc = System.Text.Json.JsonDocument.Parse(_body);
             doc.RootElement.TryGetProperty("type", out _).Should().BeFalse();
             doc.RootElement.TryGetProperty("status", out _).Should().BeFalse();
+        }
+    }
+
+    /// <summary>
+    /// /metadata/specifications is the generated /openapi/v1.json document plus reusable components, so
+    /// its security description must be the generated one: a token URL built from the request base
+    /// (never the identity provider authority), the scopes, the root requirement and the anonymous
+    /// overrides.
+    /// </summary>
+    [TestFixture]
+    public class Given_An_Identity_Authority_On_A_Different_Host_And_A_PathBase
+    {
+        private const string Authority = "https://idp.example.org/realms/other";
+        private const string SchemeName = "oauth2_client_credentials";
+
+        private JsonDocument _metadata = null!;
+        private JsonDocument _openApi = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await using var factory = CreateFactory(pathBase: "/config", identityAuthority: Authority);
+            using var client = factory.CreateClient();
+
+            var metadataResponse = await client.GetAsync("/config/metadata/specifications");
+            metadataResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            _metadata = JsonDocument.Parse(await metadataResponse.Content.ReadAsStringAsync());
+
+            var openApiResponse = await client.GetAsync("/config/openapi/v1.json");
+            openApiResponse.StatusCode.Should().Be(HttpStatusCode.OK);
+            _openApi = JsonDocument.Parse(await openApiResponse.Content.ReadAsStringAsync());
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _metadata.Dispose();
+            _openApi.Dispose();
+        }
+
+        private static JsonElement ClientCredentialsFlow(JsonDocument document) =>
+            document
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName)
+                .GetProperty("flows")
+                .GetProperty("clientCredentials");
+
+        private static string[] OperationsWithEmptySecurity(JsonDocument document) =>
+            [
+                .. document
+                    .RootElement.GetProperty("paths")
+                    .EnumerateObject()
+                    .SelectMany(path =>
+                        path.Value.EnumerateObject()
+                            .Where(operation =>
+                                HttpMethodNames.Contains(operation.Name)
+                                && operation.Value.TryGetProperty("security", out var security)
+                                && security.ValueKind == JsonValueKind.Array
+                                && security.GetArrayLength() == 0
+                            )
+                            .Select(operation => $"{operation.Name.ToUpperInvariant()} {path.Name}")
+                    )
+                    .Order(),
+            ];
+
+        [Test]
+        public void It_builds_the_token_url_from_the_server_url()
+        {
+            var serverUrl = _metadata.RootElement.GetProperty("servers")[0].GetProperty("url").GetString();
+
+            ClientCredentialsFlow(_metadata)
+                .GetProperty("tokenUrl")
+                .GetString()
+                .Should()
+                .Be(serverUrl + "/connect/token");
+        }
+
+        [Test]
+        public void It_does_not_derive_the_token_url_from_the_authority()
+        {
+            var tokenUrl = ClientCredentialsFlow(_metadata).GetProperty("tokenUrl").GetString();
+
+            tokenUrl.Should().NotStartWith(Authority);
+            tokenUrl.Should().Be("http://localhost/config/connect/token");
+        }
+
+        [Test]
+        public void It_declares_the_same_scheme_as_the_openapi_document()
+        {
+            var metadataScheme = _metadata
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName);
+            var openApiScheme = _openApi
+                .RootElement.GetProperty("components")
+                .GetProperty("securitySchemes")
+                .GetProperty(SchemeName);
+
+            // The endpoint re-serializes with indentation, so compare structure rather than raw text.
+            JsonNode
+                .DeepEquals(
+                    JsonNode.Parse(metadataScheme.GetRawText()),
+                    JsonNode.Parse(openApiScheme.GetRawText())
+                )
+                .Should()
+                .BeTrue("the scheme must be the generated one, not an overwritten copy");
+        }
+
+        [Test]
+        public void It_declares_the_same_scope_keys_as_the_openapi_document()
+        {
+            var openApiScopes = ClientCredentialsFlow(_openApi)
+                .GetProperty("scopes")
+                .EnumerateObject()
+                .Select(scope => scope.Name)
+                .ToArray();
+
+            openApiScopes.Should().NotBeEmpty();
+            ClientCredentialsFlow(_metadata)
+                .GetProperty("scopes")
+                .EnumerateObject()
+                .Select(scope => scope.Name)
+                .Should()
+                .BeEquivalentTo(openApiScopes);
+        }
+
+        [Test]
+        public void It_declares_the_same_root_requirement_as_the_openapi_document()
+        {
+            var openApiSecurity = _openApi.RootElement.GetProperty("security");
+
+            openApiSecurity.GetArrayLength().Should().Be(1);
+            JsonNode
+                .DeepEquals(
+                    JsonNode.Parse(_metadata.RootElement.GetProperty("security").GetRawText()),
+                    JsonNode.Parse(openApiSecurity.GetRawText())
+                )
+                .Should()
+                .BeTrue();
+        }
+
+        [Test]
+        public void It_declares_the_same_anonymous_operations_as_the_openapi_document()
+        {
+            var openApiAnonymous = OperationsWithEmptySecurity(_openApi);
+
+            openApiAnonymous.Should().NotBeEmpty();
+            OperationsWithEmptySecurity(_metadata).Should().Equal(openApiAnonymous);
+        }
+
+        [Test]
+        public void It_declares_the_token_endpoint_and_the_service_root_as_anonymous()
+        {
+            var anonymous = OperationsWithEmptySecurity(_metadata);
+
+            anonymous.Should().Contain("POST /connect/token/{contextPath}");
+            anonymous.Should().Contain("GET /");
         }
     }
 
@@ -616,27 +847,32 @@ public class MetadataModuleTests
     private static WebApplicationFactory<Program> CreateFactory(
         bool multiTenancy = false,
         string? pathBase = null,
-        ICollection<Uri?>? recordedRequestUris = null
+        ITenantRepository? tenantRepository = null,
+        ICollection<Uri?>? recordedRequestUris = null,
+        string? identityAuthority = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(configuration =>
-                configuration.AddInMemoryCollection(
-                    new Dictionary<string, string?>
-                    {
-                        // The application reset-credential route is registered only when this flag is
-                        // set, and it is false in both appsettings.json and appsettings.Test.json, so
-                        // without this the route is absent from the document under test.
-                        ["AppSettings:EnableApplicationResetEndpoint"] = "true",
-                        ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
-                        // Left null by default so the existing cases keep exercising the no-path-base
-                        // shape; Program only calls UsePathBase when this carries a value.
-                        ["AppSettings:PathBase"] = pathBase,
-                    }
-                )
-            );
+            {
+                var settings = new Dictionary<string, string?>
+                {
+                    ["AppSettings:MultiTenancy"] = multiTenancy.ToString(),
+                    // Left null by default so the existing cases keep exercising the no-path-base
+                    // shape; Program only calls UsePathBase when this carries a value.
+                    ["AppSettings:PathBase"] = pathBase,
+                };
+
+                // Only set when given: a null Authority makes the app fail to start.
+                if (identityAuthority is not null)
+                {
+                    settings["IdentitySettings:Authority"] = identityAuthority;
+                }
+
+                configuration.AddInMemoryCollection(settings);
+            });
             builder.ConfigureServices(services =>
             {
                 if (recordedRequestUris is null)
@@ -649,6 +885,11 @@ public class MetadataModuleTests
                         provider.GetRequiredService<IServer>(),
                         recordedRequestUris
                     ));
+                }
+
+                if (tenantRepository is not null)
+                {
+                    services.AddTransient(_ => tenantRepository);
                 }
             });
         });
@@ -1122,6 +1363,40 @@ public class MetadataModuleTests
             .TryGetProperty("content", out _)
             .Should()
             .BeFalse("201 response body should be empty per CMS-GAP-009");
+    }
+
+    [Test]
+    public async Task OpenApi_Vendor_Request_Schemas_Describe_NamespacePrefixes_As_Optional_Nullable_String()
+    {
+        await using var factory = CreateFactory();
+        using var client = factory.CreateClient();
+
+        using var doc = await FetchOpenApiDocumentAsync(client);
+        var schemas = doc.RootElement.GetProperty("components").GetProperty("schemas");
+
+        foreach (var schemaName in new[] { "VendorInsertCommand", "VendorUpdateCommand" })
+        {
+            var schema = schemas.GetProperty(schemaName);
+            var namespacePrefixesType = schema
+                .GetProperty("properties")
+                .GetProperty("namespacePrefixes")
+                .GetProperty("type");
+            namespacePrefixesType.ValueKind.Should().Be(System.Text.Json.JsonValueKind.Array);
+            namespacePrefixesType
+                .EnumerateArray()
+                .Select(item => item.GetString())
+                .Should()
+                .BeEquivalentTo("string", "null");
+
+            if (schema.TryGetProperty("required", out var required))
+            {
+                required
+                    .EnumerateArray()
+                    .Select(property => property.GetString())
+                    .Should()
+                    .NotContain("namespacePrefixes", $"{schemaName}.namespacePrefixes is optional");
+            }
+        }
     }
 
     private static bool TypeIncludes(System.Text.Json.JsonElement type, string expectedType)

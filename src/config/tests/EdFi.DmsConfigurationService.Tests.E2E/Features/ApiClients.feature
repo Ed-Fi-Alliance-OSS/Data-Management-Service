@@ -44,7 +44,9 @@ Feature: ApiClients endpoints
                           "isApproved": true,
                           "creatorOwnershipTokenId": null,
                           "ownershipTokenIds": [],
-                          "dataStoreIds": [{dataStoreId}]
+                          "dataStoreIds": [{dataStoreId}],
+                          "inheritsApplicationEducationOrganizations": true,
+                          "educationOrganizationIds": []
                       }]
                   """
 
@@ -71,7 +73,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -142,7 +146,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Application with ID 99999 not found.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -174,7 +178,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "The following DataStoreIds were not found in database: 99999, 88888",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -216,7 +220,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -309,7 +315,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -369,7 +377,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Application with ID 99999 not found.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -411,7 +419,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "The following DataStoreIds were not found in database: 99999, 88888",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "validationErrors": {},
@@ -462,7 +470,9 @@ Feature: ApiClients endpoints
                     "isApproved": false,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -610,7 +620,7 @@ Feature: ApiClients endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -656,7 +666,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a POST request is made to "/v3/apiClients" with
@@ -688,7 +700,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a PUT request is made to "/v3/apiClients/{initialApiClientId}" with
@@ -726,7 +740,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a GET request is made to "/v3/apiClients/{additionalKey}"
@@ -742,7 +758,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a token is requested with the credentials captured as "initial" and scope "TestClaim01"
@@ -784,7 +802,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a GET request is made to "/v3/apiClients/{additionalKey}"
@@ -800,7 +820,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a DELETE request is made to "/v3/apiClients/{additionalApiClientId}"
@@ -820,7 +842,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -870,7 +894,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -907,7 +931,7 @@ Feature: ApiClients endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -954,7 +978,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a PUT request is made to "/v3/apiClients/{client23Id}" with
@@ -980,7 +1006,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
               # An omitted list on create must fall back to the command's own empty default, the
@@ -1010,7 +1038,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1070,7 +1100,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1113,7 +1145,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
               # The OAuth client key resolves the same client, so neither lookup was repurposed.
@@ -1130,7 +1164,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
 
@@ -1167,20 +1203,16 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response header "location" is not present
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "validationErrors": {
-                          "Name": [
-                              "An API client with this name already exists for the application."
-                          ]
-                      },
+                      "detail": "An API client with this name already exists for the application.",
+                      "type": "urn:ed-fi:management-api:conflict",
+                      "title": "Conflict",
+                      "status": 409,
+                      "validationErrors": {},
                       "errors": []
                   }
                   """
@@ -1206,19 +1238,15 @@ Feature: ApiClients endpoints
                    "dataStoreIds": [{dataStoreId}]
                   }
                   """
-             Then it should respond with 400
+             Then it should respond with 409
               And the response body is
                   """
                   {
-                      "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
-                      "title": "Data Validation Failed",
-                      "status": 400,
-                      "validationErrors": {
-                          "Name": [
-                              "An API client with this name already exists for the application."
-                          ]
-                      },
+                      "detail": "An API client with this name already exists for the application.",
+                      "type": "urn:ed-fi:management-api:conflict",
+                      "title": "Conflict",
+                      "status": 409,
+                      "validationErrors": {},
                       "errors": []
                   }
                   """
@@ -1235,7 +1263,9 @@ Feature: ApiClients endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": [{dataStoreId}]
+                    "dataStoreIds": [{dataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
                   }
                   """
              When a POST request is made to "/v3/applications" with

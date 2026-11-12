@@ -86,7 +86,7 @@ internal class ResolveDataStoreMiddleware(
         if (matchedInstance == null)
         {
             logger.LogInformation(
-                "No matching data store found in cache, attempting reload from CMS - TraceId: {TraceId}",
+                "No matching data store found in cache, attempting reload from the Configuration Service - TraceId: {TraceId}",
                 requestInfo.FrontendRequest.TraceId.Value
             );
 
@@ -105,7 +105,7 @@ internal class ResolveDataStoreMiddleware(
             {
                 logger.LogError(
                     ex,
-                    "Failed to reload data stores from CMS - TraceId: {TraceId}",
+                    "Failed to reload data stores from the Configuration Service - TraceId: {TraceId}",
                     requestInfo.FrontendRequest.TraceId.Value
                 );
             }

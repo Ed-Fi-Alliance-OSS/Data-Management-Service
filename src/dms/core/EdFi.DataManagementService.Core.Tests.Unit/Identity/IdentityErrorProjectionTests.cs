@@ -32,7 +32,7 @@ public class IdentityErrorProjectionTests
         [SetUp]
         public void Setup()
         {
-            IdentityError[] errors = [new() { Path = "$.firstName", Message = "First name is required." }];
+            IdentityError[] errors = [new() { Path = "$.FirstName", Message = "First name is required." }];
 
             _response = IdentityErrorProjection.Project(errors, _traceId);
         }
@@ -40,7 +40,7 @@ public class IdentityErrorProjectionTests
         [Test]
         public void It_becomes_a_verbatim_validationErrors_key()
         {
-            _response["validationErrors"]!["$.firstName"]!
+            _response["validationErrors"]!["$.FirstName"]!
                 .AsArray()
                 .Select(node => node!.ToString())
                 .Should()
@@ -58,7 +58,7 @@ public class IdentityErrorProjectionTests
         {
             IdentityError[] errors =
             [
-                new() { Path = "$[2].firstName", Message = "First name is required for item 2." },
+                new() { Path = "$[2].FirstName", Message = "First name is required for item 2." },
             ];
 
             _response = IdentityErrorProjection.Project(errors, _traceId);
@@ -67,13 +67,13 @@ public class IdentityErrorProjectionTests
         [Test]
         public void It_is_kept_as_a_verbatim_key_with_no_renumbering()
         {
-            _response["validationErrors"]!.AsObject().Should().ContainKey("$[2].firstName");
+            _response["validationErrors"]!.AsObject().Should().ContainKey("$[2].FirstName");
         }
 
         [Test]
         public void It_holds_the_message_in_the_key_s_array()
         {
-            _response["validationErrors"]!["$[2].firstName"]!
+            _response["validationErrors"]!["$[2].FirstName"]!
                 .AsArray()
                 .Select(node => node!.ToString())
                 .Should()
@@ -183,8 +183,8 @@ public class IdentityErrorProjectionTests
         {
             IdentityError[] errors =
             [
-                new() { Path = "$.firstName", Message = "First name is required." },
-                new() { Path = "$.firstName", Message = "First name must not exceed 75 characters." },
+                new() { Path = "$.FirstName", Message = "First name is required." },
+                new() { Path = "$.FirstName", Message = "First name must not exceed 75 characters." },
             ];
 
             _response = IdentityErrorProjection.Project(errors, _traceId);
@@ -199,7 +199,7 @@ public class IdentityErrorProjectionTests
         [Test]
         public void It_preserves_provider_order_within_the_group()
         {
-            _response["validationErrors"]!["$.firstName"]!
+            _response["validationErrors"]!["$.FirstName"]!
                 .AsArray()
                 .Select(node => node!.ToString())
                 .Should()
@@ -217,9 +217,9 @@ public class IdentityErrorProjectionTests
         {
             IdentityError[] errors =
             [
-                new() { Path = "$.firstName", Message = "a" },
+                new() { Path = "$.FirstName", Message = "a" },
                 new() { Path = "$.lastName", Message = "b" },
-                new() { Path = "$.firstName", Message = "c" },
+                new() { Path = "$.FirstName", Message = "c" },
             ];
 
             _response = IdentityErrorProjection.Project(errors, _traceId);
@@ -232,7 +232,7 @@ public class IdentityErrorProjectionTests
                 .AsObject()
                 .Select(pair => pair.Key)
                 .Should()
-                .Equal("$.firstName", "$.lastName");
+                .Equal("$.FirstName", "$.lastName");
         }
     }
 
@@ -247,7 +247,7 @@ public class IdentityErrorProjectionTests
             IdentityError[] errors =
             [
                 new() { Path = null, Message = "document-level failure" },
-                new() { Path = "$.firstName", Message = "also present, but errors still wins" },
+                new() { Path = "$.FirstName", Message = "also present, but errors still wins" },
             ];
 
             _response = IdentityErrorProjection.Project(errors, _traceId);
@@ -280,7 +280,7 @@ public class IdentityErrorProjectionTests
         [SetUp]
         public void Setup()
         {
-            IdentityError[] errors = [new() { Path = "$.firstName", Message = "First name is required." }];
+            IdentityError[] errors = [new() { Path = "$.FirstName", Message = "First name is required." }];
 
             _response = IdentityErrorProjection.Project(errors, _traceId);
         }

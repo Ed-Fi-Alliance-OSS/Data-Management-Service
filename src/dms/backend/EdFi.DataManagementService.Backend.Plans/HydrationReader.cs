@@ -228,7 +228,7 @@ public static class HydrationReader
     }
 
     /// <summary>
-    /// Reads normalized descriptor URI rows from the current descriptor projection result set.
+    /// Reads compact descriptor identities and original-case reconstructed URIs from the current result set.
     /// </summary>
     /// <param name="reader">The data reader positioned at a descriptor projection result set.</param>
     /// <param name="descriptorPlan">The descriptor projection plan describing the expected ordinals.</param>
@@ -261,7 +261,7 @@ public static class HydrationReader
         {
             rows.Add(
                 new DescriptorUriRow(
-                    DescriptorId: reader.GetInt64(descriptorPlan.ResultShape.DescriptorIdOrdinal),
+                    DescriptorId: reader.GetInt32(descriptorPlan.ResultShape.DescriptorIdOrdinal),
                     Uri: reader.GetString(descriptorPlan.ResultShape.UriOrdinal)
                 )
             );

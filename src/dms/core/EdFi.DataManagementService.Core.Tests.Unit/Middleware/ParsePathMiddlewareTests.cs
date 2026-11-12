@@ -168,7 +168,6 @@ public class ParsePathMiddlewareTests
             A.Fake<IEffectiveApiSchemaProvider>(),
             A.Fake<IClaimSetProvider>(),
             A.Fake<IDocumentValidator>(),
-            A.Fake<IMatchingDocumentUuidsValidator>(),
             A.Fake<IEqualityConstraintValidator>(),
             A.Fake<IDecimalValidator>(),
             NullLogger<ApiService>.Instance,

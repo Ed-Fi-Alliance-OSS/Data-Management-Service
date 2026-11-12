@@ -326,7 +326,7 @@ Describe "DMS pull request change classifier" {
         }
 
         It "still detects a fresh-rebuild path in a merge group" {
-            $result = Get-DmsChangeCategory -EventName "merge_group" -ChangedFile @("eng/docker-compose/postgresql.yml")
+            $result = Get-DmsChangeCategory -EventName "merge_group" -ChangedFile @("eng/docker-compose/postgresql.compose.yml")
 
             $result.dms_relevant | Should -BeTrue
             $result.fresh_build_required | Should -BeTrue
@@ -391,7 +391,7 @@ Describe "DMS pull request change classifier" {
             @{ Path = "src/.editorconfig" }
             @{ Path = "src/dms/Dockerfile" }
             @{ Path = "src/config/Dockerfile" }
-            @{ Path = "eng/docker-compose/postgresql.yml" }
+            @{ Path = "eng/docker-compose/postgresql.compose.yml" }
             # The bash glob this replaces matched across directory separators, so a nested
             # docker-compose file counts too.
             @{ Path = "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1" }
@@ -521,6 +521,7 @@ Describe "DMS pull request change classifier" {
             @{ Path = "src/plugins/EdFi.Api.Plugins/PLUGINS.md" }
             @{ Path = "eng/fixtures/plugins/Acme.UniqueIdValidation/UniqueIdValidator.cs" }
             @{ Path = "src/config/contracts/EdFi.DmsConfigurationService.Secrets/README.md" }
+            @{ Path = "src/dms/core/EdFi.DataManagementService.Identity/IDENTITY.md" }
         ) {
             (Get-DmsChangeCategory -EventName "pull_request" -ChangedFile @($Path)).document_embeds_relevant |
                 Should -BeTrue

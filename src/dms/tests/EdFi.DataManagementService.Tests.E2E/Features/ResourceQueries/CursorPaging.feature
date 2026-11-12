@@ -100,8 +100,9 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               And the response header "Next-Page-Token" is absent
 
         @e2e-ci-shard-2
-        Scenario: 05 A page size without a page token is rejected with exactly one error
-             When a GET request is made to "/ed-fi/schools?pageSize=5&limit=10"
+        Scenario: 05 A page size without a page token or limit is rejected with exactly one error
+              # Beside limit, a page size without a page token is ignored instead; see PagingQueryString.
+             When a GET request is made to "/ed-fi/schools?pageSize=5&totalCount=true"
              Then it should respond with 400
               And the response content type is "application/json"
               And the response body is the parameter validation shell
@@ -146,6 +147,17 @@ Feature: Cursor paging for GET requests for Ed-Fi Resources
               And the response content type is "application/json"
               And the response body is the bad request shell
               And the response body has exactly one error "The query field 'pageSize' is not valid for this Change Query endpoint."
+
+        @e2e-ci-shard-2
+        Scenario: 08a A keyChanges request ignores a resource filter and names it in the warning
+             When a GET request is made to "/ed-fi/schools/keyChanges?schoolId=1"
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: schoolId"
+                  }
+                  """
 
         @e2e-ci-shard-2
         Scenario: 09 The served resources document publishes the cursor parameters and the continuation header

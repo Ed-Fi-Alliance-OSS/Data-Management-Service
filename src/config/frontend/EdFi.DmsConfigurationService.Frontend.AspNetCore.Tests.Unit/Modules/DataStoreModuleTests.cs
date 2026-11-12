@@ -501,7 +501,7 @@ public class DataStoreModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -704,7 +704,7 @@ public class DataStoreModuleTests
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
 
             JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
             body["validationErrors"]!.AsObject().Should().ContainKey("ConnectionString");
         }
 

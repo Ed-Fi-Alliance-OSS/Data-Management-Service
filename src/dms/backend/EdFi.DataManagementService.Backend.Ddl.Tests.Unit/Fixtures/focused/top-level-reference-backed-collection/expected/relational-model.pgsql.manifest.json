@@ -180,38 +180,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       }
-    },
-    {
-      "name": "TR_Program_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Program"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "ProgramId",
-        "ProgramName"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "Program",
-      "identity_elements": [
-        {
-          "column": "ProgramId",
-          "identity_json_path": "$.programId"
-        },
-        {
-          "column": "ProgramName",
-          "identity_json_path": "$.programName"
-        }
-      ]
     },
     {
       "name": "TR_Program_Stamp",
@@ -227,7 +199,7 @@
         "ProgramId",
         "ProgramName"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Program"
       },
@@ -237,29 +209,6 @@
           "name": "Program"
         }
       }
-    },
-    {
-      "name": "TR_School_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SchoolId"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "School",
-      "identity_elements": [
-        {
-          "column": "SchoolId",
-          "identity_json_path": "$.schoolId"
-        }
-      ]
     },
     {
       "name": "TR_School_Stamp",
@@ -274,7 +223,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       },
@@ -296,7 +245,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -482,8 +431,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -588,7 +549,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]
@@ -637,8 +598,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -707,7 +680,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]

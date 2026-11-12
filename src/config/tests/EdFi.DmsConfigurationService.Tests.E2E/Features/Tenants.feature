@@ -259,7 +259,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": [{dataStoreIdB}]
+                        "dataStoreIds": [{dataStoreIdB}],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
              When a PUT request is made to "/v3/apiClients/{tenantBClientId}" with header "Tenant" value "TenantB_{scenarioRunId}" and
@@ -286,7 +288,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": [{dataStoreIdB}]
+                        "dataStoreIds": [{dataStoreIdB}],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
 
@@ -346,7 +350,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": []
+                        "dataStoreIds": [],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
               # The same client is readable by its numeric id inside its own tenant, which is what
@@ -394,7 +400,9 @@ Feature: Tenants endpoints
                         "isApproved": true,
                         "creatorOwnershipTokenId": null,
                         "ownershipTokenIds": [],
-                        "dataStoreIds": []
+                        "dataStoreIds": [],
+                        "inheritsApplicationEducationOrganizations": true,
+                        "educationOrganizationIds": []
                     }
                   """
              When a token is requested with the credentials captured as "tenantAEmpty" and scope "TenantAClaimSet"
@@ -517,7 +525,7 @@ Feature: Tenants endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -592,7 +600,7 @@ Feature: Tenants endpoints
                   """
                     {
                         "detail": "Profile does not exist.",
-                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                         "title": "Unresolved Reference",
                         "status": 409,
                         "validationErrors": {},
@@ -635,7 +643,7 @@ Feature: Tenants endpoints
                   """
                     {
                         "detail": "Profile does not exist.",
-                        "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                        "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                         "title": "Unresolved Reference",
                         "status": 409,
                         "validationErrors": {},

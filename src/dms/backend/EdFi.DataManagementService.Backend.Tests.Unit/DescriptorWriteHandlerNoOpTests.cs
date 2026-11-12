@@ -12,6 +12,32 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Descriptor_No_Op_Comparison
 {
+    // Identity is the engine's verdict, established before the comparer runs; the comparer leaves it alone.
+    [TestCase("uri://ED-FI.org/SchoolTypeDescriptor", "Part#Charter")]
+    [TestCase("uri://ed-fi.org/SchoolTypeDescriptor", "PART#Charter")]
+    [TestCase("uri://ed-fi.org/SchoolTypeDescriptor#Part", "Charter")]
+    public void It_treats_identity_components_as_equal_and_compares_only_descriptive_fields(
+        string @namespace,
+        string codeValue
+    )
+    {
+        var original = new ExtractedDescriptorBody(
+            "uri://ed-fi.org/SchoolTypeDescriptor",
+            "Part#Charter",
+            "Charter",
+            null,
+            null,
+            null
+        );
+        var changed = original with { Namespace = @namespace, CodeValue = codeValue };
+
+        DescriptorNoOpComparer.IsUnchanged(changed, original).Should().BeTrue();
+        DescriptorNoOpComparer
+            .IsUnchanged(changed with { ShortDescription = "charter" }, original)
+            .Should()
+            .BeFalse();
+    }
+
     [Test]
     public void It_detects_identical_extracted_bodies_as_unchanged()
     {
@@ -21,9 +47,7 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             "English Language Arts",
             new DateOnly(2024, 1, 1),
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         var b = new ExtractedDescriptorBody(
@@ -32,9 +56,7 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             "English Language Arts",
             new DateOnly(2024, 1, 1),
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeTrue();
@@ -49,9 +71,7 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             "Old Description",
             null,
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         var b = new ExtractedDescriptorBody(
@@ -60,9 +80,7 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             "New Description",
             null,
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
@@ -77,9 +95,7 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             null,
             new DateOnly(2024, 1, 1),
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         var b = new ExtractedDescriptorBody(
@@ -88,9 +104,7 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             null,
             new DateOnly(2025, 1, 1),
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
@@ -105,9 +119,7 @@ public class Given_Descriptor_No_Op_Comparison
             null,
             null,
             null,
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         var b = new ExtractedDescriptorBody(
@@ -116,39 +128,9 @@ public class Given_Descriptor_No_Op_Comparison
             "English",
             null,
             null,
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
+            null
         );
 
         DescriptorNoOpComparer.IsUnchanged(a, b).Should().BeFalse();
-    }
-
-    [Test]
-    public void It_detects_identity_change_via_namespace_and_code_value_difference()
-    {
-        var original = new ExtractedDescriptorBody(
-            "uri://ed-fi.org/AcademicSubjectDescriptor",
-            "English",
-            "English",
-            null,
-            null,
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#English",
-            "AcademicSubjectDescriptor"
-        );
-
-        var changed = new ExtractedDescriptorBody(
-            "uri://ed-fi.org/AcademicSubjectDescriptor",
-            "Mathematics",
-            "Mathematics",
-            null,
-            null,
-            null,
-            "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics",
-            "AcademicSubjectDescriptor"
-        );
-
-        DescriptorNoOpComparer.IsUnchanged(original, changed).Should().BeFalse();
     }
 }

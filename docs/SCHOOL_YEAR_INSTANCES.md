@@ -22,8 +22,8 @@ These approaches use the same underlying Configuration Service APIs and should r
 > end up with duplicate route contexts (similar names, different IDs).
 > Prefer **one** workflow per environment: either scripted *or* manual.
 > `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
-> If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` requires
-> `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
+> If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, then `-SchoolYearRange` requires
+> `DMS_CONFIGURATION_SERVICE_TENANT` in the environment file so the script can send the
 > required `Tenant` header.
 
 ## Overview

@@ -244,6 +244,17 @@ public static class HydrationExecutor
         PageKeysetSpec keyset,
         HydrationExecutionOptions executionOptions,
         CancellationToken ct
+    ) => await ReadPageAsync(reader, plan, keyset, executionOptions, static (_, _) => Task.CompletedTask, ct);
+
+    // Standalone reads consume their leading version result after the keyset/count prelude and
+    // before metadata. Write hydration retains the public reader's original result-set contract.
+    internal static async Task<HydratedPage> ReadPageAsync(
+        DbDataReader reader,
+        ResourceReadPlan plan,
+        PageKeysetSpec keyset,
+        HydrationExecutionOptions executionOptions,
+        Func<DbDataReader, CancellationToken, Task> readBeforeMetadata,
+        CancellationToken ct
     )
     {
         ArgumentNullException.ThrowIfNull(reader);
@@ -289,6 +300,8 @@ public static class HydrationExecutor
                 );
             }
         }
+
+        await readBeforeMetadata(reader, ct);
 
         // 3. Document metadata
         var documentMetadata = await HydrationReader.ReadDocumentMetadataAsync(reader, ct);

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using FluentAssertions;
@@ -29,7 +30,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:security:authentication");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:security:authentication");
         result["title"]?.GetValue<string>().Should().Be(title);
         result["status"]?.GetValue<int>().Should().Be(401);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -50,7 +51,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:security:authorization");
         result["title"]?.GetValue<string>().Should().Be(title);
         result["status"]?.GetValue<int>().Should().Be(403);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -69,7 +70,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
         result["title"]?.GetValue<string>().Should().Be("Bad Request");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -87,7 +88,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
         result["title"]?.GetValue<string>().Should().Be("Not Found");
         result["status"]?.GetValue<int>().Should().Be(404);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -105,7 +106,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:conflict");
         result["title"]?.GetValue<string>().Should().Be("Conflict");
         result["status"]?.GetValue<int>().Should().Be(409);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -128,7 +129,10 @@ public class FailureResponseTests
 
         [Test]
         public void It_has_the_dependent_item_exists_type() =>
-            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:dependent-item-exists");
+            _result["type"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:conflict:dependent-item-exists");
 
         [Test]
         public void It_has_the_dependent_item_exists_title() =>
@@ -166,7 +170,10 @@ public class FailureResponseTests
 
         [Test]
         public void It_has_the_unresolved_reference_type() =>
-            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:conflict:unresolved-reference");
+            _result["type"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:conflict:unresolved-reference");
 
         [Test]
         public void It_has_the_unresolved_reference_title() =>
@@ -185,6 +192,53 @@ public class FailureResponseTests
             _result["validationErrors"]?.AsObject().Count.Should().Be(0);
             _result["errors"]?.AsArray().Count.Should().Be(0);
         }
+    }
+
+    [TestFixture]
+    public class Given_a_partial_sync_failure
+    {
+        private JsonNode _result = null!;
+
+        [SetUp]
+        public void Setup() => _result = FailureResponse.ForPartialSync([4, 9, 12], CorrelationId);
+
+        [Test]
+        public void It_says_the_change_is_saved_and_counts_the_pending_clients() =>
+            _result["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The Application change is saved, but 3 API clients are still pending synchronization with the identity provider. Send the same request again to retry them."
+                );
+
+        [Test]
+        public void It_lists_the_pending_client_ids_as_numbers_in_order() =>
+            _result["apiClientIds"]!.AsArray().Select(id => id!.GetValue<int>()).Should().Equal(4, 9, 12);
+
+        [Test]
+        public void It_has_the_correlation_id() =>
+            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+
+        [Test]
+        public void It_has_empty_extension_members()
+        {
+            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
+            _result["errors"]?.AsArray().Count.Should().Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_partial_sync_failure_for_one_client
+    {
+        [Test]
+        public void It_counts_one_pending_client() =>
+            FailureResponse
+                .ForPartialSync([5], CorrelationId)["detail"]
+                ?.GetValue<string>()
+                .Should()
+                .Be(
+                    "The Application change is saved, but 1 API client is still pending synchronization with the identity provider. Send the same request again to retry it."
+                );
     }
 
     [Test]
@@ -207,7 +261,7 @@ public class FailureResponseTests
             ?.GetValue<string>()
             .Should()
             .Be("Data validation failed. See 'validationErrors' for details.");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
         result["title"]?.GetValue<string>().Should().Be("Data Validation Failed");
         result["status"]?.GetValue<int>().Should().Be(400);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -235,7 +289,7 @@ public class FailureResponseTests
 
         [Test]
         public void It_has_the_parameter_validation_type() =>
-            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
 
         [Test]
         public void It_has_the_parameter_validation_title() =>
@@ -273,7 +327,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be(detail);
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:bad-gateway");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-gateway");
         result["title"]?.GetValue<string>().Should().Be("Bad Gateway");
         result["status"]?.GetValue<int>().Should().Be(502);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -289,7 +343,7 @@ public class FailureResponseTests
         // Assert
         result.Should().BeOfType<JsonObject>();
         result["detail"]?.GetValue<string>().Should().Be("");
-        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+        result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
         result["title"]?.GetValue<string>().Should().Be("Internal Server Error");
         result["status"]?.GetValue<int>().Should().Be(500);
         result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
@@ -308,7 +362,7 @@ public class FailureResponseTests
 
         [Test]
         public void It_has_the_method_not_allowed_type() =>
-            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:method-not-allowed");
+            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:management-api:method-not-allowed");
 
         [Test]
         public void It_has_the_method_not_allowed_title() =>
@@ -346,7 +400,10 @@ public class FailureResponseTests
 
         [Test]
         public void It_has_the_unsupported_media_type_type() =>
-            _result["type"]?.GetValue<string>().Should().Be("urn:ed-fi:api:unsupported-media-type");
+            _result["type"]
+                ?.GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:unsupported-media-type");
 
         [Test]
         public void It_has_the_unsupported_media_type_title() =>
@@ -414,84 +471,232 @@ public class FailureResponseTests
     }
 
     [TestFixture]
-    public class Given_a_too_many_tokens_failure
+    public class Given_the_too_many_tokens_message_for_a_limit
     {
-        private const int Limit = 5;
+        private string _message = null!;
 
+        [SetUp]
+        public void Setup() => _message = FailureResponse.TooManyTokensMessage(1234);
+
+        [Test]
+        public void It_is_the_canonical_sentence_with_the_limit_formatted_invariantly() =>
+            _message
+                .Should()
+                .Be(
+                    "Too many access tokens have been requested (limit is 1234). Access tokens should be reused until they expire."
+                );
+    }
+
+    [TestFixture]
+    public class Given_a_too_many_requests_failure
+    {
         private JsonNode _result = null!;
 
         [SetUp]
-        public void Setup() => _result = FailureResponse.ForTooManyTokens(Limit, CorrelationId);
+        public void Setup() => _result = FailureResponse.ForTooManyRequests(CorrelationId);
 
         [Test]
-        public void It_is_a_json_object() => _result.Should().BeOfType<JsonObject>();
+        public void It_uses_the_too_many_requests_type() =>
+            _result["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:too-many-requests");
 
         [Test]
-        public void It_uses_the_too_many_tokens_type() =>
-            _result["type"]
-                ?.GetValue<string>()
+        public void It_has_the_too_many_requests_title() =>
+            _result["title"]!.GetValue<string>().Should().Be("Too Many Requests");
+
+        [Test]
+        public void It_has_status_429() => _result["status"]!.GetValue<int>().Should().Be(429);
+
+        [Test]
+        public void It_has_the_retry_detail() =>
+            _result["detail"]!
+                .GetValue<string>()
                 .Should()
-                .Be("urn:ed-fi:api:security:authentication:too-many-tokens");
-
-        [Test]
-        public void It_has_the_too_many_tokens_title() =>
-            _result["title"]?.GetValue<string>().Should().Be("Too Many Tokens");
-
-        [Test]
-        public void It_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
-
-        [Test]
-        public void It_has_a_detail() =>
-            _result["detail"]
-                ?.GetValue<string>()
-                .Should()
-                .Be("The caller has authenticated too many times in too short of a time period.");
+                .Be("The number of allowed requests has been exceeded. Retry the request later.");
 
         [Test]
         public void It_carries_the_correlation_id() =>
-            _result["correlationId"]?.GetValue<string>().Should().Be(CorrelationId);
+            _result["correlationId"]!.GetValue<string>().Should().Be(CorrelationId);
 
         [Test]
-        public void It_has_an_empty_validation_errors_object() =>
-            _result["validationErrors"]?.AsObject().Count.Should().Be(0);
-
-        // This exact sentence is also a parsing contract: the DMS /oauth/token proxy's 429
-        // handler (OAuthManager in src/dms) reads the limit back out of it. Reword it here and
-        // that parser must be reworded in the same change, or DMS silently degrades every
-        // token-limit rejection to a generic rate-limit 429.
-        [Test]
-        public void It_has_a_single_error_naming_the_limit()
+        public void It_has_empty_extension_members()
         {
-            _result["errors"]?.AsArray().Count.Should().Be(1);
-            _result["errors"]
-                ?[0]?.GetValue<string>()
-                .Should()
-                .Be(
-                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
-                );
+            _result["validationErrors"]!.AsObject().Count.Should().Be(0);
+            _result["errors"]!.AsArray().Count.Should().Be(0);
         }
     }
 
     [TestFixture]
-    public class Given_a_too_many_tokens_failure_with_a_different_limit
+    public class Given_each_failure_factory
     {
-        // A second limit, so the message is proven to vary with its input rather than matching a
-        // constant that a hardcoded 5 would also satisfy.
-        private JsonNode _result = null!;
+        // One case per public factory, pinning its exact type, status and title. Members are read
+        // with a null-forgiving indexer, so a missing member fails the test instead of skipping the
+        // assertion the way a null-conditional read would.
+        public sealed record FactoryCase(
+            string Name,
+            Func<JsonNode> Invoke,
+            string ExpectedType,
+            int ExpectedStatus,
+            string ExpectedTitle
+        );
 
-        [SetUp]
-        public void Setup() => _result = FailureResponse.ForTooManyTokens(12, CorrelationId);
+        private static readonly FactoryCase[] _factoryCases =
+        [
+            new(
+                nameof(FailureResponse.ForUnauthorized),
+                () => FailureResponse.ForUnauthorized("Unauthorized", "Access denied", CorrelationId),
+                "urn:ed-fi:management-api:security:authentication",
+                401,
+                "Unauthorized"
+            ),
+            new(
+                nameof(FailureResponse.ForTooManyRequests),
+                () => FailureResponse.ForTooManyRequests(CorrelationId),
+                "urn:ed-fi:management-api:too-many-requests",
+                429,
+                "Too Many Requests"
+            ),
+            new(
+                nameof(FailureResponse.ForForbidden),
+                () => FailureResponse.ForForbidden("Forbidden", "Access forbidden", CorrelationId),
+                "urn:ed-fi:management-api:security:authorization",
+                403,
+                "Forbidden"
+            ),
+            new(
+                nameof(FailureResponse.ForBadRequest),
+                () => FailureResponse.ForBadRequest("Bad request", CorrelationId),
+                "urn:ed-fi:management-api:bad-request",
+                400,
+                "Bad Request"
+            ),
+            new(
+                nameof(FailureResponse.ForNotFound),
+                () => FailureResponse.ForNotFound("Not found", CorrelationId),
+                "urn:ed-fi:management-api:not-found",
+                404,
+                "Not Found"
+            ),
+            new(
+                nameof(FailureResponse.ForMethodNotAllowed),
+                () => FailureResponse.ForMethodNotAllowed(CorrelationId),
+                "urn:ed-fi:management-api:method-not-allowed",
+                405,
+                "Method Not Allowed"
+            ),
+            new(
+                nameof(FailureResponse.ForUnsupportedMediaType),
+                () => FailureResponse.ForUnsupportedMediaType(CorrelationId),
+                "urn:ed-fi:management-api:unsupported-media-type",
+                415,
+                "Unsupported Media Type"
+            ),
+            new(
+                nameof(FailureResponse.ForUnclassifiedStatus),
+                () => FailureResponse.ForUnclassifiedStatus(413, "Payload Too Large", CorrelationId),
+                "about:blank",
+                413,
+                "Payload Too Large"
+            ),
+            new(
+                nameof(FailureResponse.ForConflict),
+                () => FailureResponse.ForConflict("Conflict", CorrelationId),
+                "urn:ed-fi:management-api:conflict",
+                409,
+                "Conflict"
+            ),
+            new(
+                nameof(FailureResponse.ForDependentItemExists),
+                () => FailureResponse.ForDependentItemExists("Dependent item exists", CorrelationId),
+                "urn:ed-fi:management-api:conflict:dependent-item-exists",
+                409,
+                "Dependent Item Exists"
+            ),
+            new(
+                nameof(FailureResponse.ForEducationOrganizationScopeConflict),
+                () =>
+                    FailureResponse.ForEducationOrganizationScopeConflict(
+                        "Education organization scope conflict",
+                        CorrelationId
+                    ),
+                "urn:ed-fi:management-api:conflict:education-organization-scope",
+                409,
+                "Education Organization Scope Conflict"
+            ),
+            new(
+                nameof(FailureResponse.ForUnresolvedReference),
+                () => FailureResponse.ForUnresolvedReference("Unresolved reference", CorrelationId),
+                "urn:ed-fi:management-api:conflict:unresolved-reference",
+                409,
+                "Unresolved Reference"
+            ),
+            new(
+                nameof(FailureResponse.ForDataValidation),
+                () => FailureResponse.ForDataValidation([new("Property1", "Error1")], CorrelationId),
+                "urn:ed-fi:management-api:bad-request:data",
+                400,
+                "Data Validation Failed"
+            ),
+            new(
+                nameof(FailureResponse.ForParameterValidation),
+                () =>
+                    FailureResponse.ForParameterValidation(
+                        ["'limit' must be greater than 0."],
+                        CorrelationId
+                    ),
+                "urn:ed-fi:management-api:bad-request:parameter",
+                400,
+                "Parameter Validation Failed"
+            ),
+            new(
+                nameof(FailureResponse.ForBadGateway),
+                () => FailureResponse.ForBadGateway("Bad gateway", CorrelationId),
+                "urn:ed-fi:management-api:bad-gateway",
+                502,
+                "Bad Gateway"
+            ),
+            new(
+                nameof(FailureResponse.ForPartialSync),
+                () => FailureResponse.ForPartialSync([7], CorrelationId),
+                "urn:ed-fi:management-api:bad-gateway:partial-sync",
+                502,
+                "Bad Gateway"
+            ),
+            new(
+                nameof(FailureResponse.ForUnknown),
+                () => FailureResponse.ForUnknown(CorrelationId),
+                "urn:ed-fi:management-api:internal-server-error",
+                500,
+                "Internal Server Error"
+            ),
+        ];
 
+        private static IEnumerable<TestCaseData> FactoryCases() =>
+            _factoryCases.Select(factoryCase =>
+                new TestCaseData(factoryCase).SetArgDisplayNames(factoryCase.Name)
+            );
+
+        [TestCaseSource(nameof(FactoryCases))]
+        public void It_has_the_exact_type(FactoryCase factoryCase) =>
+            factoryCase.Invoke()["type"]!.GetValue<string>().Should().Be(factoryCase.ExpectedType);
+
+        [TestCaseSource(nameof(FactoryCases))]
+        public void It_has_the_expected_status(FactoryCase factoryCase) =>
+            factoryCase.Invoke()["status"]!.GetValue<int>().Should().Be(factoryCase.ExpectedStatus);
+
+        [TestCaseSource(nameof(FactoryCases))]
+        public void It_has_the_expected_title(FactoryCase factoryCase) =>
+            factoryCase.Invoke()["title"]!.GetValue<string>().Should().Be(factoryCase.ExpectedTitle);
+
+        // A factory-inventory guard: a newly added public factory fails here until it has a case
+        // above. It proves every public factory is classified, not that every Configuration Service
+        // emitter routes through the factories.
         [Test]
-        public void It_names_the_supplied_limit() =>
-            _result["errors"]
-                ?[0]?.GetValue<string>()
+        public void It_classifies_every_public_factory() =>
+            typeof(FailureResponse)
+                .GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(method => typeof(JsonNode).IsAssignableFrom(method.ReturnType))
+                .Select(method => method.Name)
                 .Should()
-                .Be(
-                    "Too many access tokens have been requested (limit is 12). Access tokens should be reused until they expire."
-                );
-
-        [Test]
-        public void It_still_has_status_429() => _result["status"]?.GetValue<int>().Should().Be(429);
+                .BeEquivalentTo(_factoryCases.Select(factoryCase => factoryCase.Name));
     }
 }

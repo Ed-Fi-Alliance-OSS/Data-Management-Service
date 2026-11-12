@@ -29,6 +29,12 @@ public sealed class Given_Postgresql_CursorPagingOperationScope : PostgresqlApiI
         CursorPagingOperationScopeScenario.It_rejects_a_page_size_on_a_key_changes_request(Harness);
 
     [Test]
+    public Task It_carries_the_warning_to_a_key_changes_request_refused_by_authorization() =>
+        CursorPagingOperationScopeScenario.It_carries_the_warning_to_a_key_changes_request_refused_by_authorization(
+            Harness
+        );
+
+    [Test]
     public Task It_carries_an_accepted_cursor_request_to_the_read_path() =>
         CursorPagingOperationScopeScenario.It_carries_an_accepted_cursor_request_to_the_read_path(Harness);
 }

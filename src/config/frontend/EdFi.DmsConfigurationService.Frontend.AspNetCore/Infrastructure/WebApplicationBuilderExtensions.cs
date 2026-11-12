@@ -81,6 +81,14 @@ public static class WebApplicationBuilderExtensions
                 webApplicationBuilder.Configuration.GetSection("AppSettings:ReverseProxy")
             )
             .AddSingleton<IValidateOptions<ReverseProxySettings>, ReverseProxySettingsValidator>()
+            .Configure<ConnectRateLimitSettings>(
+                webApplicationBuilder.Configuration.GetSection(ConnectRateLimitSettings.SectionName)
+            )
+            .AddSingleton<IValidateOptions<ConnectRateLimitSettings>, ConnectRateLimitSettingsValidator>()
+            .AddSingleton<
+                IValidateOptions<ConnectRateLimitSettings>,
+                ConnectRateLimitProxySettingsValidator
+            >()
             .Configure<DatabaseOptions>(webApplicationBuilder.Configuration.GetSection("DatabaseSettings"))
             .AddSingleton<IValidateOptions<DatabaseOptions>, DatabaseOptionsValidator>()
             .Configure<ClientSecretValidationOptions>(
@@ -106,6 +114,8 @@ public static class WebApplicationBuilderExtensions
         // The cache is a singleton taking the tenant as an argument, so it holds no scoped
         // dependency; the read seam that consults it is transient like the repositories calling it.
         webApplicationBuilder.Services.AddSingleton<SecretValueCache>();
+        // Holds the /connect/* budgets for the life of the process; disposed by the container (DMS-1482).
+        webApplicationBuilder.Services.AddSingleton<ConnectRateLimiter>();
         webApplicationBuilder.Services.AddTransient<IConnectionStringReader, ConnectionStringReader>();
         ConfigureJobOptions(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         webApplicationBuilder.Services.AddDmsEducationOrganizationProjectionReader(
@@ -116,7 +126,7 @@ public static class WebApplicationBuilderExtensions
 
         var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
         var appSettings = settingsSection.Get<AppSettings>();
-        if (appSettings == null)
+        if (appSettings is null)
         {
             logger.Error("Error reading appSettings");
             throw new InvalidOperationException("Unable to read appSettings");
@@ -131,6 +141,26 @@ public static class WebApplicationBuilderExtensions
                 client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
             }
         );
+
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenRevocationManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
+
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenIntrospectionManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
         webApplicationBuilder.Services.AddTransient<
@@ -352,7 +382,7 @@ public static class WebApplicationBuilderExtensions
     {
         IConfiguration config = webApplicationBuilder.Configuration;
         var identitySettings = config.GetSection("IdentitySettings").Get<IdentitySettings>();
-        if (identitySettings == null)
+        if (identitySettings is null)
         {
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
@@ -398,6 +428,7 @@ public static class WebApplicationBuilderExtensions
 
                         options.Events = new JwtBearerEvents
                         {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
                             OnAuthenticationFailed = context =>
                             {
                                 logger.Error("Authentication failed: {Message}", context.Exception.Message);
@@ -415,7 +446,25 @@ public static class WebApplicationBuilderExtensions
                 .Services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
                 .Configure<SigningKeyConfigurationManager, SigningKeyBearerEvents>(
                     (options, configurationManager, bearerEvents) =>
-                        options.UseSigningKeySnapshot(configurationManager, bearerEvents)
+                    {
+                        options.UseSigningKeySnapshot(configurationManager, bearerEvents);
+
+                        // UseSigningKeySnapshot replaces the scheme's message-received handler, so the
+                        // exemption of the marked routes (/connect/revoke, /connect/introspect) is composed
+                        // back in front of it: on those routes the handler stops before the snapshot
+                        // boundary reads or validates the token (DMS-1327).
+                        Func<MessageReceivedContext, Task> snapshotMessageReceived = options
+                            .Events
+                            .OnMessageReceived;
+                        options.Events.OnMessageReceived = async context =>
+                        {
+                            await BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint(context);
+                            if (context.Result is null)
+                            {
+                                await snapshotMessageReceived(context);
+                            }
+                        };
+                    }
                 );
 
             // Add authorization services for OpenIddict (same as Keycloak)
@@ -484,6 +533,7 @@ public static class WebApplicationBuilderExtensions
 
                         options.Events = new JwtBearerEvents
                         {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
                             OnAuthenticationFailed = context =>
                             {
                                 Console.WriteLine($"Authentication failed: {context.Exception.Message}");

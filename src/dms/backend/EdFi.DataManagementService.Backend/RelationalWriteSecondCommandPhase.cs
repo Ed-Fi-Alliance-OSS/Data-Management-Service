@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.ExceptionServices;
 using EdFi.DataManagementService.Backend.Composite;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Plans;
@@ -429,15 +431,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             customViewPlan.PlannedChecks,
             runValues
         );
-        var emittedChecks = TryAppendCustomView(builder, request, runtimeCheck, label);
+        var emittedValues = TryAppendCustomView(builder, request, runtimeCheck, label);
 
         var run = await RunAsync(
                 request,
                 builder,
                 namespacePlan: null,
-                customViewRuns: emittedChecks is null
+                customViewRuns: emittedValues is null
                     ? null
-                    : new EmittedCustomViewRuns(customViewPlan.PlannedChecks, emittedChecks),
+                    : new EmittedCustomViewRuns(customViewPlan.PlannedChecks, emittedValues),
                 runtimeCheck: null,
                 writeSession: writeSession,
                 cancellationToken: cancellationToken
@@ -752,15 +754,19 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     /// The request's full planned custom-view list. Mapping resolves a <c>cv1</c> payload against this, since
     /// the payload carries only an index and several runs can share one command.
     /// </param>
-    /// <param name="EmittedChecks">
-    /// Exactly the checks whose statements this command carries. Validation probes these views and no others,
-    /// so a failure is never attributed to a view the command never touched.
+    /// <param name="EmittedValues">
+    /// Exactly the checks whose statements this command carries, with the runtime basis values they were
+    /// emitted with. Validation probes these views and no others, so a failure is never attributed to a view
+    /// the command never touched; a denial is classified against the values its own run carried.
     /// </param>
     private sealed record EmittedCustomViewRuns(
         IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> PlannedChecks,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> EmittedChecks
+        IReadOnlyList<ProposedCustomViewRuntimeValue> EmittedValues
     )
     {
+        public IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> EmittedChecks =>
+            [.. EmittedValues.Select(static value => value.Check)];
+
         /// <summary>
         /// The emitted checks up to and including the one a <c>cv1</c> payload named. The command aborts at
         /// its first <c>AUTH1</c>, so nothing emitted after that check ran: probing a later view would report
@@ -770,11 +776,11 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         /// </summary>
         public EmittedCustomViewRuns ThroughDeniedCheck(int deniedCheckIndex)
         {
-            for (var position = 0; position < EmittedChecks.Count; position++)
+            for (var position = 0; position < EmittedValues.Count; position++)
             {
-                if (EmittedChecks[position].Index == deniedCheckIndex)
+                if (EmittedValues[position].Check.Index == deniedCheckIndex)
                 {
-                    return this with { EmittedChecks = [.. EmittedChecks.Take(position + 1)] };
+                    return this with { EmittedValues = [.. EmittedValues.Take(position + 1)] };
                 }
             }
 
@@ -792,8 +798,12 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             {
                 // The same splitter the runs were partitioned with, so "before the namespace position" —
                 // including its tie rule — has one definition.
-                EmittedChecks = CustomViewAuthorizationCheckSplitter
-                    .PartitionByConfiguredIndex(EmittedChecks, namespaceConfiguredIndex)
+                EmittedValues = CustomViewAuthorizationCheckSplitter
+                    .PartitionByConfiguredIndex(
+                        EmittedValues,
+                        static value => value.Check,
+                        namespaceConfiguredIndex
+                    )
                     .Before,
             };
     }
@@ -989,11 +999,11 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         public void RecordEmittedCustomViewRun(
             IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> plannedChecks,
-            IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> emittedChecks
+            IReadOnlyList<ProposedCustomViewRuntimeValue> emittedValues
         ) =>
             EmittedCustomViewRuns = new EmittedCustomViewRuns(
                 plannedChecks,
-                [.. EmittedCustomViewRuns?.EmittedChecks ?? [], .. emittedChecks]
+                [.. EmittedCustomViewRuns?.EmittedValues ?? [], .. emittedValues]
             );
     }
 
@@ -1677,7 +1687,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         var extraction = ProposedCustomViewValueExtractor.Extract(
             proposedChecks,
-            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+            request.WritePlan,
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            mergeResult.DeferredMissingDocumentReferencePaths
         );
 
         if (extraction is ProposedCustomViewExtractionResult.InvalidAuthorizationPlan invalid)
@@ -1824,7 +1836,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
     {
         if (
             _customViewValidationCommandExecutor is null
-            || customViewRuns.EmittedChecks.Count == 0
+            || customViewRuns.EmittedValues.Count == 0
             || !CustomViewAuthorizationProviderFailureMapper.IsUnrecognizedProviderFailure(
                 request.MappingSet.Key.Dialect,
                 exception,
@@ -1872,10 +1884,10 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         );
 
     /// <summary>
-    /// Appends one proposed custom-view run, answering with the checks it emitted or <see langword="null"/>
-    /// when it emitted none.
+    /// Appends one proposed custom-view run, answering with the runtime values it emitted or
+    /// <see langword="null"/> when it emitted none.
     /// </summary>
-    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? TryAppendCustomViewRun(
+    private static IReadOnlyList<ProposedCustomViewRuntimeValue>? TryAppendCustomViewRun(
         RelationalCompositeCommandBuilder builder,
         RelationalWriteExecutorRequest request,
         CustomViewStatementPlan? customViewPlan,
@@ -1896,7 +1908,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
         );
     }
 
-    private static IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? TryAppendCustomView(
+    private static IReadOnlyList<ProposedCustomViewRuntimeValue>? TryAppendCustomView(
         RelationalCompositeCommandBuilder builder,
         RelationalWriteExecutorRequest request,
         ProposedCustomViewAuthorizationRuntimeCheck runtimeCheck,
@@ -1913,7 +1925,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         AppendCustomViewStatement(builder, statement, label);
 
-        return runtimeCheck.Checks;
+        return runtimeCheck.Values;
     }
 
     private static void AppendCustomViewStatement(
@@ -1942,8 +1954,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
     private static EmittedCustomViewRuns? ComposeEmittedCustomViewRuns(
         CustomViewStatementPlan? customViewPlan,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? before,
-        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec>? after
+        IReadOnlyList<ProposedCustomViewRuntimeValue>? before,
+        IReadOnlyList<ProposedCustomViewRuntimeValue>? after
     )
     {
         if (customViewPlan is null || (before is null && after is null))
@@ -1991,7 +2003,7 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 (context, _, _) =>
                 {
                     AppendCustomViewStatement(context.Builder, statement, label);
-                    context.RecordEmittedCustomViewRun(customViewPlan.PlannedChecks, runtimeCheck.Checks);
+                    context.RecordEmittedCustomViewRun(customViewPlan.PlannedChecks, runtimeCheck.Values);
                 }
             )
         );
@@ -2013,8 +2025,11 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             : null;
 
     /// <summary>
-    /// Extracts the proposed namespace value from the finalized merged root row — never the raw request
-    /// body — so the <c>LIKE</c> semantics and the AUTH1 failure mapping stay identical to the read path.
+    /// Extracts the proposed namespace value from the finalized merged root row so the <c>LIKE</c>
+    /// semantics and the AUTH1 failure mapping stay identical to the read path. The one exception is a
+    /// namespace derived from a reference whose missing-document failure was deferred: the finalized row
+    /// has no value for an unresolved reference, so the value the request body carries is authorized
+    /// instead, mirroring ODS and the namespace authorization strategy design.
     /// Returns the security-configuration failure when the plan cannot be reconciled with that row.
     /// </summary>
     private static RelationalWriteExecutorResult? TryPlanNamespace(
@@ -2032,7 +2047,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
 
         var extraction = ProposedNamespaceValueExtractor.Extract(
             namespaceAuthorization.Checks,
-            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            request.SelectedBody,
+            mergeResult.DeferredMissingDocumentReferencePaths
         );
 
         if (extraction is ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan invalid)
@@ -2170,11 +2187,14 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             case RelationshipAuthorizationResult.Authorized authorized:
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                     authorized,
+                    request.WritePlan,
                     RelationalWriteFinalizedRootRow.Build(request, mergeResult),
                     RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
                         request.OperationKind
                     ),
-                    request.TargetContext
+                    request.TargetContext,
+                    mergeResult.DeferredMissingDocumentReferencePaths,
+                    request.SelectedBody
                 );
 
                 return extractionResult switch
@@ -2258,9 +2278,15 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     )
                     .ConfigureAwait(false);
 
+                // Only a validated denial is classified, against the runtime values this command emitted:
+                // a null document basis that is null only because its submitted reference could not be
+                // resolved answers like a resolved basis outside the view.
                 return RelationalWriteExecutorResults.BuildCustomViewAuthorizationFailureResult(
                     request.OperationKind,
-                    customViewFailure!
+                    ProposedAuthorizationFailureClassification.CorrectCustomViewFailure(
+                        customViewFailure!,
+                        customViewRuns.EmittedValues
+                    )
                 );
             }
 
@@ -2386,7 +2412,9 @@ internal sealed class CompositeRelationalWriteSecondCommand(
             );
         }
 
-        throw exception;
+        // Rethrow through dispatch info so the provider frames of the original failure survive.
+        ExceptionDispatchInfo.Capture(exception).Throw();
+        throw new UnreachableException();
     }
 
     /// <summary>

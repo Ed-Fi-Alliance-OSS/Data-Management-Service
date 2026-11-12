@@ -47,6 +47,10 @@ public static class RelationalModelSetPasses
             .. collectionSemanticIdentityValidationPasses,
             new ArrayUniquenessConstraintPass(),
             new StableCollectionConstraintPass(),
+            // Identity-text role derivation reads root identity, reference identity bindings and
+            // collection semantic identity, so it runs after every identity-producing pass and before
+            // tracked-change derivation and dialect shortening, which carry the flag forward.
+            new ApplySqlServerIdentityCollationPass(),
             new DescriptorForeignKeyConstraintPass(),
             // SQL Server FK pruning assigns final reference-FK ON UPDATE actions and must run
             // after all FK-producing passes and before constraint hashing, because the
@@ -54,7 +58,7 @@ public static class RelationalModelSetPasses
             new MssqlForeignKeyPruningPass(),
             new ApplyConstraintDialectHashingPass(),
             new ValidateForeignKeyStorageInvariantPass(),
-            // Synthesize the change-version mirror columns on resource roots before index/trigger
+            // Synthesize the version mirror and authoritative timestamp on resource roots before index/trigger
             // inventory derivation, so root content-version indexes and the descriptor composite index
             // are produced and the columns participate in dialect shortening and canonical ordering.
             new DeriveContentVersionMirrorPass(),

@@ -19,13 +19,20 @@ on:
 
 env:
   API_URL: https://api.github.com/repos/${{ github.repository }}
-  TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
 
 permissions: read-all
 
 jobs:
   create-pre-releases:
     name: Create Pre-Releases
+    # Only in Ed-Fi-Alliance-OSS: cutting the pre-release needs EDFI_BUILD_AGENT_PAT, which a
+    # fork does not have. This workflow has only a push trigger, so it never runs on a fork.
+    if: github.repository_owner == 'Ed-Fi-Alliance-OSS'
+    # EDFI_BUILD_AGENT_PAT creates the prerelease and its tag, and the tag ruleset lets this identity
+    # past its tag restrictions, so the token lives only in the 'release-automation' environment,
+    # which releases it only to runs on main and v* tags. No reviewer is required: every merge to
+    # main cuts its prerelease unattended.
+    environment: release-automation
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -40,6 +47,16 @@ jobs:
           # there will be between different major.minor releases.
           fetch-depth: 0
 
+      # A v tag push cuts a prerelease that later publishing runs read the version from, so the tag
+      # must be a v version before anything is versioned or released for it.
+      - name: Validate the release tag
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Set Version Numbers
         id: versions
         run: |
@@ -47,13 +64,15 @@ jobs:
           Get-VersionNumber -projectPrefix "cs"
 
       - name: Create CS API Pre-Release
+        env:
+          TOKEN: ${{ secrets.EDFI_BUILD_AGENT_PAT }}
         run: |
           $version = "${{ steps.versions.outputs.dms-semver }}"
           $tag = $version -replace "cs-v","cs-pre-"
 
           $body = @{
             tag_name = "$tag"
-            target_commitish = "main"
+            target_commitish = "${{ github.sha }}"
             name = $version
             body = ""
             draft = $false
@@ -63,7 +82,7 @@ jobs:
 
           $headers = @{
             Accept = "application/vnd.github+json"
-            Authorization = "Bearer ${{ env.TOKEN }}"
+            Authorization = "Bearer $env:TOKEN"
           }
 
           Invoke-RestMethod -Method POST -Uri ${{ env.API_URL }}/releases -Body $body -Headers $headers

@@ -60,6 +60,7 @@ public abstract class DatabaseTestBase
                     new("dmscs", "ownershiptoken"),
                     new("dmscs", "apiclient"),
                     new("dmscs", "apiclientdatastore"),
+                    new("dmscs", "apiclienteducationorganization"),
                     new("dmscs", "claimset"),
                     new("dmscs", "claimshierarchy"),
                     new("dmscs", "datastore"),

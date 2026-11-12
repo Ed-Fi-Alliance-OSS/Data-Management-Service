@@ -76,7 +76,11 @@ public class Given_a_proposed_custom_view_value_extractor
     {
         var rootRow = CreateRootRow(new FlattenedWriteValue.Literal(9182L));
 
-        var result = ProposedCustomViewValueExtractor.Extract([ProposedCheck()], rootRow);
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [ProposedCheck()],
+            CreateWritePlan(rootRow.TableWritePlan),
+            rootRow
+        );
 
         var work = result.Should().BeOfType<ProposedCustomViewExtractionResult.Ready>().Which.Work;
         work.SelfBasisChecks.Should().BeEmpty();
@@ -92,7 +96,11 @@ public class Given_a_proposed_custom_view_value_extractor
         // SQL, so extraction reports the null rather than treating it as a planning defect.
         var rootRow = CreateRootRow(new FlattenedWriteValue.Literal(null));
 
-        var result = ProposedCustomViewValueExtractor.Extract([ProposedCheck()], rootRow);
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [ProposedCheck()],
+            CreateWritePlan(rootRow.TableWritePlan),
+            rootRow
+        );
 
         result
             .Should()
@@ -107,7 +115,11 @@ public class Given_a_proposed_custom_view_value_extractor
     {
         var rootRow = CreateRootRow(new FlattenedWriteValue.Literal(DBNull.Value));
 
-        var result = ProposedCustomViewValueExtractor.Extract([ProposedCheck()], rootRow);
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [ProposedCheck()],
+            CreateWritePlan(rootRow.TableWritePlan),
+            rootRow
+        );
 
         result
             .Should()
@@ -126,6 +138,7 @@ public class Given_a_proposed_custom_view_value_extractor
 
         var result = ProposedCustomViewValueExtractor.Extract(
             [ProposedCheck(index: 2), ProposedCheck(index: 3)],
+            CreateWritePlan(rootRow.TableWritePlan),
             rootRow
         );
 
@@ -144,6 +157,7 @@ public class Given_a_proposed_custom_view_value_extractor
 
         var result = ProposedCustomViewValueExtractor.Extract(
             [ProposedCheck(index: 2), SelfBasisCheck(index: 3)],
+            CreateWritePlan(rootRow.TableWritePlan),
             rootRow
         );
 
@@ -160,6 +174,7 @@ public class Given_a_proposed_custom_view_value_extractor
 
         var result = ProposedCustomViewValueExtractor.Extract(
             [ProposedCheck(column: new DbColumnName("NotAColumn"))],
+            CreateWritePlan(rootRow.TableWritePlan),
             rootRow
         );
 
@@ -177,6 +192,7 @@ public class Given_a_proposed_custom_view_value_extractor
 
         var result = ProposedCustomViewValueExtractor.Extract(
             [ProposedCheck(rootTable: _otherTable)],
+            CreateWritePlan(rootRow.TableWritePlan),
             rootRow
         );
 
@@ -193,6 +209,7 @@ public class Given_a_proposed_custom_view_value_extractor
 
         var result = ProposedCustomViewValueExtractor.Extract(
             [ProposedCheck(bindingTable: _otherTable)],
+            CreateWritePlan(rootRow.TableWritePlan),
             rootRow
         );
 
@@ -210,6 +227,7 @@ public class Given_a_proposed_custom_view_value_extractor
 
         var result = ProposedCustomViewValueExtractor.Extract(
             [SelfBasisCheck(rootTable: _otherTable)],
+            CreateWritePlan(rootRow.TableWritePlan),
             rootRow
         );
 
@@ -226,7 +244,11 @@ public class Given_a_proposed_custom_view_value_extractor
             new CustomViewAuthorizationCheckTarget.Stored(_rootTable, new DbColumnName("DocumentId"))
         );
 
-        var result = ProposedCustomViewValueExtractor.Extract([storedCheck], rootRow);
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [storedCheck],
+            CreateWritePlan(rootRow.TableWritePlan),
+            rootRow
+        );
 
         result.Should().BeOfType<ProposedCustomViewExtractionResult.InvalidAuthorizationPlan>();
     }
@@ -243,7 +265,11 @@ public class Given_a_proposed_custom_view_value_extractor
             new CustomViewAuthorizationCheckTarget.Stored(_rootTable, new DbColumnName("DocumentId"))
         );
 
-        var result = ProposedCustomViewValueExtractor.Extract([mismatched], rootRow);
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [mismatched],
+            CreateWritePlan(rootRow.TableWritePlan),
+            rootRow
+        );
 
         result.Should().BeOfType<ProposedCustomViewExtractionResult.InvalidAuthorizationPlan>();
     }
@@ -253,10 +279,224 @@ public class Given_a_proposed_custom_view_value_extractor
     {
         var rootRow = CreateRootRow(new FlattenedWriteValue.Literal(9182L));
 
-        var result = ProposedCustomViewValueExtractor.Extract([], rootRow);
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [],
+            CreateWritePlan(rootRow.TableWritePlan),
+            rootRow
+        );
 
         result.Should().BeOfType<ProposedCustomViewExtractionResult.InvalidAuthorizationPlan>();
     }
+
+    [Test]
+    public void It_marks_only_a_null_document_basis_whose_submitted_reference_was_deferred()
+    {
+        var writePlan = CreateReferenceBasisWritePlan();
+        var nullRow = CreateReferenceBasisRootRow(writePlan, studentDocumentId: null, descriptorId: null);
+        var resolvedRow = CreateReferenceBasisRootRow(writePlan, studentDocumentId: 9182L, descriptorId: 7);
+        SingleRecordCustomViewAuthorizationCheckSpec[] checks = [ProposedCheck(3), DescriptorCheck(5)];
+
+        var unresolved = ExtractValues(checks, writePlan, nullRow, "$.studentReference");
+        var omitted = ExtractValues(checks, writePlan, nullRow);
+        var resolved = ExtractValues(checks, writePlan, resolvedRow, "$.studentReference");
+        var unrelated = ExtractValues(checks, writePlan, nullRow, "$.items[0].studentReference");
+
+        unresolved
+            .Select(static value =>
+                (value.Check.Index, value.BasisValue, value.IsNullBecauseDeferredMissingReference)
+            )
+            .Should()
+            .Equal((3, (object?)null, true), (5, (object?)null, false));
+        omitted.Should().OnlyContain(static value => !value.IsNullBecauseDeferredMissingReference);
+        resolved.Should().OnlyContain(static value => !value.IsNullBecauseDeferredMissingReference);
+        resolved.Select(static value => value.BasisValue).Should().Equal(9182L, 7);
+        unrelated.Should().OnlyContain(static value => !value.IsNullBecauseDeferredMissingReference);
+    }
+
+    [Test]
+    public void It_rejects_invalid_basis_reference_association_metadata()
+    {
+        var writePlan = CreateReferenceBasisWritePlan(studentReferenceBindingIndex: 4);
+
+        var result = ProposedCustomViewValueExtractor.Extract(
+            [ProposedCheck(3)],
+            writePlan,
+            CreateReferenceBasisRootRow(writePlan, studentDocumentId: null, descriptorId: null),
+            new HashSet<string>(["$.studentReference"], StringComparer.Ordinal)
+        );
+
+        result
+            .Should()
+            .BeOfType<ProposedCustomViewExtractionResult.InvalidAuthorizationPlan>()
+            .Which.FailureMessage.Should()
+            .Contain("document-reference binding index 4");
+    }
+
+    private static IReadOnlyList<ProposedCustomViewRuntimeValue> ExtractValues(
+        IReadOnlyList<SingleRecordCustomViewAuthorizationCheckSpec> checks,
+        ResourceWritePlan writePlan,
+        RootWriteRowBuffer rootRow,
+        params string[] deferredPaths
+    ) =>
+        ProposedCustomViewValueExtractor
+            .Extract(checks, writePlan, rootRow, new HashSet<string>(deferredPaths, StringComparer.Ordinal))
+            .Should()
+            .BeOfType<ProposedCustomViewExtractionResult.Ready>()
+            .Subject.Work.SqlValues;
+
+    private static readonly DbColumnName _descriptorColumn = new("GradeLevelDescriptorId");
+
+    private static SingleRecordCustomViewAuthorizationCheckSpec DescriptorCheck(int index) =>
+        CheckWithTarget(
+            index,
+            CustomViewAuthorizationCheckValueSource.Proposed,
+            new CustomViewAuthorizationCheckTarget.Proposed(
+                _rootTable,
+                new CustomViewAuthorizationProposedValueBinding(
+                    _rootTable,
+                    _descriptorColumn,
+                    "GradeLevelDescriptorId",
+                    "cvDescriptorBasis",
+                    ScalarKind.Int32
+                )
+            )
+        );
+
+    /// <summary>
+    /// A root table whose document basis is a resolved <c>studentReference</c> FK and whose descriptor basis
+    /// is a compact descriptor key, as the relational model binds them.
+    /// </summary>
+    private static ResourceWritePlan CreateReferenceBasisWritePlan(int studentReferenceBindingIndex = 0)
+    {
+        var studentReferencePath = new JsonPathExpression(
+            "$.studentReference",
+            [new JsonPathSegment.Property("studentReference")]
+        );
+        DbColumnModel[] columns =
+        [
+            new(
+                new DbColumnName("DocumentId"),
+                ColumnKind.ParentKeyPart,
+                null,
+                false,
+                null,
+                null,
+                new ColumnStorage.Stored()
+            ),
+            new(
+                _basisColumn,
+                ColumnKind.DocumentFk,
+                new RelationalScalarType(ScalarKind.Int64),
+                true,
+                null,
+                null,
+                new ColumnStorage.Stored()
+            ),
+            new(
+                _descriptorColumn,
+                ColumnKind.DescriptorFk,
+                new RelationalScalarType(ScalarKind.Int32),
+                true,
+                new JsonPathExpression("$.gradeLevelDescriptor", []),
+                null,
+                new ColumnStorage.Stored()
+            ),
+        ];
+        var tableModel = new DbTableModel(
+            _rootTable,
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_CourseTranscript",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            columns,
+            []
+        )
+        {
+            IdentityMetadata = new DbTableIdentityMetadata(
+                DbTableKind.Root,
+                [new DbColumnName("DocumentId")],
+                [new DbColumnName("DocumentId")],
+                [],
+                []
+            ),
+        };
+        var tablePlan = new TableWritePlan(
+            tableModel,
+            InsertSql: "insert into edfi.\"CourseTranscript\" values (...)",
+            UpdateSql: "update edfi.\"CourseTranscript\" set ...",
+            DeleteByParentSql: null,
+            BulkInsertBatching: new BulkInsertBatchingInfo(100, 3, 1000),
+            ColumnBindings:
+            [
+                new WriteColumnBinding(columns[0], new WriteValueSource.DocumentId(), "DocumentId"),
+                new WriteColumnBinding(
+                    columns[1],
+                    new WriteValueSource.DocumentReference(studentReferenceBindingIndex),
+                    "StudentDocumentId"
+                ),
+                new WriteColumnBinding(
+                    columns[2],
+                    new WriteValueSource.DescriptorReference(
+                        new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor"),
+                        new JsonPathExpression("$.gradeLevelDescriptor", [])
+                    ),
+                    "GradeLevelDescriptorId"
+                ),
+            ],
+            KeyUnificationPlans: []
+        );
+
+        return new ResourceWritePlan(
+            new RelationalResourceModel(
+                new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+                new DbSchemaName("edfi"),
+                ResourceStorageKind.RelationalTables,
+                tableModel,
+                [tableModel],
+                [
+                    new DocumentReferenceBinding(
+                        IsIdentityComponent: false,
+                        studentReferencePath,
+                        _rootTable,
+                        _basisColumn,
+                        new QualifiedResourceName("Ed-Fi", "Student"),
+                        []
+                    ),
+                ],
+                []
+            ),
+            [tablePlan]
+        );
+    }
+
+    private static RootWriteRowBuffer CreateReferenceBasisRootRow(
+        ResourceWritePlan writePlan,
+        long? studentDocumentId,
+        int? descriptorId
+    ) =>
+        new(
+            writePlan.TablePlansInDependencyOrder[0],
+            [
+                FlattenedWriteValue.UnresolvedRootDocumentId.Instance,
+                new FlattenedWriteValue.Literal(studentDocumentId),
+                new FlattenedWriteValue.Literal(descriptorId),
+            ]
+        );
+
+    private static ResourceWritePlan CreateWritePlan(TableWritePlan rootPlan) =>
+        new(
+            new RelationalResourceModel(
+                new QualifiedResourceName("Ed-Fi", "CourseTranscript"),
+                new DbSchemaName("edfi"),
+                ResourceStorageKind.RelationalTables,
+                rootPlan.TableModel,
+                [rootPlan.TableModel],
+                [],
+                []
+            ),
+            [rootPlan]
+        );
 
     private static RootWriteRowBuffer CreateRootRow(FlattenedWriteValue basisValue)
     {

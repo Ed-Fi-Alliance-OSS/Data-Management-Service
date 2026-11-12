@@ -31,7 +31,7 @@ public class HealthCheckEndpointModule(
             if (!string.IsNullOrWhiteSpace(statusOptions.RequiredRole))
             {
                 logger.LogWarning(
-                    "DocumentCache status endpoint was not mapped because DataManagement:DocumentCache:Status:RequiredRole is invalid. Configure a single role token such as dms-document-cache-operator."
+                    "DocumentCache status endpoint was not mapped because DataManagement:DocumentCache:Status:RequiredRole is invalid. Configure a single role token such as dms-client."
                 );
             }
 
@@ -67,6 +67,10 @@ public class HealthCheckEndpointModule(
         await httpContext.Response.WriteAsSerializedJsonAsync(healthResponse);
     }
 
+    /// <summary>
+    /// The status answers an authenticated operator, so every response, success included, is kept
+    /// out of every cache. Set before authorization so the 401 and 403 carry the same single value.
+    /// </summary>
     internal static async Task GetDocumentCacheStatus(
         HttpContext httpContext,
         IDocumentCacheStatusAuthorizationService authorizationService,
@@ -74,6 +78,8 @@ public class HealthCheckEndpointModule(
         IOptions<AppSettings> appSettings
     )
     {
+        httpContext.Response.Headers.CacheControl = "no-store";
+
         DocumentCacheStatusAuthorizationResult authorizationResult =
             await authorizationService.AuthorizeAsync(
                 GetAuthorizationHeader(httpContext),

@@ -174,7 +174,11 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
     }
 
     /// <inheritdoc />
-    public void AppendDocumentMetadataSelect(SqlWriter writer, KeysetTableContract keyset)
+    public void AppendDocumentMetadataSelect(
+        SqlWriter writer,
+        KeysetTableContract keyset,
+        DbTableName rootTable
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(keyset);
@@ -183,12 +187,17 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
             writer,
             keyset,
             DocumentTable,
+            rootTable,
             HydrationSqlConventions.SelectedPageOrdinalColumnName
         );
     }
 
     /// <inheritdoc />
-    public void AppendSingleDocumentMetadataSelect(SqlWriter writer, string documentIdParameterName)
+    public void AppendSingleDocumentMetadataSelect(
+        SqlWriter writer,
+        string documentIdParameterName,
+        DbTableName rootTable
+    )
     {
         ArgumentNullException.ThrowIfNull(writer);
         ArgumentNullException.ThrowIfNull(documentIdParameterName);
@@ -196,7 +205,8 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
         DocumentMetadataColumns.AppendSingleDocumentMetadataSelectBody(
             writer,
             DocumentTable,
-            documentIdParameterName
+            documentIdParameterName,
+            rootTable
         );
     }
 
@@ -206,8 +216,7 @@ internal sealed class PgsqlPlanDialect : IPlanSqlDialect
         string tableAlias,
         DbColumnName column,
         string operatorToken,
-        string parameterName,
-        ScalarKind? scalarKind
+        string parameterName
     )
     {
         ArgumentNullException.ThrowIfNull(writer);

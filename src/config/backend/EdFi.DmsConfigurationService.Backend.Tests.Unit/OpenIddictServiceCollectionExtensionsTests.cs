@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
@@ -10,7 +12,9 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict;
+using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.SigningKeys;
+using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -25,14 +29,13 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit;
 
 /// <summary>
 /// Covers what <see cref="OpenIddictServiceCollectionExtensions.AddOpenIddictIdentityOptions"/>
-/// actually reads out of configuration. Nothing else does: the token-manager tests construct
+/// actually reads out of configuration. The token-manager tests construct
 /// <see cref="IdentityOptions"/> directly and the HTTP tests replace <c>ITokenManager</c>
-/// wholesale, so a key spelled wrong here would bind nothing and fail no test.
+/// wholesale, so a key spelled wrong here would bind nothing and fail none of them.
 ///
-/// That is not hypothetical. The same method reads
-/// <c>IdentitySettings:TokenExpirationMinutes</c> while both appsettings files spell the key
-/// <c>OpenIddictTokenExpirationTimeMinutes</c>, so that setting never binds and its hardcoded
-/// default always wins - masked only because the two values happen to agree.
+/// The Configuration Service frontend unit tests also run this method against the shipped
+/// appsettings.json, and fail when a shipped <c>IdentitySettings</c> key is not one that this
+/// method or another reader asks for. A key the shipped file does not carry is covered only here.
 /// </summary>
 [TestFixture]
 public class OpenIddictServiceCollectionExtensionsTests
@@ -104,7 +107,7 @@ public class OpenIddictServiceCollectionExtensionsTests
         public void Setup() => _options = BindIdentityOptions([]);
 
         [Test]
-        public void It_defaults_to_five() => _options.BearerTokenPerClientLimit.Should().Be(5);
+        public void It_defaults_to_fifteen() => _options.BearerTokenPerClientLimit.Should().Be(15);
     }
 
     [TestFixture]
@@ -119,9 +122,166 @@ public class OpenIddictServiceCollectionExtensionsTests
             );
 
         // Binding the configured value is also what proves the key name: read under any other
-        // name, this would silently come back as the default 5.
+        // name, this would silently come back as the default 15.
         [Test]
         public void It_binds_the_configured_value() => _options.BearerTokenPerClientLimit.Should().Be(25);
+    }
+
+    [TestFixture]
+    public class Given_no_token_expiration_is_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() => _options = BindIdentityOptions([]);
+
+        [Test]
+        public void It_defaults_to_30_minutes() => _options.TokenExpirationMinutes.Should().Be(30);
+    }
+
+    [TestFixture]
+    public class Given_a_token_expiration_is_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "45" }
+            );
+
+        // Binding the configured value is also what proves the key name: read under any other
+        // name, this would silently come back as the default 30.
+        [Test]
+        public void It_binds_the_configured_value() => _options.TokenExpirationMinutes.Should().Be(45);
+    }
+
+    /// <summary>
+    /// Earlier releases shipped the lifetime under this name, which nothing ever read. It stays
+    /// unbound, with no alias, so an override using it keeps the default lifetime it always had.
+    /// </summary>
+    [TestFixture]
+    public class Given_only_the_earlier_token_expiration_key_is_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:OpenIddictTokenExpirationTimeMinutes"] = "45",
+                }
+            );
+
+        [Test]
+        public void It_leaves_the_lifetime_at_the_default() =>
+            _options.TokenExpirationMinutes.Should().Be(30);
+    }
+
+    [TestFixture]
+    public class Given_a_positive_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "1" }
+            );
+
+        [Test]
+        public void It_passes_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// A token minted with a non-positive lifetime is already expired when issued and reports a zero
+    /// or negative expires_in, so an unchecked value would only show up as tokens failing within the
+    /// validators' clock skew.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_zero_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "0" }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:TokenExpirationMinutes must be greater than zero*");
+    }
+
+    [TestFixture]
+    public class Given_the_largest_supported_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenExpirationMinutes"] =
+                        IdentityOptions.MaxTokenExpirationMinutes.ToString(),
+                }
+            );
+
+        [Test]
+        public void It_passes_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    /// <summary>
+    /// The token response reports the lifetime in seconds as a 32-bit integer, so a longer lifetime
+    /// would overflow into a negative expires_in.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_token_expiration_above_the_largest_supported_value_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenExpirationMinutes"] = (
+                        IdentityOptions.MaxTokenExpirationMinutes + 1
+                    ).ToString(),
+                }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:TokenExpirationMinutes must be at most 35791394*");
+    }
+
+    [TestFixture]
+    public class Given_a_negative_token_expiration_is_configured
+    {
+        private Action _validate = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _validate = ValidateAtStartup(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenExpirationMinutes"] = "-5" }
+            );
+
+        [Test]
+        public void It_fails_startup_validation() =>
+            _validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .WithMessage("*IdentitySettings:TokenExpirationMinutes must be greater than zero*");
     }
 
     [TestFixture]
@@ -140,6 +300,165 @@ public class OpenIddictServiceCollectionExtensionsTests
         [Test]
         public void It_binds_the_negative_value_unchanged() =>
             _options.BearerTokenPerClientLimit.Should().Be(-1);
+    }
+
+    [TestFixture]
+    public class Given_the_role_names_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:ConfigServiceRole"] = "operator",
+                    ["IdentitySettings:ClientRole"] = "vendor-client",
+                }
+            );
+
+        // The defaults are empty, so a role read under any other key would come back empty and fail here.
+        [Test]
+        public void It_binds_the_config_service_role() => _options.ConfigServiceRole.Should().Be("operator");
+
+        [Test]
+        public void It_binds_the_client_role() => _options.ClientRole.Should().Be("vendor-client");
+    }
+
+    [TestFixture]
+    public class Given_no_role_names_are_configured
+    {
+        private Action _validate = null!;
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _options = BindIdentityOptions([]);
+            _validate = ValidateAtStartup([]);
+        }
+
+        // Missing keys bind as empty and are left to the runtime restriction on the no-row path; the
+        // backend adds no validator for them.
+        [Test]
+        public void It_binds_an_empty_config_service_role() => _options.ConfigServiceRole.Should().BeEmpty();
+
+        [Test]
+        public void It_binds_an_empty_client_role() => _options.ClientRole.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_fail_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    [TestFixture]
+    public class Given_role_names_that_differ_only_by_case
+    {
+        private Action _validate = null!;
+        private IdentityOptions _options = null!;
+
+        private static readonly Dictionary<string, string?> CollidingRoleNames = new()
+        {
+            ["IdentitySettings:ConfigServiceRole"] = "Admin",
+            // Mixed case on both sides, so folding either name to upper or lower case changes it.
+            ["IdentitySettings:ClientRole"] = "aDMIN",
+        };
+
+        [SetUp]
+        public void Setup()
+        {
+            _options = BindIdentityOptions(CollidingRoleNames);
+            _validate = ValidateAtStartup(CollidingRoleNames);
+        }
+
+        // Role names are compared ordinally at issuance, so the binder must not fold case or trim.
+        [Test]
+        public void It_keeps_the_config_service_role_spelling() =>
+            _options.ConfigServiceRole.Should().Be("Admin");
+
+        [Test]
+        public void It_keeps_the_client_role_spelling() => _options.ClientRole.Should().Be("aDMIN");
+
+        // A collision restricts only the no-row path at request time; it does not stop the host.
+        [Test]
+        public void It_does_not_fail_startup_validation() => _validate.Should().NotThrow();
+    }
+
+    // Each self-contained store registration carries the configured role names to the options the
+    // token manager receives.
+    [TestFixture("postgresql")]
+    [TestFixture("postgresql-jwt-settings")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_store_registration_with_role_names(string registration)
+    {
+        private ServiceProvider _provider = null!;
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                        ["IdentitySettings:ConfigServiceRole"] = "operator",
+                        ["IdentitySettings:ClientRole"] = "vendor-client",
+                    }
+                )
+                .Build();
+            ServiceCollection services = [];
+            _ = registration switch
+            {
+                "postgresql" => services.AddPostgresOpenIddictStores(configuration, "http://localhost"),
+                "postgresql-jwt-settings" => services.AddPostgresOpenIddictStores(
+                    configuration,
+                    "http://localhost",
+                    new JwtSettings { Issuer = "http://localhost", Audience = "account" }
+                ),
+                _ => services.AddMssqlOpenIddictStores(configuration, "http://localhost"),
+            };
+            _provider = services.BuildServiceProvider();
+            _options = _provider.GetRequiredService<IOptions<IdentityOptions>>().Value;
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_binds_the_config_service_role() => _options.ConfigServiceRole.Should().Be("operator");
+
+        [Test]
+        public void It_binds_the_client_role() => _options.ClientRole.Should().Be("vendor-client");
+    }
+
+    // Keycloak mode never registers the self-contained identity options, so the role binding never
+    // runs there and Keycloak keeps reading the role names from the frontend settings only.
+    [TestFixture]
+    public class Given_the_keycloak_registration
+    {
+        private ServiceCollection _services = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _services = [];
+            _services.AddKeycloakServices(
+                "http://keycloak.test/realms/edfi",
+                "cms-service",
+                "secret",
+                "role"
+            );
+        }
+
+        [Test]
+        public void It_registers_no_identity_options_configuration() =>
+            _services
+                .Should()
+                .NotContain(descriptor =>
+                    descriptor.ServiceType == typeof(IConfigureOptions<IdentityOptions>)
+                    || descriptor.ServiceType == typeof(IValidateOptions<IdentityOptions>)
+                );
     }
 
     [TestFixture]
@@ -526,6 +845,221 @@ public class OpenIddictServiceCollectionExtensionsTests
         public void It_registers_one_bearer_events() => Count(typeof(SigningKeyBearerEvents)).Should().Be(1);
     }
 
+    // Every self-contained store registration supplies the OpenIddict un-approval
+    // participant that the CMS API client repository requires; there is no optional fallback.
+    [TestFixture("postgresql")]
+    [TestFixture("postgresql-jwt-settings")]
+    [TestFixture("mssql")]
+    public class Given_a_self_contained_store_registration(string registration)
+    {
+        private ServiceCollection _services = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+            _services = [];
+            _ = registration switch
+            {
+                "postgresql" => _services.AddPostgresOpenIddictStores(configuration, "http://localhost"),
+                "postgresql-jwt-settings" => _services.AddPostgresOpenIddictStores(
+                    configuration,
+                    "http://localhost",
+                    new JwtSettings { Issuer = "http://localhost", Audience = "account" }
+                ),
+                _ => _services.AddMssqlOpenIddictStores(configuration, "http://localhost"),
+            };
+        }
+
+        [Test]
+        public void It_registers_the_openiddict_unapproval_token_revocation_as_a_singleton() =>
+            _services
+                .Should()
+                .ContainSingle(descriptor => descriptor.ServiceType == typeof(IUnapprovalTokenRevocation))
+                .Which.Should()
+                .Match<ServiceDescriptor>(descriptor =>
+                    descriptor.ImplementationType == typeof(OpenIddictUnapprovalTokenRevocation)
+                    && descriptor.Lifetime == ServiceLifetime.Singleton
+                );
+    }
+
+    [TestFixture]
+    public class Given_no_token_cleanup_settings_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() => _options = BindIdentityOptions([]);
+
+        [Test]
+        public void It_defaults_the_sweep_to_enabled() => _options.TokenCleanup.Enabled.Should().BeTrue();
+
+        [Test]
+        public void It_defaults_the_interval_to_30_minutes() =>
+            _options.TokenCleanup.IntervalMinutes.Should().Be(30);
+    }
+
+    [TestFixture]
+    public class Given_token_cleanup_settings_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenCleanup:Enabled"] = "false",
+                    ["IdentitySettings:TokenCleanup:IntervalMinutes"] = "45",
+                }
+            );
+
+        [Test]
+        public void It_binds_the_enabled_switch() => _options.TokenCleanup.Enabled.Should().BeFalse();
+
+        [Test]
+        public void It_binds_the_interval() => _options.TokenCleanup.IntervalMinutes.Should().Be(45);
+    }
+
+    /// <summary>
+    /// The flat keys were replaced by the IdentitySettings:TokenCleanup section with no aliases.
+    /// </summary>
+    [TestFixture]
+    public class Given_only_the_removed_flat_token_cleanup_keys_are_configured
+    {
+        private IdentityOptions _options = null!;
+
+        [SetUp]
+        public void Setup() =>
+            _options = BindIdentityOptions(
+                new Dictionary<string, string?>
+                {
+                    ["IdentitySettings:TokenCleanupEnabled"] = "false",
+                    ["IdentitySettings:TokenCleanupIntervalMinutes"] = "45",
+                }
+            );
+
+        [Test]
+        public void It_leaves_the_sweep_enabled() => _options.TokenCleanup.Enabled.Should().BeTrue();
+
+        [Test]
+        public void It_leaves_the_interval_at_the_default() =>
+            _options.TokenCleanup.IntervalMinutes.Should().Be(30);
+    }
+
+    /// <summary>
+    /// Runs the real cleanup service on options that came through the binder, so the bound switch
+    /// and interval are proven to reach the sweep rather than stopping at the options object.
+    /// </summary>
+    private static TokenCleanupService CreateBoundCleanupService(
+        Dictionary<string, string?> settings,
+        IOpenIddictTokenRepository tokenRepository,
+        TimeProvider timeProvider
+    ) =>
+        new(
+            BuildProvider(settings).GetRequiredService<IOptions<IdentityOptions>>(),
+            NullLogger<TokenCleanupService>.Instance,
+            tokenRepository,
+            timeProvider
+        );
+
+    [TestFixture]
+    public class Given_token_cleanup_is_disabled_through_configuration
+    {
+        private IOpenIddictTokenRepository _tokenRepository = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+            using TokenCleanupService service = CreateBoundCleanupService(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenCleanup:Enabled"] = "false" },
+                _tokenRepository,
+                new FakeTimeProvider()
+            );
+
+            // ExecuteAsync runs on the thread pool, so stopping straight after StartAsync could
+            // cancel it before it runs. Waiting for it to finish proves the disabled path returned.
+            // An enabled sweep would wait on its timer and time out here instead.
+            await service.StartAsync(CancellationToken.None);
+            await service.ExecuteTask!.WaitAsync(TimeSpan.FromSeconds(10));
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_never_sweeps() =>
+            A.CallTo(() => _tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._))
+                .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// Delegates to a <see cref="FakeTimeProvider"/> and records the period of every timer the
+    /// service asks for, so the configured interval is observed directly rather than inferred from
+    /// when sweeps happen to run.
+    /// </summary>
+    private sealed class TimerPeriodRecordingTimeProvider : TimeProvider
+    {
+        private readonly FakeTimeProvider _inner = new();
+
+        public TaskCompletionSource<TimeSpan> TimerPeriod { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override DateTimeOffset GetUtcNow() => _inner.GetUtcNow();
+
+        public override long GetTimestamp() => _inner.GetTimestamp();
+
+        public override long TimestampFrequency => _inner.TimestampFrequency;
+
+        public override TimeZoneInfo LocalTimeZone => _inner.LocalTimeZone;
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            TimerPeriod.TrySetResult(period);
+            return _inner.CreateTimer(callback, state, dueTime, period);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_non_default_token_cleanup_interval_is_configured
+    {
+        private TimeSpan _timerPeriod;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IOpenIddictTokenRepository tokenRepository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => tokenRepository.DeleteExpiredTokensAsync(A<DateTimeOffset>._)).Returns(0);
+
+            TimerPeriodRecordingTimeProvider timeProvider = new();
+            using TokenCleanupService service = CreateBoundCleanupService(
+                new Dictionary<string, string?> { ["IdentitySettings:TokenCleanup:IntervalMinutes"] = "45" },
+                tokenRepository,
+                timeProvider
+            );
+
+            await service.StartAsync(CancellationToken.None);
+            _timerPeriod = await timeProvider.TimerPeriod.Task.WaitAsync(TimeSpan.FromSeconds(10));
+            await service.StopAsync(CancellationToken.None);
+        }
+
+        [Test]
+        public void It_runs_the_sweep_timer_at_the_configured_interval() =>
+            _timerPeriod.Should().Be(TimeSpan.FromMinutes(45));
+    }
+
     [TestFixture]
     public class Given_no_client_secret_hashing_iterations_is_configured
     {
@@ -688,5 +1222,202 @@ public class OpenIddictServiceCollectionExtensionsTests
                 .Should()
                 .Throw<OptionsValidationException>()
                 .WithMessage("*IdentitySettings:ClientSecretHashingIterations must be greater than zero*");
+    }
+
+    /// <summary>
+    /// A plugin replaces the client secret hasher with a plain <c>Add</c> after the host's own
+    /// registration. The one placeholder the production store registrations provide is generated
+    /// through that replacement, in its own format, once, as the host does at startup; the managers
+    /// resolved afterwards verify unknown clients against it and generate nothing per request. Only
+    /// the token repository is faked, so no database is contacted.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_a_replacement_hasher_registered_after_a_self_contained_store(string registration)
+    {
+        private const string UnknownClientId = "unknown-client";
+        private const string PresentedSecret = "presented-secret";
+        private const string ReplacementPlaceholder = "replacement-format-placeholder";
+
+        private ServiceProvider _provider = null!;
+        private IClientSecretHasher _replacement = null!;
+        private int _hashesAtInitialization;
+        private TokenResult _tokenResult = null!;
+        private TokenRevocationResult _revocationResult = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+
+            ServiceCollection services = [];
+            services.AddLogging();
+            _ =
+                registration == "postgresql"
+                    ? services.AddPostgresOpenIddictStores(configuration, "http://localhost")
+                    : services.AddMssqlOpenIddictStores(configuration, "http://localhost");
+
+            IOpenIddictTokenRepository repository = A.Fake<IOpenIddictTokenRepository>();
+            A.CallTo(() => repository.GetClientCredentialAsync(UnknownClientId))
+                .Returns((ClientCredential?)null);
+            services.AddSingleton(repository);
+
+            _replacement = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).Returns(ReplacementPlaceholder);
+            services.AddSingleton(_replacement);
+
+            _provider = services.BuildServiceProvider();
+            await _provider.GetRequiredService<ClientSecretPlaceholderHash>().InitializeAsync();
+            _hashesAtInitialization = Fake.GetCalls(_replacement)
+                .Count(call => call.Method.Name == nameof(IClientSecretHasher.HashSecretAsync));
+
+            _tokenResult = await _provider
+                .GetRequiredService<ITokenManager>()
+                .GetAccessTokenAsync([
+                    new("client_id", UnknownClientId),
+                    new("client_secret", PresentedSecret),
+                ]);
+            _revocationResult = await _provider
+                .GetRequiredService<ITokenRevocationManager>()
+                .RevokeTokenAsync(
+                    new TokenRevocationRequest(
+                        UnknownClientId,
+                        PresentedSecret,
+                        "any-token",
+                        TokenTypeHint.None
+                    ),
+                    CancellationToken.None
+                );
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_resolves_the_replacement_hasher() =>
+            _provider.GetRequiredService<IClientSecretHasher>().Should().BeSameAs(_replacement);
+
+        [Test]
+        public void It_resolves_the_production_token_manager() =>
+            _provider.GetRequiredService<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
+
+        [Test]
+        public void It_rejects_the_unknown_client_at_the_token_endpoint() =>
+            _tokenResult
+                .Should()
+                .BeEquivalentTo(
+                    new TokenResult.FailureAuthentication(
+                        "invalid_client",
+                        "Invalid client or Invalid client credentials"
+                    )
+                );
+
+        [Test]
+        public void It_rejects_the_unknown_caller_at_revocation() =>
+            _revocationResult.Should().BeOfType<TokenRevocationResult.InvalidClient>();
+
+        [Test]
+        public void It_generates_the_placeholder_once_through_the_replacement() =>
+            _hashesAtInitialization.Should().Be(1);
+
+        [Test]
+        public void It_hashes_nothing_while_handling_the_requests() =>
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_verifies_both_requests_against_the_replacements_placeholder() =>
+            A.CallTo(() => _replacement.VerifySecretAsync(PresentedSecret, ReplacementPlaceholder))
+                .MustHaveHappenedTwiceExactly();
+    }
+
+    /// <summary>
+    /// The production store registrations with nothing replaced but the client secret hasher, as
+    /// a plugin replaces it: the resolved token repository is the engine's own, over the engine's
+    /// own data repository, and offers the narrow credential read the token manager authenticates
+    /// from. The hasher replacement leaves that untouched. Nothing is resolved that would contact
+    /// a database.
+    /// </summary>
+    [TestFixture("postgresql")]
+    [TestFixture("mssql")]
+    public class Given_the_production_store_registrations_and_a_replacement_hasher(string registration)
+    {
+        private ServiceProvider _provider = null!;
+        private IClientSecretHasher _replacement = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IConfiguration configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(
+                    new Dictionary<string, string?>
+                    {
+                        ["IdentitySettings:Authority"] = "http://localhost",
+                        ["IdentitySettings:Audience"] = "account",
+                    }
+                )
+                .Build();
+
+            ServiceCollection services = [];
+            services.AddLogging();
+            services.Configure<DatabaseOptions>(options =>
+                options.DatabaseConnection =
+                    registration == "postgresql"
+                        ? "Host=localhost;Database=composition_test"
+                        : "Server=localhost;Database=composition_test;TrustServerCertificate=true"
+            );
+            _ =
+                registration == "postgresql"
+                    ? services.AddPostgresOpenIddictStores(configuration, "http://localhost")
+                    : services.AddMssqlOpenIddictStores(configuration, "http://localhost");
+
+            _replacement = A.Fake<IClientSecretHasher>();
+            A.CallTo(() => _replacement.HashSecretAsync(A<string>._)).Returns("replacement-placeholder");
+            services.AddSingleton(_replacement);
+
+            _provider = services.BuildServiceProvider();
+            // As the host does at startup; a manager cannot be constructed before it.
+            await _provider.GetRequiredService<ClientSecretPlaceholderHash>().InitializeAsync();
+        }
+
+        [TearDown]
+        public void TearDown() => _provider.Dispose();
+
+        [Test]
+        public void It_resolves_the_engines_token_repository() =>
+            _provider
+                .GetRequiredService<IOpenIddictTokenRepository>()
+                .Should()
+                .BeOfType(
+                    registration == "postgresql"
+                        ? typeof(Postgresql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                        : typeof(Mssql.OpenIddict.Repositories.OpenIddictTokenRepository)
+                );
+
+        [Test]
+        public void It_resolves_the_engines_data_repository() =>
+            _provider
+                .GetRequiredService<IOpenIddictDataRepository>()
+                .Should()
+                .BeOfType(
+                    registration == "postgresql"
+                        ? typeof(Postgresql.OpenIddict.Repositories.OpenIddictDataRepository)
+                        : typeof(Mssql.OpenIddict.Repositories.OpenIddictDataRepository)
+                );
+
+        [Test]
+        public void It_keeps_the_replacement_hasher() =>
+            _provider.GetRequiredService<IClientSecretHasher>().Should().BeSameAs(_replacement);
+
+        [Test]
+        public void It_resolves_the_production_token_manager() =>
+            _provider.GetRequiredService<ITokenManager>().Should().BeOfType<OpenIddictTokenManager>();
     }
 }

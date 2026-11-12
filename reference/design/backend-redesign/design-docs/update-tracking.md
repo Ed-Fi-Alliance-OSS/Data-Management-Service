@@ -20,8 +20,9 @@ The backend redesign needs resource-state-sensitive metadata:
   representation-sensitive: two representations of the same stored state that differ in served bytes
   (e.g. different readable profiles, links on vs. off, or identity vs. gzip coding) MUST carry different `_etag` values, as
   required for RFC 9110 §8.8.1 strong validators.
-  Descriptor identity/URI is immutable, while descriptor metadata fields are mutable and affect
-  only the descriptor resource's own representation.
+  Descriptor writes keep the stored identity components (stored wins), so an unchanged identity,
+  including a casing-only change, never stamps. Accepted descriptive changes receive normal
+  stamps; unchanged descriptor bodies preserve stamps and ETags.
 - Ed-Fi Change Query APIs depend on a global monotonic `ChangeVersion`.
 
 This redesign accomplishes indirect-update semantics without a reverse-edge table by:
@@ -62,11 +63,18 @@ Those referrer updates naturally trigger the same stamping rules as “direct”
 
 ### Representation tracking metadata
 
-Each persisted document maintains representation-tracking metadata on `dms.Document`:
+Each persisted document maintains two representation stamps in the same transaction:
 
-- `ContentVersion` (`bigint`, globally monotonic), the representation stamp
-- `ContentLastModifiedAt` (UTC timestamp), whose provider precision is retained in storage
-  and whose whole-second UTC formatting supplies `_lastModifiedDate`
+- `dms.Document.ContentVersion` (`bigint`, globally monotonic), the version used for locks,
+  optimistic concurrency and projection enqueueing, mirrored to the resource root or descriptor
+- `<root>.ContentLastModifiedAt` (or `dms.Descriptor.ContentLastModifiedAt`), the authoritative
+  UTC timestamp, whose provider precision is retained in storage and whose whole-second UTC
+  formatting supplies `_lastModifiedDate`. `dms.Document` does not store this timestamp.
+
+The same owner also stores `<root>.ContentCreatedAt` (or `dms.Descriptor.ContentCreatedAt`), the
+UTC creation time of the current resource lifetime. It is owner metadata, not a representation
+stamp: it is set once when the owner row is inserted and follows the rules in "Creation time
+(normative)" below. Child/collection tables, `_ext` tables and `dms.Document` do not store it.
 
 Note: `dms.Document` also carries metadata used by other subsystems (e.g., `CreatedByOwnershipTokenId` for ownership-based authorization; see `auth.md`). Update-tracking rules defined in this document are unchanged by those additional columns.
 
@@ -85,6 +93,49 @@ There is no separate document-level stamp for identity projection changes. When 
 alter the stored representation, including changes caused by cascaded updates to
 identity-component reference identity storage columns (see [key-unification.md](key-unification.md)),
 the same `ContentVersion` and `ContentLastModifiedAt` stamps are updated.
+
+### Compact descriptor keys and stamp ownership (DMS-1404)
+
+`dms.Descriptor.DescriptorId` is a native independently generated `int` primary key.
+`DocumentId` is its unique non-null `bigint` association to the owning document. Stored
+resource descriptor FKs and URI projection joins use the compact key; document stamps,
+UUID lookup, locks, cache/projection work and representation restamping use `DocumentId`.
+Updating or restamping an existing descriptor preserves both IDs and touches the correct
+descriptor stamp owner through its document association even when the values differ.
+
+`dms.Document.ContentVersion` remains authoritative for version checks. On insert, the
+owner document allocates the version; the descriptor trigger copies that version and generates
+`dms.Descriptor.ContentLastModifiedAt`. Changed stored representation fields advance the document
+version and update the descriptor's version mirror and authoritative timestamp in one transaction.
+SQL Server pairs descriptor `inserted`/`deleted` rows by `DescriptorId` while locating the document
+and stamp owner through `DocumentId`. The composite `FK_Descriptor_DocumentResourceKey
+(DocumentId, ResourceKeyId)` rejects descriptor `ResourceKeyId` drift from the document and is
+the safety-net FK, with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Delete the
+descriptor before its owning document in the same transaction so stamping and tombstone
+capture can read the document metadata before it is removed.
+
+There is no live descriptor discriminator or physically stored URI. URI consumers reconstruct
+the whole `Namespace + '#' + CodeValue`; SQL Server's non-persisted computed `Uri` and `UriLowered`
+exist for indexing. A POST matched by the lowered-URI descriptor probe, and a PUT whose identity
+the database treats as unchanged (casing, SQL Server collation aliases, re-split components),
+keep the stored `Namespace` and `CodeValue`. An unchanged identity therefore produces no stamp,
+ETag change or tracked change; descriptive and date changes stamp normally. A PUT with a
+different identity returns 400 without stamping.
+
+Cache materialization reconstructs original-case URI content while source metadata and work
+remain document-keyed. Resource-scope and UUID-scope representation restamps likewise retain
+document ownership. Unequal-ID regressions cover exact document/descriptor stamps and work
+for both engines under the combined schema.
+
+[DMS-1401](../epics/21-storage-reduction/16-drop-document-content-last-modified-at.md)
+removes the document timestamp and establishes root/descriptor timestamp authority. At the
+historical DMS-1404 handoff, the working fresh-schema RI runtime, regenerated fixtures, reusable
+descriptor catalog assertions and working load/copy tooling still had both document stamp columns.
+The planned combined template rebuild/source-restore matrix and consumer-pin updates belong
+to DMS-1401 and precede its closure; they are deferred from DMS-1404 closure. Keep 8.1 mapping
+version `v3`, deliberately reprovision old physical schemas, and defer template-backed
+deployment until compatible rebuilds pass catalog checks. See the
+[reprovisioning and handoff guide](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 ### Global sequence
 
@@ -105,7 +156,8 @@ A document's full resource-state representation changes when any of the followin
 - any referenced document’s identity values embedded in the representation change, which is realized as an FK cascade update to the document’s stored reference identity storage columns (canonical under key unification; see [key-unification.md](key-unification.md)).
 
 A successful update request that results in **no persisted row changes** is **not** a representation change. In that
-case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged.
+case, `ContentVersion` and `ContentLastModifiedAt` MUST remain unchanged. `ContentCreatedAt` never
+changes on update (see "Creation time" below).
 
 ### What counts as an identity projection change?
 
@@ -119,7 +171,15 @@ A document’s identity/URI projection changes when any identity component chang
 When a document’s **representation changes**, in the same transaction:
 
 - set `dms.Document.ContentVersion = next ChangeVersionSequence value`
-- set `dms.Document.ContentLastModifiedAt = now (UTC)`
+- copy that version to the resource root or `dms.Descriptor` by `DocumentId`
+- generate authoritative `ContentLastModifiedAt` on that owner (`now()` on PostgreSQL,
+  `SYSUTCDATETIME()` on SQL Server). No document timestamp is read or written.
+
+Every owner timestamp a stamping trigger writes in one transaction uses one value. PostgreSQL's
+`now()` is the transaction start time. SQL Server reads `SYSUTCDATETIME()` at the transaction's
+first trigger stamp, stores it in the session context keyed by `CURRENT_TRANSACTION_ID()`, and every
+later trigger stamp in that transaction reuses it; a new transaction never matches the stored key,
+so it reads the clock again.
 
 When a document’s **identity projection changes**, the change is stamped through the representation
 rules above when it changes stored resource state. No additional `dms.Document` columns are written
@@ -127,16 +187,17 @@ for identity tracking.
 
 ### Initialization on insert (normative)
 
-Inserting a new document is a representation change (and also an identity projection change). Therefore, on `INSERT` of a new `dms.Document` row, the inserted row MUST have:
-
-- `ContentVersion` set to a newly allocated `dms.ChangeVersionSequence` value (unique per inserted document),
-- `ContentLastModifiedAt` set to the insert time (UTC).
-
-Implementation options:
-
-- **Column defaults** on `dms.Document` that use the sequence (recommended for cross-engine multi-row inserts), plus update-time triggers for later changes.
-- Triggers that stamp inserted rows (ensure they allocate one sequence value per inserted `DocumentId` and do not assign a single statement-level value).
-- Explicit values provided by the write path.
+Inserting a new document is a representation change (and also an identity projection change).
+The `dms.Document` default allocates one new `ChangeVersionSequence` value per inserted row.
+Inserting its resource root or descriptor copies that existing version without a second allocation
+and initializes the authoritative owner timestamp in UTC. The same owner insertion sets
+`ContentCreatedAt` and the initial `ContentLastModifiedAt` from one database timestamp, so the two
+values are equal on a newly created owner. The two stored initial values MUST come from one clock
+reading: column defaults only satisfy `NOT NULL`, and the insert stamp overwrites both. Both rows are created in one transaction. Child/extension inserts
+change an existing representation and allocate a fresh version normally; they never set the root's
+`ContentCreatedAt`. When they run in the creating transaction, their restamp of
+`ContentLastModifiedAt` reuses the transaction's timestamp (see "Stamp updates"), so a resource
+created with child or `_ext` rows still commits with the two values equal on both engines.
 
 A constant default (e.g., `DEFAULT 1`) is not compatible with the uniqueness/monotonicity requirements for `ChangeVersion` and MUST NOT be treated as correct initialization.
 
@@ -148,6 +209,22 @@ Notes:
 - For watermark-only compatibility, allocating stamps must be **per-document**, not “one stamp for the whole statement”:
   - when a trigger stamps N `dms.Document` rows, it MUST allocate N distinct `ChangeVersionSequence` values (one per affected `DocumentId`).
   - SQL Server: do **not** assign `NEXT VALUE FOR dms.ChangeVersionSequence` to a variable and reuse it; use `NEXT VALUE FOR dms.ChangeVersionSequence` directly in the set-based `UPDATE` that stamps `dms.Document` (and dedupe `DocumentId`s so each document is updated once per trigger execution).
+
+### Creation time (normative)
+
+`ContentCreatedAt` on the resource root or `dms.Descriptor` records when the current resource
+lifetime began:
+
+- It is set only by owner insertion, as described in "Initialization on insert" above. A
+  client-supplied or directly inserted value is overwritten by the stamping trigger.
+- It never changes during the resource's lifetime. PUT, POST-as-update, root/child/extension
+  changes, reference-identity cascades, no-op writes and representation restamping all preserve it.
+- It takes no part in no-op or representation comparisons. A change to `ContentCreatedAt` alone is
+  not a representation change: it allocates no `ContentVersion`, leaves `ContentLastModifiedAt`
+  unchanged and writes no tracked-change row.
+- It is not client-writable and does not appear in resource JSON, `_etag` or `_lastModifiedDate`.
+- Deleting a resource ends its lifetime. Recreating the same natural key creates a new document and
+  owner row with a new `ContentCreatedAt`.
 
 ### Projection work follows every committed content stamp
 
@@ -189,9 +266,10 @@ Queries endpoint.
 
 ## Serving API metadata (normative)
 
-For a document `P`:
+For a document `P`, `owner` is its compiled resource root or `dms.Descriptor`, joined by
+`DocumentId`:
 
-- `_lastModifiedDate(P) = formatUtcWholeSeconds(dms.Document.ContentLastModifiedAt)` using
+- `_lastModifiedDate(P) = formatUtcWholeSeconds(owner.ContentLastModifiedAt)` using
   the existing DMS `yyyy-MM-ddTHH:mm:ssZ` representation; fractional seconds are discarded
   without rounding
 - `ChangeVersion(P) = dms.Document.ContentVersion`
@@ -277,11 +355,18 @@ the **state-significant projection** (`ContentVersion` and `schemaEpoch`; `forma
 
 Change Query candidate selection is defined in [change-queries.md](change-queries.md). In summary:
 
-- The per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on each `StorageKind = RelationalTables` root and on `dms.Descriptor` is what resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads filter on.
+- The per-resource `ContentVersion` mirror on each `StorageKind = RelationalTables` root and on `dms.Descriptor` is what resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads filter on.
 - Per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor` back the `/deletes` and `/keyChanges` endpoints; they are populated by the same `*_Stamp` triggers that stamp `dms.Document` (extended with `DocumentStamping.ChangeTracking`).
+- Shared descriptor history routes by compile-time qualified `ResourceKeyId` with
+  `(ResourceKeyId, ChangeVersion)` indexing. It retains owning `DocumentId`, UUID and old/new
+  namespace/code snapshots without a live-owner FK, so type and identity survive deletion.
+  Resource history captures descriptor-valued identities by joining stored `Int32` values to
+  `dms.Descriptor.DescriptorId`. Recreation checks and custom-view descriptor comparisons use the
+  lowered whole URI plus `ResourceKeyId`; namespace authorization is unchanged.
+- Abstract identity discriminator storage, union-view outputs and authorization are unchanged.
 - `/availableChangeVersions` is served by `GetMaxChangeVersion` (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server).
 
-`update-tracking.md` owns the stamping contract on `dms.Document` and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
+`update-tracking.md` owns the document-version and authoritative owner-timestamp stamping contract and how `_etag` / `_lastModifiedDate` are derived. It does not own the SQL or storage shape of candidate selection.
 The projection enqueue consequence of a stamp is described above; its table, trigger, and
 acknowledgement contracts are owned by
 [`data-model.md`](data-model.md#5a-dmsdocumentprojectionwork-always-provisioned-durable-projection-work)

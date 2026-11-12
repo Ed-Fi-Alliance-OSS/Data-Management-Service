@@ -866,7 +866,7 @@ Story 03 demonstrates a fixture create that records an issuance and then throws 
 The unsupported-operation `404`, tenant-not-found `404`, identity-not-found `404`, and feature-off `404` must be distinguishable by route presence or problem-detail `type` in tests.
 Provider-contract-violation, identity-upstream-failure, and terminal-job-failure `502`s must also be distinguishable by problem-detail `type`. Provider-configuration `500` is distinct from the host's authorization security-configuration failure.
 
-The problem-detail namespace is `urn:ed-fi:api:identities:*` rather than `urn:ed-fi:api:identity:*` because DMS already uses `urn:ed-fi:api:identity-conflict` for a document's natural-key identity, an unrelated concept, and `identities` matches this API's route and name.
+The problem-detail namespace is `urn:ed-fi:api:identities:*` rather than `urn:ed-fi:api:identity:*` because DMS used `urn:ed-fi:api:identity-conflict` for a document's natural-key identity, an unrelated concept, and `identities` matches this API's route and name. DMS-1632 replaced that natural-key conflict type with `urn:ed-fi:api:data-conflict:non-unique-identity`.
 The upstream-failure problem title identifies Identity Management as the failing subsystem and omits provider exception details.
 `IdentityError` values are not returned for upstream failures; provider details remain in structured logs.
 

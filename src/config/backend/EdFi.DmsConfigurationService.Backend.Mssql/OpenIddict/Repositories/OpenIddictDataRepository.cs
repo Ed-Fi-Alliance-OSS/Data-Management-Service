@@ -9,6 +9,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
@@ -17,8 +18,10 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
     /// SQL Server implementation of IOpenIddictDataRepository.
     /// Handles all database operations for OpenIddict using SQL Server-specific connections and SQL.
     /// </summary>
-    public class OpenIddictDataRepository(IOptions<DatabaseOptions> databaseOptions)
-        : IOpenIddictDataRepository
+    public class OpenIddictDataRepository(
+        IOptions<DatabaseOptions> databaseOptions,
+        ILogger<OpenIddictDataRepository> logger
+    ) : IOpenIddictDataRepository
     {
         private readonly string _connectionString = databaseOptions.Value.DatabaseConnection;
 
@@ -70,6 +73,26 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                       AND Status = 'valid'
                       AND ExpirationDate > @ActiveAsOf
                 ) < @MaxActiveTokens";
+
+        /// <summary>
+        /// What the grant authenticated against, read after the lock statement has returned,
+        /// in its own statement as on PostgreSQL, where that is what makes the
+        /// read current. The approval state has the semantics of
+        /// <see cref="GetClientCredentialAsync"/>, with the values of
+        /// <see cref="ApiClientApprovalState"/>: no API client row is its own state, not an approval.
+        /// The secret is returned rather than compared here, so the database's case-insensitive
+        /// default collation cannot widen what counts as equal.
+        /// </summary>
+        private const string ReadStoredClientStateSql = """
+            SELECT COALESCE(a.ClientSecret, N'') AS StoredClientSecret,
+                   (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                WHEN MIN(CAST(ac.IsApproved AS INT)) = 1 THEN 1
+                                ELSE 0 END
+                    FROM dmscs.ApiClient ac
+                    WHERE ac.ClientId = a.ClientId) AS ApiClientApproval
+            FROM dmscs.OpenIddictApplication a
+            WHERE a.Id = @ApplicationId
+            """;
 
         public async Task<T> ExecuteInTransactionAsync<T>(
             Func<IDbConnection, IDbTransaction, Task<T>> operation
@@ -143,7 +166,13 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
             await connection.ExecuteAsync(sql, new { Id = roleId, Name = roleName }, transaction);
         }
 
-        public async Task InsertApplicationAsync(
+        /// <summary>
+        /// The unique constraint on <c>OpenIddictApplication.ClientId</c> (0012). It is the only
+        /// violation this insert reports as an outcome.
+        /// </summary>
+        private const string DuplicateClientIdConstraint = "UX_OpenIddictApplication_ClientId";
+
+        public async Task<OpenIddictApplicationInsertOutcome> InsertApplicationAsync(
             Guid id,
             string clientId,
             string clientSecret,
@@ -162,21 +191,35 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories
                 VALUES (@Id, @ClientId, @ClientSecret, @DisplayName, @Permissions, @Requirements, @Type, SYSUTCDATETIME(), @ProtocolMappers)
                 """;
 
-            await connection.ExecuteAsync(
-                sql,
-                new
-                {
-                    Id = id,
-                    ClientId = clientId,
-                    ClientSecret = clientSecret,
-                    DisplayName = displayName,
-                    Permissions = JsonSerializer.Serialize(permissions),
-                    Requirements = JsonSerializer.Serialize(requirements),
-                    Type = type,
-                    ProtocolMappers = protocolMappers,
-                },
-                transaction
-            );
+            try
+            {
+                await connection.ExecuteAsync(
+                    sql,
+                    new
+                    {
+                        Id = id,
+                        ClientId = clientId,
+                        ClientSecret = clientSecret,
+                        DisplayName = displayName,
+                        Permissions = JsonSerializer.Serialize(permissions),
+                        Requirements = JsonSerializer.Serialize(requirements),
+                        Type = type,
+                        ProtocolMappers = protocolMappers,
+                    },
+                    transaction
+                );
+
+                return OpenIddictApplicationInsertOutcome.Inserted;
+            }
+            catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateClientIdConstraint))
+            {
+                // Only the client-key constraint is classified; the helper reads the violated name
+                // from where SQL Server quotes it, never from the duplicate value the message ends
+                // with. The statement was rolled back by the engine and the caller's transaction is
+                // still open; rolling it back is the caller's decision, which also discards any
+                // row it wrote earlier in the same attempt.
+                return OpenIddictApplicationInsertOutcome.DuplicateClientId;
+            }
         }
 
         public async Task<Guid?> FindScopeIdByNameAsync(
@@ -292,12 +335,28 @@ UPDATE dmscs.OpenIddictApplication
             return await connection.QueryAsync<string>(sql);
         }
 
-        public async Task<int> DeleteApplicationByIdAsync(Guid id)
+        public async Task<int> DeleteApplicationByIdAsync(
+            Guid id,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        )
         {
-            await using var connection = new SqlConnection(_connectionString);
-            await connection.OpenAsync();
             const string sql = "DELETE FROM dmscs.OpenIddictApplication WHERE Id = @Id";
-            return await connection.ExecuteAsync(sql, new { Id = id });
+            return await connection.ExecuteAsync(sql, new { Id = id }, transaction);
+        }
+
+        public async Task<bool> LockApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction transaction
+        )
+        {
+            Guid? lockedApplicationId = await connection.QuerySingleOrDefaultAsync<Guid?>(
+                LockApplicationSql,
+                new { ApplicationId = applicationId },
+                transaction
+            );
+            return lockedApplicationId is not null;
         }
 
         public async Task<int> UpdateClientSecretAsync(
@@ -333,6 +392,49 @@ UPDATE dmscs.OpenIddictApplication
             );
         }
 
+        /// <summary>
+        /// One statement and no further queries: the application's id, stored client id and
+        /// stored secret, and the approval state <see cref="GetApplicationByClientIdAsync"/>
+        /// reports (over every API client registered under the client id; no API client row when
+        /// there is none). The client id is matched with the same predicate as that lookup, so
+        /// under the database's collation. A stored null becomes an empty string. The statement is
+        /// driven by the requested client id and always returns one row, with no application id
+        /// when none is registered, so an unknown client id makes the same application and API
+        /// client index probes as a registered one. A registered id also reads its matched rows,
+        /// which an unknown id does not.
+        /// </summary>
+        public async Task<ClientCredential?> GetClientCredentialAsync(string clientId)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            const string credentialSql = """
+                SELECT a.Id AS ApplicationId,
+                       COALESCE(a.ClientId, N'') AS StoredClientId,
+                       COALESCE(a.ClientSecret, N'') AS StoredClientSecret,
+                       (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                    WHEN MIN(CAST(ac.IsApproved AS INT)) = 1 THEN 1
+                                    ELSE 0 END
+                        FROM dmscs.ApiClient ac
+                        WHERE ac.ClientId = r.ClientId) AS ApiClientApproval
+                FROM (SELECT @ClientId AS ClientId) r
+                LEFT JOIN dmscs.OpenIddictApplication a ON a.ClientId = r.ClientId
+                """;
+
+            ClientCredentialRow row = await connection.QuerySingleAsync<ClientCredentialRow>(
+                credentialSql,
+                new { ClientId = clientId }
+            );
+            return row.ApplicationId is { } applicationId
+                ? new ClientCredential(
+                    applicationId,
+                    row.StoredClientId ?? string.Empty,
+                    row.StoredClientSecret ?? string.Empty,
+                    (ApiClientApprovalState)row.ApiClientApproval
+                )
+                : null;
+        }
+
         public async Task<ApplicationInfo?> GetApplicationByIdAsync(
             Guid id,
             IDbConnection connection,
@@ -351,7 +453,12 @@ UPDATE dmscs.OpenIddictApplication
         {
             string applicationSql = $"""
                 SELECT a.Id, a.ClientId, a.ClientSecret, a.DisplayName, a.RedirectUris, a.PostLogoutRedirectUris,
-                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers
+                       a.Permissions, a.Requirements, a.Type, a.CreatedAt, a.ProtocolMappers,
+                       (SELECT CASE WHEN COUNT(*) = 0 THEN 2
+                                    WHEN MIN(CAST(ac.IsApproved AS INT)) = 1 THEN 1
+                                    ELSE 0 END
+                        FROM dmscs.ApiClient ac
+                        WHERE ac.ClientId = a.ClientId) AS ApiClientApproval
                 FROM dmscs.OpenIddictApplication a
                 WHERE {predicate}
                 """;
@@ -389,16 +496,6 @@ UPDATE dmscs.OpenIddictApplication
                 transaction
             );
 
-            bool isApproved = await connection.ExecuteScalarAsync<bool>(
-                """
-                SELECT CAST(COALESCE(MIN(CAST(ac.IsApproved AS INT)), 1) AS BIT)
-                FROM dmscs.ApiClient ac
-                WHERE ac.ClientId = @ClientId
-                """,
-                new { row.ClientId },
-                transaction
-            );
-
             return new ApplicationInfo
             {
                 Id = row.Id,
@@ -414,7 +511,7 @@ UPDATE dmscs.OpenIddictApplication
                 Scopes = scopes.Distinct().ToArray(),
                 DataStoreIds = dataStoreIds.ToArray(),
                 ProtocolMappers = row.ProtocolMappers ?? string.Empty,
-                IsApproved = isApproved,
+                ApiClientApproval = (ApiClientApprovalState)row.ApiClientApproval,
             };
         }
 
@@ -432,6 +529,34 @@ UPDATE dmscs.OpenIddictApplication
             );
         }
 
+        public async Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.QueryAsync<string>(
+                @"SELECT DISTINCT s.Name
+                  FROM dmscs.OpenIddictApplicationScope aps
+                  JOIN dmscs.OpenIddictScope s ON aps.ScopeId = s.Id
+                  WHERE aps.ApplicationId = @ApplicationId",
+                new { ApplicationId = applicationId }
+            );
+        }
+
+        public async Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await connection.OpenAsync();
+
+            return await connection.ExecuteScalarAsync<bool>(
+                @"SELECT CASE WHEN EXISTS (
+                             SELECT 1 FROM dmscs.OpenIddictRole
+                             WHERE Name = @FirstRoleName AND Name = @SecondRoleName)
+                         THEN CAST(1 AS bit) ELSE CAST(0 AS bit) END",
+                new { FirstRoleName = firstRoleName, SecondRoleName = secondRoleName }
+            );
+        }
+
         public async Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId)
         {
             await using var connection = new SqlConnection(_connectionString);
@@ -445,9 +570,15 @@ UPDATE dmscs.OpenIddictApplication
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         )
         {
+            // Before any connection is opened: a store for any other state is a caller's error,
+            // never a database outcome.
+            ThrowIfNotAdmissible(expectedApiClientApproval);
+
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
             const string insertSql =
@@ -467,22 +598,21 @@ UPDATE dmscs.OpenIddictApplication
             parameters.Add("Status", "valid");
             parameters.Add("ReferenceId", tokenId.ToString("N"));
 
-            // Enforcement disabled: the unconditional insert that ran before the limit existed,
-            // with no transaction and no lock.
-            if (maxActiveTokens < 1)
+            bool enforcesLimit = maxActiveTokens >= 1;
+            if (enforcesLimit)
             {
-                await connection.ExecuteAsync(insertSql, parameters);
-                return TokenStoreOutcome.Stored;
+                // Bound the same way ExpirationDate already is, so the count compares two DATETIME2
+                // values that took the identical conversion path.
+                parameters.Add("ActiveAsOf", DateTime.UtcNow, DbType.DateTime2);
+                parameters.Add("MaxActiveTokens", maxActiveTokens);
             }
 
-            // Bound the same way ExpirationDate already is, so the count compares two DATETIME2
-            // values that took the identical conversion path.
-            parameters.Add("ActiveAsOf", DateTime.UtcNow, DbType.DateTime2);
-            parameters.Add("MaxActiveTokens", maxActiveTokens);
-
-            // Grants for one client serialize on that client's OpenIddictApplication row, which
-            // makes the limit a strict ceiling rather than a best-effort one. The lock lives and
-            // dies with this transaction, so every path below releases it.
+            // Every store, enforcing or not, serializes on the client's OpenIddictApplication row.
+            // Against other grants that makes the limit a strict ceiling rather than a best-effort
+            // one; against credential reset, deletion and un-approval, which take the same lock
+            // first, it means a grant either stores before the change and is revoked by it, or
+            // re-validates after it and is refused. The lock lives and dies with
+            // this transaction, so every path below releases it.
             await using var transaction = await connection.BeginTransactionAsync();
 
             try
@@ -505,17 +635,44 @@ UPDATE dmscs.OpenIddictApplication
                     return TokenStoreOutcome.ClientNotFound;
                 }
 
+                StoredClientState? storedState =
+                    await connection.QuerySingleOrDefaultAsync<StoredClientState>(
+                        ReadStoredClientStateSql,
+                        new { ApplicationId = applicationId },
+                        transaction
+                    );
+
+                if (
+                    RefusalReason(storedState, expectedClientSecret, expectedApiClientApproval) is
+                    { } refusalReason
+                )
+                {
+                    await transaction.RollbackAsync();
+                    // A missing or changed API client row is a data-integrity signal, so it is
+                    // logged where operators look; the lifecycle reasons stay at Debug.
+                    logger.Log(
+                        refusalReason == ApiClientRowRefusalReason ? LogLevel.Warning : LogLevel.Debug,
+                        "Refused to store a token for application {ApplicationId}: re-validation under the application row lock failed ({RefusalReason})",
+                        applicationId,
+                        refusalReason
+                    );
+                    return storedState is null
+                        ? TokenStoreOutcome.ClientNotFound
+                        : TokenStoreOutcome.ClientChanged;
+                }
+
                 int rowsAffected = await connection.ExecuteAsync(
-                    ConditionalInsertSql,
+                    enforcesLimit ? ConditionalInsertSql : insertSql,
                     parameters,
                     transaction
                 );
 
                 await transaction.CommitAsync();
 
-                // Zero rows can only mean the count predicate was false. Any fault throws from the
-                // statements above and is never reported here as a limit rejection; only the
-                // lock-wait timeout and the deadlock below are answered as an outcome.
+                // Zero rows can only mean the count predicate was false; the plain insert always
+                // writes its row. Any fault throws from the statements above and is never reported
+                // here as a limit rejection; only the lock-wait timeout and the deadlock below are
+                // answered as an outcome.
                 return rowsAffected > 0 ? TokenStoreOutcome.Stored : TokenStoreOutcome.LimitExceeded;
             }
             catch (SqlException exception)
@@ -529,6 +686,69 @@ UPDATE dmscs.OpenIddictApplication
                 return TokenStoreOutcome.LockTimeout;
             }
         }
+
+        /// <summary>
+        /// Why the state read under the lock refuses the store, or <c>null</c> when it allows it.
+        /// The secret is compared here, ordinally, rather than in SQL, so no collation can widen
+        /// what counts as equal. The approval state allows the store only when it is the admissible
+        /// state the grant authenticated with; there is no allow-by-default. The category is
+        /// logged; the secrets never are.
+        /// </summary>
+        internal static string? RefusalReason(
+            StoredClientState? storedState,
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
+        ) =>
+            storedState switch
+            {
+                null => "missing",
+                _ when !string.Equals(
+                        storedState.StoredClientSecret,
+                        expectedClientSecret,
+                        StringComparison.Ordinal
+                    ) => "secret",
+                _ => ApprovalRefusalReason(
+                    (ApiClientApprovalState)storedState.ApiClientApproval,
+                    expectedApiClientApproval
+                ),
+            };
+
+        /// <summary>The refusal category for an API client row that is missing or changed.</summary>
+        internal const string ApiClientRowRefusalReason = "api-client-row";
+
+        private static string? ApprovalRefusalReason(
+            ApiClientApprovalState stored,
+            ApiClientApprovalState expected
+        ) =>
+            (stored, expected) switch
+            {
+                (ApiClientApprovalState.Approved, ApiClientApprovalState.Approved) => null,
+                (ApiClientApprovalState.NoApiClientRow, ApiClientApprovalState.NoApiClientRow) => null,
+                (ApiClientApprovalState.Unapproved, _) => "approval",
+                _ => ApiClientRowRefusalReason,
+            };
+
+        private static void ThrowIfNotAdmissible(ApiClientApprovalState expectedApiClientApproval)
+        {
+            if (
+                expectedApiClientApproval
+                is not (ApiClientApprovalState.Approved or ApiClientApprovalState.NoApiClientRow)
+            )
+            {
+                throw new ArgumentOutOfRangeException(
+                    nameof(expectedApiClientApproval),
+                    expectedApiClientApproval,
+                    "A token is stored only for a client that authenticated as approved or without an API client row."
+                );
+            }
+        }
+
+        /// <summary>
+        /// What the grant authenticated against, as read under the lock.
+        /// <paramref name="ApiClientApproval"/> carries the numeric values of
+        /// <see cref="ApiClientApprovalState"/>.
+        /// </summary>
+        internal sealed record StoredClientState(string StoredClientSecret, int ApiClientApproval);
 
         public async Task<string?> GetTokenStatusAsync(Guid tokenId)
         {
@@ -564,15 +784,44 @@ UPDATE dmscs.OpenIddictApplication
             }
         }
 
-        public async Task<bool> RevokeTokenAsync(Guid tokenId)
+        public async Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId)
+        {
+            await using var connection = new SqlConnection(_connectionString);
+            await OpenForTokenStatusAsync(connection);
+            return await connection.QuerySingleOrDefaultAsync<string>(
+                "SELECT Status FROM dmscs.OpenIddictToken WHERE Id = @Id AND ApplicationId = @ApplicationId",
+                new { Id = tokenId, ApplicationId = applicationId }
+            );
+        }
+
+        public async Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId)
         {
             await using var connection = new SqlConnection(_connectionString);
             await connection.OpenAsync();
+            // Ownership and status are predicates of the single statement rather than a prior read,
+            // so no interleaving can revoke another application's token, and a repeat changes no
+            // row and keeps the original RedemptionDate.
             var result = await connection.ExecuteAsync(
-                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id",
-                new { Id = tokenId }
+                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE Id = @Id AND ApplicationId = @ApplicationId AND Status <> 'revoked'",
+                new { Id = tokenId, ApplicationId = applicationId }
             );
             return result > 0;
+        }
+
+        public async Task<int> RevokeTokensForApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        )
+        {
+            // The predicate shape of RevokeTokenAsync minus the token id: only unrevoked rows
+            // change, so a repeat changes nothing and keeps every original RedemptionDate, and the
+            // ApplicationId predicate keeps every other application's tokens out of reach.
+            return await connection.ExecuteAsync(
+                "UPDATE dmscs.OpenIddictToken SET Status = 'revoked', RedemptionDate = SYSUTCDATETIME() WHERE ApplicationId = @ApplicationId AND Status <> 'revoked'",
+                new { ApplicationId = applicationId },
+                transaction
+            );
         }
 
         public async Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore)
@@ -640,7 +889,15 @@ UPDATE dmscs.OpenIddictApplication
             string? Requirements,
             string? Type,
             DateTime CreatedAt,
-            string? ProtocolMappers
+            string? ProtocolMappers,
+            int ApiClientApproval
+        );
+
+        private sealed record ClientCredentialRow(
+            Guid? ApplicationId,
+            string? StoredClientId,
+            string? StoredClientSecret,
+            int ApiClientApproval
         );
 
         private static string[] DeserializeStringArray(string? json) =>

@@ -62,9 +62,11 @@ public sealed record NamespacePrefixParameterization(
     /// only neutralizes the wildcard metacharacters (<c>%</c>, <c>_</c>, and <c>[</c> on SQL Server) so
     /// each prefix matches literally; an ordinal starts-with over the raw prefix is exactly that literal
     /// <c>prefix%</c> match, so the two are equivalent without re-deriving the escaped form here. Case
-    /// sensitivity follows the dialect's default Namespace column collation that the <c>LIKE</c> runs
-    /// under: PostgreSQL's deterministic default is case-sensitive (<see cref="StringComparison.Ordinal"/>),
-    /// the SQL Server default is case-insensitive (<see cref="StringComparison.OrdinalIgnoreCase"/>).
+    /// sensitivity follows the collation of the descriptor <c>Namespace</c> column the <c>LIKE</c> runs
+    /// under. On SQL Server that column carries the DMS identity collation
+    /// (<see cref="IdentityEqualityContract.SqlServer"/>), independent of the database default, so the
+    /// match is <see cref="StringComparison.OrdinalIgnoreCase"/>; on PostgreSQL it keeps the
+    /// case-sensitive database default, so the match is <see cref="StringComparison.Ordinal"/>.
     /// </remarks>
     public bool MatchesAnyPrefix(string storedNamespace)
     {

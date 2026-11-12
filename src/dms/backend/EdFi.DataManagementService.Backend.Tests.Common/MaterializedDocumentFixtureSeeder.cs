@@ -18,7 +18,8 @@ public enum MaterializedDocumentFixtureSqlDialect
 
 public sealed record MaterializedDocumentFixtureSqlCommand(
     string CommandText,
-    IReadOnlyList<MaterializedDocumentFixtureSqlParameter> Parameters
+    IReadOnlyList<MaterializedDocumentFixtureSqlParameter> Parameters,
+    int? DescriptorKey = null
 );
 
 public sealed record MaterializedDocumentFixtureSqlParameter(
@@ -63,16 +64,15 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
         AddDocumentCommands(commands, fixture);
         AddDescriptorCommands(commands, fixture);
-        AddTableRowCommands(commands, fixture.SourceSetup.ConcreteRootRows);
-        AddTableRowCommands(commands, fixture.SourceSetup.ChildRows);
-        AddTableRowCommands(commands, fixture.SourceSetup.ExtensionRows);
-        AddReferentialIdentityCommands(commands, fixture);
-        AddPreserveDocumentStampCommands(commands, fixture);
+        AddTableRowCommands(commands, fixture, fixture.SourceSetup.ConcreteRootRows);
+        AddTableRowCommands(commands, fixture, fixture.SourceSetup.ChildRows);
+        AddTableRowCommands(commands, fixture, fixture.SourceSetup.ExtensionRows);
+        AddPreserveStampCommands(commands, fixture);
 
         return commands;
     }
 
-    public async Task SeedAsync(
+    public async Task<IReadOnlyDictionary<int, SeededDescriptor>> SeedAsync(
         DbConnection connection,
         MaterializedDocumentFixture fixture,
         CancellationToken cancellationToken = default
@@ -80,6 +80,8 @@ public sealed class MaterializedDocumentFixtureSeeder(
     {
         ArgumentNullException.ThrowIfNull(connection);
         ArgumentNullException.ThrowIfNull(fixture);
+
+        Dictionary<int, SeededDescriptor> descriptors = [];
 
         foreach (var commandSpec in BuildSetupCommands(fixture))
         {
@@ -90,13 +92,39 @@ public sealed class MaterializedDocumentFixtureSeeder(
             {
                 var parameter = command.CreateParameter();
                 parameter.ParameterName = parameterSpec.Name;
-                parameter.Value = parameterSpec.Value ?? DBNull.Value;
+                parameter.Value = parameterSpec.Value
+                    is MaterializedDocumentFixtureDescriptorReference reference
+                    ? descriptors[reference.DescriptorKey].DescriptorId
+                    : parameterSpec.Value ?? DBNull.Value;
                 parameterSpec.ConfigureParameter?.Invoke(parameter);
                 command.Parameters.Add(parameter);
             }
 
-            await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            if (commandSpec.DescriptorKey is int descriptorKey)
+            {
+                var generatedId = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+                if (generatedId is not int descriptorId || descriptorId <= 0)
+                {
+                    throw new InvalidOperationException(
+                        "Descriptor insert must return its generated positive int key."
+                    );
+                }
+                var documentId = fixture
+                    .SourceSetup.Descriptors.Single(row => row.DescriptorId == descriptorKey)
+                    .DocumentId;
+                if (descriptorId == documentId)
+                {
+                    throw new InvalidOperationException("Fixture descriptor and document keys must differ.");
+                }
+                descriptors.Add(descriptorKey, new(descriptorId, documentId));
+            }
+            else
+            {
+                await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
         }
+
+        return descriptors;
     }
 
     private void AddSchemaCommands(
@@ -153,11 +181,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("DocumentUuid")} {_dialect.UuidColumnType} NOT NULL,
                     {_dialect.Quote("ResourceKeyId")} smallint NOT NULL,
                     {_dialect.Quote("CreatedByOwnershipTokenId")} smallint NULL,
-                    {_dialect.Quote("ContentVersion")} bigint NOT NULL,
-                    {_dialect.Quote(
-                        "ContentLastModifiedAt"
-                    )} {_dialect.TimestampWithOffsetColumnType} NOT NULL,
-                    {_dialect.Quote("CreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
+                    {_dialect.Quote("ContentVersion")} bigint NOT NULL
                     """
                 ),
                 []
@@ -169,7 +193,13 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     "dms",
                     "Descriptor",
                     $"""
-                    {_dialect.Quote("DocumentId")} bigint NOT NULL PRIMARY KEY,
+                    {_dialect.Quote(
+                        "DescriptorId"
+                    )} {_dialect.DescriptorIdentityColumnType} NOT NULL PRIMARY KEY,
+                    {_dialect.Quote("DocumentId")} bigint NOT NULL UNIQUE REFERENCES {_dialect.QualifiedTable(
+                        "dms",
+                        "Document"
+                    )} ({_dialect.Quote("DocumentId")}) ON DELETE CASCADE,
                     {_dialect.Quote("ResourceKeyId")} smallint NOT NULL,
                     {_dialect.Quote("Namespace")} {_dialect.Text(255)} NOT NULL,
                     {_dialect.Quote("CodeValue")} {_dialect.Text(50)} NOT NULL,
@@ -177,22 +207,9 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     {_dialect.Quote("Description")} {_dialect.Text(1024)} NULL,
                     {_dialect.Quote("EffectiveBeginDate")} date NULL,
                     {_dialect.Quote("EffectiveEndDate")} date NULL,
-                    {_dialect.Quote("Discriminator")} {_dialect.Text(128)} NOT NULL,
-                    {_dialect.Quote("Uri")} {_dialect.Text(512)} NULL
-                    """
-                ),
-                []
-            )
-        );
-        commands.Add(
-            new(
-                _dialect.CreateTableIfMissing(
-                    "dms",
-                    "ReferentialIdentity",
-                    $"""
-                    {_dialect.Quote("ReferentialId")} {_dialect.UuidColumnType} NOT NULL PRIMARY KEY,
-                    {_dialect.Quote("DocumentId")} bigint NOT NULL,
-                    {_dialect.Quote("ResourceKeyId")} smallint NOT NULL
+                    {_dialect.Quote("ContentVersion")} bigint NOT NULL,
+                    {_dialect.Quote("ContentLastModifiedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL,
+                    {_dialect.Quote("ContentCreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL
                     """
                 ),
                 []
@@ -223,6 +240,22 @@ public sealed class MaterializedDocumentFixtureSeeder(
                     .Cast<JsonNode>()
                     .ToArray();
                 columns.Add($"{_dialect.Quote(columnName)} {InferColumnType(columnName, values)} NULL");
+            }
+
+            if (
+                Array.Exists(
+                    fixture.SourceSetup.ConcreteRootRows,
+                    row => row.Schema == group.Key.Schema && row.Table == group.Key.Table
+                )
+            )
+            {
+                columns.Add($"{_dialect.Quote("ContentVersion")} bigint NOT NULL");
+                columns.Add(
+                    $"{_dialect.Quote("ContentLastModifiedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL"
+                );
+                columns.Add(
+                    $"{_dialect.Quote("ContentCreatedAt")} {_dialect.TimestampWithOffsetColumnType} NOT NULL"
+                );
             }
 
             commands.Add(
@@ -283,7 +316,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 new(_dialect.ParameterName(1), Guid.Parse(document.DocumentUuid)),
                 new(_dialect.ParameterName(2), document.ResourceKeyId),
                 new(_dialect.ParameterName(3), document.ContentVersion),
-                DocumentTimestampParameter(4, document.ContentLastModifiedAt),
             };
 
             commands.Add(
@@ -297,8 +329,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             "ResourceKeyId",
                             "CreatedByOwnershipTokenId",
                             "ContentVersion",
-                            "ContentLastModifiedAt",
-                            "CreatedAt",
                         ],
                         [
                             parameters[0].Name,
@@ -306,8 +336,6 @@ public sealed class MaterializedDocumentFixtureSeeder(
                             parameters[2].Name,
                             "NULL",
                             parameters[3].Name,
-                            parameters[4].Name,
-                            parameters[4].Name,
                         ],
                         useExplicitIdentityInsert: !_options.CreateSchemasAndTables
                     ),
@@ -338,21 +366,34 @@ public sealed class MaterializedDocumentFixtureSeeder(
                 ["EffectiveEndDate"] = JsonNodeDateValue(
                     JsonObjectValueOrNull(descriptor.Values, "EffectiveEndDate")
                 ),
-                ["Discriminator"] =
-                    JsonNodeValue(JsonObjectValueOrNull(descriptor.Values, "Discriminator"))
-                    ?? descriptor.CodeValue,
-                ["Uri"] = $"{descriptor.Namespace}#{descriptor.CodeValue}",
             };
 
-            commands.Add(BuildInsertCommand("dms", "Descriptor", values));
+            var document = fixture.SourceSetup.Documents.Single(row =>
+                row.DocumentId == descriptor.DocumentId
+            );
+            values["ContentVersion"] = document.ContentVersion;
+            values["ContentLastModifiedAt"] = DocumentTimestampValue(document.ContentLastModifiedAt);
+            values["ContentCreatedAt"] = DocumentTimestampValue(document.ContentCreatedAt);
+
+            var insert = BuildInsertCommand("dms", "Descriptor", values);
+            commands.Add(
+                insert with
+                {
+                    CommandText = _dialect.ReturnDescriptorId(insert.CommandText),
+                    DescriptorKey = descriptor.DescriptorId,
+                }
+            );
         }
     }
 
     private void AddTableRowCommands(
         List<MaterializedDocumentFixtureSqlCommand> commands,
+        MaterializedDocumentFixture fixture,
         IReadOnlyList<MaterializedDocumentSourceTableRow> rows
     )
     {
+        var isConcreteRoot = ReferenceEquals(rows, fixture.SourceSetup.ConcreteRootRows);
+
         foreach (
             var row in rows.OrderBy(row => row.DocumentId).ThenBy(row => row.Schema).ThenBy(row => row.Table)
         )
@@ -366,37 +407,29 @@ public sealed class MaterializedDocumentFixtureSeeder(
             {
                 if (value.Key != "DocumentId")
                 {
-                    values[value.Key] = JsonNodeValue(value.Value, value.Key);
+                    values[value.Key] =
+                        value.Key.EndsWith("DescriptorId", StringComparison.Ordinal)
+                        && value.Value is not null
+                            ? new MaterializedDocumentFixtureDescriptorReference(value.Value.GetValue<int>())
+                            : JsonNodeValue(value.Value, value.Key);
                 }
+            }
+
+            if (isConcreteRoot)
+            {
+                var document = fixture.SourceSetup.Documents.Single(source =>
+                    source.DocumentId == row.DocumentId
+                );
+                values["ContentVersion"] = document.ContentVersion;
+                values["ContentLastModifiedAt"] = DocumentTimestampValue(document.ContentLastModifiedAt);
+                values["ContentCreatedAt"] = DocumentTimestampValue(document.ContentCreatedAt);
             }
 
             commands.Add(BuildInsertCommand(row.Schema, row.Table, values));
         }
     }
 
-    private void AddReferentialIdentityCommands(
-        List<MaterializedDocumentFixtureSqlCommand> commands,
-        MaterializedDocumentFixture fixture
-    )
-    {
-        foreach (
-            var row in fixture.SourceSetup.ReferentialIdentityRows.OrderBy(row =>
-                Guid.Parse(row.ReferentialId)
-            )
-        )
-        {
-            var values = new Dictionary<string, object?>(StringComparer.Ordinal)
-            {
-                ["ReferentialId"] = Guid.Parse(row.ReferentialId),
-                ["DocumentId"] = row.DocumentId,
-                ["ResourceKeyId"] = row.ResourceKeyId,
-            };
-
-            commands.Add(BuildInsertCommand("dms", "ReferentialIdentity", values));
-        }
-    }
-
-    private void AddPreserveDocumentStampCommands(
+    private void AddPreserveStampCommands(
         List<MaterializedDocumentFixtureSqlCommand> commands,
         MaterializedDocumentFixture fixture
     )
@@ -406,22 +439,63 @@ public sealed class MaterializedDocumentFixtureSeeder(
             var parameters = new List<MaterializedDocumentFixtureSqlParameter>
             {
                 new(_dialect.ParameterName(0), document.ContentVersion),
-                DocumentTimestampParameter(1, document.ContentLastModifiedAt),
-                new(_dialect.ParameterName(2), document.DocumentId),
+                new(_dialect.ParameterName(1), document.DocumentId),
             };
 
             commands.Add(
                 new(
                     $"""
                     UPDATE {_dialect.QualifiedTable("dms", "Document")}
-                    SET {_dialect.Quote("ContentVersion")} = {parameters[0].Name},
-                        {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name}
-                    WHERE {_dialect.Quote("DocumentId")} = {parameters[2].Name}
+                    SET {_dialect.Quote("ContentVersion")} = {parameters[0].Name}
+                    WHERE {_dialect.Quote("DocumentId")} = {parameters[1].Name}
                     """,
                     parameters
                 )
             );
+
+            foreach (
+                var root in fixture.SourceSetup.ConcreteRootRows.Where(row =>
+                    row.DocumentId == document.DocumentId
+                )
+            )
+            {
+                AddOwnerStampCommand(commands, root.Schema, root.Table, document);
+            }
+
+            if (Array.Exists(fixture.SourceSetup.Descriptors, row => row.DocumentId == document.DocumentId))
+            {
+                AddOwnerStampCommand(commands, "dms", "Descriptor", document);
+            }
         }
+    }
+
+    private void AddOwnerStampCommand(
+        List<MaterializedDocumentFixtureSqlCommand> commands,
+        string schema,
+        string table,
+        MaterializedDocumentSourceDocument document
+    )
+    {
+        var parameters = new List<MaterializedDocumentFixtureSqlParameter>
+        {
+            new(_dialect.ParameterName(0), document.ContentVersion),
+            DocumentTimestampParameter(1, document.ContentLastModifiedAt),
+            DocumentTimestampParameter(2, document.ContentCreatedAt),
+            new(_dialect.ParameterName(3), document.DocumentId),
+        };
+
+        commands.Add(
+            new(
+                $"""
+                UPDATE {_dialect.QualifiedTable(schema, table)}
+                SET {_dialect.Quote("ContentVersion")} = {parameters[0].Name},
+                    {_dialect.Quote("ContentLastModifiedAt")} = {parameters[1].Name},
+                    {_dialect.Quote("ContentCreatedAt")} = {parameters[2].Name}
+                WHERE {_dialect.Quote("DocumentId")} = {parameters[3].Name}
+                """,
+                parameters
+            )
+        );
     }
 
     private MaterializedDocumentFixtureSqlCommand BuildInsertCommand(
@@ -445,6 +519,11 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private string InferColumnType(string columnName, IReadOnlyList<JsonNode> values)
     {
+        if (columnName.EndsWith("DescriptorId", StringComparison.Ordinal))
+        {
+            return "integer";
+        }
+
         if (values.Count == 0)
         {
             return _dialect.Text(1024);
@@ -517,6 +596,14 @@ public sealed class MaterializedDocumentFixtureSeeder(
             );
         }
 
+        foreach (var descriptor in fixture.SourceSetup.Descriptors)
+        {
+            resourceKeys.TryAdd(
+                descriptor.ResourceKeyId,
+                new(descriptor.ResourceKeyId, descriptor.ProjectName, descriptor.ResourceName, "5.2.0")
+            );
+        }
+
         foreach (var document in fixture.SourceSetup.Documents)
         {
             resourceKeys.TryAdd(
@@ -560,9 +647,7 @@ public sealed class MaterializedDocumentFixtureSeeder(
     }
 
     private static bool IsBigIntColumn(string columnName) =>
-        columnName.EndsWith("DocumentId", StringComparison.Ordinal)
-        || columnName.EndsWith("DescriptorId", StringComparison.Ordinal)
-        || columnName == "CollectionItemId";
+        columnName.EndsWith("DocumentId", StringComparison.Ordinal) || columnName == "CollectionItemId";
 
     private static bool IsDateColumn(string columnName) =>
         columnName.EndsWith("Date", StringComparison.Ordinal);
@@ -634,6 +719,10 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private abstract class FixtureSqlDialect
     {
+        public abstract string DescriptorIdentityColumnType { get; }
+
+        public abstract string ReturnDescriptorId(string insert);
+
         public abstract string UuidColumnType { get; }
 
         public abstract string TimestampWithOffsetColumnType { get; }
@@ -688,6 +777,10 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private sealed class PostgresqlFixtureSqlDialect : FixtureSqlDialect
     {
+        public override string DescriptorIdentityColumnType => "int GENERATED ALWAYS AS IDENTITY";
+
+        public override string ReturnDescriptorId(string insert) => insert + " RETURNING \"DescriptorId\";";
+
         public override string UuidColumnType => "uuid";
 
         public override string TimestampWithOffsetColumnType => "timestamp with time zone";
@@ -747,6 +840,17 @@ public sealed class MaterializedDocumentFixtureSeeder(
 
     private sealed class MssqlFixtureSqlDialect : FixtureSqlDialect
     {
+        public override string DescriptorIdentityColumnType => "int IDENTITY(1,1)";
+
+        public override string ReturnDescriptorId(string insert) =>
+            "DECLARE @descriptor TABLE ([DescriptorId] int); "
+            + insert.Replace(
+                " VALUES (",
+                " OUTPUT inserted.[DescriptorId] INTO @descriptor VALUES (",
+                StringComparison.Ordinal
+            )
+            + "; SELECT [DescriptorId] FROM @descriptor;";
+
         public override string UuidColumnType => "uniqueidentifier";
 
         public override string TimestampWithOffsetColumnType => "datetime2(7)";
@@ -828,3 +932,5 @@ public sealed class MaterializedDocumentFixtureSeederOptions
 
     public bool SeedResourceKeys { get; init; } = true;
 }
+
+public sealed record MaterializedDocumentFixtureDescriptorReference(int DescriptorKey);

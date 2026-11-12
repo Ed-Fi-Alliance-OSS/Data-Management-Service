@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -37,7 +38,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     private short _schoolResourceKeyId;
     private short _organizationDepartmentResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
-    private long _localEducationAgencyCategoryDescriptorDocumentId;
+    private int _localEducationAgencyCategoryDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -78,11 +79,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
 
         // Every LEA insert requires a LocalEducationAgencyCategoryDescriptor_DescriptorId; seed one
         // fresh per test so the row is in scope after ResetAsync() clears user tables.
-        _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        _localEducationAgencyCategoryDescriptorId = await InsertDescriptorAsync(
             documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
-            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
-            uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
             @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
             codeValue: "Independent",
             shortDescription: "Independent"
@@ -125,7 +124,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -156,7 +155,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var leaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -192,7 +191,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Orphan LEA"
         );
 
@@ -215,7 +214,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "ESC-only LEA",
             parentEducationServiceCenterDocumentId: escDocumentId,
             parentEducationServiceCenterId: 300
@@ -242,13 +241,13 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA"
         );
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent-LEA-only Child LEA",
             parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
             parentLocalEducationAgencyId: 400
@@ -286,7 +285,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -294,7 +293,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Child LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100,
@@ -379,7 +378,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -428,7 +427,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var leaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -482,7 +481,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Orphan LEA"
         );
 
@@ -523,7 +522,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -559,7 +558,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -606,7 +605,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -614,7 +613,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Orphan Child LEA"
         );
 
@@ -663,7 +662,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var parentLeaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Parent LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -671,7 +670,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Child LEA",
             parentLocalEducationAgencyDocumentId: parentLeaDocumentId,
             parentLocalEducationAgencyId: 400
@@ -769,7 +768,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var lea1DocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000400"),
             localEducationAgencyId: 400,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 1",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -777,7 +776,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var lea2DocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 2",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -967,7 +966,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         var leaDocumentId = await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "Test LEA",
             parentStateEducationAgencyDocumentId: seaDocumentId,
             parentStateEducationAgencyId: 100
@@ -1051,7 +1050,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             new SqlParameter("@lea2DocumentId", lea2DocumentId),
             new SqlParameter("@sea1DocumentId", sea1DocumentId),
             new SqlParameter("@sea2DocumentId", sea2DocumentId),
-            new SqlParameter("@categoryDocumentId", _localEducationAgencyCategoryDescriptorDocumentId)
+            new SqlParameter("@categoryDocumentId", _localEducationAgencyCategoryDescriptorId)
         );
 
         var tuples = await GetAuthTuplesAsync();
@@ -1100,7 +1099,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 1",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -1108,7 +1107,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000600"),
             localEducationAgencyId: 600,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 2",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -1196,7 +1195,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             new SqlParameter("@lea1DocumentId", lea1DocumentId),
             new SqlParameter("@lea2DocumentId", lea2DocumentId),
             new SqlParameter("@seaDocumentId", seaDocumentId),
-            new SqlParameter("@categoryDocumentId", _localEducationAgencyCategoryDescriptorDocumentId)
+            new SqlParameter("@categoryDocumentId", _localEducationAgencyCategoryDescriptorId)
         );
 
         var tuples = await GetAuthTuplesAsync();
@@ -1237,7 +1236,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000500"),
             localEducationAgencyId: 500,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 1",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -1245,7 +1244,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         await InsertLocalEducationAgencyAsync(
             documentUuid: Guid.Parse("c0000000-0000-0000-0000-000000000600"),
             localEducationAgencyId: 600,
-            localEducationAgencyCategoryDescriptorDocumentId: _localEducationAgencyCategoryDescriptorDocumentId,
+            localEducationAgencyCategoryDescriptorId: _localEducationAgencyCategoryDescriptorId,
             nameOfInstitution: "LEA 2",
             parentStateEducationAgencyDocumentId: sea1DocumentId,
             parentStateEducationAgencyId: 100
@@ -1321,52 +1320,48 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     /// <summary>
@@ -1448,7 +1443,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
     private async Task<long> InsertLocalEducationAgencyAsync(
         Guid documentUuid,
         long localEducationAgencyId,
-        long localEducationAgencyCategoryDescriptorDocumentId,
+        int localEducationAgencyCategoryDescriptorId,
         string nameOfInstitution,
         long? parentStateEducationAgencyDocumentId = null,
         long? parentStateEducationAgencyId = null,
@@ -1477,7 +1472,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             VALUES (
                 @documentId,
                 @localEducationAgencyId,
-                @categoryDescriptorDocumentId,
+                @categoryDescriptorId,
                 @nameOfInstitution,
                 @parentSeaDocumentId,
                 @parentSeaId,
@@ -1489,10 +1484,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Auth_EdOrg_Hierarchy_Trigge
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@localEducationAgencyId", localEducationAgencyId),
-            new SqlParameter(
-                "@categoryDescriptorDocumentId",
-                localEducationAgencyCategoryDescriptorDocumentId
-            ),
+            new SqlParameter("@categoryDescriptorId", localEducationAgencyCategoryDescriptorId),
             new SqlParameter("@nameOfInstitution", nameOfInstitution),
             new SqlParameter(
                 "@parentSeaDocumentId",

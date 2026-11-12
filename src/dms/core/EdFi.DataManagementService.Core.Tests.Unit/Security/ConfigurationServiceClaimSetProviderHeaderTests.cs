@@ -124,7 +124,7 @@ public class ConfigurationServiceClaimSetProviderHeaderTests
         A.CallTo(() =>
                 tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
             )
-            .Returns(CmsToken);
+            .Returns(new ConfigurationServiceTokenLease(CmsToken, 1));
 
         return new ConfigurationServiceClaimSetProvider(
             new ConfigurationServiceApiClient(client),

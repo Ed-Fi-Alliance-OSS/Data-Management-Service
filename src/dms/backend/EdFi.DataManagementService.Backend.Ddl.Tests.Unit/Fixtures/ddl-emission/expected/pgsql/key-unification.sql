@@ -54,34 +54,14 @@ BEGIN
     END IF;
 END $$;
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseRegistration_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SchoolId_Unified" IS DISTINCT FROM NEW."SchoolId_Unified" OR OLD."CourseOffering_LocalCourseCode" IS DISTINCT FROM NEW."CourseOffering_LocalCourseCode" OR OLD."RegistrationDate" IS DISTINCT FROM NEW."RegistrationDate") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 2;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiCourseRegistration' || '$.courseOfferingReference.schoolId=' || NEW."CourseOffering_SchoolId"::text || '#' || '$.courseOfferingReference.localCourseCode=' || NEW."CourseOffering_LocalCourseCode"::text || '#' || '$.schoolReference.schoolId=' || NEW."School_SchoolId"::text || '#' || '$.registrationDate=' || NEW."RegistrationDate"::text), NEW."DocumentId", 2);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_CourseRegistration_ReferentialIdentity" ON "edfi"."CourseRegistration";
-CREATE TRIGGER "TR_CourseRegistration_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."CourseRegistration"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_CourseRegistration_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_CourseRegistration_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -89,19 +69,20 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion"
+        INTO STRICT _stampedContentVersion
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     RETURN NEW;
 END;
@@ -113,34 +94,14 @@ BEFORE INSERT OR UPDATE OR DELETE ON "edfi"."CourseRegistration"
 FOR EACH ROW
 EXECUTE FUNCTION "edfi"."TF_TR_CourseRegistration_Stamp"();
 
-CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"()
-RETURNS TRIGGER AS $func$
-BEGIN
-    IF TG_OP = 'INSERT' OR (OLD."SchoolId" IS DISTINCT FROM NEW."SchoolId") THEN
-        DELETE FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = NEW."DocumentId" AND "ResourceKeyId" = 1;
-        INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-        VALUES ("dms"."uuidv5"('edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid, 'Ed-FiSchool' || '$.schoolId=' || NEW."SchoolId"::text), NEW."DocumentId", 1);
-    END IF;
-    RETURN NEW;
-END;
-$func$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS "TR_School_ReferentialIdentity" ON "edfi"."School";
-CREATE TRIGGER "TR_School_ReferentialIdentity"
-AFTER INSERT OR UPDATE ON "edfi"."School"
-FOR EACH ROW
-EXECUTE FUNCTION "edfi"."TF_TR_School_ReferentialIdentity"();
-
 CREATE OR REPLACE FUNCTION "edfi"."TF_TR_School_Stamp"()
 RETURNS TRIGGER AS $func$
 DECLARE
     _stampedContentVersion bigint;
-    _stampedContentLastModifiedAt timestamp with time zone;
 BEGIN
     IF TG_OP = 'DELETE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = OLD."DocumentId";
         RETURN OLD;
     END IF;
@@ -148,19 +109,20 @@ BEGIN
         RETURN NEW;
     END IF;
     IF TG_OP = 'INSERT' THEN
-        SELECT "ContentVersion", "ContentLastModifiedAt"
-        INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt
+        SELECT "ContentVersion"
+        INTO STRICT _stampedContentVersion
         FROM "dms"."Document"
         WHERE "DocumentId" = NEW."DocumentId";
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
+        NEW."ContentCreatedAt" := NEW."ContentLastModifiedAt";
     ELSIF TG_OP = 'UPDATE' THEN
         UPDATE "dms"."Document"
-        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"'), "ContentLastModifiedAt" = now()
+        SET "ContentVersion" = nextval('"dms"."ChangeVersionSequence"')
         WHERE "DocumentId" = NEW."DocumentId"
-        RETURNING "ContentVersion", "ContentLastModifiedAt" INTO STRICT _stampedContentVersion, _stampedContentLastModifiedAt;
+        RETURNING "ContentVersion" INTO STRICT _stampedContentVersion;
         NEW."ContentVersion" := _stampedContentVersion;
-        NEW."ContentLastModifiedAt" := _stampedContentLastModifiedAt;
+        NEW."ContentLastModifiedAt" := now();
     END IF;
     RETURN NEW;
 END;

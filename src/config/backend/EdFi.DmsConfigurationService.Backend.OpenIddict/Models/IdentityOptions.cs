@@ -21,6 +21,38 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public string Authority { get; set; } = string.Empty;
 
         /// <summary>
+        /// The longest token lifetime, in minutes, whose <c>expires_in</c> in seconds still fits the
+        /// token response's 32-bit integer.
+        /// </summary>
+        public const int MaxTokenExpirationMinutes = int.MaxValue / 60;
+
+        /// <summary>
+        /// The role that marks a Configuration Service administrative client: the role the
+        /// <c>ServicePolicy</c> requires and the one <c>/connect/register</c> assigns.
+        /// Bound from <c>IdentitySettings:ConfigServiceRole</c>, the same key the frontend reads; it
+        /// is not validated here (the frontend validator already requires it). Self-contained token
+        /// issuance reads it to recognize an administrative client that has no API client row. That
+        /// exception is refused, on both database engines, while this value is empty, while the
+        /// database resolves it and <see cref="ClientRole"/> to one role row (which depends on the
+        /// deployed collation: SQL Server's default collation, for example, ignores case, width and
+        /// trailing spaces), or while the two names collide after trailing white space is removed,
+        /// ignoring case, width, kana type and non-spacing marks. Role membership could not then
+        /// tell an administrative client from a vendor client. Clients that do have an API client
+        /// row are unaffected. Changing or reusing either role name requires auditing existing
+        /// role memberships first.
+        /// </summary>
+        public string ConfigServiceRole { get; set; } = string.Empty;
+
+        /// <summary>
+        /// The role assigned to the DMS vendor clients the Configuration Service creates.
+        /// Bound from <c>IdentitySettings:ClientRole</c>, the same key the frontend reads; it is not
+        /// validated here. Self-contained token issuance reads it alongside
+        /// <see cref="ConfigServiceRole"/>; see that property for the restriction on names that
+        /// collide.
+        /// </summary>
+        public string ClientRole { get; set; } = string.Empty;
+
+        /// <summary>
         /// Token expiration time in minutes.
         /// </summary>
         public int TokenExpirationMinutes { get; set; } = 30;
@@ -61,12 +93,6 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public string EncryptionKey { get; set; } = string.Empty;
 
         /// <summary>
-        /// Formerly the maximum size of the key format cache. No longer read: the cache was removed (DMS-1556, Q7) and
-        /// key formats are detected on every load. The setting still binds, so existing configuration keeps working.
-        /// </summary>
-        public int KeyFormatCacheSize { get; set; } = 100;
-
-        /// <summary>
         /// Number of PBKDF2 iterations for client secret hashing.
         /// Higher values increase security but also increase computation time.
         /// Recommended minimum: 100,000 for SHA-256.
@@ -76,25 +102,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         public int ClientSecretHashingIterations { get; set; } = 210000;
 
         /// <summary>
-        /// Whether the background sweep that deletes expired OpenIddict tokens runs.
+        /// Expired-token cleanup sweep settings.
         /// </summary>
-        public bool TokenCleanupEnabled { get; set; } = true;
-
-        /// <summary>
-        /// Interval, in minutes, between expired-token cleanup sweeps.
-        /// </summary>
-        public int TokenCleanupIntervalMinutes { get; set; } = 30;
+        public TokenCleanupOptions TokenCleanup { get; set; } = new();
 
         /// <summary>
         /// Maximum number of simultaneously active access tokens a single API client may hold.
-        /// Any value below 1 disables enforcement, allowing an unlimited number of tokens. A
-        /// disabling value also skips the application-existence check the enforcing path makes under
-        /// the client's row lock, so a client deleted mid-grant may still receive a usable token,
-        /// exactly as it could before this limit existed.
+        /// Any value below 1 disables enforcement, allowing an unlimited number of tokens. It
+        /// disables only the count: every grant still takes the client's application row lock and,
+        /// under it, re-checks that the client still exists, still holds the secret the grant
+        /// authenticated against, and is still approved. Grants for one client therefore serialize
+        /// whatever this value is, and can answer a lock timeout under heavy same-client contention.
         /// Applies to the self-contained identity provider only: the Keycloak provider persists
         /// no tokens, so the setting is inert there.
         /// </summary>
-        public int BearerTokenPerClientLimit { get; set; } = 5;
+        public int BearerTokenPerClientLimit { get; set; } = 15;
 
         /// <summary>
         /// Seconds between scheduled reloads of the signing-key snapshot. Bounds how long a

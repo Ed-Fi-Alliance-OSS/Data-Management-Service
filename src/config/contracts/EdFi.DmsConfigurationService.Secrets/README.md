@@ -192,6 +192,24 @@ verify those stored values, or every existing client must be issued a new secret
 installed. `IsSecretHashed` should recognise your own stored form as well as any form you still
 verify.
 
+The self-contained host also calls your hasher for clients that do not exist:
+
+- **At startup**, before it serves any request, it calls `HashSecretAsync` once on a random secret
+  nobody holds and keeps the result as a placeholder. If that call throws, or returns a null,
+  empty or whitespace value, the host does not start. Anything your hasher needs in order to hash
+  is therefore a startup dependency.
+- **For every client id that is not registered**, `/connect/token`, `/connect/revoke` and
+  `/connect/introspect` call `VerifySecretAsync` with the presented secret and that placeholder,
+  and reject the client whatever it answers. An exception you throw there is answered as it would
+  be for a registered client on the same endpoint, so an outage does not reveal which client ids
+  exist.
+
+This keeps an unknown client id from answering faster than a wrong secret only while a stored hash
+costs about the same to verify as the placeholder. A replacement that changes the algorithm or work
+factor and still verifies the hashes stored before it was installed does not meet that: registered
+clients cost the old work factor and unknown ids cost the new one, so response time can reveal which
+client ids exist until every existing client has been issued a new secret.
+
 ## Worked examples
 
 Each example below is complete and compiles against this package, `EdFi.Api.Plugins` 1.1.0 or

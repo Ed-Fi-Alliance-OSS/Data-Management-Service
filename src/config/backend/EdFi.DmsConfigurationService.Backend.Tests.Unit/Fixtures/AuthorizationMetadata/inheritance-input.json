@@ -1,0 +1,195 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "Zoo",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "Empty",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "Alpha",
+      "isSystemReserved": false
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "root",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "RootRead"
+              }
+            ]
+          },
+          {
+            "name": "Delete",
+            "authorizationStrategies": [
+              {
+                "name": "RootDelete"
+              }
+            ]
+          },
+          {
+            "name": "Update",
+            "authorizationStrategies": [
+              {
+                "name": "RootUpdate"
+              }
+            ]
+          },
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "RootCreate"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "Zoo",
+          "actions": [
+            {
+              "name": "Read",
+              "authorizationStrategyOverrides": [
+                {
+                  "name": "AncestorRead"
+                }
+              ]
+            },
+            {
+              "name": "Delete",
+              "authorizationStrategyOverrides": []
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "Zebra",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Create",
+                "authorizationStrategies": [
+                  {
+                    "name": "LeafCreate"
+                  }
+                ]
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "zoo",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Second"
+                    },
+                    {
+                      "name": "First"
+                    }
+                  ]
+                },
+                {
+                  "name": "Create",
+                  "authorizationStrategyOverrides": []
+                }
+              ]
+            },
+            {
+              "name": "Alpha",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": []
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "branch",
+          "defaultAuthorization": {
+            "actions": [
+              {
+                "name": "Read",
+                "authorizationStrategies": [
+                  {
+                    "name": "NearSecond"
+                  },
+                  {
+                    "name": "NearFirst"
+                  }
+                ]
+              },
+              {
+                "name": "Update",
+                "authorizationStrategies": []
+              }
+            ]
+          },
+          "claimSets": [
+            {
+              "name": "Zoo",
+              "actions": [
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": []
+                },
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": []
+                }
+              ]
+            }
+          ],
+          "claims": [
+            {
+              "name": "Beta"
+            },
+            {
+              "name": "Alpha",
+              "claimSets": [
+                {
+                  "name": "Zoo",
+                  "actions": [
+                    {
+                      "name": "Read",
+                      "authorizationStrategyOverrides": []
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Unassociated",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NeverGranted"
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
+}

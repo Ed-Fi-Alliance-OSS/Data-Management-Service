@@ -374,26 +374,51 @@ public class ClaimSetRepository(
                 transaction
             );
 
-            // Polly retry policy for handling multi-user conflicts
-            AsyncRetryPolicy<ClaimsHierarchySaveResult> retryPolicy = Policy
-                .HandleResult<ClaimsHierarchySaveResult>(result =>
-                    result is ClaimsHierarchySaveResult.FailureMultiUserConflict
-                )
-                .RetryAsync(
-                    3,
-                    onRetry: (result, retryCount) =>
-                    {
-                        logger.LogWarning(
-                            "Retrying ApplyNameChangeToClaimsHierarchy due to multi-user conflict. Attempt {RetryCount}.",
-                            retryCount
-                        );
-                    }
-                );
+            // The clients' identity provider claims still carry the old name. Marking them lets the
+            // Application's next PUT, even an unchanged one, send them the new one. It follows the
+            // Application update, the lock order an Application save takes.
+            string markClientsSql = $"""
+                UPDATE ac
+                SET IdentityProviderSyncPendingSince = COALESCE(ac.IdentityProviderSyncPendingSince, @PendingSince)
+                FROM dmscs.ApiClient ac
+                INNER JOIN dmscs.Application a ON ac.ApplicationId = a.Id
+                INNER JOIN dmscs.Vendor v ON a.VendorId = v.Id
+                WHERE a.ClaimSetName = @NewClaimSetName
+                  AND {TenantContext.TenantWhereClause("v")};
+                """;
+
+            var markParameters = new DynamicParameters(new { NewClaimSetName = newClaimSetName, TenantId });
+            // Preserve DATETIME2 precision; an inferred datetime parameter rounds to 1/300 second.
+            markParameters.Add("PendingSince", auditContext.GetCurrentTimestamp(), DbType.DateTime2);
+            await connection.ExecuteAsync(markClientsSql, markParameters, transaction);
+
+            // Polly retry pipeline for handling multi-user conflicts
+            ResiliencePipeline<ClaimsHierarchySaveResult> retryPipeline =
+                new ResiliencePipelineBuilder<ClaimsHierarchySaveResult>()
+                    .AddRetry(
+                        new RetryStrategyOptions<ClaimsHierarchySaveResult>
+                        {
+                            MaxRetryAttempts = 3,
+                            Delay = TimeSpan.Zero,
+                            ShouldHandle = new PredicateBuilder<ClaimsHierarchySaveResult>().HandleResult(
+                                result => result is ClaimsHierarchySaveResult.FailureMultiUserConflict
+                            ),
+                            OnRetry = args =>
+                            {
+                                logger.LogWarning(
+                                    "Retrying ApplyNameChangeToClaimsHierarchy due to multi-user conflict. Attempt {RetryCount}.",
+                                    args.AttemptNumber + 1
+                                );
+                                return ValueTask.CompletedTask;
+                            },
+                        }
+                    )
+                    .Build();
 
             ClaimsHierarchySaveResult nameChangeResult =
                 (
-                    await retryPolicy.ExecuteAsync(() =>
-                        ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
+                    await retryPipeline.ExecuteAsync(async _ =>
+                        await ApplyNameChangeToClaimsHierarchy(oldClaimSetName, newClaimSetName)
                     )
                 )
                 ?? new ClaimsHierarchySaveResult.FailureUnknown(
@@ -804,59 +829,71 @@ public class ClaimSetRepository(
             }
 
             // Save the JSON hierarchy with optimistic locking
-            var retryPolicy = Policy
-                .Handle<DBConcurrencyException>()
-                .RetryAsync(
-                    3,
-                    async (exception, retryCount) =>
+            ResiliencePipeline retryPipeline = new ResiliencePipelineBuilder()
+                .AddRetry(
+                    new RetryStrategyOptions
                     {
-                        logger.LogWarning("Retrying save due to conflict. Attempt {RetryCount}.", retryCount);
-
-                        // Reload hierarchy and reapply changes
-                        claimsHierarchyResult = (
-                            await claimsHierarchyRepository.GetClaimsHierarchy(transaction)
-                        );
-
-                        success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
-
-                        if (success is null)
+                        MaxRetryAttempts = 3,
+                        Delay = TimeSpan.Zero,
+                        ShouldHandle = new PredicateBuilder().Handle<DBConcurrencyException>(),
+                        OnRetry = async args =>
                         {
-                            throw new Exception(
-                                "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."
-                            );
-                        }
-
-                        claimsHierarchy = success.Claims;
-                        lastModifiedDate = success.LastModifiedDate;
-
-                        // Apply the changes to the refreshed claims hierarchy
-                        claimsHierarchyManager.RemoveClaimSetFromHierarchy(command.Name, claimsHierarchy!);
-                        var retriedSkippedClaims = claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(
-                            command,
-                            claimsHierarchy!
-                        );
-
-                        if (retriedSkippedClaims.Count > 0)
-                        {
-                            string sanitizedClaimSetName = LoggingUtility.SanitizeForLog(command.Name);
-                            string sanitizedRetriedSkippedClaims = string.Join(
-                                ", ",
-                                retriedSkippedClaims.Select(LoggingUtility.SanitizeForLog)
-                            );
-
                             logger.LogWarning(
-                                "Skipped {SkippedCount} claims while reapplying claim set {ClaimSetName}: {SkippedClaims}",
-                                retriedSkippedClaims.Count,
-                                sanitizedClaimSetName,
-                                sanitizedRetriedSkippedClaims
+                                "Retrying save due to conflict. Attempt {RetryCount}.",
+                                args.AttemptNumber + 1
                             );
-                        }
 
-                        skippedClaims = retriedSkippedClaims;
+                            // Reload hierarchy and reapply changes
+                            claimsHierarchyResult = (
+                                await claimsHierarchyRepository.GetClaimsHierarchy(transaction)
+                            );
+
+                            success = claimsHierarchyResult as ClaimsHierarchyGetResult.Success;
+
+                            if (success is null)
+                            {
+                                throw new Exception(
+                                    "An unexpected error occurred while reloading the claims hierarchy due to a concurrency check failure."
+                                );
+                            }
+
+                            claimsHierarchy = success.Claims;
+                            lastModifiedDate = success.LastModifiedDate;
+
+                            // Apply the changes to the refreshed claims hierarchy
+                            claimsHierarchyManager.RemoveClaimSetFromHierarchy(
+                                command.Name,
+                                claimsHierarchy!
+                            );
+                            var retriedSkippedClaims =
+                                claimsHierarchyManager.ApplyImportedClaimSetToHierarchy(
+                                    command,
+                                    claimsHierarchy!
+                                );
+
+                            if (retriedSkippedClaims.Count > 0)
+                            {
+                                string sanitizedClaimSetName = LoggingUtility.SanitizeForLog(command.Name);
+                                string sanitizedRetriedSkippedClaims = string.Join(
+                                    ", ",
+                                    retriedSkippedClaims.Select(LoggingUtility.SanitizeForLog)
+                                );
+
+                                logger.LogWarning(
+                                    "Skipped {SkippedCount} claims while reapplying claim set {ClaimSetName}: {SkippedClaims}",
+                                    retriedSkippedClaims.Count,
+                                    sanitizedClaimSetName,
+                                    sanitizedRetriedSkippedClaims
+                                );
+                            }
+
+                            skippedClaims = retriedSkippedClaims;
+                        },
                     }
-                );
+                )
+                .Build();
 
-            await retryPolicy.ExecuteAsync(async () =>
+            await retryPipeline.ExecuteAsync(async _ =>
             {
                 var saveResults = await claimsHierarchyRepository.SaveClaimsHierarchy(
                     claimsHierarchy,
@@ -1040,7 +1077,9 @@ public class ClaimSetRepository(
     public async Task<ClaimSetResourceActionMutationResult> ResetAuthorizationStrategies(
         int claimSetId,
         int resourceClaimId
-    ) => await CreateResourceActionMutationWorkflow().ResetAuthorizationStrategies(claimSetId, resourceClaimId);
+    ) =>
+        await CreateResourceActionMutationWorkflow()
+            .ResetAuthorizationStrategies(claimSetId, resourceClaimId);
 
     private ClaimSetResourceActionMutationWorkflow CreateResourceActionMutationWorkflow() =>
         new(
@@ -1068,14 +1107,12 @@ public class ClaimSetRepository(
     )
     {
         string claimSetSql = $"""
-                SELECT ClaimSetName, IsSystemReserved
-                FROM dmscs.ClaimSet WITH (UPDLOCK, HOLDLOCK)
-                WHERE Id = @ClaimSetId AND {ClaimSetWhereClause()};
-                """;
+            SELECT ClaimSetName, IsSystemReserved
+            FROM dmscs.ClaimSet WITH (UPDLOCK, HOLDLOCK)
+            WHERE Id = @ClaimSetId AND {ClaimSetWhereClause()};
+            """;
 
-        return await connection.QuerySingleOrDefaultAsync<
-            ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult
-        >(
+        return await connection.QuerySingleOrDefaultAsync<ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult>(
             claimSetSql,
             new { ClaimSetId = claimSetId, TenantId },
             transaction
@@ -1087,14 +1124,12 @@ public class ClaimSetRepository(
         DbTransaction transaction
     )
     {
-        const string sql =
-            "SELECT Id, ClaimName FROM dmscs.ResourceClaim WHERE TenantId IS NULL";
+        const string sql = "SELECT Id, ClaimName FROM dmscs.ResourceClaim WHERE TenantId IS NULL";
 
         return (
             await connection.QueryAsync<ResourceClaimMetadataRow>(sql, transaction: transaction)
         ).ToList();
     }
-
 
     private static ClaimSetResponse CreateClaimSetResponse(dynamic row, List<Claim> hierarchy)
     {

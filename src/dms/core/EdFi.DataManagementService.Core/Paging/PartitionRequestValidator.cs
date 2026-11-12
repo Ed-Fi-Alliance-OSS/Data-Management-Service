@@ -53,7 +53,7 @@ internal static class PartitionRequestValidator
     /// <summary>
     /// The paging parameters the partitions operation reserves, in the canonical order they are
     /// reported. They belong to GET-many, so a client that confused the two endpoints is told which
-    /// parameter does not apply rather than being given an unknown-query-field answer. Spelled from
+    /// parameter does not apply rather than having it ignored as if it were a typo. Spelled from
     /// the constants the cursor validator reads, so renaming one cannot leave the names that validator
     /// recognizes and the names this operation rejects disagreeing.
     /// </summary>
@@ -108,8 +108,8 @@ internal static class PartitionRequestValidator
         // Phase 2, reserved paging parameters. Reported without parsing their values: the complaint is
         // that the parameter does not apply here at all, so whether its value is well formed is beside
         // the point. Resource-property filters and the change-version filters are not reserved and are
-        // deliberately not reported. Every other unknown field is left to the caller's own
-        // unknown-query-field rule, which ValidatePartitionQueryMiddleware applies before this phase.
+        // deliberately not reported. Every other name is left to the caller, which ignores and reports
+        // a name that matches no query field.
         string[] errors =
         [
             .. ReservedParameters.Where(queryParameters.ContainsKey).Select(UnsupportedParameter),

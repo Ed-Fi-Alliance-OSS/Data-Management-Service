@@ -55,7 +55,7 @@ public class FailureResultsTests
 
         [Test]
         public void It_has_the_not_found_type() =>
-            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
 
         [Test]
         public void It_has_a_body_status_matching_the_http_status() =>
@@ -94,7 +94,10 @@ public class FailureResultsTests
 
         [Test]
         public void It_has_the_internal_server_error_type() =>
-            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            _result.Body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:internal-server-error");
 
         [Test]
         public void It_has_a_body_status_matching_the_http_status() =>
@@ -127,7 +130,10 @@ public class FailureResultsTests
 
         [Test]
         public void It_has_the_authorization_type() =>
-            _result.Body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:security:authorization");
+            _result.Body["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:management-api:security:authorization");
 
         [Test]
         public void It_has_the_authorization_title() =>
@@ -224,14 +230,14 @@ public class FailureResultsTests
     }
 
     [TestFixture]
-    public class Given_a_too_many_tokens_failure_result
+    public class Given_a_too_many_requests_failure_result
     {
         private ExecutedResult _result = null!;
 
         [SetUp]
         public async Task Setup()
         {
-            _result = await ExecuteAsync(FailureResults.TooManyTokens(5, "corr-tokens"));
+            _result = await ExecuteAsync(FailureResults.TooManyRequests("corr-requests"));
         }
 
         [Test]
@@ -242,11 +248,11 @@ public class FailureResultsTests
             _result.ContentType.Should().Be("application/problem+json");
 
         [Test]
-        public void It_has_the_too_many_tokens_type() =>
+        public void It_has_the_too_many_requests_type() =>
             _result.Body["type"]!
                 .GetValue<string>()
                 .Should()
-                .Be("urn:ed-fi:api:security:authentication:too-many-tokens");
+                .Be("urn:ed-fi:management-api:too-many-requests");
 
         [Test]
         public void It_has_a_body_status_matching_the_http_status() =>
@@ -254,18 +260,6 @@ public class FailureResultsTests
 
         [Test]
         public void It_includes_the_correlation_id() =>
-            _result.Body["correlationId"]!.GetValue<string>().Should().Be("corr-tokens");
-
-        [Test]
-        public void It_names_the_limit_in_the_errors_array()
-        {
-            _result.Body["errors"]!.AsArray().Count.Should().Be(1);
-            _result.Body["errors"]![0]!
-                .GetValue<string>()
-                .Should()
-                .Be(
-                    "Too many access tokens have been requested (limit is 5). Access tokens should be reused until they expire."
-                );
-        }
+            _result.Body["correlationId"]!.GetValue<string>().Should().Be("corr-requests");
     }
 }

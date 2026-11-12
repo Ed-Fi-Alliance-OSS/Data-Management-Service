@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Core.Middleware;
 
 /// <summary>
 /// Middleware responsible for validating reference array uniqueness
-/// by checking for duplicate ReferentialIds within reference arrays
+/// by checking for structurally duplicate references within reference arrays
 /// </summary>
 internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IPipelineStep
 {
@@ -79,7 +79,7 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
     }
 
     /// <summary>
-    /// Validates all document reference arrays have unique ReferentialIds
+    /// Validates that no document reference array repeats a reference
     /// </summary>
     /// <returns>A validation error tuple if duplicates are found, null otherwise</returns>
     private static (string errorKey, string message)? ValidateUniqueReferences(
@@ -105,19 +105,20 @@ internal class ReferenceArrayUniquenessValidationMiddleware(ILogger logger) : IP
     }
 
     /// <summary>
-    /// Finds the index of the first duplicate ReferentialId in a document reference array
+    /// Finds the index of the first reference that repeats an earlier one: an ordinally equal identity,
+    /// compared through <see cref="DocumentIdentityComparer"/>. Every reference in an array comes from one
+    /// document path, so all of them share one target resource.
     /// </summary>
     /// <param name="documentReferences">Array of document references to check</param>
     /// <returns>Index of the first duplicate found, or -1 if no duplicates exist</returns>
     private static int FindDuplicateReferenceIndex(DocumentReference[] documentReferences)
     {
-        // Use HashSet for O(n) duplicate detection instead of O(n²)
-        HashSet<string> seenIds = [];
+        // Use a HashSet for O(n) duplicate detection instead of O(n²)
+        HashSet<DocumentIdentity> seenIdentities = new(DocumentIdentityComparer.Instance);
 
         for (int i = 0; i < documentReferences.Length; i++)
         {
-            string id = documentReferences[i].ReferentialId.ToString();
-            if (!seenIds.Add(id))
+            if (!seenIdentities.Add(documentReferences[i].DocumentIdentity))
             {
                 return i; // Return index of first duplicate found
             }

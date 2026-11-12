@@ -37,6 +37,17 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create(
         "tenant-cache-read",
         7
@@ -509,15 +520,13 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @insertedDocument
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
 
             SELECT [DocumentId]
@@ -525,8 +534,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
 
         return new SourceDocument(
@@ -584,14 +592,12 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             SELECT
                 [requested].[DocumentUuid],
                 [requested].[ResourceKeyId],
-                [requested].[ContentVersion],
-                @lastModifiedAt
+                [requested].[ContentVersion]
             FROM @requested AS [requested];
 
             SELECT
@@ -607,8 +613,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             new SqlParameter("@sourceDocumentsJson", SqlDbType.NVarChar, -1)
             {
                 Value = JsonSerializer.Serialize(seeds),
-            },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime }
+            }
         );
 
         return rows.Select(row => new SourceDocument(
@@ -632,9 +637,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [ShortDescription],
                 [Description],
                 [EffectiveBeginDate],
-                [EffectiveEndDate],
-                [Discriminator],
-                [Uri]
+                [EffectiveEndDate]
             )
             VALUES (
                 @documentId,
@@ -644,9 +647,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 @shortDescription,
                 @description,
                 @effectiveBeginDate,
-                @effectiveEndDate,
-                @discriminator,
-                @uri
+                @effectiveEndDate
             );
             """,
             new SqlParameter("@documentId", SqlDbType.BigInt) { Value = descriptor.DocumentId },
@@ -659,15 +660,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
             new SqlParameter("@shortDescription", SqlDbType.VarChar, 75) { Value = "Alternative" },
             new SqlParameter("@description", SqlDbType.VarChar, 1024) { Value = "Alternative school type" },
             new SqlParameter("@effectiveBeginDate", SqlDbType.Date) { Value = new DateOnly(2025, 1, 15) },
-            new SqlParameter("@effectiveEndDate", SqlDbType.Date) { Value = new DateOnly(2025, 12, 31) },
-            new SqlParameter("@discriminator", SqlDbType.VarChar, 128)
-            {
-                Value = DescriptorResource.ResourceName,
-            },
-            new SqlParameter("@uri", SqlDbType.VarChar, 306)
-            {
-                Value = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
-            }
+            new SqlParameter("@effectiveEndDate", SqlDbType.Date) { Value = new DateOnly(2025, 12, 31) }
         );
     }
 
@@ -693,6 +686,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -705,6 +699,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -733,6 +728,10 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 ),
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
                 Value = new JsonObject { ["value"] = $"cache-{contentVersion}" }.ToJsonString(),
@@ -790,6 +789,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -802,6 +802,7 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 [cache].[ContentVersion],
                 [cache].[StreamEtag],
                 @lastModifiedAt,
+                @contentCreatedAt,
                 [cache].[DocumentJson],
                 @computedAt
             FROM OPENJSON(@cacheRowsJson)
@@ -830,6 +831,10 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
                 Value = resourceKey.ResourceVersion,
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt.UtcDateTime },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@computedAt", SqlDbType.DateTime2)
             {
                 Value = LastModifiedAt.AddMinutes(1).UtcDateTime,
@@ -842,16 +847,11 @@ public class Given_A_Mssql_DocumentCacheReadLookupAdapter
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE [dms].[Document]
-            SET [ContentVersion] = @contentVersion,
-                [ContentLastModifiedAt] = @lastModifiedAt
+            SET [ContentVersion] = @contentVersion
             WHERE [DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", SqlDbType.BigInt) { Value = documentId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2)
-            {
-                Value = LastModifiedAt.AddMinutes(5).UtcDateTime,
-            }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
     }
 

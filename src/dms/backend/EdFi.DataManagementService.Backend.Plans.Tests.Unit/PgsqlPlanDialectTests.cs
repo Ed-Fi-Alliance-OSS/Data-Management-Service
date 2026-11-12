@@ -15,6 +15,7 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_PgsqlPlanDialect
 {
+    private static readonly DbTableName RootTable = new(new DbSchemaName("edfi"), "School");
     private PgsqlPlanDialect _dialect = null!;
     private SqlWriter _writer = null!;
     private KeysetTableContract _keyset = null!;
@@ -55,7 +56,7 @@ public class Given_PgsqlPlanDialect
     [Test]
     public void It_should_emit_canonical_document_metadata_select()
     {
-        _dialect.AppendDocumentMetadataSelect(_writer, _keyset);
+        _dialect.AppendDocumentMetadataSelect(_writer, _keyset, RootTable);
 
         _writer
             .ToString()
@@ -66,9 +67,10 @@ public class Given_PgsqlPlanDialect
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."ContentLastModifiedAt",
+                    r."ContentLastModifiedAt",
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
+                INNER JOIN "edfi"."School" r ON r."DocumentId" = d."DocumentId"
                 INNER JOIN "page" k ON d."DocumentId" = k."DocumentId"
                 ORDER BY COALESCE(k."Ordinal", d."DocumentId"), d."DocumentId";
 
@@ -81,7 +83,8 @@ public class Given_PgsqlPlanDialect
     {
         _dialect.AppendSingleDocumentMetadataSelect(
             _writer,
-            HydrationSqlConventions.SingleDocumentIdParameterName
+            HydrationSqlConventions.SingleDocumentIdParameterName,
+            RootTable
         );
 
         _writer
@@ -93,9 +96,10 @@ public class Given_PgsqlPlanDialect
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."ContentLastModifiedAt",
+                    r."ContentLastModifiedAt",
                     d."ResourceKeyId"
                 FROM "dms"."Document" d
+                INNER JOIN "edfi"."School" r ON r."DocumentId" = d."DocumentId"
                 WHERE d."DocumentId" = @DocumentId
                 ORDER BY d."DocumentId";
 

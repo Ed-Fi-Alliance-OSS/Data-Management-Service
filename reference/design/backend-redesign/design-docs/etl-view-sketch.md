@@ -26,7 +26,7 @@ For each project schema `{schema}` (e.g., `edfi`) and each resource root table `
     - scalar identity columns from `{schema}.{R}`, plus
     - referenced identity fields for any identity elements sourced from `{resource}Reference` objects (from local per-site identity-part binding columns; aliases when unified; see [key-unification.md](key-unification.md)),
   - scalar fields from `{schema}.{R}`,
-  - `LastModifiedDate` and `ChangeVersion` from `dms.Document` stamps.
+  - `LastModifiedDate` from the authoritative root timestamp and `ChangeVersion` from its document-version mirror.
 
 Define similar views for collection tables `{schema}.{R}_{CollectionPath}` that replace the parent `..._DocumentId` with the parent natural key columns (plus ordinals).
 
@@ -34,7 +34,7 @@ Define similar views for collection tables `{schema}.{R}_{CollectionPath}` that 
 
 With stored stamps:
 
-- `LastModifiedDate(P) = dms.Document.ContentLastModifiedAt`
+- `LastModifiedDate(P) = <resource root>.ContentLastModifiedAt`
 - `ChangeVersion(P) = dms.Document.ContentVersion`
 
 No dependency aggregation is required for these views in the baseline redesign because indirect impacts are materialized as real updates on referrers (FK cascades update canonical reference identity storage columns, triggering normal stamping). Under key unification, per-site identity columns may be generated aliases; see [key-unification.md](key-unification.md).
@@ -62,8 +62,8 @@ SELECT
     ssa.ExitWithdrawDate,
 
     -- Stored metadata (representation-sensitive)
-    d.ContentLastModifiedAt AS LastModifiedDate,
-    d.ContentVersion        AS ChangeVersion
+    ssa.ContentLastModifiedAt AS LastModifiedDate,
+    ssa.ContentVersion        AS ChangeVersion
 FROM edfi.StudentSchoolAssociation ssa
 JOIN dms.Document d
   ON d.DocumentId = ssa.DocumentId;
@@ -75,7 +75,9 @@ JOIN dms.Document d
   - project identity fields from the referencing table’s per-site identity-part binding columns (aliases when unified; see [key-unification.md](key-unification.md)).
   - this applies to both concrete and abstract references.
 - **Descriptor references** (`..._DescriptorId`):
-  - join `dms.Descriptor` and project `Uri` (unless a separate descriptor-URI denormalization is introduced).
+  - join `dms.Descriptor d` on `d.DescriptorId = <..._DescriptorId>`, using the database dialect's identifier quoting.
+  - project the URI as `d."Namespace" || '#' || d."CodeValue"` on PostgreSQL, or use the non-persisted computed `d.[Uri]` column on SQL Server.
+  - use the descriptor's owning `d.DocumentId` when joining `dms.Document` for document metadata or stamps.
 
 ## Collections (sketch)
 
@@ -88,7 +90,7 @@ For collection-shaped outputs, define one view per collection table:
 ## Incremental ETL and performance notes
 
 The intended incremental pattern is:
-1. Select candidate `DocumentId`s in a `[min,max]` window by range-filtering on the resource root's `ContentVersion` mirror column (defined in [change-queries.md](change-queries.md) §"Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror"). The mirror is already the source the ETL view projects `ChangeVersion` from.
+1. Select candidate `DocumentId`s in a `[min,max]` window by range-filtering on the resource root's `ContentVersion` mirror column (defined in [change-queries.md](change-queries.md) §"Concrete-resource version mirror and authoritative timestamp"). The mirror is already the source the ETL view projects `ChangeVersion` from.
 2. Join those candidate ids to the ETL view(s) to fetch natural-key-shaped rows.
 
 If view performance is insufficient at scale, consider:

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
@@ -10,6 +11,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -133,6 +135,70 @@ public class Given_NamespaceAuthorizationExecutor
             .Should()
             .Equal("@proposedNamespace", "@namespacePrefixes");
         commandExecutor.Commands[0].Parameters[0].Value.Should().Be("uri://ed-fi.org/Thing");
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Null_Proposed_Namespace
+    {
+        private RelationalParameter _proposed = null!;
+        private IReadOnlyList<RelationalParameter> _otherParameters = null!;
+        private NpgsqlParameter _configuredProposed = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            var request = new NamespaceAuthorizationExecutionRequest(
+                CreateMappingSet(SqlDialect.Pgsql),
+                DocumentId: 0L,
+                ProposedNamespace: null,
+                [ProposedCheck(0)],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    _twoPrefixes,
+                    "namespacePrefixes"
+                )
+            );
+            var sqlPlan = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql).Compile(
+                new NamespaceAuthorizationSqlSpec(
+                    request.Checks,
+                    request.NamespacePrefixParameterization,
+                    NamespaceAuthorizationSqlSpecDefaults.DocumentIdParameterName,
+                    NamespaceAuthorizationSqlSpecDefaults.ProposedNamespaceParameterName
+                )
+            );
+
+            var parameters = NamespaceAuthorizationExecutor.BuildCommand(sqlPlan, request).Parameters;
+
+            _proposed = parameters.Single(static parameter => parameter.Name == "@proposedNamespace");
+            _otherParameters =
+            [
+                .. parameters.Where(static parameter => parameter.Name != "@proposedNamespace"),
+            ];
+            _configuredProposed = new NpgsqlParameter { Value = DBNull.Value };
+            _proposed.ConfigureParameter?.Invoke(_configuredProposed);
+        }
+
+        [Test]
+        public void It_binds_a_null_value()
+        {
+            _proposed.Value.Should().BeNull();
+        }
+
+        [Test]
+        public void It_types_the_proposed_namespace_parameter_as_a_string()
+        {
+            _configuredProposed.DbType.Should().Be(DbType.String);
+        }
+
+        [Test]
+        public void It_leaves_the_other_parameters_untyped()
+        {
+            _otherParameters
+                .Should()
+                .NotBeEmpty()
+                .And.OnlyContain(static parameter => parameter.ConfigureParameter == null);
+        }
     }
 
     [Test]

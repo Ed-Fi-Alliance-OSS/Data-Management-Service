@@ -1,9 +1,9 @@
 @reset-data-before-scenario
 Feature: The partitions endpoint for Ed-Fi Resources
     The public partitions surface as a client meets it through the deployed stack: the token array, the
-    count that is an upper bound rather than a promise, the exact rejection contract for the parameters
-    the operation does not accept, the profile outcome it shares with the collection GET, and what the
-    served documents publish about it.
+    count that is an upper bound rather than a promise, the exact rejection contract for the reserved
+    paging parameters, the parameters the operation ignores, the profile outcome it shares with the
+    collection GET, and what the served documents publish about it.
 
         Background:
             Given the claimSet "EdFiSandbox" is authorized with namespacePrefixes "uri://ed-fi.org"
@@ -77,12 +77,15 @@ Feature: The partitions endpoint for Ed-Fi Resources
                   | The 'totalCount' parameter is not supported by the partitions endpoint. |
 
         @e2e-ci-shard-3
-        Scenario Outline: 05 A parameter only ODS defines is an unknown query field
+        Scenario Outline: 05 A parameter only ODS defines is ignored and named in the warning
              When a GET request is made to "/ed-fi/schools/partitions?<parameter>=true"
-             Then it should respond with 400
-              And the response content type is "application/json"
-              And the response body is the bad request shell
-              And the response body has exactly one error "The query field '<parameter>' is not valid for this resource."
+             Then it should respond with 200
+              And the response headers include
+                  """
+                  {
+                      "X-EdFi-Warning": "Ignored query parameters: <parameter>"
+                  }
+                  """
 
         Examples:
                   | parameter           |

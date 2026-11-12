@@ -50,11 +50,16 @@ on:
         type: boolean
         default: true
     secrets:
+      # The Azure Artifacts publishing credentials. Only publish-sdk-package and
+      # promote-azure-package read them, in the push and promote steps alone, after entering the
+      # 'publishing' environment; the build restores from the feed anonymously. They must exist
+      # ONLY as secrets of the 'publishing' environment, never as repository or organization
+      # secrets: GitHub requires the caller to pass an environment secret by name, but the caller's
+      # own job has no environment, so what it passes resolves only inside these jobs.
       AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN:
-        required: true
+        required: false
       AZURE_ARTIFACTS_USER_NAME:
-        # Consumed only on the release-promotion path (env.ARTIFACTS_USERNAME); restore uses the PAT
-        # alone. Optional so non-publishing callers and forks without the secret do not hard-fail.
+        # Consumed only on the release-promotion path.
         required: false
     outputs:
       hash-code:
@@ -70,9 +75,6 @@ on:
 env:
   ARTIFACTS_FEED_URL: ${{ vars.AZURE_ARTIFACTS_FEED_URL }}
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
-  VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
 
 permissions:
   contents: write
@@ -95,6 +97,16 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # A tag push builds, publishes and attaches release assets from this job's outputs, and every
+      # job that reads the tag name follows it by needs. A tag that is not a v version stops here.
+      - name: Validate the release tag
+        if: ${{ github.ref_type == 'tag' }}
+        env:
+          RELEASE_REF: ${{ github.ref_name }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -296,11 +308,14 @@ jobs:
 
   publish-sdk-package:
     name: Publish ${{ inputs.sdk_display_name }} Package
-    if: ${{ inputs.publish_package }}
+    # Only from main or a v* tag, never a manual run from another branch, and only in the
+    # 'publishing' environment, whose protection rules GitHub checks before it releases the token.
+    if: ${{ inputs.publish_package && github.event_name != 'pull_request' && ((github.ref_type == 'branch' && github.ref == 'refs/heads/main') || (github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v'))) }}
     needs:
       - build-sdk
       - generate-package-sbom
       - generate-package-provenance
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -320,11 +335,14 @@ jobs:
             InstallCredentialHandler
 
       - name: Push SDK Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
          $artifact = (Get-ChildItem -Name -Include *.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+           NuGetApiKey = $env:ARTIFACTS_API_KEY
          }
 
          $artifact | ForEach-Object {
@@ -334,23 +352,36 @@ jobs:
 
   promote-azure-package:
     name: Promote Azure Package
-    if: ${{ github.event_name == 'release' }}
+    # Only a publishing call promotes, and only a release event on its v* tag.
+    if: ${{ inputs.publish_package && github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/v') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
         shell: pwsh
+    env:
+      RELEASE_REF: ${{ github.ref_name }}
     steps:
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # A stable release promotes by its tag name, so the name must be a v version first.
+      - name: Validate the release tag
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:RELEASE_REF -Prefix v
+
       - name: Promote SDK Azure Package
+        env:
+          ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
         run: |
           $arguments = @{
             PackagesURL = "${{ env.ARTIFACTS_PACKAGES_URL }}"
-            Username    = "${{ env.ARTIFACTS_USERNAME }}"
+            Username    = $env:ARTIFACTS_USERNAME
             ViewId      = "release"
-            ReleaseRef  = "${{ github.ref_name }}"
-            Password    = (ConvertTo-SecureString -String "${{ env.ARTIFACTS_API_KEY }}" -AsPlainText -Force)
+            ReleaseRef  = $env:RELEASE_REF
+            Password    = (ConvertTo-SecureString -String $env:ARTIFACTS_API_KEY -AsPlainText -Force)
             PackageName = "${{ inputs.sdk_package_name }}"
           }
 
@@ -364,6 +395,9 @@ jobs:
       - generate-package-sbom
       - generate-package-provenance
     if: ${{ github.event_name == 'push' }}
+    # The tag was validated by the build job this one follows through its needs.
+    env:
+      RELEASE_REF: ${{ github.ref_name }}
     permissions:
       contents: write
     steps:
@@ -381,10 +415,12 @@ jobs:
 
       - name: Attach SBOM to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ github.ref_name }}"
+          $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.manifest_file }}"
           $uploadName = "${{ inputs.sdk_package_name }}-SBOM.zip"
 
@@ -406,10 +442,12 @@ jobs:
 
       - name: Attach Provenance to Release
         shell: pwsh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ github.ref_name }}"
+          $release = $env:RELEASE_REF
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
           $file = "${{ inputs.provenance_file }}"
           $uploadName = "${{ inputs.provenance_file }}"
 

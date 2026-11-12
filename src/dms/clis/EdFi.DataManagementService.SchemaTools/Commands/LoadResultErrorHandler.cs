@@ -79,4 +79,37 @@ public static class LoadResultErrorHandler
                 return 1;
         }
     }
+
+    /// <summary>
+    /// Writes only typed input failure categories and sanitized paths for commands that
+    /// suppress shared loader logging. Raw loader messages and schema values stay private.
+    /// </summary>
+    public static int HandleRedacted(ApiSchemaFileLoadResult result, TextWriter error)
+    {
+        static string PathForConsole(string path) =>
+            LoggingSanitizer.SanitizeForConsole(path).Replace("\r", string.Empty).Replace("\n", string.Empty);
+
+        var message = result switch
+        {
+            ApiSchemaFileLoadResult.FileNotFoundResult failure =>
+                $"Schema file not found: {PathForConsole(failure.FilePath)}",
+            ApiSchemaFileLoadResult.FileReadErrorResult failure =>
+                $"Schema file could not be read: {PathForConsole(failure.FilePath)}. Check access and file permissions.",
+            ApiSchemaFileLoadResult.InvalidJsonResult failure =>
+                $"Invalid JSON in schema file: {PathForConsole(failure.FilePath)}.",
+            ApiSchemaFileLoadResult.NormalizationFailureResult failure => failure.FailureResult switch
+            {
+                ApiSchemaNormalizationResult.MissingOrMalformedProjectSchemaResult =>
+                    "Schema project metadata is missing or malformed.",
+                ApiSchemaNormalizationResult.ApiSchemaVersionMismatchResult =>
+                    "Schema input format versions do not match.",
+                ApiSchemaNormalizationResult.ProjectEndpointNameCollisionResult =>
+                    "Schema project endpoint names collide.",
+                _ => "Schema input normalization failed.",
+            },
+            _ => "Schema inputs could not be loaded.",
+        };
+        error.WriteLine(message);
+        return 1;
+    }
 }

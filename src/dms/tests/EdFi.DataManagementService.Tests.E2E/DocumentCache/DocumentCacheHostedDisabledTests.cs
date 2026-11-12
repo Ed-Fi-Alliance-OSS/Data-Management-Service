@@ -168,6 +168,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     [ContentVersion],
                     [StreamEtag],
                     [LastModifiedAt],
+                    [ContentCreatedAt],
                     [DocumentJson],
                     [ComputedAt]
                 )
@@ -180,6 +181,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     @contentVersion,
                     @streamEtag,
                     @lastModifiedAt,
+                    @contentCreatedAt,
                     @documentJson,
                     @computedAt
                 );
@@ -194,6 +196,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     "ContentVersion",
                     "StreamEtag",
                     "LastModifiedAt",
+                    "ContentCreatedAt",
                     "DocumentJson",
                     "ComputedAt"
                 )
@@ -206,6 +209,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     @contentVersion,
                     @streamEtag,
                     @lastModifiedAt,
+                    @contentCreatedAt,
                     CAST(@documentJson AS jsonb),
                     @computedAt
                 );
@@ -218,6 +222,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         AddParameter(command, "@contentVersion", metadata.ContentVersion);
         AddParameter(command, "@streamEtag", $"disabled-e2e-{metadata.ContentVersion}");
         AddParameter(command, "@lastModifiedAt", ToProviderDateTime(metadata.ContentLastModifiedAt));
+        AddParameter(command, "@contentCreatedAt", ToProviderDateTime(metadata.ContentCreatedAt));
         AddParameter(command, "@documentJson", documentJson.ToJsonString());
         AddParameter(command, "@computedAt", ToProviderDateTime(DateTimeOffset.UtcNow));
 
@@ -238,11 +243,13 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     d.[DocumentId],
                     d.[DocumentUuid],
                     d.[ContentVersion],
-                    d.[ContentLastModifiedAt],
+                    student.[ContentLastModifiedAt],
+                    student.[ContentCreatedAt],
                     rk.[ProjectName],
                     rk.[ResourceName],
                     rk.[ResourceVersion]
                 FROM [dms].[Document] AS d
+                INNER JOIN [edfi].[Student] AS student ON student.[DocumentId] = d.[DocumentId]
                 INNER JOIN [dms].[ResourceKey] AS rk ON rk.[ResourceKeyId] = d.[ResourceKeyId]
                 WHERE d.[DocumentUuid] = @documentUuid;
                 """
@@ -251,11 +258,13 @@ public sealed partial class DocumentCacheHostedHappyPathTests
                     d."DocumentId",
                     d."DocumentUuid",
                     d."ContentVersion",
-                    d."ContentLastModifiedAt",
+                    student."ContentLastModifiedAt",
+                    student."ContentCreatedAt",
                     rk."ProjectName",
                     rk."ResourceName",
                     rk."ResourceVersion"
                 FROM "dms"."Document" AS d
+                INNER JOIN "edfi"."Student" AS student ON student."DocumentId" = d."DocumentId"
                 INNER JOIN "dms"."ResourceKey" AS rk ON rk."ResourceKeyId" = d."ResourceKeyId"
                 WHERE d."DocumentUuid" = @documentUuid;
                 """;
@@ -272,6 +281,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
             DocumentUuid: (Guid)reader["DocumentUuid"],
             ContentVersion: ReadInt64(reader, "ContentVersion"),
             ContentLastModifiedAt: ToUtcDateTimeOffset(reader["ContentLastModifiedAt"]),
+            ContentCreatedAt: ToUtcDateTimeOffset(reader["ContentCreatedAt"]),
             ProjectName: ReadRequiredString(reader, "ProjectName"),
             ResourceName: ReadRequiredString(reader, "ResourceName"),
             ResourceVersion: ReadRequiredString(reader, "ResourceVersion")
@@ -298,6 +308,7 @@ public sealed partial class DocumentCacheHostedHappyPathTests
         Guid DocumentUuid,
         long ContentVersion,
         DateTimeOffset ContentLastModifiedAt,
+        DateTimeOffset ContentCreatedAt,
         string ProjectName,
         string ResourceName,
         string ResourceVersion

@@ -653,7 +653,7 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
         act.Should().Throw<TException>().WithMessage(expectedMessage);
     }
 
-    private static TokenInfoEducationOrganizationSqlSpec CreateSpec(
+    internal static TokenInfoEducationOrganizationSqlSpec CreateSpec(
         SqlDialect dialect,
         Func<MappingSet, MappingSet> configureMappingSet
     )
@@ -691,7 +691,7 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
         );
     }
 
-    private static MappingSet WithEducationOrganizationUnionView(
+    internal static MappingSet WithEducationOrganizationUnionView(
         MappingSet mappingSet,
         Func<AbstractUnionViewInfo, AbstractUnionViewInfo> configureUnionView
     )
@@ -1056,5 +1056,81 @@ public class Given_TokenInfoEducationOrganizationSqlCompiler
     private static JsonPathExpression Path(string canonical)
     {
         return new JsonPathExpression(canonical, []);
+    }
+}
+
+[TestFixture]
+[Parallelizable]
+public class Given_An_EducationOrganization_Union_View_With_A_ResourceKeyId_Payload_Output
+{
+    private static readonly DbColumnName _resourceKeyIdColumn = new("ResourceKeyId");
+
+    private TokenInfoEducationOrganizationSqlPlan _plan = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var spec = Given_TokenInfoEducationOrganizationSqlCompiler.CreateSpec(
+            SqlDialect.Pgsql,
+            static mappingSet =>
+                Given_TokenInfoEducationOrganizationSqlCompiler.WithEducationOrganizationUnionView(
+                    mappingSet,
+                    AddResourceKeyIdPayloadOutputBeforeDiscriminator
+                )
+        );
+
+        _plan = new TokenInfoEducationOrganizationSqlCompiler(SqlDialect.Pgsql).Compile(spec);
+    }
+
+    [Test]
+    public void It_projects_each_arms_EducationOrganizationId_source_column()
+    {
+        _plan
+            .ProjectionArmsInOrder.Select(static arm => arm.EducationOrganizationIdColumn.Value)
+            .Should()
+            .Equal("SchoolId", "LocalEducationAgencyId", "CustomEducationOrganizationId");
+    }
+
+    // The derived shape: DocumentId, EducationOrganizationId, ResourceKeyId, Discriminator, with each arm
+    // projecting its member's compile-time resource key as an Int16 literal.
+    private static AbstractUnionViewInfo AddResourceKeyIdPayloadOutputBeforeDiscriminator(
+        AbstractUnionViewInfo view
+    )
+    {
+        var discriminatorIndex = view
+            .OutputColumnsInSelectOrder.Select(static column => column.ColumnName.Value)
+            .ToList()
+            .IndexOf("Discriminator");
+
+        return view with
+        {
+            OutputColumnsInSelectOrder =
+            [
+                .. view.OutputColumnsInSelectOrder.Take(discriminatorIndex),
+                new AbstractUnionViewOutputColumn(
+                    _resourceKeyIdColumn,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    null,
+                    null
+                ),
+                .. view.OutputColumnsInSelectOrder.Skip(discriminatorIndex),
+            ],
+            UnionArmsInOrder =
+            [
+                .. view.UnionArmsInOrder.Select(arm =>
+                    arm with
+                    {
+                        ProjectionExpressionsInSelectOrder =
+                        [
+                            .. arm.ProjectionExpressionsInSelectOrder.Take(discriminatorIndex),
+                            new AbstractUnionViewProjectionExpression.Int16Literal(
+                                arm.ConcreteMemberResourceKey.ResourceKeyId
+                            ),
+                            .. arm.ProjectionExpressionsInSelectOrder.Skip(discriminatorIndex),
+                        ],
+                    }
+                ),
+            ],
+        };
     }
 }

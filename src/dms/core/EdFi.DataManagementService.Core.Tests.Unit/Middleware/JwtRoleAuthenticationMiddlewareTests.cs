@@ -327,7 +327,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 DataStoreIds: []
             );
 
-            var (middleware, jwtValidationService, _) = CreateMiddleware();
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: ClaimTypes.Role);
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
@@ -411,7 +411,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 DataStoreIds: []
             );
 
-            var (middleware, jwtValidationService, _) = CreateMiddleware();
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: ClaimTypes.Role);
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(
@@ -523,7 +523,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         : JwtRoleAuthenticationMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled = false;
+        private bool _nextCalled = true;
 
         [SetUp]
         public async Task Setup()
@@ -545,15 +545,15 @@ public class JwtRoleAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_calls_the_next_middleware()
+        public void It_does_not_call_the_next_middleware()
         {
-            _nextCalled.Should().BeTrue();
+            _nextCalled.Should().BeFalse();
         }
 
         [Test]
-        public void It_does_not_set_a_response()
+        public void It_returns_403_forbidden()
         {
-            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
         }
     }
 
@@ -603,7 +603,7 @@ public class JwtRoleAuthenticationMiddlewareTests
         : JwtRoleAuthenticationMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled = false;
+        private bool _nextCalled = true;
 
         [SetUp]
         public async Task Setup()
@@ -625,15 +625,15 @@ public class JwtRoleAuthenticationMiddlewareTests
         }
 
         [Test]
-        public void It_calls_the_next_middleware()
+        public void It_does_not_call_the_next_middleware()
         {
-            _nextCalled.Should().BeTrue();
+            _nextCalled.Should().BeFalse();
         }
 
         [Test]
-        public void It_does_not_set_a_response()
+        public void It_returns_403_forbidden()
         {
-            _requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
         }
     }
 
@@ -645,7 +645,7 @@ public class JwtRoleAuthenticationMiddlewareTests
     ) : JwtRoleAuthenticationMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
-        private bool _nextCalled;
+        private bool _nextCalled = true;
 
         [SetUp]
         public async Task Setup()
@@ -660,6 +660,149 @@ public class JwtRoleAuthenticationMiddlewareTests
             );
 
             var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: ClaimTypes.Role);
+
+            (_requestInfo, _nextCalled) = await ExecuteValidBearerRequest(
+                middleware,
+                jwtValidationService,
+                principal
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_the_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_403_forbidden()
+        {
+            _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
+        }
+    }
+
+    // With a custom configured type, each legacy claim type alone must be denied,
+    // and the same type must be accepted once it is explicitly configured.
+    [TestFixture("role")]
+    [TestFixture("roles")]
+    [TestFixture(ClaimTypes.Role)]
+    [Parallelizable]
+    public class Given_Only_The_Configured_Role_Claim_Type_Is_Trusted(string legacyClaimType)
+        : JwtRoleAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = true;
+
+        private ClaimsPrincipal CreatePrincipal() =>
+            new(new ClaimsIdentity([new Claim(legacyClaimType, "service")], "Test", null, legacyClaimType));
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: "custom-role");
+
+            (_requestInfo, _nextCalled) = await ExecuteValidBearerRequest(
+                middleware,
+                jwtValidationService,
+                CreatePrincipal()
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_the_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_403_forbidden()
+        {
+            _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
+        }
+
+        [Test]
+        public void It_returns_the_insufficient_permissions_detail()
+        {
+            _requestInfo.FrontendResponse.Should().NotBeNull();
+            _requestInfo.FrontendResponse!.Body.Should().NotBeNull();
+            _requestInfo.FrontendResponse.Body!.ToString().Should().Contain("Insufficient permissions");
+        }
+
+        [Test]
+        public async Task It_allows_the_same_claim_type_when_it_is_explicitly_configured()
+        {
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: legacyClaimType);
+
+            (RequestInfo requestInfo, bool nextCalled) = await ExecuteValidBearerRequest(
+                middleware,
+                jwtValidationService,
+                CreatePrincipal()
+            );
+
+            nextCalled.Should().BeTrue();
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+    }
+
+    // Both the claim type and the role value are compared ordinally.
+    [TestFixture("Custom-Role", "service")]
+    [TestFixture("custom-role", "Service")]
+    [TestFixture("custom-role", "SERVICE")]
+    [Parallelizable]
+    public class Given_A_Role_Claim_Whose_Type_Or_Value_Differs_In_Case_From_The_Configuration(
+        string claimType,
+        string claimValue
+    ) : JwtRoleAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled = true;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimsPrincipal principal = new(
+                new ClaimsIdentity([new Claim(claimType, claimValue)], "Test", null, claimType)
+            );
+
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: "custom-role");
+
+            (_requestInfo, _nextCalled) = await ExecuteValidBearerRequest(
+                middleware,
+                jwtValidationService,
+                principal
+            );
+        }
+
+        [Test]
+        public void It_does_not_call_the_next_middleware()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public void It_returns_403_forbidden()
+        {
+            _requestInfo.FrontendResponse!.StatusCode.Should().Be(403);
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_No_Client_Role_Is_Configured_And_Only_A_Legacy_Role_Claim_Is_Present
+        : JwtRoleAuthenticationMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ClaimsPrincipal principal = new(new ClaimsIdentity([new Claim("roles", "other")], "Test"));
+
+            var (middleware, jwtValidationService, _) = CreateMiddleware(
+                clientRole: string.Empty,
+                roleClaimType: "custom-role"
+            );
 
             (_requestInfo, _nextCalled) = await ExecuteValidBearerRequest(
                 middleware,
@@ -851,7 +994,7 @@ public class JwtRoleAuthenticationMiddlewareTests
                 DataStoreIds: []
             );
 
-            var (middleware, jwtValidationService, _) = CreateMiddleware();
+            var (middleware, jwtValidationService, _) = CreateMiddleware(roleClaimType: ClaimTypes.Role);
 
             A.CallTo(() =>
                     jwtValidationService.ValidateAndExtractClientAuthorizationsAsync(

@@ -576,7 +576,10 @@ public static class RelationshipAuthorizationFailureMapper
             authObject.FailureHint
         );
 
-    private static string BuildSubjectHint(RelationshipAuthorizationAuth1SubjectFailureKind failureKind) =>
+    /// <summary>
+    /// Returns the diagnostic for a subject failure, shared by provider mapping and proposed-value correction.
+    /// </summary>
+    internal static string BuildSubjectHint(RelationshipAuthorizationAuth1SubjectFailureKind failureKind) =>
         failureKind switch
         {
             RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship =>

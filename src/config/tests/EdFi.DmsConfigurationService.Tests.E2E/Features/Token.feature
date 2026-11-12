@@ -72,22 +72,10 @@ Feature: Token validation
              Then it should respond with 201
               And retrieve created key and secret
              When a token request is attempted with the captured application credentials
-             Then it should respond with 401
-              And the response body is
-                  """
-                    {
-                      "detail": "The request could not be processed. See 'errors' for details.",
-                      "type": "urn:ed-fi:api:security:authentication",
-                      "title": "Authentication Failed",
-                      "status": 401,
-                      "validationErrors": {},
-                      "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                      ]
-                    }
-                  """
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
 
-        @SelfContainedOnly
         Scenario: 04 CMS-minted secret authenticates via raw HTTP Basic auth
              When a POST request is made to "/v3/vendors" with
                   """
@@ -176,3 +164,53 @@ Feature: Token validation
              When a token is requested with the credentials captured as "additionalClient" and scope "ClaimSet05Role"
              Then it should respond with 200
               And the token carries the configured client role claim
+
+        # Swagger UI sends the client credentials only in the Basic header and puts grant_type and
+        # scope in the form. Both identity providers accept it.
+        Scenario: 06 The system client authenticates via HTTP Basic auth with grant_type and scope in the form
+             When a token is requested using HTTP Basic auth with the system credentials and scope "edfi_admin_api/full_access"
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+
+        # Keycloak rejects a scope the client does not hold; the identity provider's reason reaches
+        # the caller as a 400 instead of a bad-gateway failure.
+        @KeycloakOnly
+        Scenario: 07 A scope the client does not hold is rejected as a bad request
+            Given client "DmsConfigurationService" credentials with "edfi_admin_api/readonly_access" scope
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_scope" with description "Invalid scopes: edfi_admin_api/readonly_access"
+              And the response header "WWW-Authenticate" is not present
+
+        Scenario: 08 A token requested without a scope authorizes the system client
+             When a token is requested without a scope using the system credentials
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+            Given token received
+             When a GET request is made to "/v3/vendors"
+             Then it should respond with 200
+
+        # Keycloak 26.1.4 answers a form value over its limit with 413 without reading the rest of the
+        # request and keeps the connection open, so the next request on that connection gets no answer;
+        # the Configuration Service closes each connection to Keycloak after its answer.
+        @KeycloakOnly
+        Scenario: 09 A token request after one Keycloak refused as too large is answered as usual
+             When a token is requested by the system client with a 400000-character client secret
+             Then it should respond with 502
+             When a token is requested without a scope using the system credentials
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+
+        # The self-contained provider rejects a scope the client does not hold in the RFC 6749 §5.2
+        # error format instead of issuing a token with the client's registered scope.
+        @SelfContainedOnly
+        Scenario: 10 A scope the client does not hold is rejected as an OAuth invalid_scope error
+            Given client "DmsConfigurationService" credentials with "edfi_admin_api/readonly_access" scope
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_scope" with description "The requested scope is invalid, unknown, malformed, or exceeds the scope granted to the client."
+
+        # A request naming a held and an unheld scope is granted the held one, and the response says so.
+        @SelfContainedOnly
+        Scenario: 11 A partially held scope is granted as the held subset
+            Given client "DmsConfigurationService" credentials with "edfi_admin_api/full_access edfi_admin_api/readonly_access" scope
+             Then it should respond with 200
+              And the token response scope is "edfi_admin_api/full_access"

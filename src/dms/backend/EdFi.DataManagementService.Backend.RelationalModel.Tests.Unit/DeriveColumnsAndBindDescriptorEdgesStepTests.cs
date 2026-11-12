@@ -182,7 +182,7 @@ public class Given_A_Descriptor_Path
     {
         _column.ColumnName.Value.Should().Be("SchoolTypeDescriptor_DescriptorId");
         _column.Kind.Should().Be(ColumnKind.DescriptorFk);
-        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        _column.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
         _column.IsNullable.Should().BeFalse();
         var sourcePath =
             _column.SourceJsonPath
@@ -199,7 +199,7 @@ public class Given_A_Descriptor_Path
     {
         _foreignKey.Columns.Should().Equal(new DbColumnName("SchoolTypeDescriptor_DescriptorId"));
         _foreignKey.TargetTable.Should().Be(new DbTableName(new DbSchemaName("dms"), "Descriptor"));
-        _foreignKey.TargetColumns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
+        _foreignKey.TargetColumns.Should().Equal(RelationalNameConventions.DescriptorKeyColumnName);
         _foreignKey.OnDelete.Should().Be(ReferentialAction.NoAction);
         _foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
@@ -348,7 +348,7 @@ public class Given_A_Descriptor_Scalar_Array
         var descriptorColumn = _table.Columns.Single(column => column.Kind == ColumnKind.DescriptorFk);
 
         descriptorColumn.ColumnName.Value.Should().Be("GradeLevelDescriptor_DescriptorId");
-        descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        descriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
     }
 
     /// <summary>
@@ -460,10 +460,10 @@ public class Given_Descriptor_Uri_Strings_Without_MaxLength
     public void It_should_create_descriptor_fk_columns_instead_of_string_scalars()
     {
         _referenceDescriptorColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
-        _referenceDescriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        _referenceDescriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
 
         _arrayDescriptorColumn.Kind.Should().Be(ColumnKind.DescriptorFk);
-        _arrayDescriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int64));
+        _arrayDescriptorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int32));
 
         var hasReferenceScalar = _rootTable.Columns.Any(column =>
             column.Kind == ColumnKind.Scalar

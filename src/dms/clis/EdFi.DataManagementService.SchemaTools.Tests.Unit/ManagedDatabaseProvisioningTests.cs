@@ -176,6 +176,31 @@ public class Given_Managed_Database_Provisioning
     }
 
     [Test]
+    public async Task It_checks_the_platform_before_recording_creation_intent_and_allows_a_compliant_retry()
+    {
+        A.CallTo(() => _provider.CheckPlatformPreconditions())
+            .Throws(new PostgresqlPlatformCompatibilityException("server_version_num 170000"));
+        await FluentActions
+            .Awaiting(() => _controller.ProvisionAsync(Target, _provider))
+            .Should()
+            .ThrowAsync<PostgresqlPlatformCompatibilityException>();
+        A.CallTo(() => _provider.CreateDatabase()).MustNotHaveHappened();
+        (await ReadAsync()).Operations.Should().BeEmpty();
+
+        // After the server is upgraded the same workflow proceeds; no interrupted intent blocks it.
+        A.CallTo(() => _provider.CheckPlatformPreconditions()).DoesNothing();
+        var result = await _controller.ProvisionAsync(Target, _provider);
+        result.CreationReceipt.Outcome.Should().Be(CdcDatabaseCreationOutcome.Created);
+        A.CallTo(() => _provider.CheckPlatformPreconditions())
+            .MustHaveHappenedTwiceExactly()
+            .Then(A.CallTo(() => _provider.CreateDatabase()).MustHaveHappenedOnceExactly());
+        (await ReadAsync())
+            .Operations.Select(o => o.Effect)
+            .Should()
+            .Equal(CdcWorkflowEffect.CreateDatabase, CdcWorkflowEffect.AssociateSource);
+    }
+
+    [Test]
     public async Task It_rejects_creation_with_lost_receipt_without_relabeling_existence()
     {
         A.CallTo(() => _provider.CreateDatabase()).Throws(new IOException("lost CREATE response"));
@@ -324,6 +349,7 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
     private const string Database = "physical-database-sentinel";
     private (int ExitCode, string Output, string Error) _failure;
     private (int ExitCode, string Output, string Error) _retry;
+    private int _operationsAfterFailure;
 
     [SetUp]
     public async Task SetUp()
@@ -354,8 +380,17 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
 
             int exitCode = await command.Parse(arguments).InvokeAsync();
             _failure = (exitCode, output.ToString(), error.ToString());
+            _operationsAfterFailure = Directory
+                .GetFiles(root, "*.json", SearchOption.AllDirectories)
+                .Sum(path =>
+                {
+                    using var json = JsonDocument.Parse(File.ReadAllText(path));
+                    return json.RootElement.GetProperty("operations").GetArrayLength();
+                });
 
-            // The failed CREATE attempt leaves intent; retry must keep the dedicated recovery diagnostic.
+            // SQL Server's failed CREATE attempt leaves intent, so its retry keeps the dedicated recovery
+            // diagnostic. PostgreSQL fails in the platform check before any intent, so its retry repeats
+            // the same safe diagnostic.
             output.GetStringBuilder().Clear();
             error.GetStringBuilder().Clear();
             exitCode = await command.Parse(arguments).InvokeAsync();
@@ -519,8 +554,18 @@ public class Given_Managed_Database_Provisioning_Command_Failure(string dialect)
     public void It_preserves_the_recovery_exit_code() => _retry.ExitCode.Should().Be(1);
 
     [Test]
-    public void It_preserves_the_dedicated_recovery_diagnostic() =>
-        _retry.Error.Should().Be(new CdcManagedProvisioningRecoveryException().Message + Environment.NewLine);
+    public void It_records_creation_intent_only_after_the_platform_check() =>
+        _operationsAfterFailure.Should().Be(dialect == "pgsql" ? 0 : 1);
+
+    [Test]
+    public void It_preserves_the_dedicated_recovery_diagnostic_only_after_an_attempted_create() =>
+        _retry
+            .Error.Should()
+            .Be(
+                dialect == "pgsql"
+                    ? _failure.Error
+                    : new CdcManagedProvisioningRecoveryException().Message + Environment.NewLine
+            );
 
     [Test]
     public void It_emits_no_success_output_on_recovery() => _retry.Output.Should().BeEmpty();

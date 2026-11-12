@@ -10,7 +10,6 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.External.Profile;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 
@@ -125,7 +124,6 @@ public static class ProfileNestedCollectionScenarios
 
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(ParentResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

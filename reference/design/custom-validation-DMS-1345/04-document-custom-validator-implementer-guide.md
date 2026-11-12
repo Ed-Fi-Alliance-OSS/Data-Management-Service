@@ -5,6 +5,17 @@ epic: DMS-1345
 source_spike: DMS-1346
 ---
 
+> **Historical clarification — [DMS-1623](https://edfi.atlassian.net/browse/DMS-1623):**
+> References below to `MatchingDocumentUuidsValidator`, its interface, and
+> `ValidateMatchingDocumentUuidsMiddleware` predate their removal. PUT no longer
+> requires the client to supply an ID matching the route: `NormalizePutIdMiddleware`
+> validates a supplied non-null ID as a GUID string, then populates the parsed body
+> from the route. Invalid IDs use the data-validation response arm. The profile
+> constraint remains valid: a writable profile can remove `id` from the
+> profile-effective body passed to custom validators, so that body still cannot
+> substitute for a document-identity capability. See the current
+> [implementer guide](../../../src/dms/core/EdFi.DataManagementService.CustomValidation/CUSTOM-VALIDATION.md#why-the-document-body-is-not-a-substitute-for-identity).
+
 # Story: Document the Custom-Validator Implementer Guide
 
 ## Description

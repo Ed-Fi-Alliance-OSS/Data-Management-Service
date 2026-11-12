@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit;
@@ -111,6 +112,56 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().ContainSingle();
         session.Commands[0].Parameters.Should().OnlyContain(parameter => parameter.Name.Contains("_s0"));
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Rewritten_Proposed_Namespace_Parameter
+    {
+        private IReadOnlyList<RelationalParameter> _proposedParameters = null!;
+        private NpgsqlParameter _configuredProposed = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var request = CreateRequest(withNamespace: true, withRelationship: false);
+            var session = new ScriptedWriteSession(CreateReader(CreateAuthorizedTable()));
+
+            await CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+            _proposedParameters =
+            [
+                .. session
+                    .Commands.SelectMany(static command => command.Parameters)
+                    .Where(static parameter =>
+                        parameter.Name.Contains("proposedNamespace_s0", StringComparison.Ordinal)
+                    ),
+            ];
+            _configuredProposed = new NpgsqlParameter { Value = DBNull.Value };
+
+            if (_proposedParameters.Count == 1)
+            {
+                _proposedParameters[0].ConfigureParameter?.Invoke(_configuredProposed);
+            }
+        }
+
+        [Test]
+        public void It_sends_one_proposed_namespace_parameter()
+        {
+            _proposedParameters.Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_keeps_the_string_type_on_the_rewritten_parameter()
+        {
+            _configuredProposed.DbType.Should().Be(DbType.String);
+        }
     }
 
     [Test]
@@ -432,6 +483,182 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         (await act.Should().ThrowAsync<FakeDbException>()).Which.Should().BeSameAs(providerFailure);
     }
 
+    [TestCase(SqlDialect.Pgsql, true, RelationshipAuthorizationSubjectFailureKind.NoRelationship)]
+    [TestCase(SqlDialect.Pgsql, false, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing)]
+    [TestCase(SqlDialect.Mssql, true, RelationshipAuthorizationSubjectFailureKind.NoRelationship)]
+    [TestCase(SqlDialect.Mssql, false, RelationshipAuthorizationSubjectFailureKind.ProposedValueMissing)]
+    public async Task It_binds_the_submitted_edorg_identity_before_mapping_a_deferred_reference_denial(
+        SqlDialect dialect,
+        bool schoolReferenceWasDeferred,
+        RelationshipAuthorizationSubjectFailureKind expectedFailureKind
+    )
+    {
+        var request = CreateDeferredSchoolReferenceRequest(dialect);
+        if (!schoolReferenceWasDeferred)
+        {
+            request = request with { SelectedBody = new JsonObject() };
+        }
+        var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1")) { Dialect = dialect };
+        var sut = CreateSut(
+            CreateProposedFailureExtractor(
+                dialect,
+                schoolReferenceWasDeferred
+                    ? RelationshipAuthorizationAuth1SubjectFailureKind.NoRelationship
+                    : RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+            )
+        );
+
+        var act = async () =>
+            await sut.ResolveAsync(
+                request,
+                CreateDeferredSchoolReferenceMergeResult(request, schoolReferenceWasDeferred),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        var failure = (
+            await act.Should().ThrowAsync<RelationalWriteRelationshipAuthorizationNotAuthorizedException>()
+        )
+            .Which
+            .RelationshipFailure;
+        failure.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Proposed);
+        var failedStrategy = failure.FailedStrategies.Should().ContainSingle().Subject;
+        failedStrategy.ConfiguredStrategyIndex.Should().Be(0);
+        var failedSubject = failedStrategy.FailedSubjects.Should().ContainSingle().Subject;
+        failedSubject.SubjectIndex.Should().Be(0);
+        failedSubject.FailureKind.Should().Be(expectedFailureKind);
+        failedSubject.RootBinding.ColumnName.Should().Be("SchoolId");
+        failedSubject.SecurableElements.Should().ContainSingle().Which.ReadableName.Should().Be("SchoolId");
+        session
+            .Commands.Should()
+            .ContainSingle()
+            .Which.Parameters.Should()
+            .ContainSingle(parameter =>
+                parameter.Name.Contains("relationshipAuthorization_0_0_SchoolId", StringComparison.Ordinal)
+            )
+            .Which.Value.Should()
+            .Be(schoolReferenceWasDeferred ? 999 : null);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public async Task It_does_not_correct_a_malformed_auth1_payload(SqlDialect dialect)
+    {
+        var request = CreateDeferredSchoolReferenceRequest(dialect);
+        var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1")) { Dialect = dialect };
+        var sut = CreateSut(
+            dialect is SqlDialect.Mssql
+                ? new StubProviderFailureExtractor("50000", "AUTH1 - 1|9|x|not-a-payload")
+                : new StubProviderFailureExtractor("AUTH1", "1|9|x|not-a-payload")
+        );
+
+        var act = async () =>
+            await sut.ResolveAsync(
+                request,
+                CreateDeferredSchoolReferenceMergeResult(request, schoolReferenceWasDeferred: true),
+                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                session
+            );
+
+        await act.Should().ThrowAsync<RelationalWriteInvalidRelationshipAuthorizationFailureException>();
+    }
+
+    [Test]
+    public void It_corrects_the_standalone_mapping_boundary_without_changing_the_authorization_command()
+    {
+        var request = CreateDeferredSchoolReferenceRequest(SqlDialect.Pgsql);
+        var unresolvedCheck = ExtractDeferredSchoolReferenceRuntimeCheck(
+            request,
+            schoolReferenceWasDeferred: true
+        );
+        var absentCheck = ExtractDeferredSchoolReferenceRuntimeCheck(
+            request,
+            schoolReferenceWasDeferred: false
+        );
+
+        ProposedRelationshipAuthorizationCommand
+            .TryMapFailure(
+                SqlDialect.Pgsql,
+                CreateProposedFailureExtractor(SqlDialect.Pgsql),
+                unresolvedCheck,
+                new FakeDbException("AUTH1", "AUTH1"),
+                out var relationshipFailure,
+                out var invalidFailureDiagnostic
+            )
+            .Should()
+            .BeTrue();
+        invalidFailureDiagnostic.Should().BeNull();
+        relationshipFailure!
+            .FailedStrategies[0]
+            .FailedSubjects[0]
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationSubjectFailureKind.NoRelationship);
+
+        // Provenance is request-local runtime state: the emitted statement and its parameter values are
+        // the same whether the null subject came from an unresolved reference or genuine absence.
+        var unresolvedCommand = ProposedRelationshipAuthorizationCommand.Build(
+            request.MappingSet,
+            request.WritePlan,
+            unresolvedCheck,
+            new DefaultRelationalParameterConfigurator()
+        );
+        var absentCommand = ProposedRelationshipAuthorizationCommand.Build(
+            request.MappingSet,
+            request.WritePlan,
+            absentCheck,
+            new DefaultRelationalParameterConfigurator()
+        );
+
+        unresolvedCommand.CommandText.Should().Be(absentCommand.CommandText);
+        unresolvedCommand
+            .Parameters.Select(static parameter => (parameter.Name, parameter.Value))
+            .Should()
+            .Equal(absentCommand.Parameters.Select(static parameter => (parameter.Name, parameter.Value)));
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Namespace_Only_Failure_That_Is_Not_An_Authorization_Denial
+    {
+        private FakeDbException _providerFailure = null!;
+        private Exception? _thrown;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            var request = CreateRequest(withNamespace: true, withRelationship: false);
+            _providerFailure = new FakeDbException("duplicate key", "23505");
+            var session = new ScriptedWriteSession(_providerFailure);
+            var sut = CreateSut(new StubProviderFailureExtractor("23505", "duplicate key"));
+
+            try
+            {
+                await sut.ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+        }
+
+        [Test]
+        public void It_rethrows_the_provider_failure_itself()
+        {
+            _thrown.Should().BeSameAs(_providerFailure);
+        }
+
+        [Test]
+        public void It_keeps_the_stack_from_where_the_command_failed()
+        {
+            (_thrown?.StackTrace).Should().Contain("ScriptedDbCommand.ExecuteDbDataReader");
+        }
+    }
+
     private static CompositeRelationalWriteSecondCommand CreateSut(
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         RelationalCommandBudget? commandBudget = null
@@ -527,6 +754,179 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
             currentName: "uri://ed-fi.org/Survey",
             mergedName: "uri://ed-fi.org/Survey"
         );
+
+    private const string DeferredSchoolReferencePath = "$.schoolReference";
+
+    /// <summary>
+    /// A PUT whose proposed <c>SchoolId</c> subject derives from the root <c>schoolReference</c>, so a null
+    /// finalized value is either a genuinely absent reference or a submitted one that could not be resolved.
+    /// </summary>
+    private static RelationalWriteExecutorRequest CreateDeferredSchoolReferenceRequest(SqlDialect dialect)
+    {
+        var scalarRootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
+        var schoolReferencePath = new JsonPathExpression(
+            DeferredSchoolReferencePath,
+            [new JsonPathSegment.Property("schoolReference")]
+        );
+        var rootPlan = scalarRootPlan with
+        {
+            ColumnBindings =
+            [
+                scalarRootPlan.ColumnBindings[0],
+                scalarRootPlan.ColumnBindings[1] with
+                {
+                    Column = scalarRootPlan.ColumnBindings[1].Column with
+                    {
+                        SourceJsonPath = new JsonPathExpression(
+                            "$.schoolReference.schoolId",
+                            [
+                                new JsonPathSegment.Property("schoolReference"),
+                                new JsonPathSegment.Property("schoolId"),
+                            ]
+                        ),
+                    },
+                    Source = new WriteValueSource.ReferenceDerived(
+                        new ReferenceDerivedValueSourceMetadata(
+                            BindingIndex: 0,
+                            schoolReferencePath,
+                            new JsonPathExpression("$.schoolId", [new JsonPathSegment.Property("schoolId")]),
+                            new JsonPathExpression(
+                                "$.schoolReference.schoolId",
+                                [
+                                    new JsonPathSegment.Property("schoolReference"),
+                                    new JsonPathSegment.Property("schoolId"),
+                                ]
+                            )
+                        )
+                    ),
+                },
+                scalarRootPlan.ColumnBindings[2],
+            ],
+        };
+        var resourceModel = Given_Default_Relational_Write_Executor.CreateRelationalResourceModel(
+            rootPlan.TableModel
+        ) with
+        {
+            DocumentReferenceBindings =
+            [
+                new DocumentReferenceBinding(
+                    IsIdentityComponent: false,
+                    schoolReferencePath,
+                    rootPlan.TableModel.Table,
+                    new DbColumnName("School_DocumentId"),
+                    new QualifiedResourceName("Ed-Fi", "School"),
+                    []
+                ),
+            ],
+        };
+        var writePlan = new ResourceWritePlan(resourceModel, [rootPlan]);
+        var mappingSet = Given_Default_Relational_Write_Executor.CreateMappingSet(
+            resourceModel,
+            [rootPlan],
+            dialect
+        );
+        var input = new RelationalWriteExecutorInput(
+            mappingSet,
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),
+            writePlan,
+            Given_Default_Relational_Write_Executor.CreateReadPlan(resourceModel, dialect),
+            JsonNode.Parse("""{"schoolReference":{"schoolId":999},"name":"Lincoln High"}""")!,
+            allowIdentityUpdates: false,
+            new TraceId("composite-proposed-authorization-deferred-reference-test"),
+            new ReferenceResolverRequest(mappingSet, resourceModel.Resource, [], [])
+        );
+        input = input with
+        {
+            ProposedRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateProposedSchoolIdRelationshipAuthorization(
+                    input
+                ),
+        };
+
+        return input.Resolve(
+            new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L)
+        );
+    }
+
+    private static RelationalWriteMergeResult CreateDeferredSchoolReferenceMergeResult(
+        RelationalWriteExecutorRequest request,
+        bool schoolReferenceWasDeferred
+    ) =>
+        new(
+            [
+                new RelationalWriteMergedTableState(
+                    request.WritePlan.TablePlansInDependencyOrder[0],
+                    [CreateSchoolRow(255901)],
+                    [CreateSchoolRow(null)]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        )
+        {
+            DeferredMissingDocumentReferencePaths = new HashSet<string>(
+                schoolReferenceWasDeferred ? [DeferredSchoolReferencePath] : [],
+                StringComparer.Ordinal
+            ),
+        };
+
+    private static RelationalWriteMergedTableRow CreateSchoolRow(int? schoolId)
+    {
+        FlattenedWriteValue[] values =
+        [
+            new FlattenedWriteValue.Literal(345L),
+            new FlattenedWriteValue.Literal(schoolId),
+            new FlattenedWriteValue.Literal("Lincoln High"),
+        ];
+
+        return new RelationalWriteMergedTableRow(values, values);
+    }
+
+    private static ProposedRelationshipAuthorizationRuntimeCheck ExtractDeferredSchoolReferenceRuntimeCheck(
+        RelationalWriteExecutorRequest request,
+        bool schoolReferenceWasDeferred
+    )
+    {
+        var mergeResult = CreateDeferredSchoolReferenceMergeResult(request, schoolReferenceWasDeferred);
+        var extraction = RelationshipAuthorizationProposedValueExtractor.Extract(
+            (RelationshipAuthorizationResult.Authorized)request.ProposedRelationshipAuthorization!,
+            request.WritePlan,
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(request.OperationKind),
+            request.TargetContext,
+            mergeResult.DeferredMissingDocumentReferencePaths
+        );
+
+        return extraction
+            .Should()
+            .BeOfType<ProposedRelationshipAuthorizationExtractionResult.Ready>()
+            .Subject.RuntimeCheck;
+    }
+
+    /// <summary>
+    /// An AUTH1 subject failure in each provider's transport shape:
+    /// PostgreSQL carries the payload as the message under the AUTH1 SQLSTATE; SQL Server embeds it after
+    /// the marker in a raised error's message.
+    /// </summary>
+    private static StubProviderFailureExtractor CreateProposedFailureExtractor(
+        SqlDialect dialect,
+        RelationshipAuthorizationAuth1SubjectFailureKind failureKind =
+            RelationshipAuthorizationAuth1SubjectFailureKind.ProposedValueMissing
+    )
+    {
+        var payload = RelationshipAuthorizationAuth1FailurePayloadCodec.Encode(
+            new RelationshipAuthorizationAuth1FailurePayload(
+                RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
+                    RelationalWriteOperationKind.Put
+                ),
+                [new RelationshipAuthorizationAuth1SubjectFailure(0, 0, failureKind)]
+            )
+        );
+
+        return dialect is SqlDialect.Mssql
+            ? new StubProviderFailureExtractor("50000", $"AUTH1 - {payload}")
+            : new StubProviderFailureExtractor("AUTH1", payload);
+    }
 
     private static DbDataReader CreateAuthorizedReader(int namespaceCheckCount)
     {

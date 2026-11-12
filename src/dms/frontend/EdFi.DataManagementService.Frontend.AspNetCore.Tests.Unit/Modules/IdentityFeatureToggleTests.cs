@@ -18,7 +18,7 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 /// <summary>
-/// AppSettings:EnableIdentityManagement gates the identity route surface at mapping time.
+/// DataManagement:IdentityManagement:Enabled gates the identity route surface at mapping time.
 /// With the toggle off (the default), every identity route falls through to the same MapFallback
 /// 404 every other unmapped route reaches.
 /// </summary>
@@ -62,7 +62,7 @@ public class IdentityFeatureToggleTests
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:EnableIdentityManagement"] = enableIdentityManagement
+                            ["DataManagement:IdentityManagement:Enabled"] = enableIdentityManagement
                                 ? "true"
                                 : "false",
                         }
@@ -86,7 +86,10 @@ public class IdentityFeatureToggleTests
                 (context, configuration) =>
                 {
                     configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["AppSettings:EnableIdentityManagement"] = "true" }
+                        new Dictionary<string, string?>
+                        {
+                            ["DataManagement:IdentityManagement:Enabled"] = "true",
+                        }
                     );
                 }
             );
@@ -144,11 +147,7 @@ public class IdentityFeatureToggleTests
             await _factory.DisposeAsync();
         }
 
-        [TestCaseSource(nameof(RouteCases))]
-        public async Task It_answers_the_fallback_not_found_for_every_identity_route(
-            HttpMethod method,
-            string path
-        )
+        private async Task<HttpResponseMessage> SendAsync(HttpMethod method, string path)
         {
             using var request = new HttpRequestMessage(method, path);
             if (method == HttpMethod.Post)
@@ -156,13 +155,32 @@ public class IdentityFeatureToggleTests
                 request.Content = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
             }
 
-            using var response = await _client.SendAsync(request);
+            return await _client.SendAsync(request);
+        }
+
+        [TestCaseSource(nameof(RouteCases))]
+        public async Task It_answers_the_fallback_not_found_for_every_identity_route(
+            HttpMethod method,
+            string path
+        )
+        {
+            using var response = await SendAsync(method, path);
             var content = await response.Content.ReadAsStringAsync();
             var body = JsonNode.Parse(content);
 
             response.StatusCode.Should().Be(HttpStatusCode.NotFound);
             body.Should().NotBeNull();
             body!["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+        }
+
+        // The served identity document declares application/problem+json for every error, and the
+        // implementer guide lists this 404 among the identity responses a client tells apart.
+        [TestCaseSource(nameof(RouteCases))]
+        public async Task It_sends_the_fallback_not_found_as_problem_json(HttpMethod method, string path)
+        {
+            using var response = await SendAsync(method, path);
+
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
         }
     }
 

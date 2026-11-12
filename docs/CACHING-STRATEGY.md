@@ -35,9 +35,9 @@ Only per-client and per-connection caches remain cold:
 | ---------------- | -------- | ------------------------------ |
 | Compiled Schemas | Warm     | Pre-compiled on startup        |
 | OIDC Metadata    | Warm     | Loaded during startup          |
-| data stores    | Warm     | Loaded from CMS on startup     |
-| ClaimSets        | Warm     | Loaded from CMS on startup     |
-| CMS Token        | Warm     | Fetched as startup dependency  |
+| data stores    | Warm     | Loaded from the Configuration Service on startup     |
+| ClaimSets        | Warm     | Loaded from the Configuration Service on startup     |
+| Configuration Service Token        | Warm     | Fetched as startup dependency  |
 | App Context      | Cold     | Fetched per client on auth     |
 | Identity Tenants | Cold     | Fetched on first identity call |
 | NpgsqlDataSource | Cold     | Created on first DB connection |
@@ -80,8 +80,8 @@ client's `DataStoreIds` determine which data they can access.
 **Dependency Scope:** Every authenticated resource request path that runs
 `ProfileResolutionMiddleware` requires a resolvable application context, because
 profile resolution needs the `ApplicationId`. This is broader than the
-ownership-gated operations alone. With a cold or missing cache entry, a CMS
-outage or a malformed CMS response makes those requests fail closed with
+ownership-gated operations alone. With a cold or missing cache entry, a Configuration Service
+outage or a malformed Configuration Service response makes those requests fail closed with
 `503 Service Unavailable`. A `NotFound` context still maps to
 `401 Unauthorized` as an invalid token.
 
@@ -89,20 +89,24 @@ outage or a malformed CMS response makes those requests fail closed with
 
 **Cache Operations:**
 
-| Operation | Method                        | Description             |
-| --------- | ----------------------------- | ----------------------- |
-| Set       | `CacheApplicationContext()`   | Stores context with TTL |
-| Get       | `GetCachedApplicationContext` | Retrieves cached ctx    |
-| Remove    | `ClearCacheForClient()`       | Removes specific client |
-
-Note: Bulk cache clearing is not supported. Individual entries expire via TTL
-or can be cleared per-client. For emergency clearing, restart the service.
+The cache is read through `IApplicationContextProvider.GetApplicationByClientIdAsync(clientId, tenant)`,
+which `CachedApplicationContextProvider` implements over `HybridCache.GetOrCreateAsync`.
+A hit returns the cached context. A miss fetches from the Configuration Service and stores a
+successful answer. A `NotFound` or an unavailable answer is never stored, so a client the
+Configuration Service does not know is looked up again on the next request.
+Within one request scope the answer is also memoized, so a request asks at most once per client and tenant.
 
 **Invalidation Strategy:**
 
-- TTL-based expiration after the configured duration
-- Manual invalidation via `ReloadApplicationByClientIdAsync()`
-- Follows cache-aside pattern with fallback to Configuration Service
+- TTL-based expiration after the configured duration. This is the only invalidation an operator has.
+- Follows cache-aside pattern with fallback to the Configuration Service
+- The provider has an internal reload that evicts one client's entry and fetches it again, but
+  application reload is internal: no endpoint calls it and no operator setting reaches it, so it is
+  not a way to clear this cache.
+- There is no per-client or bulk clear. For an emergency clear, drain and restart every serving
+  replica, or wait for the entries to expire. A deployment that added a distributed cache must also
+  invalidate those entries and the local copies. A deleted client can therefore stay accepted for up
+  to the TTL. See [Identity Management](./IDENTITY-MANAGEMENT.md#application-reload-and-urgent-revocation).
 
 ---
 
@@ -163,13 +167,17 @@ A reload advances a per-key generation, so a fetch that started before the reloa
   Other replicas keep their entries, and so does another spelling of the same tenant on that
   replica (`north` after a reload for `North`), until each entry expires.
   Draining or restarting every replica clears all cached variants.
-- Requires `AppSettings:EnableManagementEndpoints: true` to map the DMS claimset management
-  route surface.
+- Requires `AppSettings:ManagementEndpoints:Enabled: true` to map the DMS claimset management
+  route surface. This one switch controls both the reload and view operations.
 - Requires a valid `AppSettings:ManagementEndpoints:RequiredRole`; the endpoints are not mapped
   without one, and callers must present a bearer token carrying that role under
   `JwtAuthentication:RoleClaimType`.
-- Requires `AppSettings:EnableClaimsetReload: true` for the reload and view operations to execute
-  after authorization. See [Configuration](./CONFIGURATION.md#appsettings).
+- See [Configuration](./CONFIGURATION.md#appsettings).
+- In multi-tenant mode the unscoped `/management/reload-claimsets` answers `404`; the reload route is
+  `/management/{tenant}/reload-claimsets`.
+- Identity Management relies on this cache for its claim checks, so a claim-action removal can stay
+  invisible until the entry expires or is reloaded. See
+  [Identity Management](./IDENTITY-MANAGEMENT.md#how-long-a-change-takes-to-apply).
 
 ---
 
@@ -221,34 +229,92 @@ during startup and entries are never evicted or replaced.
 ### 4. Configuration Service Token Cache
 
 **Purpose:** Caches OAuth bearer tokens used to authenticate with the
-Configuration Management Service (CMS).
+Configuration Service.
 
 **Location:**
 
 - `src/dms/core/.../Security/ConfigurationServiceTokenHandler.cs`
 
-**Implementation:** `HybridCache` (Microsoft.Extensions.Caching.Hybrid) with
-built-in stampede protection
+**Implementation:** one process-local coordinator in the token handler. It holds
+the current bearer, the one pending grant, and the window that follows a failed
+grant. It does not use HybridCache.
 
 **Cache Structure:**
 
-- **Key:** `ConfigServiceToken` (static string, single entry)
-- **Value:** `string` - the OAuth access token (e.g., `"eyJhbGciOiJSUzI1NiIs..."`)
+- **Value:** one bearer per process, with the time its reuse window is measured
+  from and the window's length. It is never written to logs or exceptions.
 
-**TTL:** 25 minutes (fixed, safely less than typical 30-minute token lifetime)
+**Reuse window:** follows the lifetime the issuer returns in `expires_in`.
 
-**Cache Operations:**
+- For a positive lifetime `L`, DMS reuses the bearer for `L − min(60 s, 0.1 × L)`,
+  measured from the start of the grant. A slow grant uses up part of its own
+  window. A grant whose window has already closed when it completes fails like
+  any other unusable grant.
+  - A 30-minute token is reused for 29 minutes.
+  - A 600-second token is reused for 540 seconds.
+  - A 300-second token is reused for 270 seconds.
+  - A one-second token is reused for 900 milliseconds.
+- A missing, null, zero or negative `expires_in` falls back to 300 seconds
+  from acquisition. Each such grant logs one warning.
+- The issuer sets the lifetime: `IdentitySettings:TokenExpirationMinutes` in
+  self-contained mode, or the Keycloak realm's **Access Token Lifespan**
+  (subject to a client override) in Keycloak mode.
+- The deprecated 8.x setting `CacheSettings:TokenCacheExpirationSeconds`, when
+  set, only lowers either window. It is measured from acquisition, so a slow
+  grant never makes it reject a usable token. See
+  [CONFIGURATION.md](CONFIGURATION.md#cachesettings).
 
-| Operation | Method                     | Description            |
-| --------- | -------------------------- | ---------------------- |
-| Get       | `TryGetValue(key, out t)`  | Retrieves cached token |
-| Set       | `Set(key, tok, TimeSpan)`  | Stores with lifetime   |
+**Failure handling:**
+
+- One grant runs at a time. Callers that arrive while it is pending, whether
+  the bearer is cold or expired, join it. A caller that cancels its own wait
+  leaves the grant running for the others.
+- After a failed grant, DMS sends no new grant for 5 seconds from the failure,
+  or 30 seconds after an HTTP 429. This includes other non-2xx responses (CMS
+  409 among them), transport failures, timeouts and unusable 2xx responses.
+  Callers in that window receive the same safe failure. `Retry-After` is not
+  read.
+- If a published token expires before a joined caller resumes, and no newer
+  grant or failure has superseded it, DMS reports an unusable-token failure and
+  starts the same 5-second window. The caller does not keep fetching tokens
+  that expire before it can use them.
+- Grants remain available while active requests drain during host shutdown.
+  Once the host has stopped, a pending grant is canceled without starting that
+  window.
+- The grant has its own transport, which does not follow redirects, and the
+  existing 100-second budget for the whole grant.
+- Failed grants log the numeric HTTP status when available. Problem-details types
+  are reported exactly only for `about:blank`,
+  `urn:ed-fi:api:security:authentication:too-many-tokens`,
+  `urn:ed-fi:management-api:security:authentication:too-many-tokens`,
+  `urn:ed-fi:api:internal-server-error`, and
+  `urn:ed-fi:management-api:internal-server-error`. Other string
+  types are reported as `unrecognized`; an absent, non-string or unreadable type
+  is omitted. Diagnostic body reads are limited to 16 KiB and one second so they
+  cannot delay status reporting indefinitely. Arbitrary upstream text can echo
+  credentials, so grant and protected-read clients disable automatic HTTP logging
+  and report safe failure diagnostics instead.
 
 **Invalidation Strategy:**
 
-- TTL matches the token's `expires_in` value from CMS response
-- No manual invalidation - relies on automatic expiration
-- Cache-aside pattern: fetches new token when cache miss occurs
+- On demand: the first caller at or after the cutoff obtains a replacement
+  before it sends its read.
+- On rejection: when a protected Configuration Service read returns 401, DMS
+  invalidates the bearer that read sent and replays the read once.
+  - It invalidates only that generation, so a newer bearer stays in place, even
+    one with the same text. If a replacement is pending, the read joins it. If
+    the failure window is open, the read gets that failure. Otherwise DMS
+    obtains a replacement.
+  - A second 401 ends the call with the provider's existing failure, and DMS
+    sends no third read or further grant for that call. The replacement stays
+    in place for later reads.
+  - Each later call can recover from its own first 401, even immediately after
+    a successful recovery. Only a failed or unusable token acquisition starts the back-off window.
+  - DMS sends no replay when the replacement grant fails.
+  - The grant itself and other protected failures, such as 403 or 503, are
+    never replayed.
+- No background refresh, and no coordination between processes. Each DMS
+  process holds its own bearer.
 
 ---
 
@@ -418,8 +484,8 @@ doesn't accept requests until JWT authentication is fully functional. When `Bypa
 ## Stampede Protection
 
 Stampede protection ensures that when multiple concurrent requests experience a cache miss, only one fetch runs while the others wait for its result.
-The application-context and Configuration Service token caches get it from `Microsoft.Extensions.Caching.Hybrid` (HybridCache).
-The claim-set cache and the identity tenant snapshot share one in-flight fetch task instead, so a caller that stops waiting never aborts the fetch the others still need.
+The application-context cache gets it from `Microsoft.Extensions.Caching.Hybrid` (HybridCache).
+The claim-set cache, the identity tenant snapshot and the Configuration Service token share one in-flight fetch task instead, so a caller that stops waiting never aborts the fetch the others still need.
 
 ### How It Works
 
@@ -438,7 +504,7 @@ Configuration Service during cache expiration under high load.
 | ------------------------------ | ------------------ | ------------------------------ |
 | ClaimSets                      | Yes                | One shared fetch per key       |
 | Application Context            | Yes                | HybridCache.GetOrCreateAsync   |
-| Configuration Service Token    | Yes                | HybridCache.GetOrCreateAsync   |
+| Configuration Service Token    | Yes                | One shared grant per process   |
 | Identity tenant snapshot       | Yes                | One shared refresh per process |
 | Compiled Schemas               | No*                | ConcurrentDictionary.GetOrAdd  |
 | NpgsqlDataSource               | No*                | Single-winner publish under lock |
@@ -467,7 +533,6 @@ Per-cache TTL is configured via `CacheSettings`:
   "CacheSettings": {
     "ClaimSetsCacheExpirationSeconds": 600,
     "ApplicationContextCacheExpirationSeconds": 600,
-    "TokenCacheExpirationSeconds": 1500,
     "ProfileCacheExpirationSeconds": 1800,
     "DataStoreCacheRefreshEnabled": true,
     "DataStoreCacheExpirationSeconds": 600,
@@ -476,7 +541,7 @@ Per-cache TTL is configured via `CacheSettings`:
 }
 ```
 
-Default values: ClaimSets, AppContext, data store, and derivative validation = 10 minutes; Token = 25 minutes; Profile = 30 minutes.
+Default values: ClaimSets, AppContext, data store, and derivative validation = 10 minutes; Profile = 30 minutes. The Configuration Service token has no configured TTL: its reuse follows the issuer's lifetime, as [section 4](#4-configuration-service-token-cache) describes.
 
 ### Derivative validation cache expiration
 
@@ -577,11 +642,11 @@ A caller's own cancellation propagates and is never turned into an answer.
 
 | Cache        | Mechanism    | Scope | TTL    | Tenant | Stampede | Invalidation |
 | ------------ | ------------ | ----- | ------ | ------ | -------- | ------------ |
-| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
+| App Context  | HybridCache  | Sing. | 10 min | Yes    | Yes      | TTL only (reload is internal) |
 | ClaimSets    | MemoryCache  | Sing. | 10 min | Yes    | Yes      | Manual + TTL |
 | Id. Tenants  | Snapshot     | Sing. | 60 s   | N/A    | Yes      | TTL + miss refresh |
 | Comp. Schema | ConcurDict   | Sing. | None   | No     | No       | Reload ID    |
-| CMS Token    | HybridCache  | Sing. | 25 min | No     | Yes      | TTL only     |
+| Configuration Service Token    | Coordinator  | Sing. | Issuer lifetime − min(60 s, 10%); 300 s fallback | No     | Yes      | Reuse deadline |
 | NpgsqlDS     | Dict + lock  | Sing. | None   | N/A    | No       | Reconcile + Shutdown |
 | data store | ConcurDict   | Sing. | Configurable (CacheSettings.DataStoreCacheExpirationSeconds) | Yes    | No       | TTL + Restart      |
 | OIDC Meta    | ConfigMgr    | Sing. | 60 min | No     | Yes      | Auto-refresh |
@@ -594,10 +659,11 @@ DMS uses several invalidation patterns:
 
 ### 1. TTL-Based Expiration
 
-Used by: Application Context, ClaimSets, CMS Token, OIDC Metadata, data store cache
+Used by: Application Context, ClaimSets, Configuration Service Token, OIDC Metadata, data store cache
 
-Cache entries automatically expire after a configured time period. This is the
-simplest pattern and requires no manual intervention.
+Cache entries stop being reused after their time limit, with no manual intervention.
+Most limits are configured in DMS; the Configuration Service token's limit follows the
+issuer's lifetime. Its replacement is obtained on demand by the next caller.
 
 The data store cache tracks the last refresh timestamp and exposes
 `RefreshInstancesIfExpiredAsync()`. `ResolveDataStoreMiddleware` invokes it at the
@@ -629,12 +695,11 @@ Re-prime cache with new schemas
 Used by: ClaimSets (via `/management/reload-claimsets` endpoint)
 
 Administrators can trigger cache invalidation through management endpoints.
-The DMS claimset management routes are mapped only when `AppSettings:EnableManagementEndpoints` is
-`true`. They are additionally mapped only when `AppSettings:ManagementEndpoints:RequiredRole` holds a
+The DMS claimset management routes are mapped only when `AppSettings:ManagementEndpoints:Enabled`
+is `true`. They are additionally mapped only when `AppSettings:ManagementEndpoints:RequiredRole` holds a
 valid role token, and every request must present a bearer token carrying that role under
 `JwtAuthentication:RoleClaimType`; requests without one receive `401`, and tokens lacking the
-role receive `403`. `AppSettings:EnableClaimsetReload` is checked after authorization by the
-reload and view operations.
+role receive `403`.
 
 ### 4. Lifetime-Based (Application Shutdown)
 
@@ -684,7 +749,6 @@ schemas on-demand only when first requested.
   "CacheSettings": {
     "ClaimSetsCacheExpirationSeconds": 600,
     "ApplicationContextCacheExpirationSeconds": 600,
-    "TokenCacheExpirationSeconds": 1500,
     "ProfileCacheExpirationSeconds": 1800,
     "DataStoreCacheRefreshEnabled": true,
     "DataStoreCacheExpirationSeconds": 600,
@@ -695,9 +759,8 @@ schemas on-demand only when first requested.
     "AutomaticRefreshIntervalHours": 24
   },
   "AppSettings": {
-    "EnableManagementEndpoints": false,
-    "EnableClaimsetReload": false,
     "ManagementEndpoints": {
+      "Enabled": false,
       "RequiredRole": ""
     }
   }
@@ -708,10 +771,10 @@ schemas on-demand only when first requested.
 
 | Setting         | Value      | Location                         |
 | --------------- | ---------- | -------------------------------- |
-| CMS Token TTL   | 25 minutes | `CacheSettings` (configurable)   |
+| Configuration Service Token reuse | Issuer lifetime − min(60 s, 10%); 300 s when the lifetime is missing or not positive | Token handler (deprecated 8.x cap in `CacheSettings`) |
 | Schema Cache    | No TTL     | Version-based invalidation       |
 
-Note: All cache TTLs are now configurable via `CacheSettings`.
+Note: All cache TTLs except the Configuration Service token's are configurable via `CacheSettings`. The token's reuse follows the issuer's lifetime; its deprecated 8.x cap can only lower it.
 
 ## Operational Considerations
 
@@ -735,9 +798,9 @@ Since caches are local to each instance:
 
 DMS warms most caches during startup (see `Program.cs`):
 
-- **data stores** - Loaded from Configuration Service before accepting requests
+- **data stores** - Loaded from the Configuration Service before accepting requests
 - **ClaimSets** - Retrieved and cached for all tenants on startup
-- **CMS Token** - Fetched as a dependency of the above operations
+- **Configuration Service Token** - Fetched as a dependency of the above operations
 - **Compiled Schemas** - Primed via `ProvideApiSchemaMiddleware`
 - **OIDC Metadata** - Fetched from identity provider on startup (fails fast if unavailable)
 

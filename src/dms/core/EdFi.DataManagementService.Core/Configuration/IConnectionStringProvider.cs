@@ -19,11 +19,14 @@ public interface IConnectionStringProvider
     string? GetConnectionString(long dataStoreId, string? tenant = null);
 
     /// <summary>
-    /// Gets a database connection string for health check purposes.
+    /// Resolves the database the health check should probe.
     /// This is a compromise - we just use the first available instance since health checks
     /// need some connection string to test database connectivity.
     /// In multi-tenant mode, this searches across all loaded tenant caches.
     /// </summary>
-    /// <returns>The connection string for health check, or null if no instances available</returns>
-    string? GetHealthCheckConnectionString();
+    /// <returns>
+    /// The connection string to probe, or which of the two empty states was found: no data stores
+    /// loaded yet, or data stores loaded but none with a connection string
+    /// </returns>
+    HealthCheckTarget GetHealthCheckTarget();
 }

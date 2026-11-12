@@ -3,87 +3,73 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-window.onload = function () {
-    const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
-    const defaultUrls = [
-        { url: `http://localhost:${dmsPort}/metadata/specifications/resources-spec.json`, name: "Resources" },
-        { url: `http://localhost:${dmsPort}/metadata/specifications/descriptors-spec.json`, name: "Descriptors" }
-    ];
+// Pure helpers behind the local Swagger UI, exposed on `window` for
+// eng/docker-compose/tests/LocalSwaggerUi.Tests.ps1, which loads this file under Node.
+window.EdFiLocalSwagger = (function () {
+    const routeContextVariable = "DMS_SWAGGER_UI_ROUTE_CONTEXT";
 
-    function singleOperationGroupPlugin() {
-        const operationMethods = new Set(['delete', 'get', 'head', 'options', 'patch', 'post', 'put', 'trace']);
-
-        const addGroupForSingleUntaggedOperation = (specification) => {
-            if (!specification || typeof specification !== 'object' || !specification.paths) {
-                return specification;
-            }
-
-            const operations = [];
-            Object.entries(specification.paths).forEach(([path, pathItem]) => {
-                if (!pathItem || typeof pathItem !== 'object') {
-                    return;
-                }
-
-                Object.entries(pathItem).forEach(([method, operation]) => {
-                    if (operationMethods.has(method.toLowerCase()) && operation && typeof operation === 'object') {
-                        operations.push({ method, operation, path });
-                    }
-                });
-            });
-
-            if (operations.length !== 1 || (Array.isArray(operations[0].operation.tags) && operations[0].operation.tags.length > 0)) {
-                return specification;
-            }
-
-            const { method, operation, path } = operations[0];
-            const groupName = path.replace(/^\//, '');
-            if (!groupName) {
-                return specification;
-            }
-
-            const description = operation.description || operation.summary;
-            operation.tags = [groupName];
-
-            const tags = Array.isArray(specification.tags) ? specification.tags : [];
-            if (!tags.some(tag => tag && typeof tag === 'object' && tag.name === groupName)) {
-                specification.tags = [
-                    ...tags,
-                    {
-                        name: groupName,
-                        ...(description ? { description } : {}),
-                    },
-                ];
-            }
-
-            specification.paths[path][method] = operation;
-            return specification;
-        };
-
-        return {
-            statePlugins: {
-                spec: {
-                    wrapActions: {
-                        updateSpec: (oriAction) => (...args) => {
-                            let specification = args[0];
-                            const originalWasString = typeof specification === 'string';
-
-                            if (originalWasString) {
-                                try {
-                                    specification = JSON.parse(specification);
-                                } catch (error) {
-                                    return oriAction(...args);
-                                }
-                            }
-
-                            specification = addGroupForSingleUntaggedOperation(specification);
-                            args[0] = originalWasString ? JSON.stringify(specification) : specification;
-                            return oriAction(...args);
-                        },
-                    },
-                },
-            },
-        };
+    // With multi-tenancy on, the DMS metadata routes answer only under the tenant and every configured
+    // route qualifier value, so those segments precede /metadata in every URL the UI fetches.
+    // "DistrictA/2024" becomes "/DistrictA/2024", each segment URL-encoded; empty stays empty, which
+    // keeps the unqualified routes a single-tenant stack serves.
+    function routeContextPrefix(routeContext) {
+        const segments = String(routeContext || "")
+            .split("/")
+            .map(segment => segment.trim())
+            .filter(segment => segment.length > 0)
+            .map(segment => encodeURIComponent(segment));
+        return segments.length > 0 ? `/${segments.join("/")}` : "";
     }
+
+    function metadataBaseUrl(port, routeContext) {
+        return `http://localhost:${port}${routeContextPrefix(routeContext)}/metadata`;
+    }
+
+    // The definitions a listing advertises, in either payload shape ({ specifications: [...] } or
+    // [...]) and without Discovery. When the listing is missing, malformed or empty: the Resources and
+    // Descriptors documents under the same metadata base, so the UI still loads once DMS answers.
+    function definitionsFrom(listing, metadataBase) {
+        const entries = Array.isArray(listing)
+            ? listing
+            : (listing && Array.isArray(listing.specifications) ? listing.specifications : []);
+        const advertised = entries
+            .filter(spec =>
+                spec
+                && typeof spec.name === "string"
+                && spec.name.length > 0
+                && spec.name !== "Discovery"
+                && typeof spec.endpointUri === "string"
+                && spec.endpointUri.length > 0
+            )
+            .map(spec => ({ name: spec.name, url: spec.endpointUri }));
+        return advertised.length > 0 ? advertised : [
+            { name: "Resources", url: `${metadataBase}/specifications/resources-spec.json` },
+            { name: "Descriptors", url: `${metadataBase}/specifications/descriptors-spec.json` }
+        ];
+    }
+
+    // What the page shows when DMS answers the listing with 404: the DMS problem detail, when there is
+    // one, then the setting that supplies the route context.
+    function routeContextNotice(problemDetail) {
+        const detail = typeof problemDetail === "string" && problemDetail.trim().length > 0
+            ? `${problemDetail.trim()} `
+            : "";
+        return `${detail}Set ${routeContextVariable} in the environment file to the tenant and route qualifier `
+            + "values to load, for example DistrictA/2024, then start the stack again so the swagger-ui "
+            + "container picks it up.";
+    }
+
+    return { routeContextVariable, routeContextPrefix, metadataBaseUrl, definitionsFrom, routeContextNotice };
+})();
+
+window.onload = function () {
+    const helpers = window.EdFiLocalSwagger;
+    const dmsPort = window.DMS_HTTP_PORTS || "8080"; // fallback in case DMS_HTTP_PORTS is not set
+    const routeContext = window.DMS_SWAGGER_UI_ROUTE_CONTEXT || "";
+    const metadataBase = helpers.metadataBaseUrl(dmsPort, routeContext);
+    const defaultUrls = helpers.definitionsFrom(null, metadataBase);
+
+    const singleOperationGroupPlugin = window.EdFiSingleOperationGroup;
 
     // Configuration for Ed-Fi Custom Domains plugin from environment variable
     const enableCustomDomains = (window.DMS_SWAGGER_UI_ENABLE_CUSTOM_DOMAINS || "true") === "true";
@@ -100,48 +86,60 @@ window.onload = function () {
         console.log('Ed-Fi Route Context plugin enabled');
     }
 
+    // Shown above the UI when DMS answers the listing with 404, which under multi-tenancy means the
+    // route context is missing or names a tenant or qualifier value DMS has not loaded.
+    function showNotice(message) {
+        const notice = document.createElement('div');
+        notice.className = 'edfi-route-context-notice';
+        notice.setAttribute('role', 'alert');
+        notice.style.cssText = 'margin: 16px; padding: 12px 16px; border: 1px solid #f5c2c7; border-radius: 4px; background-color: #f8d7da; color: #58151c; font-family: sans-serif; font-size: 14px;';
+        notice.textContent = message;
+        const target = document.getElementById('swagger-ui');
+        if (target && target.parentNode) {
+            target.parentNode.insertBefore(notice, target);
+        } else {
+            document.body.insertBefore(notice, document.body.firstChild);
+        }
+    }
+
+    // The problem detail of a failed listing answer, when DMS sent problem details.
+    async function problemDetailOf(response) {
+        const contentType = response.headers.get('content-type') || '';
+        if (!contentType.includes('application/problem+json')) {
+            return null;
+        }
+        try {
+            const problem = await response.json();
+            return problem && typeof problem.detail === 'string' ? problem.detail : null;
+        }
+        catch (ex) {
+            return null;
+        }
+    }
+
     // Begin dynamic discovery of available API definitions
     async function buildUrlsList() {
-        const specEndpoint = `http://localhost:${dmsPort}/metadata/specifications`;
+        const specEndpoint = `${metadataBase}/specifications`;
 
         try {
             console.log('Fetching metadata specifications from', specEndpoint);
             const resp = await fetch(specEndpoint, { cache: 'no-store' });
             if (!resp.ok) {
-                console.warn('Failed to fetch /metadata/specifications; status', resp.status);
+                console.warn('Failed to fetch', specEndpoint, '; status', resp.status);
+                if (resp.status === 404) {
+                    const notice = helpers.routeContextNotice(await problemDetailOf(resp));
+                    console.warn(notice);
+                    showNotice(`Could not load the API definitions from ${specEndpoint} (HTTP 404). ${notice}`);
+                }
                 return defaultUrls;
             }
 
-            const json = await resp.json();
-            if (!json || !Array.isArray(json.specifications) && !Array.isArray(json)) {
-                // Support both { specifications: [...] } or [...] payload shapes
-                console.warn('Unexpected /metadata/specifications shape; falling back to defaults');
-                return defaultUrls;
-            }
-
-            const entries = Array.isArray(json.specifications) ? json.specifications : json;
-
-            const urls = entries
-                .filter(spec =>
-                    spec
-                    && typeof spec.name === 'string'
-                    && spec.name.length > 0
-                    && spec.name !== 'Discovery'
-                    && typeof spec.endpointUri === 'string'
-                    && spec.endpointUri.length > 0
-                )
-                .map(spec => ({ name: spec.name, url: spec.endpointUri }));
-
-            if (urls.length === 0) {
-                console.log('No advertised specs found; using default Resources/Descriptors');
-                return defaultUrls;
-            }
-
+            const urls = helpers.definitionsFrom(await resp.json(), metadataBase);
             console.log('Discovered API definitions for Swagger UI:', urls.map(url => url.name));
             return urls;
         }
         catch (ex) {
-            console.warn('Error discovering /metadata/specifications:', ex);
+            console.warn('Error discovering', specEndpoint, ex);
             return defaultUrls;
         }
     }

@@ -28,6 +28,8 @@ internal static class FixtureRepositoryPaths
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-root-only-merge",
         [FixtureKey.DescriptorRuntime] =
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/descriptor-runtime",
+        [FixtureKey.CompactDescriptorResources] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/compact-descriptor-resources",
         [FixtureKey.ProfileSeparateTableMerge] =
             "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/small/profile-separate-table-merge",
         [FixtureKey.ProfileNestedAndRootExtensionChildren] =
@@ -41,6 +43,10 @@ internal static class FixtureRepositoryPaths
         [FixtureKey.AuthoritativeDs52Tpdm] = "src/dms/backend/Fixtures/authoritative/ds-5.2-tpdm",
         [FixtureKey.CursorPartitionContract] =
             "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/cursor-partition-contract",
+        [FixtureKey.SchemaRestampSource] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/source",
+        [FixtureKey.SchemaRestampTarget] =
+            "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/schema-restamp/target",
     };
 
     /// <summary>

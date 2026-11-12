@@ -489,6 +489,38 @@ Feature: Resources "Create" Operation validations
                   """
              Then it should respond with 200
 
+        @POST
+        @e2e-ci-shard-1 @MssqlRepresentative @DMS-1451
+        Scenario: 35 Post a resource whose identity contains a descriptor twice (Resource)
+            Given the system has these descriptors
+                  | descriptorValue                                                      |
+                  | uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education |
+              And the system has these "schools"
+                  | schoolId | nameOfInstitution  | gradeLevels                                                                        | educationOrganizationCategories                                                                                   |
+                  | 1451001  | DMS-1451 Test High | [ {"gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"} ] | [ {"educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"} ] |
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1451001
+                      },
+                      "programName": "DMS-1451 Career Pathways",
+                      "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/ed-fi/programs" with
+                  """
+                  {
+                      "educationOrganizationReference": {
+                          "educationOrganizationId": 1451001
+                      },
+                      "programName": "DMS-1451 Career Pathways",
+                      "programTypeDescriptor": "uri://ed-fi.org/ProgramTypeDescriptor#Career and Technical Education"
+                  }
+                  """
+             Then it should respond with 200
+
         @API-167 @POST
         @e2e-ci-shard-1
         Scenario: 17 Post a request with a duplicated value (Resource)
@@ -917,5 +949,34 @@ Feature: Resources "Create" Operation validations
                       "firstName": "John",
                       "lastSurname": "Doe",
                       "birthDate": "2010-05-01"
+                  }
+                  """
+
+        @DMS-1594 @e2e-ci-shard-1
+        Scenario: 35 Post a duplicate property in a later array element
+             When a POST request is made to "/ed-fi/educationContents" with
+                  """
+                  {
+                    "contentIdentifier": "Testing",
+                    "namespace": "Testing",
+                    "shortDescription": "Testing",
+                    "contentClassDescriptor": "uri://ed-fi.org/ContentClassDescriptor#Testing",
+                    "learningResourceMetadataURI": "Testing",
+                    "items": [{"a":1,"b":2},{"x":1,"x":2}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                      "$.items[1].x": ["An item with the same key has already been added."]
+                    },
+                    "errors": []
                   }
                   """

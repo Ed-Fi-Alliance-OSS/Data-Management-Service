@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Core.External.Backend;
+using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -48,5 +49,27 @@ public class Given_RelationalPartitionResultMapping
 
         success.Ranges.Should().BeEmpty();
         success.SelectionSkipped.Should().BeFalse();
+    }
+
+    // The validation failures carry the client's field paths, so they must arrive unchanged in the
+    // partition-named failure rather than being restated as an unknown failure.
+    [Test]
+    public void It_restates_a_validation_failure_with_its_field_paths()
+    {
+        WriteValidationFailure[] failures =
+        [
+            new(new JsonPath("$.schoolCategoryDescriptor"), "first"),
+            new(new JsonPath("$.administrativeFundingControlDescriptor"), "second"),
+        ];
+
+        var result = RelationalPartitionResultMapping.FromQueryResult(
+            new QueryResult.QueryFailureValidation(failures)
+        );
+
+        result
+            .Should()
+            .BeOfType<PartitionResult.PartitionFailureValidation>()
+            .Which.ValidationFailures.Should()
+            .Equal(failures);
     }
 }

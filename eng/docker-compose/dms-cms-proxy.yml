@@ -1,0 +1,34 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Apply after both DMS and CMS compose files. The DMS launchers include this for their
+# combined stack, including its infrastructure and DMS-only phases. CMS-only stacks omit it.
+services:
+  config:
+    environment:
+      AppSettings__ReverseProxy__UseForwardedHeaders: "true"
+      # Trust the reserved DMS peer, plus explicitly configured ingress proxies. Never trust
+      # the shared dms network: other workloads must not be able to forge source budgets.
+      AppSettings__ReverseProxy__KnownProxies: ${DMS_CMS_PROXY_IP:-172.30.148.2},${CONFIGURATION_SERVICE_REVERSE_PROXY_KNOWN_PROXIES:-}
+      ConnectRateLimit__RequiredProxyAddress: ${DMS_CMS_PROXY_IP:-172.30.148.2}
+    networks:
+      cms-proxy:
+        ipv4_address: ${CMS_PROXY_IP:-172.30.148.3}
+
+  dms:
+    # Pin public token proxying and system-token refresh to the dedicated link, so Docker DNS
+    # on the shared dms network cannot select a different transport/source address for CMS.
+    extra_hosts:
+      - "ed-fi-api-config=${CMS_PROXY_IP:-172.30.148.3}"
+    networks:
+      cms-proxy:
+        ipv4_address: ${DMS_CMS_PROXY_IP:-172.30.148.2}
+
+networks:
+  cms-proxy:
+    internal: true
+    ipam:
+      config:
+        - subnet: ${DMS_CMS_PROXY_SUBNET:-172.30.148.0/29}

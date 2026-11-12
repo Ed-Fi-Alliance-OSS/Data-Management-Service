@@ -42,10 +42,10 @@ function Invoke-WithDmsEnvironmentFileSchemaAuthority {
         caller's exact prior state afterward.
     .DESCRIPTION
         Compose gives process environment variables precedence over --env-file entries, and
-        local-dms.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
+        local-dms.compose.yml resolves all three with a ${VAR:-default} fallback. Because ':-' substitutes the
         default for an empty value as well as an unset one, an ambient blank value silently wins over
-        the environment file: the DMS container is created with AppSettings__UseApiSchemaPath=false and
-        empty AppSettings__ApiSchemaPath/SCHEMA_PACKAGES, run.sh skips the package download entirely,
+        the environment file: the DMS container is created with AppSettings__ApiSchema__UseCustomPath=false and
+        empty AppSettings__ApiSchema__Path/SCHEMA_PACKAGES, run.sh skips the package download entirely,
         and DMS loads only the image-baked schemas. Provisioning is not affected, because it reads
         SCHEMA_PACKAGES from the environment file only - so the provisioned database is stamped for the
         file's full package surface while DMS computes a different runtime hash, and every data-plane
@@ -162,7 +162,7 @@ function Get-DmsSchemaEnvironmentToken {
     }
 
     # Ordinal, deliberately not OrdinalIgnoreCase. run.sh:28 gates the entire package download on
-    # [ "$AppSettings__UseApiSchemaPath" = true ], a byte-exact POSIX string comparison, so only
+    # [ "$AppSettings__ApiSchema__UseCustomPath" = true ], a byte-exact POSIX string comparison, so only
     # lowercase 'true' turns on the ApiSchema path at runtime. Accepting 'TRUE' or 'True' here passed a
     # container that then downloaded nothing, which is precisely the EffectiveSchemaHash mismatch this
     # gate exists to catch. Any other casing classifies as <set> below and fails.
@@ -358,20 +358,20 @@ function Get-DmsSchemaEnvironmentVerdict {
         }
     }
 
-    $useApiSchemaPathToken = Get-DmsSchemaEnvironmentToken -ContainerEnvironment $ContainerEnvironment -Key "AppSettings__UseApiSchemaPath"
+    $useApiSchemaPathToken = Get-DmsSchemaEnvironmentToken -ContainerEnvironment $ContainerEnvironment -Key "AppSettings__ApiSchema__UseCustomPath"
     if ($useApiSchemaPathToken -ne "true") {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the DMS container's AppSettings__UseApiSchemaPath is $useApiSchemaPathToken but the environment file declares $expectedPackageCount ApiSchema package(s), so DMS loaded only the schemas baked into the image while the E2E database was provisioned for those packages."
+            Reason      = "the DMS container's AppSettings__ApiSchema__UseCustomPath is $useApiSchemaPathToken but the environment file declares $expectedPackageCount ApiSchema package(s), so DMS loaded only the schemas baked into the image while the E2E database was provisioned for those packages."
             Remediation = $containerDisagreementRemediation
         }
     }
 
-    $apiSchemaPathToken = Get-DmsSchemaEnvironmentToken -ContainerEnvironment $ContainerEnvironment -Key "AppSettings__ApiSchemaPath"
+    $apiSchemaPathToken = Get-DmsSchemaEnvironmentToken -ContainerEnvironment $ContainerEnvironment -Key "AppSettings__ApiSchema__Path"
     if ($apiSchemaPathToken -in @("<absent>", "<blank>")) {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the DMS container's AppSettings__ApiSchemaPath is $apiSchemaPathToken, so the declared ApiSchema packages have nowhere to be materialized."
+            Reason      = "the DMS container's AppSettings__ApiSchema__Path is $apiSchemaPathToken, so the declared ApiSchema packages have nowhere to be materialized."
             Remediation = $containerDisagreementRemediation
         }
     }
@@ -381,12 +381,12 @@ function Get-DmsSchemaEnvironmentVerdict {
     # cannot see. Ordinal comparison only: Compose passes the value through verbatim, so no path
     # normalization is warranted here. Neither path is echoed.
     if (-not [string]::Equals(
-            [string]$ContainerEnvironment["AppSettings__ApiSchemaPath"],
+            [string]$ContainerEnvironment["AppSettings__ApiSchema__Path"],
             $EnvironmentFileApiSchemaPath,
             [System.StringComparison]::Ordinal)) {
         return [pscustomobject]@{
             ShouldFail  = $true
-            Reason      = "the DMS container's AppSettings__ApiSchemaPath differs from the environment file's API_SCHEMA_PATH, so DMS is not materializing the declared ApiSchema packages where the environment file selected."
+            Reason      = "the DMS container's AppSettings__ApiSchema__Path differs from the environment file's API_SCHEMA_PATH, so DMS is not materializing the declared ApiSchema packages where the environment file selected."
             Remediation = $containerDisagreementRemediation
         }
     }
@@ -464,7 +464,7 @@ function Get-DmsContainerEnvironment {
 
     # A PowerShell hashtable, so its key lookups are case-INSENSITIVE, and that is deliberate here.
     # Docker Compose is the sole writer of this container's environment and emits the exact
-    # AppSettings__* spelling local-dms.yml declares, so the gate never has two spellings to tell
+    # AppSettings__* spelling local-dms.compose.yml declares, so the gate never has two spellings to tell
     # apart and a case-sensitive map would only add a way for the gate to miss its own keys. Casing
     # matters for the VALUES, which is why Get-DmsSchemaEnvironmentToken compares those Ordinal.
     $containerEnvironment = @{}

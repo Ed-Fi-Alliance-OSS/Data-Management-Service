@@ -65,7 +65,6 @@ public class Given_The_Ods_Comparison_Case_Definitions
         "number-blank-range-message",
         "cursor-parameters-rejected-on-change-queries",
         "partition-reserved-parameters-unsupported",
-        "ods-only-partition-parameters-rejected",
         "true-ceiling-at-most-requested-count",
         "partitions-enforce-profile-method-usage",
         "header-gated-on-selected-keyset-maximum",
@@ -116,6 +115,7 @@ public class Given_The_Ods_Comparison_Case_Definitions
     private static readonly string[] _expectedGroups =
     [
         "validation",
+        "page-size-beside-limit",
         "omitted-limit-default",
         "sizing",
         "number-collision",

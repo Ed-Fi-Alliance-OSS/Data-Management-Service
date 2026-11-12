@@ -18,10 +18,6 @@ public record DescriptorReference(
     /// </summary>
     DocumentIdentity DocumentIdentity,
     /// <summary>
-    /// The referentialId derived from the DocumentIdentity
-    /// </summary>
-    ReferentialId ReferentialId,
-    /// <summary>
     /// The JsonPath to the descriptor in the document
     /// </summary>
     JsonPath Path

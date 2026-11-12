@@ -16,14 +16,23 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnectio
 {
     internal DbConnection CreateConnection() => createConnection();
 
+    // The streaming scenarios admit only Student and SchoolTypeDescriptor. Keep the document
+    // visible if its owner is absent so timestamp parsing fails rather than reporting deletion.
     public Task<IReadOnlyList<CdcSourceDocument>> ReadSourceAsync(Guid uuid, CancellationToken token) =>
         ReadAsync(
             """
             SELECT d."DocumentId", d."DocumentUuid", d."ResourceKeyId", d."ContentVersion",
-                   d."ContentLastModifiedAt", es."EffectiveSchemaHash",
+                   CASE WHEN rk."ResourceName" = 'Student' THEN student."ContentLastModifiedAt"
+                        ELSE descriptor."ContentLastModifiedAt" END,
+                   CASE WHEN rk."ResourceName" = 'Student' THEN student."ContentCreatedAt"
+                        ELSE descriptor."ContentCreatedAt" END, es."EffectiveSchemaHash",
                    rk."ProjectName", rk."ResourceName", rk."ResourceVersion"
             FROM "dms"."Document" d
             JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = d."ResourceKeyId"
+            LEFT JOIN "edfi"."Student" student ON student."DocumentId" = d."DocumentId"
+                AND rk."ProjectName" = 'Ed-Fi' AND rk."ResourceName" = 'Student'
+            LEFT JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = d."DocumentId"
+                AND rk."ProjectName" = 'Ed-Fi' AND rk."ResourceName" = 'SchoolTypeDescriptor'
             CROSS JOIN "dms"."EffectiveSchema" es
             WHERE d."DocumentUuid" = @id;
             """,
@@ -34,10 +43,11 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnectio
                 reader.GetInt16(2),
                 reader.GetInt64(3),
                 ReadTimestamp(reader.GetValue(4)),
-                reader.GetString(5),
+                ReadTimestamp(reader.GetValue(5)),
                 reader.GetString(6),
                 reader.GetString(7),
-                reader.GetString(8)
+                reader.GetString(8),
+                reader.GetString(9)
             ),
             token
         );
@@ -98,6 +108,23 @@ internal sealed class CdcDocumentObserver(CdcProvider provider, Func<DbConnectio
         return Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
+    // The clocks the stamping triggers use: PostgreSQL now(), SQL Server sysutcdatetime().
+    public async Task<DateTimeOffset> ReadClockAsync(CancellationToken token)
+    {
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(token);
+        deadline.CancelAfter(TimeSpan.FromSeconds(30));
+        await using DbConnection connection = CreateConnection();
+        await connection.OpenAsync(deadline.Token);
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandTimeout = 30;
+        command.CommandText =
+            provider == CdcProvider.Postgresql ? "SELECT now();" : "SELECT SYSUTCDATETIME();";
+        object value =
+            await command.ExecuteScalarAsync(deadline.Token)
+            ?? throw new InvalidOperationException("CDC_API_DATABASE_CLOCK_MISSING");
+        return ReadTimestamp(value);
+    }
+
     private async Task<IReadOnlyList<T>> ReadAsync<T>(
         string sql,
         object id,
@@ -148,6 +175,7 @@ internal sealed record CdcSourceDocument(
     short ResourceKeyId,
     long ContentVersion,
     DateTimeOffset ContentLastModifiedAt,
+    DateTimeOffset ContentCreatedAt,
     string EffectiveSchemaHash,
     string ProjectName,
     string ResourceName,

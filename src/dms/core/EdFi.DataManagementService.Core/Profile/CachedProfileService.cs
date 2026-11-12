@@ -200,7 +200,7 @@ internal class CachedProfileService(
                 async cancel =>
                 {
                     logger.LogDebug(
-                        "Cache miss for application profiles, fetching from CMS. ApplicationId: {ApplicationId}",
+                        "Cache miss for application profiles, fetching from the Configuration Service. ApplicationId: {ApplicationId}",
                         applicationId
                     );
 
@@ -239,7 +239,7 @@ internal class CachedProfileService(
                         else
                         {
                             logger.LogWarning(
-                                "Profile ID {ProfileId} is missing from the profile catalog CMS returned, for application {ApplicationId}",
+                                "Profile ID {ProfileId} is missing from the profile catalog the Configuration Service returned, for application {ApplicationId}",
                                 profileId,
                                 applicationId
                             );
@@ -654,7 +654,7 @@ internal class CachedProfileService(
                 async cancel =>
                 {
                     logger.LogDebug(
-                        "Cache miss for profile catalog, fetching from CMS for tenant: {Tenant}",
+                        "Cache miss for profile catalog, fetching from the Configuration Service for tenant: {Tenant}",
                         LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                     );
 
@@ -709,7 +709,7 @@ internal class CachedProfileService(
                         if (profileResponse is null)
                         {
                             logger.LogWarning(
-                                "Listed profile was deleted in CMS before its definition was fetched. ProfileId: {ProfileId}, Tenant: {Tenant}",
+                                "Listed profile was deleted in the Configuration Service before its definition was fetched. ProfileId: {ProfileId}, Tenant: {Tenant}",
                                 profileId,
                                 LoggingSanitizer.SanitizeInternalValueForLogging(tenantId)
                             );

@@ -57,7 +57,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -199,10 +198,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProfileRootOnlyMergeItemResourceInfo,
-                identity
-            ),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -349,12 +344,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
     //  ProfileRootOnlyMergeItem root row can carry FK + key-unification values
     //  into the profiled PUT. Helpers are kept local (per DMS-1124 supplement
     //  scope) and duplicated in the mssql sibling with dialect-specific SQL.
-    //
-    //  - Student inserts trigger TR_Student_ReferentialIdentity, which creates
-    //    the dms.ReferentialIdentity row for ResourceKeyId=3 automatically.
-    //  - Descriptors have no trigger, so we insert dms.ReferentialIdentity
-    //    explicitly for ResourceKeyId=2 using the ReferentialId computed from
-    //    the lowercase URI (identity path $.descriptor).
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(
@@ -392,25 +381,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         );
     }
 
-    public static async Task InsertReferentialIdentityRowAsync(
-        PostgresqlGeneratedDdlTestDatabase database,
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
     public static async Task<long> SeedStudentAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
@@ -432,7 +402,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         return documentId;
     }
 
-    public static async Task<long> SeedSchoolTypeDescriptorAsync(
+    public static async Task<int> SeedSchoolTypeDescriptorAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string @namespace,
@@ -441,10 +411,9 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
-        var uri = $"{@namespace}#{codeValue}";
-        const string discriminator = "Ed-Fi:SchoolTypeDescriptor";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -452,9 +421,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -462,35 +429,17 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @shortDescription,
-                @discriminator,
-                @uri
-            );
+                @shortDescription
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
-            new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("shortDescription", shortDescription)
         );
 
-        var descriptorResourceInfo = new BaseResourceInfo(
-            new ProjectName("Ed-Fi"),
-            new ResourceName("SchoolTypeDescriptor"),
-            true
-        );
-        var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
-        ]);
-        var referentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
-        await InsertReferentialIdentityRowAsync(database, referentialId.Value, documentId, resourceKeyId);
-
-        return documentId;
+        return descriptorId;
     }
 
     public static async Task<long> SeedProfileRootOnlyMergeItemRowAsync(
@@ -502,7 +451,7 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         string? preservedText,
         long? studentDocumentId,
         string? studentUniqueId,
-        long? unifiedDescriptorId,
+        int? unifiedDescriptorId,
         bool primaryPresent,
         bool secondaryPresent
     )
@@ -593,10 +542,6 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProfileRootOnlyMergeItemResourceInfo,
-                identity
-            ),
             DocumentReferences: documentReferences,
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -612,15 +557,11 @@ internal static class PostgresqlProfileRootOnlyFixtureSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }
@@ -947,7 +888,7 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private long _studentDocumentId;
-    private long _publicDescriptorDocumentId;
+    private int _publicDescriptorId;
     private UpdateResult _putResult = null!;
     private IReadOnlyDictionary<string, object?> _rowAfterPut = null!;
 
@@ -966,14 +907,13 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
             StudentDocumentUuid,
             StudentUniqueId
         );
-        _publicDescriptorDocumentId =
-            await PostgresqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
-                _database,
-                PublicDescriptorDocumentUuid,
-                DescriptorNamespace,
-                PublicCodeValue,
-                PublicCodeValue
-            );
+        _publicDescriptorId = await PostgresqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
+            _database,
+            PublicDescriptorDocumentUuid,
+            DescriptorNamespace,
+            PublicCodeValue,
+            PublicCodeValue
+        );
         await PostgresqlProfileRootOnlyFixtureSupport.SeedProfileRootOnlyMergeItemRowAsync(
             _database,
             ItemDocumentUuid,
@@ -983,7 +923,7 @@ public class Given_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAndPropa
             preservedText: null,
             studentDocumentId: _studentDocumentId,
             studentUniqueId: StudentUniqueId,
-            unifiedDescriptorId: _publicDescriptorDocumentId,
+            unifiedDescriptorId: _publicDescriptorId,
             primaryPresent: true,
             secondaryPresent: true
         );
@@ -1121,7 +1061,7 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
     private MappingSet _mappingSet = null!;
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private long _publicDescriptorDocumentId;
+    private int _publicDescriptorId;
     private UpdateResult _putResult = null!;
     private IReadOnlyDictionary<string, object?> _rowAfterPut = null!;
 
@@ -1135,14 +1075,13 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = PostgresqlProfileRootOnlyFixtureSupport.CreateServiceProvider();
 
-        _publicDescriptorDocumentId =
-            await PostgresqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
-                _database,
-                PublicDescriptorDocumentUuid,
-                DescriptorNamespace,
-                PublicCodeValue,
-                PublicCodeValue
-            );
+        _publicDescriptorId = await PostgresqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
+            _database,
+            PublicDescriptorDocumentUuid,
+            DescriptorNamespace,
+            PublicCodeValue,
+            PublicCodeValue
+        );
         await PostgresqlProfileRootOnlyFixtureSupport.SeedProfileRootOnlyMergeItemRowAsync(
             _database,
             ItemDocumentUuid,
@@ -1152,7 +1091,7 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
             preservedText: null,
             studentDocumentId: null,
             studentUniqueId: null,
-            unifiedDescriptorId: _publicDescriptorDocumentId,
+            unifiedDescriptorId: _publicDescriptorId,
             primaryPresent: true,
             secondaryPresent: true
         );
@@ -1191,9 +1130,7 @@ public class Given_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSucceeds
 
     [Test]
     public void It_preserves_unified_descriptor_canonical_fk() =>
-        _rowAfterPut["PrimarySchoolTypeDescriptor_Unified_DescriptorId"]
-            .Should()
-            .Be(_publicDescriptorDocumentId);
+        _rowAfterPut["PrimarySchoolTypeDescriptor_Unified_DescriptorId"].Should().Be(_publicDescriptorId);
 
     [Test]
     public void It_preserves_primary_descriptor_synthetic_presence() =>

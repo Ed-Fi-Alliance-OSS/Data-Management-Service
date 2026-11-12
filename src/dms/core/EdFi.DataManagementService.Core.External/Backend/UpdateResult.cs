@@ -90,6 +90,12 @@ public record UpdateResult
     public record UpdateFailureWriteConflict() : UpdateResult();
 
     /// <summary>
+    /// A non-retryable failure because the database rejected the write with a unique-constraint
+    /// violation that the backend could not attribute to a more specific failure
+    /// </summary>
+    public record UpdateFailureNonUniqueValues() : UpdateResult();
+
+    /// <summary>
     /// A failure because the identity of this type of resource cannot be changed via update
     /// </summary>
     /// <param name="FailureMessage">A message providing failure information</param>

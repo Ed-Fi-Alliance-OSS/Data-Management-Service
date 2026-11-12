@@ -71,33 +71,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       }
-    },
-    {
-      "name": "TR_NamingStressItem_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "NamingStressItem"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "NamingStressItemId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "NamingStressItem",
-      "identity_elements": [
-        {
-          "column": "NamingStressItemId",
-          "identity_json_path": "$.namingStressItemId"
-        }
-      ]
     },
     {
       "name": "TR_NamingStressItem_Stamp",
@@ -112,7 +89,7 @@
       "identity_projection_columns": [
         "NamingStressItemId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "NamingStressItem"
       },
@@ -225,8 +202,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -359,7 +348,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]

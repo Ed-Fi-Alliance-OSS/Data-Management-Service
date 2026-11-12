@@ -17,5 +17,10 @@
     <ItemGroup>
         <ProjectReference Include="..\..\..\..\EdFi.Api.Plugins\EdFi.Api.Plugins.csproj" />
         <PackageReference Include="Microsoft.Data.SqlClient" />
+        <!--
+            Fixtures inherit no Directory.Build.targets, so the Pkcs rule in src/dms and src/config does
+            not reach this project. See src/Directory.Packages.props.
+        -->
+        <PackageReference Include="System.Security.Cryptography.Pkcs" />
     </ItemGroup>
 </Project>

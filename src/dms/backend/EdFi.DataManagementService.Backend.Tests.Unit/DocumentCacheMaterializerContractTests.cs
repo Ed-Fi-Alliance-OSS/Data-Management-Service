@@ -110,6 +110,7 @@ public class Given_DocumentCacheMaterializerContract
                 nameof(DocumentCacheMaterializationCandidate.ResourceVersion),
                 nameof(DocumentCacheMaterializationCandidate.ContentVersion),
                 nameof(DocumentCacheMaterializationCandidate.LastModifiedAt),
+                nameof(DocumentCacheMaterializationCandidate.ContentCreatedAt),
                 nameof(DocumentCacheMaterializationCandidate.StreamEtag),
                 nameof(DocumentCacheMaterializationCandidate.DocumentJson)
             );
@@ -337,6 +338,7 @@ public class Given_DocumentCacheMaterializerContract
             resourceVersion: "5.3.0",
             contentVersion: 11,
             lastModifiedAt: DateTimeOffset.Parse("2026-01-01T00:00:00Z", CultureInfo.InvariantCulture),
+            contentCreatedAt: new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             streamEtag: "\"11-fixed-stream\"",
             documentJson: JsonNode
                 .Parse(

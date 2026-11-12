@@ -81,9 +81,19 @@ public class ApplicationInfo
     public int[] DataStoreIds { get; set; } = [];
 
     /// <summary>
-    /// Indicates whether all API clients associated with this application are approved.
-    /// Derived as BOOL_AND(IsApproved) across all ApiClient rows for the application.
-    /// Defaults to true when no API clients exist.
+    /// The approval of every API client registered under the application's client id, or
+    /// <see cref="ApiClientApprovalState.NoApiClientRow"/> when there is none. Defaults to
+    /// <see cref="ApiClientApprovalState.Unapproved"/>, so an application whose state was never
+    /// read is refused rather than admitted.
     /// </summary>
-    public bool IsApproved { get; set; } = true;
+    public ApiClientApprovalState ApiClientApproval { get; set; }
+
+    /// <summary>
+    /// Exempts only applications with no API client row and a nonempty set of registered
+    /// scopes consisting entirely of the Configuration Service's recognized admin scopes. This
+    /// decides the token limit only; whether the client may authenticate is decided separately.
+    /// </summary>
+    public bool IsTokenLimitExempt =>
+        ApiClientApproval == ApiClientApprovalState.NoApiClientRow
+        && AdministrativeScopes.AllRecognized(Scopes);
 }

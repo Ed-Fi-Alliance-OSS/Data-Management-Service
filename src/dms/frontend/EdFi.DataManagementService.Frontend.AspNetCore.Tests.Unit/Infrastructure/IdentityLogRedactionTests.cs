@@ -160,7 +160,7 @@ public class IdentityLogRedactionTests
                     configuration.AddInMemoryCollection(
                         new Dictionary<string, string?>
                         {
-                            ["AppSettings:EnableIdentityManagement"] = "true",
+                            ["DataManagement:IdentityManagement:Enabled"] = "true",
                             ["AppSettings:MultiTenancy"] = multiTenancy ? "true" : "false",
                             ["AppSettings:RouteQualifierSegments"] = routeQualifierSegments,
                         }

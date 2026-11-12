@@ -132,6 +132,17 @@ public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
     }
 
     [Test]
+    public void It_keeps_versions_on_documents_and_authoritative_timestamps_on_owners()
+    {
+        if (!_isConfigured)
+        {
+            Assert.Ignore("MSSQL admin connection is required.");
+        }
+
+        ProvisionTestHelper.AssertContentStampOwnership(_manifest!);
+    }
+
+    [Test]
     public void Manifest_reports_e18_fixed_inventory()
     {
         if (!_isConfigured)

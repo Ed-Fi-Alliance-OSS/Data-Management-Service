@@ -12,16 +12,20 @@ For the relational backend runbook context, see
 
 ## Installation
 
-Install the published .NET tool package from the Ed-Fi NuGet feed:
+Install the published .NET tool package from the Release view of the Ed-Fi Azure Artifacts
+feed. Install the tool version that matches the deployed Ed-Fi API version. A tool package
+is published with each Ed-Fi API release at the same version, and Ed-Fi API versions
+before 8.1.0 have none. Installing requires the .NET 10 SDK. This example installs the
+tool for Ed-Fi API 8.1.0; use the version you run:
 
 ```bash
-feed="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
-version="<published-version>"
+feed="https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
+version="8.1.0"  # your Ed-Fi API version
 dotnet tool install --global EdFi.Api.DocumentCacheAdmin --source "$feed" --version "$version"
 ```
 
-Use a published package version from the feed. To install the latest stable package, omit
-`--version "$version"`.
+Always pin `--version`. Do not use a tool version newer or older than the Ed-Fi API you
+are administering.
 
 The installed command is `dms-document-cache`.
 
@@ -36,19 +40,20 @@ dms-document-cache --help
 The CLI loads DMS configuration from the normal settings and environment providers. Use
 `--settings <path>` and `--environment <name>` for non-secret configuration selection, and
 use `--datastore postgresql|sqlserver` only to override the provider value for the current
-run. Connection strings, CMS credentials, client secrets, and other secrets must come from
+run. Connection strings, Configuration Service credentials, client secrets, and other secrets must come from
 settings, environment variables, user secrets, or the deployment secret provider. The CLI
 does not expose secret-bearing command-line options.
 
 The tool package includes the default Ed-Fi ApiSchema workspace and uses it when
-`AppSettings:UseApiSchemaPath` is absent or `false`. Set `AppSettings:UseApiSchemaPath=true`
-and `AppSettings:ApiSchemaPath=<workspace>` only when the run must use an external
-bootstrap workspace with `bootstrap-api-schema-manifest.json`.
+`AppSettings:ApiSchema:UseCustomPath` is absent or `false`. Set
+`AppSettings:ApiSchema:UseCustomPath=true` and `AppSettings:ApiSchema:Path=<workspace>` only
+when the run must use an external bootstrap workspace with
+`bootstrap-api-schema-manifest.json`.
 
 For history-gated offline administration, add this **fragment to the complete settings**;
 it is not a standalone DMS configuration. Replace the state path with the original
 protected controller root and the deployment key with its original namespace. Keep normal
-CMS/target/provider/schema settings intact. The root must contain the original managed
+Configuration Service/target/provider/schema settings intact. The root must contain the original managed
 CREATE receipt, workflow and source history; creating an empty directory or choosing a
 new key does not establish ownership or internal-only history.
 
@@ -158,7 +163,7 @@ Target and request options:
 
 | Option | Description |
 | --- | --- |
-| `--data-store-id <id>` | Positive CMS data store identifier. |
+| `--data-store-id <id>` | Positive Configuration Service data store identifier. |
 | `--tenant-key <value>` | Target tenant key; omitted means the default tenant. |
 | `--request-json <path|->` | Path to a shared JSON request document, or `-` for stdin. |
 
@@ -291,9 +296,9 @@ This section owns offline preview, execution and verification.
 
 Use representation restamp only for an offline correction that changes composed API or
 stream representation bytes without changing domain fields, keys, or deletion history.
-The operation advances the existing canonical `ContentVersion` and
-`ContentLastModifiedAt` values and their root or descriptor mirrors. It does not add an
-ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
+The operation advances `dms.Document.ContentVersion`, copies that version to the root
+or descriptor row, and regenerates `ContentLastModifiedAt` on that row. It does not add
+an ETag algorithm, Change Query event type, projection epoch, or Kafka ordering field.
 
 ### Offline prerequisites
 

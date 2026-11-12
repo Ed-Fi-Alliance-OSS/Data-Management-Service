@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Reflection;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.Claims.Models;
@@ -121,7 +120,7 @@ public class ClaimsProviderTests
             _fragmentsPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(_fragmentsPath);
             File.WriteAllText(
-                Path.Combine(_fragmentsPath, "001-defined-claimset.json"),
+                Path.Combine(_fragmentsPath, "001-defined-claims.json"),
                 $$"""
                 {
                   "name": "{{DefinedClaimSetName}}",
@@ -252,11 +251,11 @@ public class ClaimsProviderTests
             _fragmentsPath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             Directory.CreateDirectory(_fragmentsPath);
             File.WriteAllText(
-                Path.Combine(_fragmentsPath, "001-invalid-claimset.json"),
+                Path.Combine(_fragmentsPath, "001-invalid-claims.json"),
                 Fragment(InvalidClaimSetName)
             );
             File.WriteAllText(
-                Path.Combine(_fragmentsPath, "002-valid-claimset.json"),
+                Path.Combine(_fragmentsPath, "002-valid-claims.json"),
                 Fragment(ValidClaimSetName)
             );
 
@@ -1088,11 +1087,6 @@ public class ClaimsProviderTests
         public void SetClaimsNodes(ClaimsDocument nodes)
         {
             _testClaimsNodes = nodes;
-        }
-
-        protected override Assembly GetAssemblyForEmbeddedResource()
-        {
-            return typeof(TestableClaimsProvider).Assembly;
         }
 
         // Override the LoadClaimsFromSource to return test data

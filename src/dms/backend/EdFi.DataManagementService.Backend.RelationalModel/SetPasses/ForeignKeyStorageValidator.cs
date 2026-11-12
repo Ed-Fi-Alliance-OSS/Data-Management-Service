@@ -12,6 +12,11 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 internal static class ForeignKeyStorageValidator
 {
+    private static readonly DbColumnName[] _documentIdTarget =
+    [
+        RelationalNameConventions.DocumentIdColumnName,
+    ];
+
     /// <summary>
     /// Validates that foreign-key endpoint columns are stored columns and not synthetic presence flags.
     /// </summary>
@@ -79,7 +84,8 @@ internal static class ForeignKeyStorageValidator
     }
 
     /// <summary>
-    /// Validates that dms.Document foreign-key targets include only DocumentId.
+    /// Validates that a dms.Document foreign key targets exactly <c>(DocumentId)</c>, or exactly
+    /// <c>(DocumentId, ResourceKeyId)</c> in that order (the document/resource candidate key).
     /// </summary>
     public static void ValidateDocumentTargetColumns(
         TableConstraint.ForeignKey foreignKey,
@@ -96,20 +102,19 @@ internal static class ForeignKeyStorageValidator
             );
         }
 
-        var invalidColumns = targetColumns
-            .Where(column => !column.Equals(RelationalNameConventions.DocumentIdColumnName))
-            .Select(column => $"'{column.Value}'")
-            .ToArray();
-
-        if (invalidColumns.Length == 0)
+        if (
+            targetColumns.SequenceEqual(_documentIdTarget)
+            || targetColumns.SequenceEqual(RelationalNameConventions.DocumentResourceKeyColumns)
+        )
         {
             return;
         }
 
         throw new InvalidOperationException(
             $"Foreign key '{foreignKey.Name}' from table '{referencingTable}' to table '{referencedTable}' "
-                + $"contains invalid target column(s): {string.Join(", ", invalidColumns)}. Foreign keys "
-                + "targeting dms.Document must reference only DocumentId."
+                + $"has invalid target column(s): {string.Join(", ", targetColumns.Select(column => $"'{column.Value}'"))}. "
+                + "Foreign keys targeting dms.Document must reference exactly (DocumentId) or exactly "
+                + "(DocumentId, ResourceKeyId)."
         );
     }
 }

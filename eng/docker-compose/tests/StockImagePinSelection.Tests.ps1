@@ -7,7 +7,7 @@
 
 # DMS-1502: the stock-image proof has to name one published Ed-Fi API image by version-specific tag
 # and digest, and a digest is meaningful only against the repository it was published under.
-# published-dms.yml and published-config.yml shared DMS_IMAGE_TAG, so pinning through it would have
+# published-dms.compose.yml and published-config.compose.yml shared DMS_IMAGE_TAG, so pinning through it would have
 # asked Docker Hub for the Ed-Fi API's digest under the Configuration Service's repository. These
 # assert the two seams that separate them, against what Compose actually renders rather than against
 # the files' text.
@@ -74,10 +74,10 @@ Describe 'Stock image pin selection' {
             return $images
         }
 
-        $script:publishedSet = @('postgresql.yml', 'published-dms.yml', 'published-config.yml')
+        $script:publishedSet = @('postgresql.compose.yml', 'published-dms.compose.yml', 'published-config.compose.yml')
         # The order the launchers build: application file, then the plugin overlays, then the
         # configuration service. The pin overlay rides the plugin hook, so it lands in the middle.
-        $script:pinnedSet = @('postgresql.yml', 'published-dms.yml', $script:pinOverlay, 'published-config.yml')
+        $script:pinnedSet = @('postgresql.compose.yml', 'published-dms.compose.yml', $script:pinOverlay, 'published-config.compose.yml')
     }
 
     Context 'the shipped default, which this change must not move' {
@@ -99,16 +99,16 @@ Describe 'Stock image pin selection' {
     }
 
     Context 'the Configuration Service seam' {
-        It 'takes a whole reference from DMS_CONFIG_DOCKER_IMAGE' {
+        It 'takes a whole reference from CONFIGURATION_SERVICE_DOCKER_IMAGE' {
             $reference = 'edfialliance/ed-fi-api-configuration-service@sha256:' + ('c' * 64)
-            $images = Get-RenderedImage -ComposeFile $script:publishedSet -Values @{ DMS_CONFIG_DOCKER_IMAGE = $reference }
+            $images = Get-RenderedImage -ComposeFile $script:publishedSet -Values @{ CONFIGURATION_SERVICE_DOCKER_IMAGE = $reference }
 
             $images['config'] | Should -BeExactly $reference
         }
 
         It 'leaves the Ed-Fi API image alone when only the Configuration Service is pinned' {
             $reference = 'edfialliance/ed-fi-api-configuration-service@sha256:' + ('c' * 64)
-            $images = Get-RenderedImage -ComposeFile $script:publishedSet -Values @{ DMS_CONFIG_DOCKER_IMAGE = $reference }
+            $images = Get-RenderedImage -ComposeFile $script:publishedSet -Values @{ CONFIGURATION_SERVICE_DOCKER_IMAGE = $reference }
 
             $images['dms'] | Should -BeExactly 'edfialliance/ed-fi-api:pre'
         }
@@ -117,7 +117,7 @@ Describe 'Stock image pin selection' {
             $reference = 'edfialliance/ed-fi-api-configuration-service@sha256:' + ('c' * 64)
             $images = Get-RenderedImage -ComposeFile $script:publishedSet -Values @{
                 DMS_IMAGE_TAG           = '8.0'
-                DMS_CONFIG_DOCKER_IMAGE = $reference
+                CONFIGURATION_SERVICE_DOCKER_IMAGE = $reference
             }
 
             $images['config'] | Should -BeExactly $reference
@@ -134,7 +134,7 @@ Describe 'Stock image pin selection' {
         It 'overrides the application file it is composed after' {
             $images = Get-RenderedImage -ComposeFile $script:pinnedSet -Values @{
                 DMS_STOCK_IMAGE_REFERENCE = $script:dmsPin
-                DMS_CONFIG_DOCKER_IMAGE   = $script:configPin
+                CONFIGURATION_SERVICE_DOCKER_IMAGE   = $script:configPin
             }
 
             $images['dms'] | Should -BeExactly $script:dmsPin
@@ -145,7 +145,7 @@ Describe 'Stock image pin selection' {
             # API's digest under the Configuration Service's repository.
             $images = Get-RenderedImage -ComposeFile $script:pinnedSet -Values @{
                 DMS_STOCK_IMAGE_REFERENCE = $script:dmsPin
-                DMS_CONFIG_DOCKER_IMAGE   = $script:configPin
+                CONFIGURATION_SERVICE_DOCKER_IMAGE   = $script:configPin
             }
 
             $images['dms'] | Should -BeExactly $script:dmsPin
@@ -157,7 +157,7 @@ Describe 'Stock image pin selection' {
         It 'carries a version-specific tag and a digest through to the rendered reference' {
             $images = Get-RenderedImage -ComposeFile $script:pinnedSet -Values @{
                 DMS_STOCK_IMAGE_REFERENCE = $script:dmsPin
-                DMS_CONFIG_DOCKER_IMAGE   = $script:configPin
+                CONFIGURATION_SERVICE_DOCKER_IMAGE   = $script:configPin
             }
 
             # Both halves, because the ticket's pin is a tag AND a digest and Compose has to accept
@@ -168,7 +168,7 @@ Describe 'Stock image pin selection' {
         It 'refuses to render at all when the reference is not supplied' {
             # Declared with :? like the committed recipes, so an unpinned run fails in Compose rather
             # than quietly proving something about whatever :pre happens to be today.
-            { Get-RenderedImage -ComposeFile $script:pinnedSet -Values @{ DMS_CONFIG_DOCKER_IMAGE = $script:configPin } } |
+            { Get-RenderedImage -ComposeFile $script:pinnedSet -Values @{ CONFIGURATION_SERVICE_DOCKER_IMAGE = $script:configPin } } |
                 Should -Throw '*docker compose config failed*'
         }
     }

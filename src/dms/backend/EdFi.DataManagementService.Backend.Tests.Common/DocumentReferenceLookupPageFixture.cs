@@ -36,7 +36,8 @@ public static class DocumentReferenceLookupPageFixture
     public const long Program = 730;
     public const long OffPageProgram = 740;
 
-    public const long AttemptStatusDescriptorId = 800;
+    public const int AttemptStatusDescriptorId = 800;
+    public const long AttemptStatusDescriptorDocumentId = 5000000800;
     public const string AttemptStatusUri = "uri://ed-fi.org/AttemptStatusDescriptor#Active";
 
     public const short StudentResourceKeyId = 21;
@@ -193,32 +194,34 @@ public static class DocumentReferenceLookupPageFixture
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentVersion" bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
-                "DocumentId" bigint PRIMARY KEY,
+                "DescriptorId" int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "DocumentId" bigint NOT NULL UNIQUE REFERENCES dms."Document" ("DocumentId"),
+                "ResourceKeyId" smallint NOT NULL,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
                 "CodeValue" varchar(50) NOT NULL DEFAULT '',
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
                 "EffectiveEndDate" date NULL,
-                "Discriminator" varchar(128) NOT NULL DEFAULT '',
-                "Uri" varchar(306) NOT NULL
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE {schema}."StudentSectionAssociation" (
                 "DocumentId" bigint PRIMARY KEY,
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
                 "DualCreditEducationOrganization_DocumentId" bigint NULL,
                 "DualCreditEducationOrganization_EducationOrganizationId" bigint NULL,
                 "Section_DocumentId" bigint NULL,
                 "Section_SectionIdentifier" varchar(255) NULL,
                 "Student_DocumentId" bigint NULL,
                 "Student_StudentUniqueId" varchar(32) NULL,
-                "AttemptStatusDescriptor_DescriptorId" bigint NULL
+                "AttemptStatusDescriptor_DescriptorId" int NULL
             );
 
             CREATE TABLE {schema}."StudentSectionAssociationProgram" (
@@ -248,10 +251,15 @@ public static class DocumentReferenceLookupPageFixture
                 ({Program}, '{UuidFor(Program)}', {ProgramResourceKeyId}),
                 ({OffPageProgram}, '{UuidFor(OffPageProgram)}', {ProgramResourceKeyId});
 
-            INSERT INTO dms."Descriptor" ("DocumentId", "Uri")
-            VALUES ({AttemptStatusDescriptorId}, '{AttemptStatusUri}');
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId")
+            VALUES ({AttemptStatusDescriptorDocumentId}, '{UuidFor(AttemptStatusDescriptorDocumentId)}', 25);
+
+            INSERT INTO dms."Descriptor" ("DescriptorId", "DocumentId", "ResourceKeyId", "Namespace", "CodeValue")
+            OVERRIDING SYSTEM VALUE
+            VALUES ({AttemptStatusDescriptorId}, {AttemptStatusDescriptorDocumentId}, 25, 'uri://ed-fi.org/AttemptStatusDescriptor', 'Active');
 
             INSERT INTO {schema}."StudentSectionAssociation"
+                ("DocumentId", "DualCreditEducationOrganization_DocumentId", "DualCreditEducationOrganization_EducationOrganizationId", "Section_DocumentId", "Section_SectionIdentifier", "Student_DocumentId", "Student_StudentUniqueId", "AttemptStatusDescriptor_DescriptorId")
             VALUES
                 ({FullyPopulatedDocumentId}, {DualCreditEdOrg}, 255901, {Section}, 'SEC-X', {StudentA}, 'S-701', {AttemptStatusDescriptorId}),
                 ({PartiallyPopulatedDocumentId}, NULL, NULL, {Section}, 'SEC-X', {StudentB}, 'S-702', NULL),
@@ -278,7 +286,8 @@ public static class DocumentReferenceLookupPageFixture
                 {FullyPopulatedDocumentId}, {PartiallyPopulatedDocumentId}, {AllNullReferencesDocumentId},
                 {OffPageDocumentId}, {RepeatedReferenceDocumentId}, {StudentA}, {StudentB}, {Section},
                 {DualCreditEdOrg}, {Program}, {OffPageProgram});
-            DELETE FROM dms."Descriptor" WHERE "DocumentId" = {AttemptStatusDescriptorId};
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" = {AttemptStatusDescriptorDocumentId};
+            DELETE FROM dms."Document" WHERE "DocumentId" = {AttemptStatusDescriptorDocumentId};
             """;
 
     public static string MssqlProvisionSql(string schema) =>
@@ -291,33 +300,36 @@ public static class DocumentReferenceLookupPageFixture
                 [DocumentId] bigint PRIMARY KEY,
                 [DocumentUuid] uniqueidentifier NOT NULL,
                 [ResourceKeyId] smallint NOT NULL DEFAULT 0,
-                [ContentVersion] bigint NOT NULL DEFAULT 1,
-                [ContentLastModifiedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset(),
-                [CreatedAt] datetimeoffset NOT NULL DEFAULT sysdatetimeoffset()
+                [ContentVersion] bigint NOT NULL DEFAULT 1
             );
 
             IF OBJECT_ID('dms.Descriptor', 'U') IS NULL
             CREATE TABLE dms.[Descriptor] (
-                [DocumentId] bigint PRIMARY KEY,
+                [DescriptorId] int IDENTITY(1,1) PRIMARY KEY,
+                [DocumentId] bigint NOT NULL UNIQUE REFERENCES dms.[Document] ([DocumentId]),
+                [ResourceKeyId] smallint NOT NULL,
                 [Namespace] varchar(255) NOT NULL DEFAULT '',
                 [CodeValue] varchar(50) NOT NULL DEFAULT '',
                 [ShortDescription] varchar(75) NOT NULL DEFAULT '',
                 [Description] varchar(1024) NULL,
                 [EffectiveBeginDate] date NULL,
                 [EffectiveEndDate] date NULL,
-                [Discriminator] varchar(128) NOT NULL DEFAULT '',
-                [Uri] varchar(306) NOT NULL
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
+                [Uri] AS ([Namespace] + '#' + [CodeValue]) PERSISTED
             );
 
             CREATE TABLE {schema}.[StudentSectionAssociation] (
                 [DocumentId] bigint PRIMARY KEY,
+                [ContentVersion] bigint NOT NULL DEFAULT 1,
+                [ContentLastModifiedAt] datetime2(7) NOT NULL DEFAULT sysutcdatetime(),
                 [DualCreditEducationOrganization_DocumentId] bigint NULL,
                 [DualCreditEducationOrganization_EducationOrganizationId] bigint NULL,
                 [Section_DocumentId] bigint NULL,
                 [Section_SectionIdentifier] varchar(255) NULL,
                 [Student_DocumentId] bigint NULL,
                 [Student_StudentUniqueId] varchar(32) NULL,
-                [AttemptStatusDescriptor_DescriptorId] bigint NULL
+                [AttemptStatusDescriptor_DescriptorId] int NULL
             );
 
             CREATE TABLE {schema}.[StudentSectionAssociationProgram] (
@@ -345,10 +357,16 @@ public static class DocumentReferenceLookupPageFixture
                 ({Program}, '{UuidFor(Program)}', {ProgramResourceKeyId}),
                 ({OffPageProgram}, '{UuidFor(OffPageProgram)}', {ProgramResourceKeyId});
 
-            INSERT INTO dms.[Descriptor] ([DocumentId], [Uri])
-            VALUES ({AttemptStatusDescriptorId}, '{AttemptStatusUri}');
+            INSERT INTO dms.[Document] ([DocumentId], [DocumentUuid], [ResourceKeyId])
+            VALUES ({AttemptStatusDescriptorDocumentId}, '{UuidFor(AttemptStatusDescriptorDocumentId)}', 25);
+
+            SET IDENTITY_INSERT dms.[Descriptor] ON;
+            INSERT INTO dms.[Descriptor] ([DescriptorId], [DocumentId], [ResourceKeyId], [Namespace], [CodeValue])
+            VALUES ({AttemptStatusDescriptorId}, {AttemptStatusDescriptorDocumentId}, 25, 'uri://ed-fi.org/AttemptStatusDescriptor', 'Active');
+            SET IDENTITY_INSERT dms.[Descriptor] OFF;
 
             INSERT INTO {schema}.[StudentSectionAssociation]
+                ([DocumentId], [DualCreditEducationOrganization_DocumentId], [DualCreditEducationOrganization_EducationOrganizationId], [Section_DocumentId], [Section_SectionIdentifier], [Student_DocumentId], [Student_StudentUniqueId], [AttemptStatusDescriptor_DescriptorId])
             VALUES
                 ({FullyPopulatedDocumentId}, {DualCreditEdOrg}, 255901, {Section}, 'SEC-X', {StudentA}, 'S-701', {AttemptStatusDescriptorId}),
                 ({PartiallyPopulatedDocumentId}, NULL, NULL, {Section}, 'SEC-X', {StudentB}, 'S-702', NULL),

@@ -17,7 +17,7 @@ Keycloak locally using docker-compose.
 1. Create a `.env` file. The `.env.example` is a good starting point
 
 2. You have two options to set up the Keycloak container: either use the
-   `keycloak.yml` Docker Compose file or run the `start-keycloak.ps1` script.
+   `keycloak.compose.yml` Docker Compose file or run the `start-keycloak.ps1` script.
 
     ```pwsh
     ./start-keycloak.ps1
@@ -57,7 +57,7 @@ and initial client.
 4. Select `DmsConfigurationService`
 5. Click Credentials
 6. Copy the Client secret
-7. Update DMS Configuration Service IdentitySettings section on appsettings.json:
+7. Update Configuration Service IdentitySettings section on appsettings.json:
 
    ```js
     ConfigServiceRole: "cms-client" (Service realm role created earlier)
@@ -71,7 +71,7 @@ and initial client.
     Leave the rest as-is
    ```
 
-   Keep the copied client secret aligned with the CMS `IdentitySettings:ClientSecretValidation`
+   Keep the copied client secret aligned with the Configuration Service `IdentitySettings:ClientSecretValidation`
    settings. If you customize `MinimumLength` or `MaximumLength`, configure
    Keycloak so the secret you generate or assign falls within the same range.
 
@@ -97,6 +97,81 @@ and initial client.
     "clientSecret":"ValidClientSecret1234567890!Abcd"
     }
     ```
+
+## Token revocation through the Configuration Service
+
+With `AppSettings:IdentityProvider = keycloak`, `POST /connect/revoke` on the Configuration
+Service revokes at Keycloak. Before delegating, the Configuration Service reads the caller's client definition
+through the Keycloak Admin REST API to confirm the caller is a confidential, non-bearer-only
+client (Keycloak itself accepts a public client without checking any secret). The behaviour
+and response contract are described in
+[CS-AUTH.md § Token revocation](../../reference/design/configuration-service/CS-AUTH.md#token-revocation).
+Keycloak needs the following for this to work:
+
+- **`view-clients` for the Configuration Service client.** The client-type read uses the
+  Configuration Service's own credentials (`IdentitySettings:ClientId` /
+  `IdentitySettings:ClientSecret`), so its service account needs the `realm-management`
+  client role `view-clients`. The `realm-admin` role that `setup-keycloak.ps1` assigns to
+  `DmsConfigurationService` (and that the manual setup above assigns) includes it. If you
+  grant the service account narrower roles, include `view-clients`. Without it, every
+  revocation is answered `503 temporarily_unavailable`, and the Configuration Service log says the
+  Configuration Service client lacks permission to read clients in the realm.
+- **Confidential clients.** Only a confidential client (`Client authentication` on) can
+  revoke. Public and bearer-only clients are refused with `invalid_client`.
+- **TLS and `sslRequired`.** The Configuration Service sends the caller's client secret and the token to the base
+  URL derived from `IdentitySettings:Authority` (everything before `/realms/`). Outside
+  local development that must be an `https` URL. The local Docker stack uses
+  `http://dms-keycloak:8080` on the Docker network, which works because the realm's
+  `Require SSL` setting (`sslRequired`) is `external requests` (the default; private
+  addresses may use HTTP). With `all requests`, Keycloak answers every plain-HTTP revocation
+  `403` "HTTPS required", and the Configuration Service answers `503`. The Configuration Service does not follow redirects on the
+  revocation request, so the base URL must be one Keycloak answers on directly: a redirect,
+  an HTTP-to-HTTPS redirect included, is answered `503`.
+- **Timeouts.** The client-type read, the revocation request and the reading of an error
+  response each get their own `AppSettings:TokenRequestTimeoutSeconds` window, so a slow
+  Keycloak can hold a revocation for up to three times that setting before the Configuration Service answers `503`.
+- **Changing the Keycloak image.** The Configuration Service recognises Keycloak's answer for another client's token
+  by its exact text (`400 invalid_request` "Unmatching clients") and answers it `200`. After
+  changing the image, rerun `KeycloakRevocationCharacterizationTests` (Configuration Service E2E, Keycloak
+  stack) and confirm that answer is unchanged; if the text changed, revoking another client's
+  token is answered `400` instead of `200`.
+
+### Confirming a revocation at Keycloak
+
+A `200 OK` from `/connect/revoke` does not prove the token was revoked (RFC 7009 answers `200` for unknown and foreign tokens too).
+Configuration Service `/connect/introspect`, authenticated as the token's owner, passes the owner's credentials to Keycloak and describes only the owner's access tokens, so it is subject to the audience rule below and cannot observe a public client's or a refresh token.
+Every client the Configuration Service creates, and every client `setup-keycloak.ps1` creates, already carries an audience mapper for itself, so the owner of an access token whose `aud` contains its own client id can confirm there.
+A client created by an earlier version of the Configuration Service gains that mapper from its next update through `PUT /v3/apiClients/{id}` or `PUT /v3/vendors/{id}` (every API client of the vendor's applications), but not from a credential reset (see [CS-AUTH.md § Token introspection](../../reference/design/configuration-service/CS-AUTH.md#token-introspection)), unless it already has an OpenID Connect mapper named `Client's own audience` that does not put it into its own access tokens: the update leaves that mapper unchanged and logs a Warning.
+Run again for a client that already exists, such as `DmsConfigurationService`, `setup-keycloak.ps1` adds the mapper to that client when no mapper already gives it its own audience and changes nothing else; when the client has a conflicting OpenID Connect `Client's own audience` mapper, the script leaves it unchanged and warns that the client was not repaired.
+The script reaches only the client it is run for, not the other clients the Configuration Service manages.
+Only tokens issued after the mapper is added carry the audience: on Keycloak 26.6.2 or later, a live token issued before then is still answered `active:false` to its owner, so request a new token.
+On Keycloak 26.6.2 or later, add the mapper yourself to a client that none of those updates or script runs will reach, or to one that kept such a mapper, with the steps below, using the client itself as both the observed and the introspecting client and, when `Client's own audience` is taken, another mapper name.
+For a client the Configuration Service manages, put the mapper in the client's own `<client>-dedicated` scope: its next `PUT /v3/apiClients/{id}`, or a `PUT /v3/applications/{id}` that synchronizes that client because the change affects it or it is already pending, removes every default client scope other than its claim set's, the realm's default scopes and the service-account scope.
+Otherwise confirm through Keycloak's introspection endpoint, `POST http://localhost:8045/realms/edfi/protocol/openid-connect/token/introspect`, with `token=<the token>` and the credentials of a **confidential** client:
+
+- Introspect access tokens with a client that is in the token's audience (`aud`).
+  From Keycloak 26.6.2 (the Red Hat build of Keycloak 26.4.12, per its 26.4 migration guide; observed on 26.7.5, not on 26.1.4), any other client is answered `active:false` for a live token.
+  Keycloak's opt-outs from this check (the server option `allow-token-introspection-without-audience-check` and the client setting *Allow token introspection without audience check*) are deprecated and not recommended ([Migrating to 26.6.2](https://www.keycloak.org/docs/latest/upgrading/index.html#migrating-to-26-6-2)).
+  The mapper goes on the clients whose tokens you observe, not on the introspecting client:
+
+  1. Create a client scope (or use each observed client's `<client>-dedicated` scope) and
+     add an `Audience` mapper by configuration, with *Included Client Audience* set to the
+     introspecting client and *Add to access token* and *Add to token introspection* on.
+  2. Assign that client scope as a **Default** scope to every client whose tokens you need
+     to observe.
+  3. Request new tokens. Only tokens issued after the change carry the audience; a token
+     issued before it keeps its original `aud` and still answers `active:false`.
+
+  The Configuration Service end-to-end tests set up their observer client the same way (a per-run client
+  scope with an audience mapper for the observer, assigned as a default scope to the
+  observed clients).
+- Introspect refresh tokens with the client they were issued to, passing
+  `token_type_hint=refresh_token`.
+- A public client cannot introspect (`403` "Client not allowed."); observe its tokens with a
+  confidential client.
+
+A revoked token reports `active:false`. The Configuration Service and DMS validate Keycloak tokens locally, so they
+keep accepting a revoked token until it expires (plus their clock skew).
 
 ## Shutting down the Keycloak container
 
@@ -188,7 +263,7 @@ Please refer "Creating a Configuration Service Client" section above
 1. You can provide any valid Client ID and Name when creating your client.
 2. After creating the client, Keycloak will automatically generate a secret for
    you. Make sure to store this for later use and confirm its length matches the
-   CMS `IdentitySettings:ClientSecretValidation` minimum/maximum settings.
+   Configuration Service `IdentitySettings:ClientSecretValidation` minimum/maximum settings.
 3. Follow the section titled "Configuring service-specific realm roles" to
    create a role specific to your service (e.g., dms-client for a DMS-specific
    role).
@@ -330,7 +405,7 @@ Please refer "Creating a Configuration Service Client" section above
             "Authority": "http://your-keycloak-url:port/realms/<your-realm>",
             "MetadataAddress": "http://your-keycloak-url:port/realms/<your-realm>/.well-known/openid-configuration",
             "Audience": "account",
-            "RequireHttpsMetadata": false,
+            "RequireHttpsMetadata": false, // local http Keycloak only; the application default is true (docs/CONFIGURATION.md)
             "RoleClaimType": "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"
         ```
 

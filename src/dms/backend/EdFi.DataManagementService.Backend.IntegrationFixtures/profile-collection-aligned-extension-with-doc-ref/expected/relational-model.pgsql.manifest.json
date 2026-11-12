@@ -222,7 +222,7 @@
         "ParentResource_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ParentResource"
       }
@@ -238,33 +238,10 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       }
-    },
-    {
-      "name": "TR_ParentResource_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "ParentResource"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "ParentResourceId"
-      ],
-      "resource_key_id": 1,
-      "project_name": "Ed-Fi",
-      "resource_name": "ParentResource",
-      "identity_elements": [
-        {
-          "column": "ParentResourceId",
-          "identity_json_path": "$.parentResourceId"
-        }
-      ]
     },
     {
       "name": "TR_ParentResource_Stamp",
@@ -279,7 +256,7 @@
       "identity_projection_columns": [
         "ParentResourceId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ParentResource"
       },
@@ -301,33 +278,10 @@
         "ParentResource_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "ParentResource"
       }
-    },
-    {
-      "name": "TR_Sponsor_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "Sponsor"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SponsorName"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "Sponsor",
-      "identity_elements": [
-        {
-          "column": "SponsorName",
-          "identity_json_path": "$.sponsorName"
-        }
-      ]
     },
     {
       "name": "TR_Sponsor_Stamp",
@@ -342,7 +296,7 @@
       "identity_projection_columns": [
         "SponsorName"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "Sponsor"
       },
@@ -522,8 +476,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -592,7 +558,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]
@@ -924,8 +890,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -1003,7 +981,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]

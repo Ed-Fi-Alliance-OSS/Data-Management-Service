@@ -319,6 +319,7 @@ outside v1.
   "resourceVersion": "5.2.0",
   "contentVersion": 123456,
   "lastModifiedAt": "2026-07-06T15:30:45Z",
+  "documentCreatedAt": "2026-03-02T09:12:07Z",
   "document": {
     "id": "f81d4fae-7dec-11d0-a765-00a0c91e6bf6",
     "_etag": "123456-a1b2c3d4.j._.l.i",
@@ -336,9 +337,11 @@ outside v1.
 | `resourceVersion` | Project/schema resource version copied from `dms.ResourceKey` |
 | `contentVersion` | Signed 64-bit representation version used for canonical-state idempotency and stale-write ordering; only a higher version replaces retained non-null state |
 | `lastModifiedAt` | UTC whole-second timestamp in the existing DMS `yyyy-MM-ddTHH:mm:ssZ` representation |
+| `documentCreatedAt` | Required UTC whole-second resource creation time in the same `yyyy-MM-ddTHH:mm:ssZ` representation, copied from `DocumentCache.ContentCreatedAt` (the owner's value); updates never change it, and it is not an ordering value |
 | `document` | Expanded structured full API resource body, never an escaped JSON string |
 
-Database Pascal-case columns are renamed to lower camel case. `contractVersion` and
+Database Pascal-case columns are renamed to lower camel case, except that `ContentCreatedAt`
+is published as `documentCreatedAt`. `contractVersion` and
 `contentVersion` are JSON numbers. Within `document`, valid `DocumentJson` decimal values
 are emitted as unquoted JSON numbers without `double` rounding and without converting
 numeric values to strings, including nested object and array positions. `DocumentState`
@@ -375,7 +378,8 @@ the same string key, not delete envelopes. Progress records remain on their raw
 schema/value preservation path described by the [internal progress key](#internal-progress-key)
 contract. Raw Debezium headers and source-record timestamps are connector metadata, not
 consumer-visible contract fields. Consumers use `contentVersion` for non-null state
-ordering and `lastModifiedAt` for the DMS document timestamp; Kafka record timestamps
+ordering, `lastModifiedAt` for the DMS document timestamp, and `documentCreatedAt` for the
+resource creation time; Kafka record timestamps
 remain outside the public document-state contract.
 
 The physical temporal representation is not part of the public contract. One Ed-Fi-owned
@@ -395,6 +399,13 @@ next second, or plain field rename is non-conforming. The transform also verifie
 emitted value exactly matches `document._lastModifiedDate`; a mismatch fails the record
 rather than publishing inconsistent metadata.
 
+`ContentCreatedAt` follows the same provider representation and truncation rules: PostgreSQL
+`TIMESTAMPTZ` arrives as `io.debezium.time.ZonedTimestamp` and SQL Server `datetime2(7)` as
+`io.debezium.time.IsoTimestamp`, and `DocumentState` parses the UTC value and truncates it to
+the whole-second `documentCreatedAt`. It has no embedded `document` counterpart, so there is no
+equivalent of the `_lastModifiedDate` consistency check. A missing, null, unavailable, non-UTC,
+malformed, or wrong-schema value fails the record; it is never replaced with the current time.
+
 For provider source data that Debezium can report as unavailable, including PostgreSQL
 TOAST-backed `jsonb` and SQL Server `nvarchar(max)` `DocumentJson`, the connector pins
 Debezium 3.6's unavailable-value marker. A required retained `DocumentJson` value carrying
@@ -411,7 +422,8 @@ pinned `INT64`/Java `Long` shape. `ProjectName`, `ResourceName`, `ResourceVersio
 `StreamEtag` are pinned schema-backed string fields. `LastModifiedAt` is PostgreSQL's
 pinned `io.debezium.time.ZonedTimestamp` string shape for `TIMESTAMPTZ` or SQL Server's
 pinned `io.debezium.time.IsoTimestamp` string shape for `datetime2(7)`, and the value
-must represent UTC before fractional seconds are truncated for public output. Schemaless
+must represent UTC before fractional seconds are truncated for public output.
+`ContentCreatedAt` uses the same pinned provider shapes and the same UTC requirement. Schemaless
 values, alternate logical names, numeric/string coercions, bytes, maps, Java objects, and
 otherwise parseable values arriving through non-pinned schemas fail transformation.
 
@@ -433,7 +445,8 @@ ordering value.
 stream `_etag`, and `_lastModifiedDate`. When the compiled read plan injects reference
 links, it contains those `link` subtrees; DMS does not maintain another link-free Kafka
 projection. It excludes authorization arrays, EdOrg hierarchy JSON, API client identity,
-and readable-profile-specific output.
+and readable-profile-specific output. It carries no creation-time property; resource creation
+time is published only as envelope `documentCreatedAt`.
 
 Envelope `documentUuid` and `lastModifiedAt` exactly match embedded `id` and
 `_lastModifiedDate`. The source cache row carries the DMS-computed `StreamEtag`, which is
@@ -593,15 +606,16 @@ configurable mapping language.
    including sibling objects in a collection, together with array order and exact integer
    and decimal numeric values. No independent generic expand-JSON SMT participates in the
    relational connector.
-5. Normalize `LastModifiedAt` to the existing DMS whole-second UTC
+5. Normalize `LastModifiedAt` and `ContentCreatedAt` to the existing DMS whole-second UTC
    `yyyy-MM-ddTHH:mm:ssZ` representation. For SQL Server, interpret
    `io.debezium.time.IsoTimestamp` as an ISO-8601 UTC string, deliberately truncate
    fractional seconds without rounding into the next second, and reject an unexpected
    provider representation, non-UTC value, or fractional/raw public value.
 6. Build the complete lower-camel public envelope, copy the opaque DMS-computed
    `StreamEtag` to `document._etag`, remove all internal and operational fields, add
-   `contractVersion`, and verify that the public key and normalized timestamp exactly
-   match `document.id` and `document._lastModifiedDate`. Serialize that final tree once to
+   `contractVersion`, emit both normalized timestamps as `lastModifiedAt` and
+   `documentCreatedAt`, and verify that the public key and normalized `lastModifiedAt`
+   exactly match `document.id` and `document._lastModifiedDate`. Serialize that final tree once to
    UTF-8 and emit it with the required `org.edfi.kafka.connect.data.DocumentStateJson`
    `BYTES` schema at version `1`.
 7. For a retained canonical delete, replace the value with a record-level null tombstone.

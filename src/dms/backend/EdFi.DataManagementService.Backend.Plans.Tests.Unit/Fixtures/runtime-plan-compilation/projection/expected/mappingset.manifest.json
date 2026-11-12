@@ -208,8 +208,8 @@
             ],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "a3468ecfdbbeb8e5f410b4e6eba6ba96ffa3e18331692315f434207cfe043c72",
-                "select_by_single_document_sql_sha256": "bdc5d02abe283ee90afc80a32a3fafe661821b0cb94c90cf78904345934abbda",
+                "select_by_keyset_sql_sha256": "d1d5343eb91bbfe437afccfd7ff5e666e42df70e731c1be922e4c6f58e1c81b5",
+                "select_by_single_document_sql_sha256": "578723be0a1b17673b0159f7d6cb48eab3641c519c432f727a51bc724e651a02",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -592,8 +592,8 @@
             ],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "79508cb5b93b36d9e38ec41fc861516b25c88ed0317790f135e85d3cc5a95e3b",
-                "select_by_single_document_sql_sha256": "7c7b9b7a02c2324b1f1c2630a922b43c87fa72be649535d891b6e12d92c32801",
+                "select_by_keyset_sql_sha256": "a0fde60c9a3fe0dc73b471277a7e3a28a249409f9950f70fa8a178dfe4b9c377",
+                "select_by_single_document_sql_sha256": "46c06af3c513ba8c42de9c56a281f5802ae8de3758e64e152035603866f2a1fe",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1

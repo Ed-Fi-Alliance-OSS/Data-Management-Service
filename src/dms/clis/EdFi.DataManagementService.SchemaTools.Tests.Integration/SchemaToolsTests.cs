@@ -164,6 +164,73 @@ public class SchemaToolsTests
     }
 
     [TestFixture]
+    public class Given_Ddl_Restamp_With_Invalid_Schema : SchemaToolsTests
+    {
+        private const string SchemaContentSentinel = "schema-content-secret-sentinel";
+        private const string ConnectionString =
+            "Host=localhost;Database=database-secret-sentinel;Password=connection-secret-sentinel";
+        private string _path = null!;
+        private int _exitCode;
+        private string _output = null!;
+        private string _error = null!;
+
+        [SetUp]
+        public void SetUp()
+        {
+            _path = Path.Combine(Path.GetTempPath(), $"schema-invalid-{Guid.NewGuid():N}.json");
+            File.WriteAllText(_path, $"{{ \"{SchemaContentSentinel}\": invalid }}");
+            (_exitCode, _output, _error) = CliTestHelper.RunCli(
+                "ddl",
+                "re-stamp",
+                "--schema",
+                _path,
+                "--connection-string",
+                ConnectionString,
+                "--dialect",
+                "pgsql",
+                "--migration-completed",
+                "--verbose"
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            if (File.Exists(_path))
+            {
+                File.Delete(_path);
+            }
+        }
+
+        [Test]
+        public void It_returns_a_controlled_failure() => _exitCode.Should().Be(1);
+
+        [Test]
+        public void It_reports_only_the_typed_schema_file_diagnostic_on_stderr() =>
+            _error.Should().Be($"Invalid JSON in schema file: {_path}.{Environment.NewLine}");
+
+        [Test]
+        public void It_suppresses_shared_loader_logs_even_with_verbose_enabled() =>
+            _output.Should().BeEmpty();
+
+        [Test]
+        public void It_keeps_the_connection_string_private() =>
+            (_output + _error).Should().NotContain(ConnectionString);
+
+        [Test]
+        public void It_keeps_the_database_name_private() =>
+            (_output + _error).Should().NotContain("database-secret-sentinel");
+
+        [Test]
+        public void It_keeps_the_password_private() =>
+            (_output + _error).Should().NotContain("connection-secret-sentinel");
+
+        [Test]
+        public void It_keeps_schema_content_private() =>
+            (_output + _error).Should().NotContain(SchemaContentSentinel);
+    }
+
+    [TestFixture]
     [Category("Authoritative")]
     public class Given_Ddl_Emit_With_Valid_Schema : SchemaToolsTests
     {

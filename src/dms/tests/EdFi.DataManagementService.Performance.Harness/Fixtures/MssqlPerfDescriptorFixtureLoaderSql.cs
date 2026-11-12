@@ -8,10 +8,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// <summary>
 /// SQL Server loader SQL for the descriptor fixture. Rows are generated set-based with
 /// GENERATE_SERIES and must mirror <see cref="PerfDescriptorFixtureDefinition" /> exactly:
-/// dense DocumentIds, odd ordinals under the accessible namespace, Uri as namespace#codeValue,
-/// and one referential identity per descriptor derived through the database's own uuidv5
-/// function over the lowercased URI — the same derivation the production descriptor write
-/// records. The GENERATE_SERIES availability guard is shared with the primary loader.
+/// dense DocumentIds, odd ordinals under the accessible namespace, and Uri as
+/// namespace#codeValue. The GENERATE_SERIES availability guard is shared with the primary loader.
 /// Production triggers and constraints stay enabled throughout.
 /// </summary>
 public static class MssqlPerfDescriptorFixtureLoaderSql
@@ -48,32 +46,13 @@ public static class MssqlPerfDescriptorFixtureLoaderSql
         """;
 
     public const string DescriptorInsertSql = $"""
-        INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri])
+        INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription])
         SELECT
             s.value,
             @{PerfFixtureLoaderParameters.ResourceKeyId},
             {NamespaceCaseExpression},
             {CodeValueExpression},
-            {CodeValueExpression},
-            '{PerfDescriptorFixtureDefinition.ResourceName}',
-            {NamespaceCaseExpression} + '#' + {CodeValueExpression}
-        FROM GENERATE_SERIES(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS s;
-        """;
-
-    /// <summary>
-    /// Mirrors the production descriptor write's referential identity: uuidv5 over the
-    /// project, resource, and the lowercased $.descriptor URI, computed by the database's
-    /// own function so the set-based load and the write path can never drift apart.
-    /// </summary>
-    public const string ReferentialIdentityInsertSql = $"""
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        SELECT
-            [dms].[uuidv5](
-                'edf1edf1-3df1-3df1-3df1-3df1edf1edf1',
-                CAST(N'{PerfDescriptorFixtureDefinition.ProjectName}{PerfDescriptorFixtureDefinition.ResourceName}' AS nvarchar(max))
-                    + N'$.descriptor=' + LOWER({NamespaceCaseExpression} + '#' + {CodeValueExpression})),
-            s.value,
-            @{PerfFixtureLoaderParameters.ResourceKeyId}
+            {CodeValueExpression}
         FROM GENERATE_SERIES(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS s;
         """;
 
@@ -84,7 +63,6 @@ public static class MssqlPerfDescriptorFixtureLoaderSql
     [
         "UPDATE STATISTICS [dms].[Document];",
         "UPDATE STATISTICS [dms].[Descriptor];",
-        "UPDATE STATISTICS [dms].[ReferentialIdentity];",
     ];
 
     public static IReadOnlyList<PerfVerificationQuery> VerificationQueries(
@@ -139,24 +117,18 @@ public static class MssqlPerfDescriptorFixtureLoaderSql
                 definition.DocumentIdSum()
             ),
             new(
-                "referential-identity-count",
-                "SELECT COUNT(*) FROM [dms].[ReferentialIdentity];",
-                definition.RowCount
-            ),
-            new(
-                "referential-identity-pairing",
-                """
-                SELECT COUNT(*)
-                FROM [dms].[ReferentialIdentity] ri
-                INNER JOIN [dms].[Descriptor] r ON r.[DocumentId] = ri.[DocumentId];
-                """,
-                definition.RowCount
-            ),
-            new(
                 "uri-shape-count",
-                """
-                SELECT COUNT(*) FROM [dms].[Descriptor]
-                WHERE [Uri] = [Namespace] + '#' + [CodeValue];
+                $"""
+                SELECT COUNT(*) FROM [dms].[Descriptor] r
+                INNER JOIN [dms].[ResourceKey] rk ON rk.[ResourceKeyId] = r.[ResourceKeyId]
+                WHERE rk.[ProjectName] = '{PerfDescriptorFixtureDefinition.ProjectName}'
+                    AND rk.[ResourceName] = '{PerfDescriptorFixtureDefinition.ResourceName}'
+                    -- SQL Server's = ignores trailing spaces, so the CodeValue bytes are compared
+                    AND CAST(r.[CodeValue] AS varbinary(100))
+                        = CAST(N'perf-' + RIGHT(REPLICATE(N'0', 9) + CAST(r.[DocumentId] AS nvarchar(19)), 9) AS varbinary(100))
+                    AND r.[Uri]
+                        = CASE WHEN r.[DocumentId] % 2 = 1 THEN N'{PerfDescriptorFixtureDefinition.AccessibleNamespace}' ELSE N'{PerfDescriptorFixtureDefinition.InaccessibleNamespace}' END
+                            + N'#perf-' + RIGHT(REPLICATE('0', 9) + CAST(r.[DocumentId] AS varchar(19)), 9);
                 """,
                 definition.RowCount
             ),

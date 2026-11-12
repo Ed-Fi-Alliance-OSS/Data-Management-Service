@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -26,18 +27,22 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         DateTimeKind.Utc
     );
 
-    private static readonly string FixtureRelativePath = Path.Combine(
-        "src",
-        "dms",
-        "backend",
-        "EdFi.DataManagementService.Backend.Ddl.Tests.Unit",
-        "Fixtures",
-        "small",
-        "minimal"
-    );
+    private const string FixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.IntegrationFixtures/descriptor-runtime";
 
     private IMssqlGeneratedDdlBaselineLease _databaseLease = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
+
+    // Whole microseconds, so the value round-trips exactly through datetime2(7).
+    private static readonly DateTime CreatedAtSentinel = new DateTime(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        DateTimeKind.Utc
+    ).AddTicks(1_234_560);
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -56,6 +61,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             fixture.GeneratedDdl
         );
         _database = _databaseLease.Database;
+
+        // Keep DocumentId far above DescriptorId so no test can pass by confusing the two keys.
+        await _database.ExecuteNonQueryAsync("DBCC CHECKIDENT ('dms.Document', RESEED, 999999);");
     }
 
     [SetUp]
@@ -65,6 +73,10 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             """
             DELETE FROM [dms].[Descriptor];
             DELETE FROM [dms].[Document];
+            DELETE FROM [tracked_changes_edfi].[Descriptor];
+            UPDATE [dms].[DocumentCacheState] SET [ProjectionLifecycleState] = 'Tracking';
+            DBCC CHECKIDENT ('[dms].[Document]', RESEED, 1000) WITH NO_INFOMSGS;
+            DBCC CHECKIDENT ('[dms].[Descriptor]', RESEED, 1) WITH NO_INFOMSGS;
             """
         );
     }
@@ -84,17 +96,19 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     )
     {
         var documentId = await InsertDocumentAsync();
-        await InsertDescriptorAsync(documentId, shortDescription, codeValue);
+        var descriptorId = await InsertDescriptorAsync(documentId, shortDescription, codeValue);
+        descriptorId.Should().NotBe(documentId, "every seed must have unequal descriptor and document keys");
         await RewindContentLastModifiedAtAsync(documentId);
+        await SetOwnerCreatedAtAsync(documentId, CreatedAtSentinel);
 
         var stamps = await ReadStampPairAsync(documentId);
-        return (documentId, stamps.Document.ContentVersion, stamps.Document.ContentLastModifiedAt);
+        return (documentId, stamps.DocumentVersion, stamps.Owner.ContentLastModifiedAt);
     }
 
     private async Task<long> InsertDocumentAsync()
     {
         var resourceKeyId = await _database.ExecuteScalarAsync<short>(
-            "SELECT MIN(ResourceKeyId) FROM [dms].[ResourceKey];"
+            "SELECT [ResourceKeyId] FROM [dms].[ResourceKey] WHERE [ProjectName] = 'Ed-Fi' AND [ResourceName] = 'SchoolTypeDescriptor';"
         );
 
         return await _database.ExecuteScalarAsync<long>(
@@ -108,33 +122,31 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
     }
 
-    private async Task InsertDescriptorAsync(
+    private async Task<long> InsertDescriptorAsync(
         long documentId,
         string shortDescription = "Female",
         string codeValue = "Female"
     )
     {
         var resourceKeyId = await _database.ExecuteScalarAsync<short>(
-            "SELECT MIN(ResourceKeyId) FROM [dms].[ResourceKey];"
+            "SELECT [ResourceKeyId] FROM [dms].[ResourceKey] WHERE [ProjectName] = 'Ed-Fi' AND [ResourceName] = 'SchoolTypeDescriptor';"
         );
 
-        var uriOrDiscriminator = $"uri://ed-fi.org/SexDescriptor#{codeValue}";
-        await _database.ExecuteNonQueryAsync(
+        return await _database.ExecuteScalarAsync<long>(
             """
             INSERT INTO [dms].[Descriptor]
                 ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
-                 [EffectiveBeginDate], [EffectiveEndDate], [Discriminator], [Uri])
+                 [EffectiveBeginDate], [EffectiveEndDate], [ContentLastModifiedAt], [ContentCreatedAt])
             VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @description,
-                    NULL, NULL, @discriminator, @uri);
+                    NULL, NULL, '2000-01-01', '2000-01-01');
+            SELECT SCOPE_IDENTITY();
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
-            new SqlParameter("@namespace", "uri://ed-fi.org/SexDescriptor"),
+            new SqlParameter("@namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", codeValue),
-            new SqlParameter("@discriminator", uriOrDiscriminator),
-            new SqlParameter("@uri", uriOrDiscriminator)
+            new SqlParameter("@description", codeValue)
         );
     }
 
@@ -142,10 +154,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE [dms].[Document]
-            SET [ContentLastModifiedAt] = @contentLastModifiedAt
-            WHERE [DocumentId] = @documentId;
-
             UPDATE [dms].[Descriptor]
             SET [ContentLastModifiedAt] = @contentLastModifiedAt
             WHERE [DocumentId] = @documentId;
@@ -155,19 +163,11 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
     }
 
-    private async Task<StampValues> ReadDocumentStampAsync(long documentId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT ContentVersion, ContentLastModifiedAt
-            FROM [dms].[Document]
-            WHERE DocumentId = @documentId;
-            """,
+    private async Task<long> ReadDocumentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            "SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;",
             new SqlParameter("@documentId", documentId)
         );
-        var row = rows.Single();
-        return new(Convert.ToInt64(row["ContentVersion"]), Convert.ToDateTime(row["ContentLastModifiedAt"]));
-    }
 
     private async Task<StampPair> ReadStampPairAsync(long documentId)
     {
@@ -175,9 +175,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             """
             SELECT
                 doc.ContentVersion AS DocumentContentVersion,
-                doc.ContentLastModifiedAt AS DocumentContentLastModifiedAt,
-                descriptor.ContentVersion AS MirrorContentVersion,
-                descriptor.ContentLastModifiedAt AS MirrorContentLastModifiedAt
+                descriptor.ContentVersion AS OwnerContentVersion,
+                descriptor.ContentLastModifiedAt AS OwnerContentLastModifiedAt,
+                descriptor.ContentCreatedAt AS OwnerContentCreatedAt
             FROM [dms].[Document] doc
             INNER JOIN [dms].[Descriptor] descriptor ON descriptor.DocumentId = doc.DocumentId
             WHERE doc.DocumentId = @documentId;
@@ -185,14 +185,17 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             new SqlParameter("@documentId", documentId)
         );
         var row = rows.Single();
+        var requiredVersion = await _database.ExecuteScalarAsync<long>(
+            "SELECT [RequiredContentVersion] FROM [dms].[DocumentProjectionWork] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", documentId)
+        );
+        requiredVersion.Should().Be(Convert.ToInt64(row["DocumentContentVersion"]));
         return new(
+            Convert.ToInt64(row["DocumentContentVersion"]),
             new(
-                Convert.ToInt64(row["DocumentContentVersion"]),
-                Convert.ToDateTime(row["DocumentContentLastModifiedAt"])
-            ),
-            new(
-                Convert.ToInt64(row["MirrorContentVersion"]),
-                Convert.ToDateTime(row["MirrorContentLastModifiedAt"])
+                Convert.ToInt64(row["OwnerContentVersion"]),
+                Convert.ToDateTime(row["OwnerContentLastModifiedAt"]),
+                Convert.ToDateTime(row["OwnerContentCreatedAt"])
             )
         );
     }
@@ -202,43 +205,75 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         return await _database.ExecuteScalarAsync<long>("SELECT [dms].[GetMaxChangeVersion]();");
     }
 
-    private async Task<DateTime> BackdateDocumentContentStampAsync(long documentId)
+    private sealed record StampPair(long DocumentVersion, StampValues Owner);
+
+    private async Task SetOwnerCreatedAtAsync(long documentId, DateTime createdAt)
     {
-        // Moving the seed stamp deterministically into the past keeps the strict BeAfter
-        // assertions independent of server clock granularity: sysutcdatetime() can return an
-        // identical value for two reads milliseconds apart, but never one five minutes stale.
-        // Strictness is what catches a stamp the trigger never wrote, since such a stamp stays
-        // at the backdated value; BeOnOrAfter would accept it.
-        // No trigger exists on dms.Document, so this write neither stamps nor allocates a version.
         await _database.ExecuteNonQueryAsync(
             """
-            UPDATE [dms].[Document]
-            SET [ContentLastModifiedAt] = DATEADD(minute, -5, sysutcdatetime())
-            WHERE DocumentId = @documentId;
+            UPDATE [dms].[Descriptor]
+            SET [ContentCreatedAt] = @createdAt
+            WHERE [DocumentId] = @documentId;
             """,
+            new SqlParameter("@createdAt", SqlDbType.DateTime2) { Value = createdAt },
             new SqlParameter("@documentId", documentId)
         );
-
-        return (await ReadDocumentStampAsync(documentId)).ContentLastModifiedAt;
     }
 
-    private sealed record StampPair(StampValues Document, StampValues Mirror);
-
-    private sealed record StampValues(long ContentVersion, DateTime ContentLastModifiedAt);
+    private sealed record StampValues(
+        long ContentVersion,
+        DateTime ContentLastModifiedAt,
+        DateTime ContentCreatedAt
+    );
 
     [Test]
-    public async Task It_copies_existing_document_stamp_on_descriptor_insert_without_allocating_version()
+    public async Task It_stamps_distinct_unequal_id_descriptors_concurrently_while_both_hold_owner_and_work_locks()
+    {
+        var first = await SeedAsync(codeValue: "First");
+        var second = await SeedAsync(codeValue: "Second");
+        var neighbor = await SeedAsync(codeValue: "Neighbor");
+        const string write = """
+            UPDATE [dms].[Descriptor] SET [ShortDescription] = [CodeValue] + '-changed'
+            WHERE [DocumentId] = @documentId;
+            """;
+        await MssqlStampingConcurrencyScenario.RunAsync(
+            _database,
+            "[dms].[Descriptor]",
+            first.DocumentId,
+            second.DocumentId,
+            neighbor.DocumentId,
+            write,
+            write
+        );
+
+        var descriptors = await _database.QueryRowsAsync(
+            "SELECT [ShortDescription] FROM [dms].[Descriptor] ORDER BY [DocumentId];"
+        );
+        descriptors
+            .Select(row => row["ShortDescription"])
+            .Should()
+            .Equal("First-changed", "Second-changed", "Female");
+        (await _database.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM [tracked_changes_edfi].[Descriptor];"))
+            .Should()
+            .Be(0);
+    }
+
+    [Test]
+    public async Task It_initializes_owner_timestamp_and_copies_document_version_on_descriptor_insert()
     {
         var documentId = await InsertDocumentAsync();
-        var beforeDocument = await ReadDocumentStampAsync(documentId);
+        var beforeDocument = await ReadDocumentVersionAsync(documentId);
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
 
         await InsertDescriptorAsync(documentId);
 
         var after = await ReadStampPairAsync(documentId);
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        after.Document.Should().Be(beforeDocument);
-        after.Mirror.Should().Be(beforeDocument);
+        after.DocumentVersion.Should().Be(beforeDocument);
+        after.Owner.ContentVersion.Should().Be(beforeDocument);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(RewoundContentLastModifiedAt);
+        // The insert firing overrides the supplied creation time from the same captured value.
+        after.Owner.ContentCreatedAt.Should().Be(after.Owner.ContentLastModifiedAt);
         afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion);
     }
 
@@ -247,7 +282,6 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var seedContentLastModifiedAt = await BackdateDocumentContentStampAsync(seed.DocumentId);
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -258,9 +292,13 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var afterDocument = await ReadDocumentStampAsync(seed.DocumentId);
-        afterDocument.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        afterDocument.ContentLastModifiedAt.Should().BeAfter(seedContentLastModifiedAt);
+        var afterDocument = await ReadDocumentVersionAsync(seed.DocumentId);
+        afterDocument.Should().BeGreaterThan(seed.ContentVersion);
+        var tombstoneVersion = await _database.ExecuteScalarAsync<long>(
+            "SELECT [ChangeVersion] FROM [tracked_changes_edfi].[Descriptor] WHERE [DocumentId] = @documentId;",
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+        tombstoneVersion.Should().Be(afterDocument);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a descriptor delete must allocate exactly one content stamp");
@@ -271,7 +309,7 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seed = await SeedAsync();
         var beforeMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var seedContentLastModifiedAt = await BackdateDocumentContentStampAsync(seed.DocumentId);
+        var seedContentLastModifiedAt = seed.ContentLastModifiedAt;
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -284,9 +322,10 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Mirror.Should().Be(after.Document);
-        after.Document.ContentVersion.Should().BeGreaterThan(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().BeAfter(seedContentLastModifiedAt);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        after.DocumentVersion.Should().BeGreaterThan(seed.ContentVersion);
+        after.Owner.ContentLastModifiedAt.Should().BeAfter(seedContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
         (afterMaxChangeVersion - beforeMaxChangeVersion)
             .Should()
             .Be(1L, "a single descriptor value change must allocate exactly one content stamp");
@@ -296,6 +335,12 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     public async Task It_does_not_stamp_document_on_descriptor_no_op_update()
     {
         var seed = await SeedAsync();
+        var neighbor = await SeedAsync(codeValue: "Neighbor");
+        var beforeNeighbor = await ReadStampPairAsync(neighbor.DocumentId);
+        var watermark = await ReadMaxChangeVersionAsync();
+        var beforeWork = await _database.QueryRowsAsync(
+            "SELECT * FROM [dms].[DocumentProjectionWork] ORDER BY [DocumentId];"
+        );
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -307,9 +352,52 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
 
         var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-        after.Mirror.Should().Be(after.Document);
+        after.DocumentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
+        (await ReadStampPairAsync(neighbor.DocumentId)).Should().Be(beforeNeighbor);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+        (
+            await _database.QueryRowsAsync(
+                "SELECT * FROM [dms].[DocumentProjectionWork] ORDER BY [DocumentId];"
+            )
+        )
+            .Should()
+            .BeEquivalentTo(beforeWork);
+    }
+
+    [Test]
+    public async Task It_does_not_stamp_or_track_a_creation_timestamp_only_update()
+    {
+        var seed = await SeedAsync();
+        var watermark = await ReadMaxChangeVersionAsync();
+        var trackedRowsBefore = await _database.ExecuteScalarAsync<int>(
+            "SELECT COUNT(*) FROM [tracked_changes_edfi].[Descriptor];"
+        );
+        var beforeWork = await _database.QueryRowsAsync(
+            "SELECT * FROM [dms].[DocumentProjectionWork] ORDER BY [DocumentId];"
+        );
+        var updatedCreatedAt = CreatedAtSentinel.AddDays(1);
+
+        await SetOwnerCreatedAtAsync(seed.DocumentId, updatedCreatedAt);
+
+        var after = await ReadStampPairAsync(seed.DocumentId);
+        after.DocumentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Owner.ContentCreatedAt.Should().Be(updatedCreatedAt);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark);
+        (await _database.ExecuteScalarAsync<int>("SELECT COUNT(*) FROM [tracked_changes_edfi].[Descriptor];"))
+            .Should()
+            .Be(trackedRowsBefore);
+        (
+            await _database.QueryRowsAsync(
+                "SELECT * FROM [dms].[DocumentProjectionWork] ORDER BY [DocumentId];"
+            )
+        )
+            .Should()
+            .BeEquivalentTo(beforeWork);
     }
 
     private async Task InsertBenchResourceKeyAsync()
@@ -327,9 +415,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     public async Task It_rejects_a_descriptor_update_whose_resource_key_id_diverges_from_the_document()
     {
         // List paging trusts dms.Descriptor.ResourceKeyId while GET-by-id trusts
-        // dms.Document.ResourceKeyId, and no FK ties the two copies together. The trigger's
-        // equality guard must reject the divergent write before the no-op diff (which
-        // deliberately excludes ResourceKeyId) can short-circuit past it.
+        // dms.Document.ResourceKeyId. The bench key exists in dms.ResourceKey, so only
+        // FK_Descriptor_DocumentResourceKey can reject the divergent write; the trigger's no-op
+        // diff deliberately excludes ResourceKeyId.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -344,7 +432,8 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
             );
 
         var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
-        exception.Message.Should().Contain("diverges from the owning dms.Document row");
+        exception.Number.Should().Be(547);
+        exception.Message.Should().Contain("FK_Descriptor_DocumentResourceKey");
 
         var storedResourceKeyId = await _database.ExecuteScalarAsync<short>(
             "SELECT ResourceKeyId FROM [dms].[Descriptor] WHERE DocumentId = @documentId;",
@@ -356,13 +445,14 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
         storedResourceKeyId.Should().Be(documentResourceKeyId);
         var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
-        after.Mirror.Should().Be(after.Document);
+        after.DocumentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
     }
 
     [Test]
     public async Task It_rejects_a_descriptor_insert_whose_resource_key_id_diverges_from_the_document()
     {
+        // The bench key exists in dms.ResourceKey, so only FK_Descriptor_DocumentResourceKey can reject.
         var documentId = await InsertDocumentAsync();
         await InsertBenchResourceKeyAsync();
 
@@ -371,15 +461,16 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
                 """
                 INSERT INTO [dms].[Descriptor]
                     ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description],
-                     [EffectiveBeginDate], [EffectiveEndDate], [Discriminator], [Uri])
-                VALUES (@documentId, 32000, 'uri://ed-fi.org/SexDescriptor', 'Female', 'Female', 'Female',
-                        NULL, NULL, 'uri://ed-fi.org/SexDescriptor#Female', 'uri://ed-fi.org/SexDescriptor#Female');
+                     [EffectiveBeginDate], [EffectiveEndDate])
+                VALUES (@documentId, 32000, 'uri://ed-fi.org/SchoolTypeDescriptor', 'Female', 'Female', 'Female',
+                        NULL, NULL);
                 """,
                 new SqlParameter("@documentId", documentId)
             );
 
         var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
-        exception.Message.Should().Contain("diverges from the owning dms.Document row");
+        exception.Number.Should().Be(547);
+        exception.Message.Should().Contain("FK_Descriptor_DocumentResourceKey");
 
         var descriptorRowCount = await _database.ExecuteScalarAsync<int>(
             "SELECT COUNT(*) FROM [dms].[Descriptor] WHERE DocumentId = @documentId;",
@@ -389,35 +480,35 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     }
 
     [Test]
-    public async Task It_does_not_stamp_document_when_a_resource_key_id_backfill_updates_both_tables()
+    public async Task It_rejects_a_document_resource_key_id_change_while_its_descriptor_references_it()
     {
-        // ResourceKeyId is immutable in production and deliberately excluded from the trigger's
-        // no-op diff so a migration backfill UPDATE of the column cannot bump stamps. The
-        // equality guard requires such a backfill to update dms.Document before dms.Descriptor.
+        // The composite FK also covers the document side, which the former trigger guard never did.
         var seed = await SeedAsync();
         await InsertBenchResourceKeyAsync();
 
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE [dms].[Document]
-            SET [ResourceKeyId] = 32000
-            WHERE DocumentId = @documentId;
-            """,
-            new SqlParameter("@documentId", seed.DocumentId)
-        );
-        await _database.ExecuteNonQueryAsync(
-            """
-            UPDATE [dms].[Descriptor]
-            SET [ResourceKeyId] = 32000
-            WHERE DocumentId = @documentId;
-            """,
-            new SqlParameter("@documentId", seed.DocumentId)
-        );
+        var act = async () =>
+            await _database.ExecuteNonQueryAsync(
+                """
+                UPDATE [dms].[Document]
+                SET [ResourceKeyId] = 32000
+                WHERE DocumentId = @documentId;
+                """,
+                new SqlParameter("@documentId", seed.DocumentId)
+            );
 
+        var exception = (await act.Should().ThrowAsync<SqlException>()).Which;
+        exception.Number.Should().Be(547);
+        exception.Message.Should().Contain("FK_Descriptor_DocumentResourceKey");
+
+        var documentResourceKeyId = await _database.ExecuteScalarAsync<short>(
+            "SELECT ResourceKeyId FROM [dms].[Document] WHERE DocumentId = @documentId;",
+            new SqlParameter("@documentId", seed.DocumentId)
+        );
+        documentResourceKeyId.Should().NotBe((short)32000);
         var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Document.ContentVersion.Should().Be(seed.ContentVersion);
-        after.Document.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
-        after.Mirror.Should().Be(after.Document);
+        after.DocumentVersion.Should().Be(seed.ContentVersion);
+        after.Owner.ContentLastModifiedAt.Should().Be(seed.ContentLastModifiedAt);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
     }
 
     [Test]
@@ -425,6 +516,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
     {
         var seedA = await SeedAsync(codeValue: "Female");
         var seedB = await SeedAsync(codeValue: "Male");
+        var neighbor = await SeedAsync(codeValue: "Neighbor");
+        var beforeNeighbor = await ReadStampPairAsync(neighbor.DocumentId);
+        var watermark = await ReadMaxChangeVersionAsync();
 
         await _database.ExecuteNonQueryAsync(
             """
@@ -438,14 +532,20 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
 
         var afterA = await ReadStampPairAsync(seedA.DocumentId);
         var afterB = await ReadStampPairAsync(seedB.DocumentId);
-        afterA.Mirror.Should().Be(afterA.Document);
-        afterB.Mirror.Should().Be(afterB.Document);
-        afterA.Document.ContentVersion.Should().BeGreaterThan(seedA.ContentVersion);
-        afterB.Document.ContentVersion.Should().BeGreaterThan(seedB.ContentVersion);
+        (await ReadStampPairAsync(neighbor.DocumentId)).Should().Be(beforeNeighbor);
+        (await ReadMaxChangeVersionAsync()).Should().Be(watermark + 2);
+        afterA.Owner.ContentLastModifiedAt.Should().BeAfter(seedA.ContentLastModifiedAt);
+        afterB.Owner.ContentLastModifiedAt.Should().BeAfter(seedB.ContentLastModifiedAt);
+        afterA.Owner.ContentVersion.Should().Be(afterA.DocumentVersion);
+        afterB.Owner.ContentVersion.Should().Be(afterB.DocumentVersion);
+        afterA.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
+        afterB.Owner.ContentCreatedAt.Should().Be(CreatedAtSentinel);
+        afterA.DocumentVersion.Should().BeGreaterThan(seedA.ContentVersion);
+        afterB.DocumentVersion.Should().BeGreaterThan(seedB.ContentVersion);
         afterA
-            .Document.ContentVersion.Should()
+            .DocumentVersion.Should()
             .NotBe(
-                afterB.Document.ContentVersion,
+                afterB.DocumentVersion,
                 "the affectedDocs CTE must allocate a distinct NEXT VALUE per joined Document row"
             );
     }
@@ -469,9 +569,9 @@ public class Given_A_Provisioned_Mssql_Database_With_Descriptor_Stamping_Trigger
         );
 
         var after = await ReadStampPairAsync(seed.DocumentId);
-        after.Mirror.Should().Be(after.Document);
+        after.Owner.ContentVersion.Should().Be(after.DocumentVersion);
         after
-            .Document.ContentVersion.Should()
+            .DocumentVersion.Should()
             .BeGreaterThan(
                 seed.ContentVersion,
                 "byte-level CAST comparison must detect case-only + trailing-space-only change"

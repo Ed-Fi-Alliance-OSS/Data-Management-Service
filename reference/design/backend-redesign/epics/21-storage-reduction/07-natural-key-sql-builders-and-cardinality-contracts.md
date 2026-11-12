@@ -27,6 +27,11 @@ contracts behind unused internal seams before introducing the new resolver.
 - Add PostgreSQL typed-`unnest` group builders.
 - Add SQL Server OPENJSON + `FORCE ORDER` group builders.
 - Add the union-projection single-statement form, parameter-budget guard, and ordinal result reader.
+- Descriptor groups return `(Ordinal, DescriptorId, DocumentId, ResourceKeyId)` from one row;
+  the union superset keeps an `int DescriptorId` slot (typed NULL for ordinary/abstract groups)
+  separately from `bigint DocumentId`. Descriptor-valued identity joins compare stored compact
+  FKs to `DescriptorId`, including copied bindings. PostgreSQL folds the reconstructed whole URI;
+  SQL Server probes the direct-component `UriLowered` computation.
 - Keep all new builders behind unused internal seams; do not compose them into production resolution.
 - Enforce at most one match per input ordinal. Treat multiple matches as invariant corruption rather
   than hiding them with `TOP 1`, `LIMIT 1`, or row selection.
@@ -40,4 +45,6 @@ contracts behind unused internal seams before introducing the new resolver.
   key operand and inside each descriptor fold, and one statement-level `FORCE ORDER`.
 - Abstract lookups project concrete `ResourceKeyId`.
 - Tests cover parameter-limit failure and zero-, one-, and multiple-match results.
+- Unequal descriptor/document keys prove result-reader types, union slots and stored-reference
+  joins cannot interchange the two ID roles.
 - The lookup statement is composable without changing production runtime composition.

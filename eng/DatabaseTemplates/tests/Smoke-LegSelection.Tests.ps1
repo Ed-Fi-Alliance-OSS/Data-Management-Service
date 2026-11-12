@@ -71,17 +71,17 @@ Describe "Select-SmokeTestLegs" {
         @{ EventName = "schedule" }
         @{ EventName = "workflow_dispatch" }
     ) {
-        $legs = Invoke-Selector -EventName $EventName -ChangedFiles @("eng/docker-compose/mssql.yml")
+        $legs = Invoke-Selector -EventName $EventName -ChangedFiles @("eng/docker-compose/mssql.compose.yml")
         Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1, 2, 3)
     }
 
-    It "selects only the two mssql legs for eng/docker-compose/mssql.yml" {
-        $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/docker-compose/mssql.yml")
+    It "selects only the two mssql legs for eng/docker-compose/mssql.compose.yml" {
+        $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/docker-compose/mssql.compose.yml")
         Assert-LegSet -Actual $legs -ExpectedIndices @(2, 3)
     }
 
-    It "selects only the two postgresql legs for eng/docker-compose/postgresql.yml" {
-        $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/docker-compose/postgresql.yml")
+    It "selects only the two postgresql legs for eng/docker-compose/postgresql.compose.yml" {
+        $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/docker-compose/postgresql.compose.yml")
         Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1)
     }
 
@@ -92,6 +92,13 @@ Describe "Select-SmokeTestLegs" {
 
     It "selects all four legs for a shared path" {
         $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/smoke_test/modules/SmokeTest.psm1")
+        Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1, 2, 3)
+    }
+
+    It "triggers smoke validation for a change to the paired proxy overlay" {
+        $patterns = @(& $script:selector -ListPathPatterns)
+        $patterns | Should -Contain "eng/docker-compose/dms-cms-proxy.yml"
+        $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @("eng/docker-compose/dms-cms-proxy.yml")
         Assert-LegSet -Actual $legs -ExpectedIndices @(0, 1, 2, 3)
     }
 
@@ -107,7 +114,7 @@ Describe "Select-SmokeTestLegs" {
 
     It "selects the union of legs for mixed changed files" {
         $legs = Invoke-Selector -EventName "pull_request" -ChangedFiles @(
-            "eng/docker-compose/mssql.yml",
+            "eng/docker-compose/mssql.compose.yml",
             "eng/docker-compose/.env.smoke"
         )
         Assert-LegSet -Actual $legs -ExpectedIndices @(0, 2, 3)

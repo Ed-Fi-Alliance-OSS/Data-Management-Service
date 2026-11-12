@@ -22,13 +22,11 @@ public class Given_ObjectValueArrayComparer
     [Test]
     public void It_collapses_decimals_with_distinct_trailing_zero_representations()
     {
-        // RelationalWriteFlattener's no-profile duplicate-detection dictionary uses this same
-        // comparer instance as RelationalWriteNoProfileMerge.ProjectedCollectionTableState.
-        // decimal.Equals(1.0m, 1.00m) is true even though their ToString invariant forms differ
-        // ("1.0" vs "1.00"), so a string-encoded duplicate-detection key would falsely treat
-        // them as distinct while the no-profile merge would later collapse them on the same
-        // collapsed merge key. Anchoring on object.Equals via this comparer makes the
-        // duplicate-detection contract agree with the merge contract by construction.
+        // RelationalWriteNoProfileMerge.ProjectedCollectionTableState matches stored rows with
+        // this comparer. decimal.Equals(1.0m, 1.00m) is true even though their ToString
+        // invariant forms differ ("1.0" vs "1.00"), so a string-encoded key would falsely treat
+        // them as distinct. The flattener's duplicate check keeps the same object.Equals rule
+        // through CollectionSemanticIdentityEquality.RawValues.
         object?[] left = [1.0m];
         object?[] right = [1.00m];
 
@@ -42,7 +40,7 @@ public class Given_ObjectValueArrayComparer
         // Missing identity properties and explicit JSON nulls both surface as a null entry in
         // the raw object?[] semantic identity values produced by
         // RelationalWriteFlattener.MaterializeSemanticIdentityValues. They must compare equal so
-        // duplicate detection for the no-profile path matches the no-profile merge's row-pairing.
+        // the no-profile merge's row-pairing matches the storage-NULL convention.
         object?[] left = [null];
         object?[] right = [null];
 

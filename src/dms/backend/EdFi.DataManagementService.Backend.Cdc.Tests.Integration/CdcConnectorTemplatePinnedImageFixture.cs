@@ -83,6 +83,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("ContentVersion", "bigint"),
                 new("StreamEtag", "varchar(64)"),
                 new("LastModifiedAt", "datetime2(7)"),
+                new("ContentCreatedAt", "datetime2(7)"),
                 new("DocumentJson", "nvarchar(max)"),
                 new("ComputedAt", "datetime2(7)"),
             ],
@@ -101,8 +102,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
                 new("ResourceKeyId", "smallint"),
                 new("CreatedByOwnershipTokenId", "smallint", IsNullable: true),
                 new("ContentVersion", "bigint"),
-                new("ContentLastModifiedAt", "datetime2(7)"),
-                new("CreatedAt", "datetime2(7)"),
             ],
             ["CONSTRAINT [UX_Document_DocumentUuid] UNIQUE ([DocumentUuid])"]
         ),

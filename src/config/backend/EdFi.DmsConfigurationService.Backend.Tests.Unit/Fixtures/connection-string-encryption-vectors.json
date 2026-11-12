@@ -1,0 +1,9 @@
+{
+  "description": "Fixed interoperability vectors for CMS data store connection string encryption. Every reader (CMS, DMS, PowerShell) must decrypt envelopeV1, blockAlignedEnvelopeV1 and legacyCbc to their plain text under keyText. Generated once, independently of the readers.",
+  "keyText": "Vt7wK2nR9pL4xQ8mZ3cF6hJ1bD5gS0yA",
+  "plainText": "host=dms-postgresql;port=5432;username=postgres;password=Pässwörd€1;database=edfi_dms;",
+  "envelopeV1": "RWRGaS5DUy5FbnZlbG9wZQEQERITFBUWFxgZGhssz9luYAN+Ci6crOFrSFGOvqYLpKW1iY1mGsMKefsuU11YfTlEPm7JKAuad3/CyVE4F0zimzaWhQXVjeo5hifVmOyDBZM+ABknbQlc4oH1R63jm43xj1q8Pwi876S8MiYrx9iDZSb33UQFLVaaa/1K",
+  "legacyCbc": "MDEyMzQ1Njc4OTo7PD0+PzHXmrklwetlF9qMIKJ/bMCV2avuqlxRHKHA/goBtKYnVnn0Wxwl0w9gRe0Qy4quTyrZ8PwyxNQ+NfddnHD/ignN9rZ5Ry5CltxQtt4HtFVktjuSE/FQNJd2pu6XtNgBWw==",
+  "blockAlignedPlainText": "host=localhost;port=5432;database=edfi_dms_0001;",
+  "blockAlignedEnvelopeV1": "RWRGaS5DUy5FbnZlbG9wZQGgoaKjpKWmp6ipqquG/+poP/0Zsrr4w5dLz7bpyZFaPiwuvAkm3onHb1y7Q0UAt9F/pLQkZWZg4hpZbytsOeKfIrWsgGgL1rrBrQvMcGoS6SI16rjCtwOPWSh9lA=="
+}

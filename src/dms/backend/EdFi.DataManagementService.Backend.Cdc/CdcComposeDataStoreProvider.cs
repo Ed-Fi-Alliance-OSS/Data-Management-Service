@@ -95,7 +95,7 @@ public sealed class CdcComposeDataStoreProvider(
             if (connection.Host != "dms-postgresql" || connection.Port != 5432)
             {
                 throw new InvalidOperationException(
-                    "CDC CMS target is outside the selected Compose endpoint."
+                    "CDC Configuration Service target is outside the selected Compose endpoint."
                 );
             }
             connection.Host = "127.0.0.1";
@@ -109,7 +109,9 @@ public sealed class CdcComposeDataStoreProvider(
         var sql = new SqlConnectionStringBuilder(store.ConnectionString);
         if (sql.DataSource is not ("dms-mssql,1433" or "dms-mssql" or "tcp:dms-mssql,1433"))
         {
-            throw new InvalidOperationException("CDC CMS target is outside the selected Compose endpoint.");
+            throw new InvalidOperationException(
+                "CDC Configuration Service target is outside the selected Compose endpoint."
+            );
         }
         sql.DataSource = $"127.0.0.1,{hostPort}";
         return store with { ConnectionString = sql.ConnectionString };

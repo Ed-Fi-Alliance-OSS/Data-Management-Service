@@ -54,7 +54,7 @@ env:
   MSSQL_TMPFS_SIZE: "4g"
   MSSQL_GENERATED_DDL_LEASE_STRATEGY: "backup-restore"
   MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY: ${{ github.event.inputs.mssql_generated_ddl_provision_max_concurrency || '2' }}
-  POSTGRES_INTEGRATION_IMAGE: "postgres:16.3-alpine"
+  POSTGRES_INTEGRATION_IMAGE: "postgres:18.6-alpine"
   POSTGRES_CONTAINER_MEMORY: "10g"
   POSTGRES_TMPFS_SIZE: "4g"
   POSTGRES_USE_TMPFS: "true"
@@ -187,6 +187,12 @@ jobs:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      # The repository-wide workflow ref guard. It runs here because this job is required and runs
+      # in the merge queue; the PowerShell workflow, which also runs it, is neither. A workflow or
+      # action change is DMS-relevant, so a pull request that makes one does not skip this job.
+      - name: Refuse ref, tag and secret expressions in run scripts
+        run: ./eng/ci/Test-WorkflowRefInjection.ps1
+
       - name: Install Pester
         run: Install-Module Pester -RequiredVersion 5.7.1 -Scope CurrentUser -Force
 
@@ -206,8 +212,8 @@ jobs:
         run: |
           # Non-live docker-compose/eng-ci unit specs run here; live-stack specs (e.g.
           # BootstrapDockerSmoke.Tests.ps1) are deliberately excluded from this unit lane. The E2E
-          # engine/env-forwarding, teardown-safety, artifact-sanitizer, and MSSQL workflow-structure
-          # specs are listed explicitly so their coverage runs on every PR.
+          # engine/env-forwarding, dedicated-database guard, teardown-safety, artifact-sanitizer, and
+          # MSSQL workflow-structure specs are listed explicitly so their coverage runs on every PR.
           # MssqlCollationParity.Tests.ps1 and MssqlPhysicalDistinctnessLive.Tests.ps1 are the two
           # live suites registered here ON PURPOSE: their probes gate themselves off
           # deterministically when no fixture container is configured (recording intentional
@@ -218,12 +224,17 @@ jobs:
           # DMS_NORTHRIDGE_PG_FIXTURE_CONTAINER is unset in this lane.
           $paths = @(
             "eng/docker-compose/tests/BootstrapPackageResolver.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapTemplateRestore.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapRestoreWorkspace.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapRestoreSmoke.Tests.ps1",
+            "eng/docker-compose/tests/RestoreSmokeProbes.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaAndSecuritySelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSeedDelivery.Tests.ps1",
             "eng/docker-compose/tests/BootstrapStandardSchemaSelection.Tests.ps1",
             "eng/docker-compose/tests/BootstrapClaimsGate.Tests.ps1",
             "eng/docker-compose/tests/BootstrapEntryPointWorkflow.Tests.ps1",
             "eng/docker-compose/tests/BootstrapSchemaDeploymentSafety.Tests.ps1",
+            "eng/docker-compose/tests/BootstrapSchemaToolSessionIsolation.Tests.ps1",
             "eng/docker-compose/tests/BootstrapContainerPackaging.Tests.ps1",
             "eng/docker-compose/tests/SchemaPackageUtility.Tests.ps1",
             "eng/docker-compose/tests/ResolveIdentityClientSecrets.Tests.ps1",
@@ -248,7 +259,10 @@ jobs:
             "eng/docker-compose/tests/StockImageProofOrchestration.Tests.ps1",
             "eng/docker-compose/tests/StockImageProofEntryScript.Tests.ps1",
             "eng/docker-compose/tests/ProvisionE2EDatabaseReset.Tests.ps1",
+            "eng/docker-compose/tests/E2EDedicatedDatabaseGuardEquivalence.Tests.ps1",
             "eng/docker-compose/tests/AzureVmDeployment.Tests.ps1",
+            "eng/docker-compose/tests/LocalSwaggerUi.Tests.ps1",
+            "eng/docker-compose/tests/LegacyEnvironmentVariables.Tests.ps1",
             "eng/docker-compose/tests/E2EEngineForwarding.Tests.ps1",
             "eng/docker-compose/tests/E2ETestProcessContext.Tests.ps1",
             "eng/docker-compose/tests/E2EIdentityEnvironment.Tests.ps1",
@@ -256,21 +270,40 @@ jobs:
             "eng/docker-compose/tests/EducationOrganizationProjectionToggleWiring.Tests.ps1",
             "eng/docker-compose/tests/E2ETeardownSafety.Tests.ps1",
             "eng/docker-compose/tests/InstanceE2EForwarding.Tests.ps1",
+            "eng/docker-compose/tests/oauth-token-contract/TokenContractE2E.Tests.ps1",
+            "eng/docker-compose/tests/ContainerEntryPointDatabaseWait.Tests.ps1",
+            "eng/docker-compose/tests/PublishedComposeSecrets.Tests.ps1",
             "eng/ci/tests/BuildScriptTestGuards.Tests.ps1",
             "eng/ci/tests/Sanitize-E2EArtifacts.Tests.ps1",
             "eng/ci/tests/DmsPullRequestMssqlWorkflow.Tests.ps1",
+            "eng/ci/tests/ScheduledPreImageWorkflow.Tests.ps1",
             "eng/ci/tests/DmsChangeCategories.Tests.ps1",
             "eng/ci/tests/DmsPullRequestCiBudget.Tests.ps1",
             "eng/ci/tests/DmsPrereleaseImageTags.Tests.ps1",
+            "eng/ci/tests/PrereleaseClassification.Tests.ps1",
+            "eng/ci/tests/ReleaseRefHandling.Tests.ps1",
             "eng/ci/tests/StockImagePinReadiness.Tests.ps1",
             "eng/ci/tests/StockImageProofWorkflow.Tests.ps1",
             "eng/ci/tests/UnitTestCoverage.Tests.ps1",
             "eng/ci/tests/PullCiImages.Tests.ps1",
             "eng/ci/tests/DocumentCacheAdminPackageTarget.Tests.ps1",
+            "eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1",
+            "eng/ci/tests/ReleaseAssets.Tests.ps1",
             "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
             "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
+            "eng/ci/tests/TemplateWorkflowAttestation.Tests.ps1",
+            "eng/ci/tests/IdentityContractPublication.Tests.ps1",
+            "eng/ci/tests/DockerAnalysisWorkflowCredentials.Tests.ps1",
+            "eng/ci/tests/ReleasePublishingCredentials.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-Management.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-RestoreCore.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-RestoreTrust.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-DevTrust.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-DocumentShape.Tests.ps1",
             "eng/DatabaseTemplates/tests/Template-WorkflowInputs.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-WorkflowManifest.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Template-Schema.Tests.ps1",
+            "eng/DatabaseTemplates/tests/Compact-Descriptor.Tests.ps1",
             "eng/smoke_test/tests/SmokeTest.Tests.ps1",
             "eng/northridge/tests/SchemaSnapshotSecurity.Tests.ps1",
             "eng/northridge/tests/NorthridgeFailClosedGuards.Tests.ps1",
@@ -464,6 +497,29 @@ jobs:
           # Backend.Ddl stack: effective-schema-set build -> DDL generation (both dialects) -> file emission.
           api-schema-tools ddl emit --schema $fixture --output "$env:RUNNER_TEMP/ddl-verify" --dialect both
 
+      - name: Create DocumentCacheAdmin NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 Package `
+            -DMSVersion $packageVersion `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -PackageTarget DocumentCacheAdmin
+
+      - name: Install and Run DocumentCacheAdmin Package
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # The smoke script installs from the packed .nupkg only, with an isolated
+          # global-packages folder, so it cannot validate stale or nuget.org bits.
+          ./eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1 `
+            -DMSVersion $packageVersion `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -SkipPackageBuild `
+            -ToolPath (Join-Path $env:RUNNER_TEMP "dms-document-cache")
+
       - name: Create Custom Validation NuGet Package
         run: |
           $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
@@ -580,7 +636,41 @@ jobs:
             -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
             -ExpectedPackageVersion $contractVersion
 
-      # After both packs, necessarily: this is the one check that restores both contracts, because
+      # After both packs, necessarily: this check restores both contracts, because the provider
+      # sample the identity guide publishes is registered by a plugin, and the plugin half needs
+      # EdFi.Api.Plugins. Placing it before the Identity pack, or before the Plugins pack above,
+      # would restore a package that had not been packed yet.
+      - name: Compile Identity Scratch Consumer
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $identityContractVersion = Get-IdentityContractVersion
+          $pluginsContractVersion = Get-PluginsContractVersion
+
+          # Two versions from two sources, deliberately: each contract declares its own version in
+          # its own file and neither moves with the release, so neither is derived from the other
+          # or from the release version. These are the versions the two pack steps above produced.
+          # A fresh global-packages folder per run is what stops a previously extracted copy of
+          # either fixed-version package satisfying this restore in place of the one just packed.
+          #
+          # The published half reads the Ed-Fi feed anonymously, as every restore in this workflow
+          # already does, so it needs no secret and runs the same on a fork. Until the first
+          # publication of EdFi.Api.Identity at the declared version it reports that the version is
+          # not yet on the feed and the step passes; that is the expected state, not a skipped
+          # check. After publication it compiles this consumer against the feed's package, and a
+          # published package that differs from the one just packed fails the step. An unreadable
+          # feed fails the step rather than reading as "not yet published". It has its own fresh
+          # global-packages folder because the local check's already holds the same id and version.
+          $runId = [guid]::NewGuid().ToString('N')
+          ./eng/verification/Invoke-IdentityConsumerCheck.ps1 `
+            -PackageVersion $identityContractVersion `
+            -PluginsPackageVersion $pluginsContractVersion `
+            -NuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-identity-$runId") `
+            -PublishedServiceIndexUrl "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json" `
+            -PublishedNuGetPackagesDirectory (Join-Path $env:RUNNER_TEMP "nuget-verify-published-identity-$runId")
+
+      # After both packs, necessarily: this check restores both contracts, because
       # the samples CUSTOM-VALIDATION.md publishes are a validator and the plugin that registers
       # it. Placing it earlier would restore an EdFi.Api.Plugins that had not been packed yet.
       - name: Compile and Run the Documented Custom Validator Samples
@@ -1262,6 +1352,7 @@ jobs:
       contents: read
     env:
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+      SCHEMATOOLS_ASSEMBLY_PATH: ${{ github.workspace }}/TestArtifacts/integration-test-assemblies/src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/api-schema-tools.dll
       MSSQL_FIXTURE_TIMINGS_PATH: ${{ github.workspace }}/TestResults/test-timings/mssql-api/mssql-fixture-setup-timings.csv
       MSSQL_TEST_SHARD: api
     defaults:
@@ -1404,7 +1495,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -1428,6 +1518,7 @@ jobs:
     env:
       ConnectionStrings__DatabaseConnection: "Host=localhost;Port=5432;Username=postgres;Database=edfi_dms_backend_integration;Pooling=true;Minimum Pool Size=10;Maximum Pool Size=50;Application Name=EdFi.DataManagementService;NoResetOnClose=true;"
       TEST_ASSEMBLY: ./TestArtifacts/integration-test-assemblies/dms-api/EdFi.DataManagementService.Tests.Integration.dll
+      SCHEMATOOLS_ASSEMBLY_PATH: ${{ github.workspace }}/TestArtifacts/integration-test-assemblies/src/dms/clis/EdFi.DataManagementService.SchemaTools/bin/Release/net10.0/api-schema-tools.dll
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -1478,7 +1569,6 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
       - name: Teardown PostgreSQL Container
         if: always()
@@ -1656,7 +1746,6 @@ jobs:
       CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS: "false"
       CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE }}
-      CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE }}
       CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE: ${{ vars.CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE }}
     steps:
       - name: Checkout the Repo
@@ -1672,6 +1761,11 @@ jobs:
         with:
           name: dms-integration-test-assemblies
           path: TestArtifacts/integration-test-assemblies
+
+      - name: Configure PostgreSQL qualification image
+        run: |
+          $image = ./eng/ci/Get-CdcQualificationPostgresqlImage.ps1
+          "CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=$image" >> $env:GITHUB_ENV
 
       - name: Validate CDC Connector Template Smoke Settings
         run: |
@@ -1896,8 +1990,21 @@ jobs:
           tmpfs-size: ${{ env.POSTGRES_TMPFS_SIZE }}
           image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
 
+      # The PostgreSQL platform-compatibility fixtures need a cluster whose template1 is not UTF-8.
+      - name: Start Non-UTF-8 PostgreSQL Container
+        uses: ./.github/actions/start-postgresql-test-container
+        with:
+          container-name: dms-ci-postgresql-latin1
+          container-memory: 2g
+          tmpfs-size: 1g
+          image: ${{ env.POSTGRES_INTEGRATION_IMAGE }}
+          host-port: "5433"
+          initdb-args: --encoding=LATIN1 --locale=C
+
       - name: Run SchemaTools PostgreSQL Integration Tests
         if: success()
+        env:
+          ConnectionStrings__PostgresNonUtf8Admin: "host=localhost;port=5433;username=postgres;database=postgres;pooling=false"
         run: |
           dotnet test ${{ env.SCHEMATOOLS_TEST_ASSEMBLY }} `
             -v normal `
@@ -1923,11 +2030,16 @@ jobs:
         uses: ./.github/actions/export-database-container-diagnostics
         with:
           container-name: dms-ci-postgresql
-          data-path: /var/lib/postgresql/data
 
-      - name: Teardown PostgreSQL Container
+      - name: Export Non-UTF-8 PostgreSQL Logs
+        if: failure()
+        uses: ./.github/actions/export-database-container-diagnostics
+        with:
+          container-name: dms-ci-postgresql-latin1
+
+      - name: Teardown PostgreSQL Containers
         if: always()
-        run: docker rm -f dms-ci-postgresql
+        run: docker rm -f dms-ci-postgresql dms-ci-postgresql-latin1
 
   run-schematools-mssql-integration-tests:
     name: Run SchemaTools MSSQL Integration Tests
@@ -2027,7 +2139,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2122,10 +2234,22 @@ jobs:
         id: e2e
         if: success()
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-${{ matrix.shard }}'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-${{ matrix.shard }})&(Category!=@MssqlOnly)'
+
+      - name: Run DMS-1606 token contract E2E
+        id: token-contract
+        if: success() && matrix.shard == 1
+        run: |
+          ./eng/docker-compose/tests/oauth-token-contract/Invoke-TokenContractE2E.ps1 `
+            -IdentityProvider ${{ matrix.identityprovider }} `
+            -DatabaseEngine postgresql `
+            -EnvironmentFile './.env.e2e' `
+            -Configuration ${{ env.CONFIGURATION }} `
+            -SkipDockerBuild `
+            -UsePrebuiltOutput
 
       - name: Export DMS E2E Docker Logs
-        if: always() && steps.e2e.outcome == 'failure'
+        if: always() && (steps.e2e.outcome == 'failure' || steps.token-contract.outcome == 'failure')
         run: |
           $logDir = "${{ github.workspace }}/logs/e2e-shard-${{ matrix.shard }}"
           Remove-Item -Path $logDir -Recurse -Force -ErrorAction SilentlyContinue
@@ -2145,14 +2269,15 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
 
       - name: Upload DMS E2E Logs
-        if: always() && steps.e2e.outcome == 'failure'
+        if: always() && (steps.e2e.outcome == 'failure' || steps.token-contract.outcome == 'failure')
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postgresql-${{ matrix.identityprovider }}-e2e-shard-${{ matrix.shard }}-test-logs
@@ -2170,6 +2295,28 @@ jobs:
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
+
+      - name: Report DMS-1606 token contract results
+        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        if: always() && hashFiles('TestResults/token-contract-*.trx') != ''
+        with:
+          name: DMS-1606 token contract E2E
+          path: TestResults/token-contract-*.trx
+          path-replace-backslashes: "true"
+          reporter: dotnet-trx
+          list-tests: failed
+          use-actions-summary: "true"
+
+      - name: Upload DMS-1606 token contract artifacts
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && matrix.shard == 1
+        with:
+          name: dms-1606-token-contract-${{ matrix.identityprovider }}
+          path: |
+            TestResults/token-contract-*.trx
+            logs/e2e-shard-${{ matrix.shard }}/**
+          if-no-files-found: ignore
+          retention-days: 10
 
       - name: Summarize DMS E2E Test Timings
         if: always()
@@ -2210,7 +2357,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2310,7 +2457,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_ds61.outcome == 'failure'
@@ -2333,8 +2480,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2399,7 +2547,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2496,7 +2644,7 @@ jobs:
         env:
           KAFKA_BOOTSTRAP_SERVERS: dms-kafka1:9092
         run: |
-          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter 'Category=@CursorPartitionSizing'
+          ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.cursorpartitions.e2e' -TestFilter '(Category=@CursorPartitionSizing)&(Category!=@MssqlOnly)'
 
       - name: Export DMS E2E Docker Logs
         if: always() && steps.e2e_partition_sizing.outcome == 'failure'
@@ -2519,8 +2667,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
           }
         shell: pwsh
@@ -2566,10 +2715,11 @@ jobs:
           retention-days: 30
 
   # SQL Server DMS E2E lane. Mirrors run-e2e-tests but targets the MSSQL datastore engine:
-  # -DatabaseEngine mssql composes the .env.mssql overlay onto -EnvironmentFile and swaps mssql.yml
-  # for postgresql.yml, so the stack is relational-only (no Kafka / OpenSearch). Rather than the full
-  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section across
-  # both identity providers. That filter carries no shard, so RunE2E writes the filtered TRX
+  # -DatabaseEngine mssql composes the .env.mssql overlay onto -EnvironmentFile and swaps mssql.compose.yml
+  # for postgresql.compose.yml, so the stack is relational-only (no Kafka / OpenSearch). Rather than the full
+  # four-shard DS 5.2 sweep, this lane runs only the bounded @MssqlRepresentative cross-section plus
+  # the @MssqlOnly engine variants across both identity providers, excluding @PostgresqlOnly; the
+  # PostgreSQL lanes exclude @MssqlOnly. That filter carries no shard, so RunE2E writes the filtered TRX
   # (EdFi.DataManagementService.Tests.E2E.filtered.trx). An always()-guarded engine-correct teardown
   # runs regardless of outcome, and diagnostic artifacts are sanitized before any upload or report.
   run-e2e-tests-mssql:
@@ -2588,7 +2738,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2693,7 +2843,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2730,7 +2880,7 @@ jobs:
         if: always()
         run: |
           # Always-run engine-correct, project-scoped teardown. Pass the explicit base env file the suite
-          # setup used (.env.e2e) plus -DatabaseEngine mssql, which selects the mssql.yml compose set. The
+          # setup used (.env.e2e) plus -DatabaseEngine mssql, which selects the mssql.compose.yml compose set. The
           # compose project is the sole authority for removal; a teardown failure surfaces without masking
           # the test outcome.
           ./src/dms/tests/EdFi.DataManagementService.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile '.env.e2e'
@@ -2813,7 +2963,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -2914,7 +3064,7 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-ds61"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1' *> $diagFile
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)' *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest (DS 6.1) failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -3066,7 +3216,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3181,8 +3331,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
 
               # Also display DMS logs in the workflow output for easier debugging
@@ -3252,7 +3403,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3381,8 +3532,9 @@ jobs:
               if ($container -eq "dms-postgresql") {
                   $postgresDiagnosticsPath = Join-Path $logDir "$container.storage.txt"
                   docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-                  docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-                  docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+                  $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+                  docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+                  docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
               }
 
               # Also display DMS logs in the workflow output for easier debugging
@@ -3462,7 +3614,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3607,7 +3759,7 @@ jobs:
         run: |
           # Always-run engine-correct, project-scoped teardown with the explicit base env file the
           # omitted-EnvironmentFile setup used (.env.routeContext.e2e) plus -DatabaseEngine mssql (selects
-          # mssql.yml). The compose project is the sole authority for removal; never masks the test outcome.
+          # mssql.compose.yml). The compose project is the sole authority for removal; never masks the test outcome.
           ./src/dms/tests/EdFi.InstanceManagement.Tests.E2E/teardown-local-dms.ps1 -DatabaseEngine mssql -EnvironmentFile '.env.routeContext.e2e'
 
       - name: Sanitize Instance Management Diagnostic Artifacts
@@ -3679,7 +3831,7 @@ jobs:
         shell: pwsh
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
     steps:
       - name: Checkout the Repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -3883,8 +4035,9 @@ jobs:
             if ($container -eq "dms-postgresql") {
               $postgresDiagnosticsPath = Join-Path $diagnosticsDir "$container.storage.txt"
               docker stats $container --no-stream > $postgresDiagnosticsPath 2>&1
-              docker exec $container df -h /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
-              docker exec $container du -sh /var/lib/postgresql/data >> $postgresDiagnosticsPath 2>&1
+              $postgresDataPath = docker exec $container printenv PGDATA 2>$null
+              docker exec $container df -h $postgresDataPath >> $postgresDiagnosticsPath 2>&1
+              docker exec $container du -sh $postgresDataPath >> $postgresDiagnosticsPath 2>&1
             }
 
             if ($container -eq $dmsContainer) {
@@ -4005,7 +4158,7 @@ jobs:
       - name: Fresh rebuild DMS and Config Docker images
         working-directory: eng/docker-compose
         run: |
-          docker compose -f postgresql.yml -f local-dms.yml -f kafka.yml -f local-config.yml --env-file "./.env.e2e" -p dms-local build --no-cache
+          docker compose -f postgresql.compose.yml -f local-dms.compose.yml -f kafka.compose.yml -f local-config.compose.yml --env-file "./.env.e2e" -p dms-local build --no-cache
 
   test-timing-summary:
     name: Test Timing Summary

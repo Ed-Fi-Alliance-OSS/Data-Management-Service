@@ -54,7 +54,7 @@ public class ReportInvalidConfigurationMiddlewareTests
 
         [Test]
         public void It_returns_the_internal_server_error_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
 
         [Test]
         public void It_has_the_internal_server_error_title() =>

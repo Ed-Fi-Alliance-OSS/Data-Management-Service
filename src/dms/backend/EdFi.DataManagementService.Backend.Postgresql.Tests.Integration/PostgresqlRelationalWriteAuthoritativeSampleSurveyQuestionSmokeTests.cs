@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -161,7 +160,7 @@ internal sealed record AuthoritativeSampleSurveyQuestionSeedData(
     long SchoolYearTypeDocumentId,
     long SurveyDocumentId,
     long SurveySectionDocumentId,
-    long QuestionFormDescriptorId
+    int QuestionFormDescriptorId
 );
 
 internal sealed record AuthoritativeSampleSurveyQuestionDocumentRow(
@@ -182,7 +181,7 @@ internal sealed record AuthoritativeSampleSurveyQuestionRow(
     long SurveyDocumentId,
     string SurveyNamespace,
     string SurveySurveyIdentifier,
-    long QuestionFormDescriptorId,
+    int QuestionFormDescriptorId,
     string QuestionCode,
     string QuestionText
 );
@@ -223,7 +222,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     private const string SurveyIdentifier = "climate-2024";
     private const string SurveyTitle = "Climate and Culture Survey";
     private const string SurveySectionTitle = "Student Experience";
-    private const string QuestionFormDescriptorUri = "uri://ed-fi.org/QuestionFormDescriptor#Matrix";
     private const string QuestionCode = "Q-01";
     private const string CreateQuestionText = "How would you rate each area?";
     private const string ChangedQuestionText = "How would you rate each area this semester?";
@@ -372,7 +370,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
         _resourceSchema = resourceSchema;
         _seedData = await SeedReferenceDataAsync();
-        await DisableSurveyQuestionReferentialIdentityTriggerAsync();
 
         _createResult = await ExecuteCreateAsync();
         if (_createResult is UpsertResult.UpsertFailureReference createReferenceFailure)
@@ -732,9 +729,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var questionFormDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("11111111-0000-0000-0000-000000000001"),
             questionFormDescriptorResourceKeyId,
-            "QuestionFormDescriptor",
-            "Ed-Fi:QuestionFormDescriptor",
-            QuestionFormDescriptorUri,
             "uri://ed-fi.org/QuestionFormDescriptor",
             "Matrix",
             "Matrix"
@@ -745,14 +739,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             schoolYearTypeResourceKeyId
         );
         await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, SchoolYear, SchoolYearDescription);
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "SchoolYearType", false),
-                ("$.schoolYear", SchoolYear.ToString(CultureInfo.InvariantCulture))
-            ),
-            schoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var surveyDocumentId = await InsertDocumentAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000001"),
@@ -764,15 +750,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             SurveyNamespace,
             SurveyIdentifier,
             SurveyTitle
-        );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "Survey", false),
-                ("$.namespace", SurveyNamespace),
-                ("$.surveyIdentifier", SurveyIdentifier)
-            ),
-            surveyDocumentId,
-            surveyResourceKeyId
         );
 
         var surveySectionDocumentId = await InsertDocumentAsync(
@@ -786,16 +763,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             SurveyIdentifier,
             SurveySectionTitle
         );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "SurveySection", false),
-                ("$.surveyReference.namespace", SurveyNamespace),
-                ("$.surveyReference.surveyIdentifier", SurveyIdentifier),
-                ("$.surveySectionTitle", SurveySectionTitle)
-            ),
-            surveySectionDocumentId,
-            surveySectionResourceKeyId
-        );
 
         return new(
             SchoolYearTypeDocumentId: schoolYearTypeDocumentId,
@@ -805,22 +772,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task DisableSurveyQuestionReferentialIdentityTriggerAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            ALTER TABLE "edfi"."SurveyQuestion"
-            DISABLE TRIGGER "TR_SurveyQuestion_ReferentialIdentity";
-            """
-        );
-    }
-
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string resourceName,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
@@ -829,20 +783,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
         );
 
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
-
-        return documentId;
+        return documentId.DescriptorId;
     }
 
     private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
@@ -872,19 +818,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -892,9 +837,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -902,22 +845,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolYearTypeAsync(
@@ -1014,56 +953,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             new NpgsqlParameter("surveyNamespace", surveyNamespace),
             new NpgsqlParameter("surveyIdentifier", surveyIdentifier),
             new NpgsqlParameter("surveySectionTitle", surveySectionTitle)
-        );
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
         );
     }
 
@@ -1167,7 +1056,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     rows[0],
                     "Survey_SurveyIdentifier"
                 ),
-                AuthoritativeSampleSurveyQuestionIntegrationTestSupport.GetInt64(
+                AuthoritativeSampleSurveyQuestionIntegrationTestSupport.GetInt32(
                     rows[0],
                     "QuestionFormDescriptor_DescriptorId"
                 ),

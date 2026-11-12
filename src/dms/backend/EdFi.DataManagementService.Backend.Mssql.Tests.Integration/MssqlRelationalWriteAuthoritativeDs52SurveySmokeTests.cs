@@ -243,7 +243,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
         _resourceSchema = resourceSchema;
         _seedData = await SeedReferenceDataAsync();
-        await SeedReferenceResolutionRowsAsync();
 
         _createResult = await ExecuteCreateAsync(
             CreateRequestBodyJson,
@@ -524,20 +523,16 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var sessionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Session");
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
 
-        var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var fallTermDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000001"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
-        var springTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var springTermDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000002"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Spring",
             "uri://ed-fi.org/TermDescriptor",
             "Spring",
             "Spring"
@@ -569,7 +564,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             SchoolYear,
             schoolDocumentId,
             SchoolId,
-            fallTermDescriptorDocumentId,
+            fallTermDescriptorId,
             new DateOnly(2025, 8, 1),
             new DateOnly(2025, 12, 31),
             FallSessionName,
@@ -586,7 +581,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             SchoolYear,
             schoolDocumentId,
             SchoolId,
-            springTermDescriptorDocumentId,
+            springTermDescriptorId,
             new DateOnly(2026, 1, 5),
             new DateOnly(2026, 5, 22),
             SpringSessionName,
@@ -594,58 +589,6 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
 
         return new(schoolYearTypeDocumentId, fallSessionDocumentId, springSessionDocumentId);
-    }
-
-    private async Task SeedReferenceResolutionRowsAsync()
-    {
-        var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
-        var sessionResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Session");
-
-        var createRequestBody = JsonNode.Parse(CreateRequestBodyJson)!;
-        var createDocumentInfo = MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
-            createRequestBody,
-            _resourceInfo,
-            _resourceSchema,
-            _mappingSet
-        );
-
-        await UpsertReferentialIdentityAsync(
-            createDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.schoolYearTypeReference")
-                .ReferentialId,
-            _seedData.SchoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
-        await UpsertReferentialIdentityAsync(
-            createDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.sessionReference")
-                .ReferentialId,
-            _seedData.FallSessionDocumentId,
-            sessionResourceKeyId
-        );
-
-        var changedUpdateRequestBody = JsonNode.Parse(ChangedUpdateRequestBodyJson)!;
-        var changedUpdateDocumentInfo = MssqlSurveyRuntimeIntegrationTestSupport.CreateDocumentInfo(
-            changedUpdateRequestBody,
-            _resourceInfo,
-            _resourceSchema,
-            _mappingSet
-        );
-
-        await UpsertReferentialIdentityAsync(
-            changedUpdateDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.schoolYearTypeReference")
-                .ReferentialId,
-            _seedData.SchoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
-        await UpsertReferentialIdentityAsync(
-            changedUpdateDocumentInfo
-                .DocumentReferences.Single(reference => reference.Path.Value == "$.sessionReference")
-                .ReferentialId,
-            _seedData.SpringSessionDocumentId,
-            sessionResourceKeyId
-        );
     }
 
     private async Task<SurveyRuntimePersistedState> ReadPersistedStateAsync(Guid documentUuid)
@@ -692,9 +635,10 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         var row = (
             await _database.QueryRowsAsync(
                 """
-                SELECT [ContentVersion], [ContentLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentUuid] = @documentUuid;
+                SELECT document.[ContentVersion], owner.[ContentLastModifiedAt]
+                FROM [dms].[Document] document
+                INNER JOIN [edfi].[Survey] owner ON owner.[DocumentId] = document.[DocumentId]
+                WHERE document.[DocumentUuid] = @documentUuid;
                 """,
                 new SqlParameter("@documentUuid", documentUuid)
             )
@@ -735,52 +679,48 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     private async Task InsertSchoolYearTypeAsync(long documentId, int schoolYear)
@@ -826,7 +766,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
         int schoolYear,
         long schoolDocumentId,
         int schoolId,
-        long termDescriptorDocumentId,
+        int termDescriptorId,
         DateOnly beginDate,
         DateOnly endDate,
         string sessionName,
@@ -853,7 +793,7 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
-                @termDescriptorDocumentId,
+                @termDescriptorId,
                 @beginDate,
                 @endDate,
                 @sessionName,
@@ -865,35 +805,11 @@ public class Given_A_Mssql_Relational_Write_Propagated_Reference_Identity_Runtim
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
             new SqlParameter("@schoolId", schoolId),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId),
+            new SqlParameter("@termDescriptorId", termDescriptorId),
             new SqlParameter("@beginDate", beginDate),
             new SqlParameter("@endDate", endDate),
             new SqlParameter("@sessionName", sessionName),
             new SqlParameter("@totalInstructionalDays", totalInstructionalDays)
-        );
-    }
-
-    private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-
-            DELETE FROM [dms].[ReferentialIdentity]
-            WHERE [ReferentialId] = @referentialId;
-
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
         );
     }
 

@@ -21,7 +21,7 @@ namespace EdFi.DataManagementService.Performance.Harness.Smoke;
 /// carrying the fixture's full child-collection and descriptor shape — and one control
 /// descriptor are POSTed through the real HTTP pipeline after the load, and the loader rows
 /// must match their row shapes across dms.Document, edfi.Student, the four child collection
-/// tables, dms.Descriptor, dms.ReferentialIdentity, and the tracked-change side effects —
+/// tables, dms.Descriptor, and the tracked-change side effects —
 /// including producing exactly as many insert-time tracked-change rows per document as the
 /// POST does (expected: none). Real GET-many and GET-by-id requests must then hydrate loader
 /// rows with correct bodies, including non-empty child collections and resolved descriptor
@@ -51,14 +51,8 @@ internal static class PerfFixtureSmokeScenario
         WHERE "DocumentId" = @documentId;
         """;
 
-    private const string ReferentialIdentityRowsSql = """
-        SELECT "ReferentialId", "ResourceKeyId"
-        FROM "dms"."ReferentialIdentity"
-        WHERE "DocumentId" = @documentId;
-        """;
-
     private const string DescriptorRowSql = """
-        SELECT "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "Discriminator", "Uri", "ContentVersion"
+        SELECT "ResourceKeyId", "Namespace", "CodeValue", "ShortDescription", "DescriptorId", "ContentVersion"
         FROM "dms"."Descriptor"
         WHERE "DocumentId" = @documentId;
         """;
@@ -122,7 +116,7 @@ internal static class PerfFixtureSmokeScenario
         object BirthDate,
         bool BirthCityIsNull,
         long ContentVersion,
-        long? BirthSexDescriptorId
+        int? BirthSexDescriptorId
     );
 
     private sealed record DescriptorRow(
@@ -130,12 +124,18 @@ internal static class PerfFixtureSmokeScenario
         string Namespace,
         string CodeValue,
         string ShortDescription,
-        string Discriminator,
-        string Uri,
+        int DescriptorId,
         long ContentVersion
-    );
+    )
+    {
+        public string Uri => $"{Namespace}#{CodeValue}";
+    }
 
-    public static async Task RunAsync(ApiIntegrationHarness harness, PerfProvider provider)
+    public static async Task RunAsync(
+        ApiIntegrationHarness harness,
+        PerfProvider provider,
+        string connectionString
+    )
     {
         PerfFixtureDefinition definition = new(PerfFixtureKind.Smoke10k);
         DbConnection connection = harness.DbConnection;
@@ -145,7 +145,21 @@ internal static class PerfFixtureSmokeScenario
         long trackedDescriptorsBeforeLoad = await CountAsync(connection, TrackedDescriptorChangesCountSql);
         trackedDescriptorsBeforeLoad.Should().Be(0, "the leased database must start clean");
 
-        await PerfFixtureLoader.LoadAndVerifyAsync(connection, provider, definition);
+        await using (
+            DbConnection loaderConnection = await PerfFixtureSmokeDatabase.OpenLoaderConnectionAsync(
+                connectionString,
+                provider
+            )
+        )
+        {
+            await PerfFixtureSmokeDatabase.OffsetDescriptorAllocatorAsync(loaderConnection, provider);
+            await PerfFixtureLoader.LoadAndVerifyAsync(
+                loaderConnection,
+                provider,
+                definition,
+                chunkSize: 3_000
+            );
+        }
 
         long trackedAfterLoad = await CountAsync(connection, TrackedChangesCountSql);
         long trackedDescriptorsAfterLoad = await CountAsync(connection, TrackedDescriptorChangesCountSql);
@@ -193,9 +207,17 @@ internal static class PerfFixtureSmokeScenario
                 controlStudent.BirthSexDescriptorId,
                 "loader and control students must bind the same birth-sex descriptor"
             );
-        loaderStudent
-            .BirthSexDescriptorId.Should()
-            .Be(definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource));
+        DescriptorRow birthSexDescriptor = await ReadDescriptorRowAsync(
+            connection,
+            definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource)
+        );
+        ((long)birthSexDescriptor.DescriptorId)
+            .Should()
+            .NotBe(definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource));
+        loaderStudent.BirthSexDescriptorId.Should().Be(birthSexDescriptor.DescriptorId);
+        birthSexDescriptor
+            .Uri.Should()
+            .Be(PerfFixtureDefinition.DescriptorUriFor(PerfFixtureDefinition.SexDescriptorResource));
         loaderStudent
             .ContentVersion.Should()
             .Be(loaderFirst.ContentVersion, "the stamp trigger must have mirrored the document version");
@@ -223,32 +245,11 @@ internal static class PerfFixtureSmokeScenario
                 .Equal(controlSignatures, $"loader {table} rows must match the production POST's row shape");
         }
 
-        // Validate the independent uuidv5 formula against the control row the production
-        // write path produced, then hold loader rows to it.
-        await AssertReferentialIdentityAsync(
-            connection,
-            control.DocumentId,
-            control.ResourceKeyId,
-            "control-000000001"
-        );
-        await AssertReferentialIdentityAsync(
-            connection,
-            loaderFirst.DocumentId,
-            control.ResourceKeyId,
-            PerfFixtureDefinition.StudentUniqueIdFor(1)
-        );
-
         DocumentRow loaderLast = await ReadDocumentRowAsync(
             connection,
             PerfFixtureDefinition.DocumentUuidFor(definition.RowCount)
         );
         loaderLast.DocumentId.Should().Be(definition.MaxDocumentId);
-        await AssertReferentialIdentityAsync(
-            connection,
-            loaderLast.DocumentId,
-            control.ResourceKeyId,
-            PerfFixtureDefinition.StudentUniqueIdFor(definition.RowCount)
-        );
 
         await AssertControlDescriptorParityAsync(
             harness,
@@ -328,7 +329,7 @@ internal static class PerfFixtureSmokeScenario
     /// <summary>
     /// POSTs one control VisaDescriptor through the production descriptor write path and
     /// holds the loader's VisaDescriptor rows to its shape: dms.Document metadata, the
-    /// dms.Descriptor row semantics, referential-identity row count, and tracked-change accounting.
+    /// dms.Descriptor row semantics and tracked-change accounting.
     /// </summary>
     private static async Task AssertControlDescriptorParityAsync(
         ApiIntegrationHarness harness,
@@ -337,6 +338,10 @@ internal static class PerfFixtureSmokeScenario
         long trackedDescriptorsAfterLoad
     )
     {
+        long maxDescriptorIdBeforePost = await CountAsync(
+            connection,
+            """SELECT MAX("DescriptorId") FROM "dms"."Descriptor";"""
+        );
         JsonObject payload = new()
         {
             ["codeValue"] = "Control",
@@ -381,17 +386,32 @@ internal static class PerfFixtureSmokeScenario
         loaderDocument.HasOwnershipToken.Should().Be(controlDocument.HasOwnershipToken);
 
         DescriptorRow loaderDescriptor = await ReadDescriptorRowAsync(connection, loaderDescriptorDocumentId);
+        ((long)controlDescriptor.DescriptorId)
+            .Should()
+            .Be(
+                maxDescriptorIdBeforePost + 1,
+                "loading must leave the independent descriptor allocator ready for API writes"
+            );
         loaderDescriptor.ResourceKeyId.Should().Be(controlDescriptor.ResourceKeyId);
         loaderDescriptor.Namespace.Should().Be(controlDescriptor.Namespace);
-        loaderDescriptor.Discriminator.Should().Be(controlDescriptor.Discriminator);
+        ((long)loaderDescriptor.DescriptorId).Should().NotBe(loaderDocument.DocumentId);
+        ((long)controlDescriptor.DescriptorId).Should().NotBe(controlDocument.DocumentId);
         loaderDescriptor.ShortDescription.Should().Be(loaderDescriptor.CodeValue);
         loaderDescriptor
             .Uri.Should()
+            .Be(PerfFixtureDefinition.DescriptorUriFor(PerfFixtureDefinition.VisaDescriptorResource));
+        controlDescriptor
+            .Uri.Should()
             .Be(
-                $"{loaderDescriptor.Namespace}#{loaderDescriptor.CodeValue}",
-                "the loader must derive Uri exactly as the production write path does"
+                $"{PerfFixtureDefinition.DescriptorNamespaceFor(PerfFixtureDefinition.VisaDescriptorResource)}#Control"
             );
-        controlDescriptor.Uri.Should().Be($"{controlDescriptor.Namespace}#{controlDescriptor.CodeValue}");
+        long visaResourceKeyId = await CountAsync(
+            connection,
+            PgsqlPerfFixtureLoaderSql.DescriptorResourceKeyLookupSql(
+                PerfFixtureDefinition.VisaDescriptorResource
+            )
+        );
+        loaderDescriptor.ResourceKeyId.Should().Be(visaResourceKeyId);
         loaderDescriptor
             .ContentVersion.Should()
             .Be(
@@ -399,58 +419,6 @@ internal static class PerfFixtureSmokeScenario
                 "the descriptor stamp trigger must mirror the document version"
             );
         controlDescriptor.ContentVersion.Should().Be(controlDocument.ContentVersion);
-
-        // Validate the independent descriptor referential-id formula against the control
-        // row the production write path produced, then hold the loader row to it.
-        await AssertDescriptorReferentialIdentityAsync(
-            connection,
-            controlDocument.DocumentId,
-            controlDescriptor.ResourceKeyId,
-            controlDescriptor.Uri
-        );
-        await AssertDescriptorReferentialIdentityAsync(
-            connection,
-            loaderDescriptorDocumentId,
-            loaderDescriptor.ResourceKeyId,
-            loaderDescriptor.Uri
-        );
-    }
-
-    private static async Task AssertDescriptorReferentialIdentityAsync(
-        DbConnection connection,
-        long documentId,
-        long expectedResourceKeyId,
-        string uri
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = ReferentialIdentityRowsSql;
-        AddParameter(command, "documentId", documentId);
-
-        List<(Guid ReferentialId, long ResourceKeyId)> rows = [];
-        await using (DbDataReader reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                rows.Add(
-                    (reader.GetGuid(0), Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture))
-                );
-            }
-        }
-
-        (Guid referentialId, long resourceKeyId) = rows.Should()
-            .ContainSingle($"descriptor document {documentId} must carry exactly one referential identity")
-            .Subject;
-        resourceKeyId.Should().Be(expectedResourceKeyId);
-        referentialId
-            .Should()
-            .Be(
-                ReferentialIdentityDerivation.DescriptorReferentialId(
-                    PerfFixtureDefinition.VisaDescriptorResource,
-                    uri
-                ),
-                $"the referential id for '{uri}' must match the independent uuidv5 derivation"
-            );
     }
 
     private static async Task AssertFirstPageAsync(ApiIntegrationHarness harness)
@@ -560,40 +528,6 @@ internal static class PerfFixtureSmokeScenario
         return JsonNode.Parse(body)!.AsArray();
     }
 
-    private static async Task AssertReferentialIdentityAsync(
-        DbConnection connection,
-        long documentId,
-        long expectedResourceKeyId,
-        string studentUniqueId
-    )
-    {
-        await using DbCommand command = connection.CreateCommand();
-        command.CommandText = ReferentialIdentityRowsSql;
-        AddParameter(command, "documentId", documentId);
-
-        List<(Guid ReferentialId, long ResourceKeyId)> rows = [];
-        await using (DbDataReader reader = await command.ExecuteReaderAsync())
-        {
-            while (await reader.ReadAsync())
-            {
-                rows.Add(
-                    (reader.GetGuid(0), Convert.ToInt64(reader.GetValue(1), CultureInfo.InvariantCulture))
-                );
-            }
-        }
-
-        (Guid referentialId, long resourceKeyId) = rows.Should()
-            .ContainSingle($"document {documentId} must carry exactly one referential identity")
-            .Subject;
-        resourceKeyId.Should().Be(expectedResourceKeyId);
-        referentialId
-            .Should()
-            .Be(
-                ReferentialIdentityDerivation.StudentReferentialId(studentUniqueId),
-                $"the referential id for '{studentUniqueId}' must match the independent uuidv5 derivation"
-            );
-    }
-
     private static async Task<long> CountAsync(DbConnection connection, string sql, long? documentId = null)
     {
         await using DbCommand command = connection.CreateCommand();
@@ -641,7 +575,7 @@ internal static class PerfFixtureSmokeScenario
             reader.GetValue(3),
             await reader.IsDBNullAsync(4),
             reader.GetInt64(5),
-            await reader.IsDBNullAsync(6) ? null : reader.GetInt64(6)
+            await reader.IsDBNullAsync(6) ? null : reader.GetInt32(6)
         );
     }
 
@@ -658,9 +592,8 @@ internal static class PerfFixtureSmokeScenario
             reader.GetString(1),
             reader.GetString(2),
             reader.GetString(3),
-            reader.GetString(4),
-            reader.GetString(5),
-            reader.GetInt64(6)
+            reader.GetInt32(4),
+            reader.GetInt64(5)
         );
     }
 

@@ -32,6 +32,10 @@ public sealed class Given_Postgresql_CursorPublicContract : PostgresqlApiIntegra
         );
 
     [Test]
+    public Task It_ignores_a_page_size_beside_limit_without_a_page_token() =>
+        CursorPublicContractScenario.It_ignores_a_page_size_beside_limit_without_a_page_token(Harness);
+
+    [Test]
     public Task It_reports_one_error_from_the_first_failing_phase() =>
         CursorPublicContractScenario.It_reports_one_error_from_the_first_failing_phase(Harness);
 

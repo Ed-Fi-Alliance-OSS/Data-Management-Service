@@ -1,0 +1,21 @@
+{
+  "Serilog": {
+    "MinimumLevel": {
+      "Default": "Debug"
+    },
+    "Using": [ "Serilog.Sinks.Console", "Serilog.Sinks.File" ],
+    "WriteTo:Console": {
+      "Name": "Console",
+      "Args": {
+        "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss,fff}] [{Level:u4}] [{ThreadId:00}] {SourceContext} - {Message} {Exception} {NewLine}"
+      }
+    },
+    "WriteTo:File": {
+      "Name": "File",
+      "Args": {
+        "path": "/app/logs/publisher.serilog.log",
+        "outputTemplate": "[{Timestamp:yyyy-MM-dd HH:mm:ss,fff}] [{Level:u4}] [{ThreadId:00}] {SourceContext} - {Message} {Exception} {NewLine}"
+      }
+    }
+  }
+}

@@ -31,4 +31,9 @@ public record IdentityProviderError(string FailureMessage)
     /// Insufficient permission to perform the request
     /// </summary>
     public record Forbidden(string FailureMessage) : IdentityProviderError(FailureMessage);
+
+    /// <summary>
+    /// The identity provider rejected the requested scope
+    /// </summary>
+    public record InvalidScope(string FailureMessage) : IdentityProviderError(FailureMessage);
 }

@@ -17,4 +17,12 @@ public class TokenResponse
 
     [JsonPropertyName("token_type")]
     public string? TokenType { get; set; }
+
+    /// <summary>
+    /// The granted scope as the token manager reports it, space-delimited. Omitted when the manager
+    /// reports none.
+    /// </summary>
+    [JsonPropertyName("scope")]
+    [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)]
+    public string? Scope { get; set; }
 }

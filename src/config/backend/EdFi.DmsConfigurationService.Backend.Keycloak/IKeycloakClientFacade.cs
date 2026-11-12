@@ -22,6 +22,21 @@ public interface IKeycloakClientFacade
     Task<bool> DeleteClientAsync(string realm, string clientUuid);
     Task<Credentials> GenerateClientSecretAsync(string realm, string clientUuid);
     Task<IEnumerable<Client>> GetClientsAsync(string realm);
+
+    /// <summary>
+    /// The raw list Keycloak answers for the admin <c>clientId</c> query, read with the service
+    /// credentials (DMS-1327 D-11.2). The models keep <c>publicClient</c> and <c>bearerOnly</c>
+    /// nullable, so a member Keycloak omitted stays absent rather than reading as <c>false</c>.
+    /// Throws <see cref="TimeoutException"/> when <paramref name="timeout"/> expires and
+    /// <see cref="OperationCanceledException"/> when <paramref name="cancellationToken"/> is
+    /// cancelled; any other failure escapes as the package raised it.
+    /// </summary>
+    Task<IEnumerable<Client>> GetClientsByClientIdAsync(
+        string realm,
+        string clientId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    );
     Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm);
 
     /// <summary>

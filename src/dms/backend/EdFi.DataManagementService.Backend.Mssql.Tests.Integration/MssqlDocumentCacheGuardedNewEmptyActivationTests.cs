@@ -385,20 +385,17 @@ public class Given_A_Mssql_DocumentCacheGuardedNewEmptyActivation_Command
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = Guid.NewGuid() },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = ObservedAt }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
     }
 

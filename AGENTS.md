@@ -69,8 +69,10 @@ The build script performs the Docker setup, provisions `E2E_DATABASE_NAME` with 
 Example shard run from the repository root:
 
 ```powershell
-./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@e2e-ci-shard-3'
+./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)'
 ```
+
+PostgreSQL runs exclude `@MssqlOnly` and SQL Server runs exclude `@PostgresqlOnly`; see the E2E README for each lane's filter.
 
 The direct setup path is also valid for local relational E2E testing. `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` configures the CMS data store to use `E2E_DATABASE_NAME`, provisions that database with generated DDL including `dms."EffectiveSchema"`, and starts DMS after provisioning. Direct `dotnet test` is valid after this setup when the test process is configured for the same database; the default `.env.e2e` and E2E `appsettings.json` both use `edfi_datamanagementservice_e2e`. If a custom environment file changes `E2E_DATABASE_NAME`, also set `AppSettings__DataStoreDatabaseName` to that value for direct `dotnet test` runs.
 
@@ -124,6 +126,9 @@ The DMS Configuration Management Service E2E tests directory is `src/config/test
 The DMS Configuration Management Service E2E tests have a similar setup and environment to the Data Management Service E2E tests. They have their own `setup-local-cms.ps1` for setup and `teardown-local-cms.ps1` for teardown.
 
 ## Working with MSSQL Backend Integration Tests
+
+See [RUNNING-LOCALLY.md](docs/RUNNING-LOCALLY.md#mssql-backend-integration-provisioning-diagnostics)
+for provisioning diagnostics, concurrency settings, and local shard filters.
 
 Before running MSSQL backend integration tests, verify that a SQL Server instance is listening locally on the expected test port, commonly `localhost,1434`. If no suitable instance is running, start a temporary SQL Server container and pass its admin connection string to the test command with `ConnectionStrings__MssqlAdmin`.
 

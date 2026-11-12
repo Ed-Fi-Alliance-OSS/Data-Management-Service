@@ -5,15 +5,13 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
-public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndpointModule
+public class MetadataModule : IEndpointModule
 {
     /// <summary>
-    /// Registers the OpenAPI specification endpoint with custom metadata and security scheme configuration.
+    /// Registers the OpenAPI specification endpoint with the reusable components added to the generated document.
     /// </summary>
     /// <param name="endpoints">The endpoint route builder.</param>
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
@@ -34,38 +32,9 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
 
                 var document = JsonNode.Parse(openApiJson)!.AsObject();
 
-                // Update info section
-                document["info"] = new JsonObject
-                {
-                    ["title"] = "Ed-Fi API Configuration Service API",
-                    ["description"] = "API for configuring and managing the Ed-Fi API.",
-                    ["contact"] = new JsonObject { ["url"] = "https://www.ed-fi.org/what-is-ed-fi/contact/" },
-                    ["version"] = "1",
-                };
-
                 // Add components
                 var components = document["components"]?.AsObject() ?? new JsonObject();
                 document["components"] = components;
-
-                // Add security schemes
-                var securitySchemes = components["securitySchemes"]?.AsObject() ?? new JsonObject();
-                components["securitySchemes"] = securitySchemes;
-
-                var tokenUrl = $"{identitySettings.Value.Authority.TrimEnd('/')}/connect/token";
-
-                securitySchemes["oauth2_client_credentials"] = new JsonObject
-                {
-                    ["type"] = "oauth2",
-                    ["description"] = "Ed-Fi API OAuth 2.0 Client Credentials Grant Type authorization",
-                    ["flows"] = new JsonObject
-                    {
-                        ["clientCredentials"] = new JsonObject
-                        {
-                            ["tokenUrl"] = tokenUrl,
-                            ["scopes"] = new JsonObject(),
-                        },
-                    },
-                };
 
                 // Add reusable responses
                 components["responses"] = new JsonObject
@@ -189,19 +158,6 @@ public class MetadataModule(IOptions<IdentitySettings> identitySettings) : IEndp
                             "Sort direction to use with orderBy. Accepted values are asc/ascending and desc/descending, case-insensitive. Defaults to 'asc' if omitted when orderBy is specified.",
                     },
                 };
-
-                // Add global security requirement
-                document["security"] = new JsonArray
-                {
-                    new JsonObject { ["oauth2_client_credentials"] = new JsonArray() },
-                };
-
-                // GET /tenancy is anonymous: an empty operation-level security array drops the inherited
-                // global requirement.
-                if (document["paths"]?["/tenancy"]?["get"] is JsonObject tenancyGet)
-                {
-                    tenancyGet["security"] = new JsonArray();
-                }
 
                 context.Response.ContentType = "application/json";
                 await context.Response.WriteAsync(

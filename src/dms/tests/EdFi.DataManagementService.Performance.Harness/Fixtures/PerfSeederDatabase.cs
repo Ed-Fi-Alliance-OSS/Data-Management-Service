@@ -32,6 +32,18 @@ internal static class PerfSeederDatabase
             : Convert.ToInt64(value, CultureInfo.InvariantCulture);
     }
 
+    public static async Task<int> ExecuteDescriptorInsertAsync(DbCommand command)
+    {
+        object value =
+            await command.ExecuteScalarAsync()
+            ?? throw new PerfFixtureLoadException(["Descriptor insert returned no compact identity."]);
+        return value is int descriptorId
+            ? descriptorId
+            : throw new PerfFixtureLoadException([
+                "Descriptor insert must return an Int32 compact identity.",
+            ]);
+    }
+
     /// <summary>
     /// Executes one range-parameterized statement, binding the chunk bounds plus any extra
     /// parameters the statement text actually references — an unreferenced named parameter
@@ -42,17 +54,17 @@ internal static class PerfSeederDatabase
         string sql,
         long fromOrdinal,
         long toOrdinal,
-        IReadOnlyList<(string Name, long Value)> extraParameters
+        IReadOnlyList<(string Name, object Value)> extraParameters
     )
     {
         await using DbCommand command = CreateCommand(connection, sql);
         AddParameter(command, PerfFixtureLoaderParameters.FromOrdinal, fromOrdinal);
         AddParameter(command, PerfFixtureLoaderParameters.ToOrdinal, toOrdinal);
-        foreach ((string name, long value) in extraParameters)
+        foreach ((string name, object value) in extraParameters)
         {
             if (sql.Contains("@" + name, StringComparison.Ordinal))
             {
-                AddParameter(command, name, value);
+                AddObjectParameter(command, name, value);
             }
         }
 

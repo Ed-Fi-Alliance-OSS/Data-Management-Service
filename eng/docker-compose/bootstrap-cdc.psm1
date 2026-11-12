@@ -30,7 +30,7 @@ function Read-BootstrapCdcSettings {
         # Limit the first local adapter to the route-unqualified default tenant. Provider token
         # conversion and the complete policy contract remain with the CLI.
         $cms = [uri]$settings.ConfigurationServiceSettings.BaseUrl
-        if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'CMS' }
+        if (-not $cms.IsLoopback -or $cms.Scheme -ne 'http' -or $cms.AbsolutePath -ne '/') { throw 'ConfigurationService' }
         # The qualified worker inspector proves an exact published IPv4 loopback endpoint.
         # Reject unsupported aliases before creating a database or retaining an initial workflow.
         foreach ($endpoint in @(@('ConnectEndpoint', '/'), @('WorkerMetricsEndpoint', '/metrics'))) {
@@ -40,7 +40,7 @@ function Read-BootstrapCdcSettings {
         }
         return $settings
     }
-    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, local CMS, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
+    catch { throw 'CDC requires valid explicit DMS settings with one default-tenant target, a local Configuration Service at a loopback http root URL, and explicit http://127.0.0.1 worker/metrics endpoints; environment overrides are not accepted by bootstrap.' }
 }
 
 function Invoke-BootstrapCdcDockerInspection {
@@ -104,7 +104,7 @@ function Assert-BootstrapCdcOfflineOwnership {
                 $db[0].name -cne $(if ($DatabaseEngine -eq 'mssql') { '/dms-mssql' } else { '/dms-postgresql' })) { throw 'Ownership' }
         }
     }
-    catch { throw 'CDC requires an exclusively owned local deployment, loopback CMS/database ports, and no running DMS or IDE writers. Stop other applications before retrying.' }
+    catch { throw 'CDC requires an exclusively owned local deployment, loopback Configuration Service/database ports, and no running DMS or IDE writers. Stop other applications before retrying.' }
 }
 
 function Write-BootstrapCdcPrivateJson {
@@ -172,16 +172,16 @@ function New-BootstrapCdcHandoff {
         $DatabaseName -in @('edfi_configurationservice', 'postgres', 'master', 'model', 'msdb', 'tempdb')) {
         throw 'CDC requires a dedicated database distinct from infrastructure-created databases.'
     }
-    $cmsPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name 'DMS_CONFIG_ASPNETCORE_HTTP_PORTS' -DefaultValue '8081')
+    $cmsPort = [int](Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name 'CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS' -DefaultValue '8081')
     if (([uri]$Settings.ConfigurationServiceSettings.BaseUrl).Port -ne $cmsPort) {
-        throw 'CDC settings must address the CMS port of the selected local environment.'
+        throw 'CDC settings must address the Configuration Service port of the selected local environment.'
     }
-    foreach ($name in @('DMS_CONFIG_MULTI_TENANCY', 'DMS_MULTI_TENANCY')) {
+    foreach ($name in @('CONFIGURATION_SERVICE_MULTI_TENANCY', 'DMS_MULTI_TENANCY')) {
         if ((Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $name -DefaultValue 'false') -ne 'false') {
             throw 'CDC bootstrap requires the default tenant topology.'
         }
     }
-    foreach ($name in @('CONFIG_SERVICE_TENANT', 'ROUTE_QUALIFIER_SEGMENTS')) {
+    foreach ($name in @('DMS_CONFIGURATION_SERVICE_TENANT', 'ROUTE_QUALIFIER_SEGMENTS')) {
         if (Get-ComposeResolvedEnvValue -EnvironmentValues $envValues -Name $name -DefaultValue '') {
             throw 'CDC bootstrap requires the route-unqualified default tenant topology.'
         }
@@ -190,14 +190,16 @@ function New-BootstrapCdcHandoff {
     $settingsCopy = $Settings | ConvertTo-Json -Depth 64 | ConvertFrom-Json -AsHashtable
     $settingsCopy.Cdc.Schemas = @($workspace.CoreSchemaPath) + @($workspace.ExtensionSchemaPaths)
     $settingsCopy.Cdc.Compose = @{
-        File = Join-Path $PSScriptRoot 'kafka-cdc.yml'
+        File = Join-Path $PSScriptRoot 'kafka-cdc.compose.yml'
         EnvironmentFile = $EnvironmentFile
         Project = $Project
         BrokerSizeOverrideFile = Join-Path $StatePath 'broker-size.json'
         DatabaseHostPort = $databasePort
     }
-    $settingsCopy.AppSettings.UseApiSchemaPath = $true
-    $settingsCopy.AppSettings.ApiSchemaPath = Join-Path $PSScriptRoot '.bootstrap/ApiSchema'
+    $settingsCopy.AppSettings.ApiSchema = @{
+        UseCustomPath = $true
+        Path = Join-Path $PSScriptRoot '.bootstrap/ApiSchema'
+    }
     # Private deployment configuration is separate from the secret-free controller journal.
     $configurationRoot = Join-Path $PSScriptRoot '.bootstrap/cdc-runtime'
     $id = [guid]::NewGuid().ToString('N')
@@ -213,8 +215,8 @@ function New-BootstrapCdcHandoff {
     $environment.AppSettings__Datastore = $settingsCopy.AppSettings.Datastore
     $environment.AppSettings__MultiTenancy = 'false'
     $environment.AppSettings__RouteQualifierSegments = ''
-    $environment.AppSettings__UseApiSchemaPath = 'true'
-    $environment.AppSettings__ApiSchemaPath = '/app/ApiSchema'
+    $environment.AppSettings__ApiSchema__UseCustomPath = 'true'
+    $environment.AppSettings__ApiSchema__Path = '/app/ApiSchema'
     $composePath = Join-Path $configurationRoot "bootstrap-$id.dms.json"
     Write-BootstrapCdcPrivateJson -Path $composePath -Value @{ services = @{ dms = @{ environment = $environment } } }
     return [pscustomobject]@{
@@ -285,7 +287,7 @@ function Invoke-BootstrapCdcKafkaUI {
     param($Handoff)
     $compose = $Handoff.Settings.Cdc.Compose
     # Explicit service selection and --no-deps keep this optional UI from launching Kafka.
-    & docker compose -f $compose.File -f (Join-Path $PSScriptRoot 'kafka-ui.yml') `
+    & docker compose -f $compose.File -f (Join-Path $PSScriptRoot 'kafka-ui.compose.yml') `
         --env-file $compose.EnvironmentFile -p $compose.Project up --detach --no-deps kafka-ui
     if ($LASTEXITCODE -ne 0) { throw "Failed to start CDC Kafka UI. Exit code $LASTEXITCODE" }
 }

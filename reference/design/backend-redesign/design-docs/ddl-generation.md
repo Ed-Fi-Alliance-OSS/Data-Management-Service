@@ -47,8 +47,8 @@ The DDL generation utility is responsible for database objects derived from the 
   - schema fingerprinting: `dms.EffectiveSchema`, `dms.SchemaComponent`
 - Project-derived DDL for Change Queries and update tracking (see [change-queries.md](change-queries.md) and [update-tracking.md](update-tracking.md)):
   - per-resource `tracked_changes_<schema>.<resource>` tables and the shared `tracked_changes_edfi.Descriptor`
-  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
-  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which stamp `dms.Document`, mirror onto `MirrorStampTargetTable`, and populate `tracked_changes_*`
+  - per-resource `ContentVersion` mirrors and authoritative `ContentLastModifiedAt` columns on every `StorageKind = RelationalTables` root and on `dms.Descriptor`, with supporting indexes (`IX_<Table>_ContentVersion`, `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`)
+  - `*_Stamp` triggers on resource tables and `dms.Descriptor` (extended with `DocumentStamping.ChangeTracking` where applicable), which advance `dms.Document.ContentVersion`, copy it and generate the authoritative timestamp on `StampTargetTable`, and populate `tracked_changes_*`
   - ReadChanges authorization views
 - Optional CDC objects:
   - the opt-in physical `dms.CdcHeartbeat` object defined by
@@ -163,6 +163,11 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.ResourceKey`
 - `dms.Document`
 - `dms.Descriptor`
+  - Native independent `int DescriptorId` primary key, unique non-null `bigint DocumentId`
+    document association, and `smallint ResourceKeyId` constrained to the catalog and checked
+    against the owning document by the stamping trigger.
+  - No live descriptor discriminator or physically stored URI; see the reconstructed-URI
+    index and runtime-session contract below.
 - `dms.DataStoreIdentity` (singleton source identity stable during ordinary operation)
 - `dms.DocumentCache` (always present; optionally populated/read)
 - `dms.DocumentProjectionWork` (always-present coalesced durable projection work)
@@ -176,6 +181,9 @@ This inventory is the explicit “what exists in the database” contract that t
 
 - `dms.ChangeVersionSequence`
 - `dms.CollectionItemIdSequence`
+- PostgreSQL creates separate native backing sequences for the `dms.Document.DocumentId`
+  and `dms.Descriptor.DescriptorId` identity columns. SQL Server gives each table its own
+  identity allocator. The descriptor key is never narrowed from the global document key.
 
 **Triggers (required)**
 
@@ -211,23 +219,74 @@ This inventory is the explicit “what exists in the database” contract that t
   projector-discovery index is emitted
 - Supporting indexes for all FKs (see “FK index policy” below)
 
-**Identity collation and descriptor folding** (normative detail in
-[natural-key-resolution.md](natural-key-resolution.md#sql-server-column-level-identity-collation)):
+### Descriptor storage and runtime session options
 
-- SQL Server: every generated string column that stores or copies an identity value (canonical
-  natural-key columns, flattened `RefKey` copies, abstract-identity columns, descriptor `Uri`/
-  `Namespace`/`CodeValue`, tracked-change old/new identity copies, local string members of collection
-  identity constraints) is emitted with an explicit `COLLATE SQL_Latin1_General_CP1_CI_AS`; the
-  database default collation is never the identity contract. Purpose-specific explicit collations
-  (e.g. the `Latin1_General_100_BIN2` lifecycle token) are preserved.
-- Descriptor identity index: PostgreSQL emits the unique expression index
-  `UX_Descriptor_UriLowered_ResourceKeyId ON dms."Descriptor" (lower("Uri" COLLATE "pg_c_utf8"), "ResourceKeyId")`
-  (requires PostgreSQL 17+ and a UTF-8 database; SchemaTools guards both); SQL Server emits the
-  non-persisted computed column `[UriLowered] AS LOWER([Uri])` and a unique index on
-  `([UriLowered], [ResourceKeyId])`. No emitted `lower(...)`/`LOWER(...)` over a descriptor value
-  may rely on the database default collation.
-- No `dms.ReferentialIdentity`, `TR_<R>_ReferentialIdentity`, `dms.uuidv5()`, or DMS-owned
-  `CREATE EXTENSION pgcrypto` object is emitted.
+Descriptor whole-URI uniqueness uses `UX_Descriptor_UriLowered_ResourceKeyId`, the only
+descriptor URI index:
+
+```sql
+-- PostgreSQL: no Uri or UriLowered column in the base table.
+CREATE UNIQUE INDEX "UX_Descriptor_UriLowered_ResourceKeyId"
+    ON "dms"."Descriptor" (lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId");
+
+-- SQL Server: the table defines non-persisted
+--   Uri AS ([Namespace] + N'#' + [CodeValue]) and
+--   UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS).
+CREATE UNIQUE INDEX [UX_Descriptor_UriLowered_ResourceKeyId]
+    ON [dms].[Descriptor] ([UriLowered], [ResourceKeyId]);
+```
+
+The index compares the lowered whole URI, and case folding is engine-owned: PostgreSQL pins
+`pg_c_utf8` rather than following the database default, and SQL Server computes `UriLowered` from
+the stored components, never from `Uri`. On SQL Server, `Namespace` and `CodeValue` carry the DMS
+identity collation (`SQL_Latin1_General_CP1_CI_AS`), and the non-persisted `Uri` reconstructs the
+whole URI without an index; PostgreSQL uses the database-default collation for the components.
+The index introduces no lowered component columns or component-wise uniqueness. Descriptor discriminator
+storage and its obsolete content-version index are removed. Abstract identity discriminator
+columns, literals, union-view output and authorization remain unchanged.
+
+SQL Server requires `ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`,
+`CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` effectively ON and `NUMERIC_ROUNDABORT` OFF
+both when creating this computed-column index and when maintaining it. Generated DDL sets
+these in the provisioner's session and captures trigger settings. Ordinary fresh/reused
+`Microsoft.Data.SqlClient` pools satisfy the effective options independently without an
+initializer: at compatibility level 90 or above, `ANSI_WARNINGS ON` implies effective
+`ARITHABORT ON` for this purpose. Direct clients must supply the required options too;
+provisioning-only settings do not survive onto runtime connections.
+
+DMS DDL emits no `dms.ReferentialIdentity` table, no referential-identity triggers or functions,
+no `dms.uuidv5()` function on either engine and no PostgreSQL `pgcrypto` extension. Resource
+POST upsert existence detection uses the own-natural-key capture, descriptor writes use the
+lowered-URI probe, and reference resolution and descriptor filters use the lowered-URI probes
+described in
+[natural-key-resolution.md](natural-key-resolution.md).
+
+`IX_Descriptor_ResourceKeyId_DocumentId` remains core-owned;
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` remains derived for live change
+windows. Shared descriptor history uses `ResourceKeyId` and
+`IX_Descriptor_ResourceKeyId_ChangeVersion`, with old/new namespace/code snapshots and owning
+document/UUID/version values, without a live-owner FK.
+
+### Descriptor manifests and catalog verification
+
+With complete `resource_details`, each shared-descriptor resource's
+`shared_descriptor_table` reports `DescriptorId` as its `Int32` physical row identity and
+`DocumentId` as its `Int64` root locator and unique constraint, plus the non-null `Int16`
+`ResourceKeyId` and the composite `FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)`
+with `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server.
+Its per-resource `tables` list is empty. Core DDL supplies the native allocator, mirror fields
+and whole-URI indexes; the SQL-free shared
+table model is not an inventory of every fixed core column. Derived indexes and tracked-change
+columns remain in their manifest inventories.
+
+The [authoritative DS 5.2 artifacts](../../../../src/dms/backend/Fixtures/authoritative/ds-5.2/expected)
+and [Sample artifacts](../../../../src/dms/backend/Fixtures/authoritative/sample/expected)
+are the provider comparison baselines. Pass the reviewed exact-schema, exact-dialect manifest
+with all resource details to the [reusable catalog assertions](../../../../eng/DatabaseTemplates/Compact-Descriptor.md)
+through `ExpectedModelManifestPath`. They inspect native identity, key/constraint, writable
+descriptor-column and full composite/index metadata on fresh databases. Expectations never
+adapt to the features found in an older source or restore. Counts describe schema coverage,
+not measured storage or performance improvements.
 
 ### 2b) Authorization objects (`auth` schema)
 
@@ -305,7 +364,12 @@ read time from `dms.Document.ResourceKeyId` using the runtime's validated
 
 **Descriptor foreign keys (required)**
 
-Descriptor endpoints are stored as `DescriptorFk` columns (`..._DescriptorId`) referencing `dms.Descriptor(DocumentId)`.
+Descriptor references are stored as `Int32` `DescriptorFk` columns (`..._DescriptorId`)
+referencing `dms.Descriptor(DescriptorId)` with existing `NO ACTION` deletion protection.
+This applies to copied document-reference identities, composite keys, extension/collection
+tables and canonical unified columns. Generated aliases and abstract/union projections inherit
+compatible `Int32` values; constraints still anchor only on writable storage columns. Document
+FKs, collection row IDs and change versions keep their existing types.
 
 - Descriptor FK constraints MUST be anchored on the column’s **storage** column (after mapping through `DbColumnModel.Storage`), and MUST NOT reference `UnifiedAlias` columns directly.
 - If multiple descriptor binding columns map to the same storage column on the same table (because they are unified), emit exactly one descriptor FK constraint for that `(table, storage column)` pair (de-duplication).
@@ -329,7 +393,7 @@ See [key-unification.md](key-unification.md) for the normative rules and dialect
 
 Emit per-table triggers derived from ApiSchema that:
 
-- stamp `dms.Document` content tracking columns on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
+- advance `dms.Document.ContentVersion` and maintain root/descriptor stamps on writes to resource root/child/extension tables (see [update-tracking.md](update-tracking.md)),
 - maintain `{schema}.{AbstractResource}Identity` tables from participating concrete root tables.
 
 The DDL generator emits only the surviving derived-maintenance objects: document stamping and abstract identity maintenance. Reference resolution and POST upsert detection use the compiled natural-key probe metadata described in [natural-key-resolution.md](natural-key-resolution.md).
@@ -397,9 +461,32 @@ The DDL generation utility is a **provisioning** tool, not a schema migration en
 
 ### Create-only (no migrations / upgrades)
 
-- The utility targets **new/empty** databases only.
-- There is **no upgrade/migration** capability and no support for evolving an already-provisioned database from one `EffectiveSchemaHash` to another.
-- The utility is not required to preserve data or compute diffs/reconcile drift for previously provisioned databases.
+- Ordinary `ddl provision` targets **new/empty** databases and same-hash reruns.
+- Ordinary provisioning has **no upgrade/migration** capability and cannot evolve an already-provisioned database from one `EffectiveSchemaHash` to another. The separate, bounded `ddl re-stamp` metadata operation described below records an independently completed physical migration.
+- Ordinary provisioning is not required to compute diffs/reconcile drift for previously provisioned databases; same-hash reruns retain the preservation safeguards defined in this design.
+
+DMS-1404 keeps the current 8.1 `RelationalMappingVersion` at `v3`, following the once-per-release
+cadence. `EffectiveSchemaHash` excludes generated DDL and mapping-set output, so a mapping-only
+change can retain the hash without physical compatibility. Deliberately provision fresh compact
+schemas on supported engines; a matching hash or a provisioning rerun cannot convert old tables.
+The [PostgreSQL carry-forward workflow](../../../../eng/northridge/README.md#copy-legacy-data-into-the-current-compact-schema)
+uses source-shaped staging, independent allocation and stored-reference remapping, qualified
+history type-key conversion without live owners, and allocator validation. Both Copy and
+Checkpoint require a reviewed exact-schema `ExpectedModelManifestPath`; documents and stamps
+remain intact, legacy RI rows are skipped, and abstract identity rows take `ResourceKeyId` from
+their owning document. An unchanged legacy dump restore is not the conversion.
+
+The [DMS-1404 handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff)
+historically retained authoritative `dms.Document.ContentVersion` and `ContentLastModifiedAt`
+and their root/descriptor mirrors. The combined DMS-1401 schema retains only the document
+version and makes the root/descriptor timestamp authoritative. DMS-1401 also owns the combined
+Minimal/Populated source/restore matrix on both engines for supported template Data Standards,
+plus affected prerelease consumer pins. Reuse the descriptor catalog assertions before API
+probes and alongside timestamp checks. DMS-1404 closes after its own implementation, fixtures,
+fresh-schema checks, tooling and documentation; shared package gates precede DMS-1401 closure.
+Use the combined current DDL until compatible rebuilt templates pass verification and defer
+template-backed deployment. Final release production/publication, promotion and deployment
+pins remain in the v8.1 release workflow. No version upgrade or benchmark is required here.
 
 This design **does** require provisioning to be robust and operationally repeatable:
 
@@ -435,6 +522,17 @@ reconciler. Feature-specific phase-zero checks remain bounded to safety-critical
 fingerprints, singleton preservation, known incompatible legacy artifacts, and required
 provisioning security prerequisites. Other incompatible existing objects may fail through
 ordinary provider DDL execution inside the provisioning transaction.
+
+An operator may use the separate `api-schema-tools ddl re-stamp` command after an
+independently designed and validated physical migration to update a compatible fingerprint
+transition. This bounded metadata operation validates the existing singleton, resource-key
+seed, and schema-component rows and atomically updates the effective hash and child hash
+associations. It does not execute physical DDL, certify physical schema shape or CDC
+continuity, or change ordinary provisioning: `ddl provision` continues to reject a different
+hash unless the explicit re-stamp operation has already recorded the validated target. The
+operator must stop services and other writers, run the physical migration, re-stamp, run
+ordinary provisioning separately, and restart services. Fresh provisioning remains the
+normal path; this is not a named-release upgrade recipe or automatic rollback guarantee.
 
 ### Seed data semantics
 

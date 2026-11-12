@@ -311,7 +311,9 @@ try {
     # infrastructure or provisioning any database. This runs on the standalone setup path too, so a
     # direct run can never provision database 1 and then reject an unsafe/reserved/protected database 2
     # after a mutation. provision-e2e-database.ps1 re-checks each name when it provisions (defense in
-    # depth); this is the earliest gate on this path.
+    # depth); this is the earliest gate on this path. The file is first refused if Compose could resolve
+    # a protected setting differently from the map the guard compares.
+    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $resolvedEnvironmentFile -EnvironmentValues $envValues
     Assert-RouteContextDatabaseNamesAreDedicated `
         -DatabaseNames $databases `
         -EnvironmentValues $envValues `

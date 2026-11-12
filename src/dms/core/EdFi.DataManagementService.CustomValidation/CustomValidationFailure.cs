@@ -90,6 +90,9 @@ public abstract record CustomValidationFailure
         public string Message { get; }
     }
 
+    // This summary is part of the published 1.0.0 contract, so it must stay byte-identical even
+    // though ValidateMatchingDocumentUuidsMiddleware was removed in DMS-1623. Correct it with the
+    // next contract version bump; changing it now fails the prerelease contract publish check.
     /// <summary>
     /// A failure about the document as a whole, with no JSON path, such as a cross-field or
     /// external-lookup rejection.

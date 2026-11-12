@@ -18,15 +18,15 @@ Describe "Story 00 bootstrap" {
             "API_SCHEMA_PATH",
             "SCHEMA_PACKAGES",
             "DMS_API_SCHEMA_MOUNT_SOURCE",
-            "DMS_CONFIG_CLAIMS_SOURCE",
-            "DMS_CONFIG_CLAIMS_DIRECTORY",
-            "DMS_CONFIG_CLAIMS_MOUNT_SOURCE",
+            "CONFIGURATION_SERVICE_CLAIMS_SOURCE",
+            "CONFIGURATION_SERVICE_CLAIMS_DIRECTORY",
+            "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE",
             # start-local-config.ps1 sets these before compose up and does not restore them.
-            "DMS_CONFIG_IDENTITY_PROVIDER",
+            "CONFIGURATION_SERVICE_IDENTITY_PROVIDER",
             "OAUTH_TOKEN_ENDPOINT",
             "DMS_JWT_AUTHORITY",
             "DMS_JWT_METADATA_ADDRESS",
-            "DMS_CONFIG_IDENTITY_AUTHORITY"
+            "CONFIGURATION_SERVICE_IDENTITY_AUTHORITY"
         )
 
     function script:New-TestDirectory {
@@ -47,10 +47,14 @@ Describe "Story 00 bootstrap" {
         $claimsSourceRoot = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend"
         $claimsTargetRoot = Join-Path $repoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend"
         New-Item -ItemType Directory -Path $claimsTargetRoot -Force | Out-Null
-        Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Claims") -Destination $claimsTargetRoot -Recurse
+        $bundledClaimsRelativePath = "src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards"
+        $bundledClaimsTargetRoot = Join-Path $repoRoot $bundledClaimsRelativePath
+        New-Item -ItemType Directory -Path $bundledClaimsTargetRoot -Force | Out-Null
+        Get-ChildItem -LiteralPath (Join-Path $script:sourceRepoRoot $bundledClaimsRelativePath) -Directory |
+            Copy-Item -Destination $bundledClaimsTargetRoot -Recurse
         Copy-Item -LiteralPath (Join-Path $claimsSourceRoot "Deploy") -Destination $claimsTargetRoot -Recurse
 
-        # Copy the test-owned E2E claimset fragments that Initialize-E2EClaimsWorkspace stages.
+        # Copy the test-owned E2E claims fragments that Initialize-E2EClaimsWorkspace stages.
         $e2eFragmentsRelativePath = "src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/Fragments"
         $e2eFragmentsTargetRoot = Join-Path $repoRoot $e2eFragmentsRelativePath
         New-Item -ItemType Directory -Path $e2eFragmentsTargetRoot -Force | Out-Null
@@ -70,7 +74,7 @@ Describe "Story 00 bootstrap" {
             PrepareSchemaScript = Join-Path $dockerComposeRoot "prepare-dms-schema.ps1"
             PrepareClaimsScript = Join-Path $dockerComposeRoot "prepare-dms-claims.ps1"
             ManifestModule = Join-Path $dockerComposeRoot "bootstrap-manifest.psm1"
-            DefaultFragmentsRoot = Join-Path $claimsTargetRoot "Deploy/AdditionalClaimsets"
+            DefaultFragmentsRoot = Join-Path $claimsTargetRoot "Deploy/AdditionalClaims"
             E2EFragmentsRoot = $e2eFragmentsTargetRoot
             E2EClaimsWorkspace = [System.IO.Path]::GetFullPath((Join-Path $dockerComposeRoot ".e2e-claims"))
         }
@@ -113,13 +117,24 @@ exit $ExitCode
             $ProjectEndpointName,
 
             [bool]
-            $IsExtensionProject
+            $IsExtensionProject,
+
+            # Data Standard version recorded as projectSchema.projectVersion (contract-required
+            # by JsonSchemaForApiSchema.json). Pass "" to OMIT the field for negative tests.
+            [string]
+            $ProjectVersion = "5.2.0",
+
+            # ApiSchema format version emitted as the top-level apiSchemaVersion
+            # (contract-required). Pass "" to OMIT the field for negative tests.
+            [string]
+            $ApiSchemaVersion = "1.0.0"
         )
 
         $schema = [ordered]@{
-            apiSchemaVersion = "1.0.0"
+            apiSchemaVersion = $ApiSchemaVersion
             projectSchema = [ordered]@{
                 projectName = $ProjectName
+                projectVersion = $ProjectVersion
                 projectEndpointName = $ProjectEndpointName
                 isExtensionProject = $IsExtensionProject
                 resourceSchemas = [ordered]@{}
@@ -129,6 +144,14 @@ exit $ExitCode
                     }
                 }
             }
+        }
+
+        if ([string]::IsNullOrEmpty($ProjectVersion)) {
+            $schema["projectSchema"].Remove("projectVersion")
+        }
+
+        if ([string]::IsNullOrEmpty($ApiSchemaVersion)) {
+            $schema.Remove("apiSchemaVersion")
         }
 
         New-Item -ItemType Directory -Path (Split-Path -Parent $Path) -Force | Out-Null
@@ -396,6 +419,7 @@ exit $ExitCode
             apiSchemaVersion = "1.0.0"
             projectSchema    = [ordered]@{
                 projectName         = $ProjectName
+                projectVersion      = "5.2.0"
                 projectEndpointName = $ProjectEndpointName
                 isExtensionProject  = $IsExtensionProject
                 resourceSchemas     = [ordered]@{}
@@ -514,6 +538,10 @@ exit $ExitCode
                 $manifest.schema.selectedExtensions | Should -BeNullOrEmpty
                 $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
                 $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+                # Recorded from the staged core schema: its Data Standard version
+                # (projectSchema.projectVersion) and ApiSchema format version (apiSchemaVersion).
+                $manifest.schema.dataStandardVersion | Should -Be "5.2.0"
+                $manifest.schema.apiSchemaFormatVersion | Should -Be "1.0.0"
             } finally {
                 if (Test-Path -LiteralPath $feedFolder) {
                     Remove-Item -LiteralPath $feedFolder -Recurse -Force
@@ -542,8 +570,38 @@ exit $ExitCode
             $manifest.schema.selectedExtensions | Should -Contain "sample"
             $manifest.schema.effectiveSchemaHash | Should -Be $script:hashA
             $manifest.schema.apiSchemaManifestPath | Should -Be "ApiSchema/bootstrap-api-schema-manifest.json"
+            # Recorded from the staged core schema in expert mode too: the same fields the
+            # database-template restore cross-check reads from the candidate manifest.
+            $manifest.schema.dataStandardVersion | Should -Be "5.2.0"
+            $manifest.schema.apiSchemaFormatVersion | Should -Be "1.0.0"
             # Expert filesystem staging is not package-driven, so no package identity is recorded.
             $manifest.schema.PSObject.Properties['selectedPackages'] | Should -BeNullOrEmpty
+        }
+
+        It "rejects a core schema without projectSchema.projectVersion instead of recording a blank Data Standard version" {
+            $schemaDir = New-TestDirectory
+            New-ApiSchemaFile `
+                -Path (Join-Path $schemaDir "ApiSchema.json") `
+                -ProjectName "Ed-Fi" `
+                -ProjectEndpointName "ed-fi" `
+                -IsExtensionProject $false `
+                -ProjectVersion ""
+
+            { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
+                Should -Throw "*missing projectSchema.projectVersion*"
+        }
+
+        It "rejects a core schema without apiSchemaVersion instead of recording a blank format version" {
+            $schemaDir = New-TestDirectory
+            New-ApiSchemaFile `
+                -Path (Join-Path $schemaDir "ApiSchema.json") `
+                -ProjectName "Ed-Fi" `
+                -ProjectEndpointName "ed-fi" `
+                -IsExtensionProject $false `
+                -ApiSchemaVersion ""
+
+            { Invoke-PrepareSchema -ApiSchemaPath $schemaDir } |
+                Should -Throw "*missing apiSchemaVersion*"
         }
 
         It "copies optional schema-adjacent runtime content and preserves schema JSON payloads" {
@@ -726,9 +784,9 @@ exit $ExitCode
             $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
 
             $manifest.claims.mode | Should -Be "Hybrid"
-            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
-            $claimFiles | Should -Contain "005-homograph-extension-claimset.json"
-            $claimFiles | Should -Not -Contain "001-namespace-claimset.json"
+            $claimFiles | Should -Contain "004-sample-extension-claims.json"
+            $claimFiles | Should -Contain "005-homograph-extension-claims.json"
+            $claimFiles | Should -Not -Contain "001-namespace-claims.json"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
         }
 
@@ -827,7 +885,7 @@ exit $ExitCode
             $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
 
             $manifest.claims.mode | Should -Be "Hybrid"
-            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
+            $claimFiles | Should -Contain "004-sample-extension-claims.json"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
             @($manifest.claims.expectedVerificationChecks |
                 Where-Object { $_.resourceClaim -eq "http://ed-fi.org/identity/claims/tpdm/evaluation" }).Count |
@@ -846,8 +904,8 @@ exit $ExitCode
             $claimFiles = @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File | ForEach-Object Name)
 
             $manifest.claims.mode | Should -Be "Hybrid"
-            $claimFiles | Should -Contain "004-sample-extension-claimset.json"
-            $claimFiles | Should -Contain "005-homograph-extension-claimset.json"
+            $claimFiles | Should -Contain "004-sample-extension-claims.json"
+            $claimFiles | Should -Contain "005-homograph-extension-claims.json"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://sample.ed-fi.org"
             $manifest.seed.extensionNamespacePrefixes | Should -Contain "uri://tpdm.ed-fi.org"
             # Homograph resources stay on the core namespace, so it records no distinct prefix.
@@ -874,7 +932,7 @@ exit $ExitCode
             # failure at bootstrap. The runtime claims-ready gate stays authoritative for full composition.
             Import-Module (Join-Path $script:sourceDockerComposeRoot "bootstrap-schema-catalog.psm1") -Force
             $tpdm = Get-StandardKnownExtensionInfo -ProjectName "TPDM"
-            $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds52/Claims.json"
+            $claimsPath = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds52/Claims.json"
             $hierarchy = @((Get-Content -LiteralPath $claimsPath -Raw | ConvertFrom-Json).claimsHierarchy)
 
             @($tpdm.VerificationChecks).Count | Should -BeGreaterThan 0
@@ -898,12 +956,12 @@ exit $ExitCode
         It "stages caller fragments and records expected verification checks with the fragment's raw resource name" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "custom-claims"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
             $manifest = Get-RootManifest
 
-            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claimset.json") |
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claims.json") |
                 Should -BeTrue
             # Story 00 records the fragment's resource name verbatim. CMS (or a future shared
             # composer helper) owns matching it against the composed hierarchy at startup.
@@ -936,7 +994,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-explicit-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-explicit-claims.json") -Encoding utf8
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
             $manifest = Get-RootManifest
@@ -991,7 +1049,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-non-parent-explicit-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-non-parent-explicit-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*non-parent resourceClaims entry with claimSets*"
@@ -1002,12 +1060,12 @@ exit $ExitCode
 
             $badJsonDir = Join-Path $script:repo.RepoRoot "bad-json"
             New-Item -ItemType Directory -Path $badJsonDir -Force | Out-Null
-            "{" | Set-Content -LiteralPath (Join-Path $badJsonDir "010-bad-claimset.json") -Encoding utf8
+            "{" | Set-Content -LiteralPath (Join-Path $badJsonDir "010-bad-claims.json") -Encoding utf8
             { Invoke-PrepareClaim -ClaimsDirectoryPath $badJsonDir } |
                 Should -Throw -ExpectedMessage "*malformed JSON*"
 
             $unknownDir = Join-Path $script:repo.RepoRoot "unknown"
-            New-ExplicitClaimsetFragment -Path (Join-Path $unknownDir "010-unknown-claimset.json") -ClaimSetName "NotAClaimSet"
+            New-ExplicitClaimsetFragment -Path (Join-Path $unknownDir "010-unknown-claims.json") -ClaimSetName "NotAClaimSet"
             { Invoke-PrepareClaim -ClaimsDirectoryPath $unknownDir } |
                 Should -Throw -ExpectedMessage "*unknown effective claim set*"
         }
@@ -1024,7 +1082,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Not -Throw
@@ -1033,7 +1091,7 @@ exit $ExitCode
         It "reuses identical claims workspaces and rejects changed fragment sets" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "custom-claims"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
@@ -1041,7 +1099,7 @@ exit $ExitCode
 
             # Use a distinct resource URI so this assertion exercises the fingerprint-mismatch path.
             New-ExplicitClaimsetFragment `
-                -Path (Join-Path $claimsDir "011-extra-claimset.json") `
+                -Path (Join-Path $claimsDir "011-extra-claims.json") `
                 -ResourceClaim "http://example.org/identity/claims/anotherWidget"
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*claims fingerprint mismatch*"
@@ -1055,7 +1113,7 @@ exit $ExitCode
                 resourceClaims = @("not-an-object")
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-bad-resource-claims-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-bad-resource-claims-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*not a JSON object*"
@@ -1073,7 +1131,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-missing-name-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-parent-missing-name-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing 'name'*"
@@ -1096,7 +1154,7 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing top-level name*"
@@ -1114,10 +1172,58 @@ exit $ExitCode
                 )
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
-            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-missing-name-claimset.json") -Encoding utf8
+            $fragment | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $claimsDir "010-implicit-missing-name-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*missing 'name'*"
+        }
+
+        It "ignores and warns about caller files with the retired -claimset.json suffix, as CMS discovery does" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "nested/011-tpdm-claimset.json")
+
+            $warnings = @(& $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir 3>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Name |
+                Should -Be @("010-tpdm-claims.json")
+            $warnings.Count | Should -Be 1
+            $warnings[0].Message | Should -BeLike "*011-tpdm-claimset.json*must end in -claims.json*"
+        }
+
+        It "ignores and warns about caller files whose -claims.json suffix is not lowercase, as CMS discovery on Linux does" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "mixed-case-suffix-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "nested/011-tpdm-Claims.json")
+
+            $warnings = @(& $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir 3>&1 |
+                    Where-Object { $_ -is [System.Management.Automation.WarningRecord] })
+
+            @(Get-ChildItem -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims") -File).Name |
+                Should -Be @("010-tpdm-claims.json")
+            $warnings.Count | Should -Be 1
+            $warnings[0].Message | Should -BeLike "*011-tpdm-Claims.json*must end in lowercase -claims.json*"
+        }
+
+        It "warns about retired -claimset.json files before rejecting a directory with no -claims.json files" {
+            Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
+            $claimsDir = Join-Path $script:repo.RepoRoot "retired-suffix-only-claims"
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+
+            $warnings = $null
+            $thrown = $null
+            try {
+                & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $claimsDir -WarningVariable warnings -WarningAction SilentlyContinue
+            } catch {
+                $thrown = $_
+            }
+
+            "$thrown" | Should -BeLike "*does not contain any*-claims.json files*"
+            @($warnings).Count | Should -Be 1
+            @($warnings)[0].Message | Should -BeLike "*010-tpdm-claimset.json*"
         }
 
         It "discovers caller fragments recursively to match CMS ClaimsFragmentComposer" {
@@ -1126,19 +1232,19 @@ exit $ExitCode
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "nested-claims"
             $nestedDir = Join-Path $claimsDir "subdir"
-            New-ExplicitClaimsetFragment -Path (Join-Path $nestedDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $nestedDir "010-tpdm-claims.json")
 
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
 
-            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claimset.json") |
+            Test-Path -LiteralPath (Join-Path $script:repo.BootstrapRoot "claims/010-tpdm-claims.json") |
                 Should -BeTrue
         }
 
         It "detects nested filename collisions across subdirectories" {
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "nested-collision"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "a/010-tpdm-claimset.json")
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "b/010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "a/010-tpdm-claims.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "b/010-tpdm-claims.json")
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*filename collision*"
@@ -1158,7 +1264,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-string-isparent-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-string-isparent-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*malformed boolean for 'isParent'*"
@@ -1176,7 +1282,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-resourceclaims-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-resourceclaims-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*resourceClaims value that is not a JSON array*"
@@ -1203,7 +1309,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-claimsets-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-claimsets-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*claimSets value that is not a JSON array*"
@@ -1230,7 +1336,7 @@ exit $ExitCode
             }
             New-Item -ItemType Directory -Path $claimsDir -Force | Out-Null
             $fragment | ConvertTo-Json -Depth 20 |
-                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-actions-claimset.json") -Encoding utf8
+                Set-Content -LiteralPath (Join-Path $claimsDir "010-scalar-actions-claims.json") -Encoding utf8
 
             { Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir } |
                 Should -Throw -ExpectedMessage "*claimSets actions value that is not a JSON array*"
@@ -1242,7 +1348,7 @@ exit $ExitCode
             # the manifest sections; teardown is the required remediation.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
             $claimsDir = Join-Path $script:repo.RepoRoot "stale-claims-input"
-            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claimset.json")
+            New-ExplicitClaimsetFragment -Path (Join-Path $claimsDir "010-tpdm-claims.json")
             Invoke-PrepareClaim -ClaimsDirectoryPath $claimsDir
 
             $stagedClaims = Join-Path $script:repo.BootstrapRoot "claims"
@@ -1316,12 +1422,12 @@ exit $ExitCode
     Context "claims staging with -IncludeE2EClaimSets" {
         BeforeEach {
             $script:e2eFragmentFileNames = @(
-                "001-namespace-claimset.json",
-                "002-nofurtherauth-claimset.json",
-                "003-edorgsonly-claimset.json",
-                "003a-edorgsonly-inverted-claimset.json",
-                "003b-edorgsonly-or-inverted-claimset.json",
-                "003c-edorgsonly-mixed-claimset.json"
+                "001-namespace-claims.json",
+                "002-nofurtherauth-claims.json",
+                "003-edorgsonly-claims.json",
+                "003a-edorgsonly-inverted-claims.json",
+                "003b-edorgsonly-or-inverted-claims.json",
+                "003c-edorgsonly-mixed-claims.json"
             )
             $script:e2eProbes = @(
                 "E2E-NameSpaceBasedClaimSet|http://ed-fi.org/identity/claims/ed-fi/survey|Read|False",
@@ -1361,13 +1467,13 @@ exit $ExitCode
             $staged = Invoke-SampleHomographStaging -IncludeE2EClaimSets
 
             $staged.Mode | Should -Be "Hybrid"
-            $staged.Files | Should -Be (@("004-sample-extension-claimset.json", "005-homograph-extension-claimset.json") + $script:e2eFragmentFileNames | Sort-Object)
+            $staged.Files | Should -Be (@("004-sample-extension-claims.json", "005-homograph-extension-claims.json") + $script:e2eFragmentFileNames | Sort-Object)
         }
 
         It "stages nothing extra and records unchanged checks without the switch" {
             $baseline = Invoke-SampleHomographStaging
 
-            $baseline.Files | Should -Be @("004-sample-extension-claimset.json", "005-homograph-extension-claimset.json")
+            $baseline.Files | Should -Be @("004-sample-extension-claims.json", "005-homograph-extension-claims.json")
             @($baseline.Checks | Where-Object { $_ -like "E2E-*" }) | Should -BeNullOrEmpty
         }
 
@@ -1414,18 +1520,18 @@ exit $ExitCode
         It "still rejects a user fragment that names an undeclared claim set when the switch is set" {
             $userClaimsDirectory = Join-Path $script:repo.RepoRoot "user-claims"
             New-ExplicitClaimsetFragment `
-                -Path (Join-Path $userClaimsDirectory "acme-claimset.json") `
+                -Path (Join-Path $userClaimsDirectory "acme-claims.json") `
                 -ClaimSetName "Acme-UndeclaredClaimSet"
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
 
             { & $script:repo.PrepareClaimsScript -ClaimsDirectoryPath $userClaimsDirectory -IncludeE2EClaimSets | Out-Null } |
-                Should -Throw -ExpectedMessage "*acme-claimset.json*uses unknown effective claim set 'Acme-UndeclaredClaimSet'*"
+                Should -Throw -ExpectedMessage "*acme-claims.json*uses unknown effective claim set 'Acme-UndeclaredClaimSet'*"
         }
 
         It "rejects a user fragment that names an E2E claim set without the switch" {
             $userClaimsDirectory = Join-Path $script:repo.RepoRoot "user-claims"
             New-ExplicitClaimsetFragment `
-                -Path (Join-Path $userClaimsDirectory "acme-claimset.json") `
+                -Path (Join-Path $userClaimsDirectory "acme-claims.json") `
                 -ClaimSetName "E2E-NoFurtherAuthRequiredClaimSet"
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Acme"))
 
@@ -1471,9 +1577,9 @@ exit $ExitCode
             Import-Module $script:repo.ManifestModule -Force
 
             # Pre-set stale process-env values to confirm bootstrap activation overrides them.
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
             $env:SCHEMA_PACKAGES = "ambient-packages"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
@@ -1488,9 +1594,9 @@ exit $ExitCode
 
             # Claims activation: manifest claims.mode=Hybrid (Sample extension) overrides the
             # stale Embedded process-env values.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
         It "validates a package-backed standard-mode bootstrap manifest at startup (DMS-1156 wrapper path)" {
@@ -1545,23 +1651,23 @@ exit $ExitCode
         It "manifest claims.mode governs in bootstrap mode and overrides caller-set process-env claims values" {
             # Bootstrap mode: manifest claims.mode is authoritative. "Sample" extension produces
             # Hybrid mode; any pre-set Embedded process-env values are overridden by activation.
-            # DMS_CONFIG_CLAIMS_MOUNT_SOURCE is set to the staged .bootstrap/claims path.
+            # CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE is set to the staged .bootstrap/claims path.
             Invoke-PrepareSchema -ApiSchemaPath (New-ApiSchemaSet -Extensions @("Sample"))
             Invoke-PrepareClaim
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
             # Simulate process env set to Embedded by a prior caller; manifest says Hybrid.
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
             # Manifest claims.mode=Hybrid overrides the Embedded process-env values.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
         It "Embedded manifest claims.mode overrides pre-set Hybrid process-env values in bootstrap mode" {
@@ -1573,16 +1679,16 @@ exit $ExitCode
             Import-Module $script:repo.ManifestModule -Force
 
             # Simulate Hybrid values left in process env from a prior session.
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/claims/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/claims/path"
 
             Set-BootstrapStartupEnvironment | Should -BeTrue
 
             # Manifest claims.mode=Embedded overrides Hybrid; mount source is blanked.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -BeNullOrEmpty
         }
 
         It "AddExtensionSecurityMetadata flag is ignored in bootstrap mode; manifest claims.mode governs" {
@@ -1595,9 +1701,9 @@ exit $ExitCode
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "Embedded"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = ""
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "Embedded"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = ""
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
@@ -1605,9 +1711,9 @@ exit $ExitCode
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -Be "/app/ApiSchema"
             # Manifest claims.mode=Hybrid governs; flag does not override.
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Not -BeNullOrEmpty
         }
 
         It "Invoke-BootstrapStartupConfiguration returns a clean boolean so start scripts can conditionally append bootstrap-dms.yml" {
@@ -1636,19 +1742,19 @@ exit $ExitCode
 
         It "bootstrap-dms.yml exists with the dms volume override and is conditionally included by start scripts" {
             # bootstrap-dms.yml overrides the dms service with the staged ApiSchema volume mount.
-            # local-dms.yml and published-dms.yml must NOT carry the ApiSchema mount directly (they
+            # local-dms.compose.yml and published-dms.compose.yml must NOT carry the ApiSchema mount directly (they
             # rely on bootstrap-dms.yml, included only when bootstrap mode is active). Config Service
             # keeps its mount-source env hook for bootstrap-mode claims activation.
-            $localDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.yml") -Raw
-            $publishedDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.yml") -Raw
-            $localConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-config.yml") -Raw
-            $publishedConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-config.yml") -Raw
+            $localDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-dms.compose.yml") -Raw
+            $publishedDms = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-dms.compose.yml") -Raw
+            $localConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "local-config.compose.yml") -Raw
+            $publishedConfig = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot "published-config.compose.yml") -Raw
 
             $localDms | Should -Not -Match "/app/additional-claims"
             $publishedDms | Should -Not -Match "/app/additional-claims"
             $localDms | Should -Not -Match "/app/ApiSchema:ro"
-            $localConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
-            $publishedConfig | Should -Match "DMS_CONFIG_CLAIMS_MOUNT_SOURCE"
+            $localConfig | Should -Match "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE"
+            $publishedConfig | Should -Match "CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE"
 
             # bootstrap-dms.yml must exist and declare the dms service volume override.
             $bootstrapDmsYml = Join-Path $script:sourceDockerComposeRoot "bootstrap-dms.yml"
@@ -1670,7 +1776,7 @@ exit $ExitCode
             # The inclusion condition is computed once into $cmsIncludedInComposeSet (shared with the
             # CMS-participation gate so the two cannot drift); assert the inclusion is gated on that
             # variable and that its definition still carries $bootstrapMode.
-            $publishedStartScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?published-config\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
+            $publishedStartScript | Should -Match '(?s)if \(\$cmsIncludedInComposeSet\)\s*\{[^}]*?published-config\.compose\.yml' -Because "published bootstrap mode must include the Config Service compose file that mounts staged claims"
             $publishedStartScript | Should -Match '\$cmsIncludedInComposeSet = [^\r\n]*\$bootstrapMode' -Because "bootstrap mode must remain one of the conditions that includes CMS"
         }
 
@@ -1694,21 +1800,21 @@ exit $ExitCode
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "Hybrid"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "Hybrid"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -Be "/app/additional-claims"
         }
 
         It "mounts the staged E2E claims workspace when AddExtensionSecurityMetadata is passed without a bootstrap manifest" {
             # Pre-set a stale ambient value that a prior bootstrap session might have left behind.
-            $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
+            $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/some/stale/path"
 
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
 
             Invoke-BootstrapStartupConfiguration -AddExtensionSecurityMetadata
 
-            [System.IO.Path]::GetFullPath($env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE) | Should -Be $script:repo.E2EClaimsWorkspace
-            Test-Path -LiteralPath (Join-Path $script:repo.E2EClaimsWorkspace "001-namespace-claimset.json") |
+            [System.IO.Path]::GetFullPath($env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE) | Should -Be $script:repo.E2EClaimsWorkspace
+            Test-Path -LiteralPath (Join-Path $script:repo.E2EClaimsWorkspace "001-namespace-claims.json") |
                 Should -BeTrue -Because "the mounted directory must already hold the E2E fragments when compose starts CMS"
         }
 
@@ -1730,20 +1836,20 @@ exit $ExitCode
         It "restores bootstrap environment variables through the snapshot helper including DMS_API_SCHEMA_MOUNT_SOURCE and SCHEMA_PACKAGES" {
             # Snapshot/restore covers all bootstrap-managed env vars: USE_API_SCHEMA_PATH,
             # API_SCHEMA_PATH, DMS_API_SCHEMA_MOUNT_SOURCE, SCHEMA_PACKAGES (schema side) and
-            # DMS_CONFIG_CLAIMS_SOURCE, DMS_CONFIG_CLAIMS_DIRECTORY, DMS_CONFIG_CLAIMS_MOUNT_SOURCE
+            # CONFIGURATION_SERVICE_CLAIMS_SOURCE, CONFIGURATION_SERVICE_CLAIMS_DIRECTORY, CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE
             # (claims side). Both new vars (DMS_API_SCHEMA_MOUNT_SOURCE and SCHEMA_PACKAGES) are
             # now fully managed by Set-BootstrapStartupEnvironment and must round-trip correctly.
             Remove-Module bootstrap-manifest -Force -ErrorAction SilentlyContinue
             Import-Module $script:repo.ManifestModule -Force
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "existing"
-            Remove-Item Env:DMS_CONFIG_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "existing"
+            Remove-Item Env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY -ErrorAction SilentlyContinue
             $env:USE_API_SCHEMA_PATH = "true"
             Remove-Item Env:API_SCHEMA_PATH -ErrorAction SilentlyContinue
             $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/prior/ApiSchema"
             $env:SCHEMA_PACKAGES = "prior-packages"
             $snapshot = Get-BootstrapEnvSnapshot
-            $env:DMS_CONFIG_CLAIMS_SOURCE = "mutated"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY = "/app/additional-claims"
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE = "mutated"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY = "/app/additional-claims"
             $env:USE_API_SCHEMA_PATH = ""
             $env:API_SCHEMA_PATH = "/app/ApiSchema"
             $env:DMS_API_SCHEMA_MOUNT_SOURCE = "/mutated/ApiSchema"
@@ -1751,8 +1857,8 @@ exit $ExitCode
 
             Restore-BootstrapEnvSnapshot -Snapshot $snapshot
 
-            $env:DMS_CONFIG_CLAIMS_SOURCE | Should -Be "existing"
-            $env:DMS_CONFIG_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
+            $env:CONFIGURATION_SERVICE_CLAIMS_SOURCE | Should -Be "existing"
+            $env:CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Should -BeNullOrEmpty
             $env:USE_API_SCHEMA_PATH | Should -Be "true"
             $env:API_SCHEMA_PATH | Should -BeNullOrEmpty
             $env:DMS_API_SCHEMA_MOUNT_SOURCE | Should -Be "/prior/ApiSchema"
@@ -1761,8 +1867,8 @@ exit $ExitCode
 
         It "restores temporary identity selection before CDC fingerprints the next phase" {
             Import-Module $script:repo.ManifestModule -Force
-            $names = @('DMS_CONFIG_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
-                'DMS_JWT_METADATA_ADDRESS', 'DMS_CONFIG_IDENTITY_AUTHORITY')
+            $names = @('CONFIGURATION_SERVICE_IDENTITY_PROVIDER', 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY',
+                'DMS_JWT_METADATA_ADDRESS', 'CONFIGURATION_SERVICE_IDENTITY_AUTHORITY')
             $original = Get-BootstrapEnvSnapshot
             try {
                 foreach ($name in $names) { Remove-Item "Env:$name" -ErrorAction SilentlyContinue }
@@ -1783,7 +1889,7 @@ exit $ExitCode
 
             $content | Should -Match "bootstrap-api-schema-manifest\.json"
             $content | Should -Match "package-manifest\.json"
-            $content | Should -Match '\$\{AppSettings__ApiSchemaPath\}/Packages/\$\{name\}/package-manifest\.json'
+            $content | Should -Match '\$\{AppSettings__ApiSchema__Path\}/Packages/\$\{name\}/package-manifest\.json'
             $content | Should -Match "jq -n --slurpfile projects"
             $content | Should -Match 'schemaPath: \(\$packageDir \+ "/" \+ \.schemaPath\)'
         }
@@ -1867,8 +1973,8 @@ exit 0
             $envNames = @(
                 "PATH",
                 "DATABASE_CONNECTION_STRING_ADMIN",
-                "AppSettings__UseApiSchemaPath",
-                "AppSettings__ApiSchemaPath",
+                "AppSettings__ApiSchema__UseCustomPath",
+                "AppSettings__ApiSchema__Path",
                 "SCHEMA_PACKAGES",
                 "DOTNET_INVOCATIONS_PATH"
             )
@@ -1880,8 +1986,8 @@ exit 0
             try {
                 $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
                 $env:DATABASE_CONNECTION_STRING_ADMIN = "host=localhost;port=5432;username=postgres"
-                $env:AppSettings__UseApiSchemaPath = "true"
-                $env:AppSettings__ApiSchemaPath = $apiSchemaPath
+                $env:AppSettings__ApiSchema__UseCustomPath = "true"
+                $env:AppSettings__ApiSchema__Path = $apiSchemaPath
                 $env:SCHEMA_PACKAGES = '[{"name":"KeptPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
                 $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
 
@@ -1947,7 +2053,7 @@ exit 0
                 "PATH",
                 "DATABASE_CONNECTION_STRING_ADMIN",
                 "AppSettings__Datastore",
-                "AppSettings__UseApiSchemaPath",
+                "AppSettings__ApiSchema__UseCustomPath",
                 "PG_ISREADY_INVOCATIONS_PATH",
                 "DOTNET_INVOCATIONS_PATH"
             )
@@ -1960,7 +2066,7 @@ exit 0
                 $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
                 $env:DATABASE_CONNECTION_STRING_ADMIN = "Server=localhost,1433;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
                 $env:AppSettings__Datastore = "mssql"
-                $env:AppSettings__UseApiSchemaPath = "false"
+                $env:AppSettings__ApiSchema__UseCustomPath = "false"
                 $env:PG_ISREADY_INVOCATIONS_PATH = $pgIsReadyInvocationsPath
                 $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
 
@@ -1988,6 +2094,72 @@ exit 0
                 Should -BeFalse -Because "MSSQL startup must not run PostgreSQL readiness checks"
             Get-Content -LiteralPath $dotnetInvocationsPath |
                 Should -Contain "EdFi.DataManagementService.Frontend.AspNetCore.dll"
+        }
+
+        It "run.sh ignores the removed flat ApiSchema variables" -Skip:(-not (Get-Command -Name bash -ErrorAction SilentlyContinue) -or -not (Get-Command -Name chmod -ErrorAction SilentlyContinue)) {
+            $workspace = Join-Path $script:repo.RepoRoot "run-sh-legacy-apischema"
+            $stubDirectory = Join-Path $workspace "bin"
+            $apiSchemaPath = Join-Path $workspace "ApiSchema"
+            $dotnetInvocationsPath = Join-Path $workspace "dotnet-invocations.log"
+            Remove-Item -LiteralPath $workspace -Recurse -Force -ErrorAction SilentlyContinue
+            New-Item -ItemType Directory -Path $stubDirectory -Force | Out-Null
+
+            @'
+#!/bin/sh
+echo "$*" >> "$DOTNET_INVOCATIONS_PATH"
+exit 0
+'@ | Set-Content -LiteralPath (Join-Path $stubDirectory "dotnet") -Encoding utf8
+
+            & chmod +x (Join-Path $stubDirectory "dotnet")
+
+            $envNames = @(
+                "PATH",
+                "AppSettings__Datastore",
+                "AppSettings__ApiSchema__UseCustomPath",
+                "AppSettings__ApiSchema__Path",
+                "AppSettings__UseApiSchemaPath",
+                "AppSettings__ApiSchemaPath",
+                "SCHEMA_PACKAGES",
+                "DOTNET_INVOCATIONS_PATH"
+            )
+            $envSnapshot = @{}
+            foreach ($name in $envNames) {
+                $envSnapshot[$name] = [System.Environment]::GetEnvironmentVariable($name)
+            }
+
+            try {
+                $env:PATH = "$stubDirectory$([System.IO.Path]::PathSeparator)$($env:PATH)"
+                $env:AppSettings__Datastore = "mssql"
+                Remove-Item -LiteralPath "Env:AppSettings__ApiSchema__UseCustomPath" -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath "Env:AppSettings__ApiSchema__Path" -ErrorAction SilentlyContinue
+                $env:AppSettings__UseApiSchemaPath = "true"
+                $env:AppSettings__ApiSchemaPath = $apiSchemaPath
+                $env:SCHEMA_PACKAGES = '[{"name":"LegacyPackage","version":"1.0.0","feedUrl":"https://example.test/feed/index.json"}]'
+                $env:DOTNET_INVOCATIONS_PATH = $dotnetInvocationsPath
+
+                $runOutput = & bash (Join-Path $script:sourceRepoRoot "src/dms/run.sh") 2>&1
+
+                $LASTEXITCODE | Should -Be 0 -Because ($runOutput -join [Environment]::NewLine)
+                ($runOutput -join [Environment]::NewLine) | Should -Not -Match "Using Api Schema Path\."
+            }
+            finally {
+                # Restore absence with Remove-Item: SetEnvironmentVariable coerces a $null snapshot
+                # to "" from PowerShell, which newer pwsh/.NET on Unix stores as a present-but-blank
+                # variable instead of removing it — poisoning ambient-precedence checks downstream.
+                foreach ($name in $envNames) {
+                    if ($null -eq $envSnapshot[$name]) {
+                        Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+                    }
+                    else {
+                        [System.Environment]::SetEnvironmentVariable($name, $envSnapshot[$name])
+                    }
+                }
+            }
+
+            Get-Content -LiteralPath $dotnetInvocationsPath |
+                Should -Be @("EdFi.DataManagementService.Frontend.AspNetCore.dll") -Because "the removed flat variables must not trigger a package download"
+            Test-Path -LiteralPath $apiSchemaPath |
+                Should -BeFalse -Because "the removed flat path variable must not be materialized"
         }
 
         It "start-local-dms.ps1 does not register the legacy default connector" {
@@ -2021,14 +2193,14 @@ exit 0
             Import-Module $script:repo.ManifestModule -Force
 
             $script:expectedE2EClaimsFiles = @(
-                "001-namespace-claimset.json",
-                "002-nofurtherauth-claimset.json",
-                "003-edorgsonly-claimset.json",
-                "003a-edorgsonly-inverted-claimset.json",
-                "003b-edorgsonly-or-inverted-claimset.json",
-                "003c-edorgsonly-mixed-claimset.json",
-                "004-sample-extension-claimset.json",
-                "005-homograph-extension-claimset.json"
+                "001-namespace-claims.json",
+                "002-nofurtherauth-claims.json",
+                "003-edorgsonly-claims.json",
+                "003a-edorgsonly-inverted-claims.json",
+                "003b-edorgsonly-or-inverted-claims.json",
+                "003c-edorgsonly-mixed-claims.json",
+                "004-sample-extension-claims.json",
+                "005-homograph-extension-claims.json"
             )
         }
 
@@ -2054,29 +2226,32 @@ exit 0
             Test-Path -LiteralPath (Join-Path $workspace "README.md") | Should -BeFalse
         }
 
-        It "removes a stale claimset fragment left by a previous run" {
+        It "removes a stale claims fragment left by a previous run" {
             $workspace = Initialize-E2EClaimsWorkspace
-            $stalePath = Join-Path $workspace "099-stale-claimset.json"
+            $stalePath = Join-Path $workspace "099-stale-claims.json"
             Set-Content -LiteralPath $stalePath -Value "{}"
+            $retiredPath = Join-Path $workspace "001-namespace-claimset.json"
+            Set-Content -LiteralPath $retiredPath -Value "{}"
 
             $null = Initialize-E2EClaimsWorkspace
 
             Test-Path -LiteralPath $stalePath | Should -BeFalse
+            Test-Path -LiteralPath $retiredPath | Should -BeFalse
             @(Get-ChildItem -LiteralPath $workspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
         }
 
         It "throws on a fragment file-name collision between the source directories" {
             Copy-Item `
-                -LiteralPath (Join-Path $script:repo.DefaultFragmentsRoot "004-sample-extension-claimset.json") `
+                -LiteralPath (Join-Path $script:repo.DefaultFragmentsRoot "004-sample-extension-claims.json") `
                 -Destination $script:repo.E2EFragmentsRoot
 
-            { Initialize-E2EClaimsWorkspace } | Should -Throw "*filename collision for '004-sample-extension-claimset.json'*"
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*filename collision for '004-sample-extension-claims.json'*"
         }
 
         It "throws when the E2E fragment directory is missing instead of staging without the E2E claim sets" {
             Remove-Item -LiteralPath $script:repo.E2EFragmentsRoot -Recurse -Force
 
-            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claimset fragment directory does not exist*"
+            { Initialize-E2EClaimsWorkspace } | Should -Throw "*E2E claims fragment directory does not exist*"
         }
 
         It "reuses the same directory when called again, as the -InfraOnly then -DmsOnly phases do" {
@@ -2086,7 +2261,7 @@ exit 0
             $markerPath = Join-Path $firstWorkspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
             $hashesBefore = @{}
-            foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claimset.json" -File) {
+            foreach ($file in Get-ChildItem -LiteralPath $firstWorkspace -Filter "*-claims.json" -File) {
                 $hashesBefore[$file.Name] = (Get-FileHash -LiteralPath $file.FullName).Hash
             }
 
@@ -2094,7 +2269,7 @@ exit 0
 
             $secondWorkspace | Should -Be $firstWorkspace
             Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
-            $stagedFiles = @(Get-ChildItem -LiteralPath $secondWorkspace -Filter "*-claimset.json" -File)
+            $stagedFiles = @(Get-ChildItem -LiteralPath $secondWorkspace -Filter "*-claims.json" -File)
             $stagedFiles.Count | Should -Be $script:expectedE2EClaimsFiles.Count
             foreach ($file in $stagedFiles) {
                 (Get-FileHash -LiteralPath $file.FullName).Hash | Should -Be $hashesBefore[$file.Name]
@@ -2105,16 +2280,16 @@ exit 0
             $workspace = Initialize-E2EClaimsWorkspace
             $markerPath = Join-Path $workspace "directory-identity.marker"
             Set-Content -LiteralPath $markerPath -Value "first-phase"
-            $changedSource = Join-Path $script:repo.E2EFragmentsRoot "001-namespace-claimset.json"
+            $changedSource = Join-Path $script:repo.E2EFragmentsRoot "001-namespace-claims.json"
             Set-Content -LiteralPath $changedSource -Value '{ "name": "E2E-NameSpaceBasedClaimSet", "resourceClaims": [] }'
-            $addedSource = Join-Path $script:repo.E2EFragmentsRoot "006-added-claimset.json"
+            $addedSource = Join-Path $script:repo.E2EFragmentsRoot "006-added-claims.json"
             Set-Content -LiteralPath $addedSource -Value '{ "name": "E2E-AddedClaimSet", "resourceClaims": [] }'
 
             $null = Initialize-E2EClaimsWorkspace
 
-            (Get-FileHash -LiteralPath (Join-Path $workspace "001-namespace-claimset.json")).Hash |
+            (Get-FileHash -LiteralPath (Join-Path $workspace "001-namespace-claims.json")).Hash |
                 Should -Be (Get-FileHash -LiteralPath $changedSource).Hash
-            (Get-FileHash -LiteralPath (Join-Path $workspace "006-added-claimset.json")).Hash |
+            (Get-FileHash -LiteralPath (Join-Path $workspace "006-added-claims.json")).Hash |
                 Should -Be (Get-FileHash -LiteralPath $addedSource).Hash
             Get-Content -LiteralPath $markerPath | Should -Be "first-phase"
         }
@@ -2135,7 +2310,7 @@ exit 0
                 $composeUpMountSources = [System.Collections.Generic.List[string]]::new()
                 function docker {
                     if ($args -contains "up") {
-                        $composeUpMountSources.Add([string]$env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE)
+                        $composeUpMountSources.Add([string]$env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE)
                         throw "fake docker stopped startup"
                     }
                     $global:LASTEXITCODE = 0
@@ -2152,7 +2327,7 @@ exit 0
             }
 
             It "mounts the staged workspace for compose and restores the caller's prior value" {
-                $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE = "/caller/prior/value"
+                $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE = "/caller/prior/value"
 
                 { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile -AddE2EClaimSets *> $null } |
                     Should -Throw "*fake docker stopped startup*"
@@ -2160,21 +2335,21 @@ exit 0
                 $composeUpMountSources.Count | Should -Be 1
                 [System.IO.Path]::GetFullPath($composeUpMountSources[0]) | Should -Be $script:repo.E2EClaimsWorkspace
                 @(Get-ChildItem -LiteralPath $script:repo.E2EClaimsWorkspace -File).Count | Should -Be $script:expectedE2EClaimsFiles.Count
-                $env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -Be "/caller/prior/value"
+                $env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -Be "/caller/prior/value"
             }
 
             It "removes the mount source again when the caller had none" {
-                Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
 
                 { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile -AddE2EClaimSets *> $null } |
                     Should -Throw "*fake docker stopped startup*"
 
                 [System.IO.Path]::GetFullPath($composeUpMountSources[0]) | Should -Be $script:repo.E2EClaimsWorkspace
-                Test-Path -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE | Should -BeFalse
+                Test-Path -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE | Should -BeFalse
             }
 
             It "leaves the default compose mount in place without the switch" {
-                Remove-Item -LiteralPath Env:DMS_CONFIG_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
+                Remove-Item -LiteralPath Env:CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE -ErrorAction SilentlyContinue
 
                 { & $script:startLocalConfig -EnvironmentFile $script:configEnvFile *> $null } |
                     Should -Throw "*fake docker stopped startup*"
@@ -2210,7 +2385,7 @@ exit 0
 
         It "passes AddExtensionSecurityMetadata in E2E setup scripts to enable Hybrid claims for extension schemas" {
             # Confirm that both E2E setup wrappers pass -AddExtensionSecurityMetadata to start-local-dms.ps1
-            # so extension claimset fragments (e.g. Sample, Homograph) are loaded in non-bootstrap mode.
+            # so extension claims fragments (e.g. Sample, Homograph) are loaded in non-bootstrap mode.
             foreach ($path in @(
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.DataManagementService.Tests.E2E/setup-local-dms.ps1"),
                 (Join-Path $script:sourceRepoRoot "src/dms/tests/EdFi.InstanceManagement.Tests.E2E/setup-local-dms.ps1")
@@ -2432,7 +2607,7 @@ exit 0
 
         It "both E2E setup wrappers let the selected environment file provide the schema package settings" {
             # DMS-1300. Docker Compose gives process env vars precedence over --env-file entries, and
-            # local-dms.yml resolves all three names with a ${VAR:-default} fallback that treats a
+            # local-dms.compose.yml resolves all three names with a ${VAR:-default} fallback that treats a
             # present-but-blank value as unset. Both setup flows must therefore REMOVE the three names
             # around their Docker phases, never blank them: an assignment-based clear is
             # platform- and PowerShell-version-dependent and can leave a present-but-blank value,

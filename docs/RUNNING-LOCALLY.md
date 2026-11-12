@@ -31,6 +31,16 @@ cd ../
 ./build-dms.ps1 run
 ```
 
+The shipped DMS `appsettings.json` sets `JwtAuthentication:RequireHttpsMetadata`
+to `true`, so DMS does not start when `JwtAuthentication:MetadataAddress` is a
+plain `http://` address. The DMS starter file
+`src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/appsettings.Development.json.example`
+sets it to `false` because the local Configuration Service is reached over
+http. If you already have an `appsettings.Development.json`, add
+`"RequireHttpsMetadata": false` under `JwtAuthentication`. Keep the value `true`
+for any identity provider reachable over an untrusted network; see
+[Configuration](./CONFIGURATION.md#jwtauthentication-parameters-in-appsettingsjson-dms-api-service).
+
 ## Selecting a Data Standard version
 
 The local start/build scripts run **Data Standard 5.2 by default**. To run a
@@ -63,6 +73,16 @@ If you already have an `appsettings.Development.json`, add the missing values to
 it instead of copying over it. Replacing the file changes the derived encryption
 key, which orphans any connection strings already stored in your local
 Configuration Service database.
+
+The shipped `appsettings.json` sets `IdentitySettings:RequireHttpsMetadata` to
+`true`, and the starter file sets it to `false` because a local identity
+provider is reached over http. If you already have an
+`appsettings.Development.json`, add `"RequireHttpsMetadata": false` under
+`IdentitySettings`. In self-contained mode the Configuration Service fetches no
+metadata, so the setting has no effect there, but a local run against a plain
+http Keycloak fails at the first authenticated request without it. Keep the
+value `true` for any identity provider reachable over an untrusted network; see
+[Configuration](./CONFIGURATION.md#relevant-parameters-in-appsettingsjson-configuration-service).
 
 `appsettings.Development.json` is gitignored, so the values stay on your
 machine. `DatabaseSettings:EncryptionKey` must be at least 32 ASCII characters;
@@ -103,7 +123,7 @@ Visual Studio. The file name is
 
 The `EdFi.DataManagementService.Tests.Integration` project boots the real DMS
 HTTP pipeline against a provisioned PostgreSQL and/or SQL Server database,
-with auth/CMS/profile-catalog/application-context faked. See
+with auth/Configuration Service/profile-catalog/application-context faked. See
 [`src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md`](../src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md)
 for the fixture map, runtime-compatibility materialization details, and the
 recipe for adding a scenario.
@@ -162,6 +182,100 @@ dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration --filter 
 
 Tests whose dialect is unconfigured cleanly `Assert.Ignore`, so partial
 local setups still produce a useful test run.
+
+## MSSQL backend integration provisioning diagnostics
+
+The backend MSSQL integration project creates real SQL Server databases during
+fixture setup. These tests use `ConnectionStrings__MssqlAdmin` as described
+above; they are separate from the API-level integration project and from the
+Docker-stack E2E suite.
+
+On slow or emulated hosts, such as Apple Silicon running the amd64 SQL Server
+image, concurrent baseline provisioning can exceed the command timeout even
+when individual fixtures pass. Use the concurrency setting or shard filters
+below to reduce provisioning contention during local development.
+
+The same provisioning gate and diagnostics also apply to the SQL Server paths
+in `src/dms/tests/EdFi.DataManagementService.Tests.Integration` and
+`src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin.Tests.Integration`.
+
+Run the backend project without a fixture or category filter to see the same
+setup failures that occur in an unfiltered test host:
+
+```powershell
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj
+```
+
+Generated-DDL admission is unlimited when
+`MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY` is unset or blank. To cap the
+number of admitted provisioning operations in a new test process, set a
+positive integer before starting it:
+
+```powershell
+$env:MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY = '1'
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj
+```
+
+The setting is captured lazily once per process, so change it and restart the
+test process to apply a different value. It only coordinates tests inside that
+process; it does not limit other processes or SQL Server activity. The existing
+300-second generated-DDL command timeout remains unchanged. A timeout message
+reports process-wide admitted-operation samples at batch start and timeout,
+including the failing operation and excluding queued entrants. Those samples
+are not executing-query counts and do not prove an engine wait. The message
+labels provisioning contention as suspected when either sample observes
+overlap, and possible when neither does. Snapshot creation/restoration,
+backup/restore, resets, and standalone `ApplyGeneratedDdlAsync` reapplication
+are outside the gate and its counts, including the DS52-TPDM idempotency check.
+If the effective limit is already 1, investigate this ungated in-process work,
+other test processes, and SQL Server waits/logs; the limit cannot be reduced
+further. Use the local shard filters below to narrow the workload when investigating.
+
+Only command timeouts while applying generated-DDL batches under provisioning
+admission receive this diagnostic. Timeouts during `CREATE DATABASE`, connection
+opening, transaction commit, reset-plan discovery, snapshot creation/restoration,
+and backup/restore retain their provider failures without a contention diagnostic.
+The `contextOrigin` field identifies the recorded caller by source filename,
+member, and line; shared baselines retain the context from their first
+registration, which may differ from the fixture currently acquiring a lease.
+
+The diagnostic is attached to the original provider exception's `Data` under
+`MssqlGeneratedDdlProvisioningDiagnostic` and also written to stderr
+(`Console.Error`). NUnit includes exception data in each affected test's setup
+failure, making the context available in console and TRX results even when
+stderr is captured only at run level. The provider exception type, number,
+message, and stack are preserved. CSV timing output is optional.
+
+Optional CSV timing output, with rows per phase and DDL batch, can
+be enabled with `MSSQL_FIXTURE_TIMINGS_PATH`. Output failures are best-effort
+and do not replace test failures or interrupt cleanup. An unavailable path
+produces at most one warning per configured path in a process; inspect the
+setting's value and its parent directory permissions. Paths are omitted from
+warnings.
+
+Backend CI uses four categories, `MssqlCiShard1` through `MssqlCiShard4`, with
+the `backup-restore` lease strategy and a provisioning concurrency limit of 2
+by default. To isolate one shard locally:
+
+```powershell
+$env:MSSQL_GENERATED_DDL_LEASE_STRATEGY = 'backup-restore'
+$env:MSSQL_GENERATED_DDL_PROVISION_MAX_CONCURRENCY = '2'
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "Category=MssqlCiShard4"
+```
+
+Replace the category to select another shard. On slow or emulated hosts,
+use shard filters for routine local runs and the unfiltered command above
+to reproduce whole-suite provisioning contention. Controlled
+provider-timeout probes are explicit and outside these CI shards; run them
+separately when changing the diagnostic wiring:
+
+```powershell
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj --filter "FullyQualifiedName~Given_MssqlGeneratedDdlProvisioningPipeline&FullyQualifiedName!~Non_Timeout"
+```
+
+Keep the non-timeout fixture excluded from this probe command. The pinned NUnit
+adapter skips explicit probes when the filter also selects non-explicit tests.
+The non-timeout failure fixture runs in `MssqlCiShard4`.
 
 ## Running Unit Tests and Generate Code Coverage Report
 

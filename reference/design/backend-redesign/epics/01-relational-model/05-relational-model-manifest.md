@@ -32,7 +32,7 @@ The manifest is a *semantic* representation (not engine introspection) and must 
   - constraints (PK/UK/FK/CHECK where applicable),
   - indexes (including FK-supporting indexes),
   - views (abstract union views),
-  - triggers (derived trigger intent inventory including `name`, `table`, `kind`, `key_columns`, `identity_projection_columns`, optional `mirror_stamp_target_table`, and parameter-specific payloads such as `target_table` or `referrer_updates` with `referrer_table`, `referrer_fk_column`, and ordered `target_column_mappings`).
+  - triggers (derived trigger intent inventory including `name`, `table`, `kind`, `key_columns`, `identity_projection_columns`, optional `stamp_target_table`, and parameter-specific payloads such as `target_table` or `referrer_updates` with `referrer_table`, `referrer_fk_column`, and ordered `target_column_mappings`).
 - Output is byte-for-byte stable for the same inputs (stable ordering + `\n` line endings).
 - Small fixture snapshot tests compare the manifest exactly.
 

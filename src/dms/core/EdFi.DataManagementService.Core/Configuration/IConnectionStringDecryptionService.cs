@@ -12,4 +12,10 @@ public interface IConnectionStringDecryptionService
     /// Returns null when input is null or empty.
     /// </summary>
     string? DecryptFromBase64(string? base64EncodedCipherText);
+
+    /// <summary>
+    /// Whether the value is in the legacy AES-CBC form rather than an envelope. False for a null,
+    /// empty, or non-Base64 value, and for one of neither form. Decrypts nothing.
+    /// </summary>
+    bool IsLegacyFormat(string? base64EncodedCipherText);
 }

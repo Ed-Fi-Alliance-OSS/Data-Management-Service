@@ -177,8 +177,8 @@ public sealed record DescriptorProjectionPlan
 /// <summary>
 /// Ordinal contract for descriptor projection result rows.
 /// </summary>
-/// <param name="DescriptorIdOrdinal">Zero-based <c>DescriptorId</c> ordinal in the descriptor projection result row.</param>
-/// <param name="UriOrdinal">Zero-based <c>Uri</c> ordinal in the descriptor projection result row.</param>
+/// <param name="DescriptorIdOrdinal">Zero-based compact Int32 <c>DescriptorId</c> ordinal in the descriptor projection result row.</param>
+/// <param name="UriOrdinal">Zero-based original-case <c>Namespace + '#' + CodeValue</c> URI ordinal in the descriptor projection result row.</param>
 public sealed record DescriptorProjectionResultShape(int DescriptorIdOrdinal, int UriOrdinal);
 
 /// <summary>
@@ -188,7 +188,7 @@ public sealed record DescriptorProjectionResultShape(int DescriptorIdOrdinal, in
 /// <param name="Table">Owning table for the descriptor FK source.</param>
 /// <param name="DescriptorResource">Descriptor resource type expected at this source path.</param>
 /// <param name="DescriptorIdColumnOrdinal">
-/// Zero-based ordinal for the source table descriptor-id column in the hydration select list.
+/// Zero-based ordinal for the source table compact Int32 descriptor-id column in the hydration select list.
 /// </param>
 public sealed record DescriptorProjectionSource(
     JsonPathExpression DescriptorValuePath,

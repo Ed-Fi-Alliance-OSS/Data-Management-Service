@@ -269,4 +269,9 @@ Describe "on-dms-pullrequest.yml bootstrap Pester registry" {
         $script:pesterPaths | Should -Contain "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1" `
             -Because "a Pester file that no lane names never runs, so its regressions would go unnoticed"
     }
+
+    It "runs the dedicated E2E database guard equivalence suite in the pull request Pester lane" {
+        $script:pesterPaths | Should -Contain "eng/docker-compose/tests/E2EDedicatedDatabaseGuardEquivalence.Tests.ps1" `
+            -Because "the guard that keeps E2E resets off shared databases must run on every DMS-relevant pull request"
+    }
 }

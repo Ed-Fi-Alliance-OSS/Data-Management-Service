@@ -36,6 +36,71 @@ For the design rationale, start with these:
 - [`cdc-streaming.md`](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md) — DocumentCache configuration, projection, readiness, CDC admission, and operations
 - [`new-startup-flow.md`](../reference/design/backend-redesign/design-docs/new-startup-flow.md) — how the service starts up against a provisioned database
 
+### Compact descriptor storage (DMS-1404)
+
+Descriptors have two independent keys:
+
+| Key | Storage and use |
+|---|---|
+| `DescriptorId` | Native `int` primary key on `dms.Descriptor`; PostgreSQL `GENERATED ALWAYS AS IDENTITY` with its own backing sequence, SQL Server `IDENTITY(1,1)`. Every stored descriptor reference is `Int32` and targets this key, including collections, extensions, copied reference identities, and composite keys. |
+| `DocumentId` | Unique, non-null `bigint` association to `dms.Document`; used for UUID lookup, locks, concurrency, paging, cache/projection work, and representation restamping. Updates preserve both keys. |
+
+`ResourceKeyId` (`smallint`) identifies the qualified descriptor type. The composite
+`FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` references the owning document's
+`(DocumentId, ResourceKeyId)`, so the database rejects a type key that differs from the
+document's. It uses `RESTRICT` on PostgreSQL and `NO ACTION` on SQL Server. Live descriptors
+have no `Discriminator` and no physically stored `Uri`.
+
+On SQL Server, `Namespace` and `CodeValue` carry the DMS identity collation
+(`SQL_Latin1_General_CP1_CI_AS`) independent of the database default. SQL Server also defines a
+non-persisted, non-indexed `Uri AS ([Namespace] + N'#' + [CodeValue])` that reconstructs the
+whole URI. PostgreSQL components use the database-default collation.
+
+`UX_Descriptor_UriLowered_ResourceKeyId` enforces uniqueness over the lowered whole
+`Namespace + '#' + CodeValue` within a type, so case variants of one URI cannot coexist on either
+engine. It is the only descriptor URI index, and it introduces no component-wise uniqueness:
+
+- PostgreSQL indexes `(lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8"), "ResourceKeyId")`,
+  pinning the folding collation instead of following the database default. It adds no column.
+- SQL Server defines non-persisted
+  `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+  and indexes `(UriLowered, ResourceKeyId)`.
+
+Descriptor writes, descriptor references and descriptor-valued query filters whose values contain
+the NUL character are rejected with HTTP 400 keyed by the offending field path. An
+unpaired-surrogate escape in any request-body string is rejected at body parse with the
+malformed-body 400, whose message names the path. Reference resolution and descriptor-valued query
+filters use the lowered-URI natural-key probes, which return both IDs in one lookup and fold case
+in SQL; original-case responses reconstruct the whole string. Resource POST target detection
+uses the natural-key columns of the resource, and descriptor POST detects its target with the
+same lowered-URI probe; descriptor PUT addresses its target by document UUID and uses the probe
+only for its identity verdict. Core computes no UUIDv5 referential ids, and DMS DDL creates no
+`dms.ReferentialIdentity` table, no referential-identity triggers, no `dms.uuidv5` function and
+no PostgreSQL `pgcrypto` extension. DMS never drops `pgcrypto`; the Configuration Service creates
+its own. On SQL
+Server, a resource's own identity values, including the values of the references that are part
+of it, and the string values that identify collection items keep their stored casing on POST and
+PUT when they are equal under the identity comparer (`OrdinalIgnoreCase`). Values inside other
+references, including the references that identify collection items, are stored as sent.
+Descriptor POST and PUT keep the stored `Namespace` and `CodeValue` on both engines when the
+database treats the request's identity as the stored one: a case variant on either engine, and
+on SQL Server also a collation alias such as `ß`/`ss`. A casing-only descriptor re-POST is a
+no-op, and a PUT that changes only the identity's casing returns 204 without changes. Abstract
+identity discriminators and union-view discriminator outputs remain unchanged.
+
+**Rollback boundary.** From DMS-1454 on, descriptor writes write no RI rows, so descriptor RI
+rows in a database written by DMS-1454 or later are absent or stale. From DMS-1456 on, the
+database has no `dms.ReferentialIdentity` table at all. Every earlier build, including the
+DMS-1451 to DMS-1453 checkpoints and 8.0.x, matches descriptor POSTs through RI, and builds before
+DMS-1456 maintain resource RI rows through triggers. Running any of them against a database
+written by DMS-1454 or later, including one provisioned by DMS-1456 or later, requires
+reprovisioning it with that build or a designed RI backfill.
+
+The regenerated [DS 5.2 artifacts](../src/dms/backend/Fixtures/authoritative/ds-5.2/expected)
+cover 595 stored descriptor columns and 879 indexes containing such columns. These are schema
+coverage counts, not measured storage savings or evidence of faster joins; benchmarks and
+database-version upgrades are not DMS-1404 completion requirements.
+
 ## 2. Provisioning a database for an effective schema
 
 Provisioning is done with the **`api-schema-tools`** CLI
@@ -68,7 +133,7 @@ api-schema-tools ddl emit --schema core/ApiSchema.json --output ./ddl-output --d
 |---|---|---|
 | `pgsql.sql` / `mssql.sql` | per selected dialect | the full DDL script for that engine, without a built-in transaction wrapper |
 | `effective-schema.manifest.json` | always | the schema fingerprint, components, and resource-key seed summary |
-| `relational-model.{dialect}.manifest.json` | per selected dialect | the effective-schema-derived relational model inventory; fixed `dms` inventory is emitted in SQL and affects the optional DDL manifest hashes/counts instead |
+| `relational-model.{dialect}.manifest.json` | per selected dialect | derived inventory, including each descriptor resource's `resource_details[].shared_descriptor_table` with physical `DescriptorId` identity and `DocumentId` root locator/unique association; fixed core DDL adds type keys, mirrors, native allocation, and URI indexes |
 | `ddl.manifest.json` | only with `--ddl-manifest` | dialect-independent summary (normalized-SQL hash + statement count per dialect) for diagnostics |
 
 `--dialect` accepts `pgsql`, `mssql`, or `both` (default `both`). All output uses Unix
@@ -100,11 +165,256 @@ api-schema-tools ddl provision \
 bounds DDL execution. For SQL Server, provisioning configures Read Committed Snapshot
 Isolation (and `ALLOW_SNAPSHOT_ISOLATION`) on newly created databases.
 
-`IX_Document_CreatedByOwnershipTokenId` is a filtered index, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for the session that creates it and for every write to `dms.Document`, and it captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
+`IX_Document_CreatedByOwnershipTokenId` is a filtered index and `UX_Descriptor_UriLowered_ResourceKeyId` indexes a computed column, so SQL Server requires the indexed-view SET option set (`ANSI_NULLS`, `ANSI_PADDING`, `ANSI_WARNINGS`, `ARITHABORT`, `CONCAT_NULL_YIELDS_NULL`, `QUOTED_IDENTIFIER` ON; `NUMERIC_ROUNDABORT` OFF) for index creation and for writes to `dms.Document` or `dms.Descriptor`. It captures `QUOTED_IDENTIFIER` and `ANSI_NULLS` into each stamp trigger the script creates.
 The generated SQL Server script therefore opens with one `SET` batch that puts the session in that state, so applying it with any client, including ODBC `sqlcmd` without `-I`, provisions the index and bakes the right settings into the triggers.
 The filter applies to newly provisioned databases only: both engines guard index creation by name, so a database provisioned before this change keeps its unfiltered index, with no startup-validation signal (generated DDL is not an input to the effective schema hash), until it is deliberately reprovisioned.
 Sessions that write `dms.Document` directly still need `QUOTED_IDENTIFIER` ON: `Microsoft.Data.SqlClient` and go-sqlcmd default it ON, ODBC `sqlcmd` needs `-I`, and a write without it fails with `Msg 1934` while a read raises nothing and silently stops using the index.
 (`ARITHABORT` needs no attention: at compatibility level 90 or above `ANSI_WARNINGS` ON implies it for this purpose, which is why `SqlClient` sessions, which open with it OFF, are fine.)
+Fresh and reused ordinary `SqlClient` pools satisfy the effective options for descriptor DML
+without a runtime initializer. Provisioning settings belong to that session and do not carry
+over to pooled runtime connections; direct SQL clients must supply the effective options too.
+
+### Reprovisioning and legacy data carry-forward
+
+Existing databases require deliberate reprovisioning before using the runtime with compact
+descriptors, authoritative root/descriptor timestamps and no referential-identity objects. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
+release line. The constant tracks releases: bump at most once per release when mapping
+changes, never lower it, and do not add another bump before 8.1 ships. The next eligible
+bump is `v4` for the first qualifying mapping change after 8.1 ships.
+
+`EffectiveSchemaHash` includes that constant and normalized ApiSchema inputs, but excludes
+generated DDL and mapping-set output. Consequently, this mapping-only physical change can
+leave the hash unchanged. Hash equality and successful first-use validation cannot prove
+that an older database or template has compact descriptor columns or the current timestamp
+ownership (no `dms.Document.ContentLastModifiedAt`, authoritative root/descriptor timestamps), or
+that it no longer carries `dms.ReferentialIdentity` and its triggers. Rerunning create-only
+provisioning against it does not convert its schema.
+
+Provision a fresh target from current DDL for its exact core/extension schema set, or use a
+compatible rebuilt template verified against that baseline. For PostgreSQL legacy dumps,
+the supported carry-forward route is
+[`Copy-NorthridgeDataForward.ps1`](../eng/northridge/Copy-NorthridgeDataForward.ps1), following
+the [current conversion recipe](../eng/northridge/README.md#copy-legacy-data-into-the-current-compact-schema):
+
+1. Stop writers. Provision fresh target and reference databases; restore the legacy dump
+   into a separate source database for counts and source-shape checks.
+2. Supply `-ExpectedModelManifestPath` in both Copy and Checkpoint modes. Use the reviewed
+   `relational-model.pgsql.manifest.json` for that exact schema set with complete
+   `resource_details`; the synthetic compact fixture is not a production baseline.
+3. The tool stages source-shaped tables, allocates native independent descriptor IDs,
+   saves `descriptor-key-map.<target>.tsv`, and remaps every canonical stored descriptor
+   reference before insertion. Generated aliases remain read-only; legacy URI and
+   discriminator columns remain in staging only.
+4. Descriptor history translates source type strings through the qualified resource-key
+   catalog to `ResourceKeyId`, including tombstones without live document/descriptor rows.
+   Unknown or ambiguous types and unmapped non-null references stop the copy.
+5. Validate preserved document IDs/UUIDs, stamps, history, FK integrity, counts,
+   fingerprints, trigger state, and source identity. A legacy dump's `dms.ReferentialIdentity`
+   rows are skipped, never restored, and abstract identity rows take `ResourceKeyId` from their
+   owning document. Copy and Checkpoint also validate the
+   independent descriptor allocator against allocated compact keys without consuming an ID.
+
+This conversion loads legacy data into a fresh schema; an unchanged legacy dump restore
+and an in-place schema upgrade do not produce the required target. Discard and reprovision
+a partially loaded target after failure. The tool omits both legacy document timestamps
+(`ContentLastModifiedAt` and `CreatedAt`) from target inserts and retains the document
+`ContentVersion` check. It verifies authoritative descriptor and sampled root stamps with
+deterministic, `DocumentId`-ordered tuple checksums, so redistributed stamps with unchanged
+minima/maxima fail validation. The sampled-root scope is unchanged. A full Northridge reload or
+dataset republication is not a prerequisite for this schema change.
+
+**`dms.Document.CreatedAt` removal (DMS-1403).** Freshly provisioned schemas no longer have
+`dms.Document.CreatedAt` on either engine. The DMS API data path did not use this column;
+removing it does not change API fields, ETags, change queries, or authorization decisions. It
+is not replaced on `dms.Document`; resource creation time is stored on the owner as
+`ContentCreatedAt` (see DMS-1656 below). `RelationalMappingVersion` stays `v3`, and generated
+DDL is not a hash input, so `EffectiveSchemaHash` is unchanged. A matching hash and successful
+startup validation therefore cannot prove that a database no longer has the column. Verify the
+catalog instead. The first query must return at least one row, which proves the table exists.
+The second must return no rows:
+
+```sql
+-- PostgreSQL
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'Document' ORDER BY ordinal_position;
+SELECT column_name FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'Document' AND column_name = 'CreatedAt';
+
+-- SQL Server
+SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') ORDER BY c.column_id;
+SELECT c.name FROM sys.columns c WHERE c.object_id = OBJECT_ID(N'dms.Document') AND c.name = N'CreatedAt';
+```
+
+The DMS API reads and writes correctly whether or not the column is present. Existing databases
+keep it, and the storage saving exists only after you deliberately reprovision them from current
+DDL. No in-place `ALTER TABLE … DROP COLUMN` is provided, and rerunning create-only provisioning
+does not remove it. To get the saving on a PostgreSQL store without CDC, use the carry-forward
+route above. On SQL Server, reprovision and reload.
+
+CDC setup and validation compare the live `dms.Document` columns with the expected inventory
+and fail closed on any difference. This covers initial enablement, `cdc-validate`, and the
+guarded start, restart, and resume pre-checks. Fresh provisioning followed by eligible initial
+CDC enablement is supported. **Established CDC deployments have no supported upgrade or cutover
+path to the new `dms.Document` shape in this release.** With the new runtime, validation and
+the guarded pre-checks fail closed on such a binding while its database still has the column;
+the DMS API keeps serving. The CDC design
+[defers physical-source replacement](../reference/design/backend-redesign/design-docs/cdc/cdc-streaming.md#v1-physical-source-replacement-deferral),
+and no documented sequence moves an established binding onto a reprovisioned database. Do not
+treat carry-forward or generation retirement as one. Resolving this is a separate release
+coordination item.
+
+Database template packages built before this change still have the column. They restore and
+serve, but they do not deliver the saving. Replace them with packages built from DDL that
+includes this change. `eng/DatabaseTemplates/verify-template-restore.ps1` rejects them: it fails
+when the source database (before the restore) or the restored database (before the API probe)
+has no `dms.Document` table, still has `CreatedAt`, or cannot be queried.
+
+**Owner `ContentCreatedAt` (DMS-1656).** Freshly provisioned schemas store each resource's
+creation time as a non-null `ContentCreatedAt` column on the root table of every resource
+(core and extension-project) and on `dms.Descriptor`: PostgreSQL `timestamp with time zone`,
+SQL Server `datetime2(7)`, both UTC. It is not on `dms.Document`, child/collection tables or
+`_ext` tables, and it has no index. A direct database reader gets a
+resource's creation time from its own row, without joining `dms.Document`. The column is
+backend-owned: inserting the owner row sets it from the same database timestamp as the initial
+`ContentLastModifiedAt`, and no later write, cascade, no-op or restamp changes it. Deleting and
+recreating a resource starts a new lifetime with a new value. It is not client-writable, does not
+appear in API JSON, and never allocates a `ContentVersion` or a tracked-change row; see
+[update-tracking.md](../reference/design/backend-redesign/design-docs/update-tracking.md#creation-time-normative).
+Rows loaded by the [carry-forward route](#reprovisioning-and-legacy-data-carry-forward) are the
+exception: the copy runs with triggers disabled and keeps each row's source `ContentLastModifiedAt`,
+so `ContentCreatedAt` takes its default, the copy time, which is later than the carried
+`ContentLastModifiedAt`.
+
+`RelationalMappingVersion` stays `v3`, and generated DDL is not a hash input, so a database
+provisioned before this change passes startup validation but lacks the column until it is
+deliberately reprovisioned. Verify the catalog. The first query must return at least one row
+(the owner tables). The second lists owners without the column and must return no rows:
+
+```sql
+-- PostgreSQL
+SELECT table_schema, table_name FROM information_schema.columns
+WHERE column_name = 'ContentLastModifiedAt' ORDER BY table_schema, table_name;
+SELECT o.table_schema, o.table_name FROM information_schema.columns o
+WHERE o.column_name = 'ContentLastModifiedAt'
+  AND NOT EXISTS (SELECT 1 FROM information_schema.columns c
+                  WHERE c.table_schema = o.table_schema AND c.table_name = o.table_name
+                    AND c.column_name = 'ContentCreatedAt');
+
+-- SQL Server
+SELECT OBJECT_SCHEMA_NAME(o.object_id), OBJECT_NAME(o.object_id) FROM sys.columns o
+WHERE o.name = N'ContentLastModifiedAt' ORDER BY 1, 2;
+SELECT OBJECT_SCHEMA_NAME(o.object_id), OBJECT_NAME(o.object_id) FROM sys.columns o
+WHERE o.name = N'ContentLastModifiedAt'
+  AND NOT EXISTS (SELECT 1 FROM sys.columns c
+                  WHERE c.object_id = o.object_id AND c.name = N'ContentCreatedAt');
+```
+
+Do not rerun `ddl provision` against such a database to add the column. On PostgreSQL the rerun
+succeeds: it keeps the existing tables but replaces the stamping trigger functions, so every later
+INSERT into a resource root table or `dms.Descriptor` fails (`record "new" has no field
+"ContentCreatedAt"`), while updates keep working. On SQL Server the rerun fails at the first
+trigger that names the column and rolls back. Drop and recreate the database from current DDL and
+reload its data instead; a PostgreSQL database that has already been rerun needs the same. The
+carry-forward route does not apply: it accepts only legacy dumps, and these databases already have
+compact descriptors.
+
+Database template packages built before this change lack the column. They restore and serve,
+but `Assert-TemplateSchema.ps1` checks only `ContentLastModifiedAt` on each owner, so it does not
+reject them. Run the two queries above on the source and restored catalogs of every rebuilt
+package.
+
+**Cached `ContentCreatedAt` (DMS-1657).** `dms.DocumentCache.ContentCreatedAt` (non-null, same
+types as the owner column) carries a copy of each resource owner's `ContentCreatedAt`. The cache
+materializer writes it on every projection, direct fill and rebuild, never a cache-side default,
+so a rebuild recovers it from the owner. CDC publishes the cached value as the envelope's
+`documentCreatedAt` (DMS-1658). A database provisioned before DMS-1657 fails the
+DocumentCache inventory check (`ContentCreatedAt` column missing), so its cache target stays
+unavailable. CDC setup, `cdc-validate` and the guarded start, restart and resume pre-checks also
+fail closed on it; as with the `dms.Document` shape change above, established CDC deployments have
+no supported upgrade or cutover path. Rerunning `ddl provision` does not add the column, because
+provisioning is create-only. Drop and recreate the database from current DDL. Canonical reads and
+writes are unaffected.
+
+Database template packages built before DMS-1657 lack the cache column, and the two queries
+above do not detect it. On the source and restored catalogs of every rebuilt package, also confirm
+that this returns one row:
+
+```sql
+-- PostgreSQL
+SELECT 1 FROM information_schema.columns
+WHERE table_schema = 'dms' AND table_name = 'DocumentCache' AND column_name = 'ContentCreatedAt';
+
+-- SQL Server
+SELECT 1 FROM sys.columns
+WHERE object_id = OBJECT_ID(N'dms.DocumentCache') AND name = N'ContentCreatedAt';
+```
+
+### Descriptor catalog checks and template handoff
+
+Use the reusable [compact descriptor catalog assertions](../eng/DatabaseTemplates/Compact-Descriptor.md)
+and their shared manifest inventory reader to check native allocation, the unique document
+association, compact stored FKs and composite keys/indexes, URI storage/index shape, and
+`ResourceKeyId` history. Expectations come from a reviewed implementation baseline, never
+from detecting what an older source or restored database happens to contain.
+
+DMS-1404's handoff to [DMS-1401](../reference/design/backend-redesign/epics/21-storage-reduction/16-drop-document-content-last-modified-at.md)
+was the working RI runtime on fresh schemas on both engines, regenerated fixtures, reusable
+catalog assertions, working fixture/performance loaders and legacy conversion, and passing
+unequal-ID metadata, stamping, restamping, and cache regressions. At that historical checkpoint,
+`dms.Document.ContentVersion` and `dms.Document.ContentLastModifiedAt` were authoritative, with
+both mirrored to roots/descriptors. The combined DMS-1401 schema removes the document timestamp:
+only `ContentVersion` is mirrored; the root/descriptor timestamp is authoritative.
+
+[DMS-1404](../reference/design/backend-redesign/epics/21-storage-reduction/15-compact-descriptor-id-and-storage-optimizations.md)
+may close after its implementation, fixture, fresh-schema behavior/catalog, tooling, and
+reprovisioning-documentation checks pass. In the planned sequence, DMS-1401 owns the shared
+Minimal and Populated template builds and source/restore verification on PostgreSQL and
+SQL Server for supported template Data Standards `5.2.0` and `6.1.0` (eight legs), plus affected
+repository consumer pins to verified prereleases. Run the descriptor assertions on both
+source and restored catalogs before API probes, alongside DMS-1401's timestamp checks;
+retain `RequirePopulatedData` for Populated verification. These package gates are required
+before DMS-1401 closes and are deferred from DMS-1404 closure.
+
+Until compatible rebuilds are verified, use databases freshly provisioned from the combined current DDL
+and defer template-backed deployment. If templates are needed earlier, build and verify
+compatible packages first. Retaining `v3` does not make old physical schemas or packages
+compatible. Final v8.1 template production/publication, release-view promotion, and deployment
+pins remain release-workflow responsibilities; verify the final release schema against both
+stories' physical expectations when both changes are included.
+
+For the combined closure gate, build Minimal and Populated packages on both PostgreSQL and
+SQL Server for DS `5.2.0` core + TPDM and DS `6.1.0` core: eight artifacts from the same reviewed
+combined implementation commit. Use the existing engine-specific template workflows with
+`publish_package: false`, fresh sources provisioned from changed DDL and fresh restoration
+targets. Each leg emits its complete provider relational-model manifest with SchemaTools
+`ddl emit` using the exact ordered ApiSchema inputs used for provisioning; review it and pass
+it as `ExpectedModelManifestPath`. Both source and restored catalogs must pass
+`Assert-TemplateSchema.ps1` before API registration/probes: timestamp-free Document with its
+version, authoritative non-null timestamps on every expected root/descriptor, and all compact
+ID/FK/type/URI assertions. Keep schema/data/serveability checks and `RequirePopulatedData`.
+A matching `v3` fingerprint or a successful API read alone is insufficient.
+
+Retain per-leg producing commit, build run, engine image, package id/version/SHA-256, exact-schema
+manifest/hash, and source/restored catalog, data and authenticated API results. Update affected
+fixed repository consumer pins to those verified prereleases before story closure. Preserve
+`DATABASE_TEMPLATE_PACKAGE` ids and their Data Standard suffixes. Publish any retained verified
+prereleases needed by those consumers unchanged via the existing `build-dms.ps1 Push` path and
+EdFi Azure Artifacts feed, then download the exact versions from the configured feed, verify their
+hashes and smoke-test resolution/restoration.
+
+Final stable v8.1 production, publication, release-view promotion and deployment pin changes
+remain in the release workflow. Rebuild from the final release commit/schema and repeat all
+eight source/restore gates before publication. Deploy compatible rebuilt Minimal and Populated
+packages on both engines, discard cached older artifacts, update fixed deployment pins to the
+verified release versions, and deliberately reprovision affected databases before serving traffic.
+No benchmark, full dataset run, engine upgrade, RI removal or bootstrap template restore
+is a prerequisite for this story.
+
+The expected saving is roughly eight bytes of raw timestamp payload per document, about half
+of the raw payload of the two former document stamp columns, not half of table/database storage.
+Alignment and page layout affect actual savings. Document-version updates and owner stamp
+maintenance remain necessary; throughput improvement and negligible read overhead are unmeasured
+hypotheses.
 
 ### Always-provisioned DocumentCache inventory
 
@@ -216,7 +526,9 @@ wraps the above; see [`eng/docker-compose/README.md`](../eng/docker-compose/READ
 
 The relational backend records a **fingerprint** of the effective schema in the database
 at provisioning time, then verifies it before serving traffic. This guarantees the
-running service and the database agree on exactly one effective schema.
+running service and the database agree on exactly one effective schema input fingerprint.
+It does not verify every physical mapping feature; same-hash mapping changes require the
+deliberate reprovisioning and catalog checks described above.
 
 ### Where the fingerprint lives
 
@@ -274,6 +586,10 @@ compares it to the effective schema it loaded. The check runs in
   with a detail explaining that the database was provisioned for a different effective schema and
   that it **must be reprovisioned with `ddl provision` against a fresh database and the service
   restarted** to clear the cached validation state.
+  Fresh reprovisioning is the default remediation. An independently validated,
+  metadata-compatible physical migration may instead use the bounded
+  [re-stamp procedure](#re-stamping-after-a-validated-physical-migration) below;
+  ordinary provisioning and runtime never update a mismatched stamp automatically.
 
 Immediately after the fingerprint check, each routed resource pipeline runs a second first-use check,
 [`ValidateResourceKeySeedMiddleware`](../src/dms/core/EdFi.DataManagementService.Core/Middleware/ValidateResourceKeySeedMiddleware.cs)
@@ -303,16 +619,28 @@ are in the design docs:
 
 ### Stored stamps and tracked-change tables
 
-Each document carries two stamps set together by the same **stamping triggers** on the document
-tables: a `ContentVersion` (the change-version number, from the shared change-version sequence) and
-a `ContentLastModifiedAt` timestamp (the current UTC time, refreshed on every write). Those triggers
+Each document has a `ContentVersion` on `dms.Document` (allocated from the global sequence) and
+an authoritative `ContentLastModifiedAt` on its resource root or `dms.Descriptor`. The owner also
+mirrors `ContentVersion`. **Stamping triggers** maintain those stamps in one transaction, including
+child/extension and identity-cascade changes; `dms.Document` has no last-modified timestamp.
+No-op writes preserve stamps. Document insertion allocates the initial version and owner insertion
+copies it while generating its timestamp. Owner insertion also sets `ContentCreatedAt` from that
+same timestamp; it is not a stamp, and every later write preserves it. Every stamp the stamping
+triggers write in one transaction uses one timestamp on both engines (PostgreSQL's `now()`; on SQL
+Server, the first trigger stamp's `sysutcdatetime()` reading, kept in the session context for that transaction), so child
+and `_ext` rows inserted by the creating write leave the two values equal. Document locks, optimistic concurrency and projection
+enqueueing remain version-only. Those triggers
 also populate per-resource **tracked-change tables** that live under a per-project schema named
 `tracked_changes_<projectSchema>` (for example the `tracked_changes_edfi` schema), recording the
-old/new identity and securable values plus a `ChangeVersion`. (Descriptors share a single
-tracked-change table within that schema rather than one table per resource.) When debugging a stamp or a
+old/new identity and securable values plus a `ChangeVersion`. Descriptors share
+`tracked_changes_edfi.Descriptor`, routed by `ResourceKeyId`, with old/new namespace/code
+snapshots and retained owning `DocumentId`, UUID `Id`, version and creation time. It has no
+descriptor discriminator or FK requiring a live owner; history survives deletion. Resource
+history snapshots dereference stored `int` values through `dms.Descriptor.DescriptorId`.
+When debugging a stamp or a
 tracked-change row, these are the sources of truth:
 
-- [`RelationalModelDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs) (per-resource root tables) and [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) (descriptors) — the stamping-trigger bodies that write the `ContentVersion` / `ContentLastModifiedAt` stamps
+- [`RelationalModelDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/RelationalModelDdlEmitter.cs) (per-resource root tables) and [`CoreDdlEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/CoreDdlEmitter.cs) (descriptors) — the stamping-trigger bodies that write the `ContentVersion` / `ContentLastModifiedAt` stamps and initialize `ContentCreatedAt` on insert
 - [`TrackedChangeTriggerBodyEmitter.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.Ddl/TrackedChangeTriggerBodyEmitter.cs) — the trigger bodies that write the tracked-change rows (they read the already-stamped `ContentVersion`)
 - [`DeriveTrackedChangeInventoryPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveTrackedChangeInventoryPass.cs) — how the tracked-change table inventory and columns are derived
 
@@ -324,7 +652,8 @@ document `Id`, and the `ChangeVersion` for a given write. Only the separator aft
 
 #### Read metadata (`_etag`, `_lastModifiedDate`)
 
-On read, `_lastModifiedDate` is served from the stored `ContentLastModifiedAt` and `_etag` is
+On read, `_lastModifiedDate` uses the authoritative root/descriptor `ContentLastModifiedAt`,
+formatted as UTC `yyyy-MM-ddTHH:mm:ssZ` (fractional seconds discarded without rounding). `_etag` is
 composed from `ContentVersion` plus the active representation `variantKey`; the materialized
 content is not hashed to build `_etag`. When a served `_etag` or `_lastModifiedDate` looks wrong,
 start here:
@@ -332,28 +661,39 @@ start here:
 - [`RelationalReadMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalReadMaterializer.cs) — composes `_etag` and serves `_lastModifiedDate` for resources
 - [`DescriptorDocumentMaterializer.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/DescriptorDocumentMaterializer.cs) — the same for descriptors
 
+Ordinary GET-by-id/page metadata SELECTs join the compiled root by `DocumentId` inside the
+existing hydration batch. Descriptor metadata reads join its owning `DocumentId`; compact
+`DescriptorId` remains the stored-reference key. PUT and descriptor delete-target UUID lookups
+remain document-only when they need identity/version, preserving wrong-resource behavior without
+a new timestamp-only query. Standalone hydration appends a document-only version fence and
+retries the whole acquisition on drift/disappearance, up to three attempts. Cache source reads
+and final rereads likewise use owner timestamps and reject incoherent candidates or stable
+missing owners. See the [read/cache contracts](../reference/design/backend-redesign/design-docs/transactions-and-concurrency.md#authoritative-response-metadata).
+
+Representation restamping allocates document versions, updates the mapped root/descriptor by
+`DocumentId` and captures its persisted timestamp in the same transaction. Missing owners roll
+back the page and any enqueued work. Body, identity and tracked history remain unchanged; the
+existing document-version trigger drives projection work when the lifecycle enables it.
+
 #### Change-version filtering (`minChangeVersion` / `maxChangeVersion`)
 
-Root and descriptor tables carry **mirrored** `ContentVersion` / `ContentLastModifiedAt` columns
-(`ColumnKind.MirroredContentVersion`) that the query change-version filter ranges over. This
-query-time filter **is wired up and works** — unlike the `/deletes` and `/keyChanges` change-query
-endpoints, which are still a placeholder shim (see the note below).
+Root and descriptor tables carry a **mirrored** `ContentVersion`, an **authoritative**
+`ContentLastModifiedAt` and a creation-time `ContentCreatedAt` (`ColumnKind.MirroredContentVersion` /
+`ColumnKind.AuthoritativeContentLastModifiedAt` / `ColumnKind.AuthoritativeContentCreatedAt`).
+The query-time change-version filter ranges over `ContentVersion`. Descriptor live windows use
+`IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId`; history windows use
+`IX_Descriptor_ResourceKeyId_ChangeVersion` on the shared history table.
 
-- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the mirrored `ContentVersion` / `ContentLastModifiedAt` columns on root resource tables (descriptor mirror columns live on the shared `dms.Descriptor` table from the core DDL pass)
+- [`DeriveContentVersionMirrorPass.cs`](../src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel/SetPasses/DeriveContentVersionMirrorPass.cs) — derives the version mirror, authoritative timestamp and creation time on root resource tables (the core DDL pass owns those columns on `dms.Descriptor`)
 - [`RelationalQueryPageKeysetPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalQueryPageKeysetPlanner.cs) — the change-version range predicate (`ChangeVersionFilterConstants`, `AppendChangeVersionPredicates`)
 
-> [!NOTE]
-> **Change-query read endpoints are not wired up yet.** The tracked-change tables and triggers
-> are real and populated, but the runtime read side is a placeholder. `IChangeQueryRepository`'s
-> relational implementation
-> ([`RelationalChangeQueryRepository.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/RelationalChangeQueryRepository.cs))
-> only returns the newest change version through dialect-specific SQL. PostgreSQL calls
-> `SELECT "dms"."GetMaxChangeVersion"() AS "NewestChangeVersion"` and SQL Server calls
-> `SELECT [dms].[GetMaxChangeVersion]() AS [NewestChangeVersion]`. The
-> `/deletes` and `/keyChanges` endpoints are a temporary empty-response shim
-> ([`TrackedChangesEndpointModule.cs`](../src/dms/frontend/EdFi.DataManagementService.Frontend.AspNetCore/Modules/TrackedChangesEndpointModule.cs))
-> that returns `[]` (with a `Total-Count: 0` header only when `totalCount=true` is requested). Do not
-> expect `/deletes` or `/keyChanges` to read the tracked-change tables yet.
+The relational `/deletes` and `/keyChanges` paths use
+[`TrackedChangeQueryPlanner.cs`](../src/dms/backend/EdFi.DataManagementService.Backend/ChangeQueries/TrackedChangeQueryPlanner.cs)
+and retained old identity/securable values. Descriptor routes bind the compile-time qualified
+`ResourceKeyId`. Descriptor recreation checks and custom-view descriptor seeks compare the lowered
+whole URI plus `ResourceKeyId`, the same descriptor identity the write path uses; namespace
+authorization is unchanged. See [change-queries.md](../reference/design/backend-redesign/design-docs/change-queries.md)
+for the endpoint contract.
 
 `newestChangeVersion` is the current value reported by the provider's change-version sequence, not
 `MAX(ContentVersion)` over `dms.Document`. After identity stamp columns were removed from
@@ -439,8 +779,10 @@ E2E runs against the Docker stack. The full setup is documented in
 A typical shard run from the repo root:
 
 ```powershell
-./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e -TestFilter "Category=@e2e-ci-shard-3"
+./build-dms.ps1 E2ETest -EnvironmentFile ./.env.e2e -TestFilter "(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)"
 ```
+
+The `@MssqlOnly` exclusion keeps SQL Server-only scenario variants out of a PostgreSQL run.
 
 The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-compose/.env.e2e);
 `build-dms.ps1` resolves the `./.env.e2e` argument to that location automatically.
@@ -452,8 +794,9 @@ The environment file lives at [`eng/docker-compose/.env.e2e`](../eng/docker-comp
 
 ## 7. E2E setup/teardown and the "no hot reload" rule
 
-The effective schema is **fixed at provisioning time**. There is no in-place schema migration
-and **no hot reload**: changing any `ApiSchema.json` input changes the effective schema hash, and
+The loaded effective schema has **no hot reload**. Ordinary provisioning does not
+perform in-place migrations; the bounded administrative exception below records
+an independently validated physical migration. Changing any `ApiSchema.json` input changes the effective schema hash, and
 a DMS instance running against a database provisioned for the old hash will fail the first-use
 fingerprint check and return **HTTP 503** (see [§3](#3-schema-fingerprint-validation--how-dms-validates-schema-on-first-use)).
 
@@ -467,8 +810,80 @@ So, after **any** schema change, the developer loop is:
 This is exactly what the test infrastructure does: integration fixtures create a fresh database
 from the generated DDL per run and drop it on teardown, and the E2E setup tears down stale state
 (including removing a stale `.bootstrap` workspace) before starting. Because each run provisions
-cleanly, tests never rely on updating an already-provisioned database in place.
+cleanly, ordinary fixtures do not update an already-provisioned database in place.
+The dedicated schema re-stamp migration fixture exercises the explicit exception.
 
 > [!WARNING]
 > If you change a schema and only restart the service (without reprovisioning), or only
 > reprovision (without restarting), you will still see 503s. Both steps are required.
+
+### Re-stamping after a validated physical migration
+
+Fresh provisioning remains the normal development, test, and deployment path.
+For a separately designed and validated data-preserving physical migration,
+`api-schema-tools ddl re-stamp` provides a bounded administrative exception for
+updating the database's fingerprint metadata. The command validates the current
+singleton, resource-key seeds, and schema components, then atomically changes
+only the effective hash and its component associations. It preserves
+`AppliedAt`, resource keys, and the other singleton values. A valid target
+fingerprint is a read-only success; missing or corrupt metadata is an error.
+
+The operator owns the migration recipe, backup/recovery boundary, physical DDL,
+and post-migration validation. Stop DMS, workers, and other metadata writers;
+apply and validate the physical change; run the command with the target core and
+extension schemas and `--migration-completed`; run ordinary `ddl provision`
+separately; complete any required representation correction described below;
+then restart services and verify runtime admission and affected API
+operations. Provisioning's ordinary hash mismatch guard remains in force. A
+successful provision pass does not verify every existing physical object and
+can miss an omitted migration, such as a missing column on an existing table.
+Independently validate physical shape before re-stamping and verify affected
+API operations before reopening traffic. A failed provision pass does not undo
+the committed re-stamp: keep services stopped and follow the migration's
+recovery procedure. A successful metadata update does not certify physical
+shape, promise automatic rollback, or certify CDC continuity. If commit transport fails, treat the result
+as uncertain, inspect the database, and retry with identical inputs while
+services remain stopped. A valid target stamp is a no-op on retry.
+
+The re-stamp role requires `SELECT` on all three metadata tables, `UPDATE` on
+`dms.EffectiveSchema`, and `DELETE`/`INSERT` on `dms.SchemaComponent`, plus
+database/schema access. On PostgreSQL, all three tables are locked in
+`SHARE ROW EXCLUSIVE` mode; ownership or `MAINTAIN`, `UPDATE`, `DELETE`, or
+`TRUNCATE` privilege is required on each table, even `dms.ResourceKey` and even
+for an unconfirmed or matching invocation. Prefer `MAINTAIN` on `ResourceKey`
+where available to avoid granting data mutation. Retain the locks to exclude
+concurrent metadata writers. Physical migration and provisioning require their
+own privileges; see the linked command reference for details.
+
+The command preserves stored `dms.DocumentCache` entries and document versions.
+If the migration changes API document representations, plan and complete the
+supported offline [DocumentCacheAdmin representation-restamp procedure](../src/dms/clis/EdFi.DataManagementService.DocumentCacheAdmin/README.md#representation-restamp)
+before reopening traffic and validate affected reads afterward. A process
+restart does not invalidate stored cache entries, and a cache rebuild alone
+does not carry out the document-version/publication changes required by a
+representation correction. Cache lifecycle and CDC compatibility remain separate
+migration responsibilities.
+
+This exception does not change the fresh-database developer loop above, hot
+reload behavior, the release cadence for `RelationalMappingVersion`, or the
+reprovisioning requirements for changes that are not compatible fingerprint
+transitions. See the [schema tools command reference](../src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md#ddl-re-stamp--record-a-validated-physical-schema-migration).
+
+For compatible metadata transitions, this command replaces the manual
+EffectiveSchema/SchemaComponent re-key in [PR #1121's historical migration procedure](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/pull/1121).
+Use `api-schema-tools` from the same release/build as the target DMS, together
+with that deployment's exact core and extension schema inputs. The computed
+hash depends on the tool's compiled relational mapping version as well as the
+schema files. Both changed and matching invocations print the target effective
+schema hash; compare it with the expected hash in the target DMS preflight
+error before restarting. If they differ, keep services stopped and correct the
+tool build or inputs. An older tool can report a successful no-op against an
+old stamp while the target DMS still rejects it.
+
+The ApiSchema format, resource-key seed fingerprint, ResourceKey ID/name/version
+mappings, and component endpoint/name/version/extension flags must remain identical.
+Keep any independently applicable physical migration DDL and validate it before
+re-stamping. The historical procedure's mapping-version references and physical
+DDL do not constitute a complete upgrade to today's schema; current release
+policy retains `RelationalMappingVersion = "v3"` for 8.1. A same-hash no-op cannot
+repair a stale physical database or template.

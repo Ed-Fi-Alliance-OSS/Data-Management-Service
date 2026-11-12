@@ -1,0 +1,32 @@
+[
+  {
+    "claimSetName": "zoo",
+    "claims": [
+      { "name": "urn:z-empty", "authorizationId": 40 },
+      { "name": "urn:a-forward", "authorizationId": 2 },
+      { "name": "urn:Z-reverse", "authorizationId": 5 },
+      { "name": "urn:duplicate", "authorizationId": 8 },
+      { "name": "urn:no-strategies", "authorizationId": 6 },
+      { "name": "urn:actions", "authorizationId": 7 }
+    ],
+    "authorizations": [
+      { "id": 5, "actions": [{ "name": "Read", "authorizationStrategies": [{ "name": "Second" }, { "name": "First" }] }] },
+      { "id": 40, "actions": [] },
+      { "id": 8, "actions": [{ "name": "Read", "authorizationStrategies": [{ "name": "Second" }, { "name": "First" }] }] },
+      { "id": 7, "actions": [
+        { "name": "update", "authorizationStrategies": [] },
+        { "name": "apple", "authorizationStrategies": [] },
+        { "name": "Zed", "authorizationStrategies": [] },
+        { "name": "Create", "authorizationStrategies": [{ "name": "z" }, { "name": "A" }, { "name": "z" }] }
+      ] },
+      { "id": 6, "actions": [{ "name": "Read", "authorizationStrategies": [] }] },
+      { "id": 2, "actions": [{ "name": "Read", "authorizationStrategies": [{ "name": "First" }, { "name": "Second" }] }] }
+    ]
+  },
+  { "claimSetName": "Empty", "claims": [], "authorizations": [] },
+  {
+    "claimSetName": "Zulu",
+    "claims": [{ "name": "urn:Zulu", "authorizationId": 5 }],
+    "authorizations": [{ "id": 5, "actions": [{ "name": "Read", "authorizationStrategies": [{ "name": "Zulu" }] }] }]
+  }
+]

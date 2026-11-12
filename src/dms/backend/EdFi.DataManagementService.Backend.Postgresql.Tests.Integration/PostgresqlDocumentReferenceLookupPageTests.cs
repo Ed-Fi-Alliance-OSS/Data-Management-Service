@@ -320,7 +320,8 @@ public class Given_A_Postgresql_Empty_Page_With_Document_References
 public class Given_A_Postgresql_Descriptor_Only_Resource_Page
 {
     private const string TestSchema = "refpagedesc";
-    private const long GradeLevelDescriptorId = 810;
+    private const int GradeLevelDescriptorId = 810;
+    private const long GradeLevelDescriptorDocumentId = 5000000810;
     private const string GradeLevelUri = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade";
 
     private NpgsqlDataSource _dataSource = null!;
@@ -345,26 +346,28 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
                 "DocumentId" bigint PRIMARY KEY,
                 "DocumentUuid" uuid NOT NULL,
                 "ResourceKeyId" smallint NOT NULL DEFAULT 0,
-                "ContentVersion" bigint NOT NULL DEFAULT 1,
-                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
-                "CreatedAt" timestamptz NOT NULL DEFAULT now()
+                "ContentVersion" bigint NOT NULL DEFAULT 1
             );
 
             CREATE TABLE IF NOT EXISTS dms."Descriptor" (
-                "DocumentId" bigint PRIMARY KEY,
+                "DescriptorId" int GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                "DocumentId" bigint NOT NULL UNIQUE REFERENCES dms."Document" ("DocumentId"),
+                "ResourceKeyId" smallint NOT NULL,
                 "Namespace" varchar(255) NOT NULL DEFAULT '',
                 "CodeValue" varchar(50) NOT NULL DEFAULT '',
                 "ShortDescription" varchar(75) NOT NULL DEFAULT '',
                 "Description" varchar(1024) NULL,
                 "EffectiveBeginDate" date NULL,
                 "EffectiveEndDate" date NULL,
-                "Discriminator" varchar(128) NOT NULL DEFAULT '',
-                "Uri" varchar(306) NOT NULL
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now()
             );
 
             CREATE TABLE {TestSchema}."DescriptorOnly" (
                 "DocumentId" bigint PRIMARY KEY,
-                "GradeLevelDescriptor_DescriptorId" bigint NULL
+                "ContentVersion" bigint NOT NULL DEFAULT 1,
+                "ContentLastModifiedAt" timestamptz NOT NULL DEFAULT now(),
+                "GradeLevelDescriptor_DescriptorId" int NULL
             );
             """
         );
@@ -378,8 +381,12 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
                 (901, '00000000-0000-0000-0000-000000000901', 30),
                 (902, '00000000-0000-0000-0000-000000000902', 30);
 
-            INSERT INTO dms."Descriptor" ("DocumentId", "Uri")
-            VALUES ({GradeLevelDescriptorId}, '{GradeLevelUri}');
+            INSERT INTO dms."Document" ("DocumentId", "DocumentUuid", "ResourceKeyId")
+            VALUES ({GradeLevelDescriptorDocumentId}, '00000000-0000-0000-0000-005000000810', 31);
+
+            INSERT INTO dms."Descriptor" ("DescriptorId", "DocumentId", "ResourceKeyId", "Namespace", "CodeValue")
+            OVERRIDING SYSTEM VALUE
+            VALUES ({GradeLevelDescriptorId}, {GradeLevelDescriptorDocumentId}, 31, 'uri://ed-fi.org/GradeLevelDescriptor', 'Tenth grade');
 
             INSERT INTO {TestSchema}."DescriptorOnly" ("DocumentId", "GradeLevelDescriptor_DescriptorId")
             VALUES (901, {GradeLevelDescriptorId}), (902, NULL);
@@ -430,7 +437,8 @@ public class Given_A_Postgresql_Descriptor_Only_Resource_Page
     private static string CleanupRowsSql =>
         $"""
             DELETE FROM dms."Document" WHERE "DocumentId" IN (901, 902);
-            DELETE FROM dms."Descriptor" WHERE "DocumentId" = {GradeLevelDescriptorId};
+            DELETE FROM dms."Descriptor" WHERE "DocumentId" = {GradeLevelDescriptorDocumentId};
+            DELETE FROM dms."Document" WHERE "DocumentId" = {GradeLevelDescriptorDocumentId};
             """;
 
     [Test]

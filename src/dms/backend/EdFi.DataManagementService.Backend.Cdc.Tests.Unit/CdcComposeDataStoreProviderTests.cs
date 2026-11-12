@@ -105,7 +105,7 @@ public class Given_CdcComposeDataStoreProvider(string provider)
         Action act = () => _subject.GetById(42);
         act.Should()
             .Throw<InvalidOperationException>()
-            .WithMessage("CDC CMS target is outside the selected Compose endpoint.");
+            .WithMessage("CDC Configuration Service target is outside the selected Compose endpoint.");
     }
 
     [Test]

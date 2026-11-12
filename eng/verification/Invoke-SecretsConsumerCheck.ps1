@@ -38,7 +38,7 @@
        SECRETS_VERIFICATION_FEED and everything else to nuget.org. Assert-DocumentEmbeds.ps1 holds
        the guide's blocks to that project's sources, so the examples an implementer copies are ones
        that compile. They are compiled only; nothing here runs them against a vault.
-    6. With -PublishedServiceIndexUrl, runs Invoke-PublishedSecretsConsumerCheck.ps1, which compiles
+    6. With -PublishedServiceIndexUrl, runs Invoke-PublishedContractConsumerCheck.ps1, which compiles
        the scratch consumer against the package published on that feed once the declared version
        exists there, and says plainly when it does not yet.
 
@@ -248,7 +248,7 @@ finally {
 $publishedStatus = "The published package was not checked: no -PublishedServiceIndexUrl was given."
 if ($PublishedServiceIndexUrl) {
     # 6. Against the package published on the feed, if the declared version is there yet.
-    $publishedStatus = & (Join-Path $PSScriptRoot "Invoke-PublishedSecretsConsumerCheck.ps1") `
+    $publishedStatus = & (Join-Path $PSScriptRoot "Invoke-PublishedContractConsumerCheck.ps1") `
         -PackageFile $packageFile `
         -PackageVersion $packageVersion `
         -ServiceIndexUrl $PublishedServiceIndexUrl `

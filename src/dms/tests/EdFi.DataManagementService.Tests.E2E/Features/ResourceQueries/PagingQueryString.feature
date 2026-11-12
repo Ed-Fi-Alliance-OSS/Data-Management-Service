@@ -193,3 +193,50 @@ Feature: Paging Support for GET requests for Ed-Fi Resources
                   | value |
                   | abc   |
                   | 1     |
+
+        @e2e-ci-shard-4
+        Scenario Outline: 15 Ensure a pageSize sent beside limit without a pageToken is ignored
+            # Clients written against the ODS/API may send limit and pageSize together. As in the
+            # ODS/API, the request pages by limit and pageSize has no effect, whatever its value.
+             When a GET request is made to "/ed-fi/schools?offset=3&limit=2&totalCount=false&pageSize=<pageSize>"
+             Then it should respond with 200
+              And the response body is
+                  """
+                    [
+                        {
+                            "id": "{id}",
+                            "schoolId": 4,
+                            "nameOfInstitution": "School 4",
+                            "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                            }
+                            ],
+                            "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                            }
+                            ]
+                        },
+                        {
+                            "id": "{id}",
+                            "schoolId": 5,
+                            "nameOfInstitution": "School 5",
+                            "educationOrganizationCategories": [
+                            {
+                                "educationOrganizationCategoryDescriptor": "uri://tpdm.ed-fi.org/EducationOrganizationCategoryDescriptor#Educator Preparation Provider"
+                            }
+                            ],
+                            "gradeLevels": [
+                            {
+                                "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Postsecondary"
+                            }
+                            ]
+                        }
+                    ]
+                  """
+        Examples:
+                  | pageSize |
+                  | 1        |
+                  | 500      |
+                  | 99999    |

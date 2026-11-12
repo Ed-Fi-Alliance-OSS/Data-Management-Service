@@ -9,39 +9,115 @@ set +x
 
 datastore=$(printf '%s' "${AppSettings__Datastore:-postgresql}" | tr '[:upper:]' '[:lower:]')
 
+# Prints the value of one setting in a connection string, following the .NET connection string
+# rules: a single- or double-quoted value may contain semicolons, a doubled quote inside it is a
+# literal quote, spaces around keys and unquoted values are ignored, and the last occurrence of a
+# key wins. Keys match in any case, so Host= and host= are the same key. A whole value wrapped
+# in one pair of quotes, as docker run --env-file passes it, is unwrapped first.
+connection_string_value() {
+    printf '%s' "$1" | awk -v want="$2" -v sq="'" '
+        { s = s (NR > 1 ? "\n" : "") $0 }
+        END {
+            n = length(s)
+            first = substr(s, 1, 1)
+            if (n >= 2 && (first == "\"" || first == sq) && substr(s, n, 1) == first) {
+                s = substr(s, 2, n - 2)
+                n -= 2
+            }
+            i = 1
+            while (i <= n) {
+                key = ""
+                while (i <= n && substr(s, i, 1) != "=" && substr(s, i, 1) != ";") {
+                    key = key substr(s, i, 1)
+                    i++
+                }
+                if (i > n || substr(s, i, 1) == ";") {
+                    i++
+                    continue
+                }
+                i++
+                while (i <= n && (substr(s, i, 1) == " " || substr(s, i, 1) == "\t")) {
+                    i++
+                }
+                value = ""
+                quote = substr(s, i, 1)
+                if (quote == "\"" || quote == sq) {
+                    i++
+                    while (i <= n) {
+                        c = substr(s, i, 1)
+                        if (c == quote && substr(s, i + 1, 1) == quote) {
+                            value = value quote
+                            i += 2
+                        } else if (c == quote) {
+                            i++
+                            break
+                        } else {
+                            value = value c
+                            i++
+                        }
+                    }
+                    while (i <= n && substr(s, i, 1) != ";") {
+                        i++
+                    }
+                } else {
+                    while (i <= n && substr(s, i, 1) != ";") {
+                        value = value substr(s, i, 1)
+                        i++
+                    }
+                    sub(/[ \t]+$/, "", value)
+                }
+                i++
+                sub(/^[ \t]+/, "", key)
+                sub(/[ \t]+$/, "", key)
+                if (tolower(key) == want) {
+                    result = value
+                    found = 1
+                }
+            }
+            if (found) {
+                print result
+            }
+        }'
+}
+
 if [ "$datastore" = "postgresql" ]; then
     # Safely extract a few environment variables from the admin connection string
-    host=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "host([^;]+)" | awk -F= '{print $2}')
-    port=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "port([^;]+)" | awk -F= '{print $2}')
-    username=$(echo "${DATABASE_CONNECTION_STRING_ADMIN:-}" | grep -Eo "username([^;]+)" | awk -F= '{print $2}')
+    host=$(connection_string_value "${DATABASE_CONNECTION_STRING_ADMIN:-}" host)
+    port=$(connection_string_value "${DATABASE_CONNECTION_STRING_ADMIN:-}" port)
+    username=$(connection_string_value "${DATABASE_CONNECTION_STRING_ADMIN:-}" username)
 
-    until pg_isready -h "${host}" -p "${port}" -U "${username}"; do
-        echo "Waiting for PostgreSQL to start..."
-        sleep 2
-    done
+    if [ -z "${host}" ]; then
+        # Let .NET surface a real connection error rather than blocking startup forever.
+        echo "No host= setting found in DATABASE_CONNECTION_STRING_ADMIN; skipping the PostgreSQL readiness wait."
+    else
+        until pg_isready -h "${host}" -p "${port}" -U "${username}"; do
+            echo "Waiting for PostgreSQL to start..."
+            sleep 2
+        done
 
-    echo "PostgreSQL is ready."
+        echo "PostgreSQL is ready."
+    fi
 else
     echo "Skipping PostgreSQL readiness check for datastore '${datastore}'."
 fi
 
-if [ "$AppSettings__UseApiSchemaPath" = true ]; then
+if [ "$AppSettings__ApiSchema__UseCustomPath" = true ]; then
     echo "Using Api Schema Path."
 
     schema_packages="${SCHEMA_PACKAGES:-[]}"
     package_count=$(echo "$schema_packages" | jq 'length')
 
     if [ "$package_count" -gt 0 ]; then
-        if [ -z "${AppSettings__ApiSchemaPath:-}" ]; then
-            echo "AppSettings__ApiSchemaPath is required when SCHEMA_PACKAGES contains package entries."
+        if [ -z "${AppSettings__ApiSchema__Path:-}" ]; then
+            echo "AppSettings__ApiSchema__Path is required when SCHEMA_PACKAGES contains package entries."
             exit 1
         fi
 
-        generated_packages_dir="${AppSettings__ApiSchemaPath}/Packages"
-        downloaded_packages_dir="${AppSettings__ApiSchemaPath}/DownloadedPackages"
-        echo "Clearing generated ApiSchema package extraction output under ${AppSettings__ApiSchemaPath}."
+        generated_packages_dir="${AppSettings__ApiSchema__Path}/Packages"
+        downloaded_packages_dir="${AppSettings__ApiSchema__Path}/DownloadedPackages"
+        echo "Clearing generated ApiSchema package extraction output under ${AppSettings__ApiSchema__Path}."
         rm -rf -- "$generated_packages_dir" "$downloaded_packages_dir"
-        mkdir -p "${AppSettings__ApiSchemaPath}"
+        mkdir -p "${AppSettings__ApiSchema__Path}"
 
         echo "$schema_packages" | jq -c '.[]' | while read -r item
         do
@@ -50,17 +126,17 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
             name=$(echo "$item" | jq -r '.name')
 
             echo "Downloading Package $name..."
-            dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchemaPath}" -v "$version" -f "$feedUrl"
+            dotnet /app/ApiSchemaDownloader/EdFi.DataManagementService.ApiSchemaDownloader.dll -p "$name" -d "${AppSettings__ApiSchema__Path}" -v "$version" -f "$feedUrl"
         done
 
-        manifest_path="${AppSettings__ApiSchemaPath}/bootstrap-api-schema-manifest.json"
+        manifest_path="${AppSettings__ApiSchema__Path}/bootstrap-api-schema-manifest.json"
         manifest_temp_path=$(mktemp)
         projects_temp_path=$(mktemp)
         : > "$projects_temp_path"
 
         echo "$schema_packages" | jq -r '.[].name' | while read -r name
         do
-            package_manifest_path="${AppSettings__ApiSchemaPath}/Packages/${name}/package-manifest.json"
+            package_manifest_path="${AppSettings__ApiSchema__Path}/Packages/${name}/package-manifest.json"
             if [ ! -f "$package_manifest_path" ]; then
                 echo "ApiSchema package manifest not found: $package_manifest_path"
                 exit 1
@@ -84,7 +160,7 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
                     exit 1
                 fi
 
-                package_xsd_directory="${AppSettings__ApiSchemaPath}/Packages/${name}/${xsd_directory}"
+                package_xsd_directory="${AppSettings__ApiSchema__Path}/Packages/${name}/${xsd_directory}"
                 if [ ! -d "$package_xsd_directory" ]; then
                     echo "ApiSchema package manifest declares xsdDirectory '$xsd_directory', but the directory was not found: $package_xsd_directory"
                     exit 1
@@ -108,7 +184,7 @@ if [ "$AppSettings__UseApiSchemaPath" = true ]; then
         done
 
         jq -n --slurpfile projects "$projects_temp_path" '{ version: 1, projects: $projects }' > "$manifest_temp_path"
-        mkdir -p "${AppSettings__ApiSchemaPath}"
+        mkdir -p "${AppSettings__ApiSchema__Path}"
         mv "$manifest_temp_path" "$manifest_path"
         rm -f "$projects_temp_path"
     fi

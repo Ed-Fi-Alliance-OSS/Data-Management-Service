@@ -1,0 +1,16 @@
+[
+  {
+    "claimSetName": "DriftEditable",
+    "claims": [
+      { "name": "http://ed-fi.org/identity/claims/ed-fi/student", "authorizationId": 1 }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          { "name": "Read", "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }] }
+        ]
+      }
+    ]
+  }
+]

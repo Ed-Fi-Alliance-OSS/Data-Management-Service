@@ -1006,16 +1006,16 @@ public class IdentityOpenApiDocumentTests
         }
 
         [Test]
-        public void It_the_createFieldError_example_has_a_firstName_validation_error()
+        public void It_the_createFieldError_example_has_a_FirstName_validation_error()
         {
-            _examples["createFieldError"]!["value"]!["validationErrors"]!["$.firstName"].Should().NotBeNull();
+            _examples["createFieldError"]!["value"]!["validationErrors"]!["$.FirstName"].Should().NotBeNull();
         }
 
         [Test]
-        public void It_the_searchItemError_example_has_an_indexed_firstName_validation_error()
+        public void It_the_searchItemError_example_has_an_indexed_FirstName_validation_error()
         {
             _examples["searchItemError"]!["value"]!["validationErrors"]!
-                ["$[2].firstName"]
+                ["$[2].FirstName"]
                 .Should()
                 .NotBeNull();
         }
@@ -1028,10 +1028,10 @@ public class IdentityOpenApiDocumentTests
         }
 
         [Test]
-        public void It_the_twoMessagesOneKey_example_has_two_messages_for_firstName()
+        public void It_the_twoMessagesOneKey_example_has_two_messages_for_FirstName()
         {
             JsonArray twoMessages = _examples["twoMessagesOneKey"]!["value"]!["validationErrors"]![
-                "$.firstName"
+                "$.FirstName"
             ]!.AsArray();
             twoMessages.Should().HaveCount(2);
         }

@@ -30,7 +30,7 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
 [TestFixture]
-public class ApplicationModuleTests
+public partial class ApplicationModuleTests
 {
     private readonly IApplicationRepository _applicationRepository = A.Fake<IApplicationRepository>();
     private readonly IApiClientRepository _apiClientRepository = A.Fake<IApiClientRepository>();
@@ -41,6 +41,16 @@ public class ApplicationModuleTests
     private readonly IProfileRepository _profileRepository = A.Fake<IProfileRepository>();
     private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
 
+    /// <summary>A saved Application with no client awaiting an identity provider update.</summary>
+    private static readonly ApplicationSyncState EmptySyncState = new(
+        "Test Application",
+        1,
+        "Test",
+        [],
+        [],
+        []
+    );
+
     public ApplicationModuleTests()
     {
         A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
@@ -50,32 +60,17 @@ public class ApplicationModuleTests
                 )
             );
 
-        A.CallTo(() => _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored))
-            .Returns(
-                new ApplicationUpdateStateResult.Success(
-                    new ApplicationUpdateState(
-                        "Original Application",
-                        7,
-                        "OriginalClaim",
-                        [9],
-                        [],
-                        "clientId",
-                        Guid.NewGuid(),
-                        true,
-                        [1]
-                    )
-                )
-            );
-
+        A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+            .Returns(new ApplicationSaveResult.Success(EmptySyncState));
+        A.CallTo(() => _applicationRepository.GetApplicationSyncState(A<int>.Ignored))
+            .Returns(new ApplicationSyncStateResult.Success(EmptySyncState));
         A.CallTo(() =>
-                _applicationRepository.SyncApplicationApiClientUuid(
+                _apiClientRepository.ClearApiClientIdentityProviderSyncPending(
                     A<int>.Ignored,
-                    A<string>.Ignored,
-                    A<Guid>.Ignored,
-                    A<Guid>.Ignored
+                    A<string>.Ignored
                 )
             )
-            .Returns(new ApiClientUuidSyncResult.Success());
+            .Returns(new ApiClientSyncPendingResult.Success());
 
         A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
             .Returns(new ApiClientUuidReferenceResult.None());
@@ -117,10 +112,6 @@ public class ApplicationModuleTests
             {
                 // Use the new test authentication extension that mimics production setup
                 collection.AddTestAuthentication();
-                collection.Configure<AppSettings>(options =>
-                {
-                    options.EnableApplicationResetEndpoint = true;
-                });
                 if (clientSecretMinimumLength is not null)
                 {
                     collection.Configure<ClientSecretValidationOptions>(options =>
@@ -218,13 +209,8 @@ public class ApplicationModuleTests
                     )
                 );
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.Success());
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.Success(EmptySyncState));
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult.Success());
@@ -439,13 +425,13 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "ApplicationName": [
-                      "The length of 'Application Name' must be 256 characters or fewer. You entered 266 characters."
+                      "The length of 'Application Name' must be 50 characters or fewer. You entered 266 characters."
                     ],
                     "ClaimSetName": [
                       "'Claim Set Name' must not be empty."
@@ -470,13 +456,13 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "ClaimSetName": [
-                      "Claim set name must not contain white spaces."
+                      "Claim set name must not contain white spaces or commas."
                     ]
                   },
                   "errors": []
@@ -523,7 +509,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -539,6 +525,109 @@ public class ApplicationModuleTests
             addResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
         }
+    }
+
+    [TestFixture("Alpha,Beta")]
+    [TestFixture(",Alpha")]
+    [TestFixture("Alpha,")]
+    [TestFixture(",")]
+    public class Given_application_requests_with_a_comma_in_the_claim_set_name(string claimSetName)
+        : ApplicationModuleTests
+    {
+        private HttpResponseMessage _insertResponse = null!;
+        private HttpResponseMessage _updateResponse = null!;
+        private List<string> _dependencyCalls = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _dependencyCalls = [];
+            A.CallTo(_lockManager).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_clientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_vendorRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_dataStoreRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+            A.CallTo(_profileRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
+
+            using var client = SetUpClient();
+            _insertResponse = await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    $$"""
+                    {
+                        "ApplicationName": "Application101",
+                        "ClaimSetName": "{{claimSetName}}",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [255901],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+            _updateResponse = await client.PutAsync(
+                "/v3/applications/1",
+                new StringContent(
+                    $$"""
+                    {
+                        "Id": 1,
+                        "ApplicationName": "Application101",
+                        "ClaimSetName": "{{claimSetName}}",
+                        "VendorId": 1,
+                        "EducationOrganizationIds": [255901],
+                        "DataStoreIds": [1]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponses()
+        {
+            _insertResponse?.Dispose();
+            _updateResponse?.Dispose();
+        }
+
+        private static async Task AssertSharedValidationContract(HttpResponseMessage response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode actual = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            JsonNode expected = JsonNode.Parse(
+                $$"""
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{{actual["correlationId"]!.GetValue<string>()}}",
+                  "validationErrors": {
+                    "ClaimSetName": [
+                      "Claim set name must not contain white spaces or commas."
+                    ]
+                  },
+                  "errors": []
+                }
+                """
+            )!;
+            JsonNode.DeepEquals(actual, expected).Should().BeTrue();
+        }
+
+        [Test]
+        public async Task It_rejects_the_insert_with_the_shared_validation_error() =>
+            await AssertSharedValidationContract(_insertResponse);
+
+        [Test]
+        public async Task It_rejects_the_update_with_the_shared_validation_error() =>
+            await AssertSharedValidationContract(_updateResponse);
+
+        [Test]
+        public void It_calls_no_repository_lock_or_identity_provider_dependency() =>
+            _dependencyCalls.Should().BeEmpty();
     }
 
     /// <summary>
@@ -608,13 +697,8 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult.FailureNotFound());
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureNotExists());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureNotExists());
@@ -782,13 +866,8 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult.FailureUnknown(""));
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureUnknown(""));
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureUnknown(""));
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult.FailureUnknown(""));
@@ -885,13 +964,8 @@ public class ApplicationModuleTests
             A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
                 .Returns(new ApplicationGetResult());
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult());
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult());
 
             A.CallTo(() => _applicationRepository.DeleteApplication(A<int>.Ignored))
                 .Returns(new ApplicationDeleteResult());
@@ -996,13 +1070,8 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.FailureVendorNotFound());
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureVendorNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
@@ -1060,7 +1129,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1076,105 +1145,20 @@ public class ApplicationModuleTests
         [Test]
         public async Task Should_return_conflict_when_vendor_not_found_at_repository_on_update()
         {
-            // Arrange
-            var originalUuid = Guid.NewGuid();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(
-                    new ApplicationUpdateStateResult.Success(
-                        new ApplicationUpdateState(
-                            "Original Application",
-                            7,
-                            "OriginalClaim",
-                            [9],
-                            [],
-                            "clientId",
-                            originalUuid,
-                            true,
-                            [1]
-                        )
-                    )
-                );
-
-            var updatedUuid = Guid.NewGuid();
-            var rollbackUuid = Guid.NewGuid();
-            List<string> clientUpdateNames = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => clientUpdateNames.Add(call.GetArgument<string>(1)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(updatedUuid),
-                    new ClientUpdateResult.Success(rollbackUuid)
-                );
-
-            List<ApplicationUpdateCommand> updateCommands = [];
-            List<ApiClientCommand> apiClientCommands = [];
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(call =>
-                {
-                    updateCommands.Add(call.GetArgument<ApplicationUpdateCommand>(0)!);
-                    apiClientCommands.Add(call.GetArgument<ApiClientCommand>(1)!);
-                })
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call => syncCalls.Add((call.GetArgument<Guid>(2), call.GetArgument<Guid>(3))))
-                .Returns(new ApiClientUuidSyncResult.Success());
-
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureVendorNotFound());
             using var client = SetUpClient();
 
-            //Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "id": 1,
-                       "ApplicationName": "Application 101",
-                        "ClaimSetName": "Test",
-                        "VendorId":1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [1]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
+            var updateResponse = await client.PutAsync("/v3/applications/1", UpdateContent());
 
-            //Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            var actualResponse = JsonNode.Parse(responseBody);
+            var actualResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
             var expectedResponse = JsonNode.Parse(
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1184,62 +1168,7 @@ public class ApplicationModuleTests
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-
-            clientUpdateNames.Should().Equal("Application 101", "Original Application");
-            updateCommands.Should().HaveCount(1);
-            apiClientCommands[0].ClientUuid.Should().Be(updatedUuid);
-            syncCalls.Should().Equal((originalUuid, rollbackUuid));
-        }
-
-        [Test]
-        public async Task Should_not_update_identity_provider_when_update_vendor_id_is_invalid()
-        {
-            // Arrange
-            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
-                .Returns(new VendorGetResult.FailureNotFound());
-
-            using var client = SetUpClient();
-
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "id": 1,
-                        "applicationName": "Application 101",
-                        "claimSetName": "Test",
-                        "vendorId": 999,
-                        "educationOrganizationIds": [1],
-                        "dataStoreIds": [1]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
+            AssertNoProviderUpdate();
         }
 
         [Test]
@@ -1277,55 +1206,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
-                  "title": "Internal Server Error",
-                  "status": 500,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-        }
-
-        [Test]
-        public async Task It_returns_internal_server_error_when_vendor_lookup_fails_on_update()
-        {
-            const string Sentinel = "SENTINEL_VENDOR_LOOKUP_UPDATE_must_not_leak";
-            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
-                .Returns(new VendorGetResult.FailureUnknown(Sentinel));
-
-            using var client = SetUpClient();
-
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "id": 1,
-                       "ApplicationName": "Application 101",
-                        "ClaimSetName": "Test",
-                        "VendorId":1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [1]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
-            updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            responseBody.Should().NotContain(Sentinel);
-            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
-            JsonNode expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
+                  "type": "urn:ed-fi:management-api:internal-server-error",
                   "title": "Internal Server Error",
                   "status": 500,
                   "correlationId": "{correlationId}",
@@ -1380,13 +1261,8 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.FailureDuplicateApplication("Test Application"));
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureDuplicateApplication("Test Application"));
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureDuplicateApplication("Test Application"));
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
@@ -1439,7 +1315,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1458,135 +1334,19 @@ public class ApplicationModuleTests
         [Test]
         public async Task Should_return_bad_request_for_duplicate_application_name_on_update()
         {
-            // Arrange
-            var originalUuid = Guid.NewGuid();
-            var updatedUuid = Guid.NewGuid();
-            var rollbackUuid = Guid.NewGuid();
-            var originalState = new ApplicationUpdateState(
-                "Original Application",
-                7,
-                "OriginalClaim",
-                [9],
-                [],
-                "clientId",
-                originalUuid,
-                true,
-                [42]
-            );
-
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(new ApplicationUpdateStateResult.Success(originalState));
-
-            List<(
-                string ClientUuid,
-                string DisplayName,
-                string Scope,
-                string EducationOrganizationIds,
-                int[]? DataStoreIds
-            )> providerUpdates = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call =>
-                    providerUpdates.Add(
-                        (
-                            call.GetArgument<string>(0)!,
-                            call.GetArgument<string>(1)!,
-                            call.GetArgument<string>(2)!,
-                            call.GetArgument<string>(3)!,
-                            call.GetArgument<int[]?>(4)
-                        )
-                    )
-                )
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(updatedUuid),
-                    new ClientUpdateResult.Success(rollbackUuid)
-                );
-
-            List<(int ApplicationId, string ClientId, Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call =>
-                    syncCalls.Add(
-                        (
-                            call.GetArgument<int>(0),
-                            call.GetArgument<string>(1)!,
-                            call.GetArgument<Guid>(2),
-                            call.GetArgument<Guid>(3)
-                        )
-                    )
-                )
-                .Returns(new ApiClientUuidSyncResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureDuplicateApplication("Test Application"));
-
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureDuplicateApplication("Test Application"));
             using var client = SetUpClient();
 
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [1]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert - the compensation restored the recreated client to the exact original
-            // state and synchronized its UUID before the duplicate-name response was returned.
-            // Removing the compensation fails these capture assertions.
-            providerUpdates.Should().HaveCount(2);
-            providerUpdates[1].ClientUuid.Should().Be(updatedUuid.ToString());
-            providerUpdates[1].DisplayName.Should().Be("Original Application");
-            providerUpdates[1].Scope.Should().Be("OriginalClaim");
-            providerUpdates[1].EducationOrganizationIds.Should().Be("9");
-            providerUpdates[1].DataStoreIds.Should().Equal(42);
-
-            syncCalls.Should().HaveCount(1);
-            syncCalls[0].ApplicationId.Should().Be(1);
-            syncCalls[0].ClientId.Should().Be("clientId");
-            syncCalls[0].ExpectedUuid.Should().Be(originalUuid);
-            syncCalls[0].NewUuid.Should().Be(rollbackUuid);
+            var updateResponse = await client.PutAsync("/v3/applications/1", UpdateContent());
 
             updateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            var actualResponse = JsonNode.Parse(responseBody);
+            var actualResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
             var expectedResponse = JsonNode.Parse(
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1600,6 +1360,7 @@ public class ApplicationModuleTests
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            AssertNoProviderUpdate();
         }
     }
 
@@ -1671,32 +1432,6 @@ public class ApplicationModuleTests
                     )
                 )
                 .Returns(new ApplicationInsertResult.FailureDataStoreNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureDataStoreNotFound());
-
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
-                .Returns(
-                    new ApplicationApiClientsResult.Success([new ApiClient("clientId", Guid.NewGuid(), true)])
-                );
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
         }
 
         [Test]
@@ -1737,7 +1472,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data store does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1748,124 +1483,6 @@ public class ApplicationModuleTests
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
             deletedClientIds.Should().HaveCount(1);
-        }
-
-        [Test]
-        public async Task Should_return_conflict_when_data_store_not_found_at_repository_on_update()
-        {
-            // Arrange
-            var originalUuid = Guid.NewGuid();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(
-                    new ApplicationUpdateStateResult.Success(
-                        new ApplicationUpdateState(
-                            "Original Application",
-                            7,
-                            "OriginalClaim",
-                            [9],
-                            [],
-                            "clientId",
-                            originalUuid,
-                            true,
-                            [1]
-                        )
-                    )
-                );
-
-            var updatedUuid = Guid.NewGuid();
-            var rollbackUuid = Guid.NewGuid();
-            List<string> clientUpdateNames = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => clientUpdateNames.Add(call.GetArgument<string>(1)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(updatedUuid),
-                    new ClientUpdateResult.Success(rollbackUuid)
-                );
-
-            List<ApplicationUpdateCommand> updateCommands = [];
-            List<ApiClientCommand> apiClientCommands = [];
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(call =>
-                {
-                    updateCommands.Add(call.GetArgument<ApplicationUpdateCommand>(0)!);
-                    apiClientCommands.Add(call.GetArgument<ApiClientCommand>(1)!);
-                })
-                .Returns(new ApplicationUpdateResult.FailureDataStoreNotFound());
-
-            List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call => syncCalls.Add((call.GetArgument<Guid>(2), call.GetArgument<Guid>(3))))
-                .Returns(new ApiClientUuidSyncResult.Success());
-
-            using var client = SetUpClient();
-
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            var actualResponse = JsonNode.Parse(responseBody);
-            var expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "Data store does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
-                  "title": "Unresolved Reference",
-                  "status": 409,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
-            );
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-
-            clientUpdateNames.Should().Equal("Test Application", "Original Application");
-            updateCommands.Should().HaveCount(1);
-            apiClientCommands[0].ClientUuid.Should().Be(updatedUuid);
-            syncCalls.Should().Equal((originalUuid, rollbackUuid));
         }
 
         [Test]
@@ -1924,62 +1541,6 @@ public class ApplicationModuleTests
                 )
                 .MustNotHaveHappened();
         }
-
-        [Test]
-        public async Task Should_not_update_identity_provider_when_update_data_store_id_is_invalid()
-        {
-            // Arrange
-            A.CallTo(() =>
-                    _dataStoreRepository.GetExistingDataStoreIds(
-                        A<int[]>.That.Matches(ids => ids.Length == 1 && ids[0] == 999)
-                    )
-                )
-                .Returns(new DataStoreIdsExistResult.Success([]));
-
-            using var client = SetUpClient();
-
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-        }
     }
 
     [TestFixture]
@@ -2024,13 +1585,8 @@ public class ApplicationModuleTests
                 )
                 .Returns(new ApplicationInsertResult.FailureProfileNotFound());
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureProfileNotFound());
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureProfileNotFound());
 
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(
@@ -2090,7 +1646,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Profile does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -2104,44 +1660,22 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_conflict_when_profile_not_found_at_pre_check_on_update()
+        public async Task It_returns_conflict_when_profile_not_found_at_repository_on_update()
         {
-            // Arrange
-            A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
-                .Returns(new ProfileGetResult.FailureNotFound());
-
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
+                .Returns(new ApplicationSaveResult.FailureProfileNotFound());
             using var client = SetUpClient();
 
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [1],
-                        "ProfileIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
+            var updateResponse = await client.PutAsync("/v3/applications/1", UpdateContent());
 
-            // Assert
             updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
             updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            var actualResponse = JsonNode.Parse(responseBody);
+            var actualResponse = JsonNode.Parse(await updateResponse.Content.ReadAsStringAsync());
             var expectedResponse = JsonNode.Parse(
                 """
                 {
                   "detail": "Profile does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -2151,289 +1685,7 @@ public class ApplicationModuleTests
                 """.Replace("{correlationId}", actualResponse!["correlationId"]!.GetValue<string>())
             );
             JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-        }
-
-        [Test]
-        public async Task It_returns_conflict_when_profile_not_found_at_repository_on_update()
-        {
-            A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
-                .Returns(
-                    new ProfileGetResult.Success(
-                        new ProfileResponse
-                        {
-                            Id = 999,
-                            Name = "TestProfile",
-                            Definition = "<Profile name=\"TestProfile\"></Profile>",
-                        }
-                    )
-                );
-
-            var originalUuid = Guid.NewGuid();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(
-                    new ApplicationUpdateStateResult.Success(
-                        new ApplicationUpdateState(
-                            "Original Application",
-                            7,
-                            "OriginalClaim",
-                            [9],
-                            [],
-                            "clientId",
-                            originalUuid,
-                            true,
-                            [1]
-                        )
-                    )
-                );
-
-            var updatedUuid = Guid.NewGuid();
-            var rollbackUuid = Guid.NewGuid();
-            List<string> clientUpdateNames = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => clientUpdateNames.Add(call.GetArgument<string>(1)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(updatedUuid),
-                    new ClientUpdateResult.Success(rollbackUuid)
-                );
-
-            List<ApplicationUpdateCommand> updateCommands = [];
-            List<ApiClientCommand> apiClientCommands = [];
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(call =>
-                {
-                    updateCommands.Add(call.GetArgument<ApplicationUpdateCommand>(0)!);
-                    apiClientCommands.Add(call.GetArgument<ApiClientCommand>(1)!);
-                })
-                .Returns(new ApplicationUpdateResult.FailureProfileNotFound());
-
-            List<(Guid ExpectedUuid, Guid NewUuid)> syncCalls = [];
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call => syncCalls.Add((call.GetArgument<Guid>(2), call.GetArgument<Guid>(3))))
-                .Returns(new ApiClientUuidSyncResult.Success());
-
-            using var client = SetUpClient();
-
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [1],
-                        "ProfileIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-            updateResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
-            string responseBody = await updateResponse.Content.ReadAsStringAsync();
-            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
-            JsonNode expectedResponse = JsonNode.Parse(
-                """
-                {
-                  "detail": "Profile does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
-                  "title": "Unresolved Reference",
-                  "status": 409,
-                  "correlationId": "{correlationId}",
-                  "validationErrors": {},
-                  "errors": []
-                }
-                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
-            )!;
-            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-
-            clientUpdateNames.Should().Equal("Test Application", "Original Application");
-            updateCommands.Should().HaveCount(1);
-            apiClientCommands[0].ClientUuid.Should().Be(updatedUuid);
-            syncCalls.Should().Equal((originalUuid, rollbackUuid));
-        }
-
-        [Test]
-        public async Task Should_not_update_identity_provider_when_update_profile_id_is_invalid()
-        {
-            // Arrange
-            A.CallTo(() => _profileRepository.GetProfile(A<int>.Ignored))
-                .Returns(new ProfileGetResult.FailureNotFound());
-
-            // Local capture lists rather than MustNotHaveHappened: the shared fixture instance
-            // accumulates call history from sibling tests that legitimately update the client.
-            List<string> updatedClientUuids = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
-
-            List<ApplicationUpdateCommand> applicationUpdates = [];
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(call => applicationUpdates.Add(call.GetArgument<ApplicationUpdateCommand>(0)!))
-                .Returns(new ApplicationUpdateResult.FailureProfileNotFound());
-
-            using var client = SetUpClient();
-
-            // Act
-            var updateResponse = await client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(
-                    """
-                    {
-                        "Id": 1,
-                        "ApplicationName": "Test Application",
-                        "ClaimSetName": "TestClaimSet",
-                        "VendorId": 1,
-                        "EducationOrganizationIds": [1],
-                        "DataStoreIds": [1],
-                        "ProfileIds": [999]
-                    }
-                    """,
-                    Encoding.UTF8,
-                    "application/json"
-                )
-            );
-
-            // Assert
-            updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-
-            // Assert - the identity provider client was never mutated for an invalid
-            // profile reference, so a rejected update cannot leave the client out of sync
-            updatedClientUuids.Should().BeEmpty();
-            applicationUpdates.Should().BeEmpty();
-        }
-    }
-
-    public abstract class UpdateRollbackTestBase : ApplicationModuleTests
-    {
-        private const string UpdateRequestBody = """
-            {
-                "Id": 1,
-                "ApplicationName": "Test Application",
-                "ClaimSetName": "TestClaimSet",
-                "VendorId": 1,
-                "EducationOrganizationIds": [1],
-                "DataStoreIds": [1]
-            }
-            """;
-
-        private HttpClient _client = null!;
-        protected HttpResponseMessage _updateResponse = null!;
-        protected Guid _originalClientUuid;
-        protected ApplicationUpdateState _originalState = null!;
-
-        [SetUp]
-        public void SetUpUpdateDefaults()
-        {
-            _originalClientUuid = Guid.NewGuid();
-            _originalState = new ApplicationUpdateState(
-                "Original Application",
-                7,
-                "OriginalClaim",
-                [9],
-                [],
-                "clientId",
-                _originalClientUuid,
-                true,
-                [1]
-            );
-
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(new ApplicationUpdateStateResult.Success(_originalState));
-
-            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
-                .Returns(
-                    new VendorGetResult.Success(
-                        new VendorResponse
-                        {
-                            Company = "Test Company",
-                            ContactName = "Test Contact",
-                            ContactEmailAddress = "test@test.com",
-                            NamespacePrefixes = "Test Prefix",
-                        }
-                    )
-                );
-
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
-                .Returns(
-                    new ApplicationApiClientsResult.Success([
-                        new ApiClient("clientId", _originalClientUuid, true),
-                    ])
-                );
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
-        }
-
-        [TearDown]
-        public void TearDownUpdateClient()
-        {
-            _updateResponse?.Dispose();
-            _client?.Dispose();
-        }
-
-        protected async Task ActUpdateAsync()
-        {
-            _client = SetUpClient();
-            _updateResponse = await _client.PutAsync(
-                "/v3/applications/1",
-                new StringContent(UpdateRequestBody, Encoding.UTF8, "application/json")
-            );
+            AssertNoProviderUpdate();
         }
     }
 
@@ -2454,7 +1706,7 @@ public class ApplicationModuleTests
             """
             {
               "detail": "",
-              "type": "urn:ed-fi:api:internal-server-error",
+              "type": "urn:ed-fi:management-api:internal-server-error",
               "title": "Internal Server Error",
               "status": 500,
               "correlationId": "{correlationId}",
@@ -2464,533 +1716,6 @@ public class ApplicationModuleTests
             """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
         )!;
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_where_the_original_application_is_missing
-        : UpdateRollbackTestBase
-    {
-        private List<string> _updatedClientUuids = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(new ApplicationUpdateStateResult.FailureNotExists());
-
-            _updatedClientUuids = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_not_found() => _updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        [Test]
-        public void It_does_not_update_the_identity_provider() => _updatedClientUuids.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_where_the_original_state_cannot_be_read : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_ORIGINAL_STATE_must_not_leak";
-        private List<string> _updatedClientUuids = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(new ApplicationUpdateStateResult.FailureUnknown(Sentinel));
-
-            _updatedClientUuids = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_does_not_update_the_identity_provider() => _updatedClientUuids.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_where_the_identity_provider_rollback_fails
-        : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_ROLLBACK_must_not_leak";
-        private Guid _updatedUuid;
-        private List<string> _updatedClientUuids = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _updatedUuid = Guid.NewGuid();
-            _updatedClientUuids = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(_updatedUuid),
-                    new ClientUpdateResult.FailureUnknown(Sentinel)
-                );
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_attempted_the_rollback_against_the_recreated_client()
-        {
-            _updatedClientUuids.Should().HaveCount(2);
-            _updatedClientUuids[1].Should().Be(_updatedUuid.ToString());
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_where_the_rollback_state_cannot_be_persisted
-        : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_ROLLBACK_SYNC_must_not_leak";
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Returns(new ApiClientUuidSyncResult.FailureUnknown(Sentinel));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_where_the_application_vanishes_during_rollback
-        : UpdateRollbackTestBase
-    {
-        private Guid _rollbackUuid;
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _rollbackUuid = Guid.NewGuid();
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(Guid.NewGuid()),
-                    new ClientUpdateResult.Success(_rollbackUuid)
-                );
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Returns(new ApiClientUuidSyncResult.FailureNotExistsSafeToDelete());
-
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse);
-
-        [Test]
-        public void It_deletes_the_client_recreated_by_the_rollback() =>
-            _deletedClientIds.Should().Equal(_rollbackUuid.ToString());
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_where_the_application_vanished_from_the_repository
-        : UpdateRollbackTestBase
-    {
-        private Guid _updatedUuid;
-        private List<string> _updatedClientUuids = null!;
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _updatedUuid = Guid.NewGuid();
-            _updatedClientUuids = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientUpdateResult.Success(_updatedUuid));
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
-
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_not_found() => _updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-
-        [Test]
-        public void It_deletes_the_recreated_client_instead_of_restoring_it()
-        {
-            _deletedClientIds.Should().Equal(_updatedUuid.ToString());
-            _updatedClientUuids.Should().HaveCount(1);
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_vanished_application_whose_identity_provider_client_was_already_deleted
-        : UpdateRollbackTestBase
-    {
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
-
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Returns(new ClientDeleteResult.FailureClientNotFound("Client not found"));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_not_found() => _updateResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-    }
-
-    [TestFixture]
-    public class Given_a_vanished_application_whose_identity_provider_client_cleanup_fails
-        : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_CLEANUP_must_not_leak";
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
-
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Returns(new ClientDeleteResult.FailureUnknown(Sentinel));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-    }
-
-    /// <summary>
-    /// An identity-preserving provider update returns the stored UUID unchanged, so guarded
-    /// synchronization is asked to replace a UUID with itself. It must recognize that as applied
-    /// rather than as stale state, and compensation must still return the domain contract.
-    /// </summary>
-    [TestFixture]
-    public class Given_a_failed_application_update_whose_provider_preserves_the_uuid : UpdateRollbackTestBase
-    {
-        private List<(Guid Expected, Guid New)> _syncCalls = null!;
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _syncCalls = [];
-            _deletedClientIds = [];
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.Success(_originalClientUuid));
-
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call => _syncCalls.Add((call.GetArgument<Guid>(2), call.GetArgument<Guid>(3))))
-                // The relational repositories answer AlreadyApplied when the stored UUID already
-                // equals the new one, which is always the case for a stable-identity provider.
-                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_the_unresolved_reference_conflict() =>
-            _updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-
-        [Test]
-        public void It_synchronizes_the_unchanged_uuid_against_itself() =>
-            _syncCalls.Should().Equal((_originalClientUuid, _originalClientUuid));
-
-        [Test]
-        public void It_deletes_no_provider_client() => _deletedClientIds.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_that_succeeds_with_a_stable_provider_uuid
-        : UpdateRollbackTestBase
-    {
-        private List<ApiClientCommand> _writtenClientCommands = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _writtenClientCommands = [];
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.Success(_originalClientUuid));
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(call => _writtenClientCommands.Add(call.GetArgument<ApiClientCommand>(1)!))
-                .Returns(new ApplicationUpdateResult.Success());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_no_content() =>
-            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        [Test]
-        public void It_persists_the_unchanged_client_uuid() =>
-            _writtenClientCommands.Should().ContainSingle().Which.ClientUuid.Should().Be(_originalClientUuid);
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_whose_stored_provider_client_is_missing : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_APPLICATION_STORED_CLIENT_MISSING_must_not_leak";
-
-        private RecordingLockManager _recordingLockManager = null!;
-        private List<string> _repositoryUpdates = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _repositoryUpdates = [];
-            _recordingLockManager = new RecordingLockManager();
-            _lockManager = _recordingLockManager;
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Returns(new ClientUpdateResult.FailureNotFound(Sentinel));
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Invokes(_ => _repositoryUpdates.Add("update"))
-                .Returns(new ApplicationUpdateResult.Success());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_does_not_update_the_database_application() => _repositoryUpdates.Should().BeEmpty();
-
-        [Test]
-        public void It_does_not_synchronize_the_client_uuid() =>
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .MustNotHaveHappened();
-
-        [Test]
-        public void It_acquires_and_releases_the_aggregate_lock()
-        {
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1);
-            _recordingLockManager.Handle.Disposed.Should().BeTrue();
-        }
     }
 
     [TestFixture]
@@ -3047,7 +1772,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -3085,16 +1810,9 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public void It_does_not_call_application_repository_update()
-        {
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
+        public void It_does_not_save_the_application() =>
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
                 .MustNotHaveHappened();
-        }
     }
 
     [TestFixture]
@@ -3152,16 +1870,9 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public void It_does_not_call_application_repository_update()
-        {
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
+        public void It_does_not_save_the_application() =>
+            A.CallTo(() => _applicationRepository.SaveApplication(A<ApplicationUpdateCommand>.Ignored))
                 .MustNotHaveHappened();
-        }
     }
 
     [TestFixture]
@@ -3299,7 +2010,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -3588,7 +2299,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -3856,7 +2567,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "The request could not be processed. See 'errors' for details.",
-                  "type": "urn:ed-fi:api:bad-gateway",
+                  "type": "urn:ed-fi:management-api:bad-gateway",
                   "title": "Bad Gateway",
                   "status": 502,
                   "correlationId": "{correlationId}",
@@ -4018,7 +2729,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Reference 'VendorId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -4141,7 +2852,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -4171,6 +2882,551 @@ public class ApplicationModuleTests
                     entry.Level == LogLevel.Error && entry.Exception is InvalidOperationException
                 );
         }
+    }
+
+    /// <summary>
+    /// Shared arrangement for the insert's identifier-conflict arms: the database rejects the
+    /// initial client's row under one of the two identifier constraints, and the fixture decides
+    /// what the UUID reference check reports. Every fixture asserts the exact sanitized 409 body,
+    /// the absence of credentials, and whether the provisioned provider client was deleted.
+    /// </summary>
+    public abstract class IdentifierConflictInsertTestBase : InsertWorkflowTestBase
+    {
+        protected const string DuplicateClientIdDetail =
+            "The generated client key is already in use. Retry the request.";
+
+        protected const string DuplicateClientUuidDetail =
+            "The identity provider client is already associated with another API client.";
+
+        protected const string LeftInPlaceMarker = "Could not prove provider client";
+
+        protected void ArrangeReferenceCheck(ApiClientUuidReferenceResult result) =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored)).Returns(result);
+
+        protected async Task AssertIdentifierConflictContract(string detail)
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _insertResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            correlationId.Should().NotBeNullOrWhiteSpace();
+            JsonNode expectedResponse = JsonNode.Parse(
+                $$"""
+                {
+                  "detail": "{{detail}}",
+                  "type": "urn:ed-fi:management-api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "{{correlationId}}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+            responseBody.Should().NotContain(_createdClientUuid.ToString());
+            responseBody.Should().NotContain(_createdClientId);
+        }
+
+        protected void AssertReferenceCheckedOnceForTheCreatedUuid() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(_createdClientUuid))
+                .MustHaveHappenedOnceExactly();
+
+        protected void AssertLeftInPlace(string outcome)
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains(LeftInPlaceMarker)
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains(outcome)
+                    && entry.Contains("left in place")
+                );
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    /// <summary>
+    /// The generated key collided and no row holds the provisioned client's UUID, so the client is
+    /// deleted exactly once and the caller is told to retry.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_is_already_in_use
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_records_the_collision_as_a_warning_with_the_client_id() =>
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .Contain(entry => entry.Contains("already in use") && entry.Contains(_createdClientId));
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The both-identifier arrangement: the database reports the key collision, and the reference
+    /// check finds another row already holding the provisioned client's UUID. The client is in
+    /// use, so it stays, and the key conflict is still what the caller is told.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_reference_check_fails
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_REFERENCE_CHECK_UNKNOWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.FailureUnknown(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_with_the_sanitized_failure() =>
+            AssertLeftInPlace(
+                $"{nameof(ApiClientUuidReferenceResult.FailureUnknown)}: {Sentinel}{SanitizedSuffix}"
+            );
+    }
+
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_reference_check_is_unrecognized
+        : IdentifierConflictInsertTestBase
+    {
+        private sealed record UnrecognizedReferenceResult : ApiClientUuidReferenceResult;
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new UnrecognizedReferenceResult());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_naming_the_outcome() =>
+            AssertLeftInPlace(nameof(UnrecognizedReferenceResult));
+    }
+
+    /// <summary>
+    /// A reference check that throws must not reach the global handler: the 409 stands, nothing is
+    /// deleted, and the thrown check is reported by its exception type alone. The exception's
+    /// message is never sanitized, so attaching it would log whatever text it carries; the
+    /// sentinel therefore carries the raw suffix and must appear nowhere in the log in either form.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_reference_check_throws
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_REFERENCE_CHECK_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .Throws(new InvalidOperationException(Sentinel + RawSuffix));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_thrown_check_by_type_only() =>
+            AssertLeftInPlace(nameof(InvalidOperationException));
+
+        [Test]
+        public void It_attaches_no_exception_to_any_log_entry() =>
+            _moduleLogger.Entries.Should().AllSatisfy(entry => entry.Exception.Should().BeNull());
+
+        [Test]
+        public void It_logs_the_exception_message_in_neither_form() =>
+            _moduleLogger
+                .Entries.Select(entry => $"{entry.State}")
+                .Should()
+                .OnlyContain(message => !message.Contains(Sentinel));
+    }
+
+    /// <summary>
+    /// The reference check clears the deletion, and the deletion itself then fails. The existing
+    /// cleanup helper reports the client as possibly remaining; the caller's 409 is unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_generated_key_collides_and_whose_cleanup_throws
+        : IdentifierConflictInsertTestBase
+    {
+        private const string Sentinel = "SENTINEL_APPLICATION_KEY_CLEANUP_THROWN_must_not_leak";
+
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientId());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
+                .Invokes(call => _deletedClientUuids.Add(call.GetArgument<string>(0)!))
+                .Throws(new InvalidOperationException(Sentinel));
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_duplicate_key_conflict_contract()
+        {
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+            (await _insertResponse.Content.ReadAsStringAsync()).Should().NotContain(Sentinel);
+        }
+
+        [Test]
+        public void It_attempted_the_deletion() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_reports_the_thrown_cleanup_as_unconfirmed() =>
+            AssertCleanupReportedAsUnconfirmed(nameof(InvalidOperationException));
+    }
+
+    /// <summary>
+    /// The Application row is inserted before the ApiClient row, so a name conflict is reported
+    /// before the UUID constraint can judge the UUID the provider reported. Another row holds that
+    /// UUID, so the client stays, and the caller still gets the duplicate-name validation failure.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_with_a_duplicate_name_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(
+                new ApplicationInsertResult.FailureDuplicateApplication("Test Application")
+            );
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_duplicate_name_validation_response()
+        {
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            _insertResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            JsonNode actualResponse = JsonNode.Parse(await _insertResponse.Content.ReadAsStringAsync())!;
+            string correlationId = actualResponse["correlationId"]!.GetValue<string>();
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "Data validation failed. See 'validationErrors' for details.",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
+                  "title": "Data Validation Failed",
+                  "status": 400,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {
+                    "ApplicationName": [
+                      "Application 'Test Application' already exists for vendor."
+                    ]
+                  },
+                  "errors": []
+                }
+                """.Replace("{correlationId}", correlationId)
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// The same name conflict with a UUID no row holds: the reference check clears the deletion and
+    /// the provisioned client is removed exactly once.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_with_a_duplicate_name_whose_uuid_is_unreferenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(
+                new ApplicationInsertResult.FailureDuplicateApplication("Test Application")
+            );
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.None());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_duplicate_name_validation_failure() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_checks_the_created_uuid_for_references_before_deleting() =>
+            AssertReferenceCheckedOnceForTheCreatedUuid();
+
+        [Test]
+        public void It_deletes_the_provisioned_client_exactly_once() =>
+            _deletedClientUuids.Should().Equal(_createdClientUuid.ToString());
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// The vendor was not found, so no row was written and no constraint judged the reported UUID.
+    /// Another row holds it, so the client stays and the unresolved reference still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_for_a_missing_vendor_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureVendorNotFound());
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_unresolved_reference_conflict() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// An unclassified insert failure says nothing about the reported UUID. Another row holds it,
+    /// so the client stays and the server error still answers.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_failing_unknown_whose_uuid_is_referenced
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureUnknown("insert failed"));
+            ArrangeReferenceCheck(new ApiClientUuidReferenceResult.Referenced());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public void It_keeps_the_internal_server_error() =>
+            _insertResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_reports_the_client_left_in_place() =>
+            AssertLeftInPlace(nameof(ApiClientUuidReferenceResult.Referenced));
+    }
+
+    /// <summary>
+    /// Another row already references the UUID the provider reported for this request's client.
+    /// The client is provably in use, so no reference check and no deletion are attempted.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_provider_client_is_already_associated
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeDatabaseInsert(new ApplicationInsertResult.FailureDuplicateClientUuid());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_uuid_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientUuidDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_reports_the_client_left_in_place_at_error()
+        {
+            LoggedAt(LogLevel.Error)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already associated with another API client")
+                    && entry.Contains(_createdClientUuid.ToString())
+                    && entry.Contains(_createdClientId)
+                    && entry.Contains("left in place")
+                );
+            AssertNoRawCharactersLogged();
+        }
+    }
+
+    /// <summary>
+    /// The identity provider refused the generated key as already registered and created nothing,
+    /// so the caller is told to retry with the same 409 the database collision produces, and no
+    /// row, reference check, or deletion follows. Fails against the implementation whose create
+    /// switch let the variant fall through to the 500 default.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_application_insert_whose_provider_reports_the_generated_key_already_registered
+        : IdentifierConflictInsertTestBase
+    {
+        [SetUp]
+        public async Task Act()
+        {
+            ArrangeProviderCreate(new ClientCreateResult.FailureDuplicateClientId());
+
+            await ActInsertAsync();
+        }
+
+        [Test]
+        public async Task It_returns_the_duplicate_key_conflict_contract() =>
+            await AssertIdentifierConflictContract(DuplicateClientIdDetail);
+
+        [Test]
+        public async Task It_returns_no_credentials() => await AssertNoCredentialsInResponse();
+
+        [Test]
+        public void It_persists_no_application() => AssertNoDatabaseInsert();
+
+        [Test]
+        public void It_deletes_nothing() => AssertNoProviderCleanup();
+
+        [Test]
+        public void It_runs_no_reference_check() =>
+            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_records_the_conflict_as_a_warning_with_the_client_id()
+        {
+            LoggedAt(LogLevel.Warning)
+                .Should()
+                .ContainSingle(entry =>
+                    entry.Contains("already registered at the identity provider")
+                    && entry.Contains("no client was created")
+                    && entry.Contains(_createdClientId)
+                );
+            AssertNoRawCharactersLogged();
+        }
+
+        [Test]
+        public void It_logs_nothing_at_error() => LoggedAt(LogLevel.Error).Should().BeEmpty();
     }
 
     [TestFixture]
@@ -4207,11 +3463,10 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
-    public class ResetCredentialEndpointEnabledTests : ApplicationModuleTests
+    public class ResetCredentialTests : ApplicationModuleTests
     {
         /// <summary>
-        /// Tests that verify the reset-credential endpoint is available when
-        /// EnableApplicationResetEndpoint is true.
+        /// Tests that verify the application-level credential reset for a single-client application.
         /// </summary>
         [SetUp]
         public void SetUp()
@@ -4224,7 +3479,7 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_successfully_reset_credentials_when_endpoint_enabled()
+        public async Task Should_successfully_reset_credentials_for_a_single_client_application()
         {
             // Arrange
             using var client = SetUpClient();
@@ -4243,18 +3498,22 @@ public class ApplicationModuleTests
         }
 
         [Test]
-        public async Task Should_return_not_found_when_application_has_no_api_clients()
+        public async Task Should_return_not_found_when_the_application_does_not_exist()
         {
-            // Arrange
+            // Arrange - a missing application has no clients and no application row
+            Fake.ClearRecordedCalls(_clientRepository);
             using var client = SetUpClient();
             A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
                 .Returns(new ApplicationApiClientsResult.Success([]));
+            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
+                .Returns(new ApplicationGetResult.FailureNotFound());
 
             // Act
             var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
 
             // Assert
             resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
         }
 
         [Test]
@@ -4276,7 +3535,7 @@ public class ApplicationModuleTests
                 """
                 {
                   "detail": "",
-                  "type": "urn:ed-fi:api:internal-server-error",
+                  "type": "urn:ed-fi:management-api:internal-server-error",
                   "title": "Internal Server Error",
                   "status": 500,
                   "correlationId": "{correlationId}",
@@ -4316,7 +3575,7 @@ public class ApplicationModuleTests
         }
 
         /// <summary>
-        /// Asserts the full urn:ed-fi:api:bad-request:parameter contract (real pipeline, not a
+        /// Asserts the full urn:ed-fi:management-api:bad-request:parameter contract (real pipeline, not a
         /// unit-level construction) for both binding-level (offset/limit non-numeric) and
         /// validation-rule-level (limit=0, negative offset, invalid orderBy) query-parameter failures,
         /// including a fixed <c>detail</c> and exactly one <c>errors</c> entry. <paramref name="exactMatch"/>
@@ -4334,7 +3593,7 @@ public class ApplicationModuleTests
 
             string content = await response.Content.ReadAsStringAsync();
             JsonNode body = JsonNode.Parse(content)!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             body["title"]!.GetValue<string>().Should().Be("Parameter Validation Failed");
             body["detail"]!
                 .GetValue<string>()
@@ -4505,88 +3764,6 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
-    public class ResetCredentialEndpointDisabledTests : ApplicationModuleTests
-    {
-        /// <summary>
-        /// Tests that verify the reset-credential endpoint returns 404 when
-        /// EnableApplicationResetEndpoint is false. This scenario is typical when
-        /// using multiple API clients per application to avoid credential confusion.
-        /// </summary>
-        private HttpClient SetUpClientWithEndpointDisabled()
-        {
-            var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
-            {
-                builder.UseEnvironment("Test");
-                builder.ConfigureServices(collection =>
-                {
-                    collection.AddTestAuthentication();
-
-                    // Override AppSettings to disable the reset endpoint
-                    collection.Configure<EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration.AppSettings>(
-                        options =>
-                        {
-                            options.EnableApplicationResetEndpoint = false;
-                        }
-                    );
-
-                    collection
-                        .AddTransient((_) => _applicationRepository)
-                        .AddTransient((_) => _clientRepository)
-                        .AddTransient((_) => _dataStoreRepository)
-                        .AddTransient((_) => _vendorRepository)
-                        .AddTransient((_) => _profileRepository);
-                });
-            });
-            _factoryTracker.Track(factory);
-            var client = factory.CreateClient();
-            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
-            return client;
-        }
-
-        [Test]
-        public async Task Should_return_not_found_when_endpoint_disabled()
-        {
-            // Arrange
-            using var client = SetUpClientWithEndpointDisabled();
-
-            // Act
-            var resetResponse = await client.PutAsync("/v3/applications/1/reset-credential", null);
-
-            // Assert
-            resetResponse.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        }
-
-        [Test]
-        public async Task Should_still_allow_other_application_endpoints_when_reset_disabled()
-        {
-            // Arrange
-            using var client = SetUpClientWithEndpointDisabled();
-
-            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
-                .Returns(
-                    new ApplicationGetResult.Success(
-                        new ApplicationResponse()
-                        {
-                            Id = 1,
-                            ApplicationName = "Test Application",
-                            ClaimSetName = "ClaimSet",
-                            VendorId = 1,
-                            EducationOrganizationIds = [1],
-                            DataStoreIds = [1],
-                            ProfileIds = [],
-                        }
-                    )
-                );
-
-            // Act - Verify GET still works
-            var getResponse = await client.GetAsync("/v3/applications/1");
-
-            // Assert
-            getResponse.StatusCode.Should().Be(HttpStatusCode.OK);
-        }
-    }
-
-    [TestFixture]
     public class Given_GetApplications_WithEnabledFlag : ApplicationModuleTests
     {
         [Test]
@@ -4732,7 +3909,7 @@ public class ApplicationModuleTests
             """
             {
               "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-              "type": "urn:ed-fi:api:conflict",
+              "type": "urn:ed-fi:management-api:conflict",
               "title": "Conflict",
               "status": 409,
               "correlationId": "{correlationId}",
@@ -4742,578 +3919,6 @@ public class ApplicationModuleTests
             """.Replace("{correlationId}", correlationId)
         )!;
         JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_when_the_aggregate_lock_times_out : UpdateRollbackTestBase
-    {
-        private List<string> _dependencyCalls = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _dependencyCalls = [];
-            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
-                .Returns(new ApplicationLockResult.FailureTimeout());
-            A.CallTo(_applicationRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
-            A.CallTo(_apiClientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
-            A.CallTo(_clientRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
-            A.CallTo(_vendorRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
-            A.CallTo(_dataStoreRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
-            A.CallTo(_profileRepository).Invokes(call => _dependencyCalls.Add(call.Method.Name));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_the_retriable_conflict_contract() =>
-            await AssertLockConflictContract(_updateResponse);
-
-        [Test]
-        public void It_calls_no_repository_or_identity_provider_dependency() =>
-            _dependencyCalls.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_when_the_aggregate_lock_cannot_be_acquired
-        : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_LOCK_ACQUIRE_must_not_leak";
-
-        [SetUp]
-        public async Task Act()
-        {
-            A.CallTo(() => _lockManager.AcquireAsync(A<int>.Ignored, A<CancellationToken>.Ignored))
-                .Returns(new ApplicationLockResult.FailureUnknown(Sentinel));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-    }
-
-    [TestFixture]
-    public class Given_an_application_update_that_succeeds_under_the_lock : UpdateRollbackTestBase
-    {
-        private List<string> _callOrder = null!;
-        private RecordingLockManager _recordingLockManager = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _callOrder = [];
-            _recordingLockManager = new RecordingLockManager(() => _callOrder.Add("lock"));
-            _lockManager = _recordingLockManager;
-
-            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
-                .Invokes(_ => _callOrder.Add("clients-read"))
-                .Returns(
-                    new ApplicationApiClientsResult.Success([
-                        new ApiClient("clientId", _originalClientUuid, true),
-                    ])
-                );
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.Success());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_no_content() =>
-            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-
-        [Test]
-        public void It_acquires_the_lock_before_the_first_read()
-        {
-            _recordingLockManager.AcquiredApplicationIds.Should().Equal(1);
-            _callOrder.Take(2).Should().Equal("lock", "clients-read");
-        }
-
-        [Test]
-        public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
-    }
-
-    public abstract class ThrownRepositoryExceptionTestBase : UpdateRollbackTestBase
-    {
-        protected const string Sentinel = "SENTINEL_THROWN_REPO_must_not_leak";
-
-        protected Guid _updatedUuid;
-        protected Guid _rollbackUuid;
-        protected List<string> _updatedClientUuids = null!;
-        protected List<string> _deletedClientIds = null!;
-        protected List<(Guid ExpectedUuid, Guid NewUuid)> _syncCalls = null!;
-
-        [SetUp]
-        public void SetUpThrownDefaults()
-        {
-            _updatedUuid = Guid.NewGuid();
-            _rollbackUuid = Guid.NewGuid();
-            _updatedClientUuids = [];
-            _deletedClientIds = [];
-            _syncCalls = [];
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Invokes(call => _syncCalls.Add((call.GetArgument<Guid>(2), call.GetArgument<Guid>(3))))
-                .Returns(new ApiClientUuidSyncResult.Success());
-
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(Guid.Empty),
-                    new ClientUpdateResult.Success(Guid.Empty)
-                );
-
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Throws(new InvalidOperationException(Sentinel));
-        }
-
-        protected void ArrangeProviderUpdates()
-        {
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _updatedClientUuids.Add(call.GetArgument<string>(0)!))
-                .ReturnsNextFromSequence(
-                    new ClientUpdateResult.Success(_updatedUuid),
-                    new ClientUpdateResult.Success(_rollbackUuid)
-                );
-        }
-
-        protected ApplicationUpdateState CommandMatchingState() =>
-            new("Test Application", 1, "TestClaimSet", [1], [], "clientId", _updatedUuid, true, [1]);
-    }
-
-    [TestFixture]
-    public class Given_a_thrown_repository_exception_whose_transaction_committed
-        : ThrownRepositoryExceptionTestBase
-    {
-        [SetUp]
-        public async Task Act()
-        {
-            ArrangeProviderUpdates();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .ReturnsNextFromSequence(
-                    new ApplicationUpdateStateResult.Success(_originalState),
-                    new ApplicationUpdateStateResult.Success(CommandMatchingState())
-                );
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_the_recovered_success()
-        {
-            _updateResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
-            responseBody.Should().NotContain(Sentinel);
-        }
-
-        [Test]
-        public void It_performs_no_rollback_or_deletion()
-        {
-            _updatedClientUuids.Should().HaveCount(1);
-            _deletedClientIds.Should().BeEmpty();
-        }
-
-        [Test]
-        public void It_does_not_synchronize_the_uuid() => _syncCalls.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_a_thrown_repository_exception_whose_transaction_did_not_commit
-        : ThrownRepositoryExceptionTestBase
-    {
-        [SetUp]
-        public async Task Act()
-        {
-            ArrangeProviderUpdates();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .ReturnsNextFromSequence(
-                    new ApplicationUpdateStateResult.Success(_originalState),
-                    new ApplicationUpdateStateResult.Success(_originalState)
-                );
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_compensates_the_identity_provider()
-        {
-            _updatedClientUuids.Should().HaveCount(2);
-            _updatedClientUuids[1].Should().Be(_updatedUuid.ToString());
-            _syncCalls.Should().Equal((_originalClientUuid, _rollbackUuid));
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_thrown_repository_exception_whose_outcome_resolution_fails
-        : ThrownRepositoryExceptionTestBase
-    {
-        private const string ResolutionSentinel = "SENTINEL_RESOLUTION_must_not_leak";
-
-        [SetUp]
-        public async Task Act()
-        {
-            ArrangeProviderUpdates();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .ReturnsNextFromSequence(
-                    new ApplicationUpdateStateResult.Success(_originalState),
-                    new ApplicationUpdateStateResult.FailureUnknown(ResolutionSentinel)
-                );
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error()
-        {
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-            string responseBody = await _updateResponse.Content.ReadAsStringAsync();
-            responseBody.Should().NotContain(ResolutionSentinel);
-        }
-
-        [Test]
-        public void It_performs_no_rollback_or_deletion()
-        {
-            _updatedClientUuids.Should().HaveCount(1);
-            _deletedClientIds.Should().BeEmpty();
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_whose_provider_compensation_throws : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_COMPENSATION_THROW_must_not_leak";
-        private RecordingLockManager _recordingLockManager = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _recordingLockManager = new RecordingLockManager();
-            _lockManager = _recordingLockManager;
-
-            int providerCalls = 0;
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .ReturnsLazily(_ =>
-                {
-                    providerCalls++;
-                    if (providerCalls == 1)
-                    {
-                        return Task.FromResult<ClientUpdateResult>(
-                            new ClientUpdateResult.Success(Guid.NewGuid())
-                        );
-                    }
-
-                    throw new InvalidOperationException(Sentinel);
-                });
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_with_disjoint_client_data_stores : UpdateRollbackTestBase
-    {
-        private List<int[]?> _providerDataStoreArguments = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            // The aggregate read unions data stores across clients; compensation must restore
-            // the selected client's exact set instead.
-            A.CallTo(() => _applicationRepository.GetApplication(A<int>.Ignored))
-                .Returns(
-                    new ApplicationGetResult.Success(
-                        new ApplicationResponse
-                        {
-                            Id = 1,
-                            ApplicationName = "Original Application",
-                            ClaimSetName = "OriginalClaim",
-                            VendorId = 7,
-                            EducationOrganizationIds = [9],
-                            DataStoreIds = [1, 2],
-                            ProfileIds = [],
-                        }
-                    )
-                );
-
-            _originalState = new ApplicationUpdateState(
-                "Original Application",
-                7,
-                "OriginalClaim",
-                [9],
-                [],
-                "clientId",
-                _originalClientUuid,
-                true,
-                [1]
-            );
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .Returns(new ApplicationUpdateStateResult.Success(_originalState));
-
-            _providerDataStoreArguments = [];
-            A.CallTo(() =>
-                    _clientRepository.UpdateClientAsync(
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<string>.Ignored,
-                        A<int[]?>.Ignored,
-                        A<bool>.Ignored,
-                        A<string>.Ignored
-                    )
-                )
-                .Invokes(call => _providerDataStoreArguments.Add(call.GetArgument<int[]?>(4)))
-                .Returns(new ClientUpdateResult.Success(Guid.NewGuid()));
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public void It_returns_the_unresolved_reference_conflict() =>
-            _updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
-
-        [Test]
-        public void It_restores_only_the_selected_clients_data_stores()
-        {
-            _providerDataStoreArguments.Should().HaveCount(2);
-            _providerDataStoreArguments[1].Should().Equal(1);
-        }
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_with_a_stale_stored_client : UpdateRollbackTestBase
-    {
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Returns(new ApiClientUuidSyncResult.FailureStaleState());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse);
-
-        [Test]
-        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_a_failed_application_update_whose_rollback_client_is_still_referenced
-        : UpdateRollbackTestBase
-    {
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Returns(new ApiClientUuidSyncResult.FailureNotExists());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse);
-
-        [Test]
-        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_an_ambiguous_update_for_a_vanished_application : ThrownRepositoryExceptionTestBase
-    {
-        [SetUp]
-        public async Task Act()
-        {
-            ArrangeProviderUpdates();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .ReturnsNextFromSequence(
-                    new ApplicationUpdateStateResult.Success(_originalState),
-                    new ApplicationUpdateStateResult.FailureNotExists()
-                );
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_deletes_the_recreated_client_after_the_reference_check() =>
-            _deletedClientIds.Should().Equal(_updatedUuid.ToString());
-    }
-
-    [TestFixture]
-    public class Given_a_vanished_application_whose_recreated_client_is_still_referenced
-        : UpdateRollbackTestBase
-    {
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
-
-            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
-                .Returns(new ApiClientUuidReferenceResult.Referenced());
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse);
-
-        [Test]
-        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
     }
 
     [TestFixture]
@@ -5431,184 +4036,486 @@ public class ApplicationModuleTests
     }
 
     [TestFixture]
-    public class Given_an_ambiguous_update_resolving_to_a_command_like_partial_state
-        : ThrownRepositoryExceptionTestBase
+    public class Given_an_application_credential_reset_for_a_multi_client_application : ApplicationModuleTests
     {
+        private HttpResponseMessage _resetResponse = null!;
+
         [SetUp]
         public async Task Act()
         {
-            ArrangeProviderUpdates();
-            A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
-                )
-                .ReturnsNextFromSequence(
-                    new ApplicationUpdateStateResult.Success(_originalState),
-                    new ApplicationUpdateStateResult.Success(
-                        CommandMatchingState() with
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(A<int>.Ignored))
+                .Returns(
+                    new ApplicationApiClientsResult.Success([
+                        new ApiClient("firstClientId", Guid.NewGuid(), true),
+                        new ApiClient("secondClientId", Guid.NewGuid(), true),
+                    ])
+                );
+
+            // Arranged to succeed so that a handler resetting one of the clients would answer 200.
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored))
+                .Returns(new ClientResetResult.Success("NEW_SECRET"));
+
+            using var client = SetUpClient();
+            _resetResponse = await client.PutAsync(
+                "/v3/applications/1/reset-credential",
+                new StringContent("{}", Encoding.UTF8, "application/json")
+            );
+        }
+
+        [TearDown]
+        public void TearDownResponse() => _resetResponse?.Dispose();
+
+        [Test]
+        public async Task It_returns_409_with_the_conflict_problem_details()
+        {
+            _resetResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+            _resetResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+            string responseBody = await _resetResponse.Content.ReadAsStringAsync();
+            JsonNode actualResponse = JsonNode.Parse(responseBody)!;
+            JsonNode expectedResponse = JsonNode.Parse(
+                """
+                {
+                  "detail": "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
+                  "type": "urn:ed-fi:management-api:conflict",
+                  "title": "Conflict",
+                  "status": 409,
+                  "correlationId": "{correlationId}",
+                  "validationErrors": {},
+                  "errors": []
+                }
+                """.Replace("{correlationId}", actualResponse["correlationId"]!.GetValue<string>())
+            )!;
+            JsonNode.DeepEquals(actualResponse, expectedResponse).Should().Be(true);
+        }
+
+        [Test]
+        public void It_resets_no_client() =>
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
+    }
+
+    public abstract class CreateDefaultCredentialsTestBase : ApplicationModuleTests
+    {
+        protected readonly List<ApiClientCommand> InsertedClientCommands = [];
+        protected readonly List<string> ProvisionedSecrets = [];
+        protected readonly List<ApplicationInsertCommand> InsertedCommands = [];
+
+        // NUnit reuses the fixture instance across its tests, so each test starts from no
+        // recorded calls; base-class SetUp runs before the derived fixture's arrange and act.
+        [SetUp]
+        public void ClearRecordedRequests()
+        {
+            InsertedClientCommands.Clear();
+            InsertedCommands.Clear();
+            ProvisionedSecrets.Clear();
+            Fake.ClearRecordedCalls(_applicationRepository);
+            Fake.ClearRecordedCalls(_clientRepository);
+        }
+
+        protected void ArrangeVendorAndInsert(ApplicationInsertResult insertResult)
+        {
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(
+                    new VendorGetResult.Success(
+                        new VendorResponse
                         {
-                            IsApproved = false,
+                            Company = "any",
+                            ContactName = "any",
+                            ContactEmailAddress = "any",
+                            NamespacePrefixes = "any",
                         }
                     )
                 );
 
-            await ActUpdateAsync();
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .Invokes(
+                    (ApplicationInsertCommand command, ApiClientCommand clientCommand) =>
+                    {
+                        InsertedCommands.Add(command);
+                        InsertedClientCommands.Add(clientCommand);
+                    }
+                )
+                .Returns(insertResult);
+
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .Invokes(call => ProvisionedSecrets.Add(call.GetArgument<string>(1)!))
+                .Returns(new ClientCreateResult.Success(Guid.NewGuid()));
         }
 
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_performs_no_compensation_or_cleanup()
+        protected async Task<HttpResponseMessage> PostApplicationAsync(string additionalFields)
         {
-            _updatedClientUuids.Should().HaveCount(1);
-            _syncCalls.Should().BeEmpty();
-            _deletedClientIds.Should().BeEmpty();
+            using var client = SetUpClient();
+            return await client.PostAsync(
+                "/v3/applications",
+                new StringContent(
+                    $$"""
+                    {
+                      {{additionalFields}}
+                      "applicationName": "Application 11",
+                      "claimSetName": "Test",
+                      "vendorId": 1,
+                      "educationOrganizationIds": [1, 2],
+                      "profileIds": [3]
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
         }
+
+        protected void AssertNoProviderClientWasCreatedOrDeleted()
+        {
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored)).MustNotHaveHappened();
+        }
+
+        protected void AssertProviderClientWasCreatedOnce() =>
+            A.CallTo(() =>
+                    _clientRepository.CreateClientAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<string>.Ignored,
+                        A<int[]?>.Ignored,
+                        A<bool>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
     }
 
     [TestFixture]
-    public class Given_an_ambiguous_update_resolving_to_an_original_like_partial_state
-        : ThrownRepositoryExceptionTestBase
+    public class Given_an_application_created_without_default_credentials : CreateDefaultCredentialsTestBase
     {
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
         [SetUp]
-        public async Task Act()
+        public async Task Setup()
         {
-            ArrangeProviderUpdates();
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            _response = await PostApplicationAsync("\"createDefaultCredentials\": false,");
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_returns_created() => _response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        [Test]
+        public void It_returns_the_application_id() => _body["id"]!.GetValue<int>().Should().Be(5);
+
+        [Test]
+        public void It_returns_an_explicit_null_key()
+        {
+            _body.ContainsKey("key").Should().BeTrue();
+            _body["key"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_returns_an_explicit_null_secret()
+        {
+            _body.ContainsKey("secret").Should().BeTrue();
+            _body["secret"].Should().BeNull();
+        }
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => AssertNoProviderClientWasCreatedOrDeleted();
+
+        [Test]
+        public void It_inserts_the_application_without_default_credentials() =>
+            InsertedCommands.Should().ContainSingle().Which.CreateDefaultCredentials.Should().BeFalse();
+
+        [Test]
+        public void It_inserts_the_requested_education_organizations_and_profiles()
+        {
+            InsertedCommands.Should().ContainSingle();
+            InsertedCommands[0].EducationOrganizationIds.Should().Equal(1, 2);
+            InsertedCommands[0].ProfileIds.Should().Equal(3);
+        }
+    }
+
+    [TestFixture("")]
+    [TestFixture("\"createDefaultCredentials\": true,")]
+    [TestFixture("\"enabled\": false,")]
+    public class Given_an_application_created_with_default_credentials(string additionalFields)
+        : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            _response = await PostApplicationAsync(additionalFields);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_returns_created() => _response.StatusCode.Should().Be(HttpStatusCode.Created);
+
+        [Test]
+        public void It_creates_one_identity_provider_client() => AssertProviderClientWasCreatedOnce();
+
+        [Test]
+        public void It_inserts_the_application_with_default_credentials() =>
+            InsertedCommands.Should().ContainSingle().Which.CreateDefaultCredentials.Should().BeTrue();
+
+        [Test]
+        public void It_returns_the_stored_client_key() =>
+            _body["key"]!
+                .GetValue<string>()
+                .Should()
+                .Be(InsertedClientCommands.Should().ContainSingle().Subject.ClientId);
+
+        [Test]
+        public void It_returns_the_provisioned_secret() =>
+            _body["secret"]!
+                .GetValue<string>()
+                .Should()
+                .Be(ProvisionedSecrets.Should().ContainSingle().Subject);
+    }
+
+    [TestFixture("\"enabled\": false,", "Enabled")]
+    [TestFixture("\"enabled\": true,", "Enabled")]
+    [TestFixture("\"enabled\": null,", "Enabled")]
+    [TestFixture("\"Enabled\": true,", "Enabled")]
+    [TestFixture("\"dataStoreIds\": [],", "DataStoreIds")]
+    [TestFixture("\"dataStoreIds\": null,", "DataStoreIds")]
+    [TestFixture("\"dataStoreIds\": [1],", "DataStoreIds")]
+    [TestFixture("\"enabled\": true, \"dataStoreIds\": [1],", "Enabled,DataStoreIds")]
+    public class Given_an_application_created_without_default_credentials_and_default_client_fields(
+        string defaultClientFields,
+        string expectedFields
+    ) : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonObject _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            _response = await PostApplicationAsync(
+                $"\"createDefaultCredentials\": false, {defaultClientFields}"
+            );
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!.AsObject();
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public void It_returns_a_data_validation_problem() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:data");
+
+        [Test]
+        public void It_reports_each_supplied_default_client_field() =>
+            _body["validationErrors"]!
+                .AsObject()
+                .Select(e => e.Key)
+                .Should()
+                .BeEquivalentTo(expectedFields.Split(','));
+
+        [Test]
+        public void It_writes_nothing() =>
             A.CallTo(() =>
-                    _applicationRepository.GetApplicationUpdateState(A<int>.Ignored, A<string>.Ignored)
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
                 )
-                .ReturnsNextFromSequence(
-                    new ApplicationUpdateStateResult.Success(_originalState),
-                    new ApplicationUpdateStateResult.Success(_originalState with { IsApproved = false })
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
+
+    [TestFixture]
+    public class Given_an_application_created_without_default_credentials_for_a_missing_vendor
+        : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.Success(5));
+            A.CallTo(() => _vendorRepository.GetVendor(A<int>.Ignored))
+                .Returns(new VendorGetResult.FailureNotFound());
+            _response = await PostApplicationAsync("\"createDefaultCredentials\": false,");
+        }
+
+        [Test]
+        public void It_returns_conflict() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_writes_nothing() =>
+            A.CallTo(() =>
+                    _applicationRepository.InsertApplication(
+                        A<ApplicationInsertCommand>.Ignored,
+                        A<ApiClientCommand>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_creates_no_identity_provider_client() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
+
+    [TestFixture]
+    public class Given_an_application_created_without_default_credentials_whose_insert_fails
+        : CreateDefaultCredentialsTestBase
+    {
+        private HttpResponseMessage _profileResponse = null!;
+        private HttpResponseMessage _vendorResponse = null!;
+        private HttpResponseMessage _duplicateResponse = null!;
+        private HttpResponseMessage _unknownResponse = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureProfileNotFound());
+            const string Flag = "\"createDefaultCredentials\": false,";
+            _profileResponse = await PostApplicationAsync(Flag);
+
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureVendorNotFound());
+            _vendorResponse = await PostApplicationAsync(Flag);
+
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureDuplicateApplication("Application 11"));
+            _duplicateResponse = await PostApplicationAsync(Flag);
+
+            ArrangeVendorAndInsert(new ApplicationInsertResult.FailureUnknown("boom"));
+            _unknownResponse = await PostApplicationAsync(Flag);
+        }
+
+        [Test]
+        public void It_returns_conflict_for_a_missing_profile() =>
+            _profileResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public void It_returns_conflict_for_a_vendor_removed_before_the_insert() =>
+            _vendorResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+
+        [Test]
+        public async Task It_returns_the_duplicate_name_validation_failure()
+        {
+            _duplicateResponse.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            var body = JsonNode.Parse(await _duplicateResponse.Content.ReadAsStringAsync())!;
+            body["validationErrors"]!["ApplicationName"].Should().NotBeNull();
+        }
+
+        [Test]
+        public void It_returns_internal_server_error_for_an_unknown_failure() =>
+            _unknownResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_never_calls_the_identity_provider() => AssertNoProviderClientWasCreatedOrDeleted();
+    }
+
+    [TestFixture]
+    public class Given_a_credential_reset_for_an_application_with_no_api_clients : ApplicationModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private JsonNode _body = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(7))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+            A.CallTo(() => _applicationRepository.GetApplication(7))
+                .Returns(
+                    new ApplicationGetResult.Success(
+                        new ApplicationResponse
+                        {
+                            Id = 7,
+                            ApplicationName = "Zero Client Application",
+                            ClaimSetName = "ClaimSet",
+                            VendorId = 1,
+                        }
+                    )
                 );
 
-            await ActUpdateAsync();
+            using var client = SetUpClient();
+            _response = await client.PutAsync("/v3/applications/7/reset-credential", null);
+            _body = JsonNode.Parse(await _response.Content.ReadAsStringAsync())!;
         }
 
         [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
+        public void It_returns_conflict() => _response.StatusCode.Should().Be(HttpStatusCode.Conflict);
 
         [Test]
-        public void It_performs_no_compensation_or_cleanup()
-        {
-            _updatedClientUuids.Should().HaveCount(1);
-            _syncCalls.Should().BeEmpty();
-            _deletedClientIds.Should().BeEmpty();
-        }
+        public void It_returns_the_conflict_problem_type() =>
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:conflict");
+
+        [Test]
+        public void It_explains_that_the_application_has_no_api_clients() =>
+            _body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("The application has no API clients. Create one with POST /v3/apiClients.");
+
+        [Test]
+        public void It_resets_no_identity_provider_client() =>
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
     }
 
     [TestFixture]
-    public class Given_a_failed_application_update_whose_rollback_was_already_synchronized
-        : UpdateRollbackTestBase
+    public class Given_a_credential_reset_for_an_application_that_cannot_be_read : ApplicationModuleTests
     {
-        private List<string> _deletedClientIds = null!;
+        private HttpResponseMessage _response = null!;
 
         [SetUp]
-        public async Task Act()
+        public async Task Setup()
         {
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
+            A.CallTo(() => _applicationRepository.GetApplicationApiClients(7))
+                .Returns(new ApplicationApiClientsResult.Success([]));
+            A.CallTo(() => _applicationRepository.GetApplication(7))
+                .Returns(new ApplicationGetResult.FailureUnknown("read failed"));
 
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureVendorNotFound());
-
-            A.CallTo(() =>
-                    _applicationRepository.SyncApplicationApiClientUuid(
-                        A<int>.Ignored,
-                        A<string>.Ignored,
-                        A<Guid>.Ignored,
-                        A<Guid>.Ignored
-                    )
-                )
-                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
-
-            await ActUpdateAsync();
+            using var client = SetUpClient();
+            _response = await client.PutAsync("/v3/applications/7/reset-credential", null);
         }
 
         [Test]
-        public void It_returns_the_unresolved_reference_conflict() =>
-            _updateResponse.StatusCode.Should().Be(HttpStatusCode.Conflict);
+        public void It_returns_internal_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
 
         [Test]
-        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_a_vanished_application_whose_reference_check_fails : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_REFERENCE_CHECK_must_not_leak";
-        private List<string> _deletedClientIds = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _deletedClientIds = [];
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Invokes(call => _deletedClientIds.Add(call.GetArgument<string>(0)!))
-                .Returns(new ClientDeleteResult.Success());
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
-
-            A.CallTo(() => _apiClientRepository.HasApiClientUuidReference(A<Guid>.Ignored))
-                .Returns(new ApiClientUuidReferenceResult.FailureUnknown(Sentinel));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_deletes_nothing() => _deletedClientIds.Should().BeEmpty();
-    }
-
-    [TestFixture]
-    public class Given_a_vanished_application_whose_client_cleanup_throws : UpdateRollbackTestBase
-    {
-        private const string Sentinel = "SENTINEL_CLEANUP_THROW_must_not_leak";
-        private RecordingLockManager _recordingLockManager = null!;
-
-        [SetUp]
-        public async Task Act()
-        {
-            _recordingLockManager = new RecordingLockManager();
-            _lockManager = _recordingLockManager;
-
-            A.CallTo(() =>
-                    _applicationRepository.UpdateApplication(
-                        A<ApplicationUpdateCommand>.Ignored,
-                        A<ApiClientCommand>.Ignored
-                    )
-                )
-                .Returns(new ApplicationUpdateResult.FailureNotExists());
-
-            A.CallTo(() => _clientRepository.DeleteClientAsync(A<string>.Ignored))
-                .Throws(new InvalidOperationException(Sentinel));
-
-            await ActUpdateAsync();
-        }
-
-        [Test]
-        public async Task It_returns_a_sanitized_internal_server_error() =>
-            await AssertSanitizedInternalServerError(_updateResponse, Sentinel);
-
-        [Test]
-        public void It_releases_the_lock() => _recordingLockManager.Handle.Disposed.Should().BeTrue();
+        public void It_resets_no_identity_provider_client() =>
+            A.CallTo(() => _clientRepository.ResetCredentialsAsync(A<string>.Ignored)).MustNotHaveHappened();
     }
 }

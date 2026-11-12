@@ -370,7 +370,7 @@ public class Given_RepresentationRestampCommand
                     new RepresentationRestampValidationException(
                         DocumentCacheAdministrativeCommandClassification.InvalidRepresentationRestampMirror,
                         DocumentCacheAdministrativeDiagnosticCategory.InvalidRepresentationRestampMirror,
-                        "Representation restamp document resource has no unique compiled document-stamping mirror route."
+                        "Representation restamp document resource has no unique compiled document-stamping route."
                     )
                 )
             );
@@ -904,7 +904,7 @@ public class Given_RepresentationRestampCommand
             new RepresentationRestampDocument(
                 documentId,
                 Guid.Parse($"00000000-0000-0000-0000-{documentId:D12}"),
-                new RepresentationRestampMirrorRoute(1, "dms", "Student")
+                new RepresentationRestampStampRoute(1, "dms", "Student")
             ),
         ]);
 

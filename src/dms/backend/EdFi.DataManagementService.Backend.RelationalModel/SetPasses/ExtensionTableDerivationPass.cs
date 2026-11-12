@@ -1136,7 +1136,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
             var column = new DbColumnModel(
                 columnName,
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 isNullable,
                 descriptorPathInfo.DescriptorValuePath,
                 descriptorPathInfo.DescriptorResource

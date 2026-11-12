@@ -47,8 +47,10 @@ public class Given_the_served_openapi_document
     private string DataStoreIdsDescription(string schemaName) =>
         DataStoreIdsSchema(schemaName)["description"]!.GetValue<string>();
 
-    private JsonNode RequestBodyExample(string path, string method) =>
-        _document["paths"]![path]![method]!["requestBody"]!["content"]!["application/json"]!["example"]!;
+    private JsonNode RequestBodyExample(string path, string method, string name) =>
+        _document["paths"]![path]![method]!["requestBody"]!["content"]!["application/json"]!["examples"]![
+            name
+        ]!["value"]!;
 
     private JsonNode Operation(string path, string method) => _document["paths"]![path]![method]!;
 
@@ -133,11 +135,11 @@ public class Given_the_served_openapi_document
         DataStoreIdsSchema(schemaName)["type"]!.GetValue<string>().Should().Be("array");
     }
 
-    [TestCase("/v3/apiClients", "post")]
-    [TestCase("/v3/apiClients/{id}", "put")]
-    public void It_publishes_an_empty_data_store_assignment_example(string path, string method)
+    [TestCase("/v3/apiClients", "post", "inherit")]
+    [TestCase("/v3/apiClients/{id}", "put", "keepScope")]
+    public void It_publishes_an_empty_data_store_assignment_example(string path, string method, string name)
     {
-        RequestBodyExample(path, method)["dataStoreIds"]!.AsArray().Should().BeEmpty();
+        RequestBodyExample(path, method, name)["dataStoreIds"]!.AsArray().Should().BeEmpty();
     }
 
     [Test]
@@ -252,7 +254,10 @@ public class Given_the_served_openapi_document
         params string[] requiredPropertyNames
     )
     {
-        Schema(schemaName)["required"]!.AsArray().Select(value => value!.GetValue<string>()).Should()
+        Schema(schemaName)["required"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
             .BeEquivalentTo(requiredPropertyNames);
     }
 

@@ -7,7 +7,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 
 namespace EdFi.DataManagementService.Backend.Tests.Common;
@@ -21,7 +20,7 @@ namespace EdFi.DataManagementService.Backend.Tests.Common;
 /// upsert/update request types are constructed in each provider adapter. The update-tracking proof
 /// here is the ContentVersion bump by design: the response ETag is composed from ContentVersion
 /// (see reference/adr-etag-from-content-version.md), and the full stored stamp surface —
-/// ContentLastModifiedAt and the root table's replicated stamp columns — is
+/// the authoritative root ContentLastModifiedAt and root ContentVersion mirror — is
 /// owned by the guarded no-op and ETag/If-Match families on either engine, so this changed-PUT
 /// family does not re-assert it.
 /// </summary>
@@ -122,7 +121,6 @@ public static class NoProfileUpdateSemanticsScenarios
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

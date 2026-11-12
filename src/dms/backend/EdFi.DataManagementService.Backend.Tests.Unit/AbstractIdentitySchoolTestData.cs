@@ -147,6 +147,15 @@ internal static class AbstractIdentitySchoolTestData
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -166,10 +175,10 @@ internal static class AbstractIdentitySchoolTestData
                     [new DbColumnName("EducationOrganizationId"), new DbColumnName("DocumentId")]
                 ),
                 new TableConstraint.ForeignKey(
-                    "FK_EducationOrganizationIdentity_Document",
-                    [new DbColumnName("DocumentId")],
+                    "FK_EducationOrganizationIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     new DbTableName(new DbSchemaName("dms"), "Document"),
-                    [new DbColumnName("DocumentId")],
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
                     OnDelete: ReferentialAction.Cascade
                 ),
             ]
@@ -256,6 +265,15 @@ internal static class AbstractIdentitySchoolTestData
                     new ColumnStorage.Stored()
                 ),
                 new DbColumnModel(
+                    new DbColumnName("ResourceKeyId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int16),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
                     new DbColumnName("Discriminator"),
                     ColumnKind.Scalar,
                     new RelationalScalarType(ScalarKind.String, 256),
@@ -273,6 +291,153 @@ internal static class AbstractIdentitySchoolTestData
                 new TableConstraint.Unique(
                     "UX_GeneralStudentProgramAssociationIdentity_RefKey",
                     [new DbColumnName("Program_EducationOrganizationId"), new DbColumnName("DocumentId")]
+                ),
+                new TableConstraint.ForeignKey(
+                    "FK_GeneralStudentProgramAssociationIdentity_DocumentResourceKey",
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
+                    new DbTableName(new DbSchemaName("dms"), "Document"),
+                    [new DbColumnName("DocumentId"), new DbColumnName("ResourceKeyId")],
+                    OnDelete: ReferentialAction.Cascade
+                ),
+            ]
+        );
+
+    /// <summary>
+    /// Builds a concrete StudentProgramAssociation root table with two reference-backed identity columns whose
+    /// JSONPaths end in the same property: <c>EducationOrganization_EducationOrganizationId</c> from
+    /// <c>$.educationOrganizationReference</c> and <c>Program_EducationOrganizationId</c> from
+    /// <c>$.programReference</c>.
+    /// </summary>
+    internal static DbTableModel StudentProgramAssociationWithTwoEducationOrganizationIdsRootTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "StudentProgramAssociation"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_StudentProgramAssociation",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    null,
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("EducationOrganization_EducationOrganizationId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression(
+                        "$.educationOrganizationReference.educationOrganizationId",
+                        [
+                            new JsonPathSegment.Property("educationOrganizationReference"),
+                            new JsonPathSegment.Property("educationOrganizationId"),
+                        ]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Program_EducationOrganizationId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression(
+                        "$.programReference.educationOrganizationId",
+                        [
+                            new JsonPathSegment.Property("programReference"),
+                            new JsonPathSegment.Property("educationOrganizationId"),
+                        ]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            []
+        );
+
+    /// <summary>
+    /// Models edfi."GeneralStudentProgramAssociationIdentity" with both reference-backed EducationOrganization
+    /// identity columns: DocumentId primary key, the _NK natural-key unique over the two identity columns, the
+    /// _RefKey helper that also includes DocumentId, and the document FK.
+    /// </summary>
+    internal static DbTableModel GeneralStudentProgramAssociationIdentityWithTwoEducationOrganizationIdsTable() =>
+        new(
+            new DbTableName(new DbSchemaName("edfi"), "GeneralStudentProgramAssociationIdentity"),
+            new JsonPathExpression("$", []),
+            new TableKey(
+                "PK_GeneralStudentProgramAssociationIdentity",
+                [new DbKeyColumn(new DbColumnName("DocumentId"), ColumnKind.ParentKeyPart)]
+            ),
+            [
+                new DbColumnModel(
+                    new DbColumnName("DocumentId"),
+                    ColumnKind.ParentKeyPart,
+                    new RelationalScalarType(ScalarKind.Int64),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("EducationOrganization_EducationOrganizationId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression(
+                        "$.educationOrganizationReference.educationOrganizationId",
+                        [
+                            new JsonPathSegment.Property("educationOrganizationReference"),
+                            new JsonPathSegment.Property("educationOrganizationId"),
+                        ]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Program_EducationOrganizationId"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.Int32),
+                    false,
+                    new JsonPathExpression(
+                        "$.programReference.educationOrganizationId",
+                        [
+                            new JsonPathSegment.Property("programReference"),
+                            new JsonPathSegment.Property("educationOrganizationId"),
+                        ]
+                    ),
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+                new DbColumnModel(
+                    new DbColumnName("Discriminator"),
+                    ColumnKind.Scalar,
+                    new RelationalScalarType(ScalarKind.String, 256),
+                    false,
+                    null,
+                    null,
+                    new ColumnStorage.Stored()
+                ),
+            ],
+            [
+                new TableConstraint.Unique(
+                    GeneralStudentProgramAssociationNaturalKeyConstraintName,
+                    [
+                        new DbColumnName("EducationOrganization_EducationOrganizationId"),
+                        new DbColumnName("Program_EducationOrganizationId"),
+                    ]
+                ),
+                new TableConstraint.Unique(
+                    "UX_GeneralStudentProgramAssociationIdentity_RefKey",
+                    [
+                        new DbColumnName("EducationOrganization_EducationOrganizationId"),
+                        new DbColumnName("Program_EducationOrganizationId"),
+                        new DbColumnName("DocumentId"),
+                    ]
                 ),
                 new TableConstraint.ForeignKey(
                     "FK_GeneralStudentProgramAssociationIdentity_Document",
@@ -293,8 +458,8 @@ internal static class AbstractIdentitySchoolTestData
 
     /// <summary>
     /// Builds the School write plan and mapping set shared by the abstract-identity tests. The School
-    /// referential-identity trigger is always present so the failure mapper can project the concrete identity
-    /// values; the constraint resolver ignores triggers.
+    /// own natural-key probe is always present so the failure mapper can project the concrete identity
+    /// values; the constraint resolver classifies abstract identity conflicts structurally.
     /// </summary>
     /// <param name="abstractIdentityTable">
     /// The abstract identity table placed in the mapping set's abstract-identity inventory. Tests pass a
@@ -306,8 +471,7 @@ internal static class AbstractIdentitySchoolTestData
         BuildSubclassWriteModel(
             SchoolResource,
             SchoolRootTable(),
-            new DbColumnName("SchoolId"),
-            "$.schoolId",
+            [(new DbColumnName("SchoolId"), "$.schoolId")],
             abstractIdentityTable,
             EducationOrganizationResource
         );
@@ -324,8 +488,7 @@ internal static class AbstractIdentitySchoolTestData
         BuildSubclassWriteModel(
             LocalEducationAgencyResource,
             LocalEducationAgencyRootTable(),
-            new DbColumnName("LocalEducationAgencyId"),
-            "$.localEducationAgencyId",
+            [(new DbColumnName("LocalEducationAgencyId"), "$.localEducationAgencyId")],
             EducationOrganizationIdentityTable(),
             EducationOrganizationResource
         );
@@ -344,21 +507,54 @@ internal static class AbstractIdentitySchoolTestData
         BuildSubclassWriteModel(
             StudentProgramAssociationResource,
             StudentProgramAssociationRootTable(),
-            new DbColumnName("Program_EducationOrganizationId"),
-            "$.programReference.educationOrganizationId",
+            [
+                (
+                    new DbColumnName("Program_EducationOrganizationId"),
+                    "$.programReference.educationOrganizationId"
+                ),
+            ],
             GeneralStudentProgramAssociationIdentityTable(),
             GeneralStudentProgramAssociationResource
         );
 
     /// <summary>
+    /// Builds a concrete StudentProgramAssociation write model whose two reference-backed identity elements end
+    /// in the same property (<c>educationOrganizationId</c>), projecting into a two-column
+    /// GeneralStudentProgramAssociation abstract identity table. The referential-identity metadata lists
+    /// <c>$.programReference.educationOrganizationId</c> before
+    /// <c>$.educationOrganizationReference.educationOrganizationId</c>, deliberately not in alphabetical order,
+    /// so a test can tell metadata order from sorted order.
+    /// </summary>
+    internal static (
+        ResourceWritePlan WritePlan,
+        MappingSet MappingSet
+    ) BuildRepeatedIdentityLeafSubclassWriteModel() =>
+        BuildSubclassWriteModel(
+            StudentProgramAssociationResource,
+            StudentProgramAssociationWithTwoEducationOrganizationIdsRootTable(),
+            [
+                (
+                    new DbColumnName("Program_EducationOrganizationId"),
+                    "$.programReference.educationOrganizationId"
+                ),
+                (
+                    new DbColumnName("EducationOrganization_EducationOrganizationId"),
+                    "$.educationOrganizationReference.educationOrganizationId"
+                ),
+            ],
+            GeneralStudentProgramAssociationIdentityWithTwoEducationOrganizationIdsTable(),
+            GeneralStudentProgramAssociationResource
+        );
+
+    /// <summary>
     /// Builds the write plan and mapping set for a concrete subclass that projects into the shared abstract
-    /// identity table, parameterized by the subclass's identity column, JSONPath, and abstract superclass.
+    /// identity table, parameterized by the subclass's identity columns and JSONPaths (in referential-identity
+    /// order) and its abstract superclass.
     /// </summary>
     private static (ResourceWritePlan WritePlan, MappingSet MappingSet) BuildSubclassWriteModel(
         QualifiedResourceName concreteResource,
         DbTableModel concreteRootTable,
-        DbColumnName identityColumnName,
-        string identityJsonPath,
+        IReadOnlyList<(DbColumnName Column, string JsonPath)> identityElements,
         DbTableModel abstractIdentityTable,
         QualifiedResourceName abstractResource
     )
@@ -378,26 +574,19 @@ internal static class AbstractIdentitySchoolTestData
         var concreteKey = new ResourceKeyEntry(1, concreteResource, "1.0.0", false);
         var abstractResourceKey = new ResourceKeyEntry(2, abstractResource, "1.0.0", true);
 
-        // Subclass identifiers carry an Int32 scalar type in these fixtures; the failure mapper reads only the
-        // identity JSONPath from this element (walking it against the request body), not its scalar type, so a
-        // reference-backed nested path resolves the same way.
-        var referentialIdentityTrigger = new DbTriggerInfo(
-            new DbTriggerName($"TR_{concreteResource.ResourceName}_ReferentialIdentity"),
+        // The failure mapper reads only the identity JSONPath from the probe entry (walking it against the
+        // request body), not its column or binding, so a reference-backed nested path resolves the same way.
+        var ownNaturalKeyProbe = new OwnNaturalKeyProbe(
+            concreteResource,
             concreteRootTable.Table,
-            [new DbColumnName("DocumentId")],
-            [identityColumnName],
-            new TriggerKindParameters.ReferentialIdentityMaintenance(
-                concreteKey.ResourceKeyId,
-                concreteResource.ProjectName,
-                concreteResource.ResourceName,
-                [
-                    new IdentityElementMapping(
-                        identityColumnName,
-                        identityJsonPath,
-                        new RelationalScalarType(ScalarKind.Int32)
-                    ),
-                ]
-            )
+            [
+                .. identityElements.Select(identityElement => new NaturalKeyProbeKeyColumn(
+                    new JsonPathExpression(identityElement.JsonPath, []),
+                    identityElement.Column,
+                    new NaturalKeyProbeKeyBinding.Scalar(new RelationalScalarType(ScalarKind.Int32))
+                )),
+            ],
+            new DbColumnName("DocumentId")
         );
 
         var mappingSet = new MappingSet(
@@ -418,7 +607,7 @@ internal static class AbstractIdentitySchoolTestData
                 [new AbstractIdentityTableInfo(abstractResourceKey, abstractIdentityTable)],
                 [],
                 [],
-                [referentialIdentityTrigger]
+                []
             ),
             new Dictionary<QualifiedResourceName, ResourceWritePlan> { [concreteResource] = writePlan },
             new Dictionary<QualifiedResourceName, ResourceReadPlan>(),
@@ -433,7 +622,13 @@ internal static class AbstractIdentitySchoolTestData
                 [abstractResourceKey.ResourceKeyId] = abstractResourceKey,
             },
             new Dictionary<QualifiedResourceName, IReadOnlyList<ResolvedSecurableElementPath>>()
-        );
+        )
+        {
+            OwnNaturalKeyProbesByResource = new Dictionary<QualifiedResourceName, OwnNaturalKeyProbe>
+            {
+                [concreteResource] = ownNaturalKeyProbe,
+            },
+        };
 
         return (writePlan, mappingSet);
     }

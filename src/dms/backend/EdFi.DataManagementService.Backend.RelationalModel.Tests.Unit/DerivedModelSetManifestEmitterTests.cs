@@ -309,7 +309,7 @@ public class Given_A_Contact_Model_Set_With_Extension_When_Emitting_Manifest
                 new DbColumnModel(
                     new DbColumnName("TransportationTypeDescriptor_DescriptorId"),
                     ColumnKind.DescriptorFk,
-                    new RelationalScalarType(ScalarKind.Int64),
+                    new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: false,
                     SourceJsonPath: JsonPathExpressionCompiler.Compile("$.transportationTypeDescriptor"),
                     TargetResource: new QualifiedResourceName("Ed-Fi", "TransportationTypeDescriptor")
@@ -988,5 +988,255 @@ public class Given_A_Model_Set_With_People_Auth_Availability_When_Emitting_Manif
             AuthEdOrgHierarchy: authHierarchy,
             TrackedChangeTablesInNameOrder: trackedChangeTables
         );
+    }
+}
+
+[TestFixture]
+public class Given_A_Mssql_Model_Set_With_Identity_Collation_When_Emitting_Detailed_Manifest
+{
+    private const string FlagProperty = "uses_sql_server_identity_collation";
+    private JsonObject[] _manifestObjects = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var derivedSet = IdentityCollationTestHelpers.BuildSet(
+            new MssqlDialectRules(),
+            IdentityCollationTestSchemaBuilder.BuildCoreProjectSchema()
+        );
+        var manifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "School") }
+        );
+
+        _manifestObjects = IdentityCollationManifestTestHelpers
+            .EnumerateObjects(JsonNode.Parse(manifest)!)
+            .ToArray();
+    }
+
+    [Test]
+    public void It_writes_the_flag_on_a_flagged_column()
+    {
+        _manifestObjects.Single(node => node["name"]?.GetValue<string>() == "SchoolCode")[FlagProperty]!
+            .GetValue<bool>()
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_omits_the_flag_on_an_unflagged_column()
+    {
+        _manifestObjects
+            .Single(node => node["name"]?.GetValue<string>() == "NameOfInstitution")
+            .ContainsKey(FlagProperty)
+            .Should()
+            .BeFalse();
+    }
+
+    [Test]
+    public void It_writes_the_flag_on_a_flagged_tracked_change_value_column()
+    {
+        _manifestObjects.Single(node => node["old_column"]?.GetValue<string>() == "OldSchoolCode")[
+            FlagProperty
+        ]!
+            .GetValue<bool>()
+            .Should()
+            .BeTrue();
+    }
+
+    [Test]
+    public void It_omits_the_flag_on_an_unflagged_tracked_change_value_column()
+    {
+        _manifestObjects
+            .Single(node => node["old_column"]?.GetValue<string>() == "OldOfferingNumber")
+            .ContainsKey(FlagProperty)
+            .Should()
+            .BeFalse();
+    }
+}
+
+[TestFixture]
+public class Given_A_Pgsql_Model_Set_With_Identity_Columns_When_Emitting_Detailed_Manifest
+{
+    private string _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var derivedSet = IdentityCollationTestHelpers.BuildSet(
+            new PgsqlDialectRules(),
+            IdentityCollationTestSchemaBuilder.BuildCoreProjectSchema()
+        );
+
+        _manifest = DerivedModelSetManifestEmitter.Emit(
+            derivedSet,
+            new HashSet<QualifiedResourceName> { new("Ed-Fi", "School") }
+        );
+    }
+
+    [Test]
+    public void It_writes_no_identity_collation_flag()
+    {
+        _manifest.Should().NotContain("uses_sql_server_identity_collation");
+    }
+}
+
+internal static class IdentityCollationManifestTestHelpers
+{
+    internal static IEnumerable<JsonObject> EnumerateObjects(JsonNode node)
+    {
+        switch (node)
+        {
+            case JsonObject jsonObject:
+                yield return jsonObject;
+                foreach (var child in jsonObject.Select(property => property.Value).OfType<JsonNode>())
+                {
+                    foreach (var nested in EnumerateObjects(child))
+                    {
+                        yield return nested;
+                    }
+                }
+                break;
+            case JsonArray jsonArray:
+                foreach (var child in jsonArray.OfType<JsonNode>())
+                {
+                    foreach (var nested in EnumerateObjects(child))
+                    {
+                        yield return nested;
+                    }
+                }
+                break;
+        }
+    }
+}
+
+[TestFixture]
+public class Given_An_Abstract_Identity_Trigger_And_View_When_Emitting_Manifest
+{
+    private const short ResourceKeyIdValue = 4242;
+
+    private JsonObject _manifest = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var schema = new DbSchemaName("edfi");
+        var abstractResourceKey = new ResourceKeyEntry(
+            1,
+            new QualifiedResourceName("Ed-Fi", "EducationOrganization"),
+            "1.0.0",
+            true
+        );
+        var schoolResourceKey = new ResourceKeyEntry(
+            ResourceKeyIdValue,
+            new QualifiedResourceName("Ed-Fi", "School"),
+            "1.0.0",
+            false
+        );
+        var schoolTable = new DbTableName(schema, "School");
+        var identityTable = new DbTableName(schema, "EducationOrganizationIdentity");
+        var organizationIdColumn = new DbColumnName("EducationOrganizationId");
+
+        var view = new AbstractUnionViewInfo(
+            abstractResourceKey,
+            new DbTableName(schema, "EducationOrganization_View"),
+            [
+                new AbstractUnionViewOutputColumn(
+                    new DbColumnName("ResourceKeyId"),
+                    new RelationalScalarType(ScalarKind.Int16),
+                    SourceJsonPath: null,
+                    TargetResource: null
+                ),
+            ],
+            [
+                new AbstractUnionViewArm(
+                    schoolResourceKey,
+                    schoolTable,
+                    [new AbstractUnionViewProjectionExpression.Int16Literal(ResourceKeyIdValue)]
+                ),
+            ]
+        );
+
+        var trigger = new DbTriggerInfo(
+            new DbTriggerName("TR_School_AbstractIdentity"),
+            schoolTable,
+            [new DbColumnName("DocumentId")],
+            [organizationIdColumn],
+            new TriggerKindParameters.AbstractIdentityMaintenance(
+                identityTable,
+                [new TriggerColumnMapping(organizationIdColumn, organizationIdColumn)],
+                ResourceKeyIdValue,
+                "Ed-Fi:School"
+            )
+        );
+
+        var effectiveSchema = new EffectiveSchemaInfo(
+            ApiSchemaFormatVersion: "1.0.0",
+            RelationalMappingVersion: "1.0.0",
+            EffectiveSchemaHash: "hash",
+            ResourceKeyCount: 2,
+            ResourceKeySeedHash: new byte[32],
+            SchemaComponentsInEndpointOrder:
+            [
+                new SchemaComponentInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    ProjectHash: "hash"
+                ),
+            ],
+            ResourceKeysInIdOrder: [abstractResourceKey, schoolResourceKey]
+        );
+
+        var derivedSet = new DerivedRelationalModelSet(
+            effectiveSchema,
+            SqlDialect.Pgsql,
+            ProjectSchemasInEndpointOrder:
+            [
+                new ProjectSchemaInfo(
+                    ProjectEndpointName: "ed-fi",
+                    ProjectName: "Ed-Fi",
+                    ProjectVersion: "1.0.0",
+                    IsExtensionProject: false,
+                    PhysicalSchema: schema
+                ),
+            ],
+            ConcreteResourcesInNameOrder: [],
+            AbstractIdentityTablesInNameOrder: [],
+            AbstractUnionViewsInNameOrder: [view],
+            IndexesInCreateOrder: [],
+            TriggersInCreateOrder: [trigger]
+        );
+
+        _manifest =
+            JsonNode.Parse(DerivedModelSetManifestEmitter.Emit(derivedSet)) as JsonObject
+            ?? throw new InvalidOperationException("Expected manifest to be a JSON object.");
+    }
+
+    [Test]
+    public void It_writes_the_trigger_resource_key_id_value()
+    {
+        var trigger = _manifest["triggers"]!.AsArray().OfType<JsonObject>().Single();
+
+        trigger["resource_key_id_value"]!.GetValue<short>().Should().Be(ResourceKeyIdValue);
+        trigger["discriminator_value"]!.GetValue<string>().Should().Be("Ed-Fi:School");
+    }
+
+    [Test]
+    public void It_writes_Int16_literal_projections()
+    {
+        var projection = _manifest["abstract_union_views"]!.AsArray().OfType<JsonObject>().Single()[
+            "union_arms"
+        ]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single()["projection_expressions"]!
+            .AsArray()
+            .OfType<JsonObject>()
+            .Single();
+
+        projection["kind"]!.GetValue<string>().Should().Be("Int16Literal");
+        projection["value"]!.GetValue<short>().Should().Be(ResourceKeyIdValue);
     }
 }

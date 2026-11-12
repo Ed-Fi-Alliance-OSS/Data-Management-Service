@@ -35,8 +35,8 @@ public class ValidatePartitionQueryMiddlewareTests
     private const string TraceId = "partition-trace-id";
 
     /// <summary>
-    /// A resource with two query fields, one of them typed, so the unknown-field and bad-value
-    /// branches both run for real rather than over an empty field set.
+    /// A resource with two query fields, one of them typed, so ignoring an unknown name and rejecting
+    /// a bad value both run for real rather than over an empty field set.
     /// </summary>
     private static ApiSchemaDocuments NewApiSchemaDocuments() =>
         new ApiSchemaBuilder()
@@ -118,6 +118,14 @@ public class ValidatePartitionQueryMiddlewareTests
 
         return requestInfo;
     }
+
+    private static string? WarningOf(RequestInfo requestInfo) =>
+        requestInfo.FrontendResponse.Headers.TryGetValue(
+            IgnoredQueryParameterWarning.HeaderName,
+            out string? value
+        )
+            ? value
+            : null;
 
     /// <summary>
     /// The parameter-validation shell, asserted whole so a partial regression cannot pass. The media
@@ -223,62 +231,127 @@ public class ValidatePartitionQueryMiddlewareTests
                 PartitionRequestValidator.UnsupportedParameter("totalCount")
             );
         }
+
+        // A rejected name is not also an ignored one, so the warning names only the unknown field.
+        [Test]
+        public async Task It_rejects_the_reserved_parameter_and_reports_only_the_unknown_field()
+        {
+            RequestInfo requestInfo = await Execute(("limit", "5"), ("notAField", "1"));
+
+            AssertParameterValidationShell(
+                requestInfo,
+                PartitionRequestValidator.UnsupportedParameter("limit")
+            );
+            WarningOf(requestInfo).Should().Be("Ignored query parameters: notAField");
+        }
+
+        [Test]
+        public async Task It_sends_no_warning_when_only_a_reserved_parameter_was_sent()
+        {
+            WarningOf(await Execute(("limit", "5"))).Should().BeNull();
+        }
     }
 
     [TestFixture]
     [Parallelizable]
     public class Given_An_Unknown_Query_Field : ValidatePartitionQueryMiddlewareTests
     {
-        [Test]
-        public async Task It_returns_the_bad_request_shell_naming_the_field()
+        /// <summary>
+        /// Runs the step with a rest-of-pipeline that answers 200 with a header of its own, so what the step
+        /// adds to a downstream response, and what it preserves, can be asserted.
+        /// </summary>
+        private static async Task<RequestInfo> ExecuteToDownstreamResponse(
+            params (string Key, string Value)[] queryParameters
+        )
         {
-            RequestInfo requestInfo = await Execute(("notAField", "1"));
+            RequestInfo requestInfo = RequestInfoFor(queryParameters);
 
-            requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+            await new ValidatePartitionQueryMiddleware(
+                NullLogger.Instance,
+                DefaultPartitionCount,
+                NoOpCollectionPagingTelemetry.Instance,
+                _useLegacyDocumentIdOrderingForChangeQueries: false
+            ).Execute(
+                requestInfo,
+                () =>
+                {
+                    requestInfo.FrontendResponse = new FrontendResponse(
+                        StatusCode: 200,
+                        Body: new JsonArray(),
+                        Headers: new() { ["Downstream"] = "kept" }
+                    );
+                    return Task.CompletedTask;
+                }
+            );
 
-            JsonNode body = requestInfo.FrontendResponse.Body!;
-
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
-            body["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
-                .Should()
-                .Equal("The query field 'notAField' is not valid for this resource.");
-            AssertNothingApplied(requestInfo);
+            return requestInfo;
         }
 
-        // Filters are matched before the partition phase, because the reserved names are excluded from
-        // filter matching and that exclusion is what lets '?limit=5' be reported as a parameter that
-        // does not apply rather than as an unknown field. The consequence is that a request carrying
-        // both is answered with the unknown field alone.
         [Test]
-        public async Task It_answers_before_the_reserved_parameter_phase()
+        public async Task It_ignores_the_field_and_applies_the_known_filter()
         {
-            RequestInfo requestInfo = await Execute(("notAField", "1"), ("limit", "5"));
+            RequestInfo requestInfo = await ExecuteToDownstreamResponse(
+                ("notAField", "1"),
+                ("schoolId", "255901")
+            );
 
-            requestInfo.FrontendResponse.Body!["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
+            requestInfo.FrontendResponse.StatusCode.Should().Be(200);
+            requestInfo
+                .QueryElements.Select(queryElement => (queryElement.QueryFieldName, queryElement.Value))
                 .Should()
-                .Equal("The query field 'notAField' is not valid for this resource.");
+                .Equal(("schoolId", "255901"));
+            WarningOf(requestInfo).Should().Be("Ignored query parameters: notAField");
         }
 
-        // Filter matching also precedes the count phase, so a request that is wrong in both ways is
-        // answered with the field. The count error is suppressed, not merged.
         [Test]
-        public async Task It_answers_before_the_partition_count_phase()
+        public async Task It_keeps_the_downstream_response_and_its_headers()
+        {
+            RequestInfo requestInfo = await ExecuteToDownstreamResponse(("notAField", "1"));
+
+            requestInfo.FrontendResponse.Body.Should().BeOfType<JsonArray>();
+            requestInfo.FrontendResponse.Headers.Should().Contain("Downstream", "kept");
+        }
+
+        [Test]
+        public async Task It_answers_a_malformed_count_with_the_warning()
         {
             RequestInfo requestInfo = await Execute(("number", "abc"), ("notAField", "1"));
+
+            AssertParameterValidationShell(requestInfo, PartitionRequestValidator.NumberOutOfRange);
+            WarningOf(requestInfo).Should().Be("Ignored query parameters: notAField");
+        }
+
+        [TestCase("before")]
+        [TestCase("after")]
+        public async Task It_answers_a_malformed_filter_value_with_the_warning(string unknownPosition)
+        {
+            (string, string)[] queryParameters =
+                unknownPosition == "before"
+                    ? [("notAField", "1"), ("schoolId", "x")]
+                    : [("schoolId", "x"), ("notAField", "1")];
+
+            RequestInfo requestInfo = await Execute(queryParameters);
 
             requestInfo.FrontendResponse.Body!["type"]!
                 .GetValue<string>()
                 .Should()
-                .Be("urn:ed-fi:api:bad-request");
-            requestInfo.FrontendResponse.Body!["errors"]!
-                .AsArray()
-                .Select(error => error!.GetValue<string>())
+                .Be("urn:ed-fi:api:bad-request:data-validation-failed");
+            requestInfo.FrontendResponse.Body!["validationErrors"]!
+                .AsObject()
                 .Should()
-                .Equal("The query field 'notAField' is not valid for this resource.");
+                .ContainKey("$.schoolId");
+            WarningOf(requestInfo).Should().Be("Ignored query parameters: notAField");
+        }
+
+        [Test]
+        public async Task It_sends_no_warning_when_nothing_was_ignored()
+        {
+            RequestInfo requestInfo = await ExecuteToDownstreamResponse(
+                ("schoolId", "255901"),
+                ("number", "4")
+            );
+
+            WarningOf(requestInfo).Should().BeNull();
         }
     }
 
@@ -342,7 +415,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [Test]
         public async Task It_answers_before_the_resource_filter_phase()
         {
-            RequestInfo requestInfo = await Execute(("minChangeVersion", "notANumber"), ("notAField", "1"));
+            RequestInfo requestInfo = await Execute(("minChangeVersion", "notANumber"), ("schoolId", "x"));
 
             requestInfo.FrontendResponse.Body!["type"]!
                 .GetValue<string>()
@@ -352,8 +425,7 @@ public class ValidatePartitionQueryMiddlewareTests
                 .AsArray()
                 .Select(error => error!.GetValue<string>())
                 .Should()
-                .NotContain("The query field 'notAField' is not valid for this resource.")
-                .And.ContainSingle();
+                .ContainSingle();
             AssertNothingApplied(requestInfo);
         }
     }
@@ -623,7 +695,7 @@ public class ValidatePartitionQueryMiddlewareTests
         [
             new TestCaseData(new[] { ("number", "0") }).SetName("{m}(partition count fault)"),
             new TestCaseData(new[] { ("minChangeVersion", "abc") }).SetName("{m}(change-version fault)"),
-            new TestCaseData(new[] { ("notAField", "1") }).SetName("{m}(unknown query field)"),
+            new TestCaseData(new[] { ("limit", "5") }).SetName("{m}(reserved paging parameter)"),
             new TestCaseData(new[] { ("schoolId", "not-a-number") }).SetName("{m}(invalid filter value)"),
         ];
 
@@ -653,6 +725,16 @@ public class ValidatePartitionQueryMiddlewareTests
             telemetry.Single.Duration.Should().BeNull();
             telemetry.Single.Requested.Should().BeNull();
             telemetry.Single.Returned.Should().BeNull();
+        }
+
+        [Test]
+        public async Task It_counts_nothing_for_an_ignored_parameter()
+        {
+            RecordingCollectionPagingTelemetry telemetry = new();
+
+            await Execute(telemetry, ("notAField", "1"));
+
+            telemetry.Measurements.Should().BeEmpty();
         }
 
         [Test]

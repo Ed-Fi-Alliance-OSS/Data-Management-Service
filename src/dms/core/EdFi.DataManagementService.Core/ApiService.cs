@@ -39,7 +39,6 @@ internal class ApiService : IApiService
     private readonly IEffectiveApiSchemaProvider _effectiveApiSchemaProvider;
     private readonly IClaimSetProvider _claimSetProvider;
     private readonly IDocumentValidator _documentValidator;
-    private readonly IMatchingDocumentUuidsValidator _matchingDocumentUuidsValidator;
     private readonly IEqualityConstraintValidator _equalityConstraintValidator;
     private readonly IDecimalValidator _decimalValidator;
     private readonly ILogger<ApiService> _logger;
@@ -162,7 +161,6 @@ internal class ApiService : IApiService
         IEffectiveApiSchemaProvider effectiveApiSchemaProvider,
         IClaimSetProvider claimSetProvider,
         IDocumentValidator documentValidator,
-        IMatchingDocumentUuidsValidator matchingDocumentUuidsValidator,
         IEqualityConstraintValidator equalityConstraintValidator,
         IDecimalValidator decimalValidator,
         ILogger<ApiService> logger,
@@ -191,7 +189,6 @@ internal class ApiService : IApiService
         _effectiveApiSchemaProvider = effectiveApiSchemaProvider;
         _claimSetProvider = claimSetProvider;
         _documentValidator = documentValidator;
-        _matchingDocumentUuidsValidator = matchingDocumentUuidsValidator;
         _equalityConstraintValidator = equalityConstraintValidator;
         _decimalValidator = decimalValidator;
         _logger = logger;
@@ -435,6 +432,7 @@ internal class ApiService : IApiService
                 _logger,
                 _appSettings.Value.MaximumPageSize,
                 _cursorParametersRecognized: true,
+                _resourceFiltersRecognized: true,
                 _serviceProvider.GetRequiredService<ICollectionPagingTelemetry>(),
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
@@ -519,6 +517,8 @@ internal class ApiService : IApiService
             new RequestInfoBodyLoggingMiddleware(_logger, _appSettings.Value.MaskRequestBodyInLogs),
             new DuplicatePropertiesMiddleware(_logger),
             _serviceProvider.GetRequiredService<ProfileResolutionMiddleware>(),
+            // Preserve profile-error precedence; normalize after duplicate detection and before coercion and validation.
+            new NormalizePutIdMiddleware(_logger),
             new CoerceDateFormatMiddleware(_logger),
             new CoerceDateTimesMiddleware(_logger),
         ]);
@@ -537,7 +537,6 @@ internal class ApiService : IApiService
             new ValidateDocumentMiddleware(_logger, _documentValidator),
             new ValidateDecimalMiddleware(_logger, _decimalValidator),
             _serviceProvider.GetRequiredService<ProfileWritePipelineMiddleware>(),
-            new ValidateMatchingDocumentUuidsMiddleware(_logger, _matchingDocumentUuidsValidator),
             new ValidateEqualityConstraintMiddleware(_logger, _equalityConstraintValidator),
             new BuildResourceInfoMiddleware(
                 _logger,
@@ -650,14 +649,18 @@ internal class ApiService : IApiService
             // inert for the same reason: a tracked-change request travels on its own contract, which
             // carries no anchor. The configured ordering value is still supplied rather than
             // hard-coded, so no composition can resolve the anchor by a different rule than the others.
+            //
+            // A Change Query neither pages by cursor nor filters on resource fields. The cursor
+            // parameters are rejected by name, so a client cannot believe it is walking a cursor. A
+            // resource filter is ignored and reported, as the ODS/API ignores it.
             new ValidateQueryMiddleware(
                 _logger,
                 _appSettings.Value.MaximumPageSize,
                 _cursorParametersRecognized: false,
+                _resourceFiltersRecognized: false,
                 NoOpCollectionPagingTelemetry.Instance,
                 _appSettings.Value.UseLegacyDocumentIdOrderingForChangeQueries
             ),
-            new ValidateTrackedChangeQueryMiddleware(_logger),
             new ResourceActionAuthorizationMiddleware(_claimSetProvider, _logger),
             new ApplicationContextRequirementMiddleware(_applicationContextRequirementLogger),
             new ProvideAuthorizationFiltersMiddleware(_logger),
@@ -743,14 +746,17 @@ internal class ApiService : IApiService
     /// eight steps from GetIdentityCommonSteps(), then content-type, body parsing, and duplicate-property
     /// checks - all gated behind the capability check, so a request for an unsupported operation never
     /// reaches content-type or body validation - and finally IdentityHandler.
+    /// Body parsing and duplicate-property checks answer their 400s as application/problem+json, the
+    /// only media type the identity OpenAPI document declares for them; the resource write pipelines
+    /// keep those steps' application/json default.
     /// </summary>
     private PipelineProvider CreateIdentityJsonBodyPipeline()
     {
         var steps = GetIdentityCommonSteps();
         steps.AddRange([
             new ValidateContentTypeMiddleware(_logger, ContentTypePolicy.BaselineJsonOnly),
-            new ParseBodyMiddleware(_logger),
-            new DuplicatePropertiesMiddleware(_logger),
+            new ParseBodyMiddleware(_logger, _errorContentType: "application/problem+json"),
+            new DuplicatePropertiesMiddleware(_logger, errorContentType: "application/problem+json"),
             new IdentityHandler(
                 _identityProviderBoundary,
                 IdentityHandler.DefaultMaxRequestLineSize,
@@ -1439,13 +1445,6 @@ internal class ApiService : IApiService
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
     public async Task<IFrontendResponse> ReloadClaimsetsAsync(string? tenant = null)
     {
-        // Check if claimset reload endpoints are enabled
-        if (!_appSettings.Value.EnableClaimsetReload)
-        {
-            _logger.LogWarning("Claimsets reload requested but claimset reload is disabled");
-            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
-        }
-
         _logger.LogInformation("Claimsets reload requested");
 
         try
@@ -1457,7 +1456,7 @@ internal class ApiService : IApiService
             // Force immediate reload by calling GetAllClaimSets(), which will fetch from CMS and populate the cache
             var claimSets = await _claimSetProvider.GetAllClaimSets(tenant);
             _logger.LogInformation(
-                "Claimsets reloaded successfully. Retrieved {ClaimSetCount} claimsets from CMS",
+                "Claimsets reloaded successfully. Retrieved {ClaimSetCount} claimsets from the Configuration Service",
                 claimSets.Count
             );
 
@@ -1481,13 +1480,6 @@ internal class ApiService : IApiService
     /// <param name="tenant">Optional tenant identifier for multi-tenant deployments</param>
     public async Task<IFrontendResponse> ViewClaimsetsAsync(string? tenant = null)
     {
-        // Check if claimset reload endpoints are enabled
-        if (!_appSettings.Value.EnableClaimsetReload)
-        {
-            _logger.LogWarning("Claimsets view requested but claimset reload is disabled");
-            return new FrontendResponse(StatusCode: 404, Body: null, Headers: []);
-        }
-
         _logger.LogInformation("Claimsets view requested");
 
         try

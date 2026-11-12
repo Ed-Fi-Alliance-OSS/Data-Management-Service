@@ -5,7 +5,7 @@ This guide walks you through deploying and configuring a multi-tenant Ed-Fi API
 
 ## Overview
 
-Multi-tenancy in DMS provides two layers of data isolation:
+Multi-tenancy in DMS provides two layers of data partitioning:
 
 1. **Tenant Isolation** - Configuration data is isolated between tenants via the
    `Tenant` HTTP header in Configuration Service requests. Vendors, applications
@@ -18,6 +18,11 @@ Multi-tenancy in DMS provides two layers of data isolation:
    tenant already uses is rejected with 400 even though it is not listed
 2. **Instance Routing** - Each tenant can have multiple data stores (databases),
    accessible via URL-based routing or credential-based routing
+
+> [!IMPORTANT]
+> The `Tenant` header is a **routing mechanism, not a security boundary**. Every
+> Configuration Service client can address every tenant. See
+> [Tenant Header](#tenant-header) before issuing Configuration Service credentials.
 
 ## Prerequisites
 
@@ -44,7 +49,7 @@ Edit `.env.multitenancy` and configure these key settings:
 DMS_MULTI_TENANCY=true
 
 # Enable multi-tenancy in Configuration Service
-DMS_CONFIG_MULTI_TENANCY=true
+CONFIGURATION_SERVICE_MULTI_TENANCY=true
 ```
 
 ### Route Qualifier Settings (Optional)
@@ -67,6 +72,18 @@ When route qualifiers are configured:
 
 Leave `ROUTE_QUALIFIER_SEGMENTS` empty or commented out for implicit routing
 (each API credential accesses only one instance).
+
+### Swagger UI Settings
+
+With multi-tenancy enabled, the DMS metadata routes answer only under the tenant
+and every configured route qualifier value, so Swagger UI needs one such route
+context to load the API definitions:
+
+```bash
+# The tenant, then one value per ROUTE_QUALIFIER_SEGMENTS entry, slash separated.
+# DistrictA and 2024 are the tenant and school year Steps 4 and 5 create.
+DMS_SWAGGER_UI_ROUTE_CONTEXT=DistrictA/2024
+```
 
 ### Database Settings
 
@@ -96,8 +113,8 @@ is included in the repository.
 > `schoolYear` route contexts (as of DMS-1153 this flag lives on the configure
 > phase command, not `start-local-dms.ps1`).
 > `-SchoolYearRange` and `-NoDataStore` are mutually exclusive.
-> If `DMS_CONFIG_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
-> `CONFIG_SERVICE_TENANT` in the environment file so the script can send the
+> If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, then `-SchoolYearRange` also requires
+> `DMS_CONFIGURATION_SERVICE_TENANT` in the environment file so the script can send the
 > required `Tenant` header.
 > Avoid mixing `-SchoolYearRange` with manual instance creation in the same
 > environment, because manually named instances can duplicate its route
@@ -109,14 +126,9 @@ Start the DMS stack with your multi-tenancy configuration:
 ```powershell
 cd eng/docker-compose
 
-# Prepare the ApiSchema workspace used by provisioning. On a clean checkout,
-# publish the api-schema-tools tool first.
-$schemaToolProject = "../../src/dms/clis/EdFi.DataManagementService.SchemaTools/EdFi.DataManagementService.SchemaTools.csproj"
-$schemaToolOutput  = ".bootstrap/tools/api-schema-tools"
-dotnet publish $schemaToolProject -c Release -p:UseAppHost=true -o $schemaToolOutput
-$schemaToolExe = if ($IsWindows) { "$schemaToolOutput/api-schema-tools.exe" } else { "$schemaToolOutput/api-schema-tools" }
-
-pwsh ./prepare-dms-schema.ps1 -SchemaToolPath $schemaToolExe
+# Prepare the ApiSchema workspace used by provisioning. If no eligible schema tool
+# exists, prepare publishes it automatically using the host .NET 10 SDK.
+pwsh ./prepare-dms-schema.ps1
 pwsh ./prepare-dms-claims.ps1
 
 pwsh ./start-local-dms.ps1 `
@@ -153,7 +165,7 @@ on first connection. Schema provisioning happens after the data stores exist in
 Configuration Service (Step 5).
 
 You do not need to create the databases manually. The provisioning phase uses
-the configured CMS data store connection strings, creates missing PostgreSQL
+the configured Configuration Service data store connection strings, creates missing PostgreSQL
 databases, and runs the SchemaTools ddl provision workflow for each distinct
 target database. If you prefer to create empty databases yourself before
 provisioning, use commands like these:
@@ -179,7 +191,7 @@ host=dms-postgresql;port=5432;username=postgres;password={your_password};databas
 For the databases created above:
 
 | Database | Connection String |
-|----------|-------------------|
+| ---------- | ------------------- |
 | edfi_dms_districta_2024 | `host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2024;` |
 | edfi_dms_districta_2025 | `host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districta_2025;` |
 | edfi_dms_districtb_2024 | `host=dms-postgresql;port=5432;username=postgres;password=abcdefgh1!;database=edfi_dms_districtb_2024;` |
@@ -218,10 +230,10 @@ script never creates them) and want explicit school year routing (for example,
 Prerequisites:
 
 - `ROUTE_QUALIFIER_SEGMENTS=schoolYear` in your environment file.
-- If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
+- If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all
   tenant-scoped Configuration Service calls.
 - Choose the target PostgreSQL database names first (Step 3). Provision them
-  after creating the CMS data stores and route contexts.
+  after creating the Configuration Service data stores and route contexts.
 
 Steps (repeat per school year):
 
@@ -283,18 +295,18 @@ the tenant databases before restarting DMS.
 
 Notes:
 
-- If `DMS_CONFIG_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all tenant-scoped Configuration Service requests.
+- If `CONFIGURATION_SERVICE_MULTI_TENANCY=true`, include `Tenant: {tenant-name}` on all tenant-scoped Configuration Service requests.
 - Each instance needs route context entries that match `ROUTE_QUALIFIER_SEGMENTS`.
 
 ## Step 5: Provision Schemas and Restart DMS
 
 After creating all instances and route contexts, provision the tenant
-databases. `provision-dms-schema.ps1` reads data stores from Configuration
-Service for the tenant named by `CONFIG_SERVICE_TENANT` in the environment
+databases. `provision-dms-schema.ps1` reads data stores from the Configuration
+Service for the tenant named by `DMS_CONFIGURATION_SERVICE_TENANT` in the environment
 file, translates Docker-internal PostgreSQL connection strings to host-side
 targets, creates missing databases, and invokes `api-schema-tools ddl provision`.
 
-For the two-tenant example, set `CONFIG_SERVICE_TENANT` to `DistrictA` in
+For the two-tenant example, set `DMS_CONFIGURATION_SERVICE_TENANT` to `DistrictA` in
 `.env.multitenancy`, provision, then repeat with `DistrictB`:
 
 ```powershell
@@ -384,15 +396,15 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 ### Environment Variables
 
 | Variable | Description | Default |
-|----------|-------------|---------|
+| ---------- | ------------- | --------- |
 | `DMS_MULTI_TENANCY` | Enable multi-tenancy in DMS | `false` |
-| `DMS_CONFIG_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
+| `CONFIGURATION_SERVICE_MULTI_TENANCY` | Enable multi-tenancy in Configuration Service | `false` |
 | `ROUTE_QUALIFIER_SEGMENTS` | Comma-separated route qualifiers (e.g., `schoolYear` or `districtId,schoolYear`) | (empty) |
 
 ### API Endpoints
 
 | Endpoint | Method | Description |
-|----------|--------|-------------|
+| ---------- | -------- | ------------- |
 | `/v3/tenants/` | GET, POST | List/create tenants |
 | `/tenancy` | GET | List tenant names; requires no authentication and no Tenant header |
 | `/v3/dataStores` | GET, POST, PUT, DELETE | Manage data stores |
@@ -405,7 +417,7 @@ docker exec dms-postgresql psql -U postgres -d edfi_dms_districta_2025 \
 For tenant-scoped Configuration Service requests (the `/v3/*` resources),
 include:
 
-```
+```text
 Tenant: {tenant-name}
 ```
 
@@ -425,10 +437,48 @@ A client that does not yet know a tenant name reads `GET /`, follows
 `/v3/tenants/` also needs no `Tenant` header, but unlike the discovery
 endpoints it does require authentication.
 
+#### The tenant header selects data, it does not restrict access
+
+The `Tenant` header tells the Configuration Service **which tenant's configuration
+data a request operates on**. It does not limit which tenants a client may reach,
+and it is not an access control mechanism. This is a deliberate design decision:
+
+- Configuration Service access tokens carry no tenant claim.
+- Any Configuration Service client with the appropriate scope may set any valid
+  `Tenant` value and administer that tenant's vendors, applications, API clients,
+  claim sets, and data store connection strings.
+- Tenant names are discoverable: `GET /tenancy` lists them without authentication,
+  and `GET /v3/tenants` lists them to any authenticated client without a `Tenant`
+  header.
+
+**Treat every Configuration Service credential as a platform-wide administrative
+credential.** Do not issue Configuration Service client credentials to a party who
+should only be able to administer a single tenant — there is no per-tenant
+Configuration Service credential, and the header will not stop them from reaching
+other tenants.
+
+This applies only to the Configuration Service. Vendor credentials issued *by* the
+Configuration Service for the DMS resource API are separately constrained: DMS
+enforces claim set, education organization, namespace prefix, and data store
+authorization per request.
+
+If you require a hard security boundary between tenants — for example, because
+different organizations administer their own configuration — run a separate
+Configuration Service deployment, with its own database and its own credentials,
+per boundary.
+
 ## Step 7: Access Swagger UI with Multi-Tenancy
 
 With multi-tenancy enabled, Swagger UI provides dropdown selectors for both
 tenant and school year selection.
+
+Swagger UI loads the API definitions under the route context in
+`DMS_SWAGGER_UI_ROUTE_CONTEXT` (`DistrictA/2024` in `.env.multitenancy`),
+because the DMS metadata routes answer only under a tenant and every configured
+route qualifier value. The tenant and school year it names must exist, which is
+why this step comes after Steps 4 and 5. Once a definition loads, its tenant and
+school year selectors list every tenant and school year DMS has loaded, so one
+route context is enough to work with all of them.
 
 ### Navigate to Swagger UI
 
@@ -450,6 +500,14 @@ tenant and school year in the URL path. For example, selecting "DistrictA" and
 ```
 http://localhost:8080/DistrictA/2024/data/ed-fi/{resource}
 ```
+
+### Troubleshooting
+
+If the page shows "Failed to load API definition", `DMS_SWAGGER_UI_ROUTE_CONTEXT`
+is empty or names a tenant or school year that does not exist. The notice at the
+top of the page and the browser console carry the DMS response. Correct the
+value in `.env.multitenancy` and run the `start-local-dms.ps1` command from
+Step 2 again; Compose recreates the `swagger-ui` container with the new value.
 
 ### Authentication in Swagger UI
 

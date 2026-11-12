@@ -307,6 +307,62 @@ public class Given_EducationOrganizationProjectionSqlCompiler_Over_The_Ds52_SqlS
     }
 }
 
+/// <summary>
+/// The EducationOrganization union view also outputs <c>ResourceKeyId</c> beside <c>DocumentId</c>,
+/// the identity and <c>Discriminator</c>. That column is not the identity, so the projection must still
+/// compile and read each arm's identity column.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+[Parallelizable]
+public class Given_EducationOrganizationProjectionSqlCompiler_Over_A_Union_View_That_Outputs_ResourceKeyId(
+    SqlDialect dialect
+)
+{
+    private IReadOnlyList<string> _viewOutputColumns = null!;
+    private EducationOrganizationProjectionSqlCompilation _compilation = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var mappingSet = EducationOrganizationProjectionDs52MappingSets.For(dialect);
+
+        _viewOutputColumns =
+        [
+            .. ProjectionMappingSetMutations
+                .EducationOrganizationUnionView(mappingSet)
+                .OutputColumnsInSelectOrder.Select(static column => column.ColumnName.Value),
+        ];
+        _compilation = new EducationOrganizationProjectionSqlCompiler(dialect).Compile(mappingSet);
+    }
+
+    [Test]
+    public void It_compiles_over_a_view_whose_outputs_include_ResourceKeyId()
+    {
+        _viewOutputColumns
+            .Should()
+            .Equal("DocumentId", "EducationOrganizationId", "ResourceKeyId", "Discriminator");
+        EducationOrganizationProjectionDs52MappingSets.RequireCompiled(_compilation);
+    }
+
+    [Test]
+    public void It_reads_each_core_arm_identity_from_its_own_identifier_column()
+    {
+        EducationOrganizationProjectionDs52MappingSets
+            .RequireCompiled(_compilation)
+            .ArmsInOrder.Select(static arm =>
+                (arm.Resource.ResourceName, arm.EducationOrganizationIdColumn.Value)
+            )
+            .Should()
+            .Equal(
+                ("StateEducationAgency", "StateEducationAgencyId"),
+                ("EducationServiceCenter", "EducationServiceCenterId"),
+                ("LocalEducationAgency", "LocalEducationAgencyId"),
+                ("School", "SchoolId")
+            );
+    }
+}
+
 [TestFixture]
 [Parallelizable]
 public class Given_EducationOrganizationProjectionSqlCompiler_With_Extension_Education_Organization_Arms

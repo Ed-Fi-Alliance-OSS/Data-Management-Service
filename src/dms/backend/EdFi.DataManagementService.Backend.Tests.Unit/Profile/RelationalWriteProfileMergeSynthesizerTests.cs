@@ -8,8 +8,10 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Profile;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Backend.Tests.Unit.Profile.ProfileTestDoubles;
@@ -64,10 +66,14 @@ public class Given_ProfileSynthesizer_for_CreateNew_with_single_scalar_binding
     }
 }
 
-[TestFixture]
-public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_binding
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_binding(
+    bool deferMissingReference
+)
 {
-    private RelationalWriteMergeResult _result = null!;
+    private ProfileMergeOutcome _outcome;
+    private RelationalWriteMergedTableState _rootState = null!;
 
     [SetUp]
     public void Setup()
@@ -81,36 +87,50 @@ public class Given_ProfileSynthesizer_for_ExistingDocument_with_hidden_scalar_bi
         );
 
         var synthesizer = BuildProfileSynthesizer();
-        _result = UnwrapMergeResult(
-            synthesizer.Synthesize(
-                new RelationalWriteProfileMergeRequest(
-                    writePlan: plan,
-                    flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "request-value"),
-                    writableRequestBody: body,
-                    currentState: BuildCurrentStateWithSingleRootRow(plan, "stored-value"),
-                    profileRequest: request,
-                    profileAppliedContext: appliedContext,
-                    resolvedReferences: EmptyResolvedReferenceSet()
-                )
+        _outcome = synthesizer.Synthesize(
+            new RelationalWriteProfileMergeRequest(
+                writePlan: plan,
+                flattenedWriteSet: BuildFlattenedWriteSetFrom(plan, "request-value"),
+                writableRequestBody: body,
+                currentState: BuildCurrentStateWithSingleRootRow(plan, "stored-value"),
+                profileRequest: request,
+                profileAppliedContext: appliedContext,
+                resolvedReferences: EmptyResolvedReferenceSet(),
+                allowMissingDocumentReferencesForPrecedence: deferMissingReference
             )
         );
+        _rootState = deferMissingReference
+            ? _outcome.AuthorizationRootTableState!
+            : UnwrapMergeResult(_outcome).TablesInDependencyOrder[0];
     }
 
     [Test]
     public void It_preserves_stored_value_on_hidden_binding()
     {
-        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].MergedRows[0].Values[0])
-            .Value.Should()
-            .Be("stored-value");
+        ((FlattenedWriteValue.Literal)_rootState.MergedRows[0].Values[0]).Value.Should().Be("stored-value");
     }
 
     [Test]
     public void It_includes_projected_current_row()
     {
-        _result.TablesInDependencyOrder[0].CurrentRows.Should().ContainSingle();
-        ((FlattenedWriteValue.Literal)_result.TablesInDependencyOrder[0].CurrentRows[0].Values[0])
-            .Value.Should()
-            .Be("stored-value");
+        _rootState.CurrentRows.Should().ContainSingle();
+        ((FlattenedWriteValue.Literal)_rootState.CurrentRows[0].Values[0]).Value.Should().Be("stored-value");
+    }
+
+    [Test]
+    public void It_returns_only_the_authorization_root_when_missing_references_are_deferred()
+    {
+        _outcome.IsRejection.Should().BeFalse();
+        if (deferMissingReference)
+        {
+            _outcome.MergeResult.Should().BeNull();
+            _outcome.AuthorizationRootTableState.Should().BeSameAs(_rootState);
+        }
+        else
+        {
+            _outcome.AuthorizationRootTableState.Should().BeNull();
+            _outcome.MergeResult!.SupportsGuardedNoOp.Should().BeTrue();
+        }
     }
 }
 
@@ -676,6 +696,19 @@ public class Given_Synthesizer_SeparateTable_VisiblePresent_NoStored_Creatable_F
 
     [Test]
     public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
+
+    [Test]
+    public void It_retains_the_finalized_root_for_authorization_before_the_policy_denial()
+    {
+        _outcome.AuthorizationRootTableState.Should().NotBeNull();
+        _outcome
+            .AuthorizationRootTableState!.MergedRows.Should()
+            .ContainSingle()
+            .Which.Values.OfType<FlattenedWriteValue.Literal>()
+            .Select(value => value.Value)
+            .Should()
+            .Contain("Ada");
+    }
 
     [Test]
     public void It_identifies_the_extension_scope_as_the_rejected_scope()
@@ -3212,6 +3245,16 @@ public class Given_Synthesize_top_level_collection_CreatabilityRejection_propaga
     public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
 
     [Test]
+    public void It_retains_the_finalized_root_for_authorization_before_the_policy_denial()
+    {
+        _outcome.AuthorizationRootTableState.Should().NotBeNull();
+        _outcome.AuthorizationRootTableState!.MergedRows.Should().ContainSingle();
+        _outcome
+            .AuthorizationRootTableState.TableWritePlan.TableModel.IdentityMetadata.TableKind.Should()
+            .Be(DbTableKind.Root);
+    }
+
+    [Test]
     public void It_identifies_the_collection_scope()
     {
         _outcome
@@ -3700,8 +3743,8 @@ internal static class DocumentReferenceCanonicalizeBuilders
         );
 
     public static ResolvedReferenceSet BuildResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
+        ResolvedReferenceSets.Create(
+            successfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>
             {
                 [new JsonPath(ReferenceConcretePath)] = new ResolvedDocumentReference(
                     Reference: new DocumentReference(
@@ -3717,19 +3760,12 @@ internal static class DocumentReferenceCanonicalizeBuilders
                                 EducationOrganizationId
                             ),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath(ReferenceConcretePath)
                     ),
                     DocumentId: SchoolDocumentId,
                     ResourceKeyId: 11
                 ),
-            },
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 
     public static RelationalWriteCurrentState BuildCurrentState(
@@ -4077,7 +4113,7 @@ internal static class DescriptorCanonicalizeBuilders
     );
 
     public const string AddressTypeUri = "uri://ed-fi.org/AddressTypeDescriptor#Physical";
-    public const long AddressTypeId = 42L;
+    public const int AddressTypeId = 42;
 
     /// <summary>
     /// Builds a two-table ResourceWritePlan: [0] root, [1] collection table with
@@ -4192,7 +4228,7 @@ internal static class DescriptorCanonicalizeBuilders
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: Path(DescriptorPath),
             TargetResource: AddressTypeDescriptorResource
@@ -4281,10 +4317,10 @@ internal static class DescriptorCanonicalizeBuilders
     }
 
     /// <summary>
-    /// Builds a CollectionWriteCandidate whose semantic identity carries the Int64 descriptor id
+    /// Builds a CollectionWriteCandidate whose semantic identity carries the Int32 descriptor id
     /// (as the backend flattener would emit after resolving the URI).
     /// </summary>
-    public static CollectionWriteCandidate BuildCandidate(TableWritePlan collectionPlan, long descriptorId)
+    public static CollectionWriteCandidate BuildCandidate(TableWritePlan collectionPlan, int descriptorId)
     {
         var values = new FlattenedWriteValue[collectionPlan.ColumnBindings.Length];
         for (var i = 0; i < values.Length; i++)
@@ -4343,11 +4379,10 @@ internal static class DescriptorCanonicalizeBuilders
     /// </summary>
     public static ResolvedReferenceSet BuildResolvedReferenceSetWithDescriptor(
         string uri,
-        long descriptorId
+        int descriptorId
     ) =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
+        ResolvedReferenceSets.Create(
+            successfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>
             {
                 [new JsonPath("$.addresses[0].addressTypeDescriptor")] = new ResolvedDescriptorReference(
                     Reference: new DescriptorReference(
@@ -4359,29 +4394,26 @@ internal static class DescriptorCanonicalizeBuilders
                         DocumentIdentity: new DocumentIdentity([
                             new DocumentIdentityElement(new JsonPath("$.descriptor"), uri),
                         ]),
-                        ReferentialId: new ReferentialId(Guid.NewGuid()),
                         Path: new JsonPath("$.addresses[0].addressTypeDescriptor")
                     ),
-                    DocumentId: descriptorId,
+                    DescriptorId: descriptorId,
+                    DocumentId: 5000000000L + descriptorId,
                     ResourceKeyId: 1
                 ),
-            },
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
+            }
         );
 
     /// <summary>
     /// Builds a RelationalWriteCurrentState for the two-table plan with a root row and
-    /// optional collection rows (layout: [CollectionItemId, ParentDocumentId, Ordinal, DescriptorId]).
+    /// optional collection rows (layout: [CollectionItemId, ParentDocumentId, Ordinal, DescriptorId]) and
+    /// an optional stored descriptor projection (the URI the database holds for each stored DescriptorId).
     /// </summary>
     public static RelationalWriteCurrentState BuildCurrentState(
         TableWritePlan rootPlan,
         TableWritePlan collectionPlan,
         long documentId,
-        IReadOnlyList<object?[]>? collectionRows = null
+        IReadOnlyList<object?[]>? collectionRows = null,
+        IReadOnlyList<DescriptorUriRow>? storedDescriptorUris = null
     ) =>
         new(
             new DocumentMetadataRow(
@@ -4400,7 +4432,7 @@ internal static class DescriptorCanonicalizeBuilders
                 ),
                 new HydratedTableRows(collectionPlan.TableModel, collectionRows ?? []),
             ],
-            []
+            storedDescriptorUris is null ? [] : [new HydratedDescriptorRows(storedDescriptorUris)]
         );
 
     private static JsonPathExpression Path(string canonical) => new(canonical, []);
@@ -4408,7 +4440,7 @@ internal static class DescriptorCanonicalizeBuilders
 
 /// <summary>
 /// Fixture: descriptor-backed identity in request + stored both carry the URI; the cache
-/// resolves it to Int64. Planner must produce a MatchedUpdateEntry.
+/// resolves it to Int32. Planner must produce a MatchedUpdateEntry.
 /// </summary>
 [TestFixture]
 public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matches_when_uri_in_cache
@@ -4428,7 +4460,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             ),
         };
 
-        // Backend candidate carries Int64 (as flattener produces after resolving).
+        // Backend candidate carries Int32 (as flattener produces after resolving).
         var candidate = DescriptorCanonicalizeBuilders.BuildCandidate(
             collectionPlan,
             DescriptorCanonicalizeBuilders.AddressTypeId
@@ -4469,14 +4501,14 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             [storedRow]
         );
 
-        // Current DB state: one stored row with Int64 descriptor id.
+        // Current DB state: one stored row with Int32 descriptor id.
         var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
             rootPlan,
             collectionPlan,
             documentId: 345L,
             collectionRows:
             [
-                [1L, 345L, 1, DescriptorCanonicalizeBuilders.AddressTypeId],
+                [1L, 345L, 0, DescriptorCanonicalizeBuilders.AddressTypeId],
             ]
         );
 
@@ -4513,21 +4545,41 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
 
     [Test]
+    public void It_keeps_the_compact_descriptor_value_in_the_matched_row() =>
+        _outcome
+            .MergeResult!.TablesInDependencyOrder[1]
+            .MergedRows.Single()
+            .Values[3]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(DescriptorCanonicalizeBuilders.AddressTypeId));
+
+    [Test]
+    public void It_keeps_unchanged_descriptor_rows_equal_for_no_op_detection()
+    {
+        var table = _outcome.MergeResult!.TablesInDependencyOrder[1];
+        table
+            .MergedRows.Single()
+            .ComparableValues.Should()
+            .Equal(table.CurrentRows.Single().ComparableValues);
+    }
+
+    [Test]
     public void It_has_one_current_collection_row() =>
         _outcome.MergeResult!.TablesInDependencyOrder[1].CurrentRows.Length.Should().Be(1);
 }
 
 /// <summary>
-/// Regression: in production, <c>DescriptorExtractor.CreateDescriptorReference</c> lowercases
-/// descriptor URIs before publishing them into <see cref="ResolvedReferenceSet"/>, but Core's
-/// <c>AddressDerivationEngine</c> reads the raw JSON value (typically mixed-case) into
-/// <see cref="VisibleStoredCollectionRow"/> identity parts. The URI-keyed cache lookup must
-/// normalize the input on both insert and probe so the documented "URI in cache" path works
-/// reliably against typical mixed-case Ed-Fi descriptor URIs (e.g.
-/// <c>uri://ed-fi.org/AddressTypeDescriptor#Physical</c>).
+/// Regression: the request-cycle descriptor cache is keyed by the exact URI the client sent, while Core's
+/// <c>AddressDerivationEngine</c> reads stored-row identity parts from the stored document, whose descriptor URIs
+/// carry the database's stored spelling. The merge seeds the cache from the stored descriptor projection, so a stored
+/// spelling resolves whether or not the client matched it. A hidden row makes the cache hit load-bearing: without
+/// it the count-divergence fallback throws.
 /// </summary>
-[TestFixture]
-public class Given_top_level_collection_with_descriptor_backed_semantic_identity_matches_when_uri_case_differs_between_cache_and_stored_row
+[TestFixture("uri://ed-fi.org/AddressTypeDescriptor#Physical")]
+[TestFixture("uri://ed-fi.org/addresstypedescriptor#PHYSICAL")]
+public class Given_top_level_collection_with_descriptor_backed_semantic_identity_and_a_hidden_row_matches_through_the_stored_descriptor_projection(
+    string requestUri
+)
 {
     private ProfileMergeOutcome _outcome;
 
@@ -4539,9 +4591,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
 
         var body = new JsonObject
         {
-            ["addresses"] = new JsonArray(
-                new JsonObject { ["addressTypeDescriptor"] = DescriptorCanonicalizeBuilders.AddressTypeUri }
-            ),
+            ["addresses"] = new JsonArray(new JsonObject { ["addressTypeDescriptor"] = requestUri }),
         };
 
         var candidate = DescriptorCanonicalizeBuilders.BuildCandidate(
@@ -4549,20 +4599,17 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
             DescriptorCanonicalizeBuilders.AddressTypeId
         );
 
-        // Mixed-case URI on the request item (raw JSON input).
-        var requestItem = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(
-            DescriptorCanonicalizeBuilders.AddressTypeUri,
-            creatable: true
-        );
+        // The client's spelling on the request item, as Core reads it from the request body.
+        var requestItem = DescriptorCanonicalizeBuilders.BuildRequestItemWithUri(requestUri, creatable: true);
 
-        // Mixed-case URI on the stored row (raw JSON from stored doc).
+        // The stored spelling on the stored row, as Core reads it from the stored document.
         var storedRow = DescriptorCanonicalizeBuilders.BuildStoredRowWithUri(
             DescriptorCanonicalizeBuilders.AddressTypeUri
         );
 
-        // Cache populated with the LOWERCASED URI as production's DescriptorExtractor produces.
+        // The resolver publishes the client's spelling unchanged; the engine matched it to the stored id.
         var resolvedRefs = DescriptorCanonicalizeBuilders.BuildResolvedReferenceSetWithDescriptor(
-            DescriptorCanonicalizeBuilders.AddressTypeUri.ToLowerInvariant(),
+            requestUri,
             DescriptorCanonicalizeBuilders.AddressTypeId
         );
 
@@ -4588,8 +4635,7 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
         // Two current DB rows; only one is visible to this profile (descriptor-only identity
         // with a hidden row interleaved). This makes the URI-cache hit load-bearing: the
         // positional / scalar-parts fallback would refuse with "row counts differ" because the
-        // current and stored row counts diverge, so the test will fail without the case-
-        // insensitive lookup.
+        // current and stored row counts diverge.
         var currentState = DescriptorCanonicalizeBuilders.BuildCurrentState(
             rootPlan,
             collectionPlan,
@@ -4601,8 +4647,16 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
                     2L,
                     345L,
                     2,
-                    99L, /* hidden row's descriptor id */
+                    99, /* hidden row's descriptor id */
                 ],
+            ],
+            storedDescriptorUris:
+            [
+                new DescriptorUriRow(
+                    DescriptorCanonicalizeBuilders.AddressTypeId,
+                    DescriptorCanonicalizeBuilders.AddressTypeUri
+                ),
+                new DescriptorUriRow(99, "uri://ed-fi.org/AddressTypeDescriptor#Mailing"),
             ]
         );
 
@@ -4632,9 +4686,21 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
     public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
 
     [Test]
+    public void It_preserves_the_hidden_compact_descriptor_and_matches_the_visible_compact_descriptor()
+    {
+        var rows = _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows;
+        rows[0]
+            .Values[3]
+            .Should()
+            .Be(new FlattenedWriteValue.Literal(DescriptorCanonicalizeBuilders.AddressTypeId));
+        rows[1].Values[3].Should().Be(new FlattenedWriteValue.Literal(99));
+        rows[1].Values[0].Should().Be(new FlattenedWriteValue.Literal(2L));
+    }
+
+    [Test]
     public void It_produces_two_merged_rows_one_visible_update_and_one_hidden_preserve() =>
-        // Without case-insensitive URI lookup the cache miss falls through to the count-divergence
-        // throw at CanonicalizeStoredIdentityParts, so this length assertion is the regression gate.
+        // Without the stored-projection seeding the client-changed-casing case misses the cache and falls
+        // through to the count-divergence throw at CanonicalizeStoredIdentityParts, so this is the regression gate.
         _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(2);
 }
 
@@ -4764,9 +4830,9 @@ public class Given_top_level_collection_with_descriptor_backed_identity_delete_b
 
     // Two descriptor URIs/ids used in this fixture.
     private const string AddressTypeUriA = DescriptorCanonicalizeBuilders.AddressTypeUri; // "Physical"
-    private const long AddressTypeIdA = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
+    private const int AddressTypeIdA = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
     private const string AddressTypeUriB = "uri://ed-fi.org/AddressTypeDescriptor#Home";
-    private const long AddressTypeIdB = 99L;
+    private const int AddressTypeIdB = 99;
 
     [SetUp]
     public void Setup()
@@ -4878,7 +4944,7 @@ public class Given_top_level_collection_with_descriptor_backed_identity_delete_b
 
 /// <summary>
 /// Fixture: two-part identity with one scalar part and one descriptor part. The scalar part
-/// must pass through unchanged; the descriptor URI must be canonicalized to Int64.
+/// must pass through unchanged; the descriptor URI must be canonicalized to Int32.
 /// Planner must match request item against stored row after both canonicalizations apply.
 /// </summary>
 [TestFixture]
@@ -4930,7 +4996,7 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: new JsonPathExpression(DescriptorCanonicalizeBuilders.DescriptorPath, []),
             TargetResource: DescriptorCanonicalizeBuilders.AddressTypeDescriptorResource
@@ -5100,7 +5166,7 @@ public class Given_top_level_collection_with_mixed_scalar_and_descriptor_identit
             [rootPlan, collectionPlan]
         );
 
-        // Candidate carries: city = "Springfield", descriptorId = Int64 (Int64 from flattener).
+        // Candidate carries: city = "Springfield", descriptorId = Int32 (Int32 from flattener).
         var candidateValues = new FlattenedWriteValue[]
         {
             new FlattenedWriteValue.Literal(null), // CollectionItemId
@@ -5267,9 +5333,9 @@ internal static class MixedIdentityBuilders
         DescriptorCanonicalizeBuilders.AddressTypeDescriptorResource;
 
     public const string PhysicalUri = DescriptorCanonicalizeBuilders.AddressTypeUri; // "uri://ed-fi.org/AddressTypeDescriptor#Physical"
-    public const long PhysicalId = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
+    public const int PhysicalId = DescriptorCanonicalizeBuilders.AddressTypeId; // 42L
     public const string MailingUri = "uri://ed-fi.org/AddressTypeDescriptor#Mailing";
-    public const long MailingId = 50L;
+    public const int MailingId = 50;
 
     /// <summary>
     /// Builds the five-column mixed-identity collection plan:
@@ -5316,7 +5382,7 @@ internal static class MixedIdentityBuilders
         var descriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("AddressTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: Path(DescriptorPath),
             TargetResource: AddressTypeDescriptorResource
@@ -5528,7 +5594,7 @@ internal static class MixedIdentityBuilders
     public static CollectionWriteCandidate BuildCandidate(
         TableWritePlan collectionPlan,
         string city,
-        long descriptorId,
+        int descriptorId,
         int requestOrder
     )
     {
@@ -6069,15 +6135,7 @@ public class Given_top_level_collection_with_descriptor_only_identity_throws_whe
         );
 
         // Cache is EMPTY — Physical URI not resolved in this request cycle (cache miss).
-        var resolvedRefs = new ResolvedReferenceSet(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+        var resolvedRefs = ResolvedReferenceSets.Create();
 
         var request = new ProfileAppliedWriteRequest(
             body,
@@ -6176,8 +6234,8 @@ internal static class ReferenceWithDescriptorIdentityBuilders
     public const string ProgramBId = "99";
     public const string AthleticUri = "uri://ed-fi.org/ProgramTypeDescriptor#Athletic";
     public const string CareerUri = "uri://ed-fi.org/ProgramTypeDescriptor#Career";
-    public const long AthleticDescriptorId = 10L;
-    public const long CareerDescriptorId = 20L;
+    public const int AthleticDescriptorId = 10;
+    public const int CareerDescriptorId = 20;
     public const long ProgramADocumentId = 501L;
     public const long ProgramBDocumentId = 502L;
 
@@ -6260,16 +6318,7 @@ internal static class ReferenceWithDescriptorIdentityBuilders
             ImmutableArray<string>.Empty
         );
 
-    public static ResolvedReferenceSet BuildEmptyResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    public static ResolvedReferenceSet BuildEmptyResolvedReferenceSet() => ResolvedReferenceSets.Create();
 
     private static TableWritePlan BuildRootPlan()
     {
@@ -6359,7 +6408,7 @@ internal static class ReferenceWithDescriptorIdentityBuilders
         var programTypeDescriptorColumn = new DbColumnModel(
             ColumnName: new DbColumnName("ProgramReference_ProgramTypeDescriptor_Id"),
             Kind: ColumnKind.DescriptorFk,
-            ScalarType: new RelationalScalarType(ScalarKind.Int64),
+            ScalarType: new RelationalScalarType(ScalarKind.Int32),
             IsNullable: false,
             SourceJsonPath: Path(ProgramTypeDescriptorPath),
             TargetResource: ProgramTypeDescriptorResource
@@ -8493,6 +8542,16 @@ public class Given_extension_child_non_creatable_insert_with_existing_visible_pa
     public void It_has_no_merge_result() => _outcome.MergeResult.Should().BeNull();
 
     [Test]
+    public void It_retains_the_root_when_the_extension_child_policy_rejects()
+    {
+        _outcome.AuthorizationRootTableState.Should().NotBeNull();
+        _outcome.AuthorizationRootTableState!.MergedRows.Should().ContainSingle();
+        _outcome
+            .AuthorizationRootTableState.TableWritePlan.TableModel.IdentityMetadata.TableKind.Should()
+            .Be(DbTableKind.Root);
+    }
+
+    [Test]
     public void It_identifies_the_extension_child_collection_scope_as_the_rejected_scope() =>
         _outcome
             .CreatabilityRejection!.ScopeJsonScope.Should()
@@ -9610,4 +9669,80 @@ public class Given_Synthesizer_TopLevelCollection_All_Matched_With_Hidden_Interl
     [Test]
     public void It_projects_comparable_values_from_merged_row_values_via_the_shared_helper() =>
         ProfileMergeGuardedNoOpAssertionHelpers.AssertMergedRowsUseSharedComparableProjection(_result);
+}
+
+[TestFixture]
+public class Given_ProfileSynthesizer_with_a_child_validation_failure
+{
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_retains_the_root_only_for_request_validation(bool invariantFailure)
+    {
+        var plan = BuildRootPlusRootExtensionPlan(
+            extensionBindings: new RootExtensionBindingSpec(
+                "FavoriteColor",
+                RootExtensionBindingKind.Scalar,
+                RelativePath: "$._ext.sample.favoriteColor"
+            )
+        );
+        var body = new JsonObject
+        {
+            ["firstName"] = "Ada",
+            ["_ext"] = new JsonObject { ["sample"] = new JsonObject { ["favoriteColor"] = "Blue" } },
+        };
+        var request = CreateRequest(
+            writableBody: body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$._ext.sample")
+        );
+        var flattened = BuildFlattenedWriteSetWithExtensionRow(
+            plan,
+            plan.TablePlansInDependencyOrder[1],
+            rootLiteralsByBindingIndex: ["Ada"],
+            extensionLiteralsByBindingIndex: [null, "Blue"]
+        );
+        var validation = RelationalWriteRequestValidationException.ForPath(
+            "$._ext.sample.favoriteColor",
+            "Key-unification conflict"
+        );
+        Exception failure = invariantFailure
+            ? new InvalidOperationException("Invalid planner metadata")
+            : validation;
+        var decider = A.Fake<IProfileSeparateTableMergeDecider>();
+        A.CallTo(() => decider.Decide(A<string>._, A<RequestScopeState>._, A<StoredScopeState>._, A<bool>._))
+            .Throws(failure);
+        var sut = new RelationalWriteProfileMergeSynthesizer(
+            new ProfileRootTableBindingClassifier(),
+            new ProfileRootKeyUnificationResolver(),
+            new ProfileSeparateTableBindingClassifier(),
+            new ProfileSeparateTableKeyUnificationResolver(),
+            decider
+        );
+        var input = new RelationalWriteProfileMergeRequest(
+            plan,
+            flattened,
+            body,
+            null,
+            request,
+            null,
+            EmptyResolvedReferenceSet()
+        );
+        if (invariantFailure)
+        {
+            Action act = () => sut.Synthesize(input);
+            act.Should().Throw<InvalidOperationException>().Which.Should().BeSameAs(failure);
+            return;
+        }
+        var result = sut.Synthesize(input);
+        result.ValidationFailure!.ValidationFailures.Should().Equal(validation.ValidationFailures);
+        result.MergeResult.Should().BeNull();
+        result
+            .AuthorizationRootTableState!.MergedRows.Should()
+            .ContainSingle()
+            .Which.Values.OfType<FlattenedWriteValue.Literal>()
+            .Select(value => value.Value)
+            .Should()
+            .Contain("Ada");
+    }
 }

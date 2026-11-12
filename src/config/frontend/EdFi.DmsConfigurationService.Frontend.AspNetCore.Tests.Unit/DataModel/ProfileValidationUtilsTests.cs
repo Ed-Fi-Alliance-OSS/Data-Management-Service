@@ -333,4 +333,124 @@ public class ProfileValidationUtilsTests
             result.Should().BeFalse();
         }
     }
+
+    // Small, bounded declarations with an actual entity reference. Name expands to "PPPP".
+    public const string NestedEntityXml = """
+        <!DOCTYPE Profile [
+        <!ENTITY a "P">
+        <!ENTITY b "&a;&a;">
+        <!ENTITY c "&b;&b;">
+        ]>
+        <Profile name="&c;"><Resource name="School" /></Profile>
+        """;
+
+    [TestFixture("empty internal subset", "P", "<!DOCTYPE Profile []>")]
+    [TestFixture("no internal subset", "P", "<!DOCTYPE Profile>")]
+    [TestFixture("nested internal entities", "PPPP", NestedEntityXml)]
+    [TestFixture("external SYSTEM", "P", "<!DOCTYPE Profile SYSTEM \"urn:dms-1485:external\">")]
+    [TestFixture("external PUBLIC", "P", "<!DOCTYPE Profile PUBLIC \"dms-1485\" \"urn:dms-1485:external\">")]
+    public class Given_profile_xml_with_a_dtd(string description, string profileName, string declaration)
+    {
+        private bool _nameMatches;
+        private bool _hasResource;
+        private bool _allResourcesNamed;
+
+        [SetUp]
+        public void Setup()
+        {
+            // The nested case already carries its own Profile element.
+            var xml = declaration.Contains("<Profile", StringComparison.Ordinal)
+                ? declaration
+                : $"""{declaration}<Profile name="P"><Resource name="School" /></Profile>""";
+
+            _nameMatches = ProfileValidationUtils.XmlProfileNameMatches(profileName, xml);
+            _hasResource = ProfileValidationUtils.HasAtLeastOneResource(xml);
+            _allResourcesNamed = ProfileValidationUtils.AllResourcesHaveNameAttribute(xml);
+        }
+
+        [Test]
+        public void It_rejects_the_profile_name()
+        {
+            _nameMatches.Should().BeFalse(description);
+        }
+
+        [Test]
+        public void It_rejects_resource_presence()
+        {
+            _hasResource.Should().BeFalse(description);
+        }
+
+        [Test]
+        public void It_rejects_resource_names()
+        {
+            _allResourcesNamed.Should().BeFalse(description);
+        }
+    }
+
+    [TestFixture("literal space", "A B", "A B")]
+    [TestFixture("literal tab", "A\tB", "A\tB")]
+    [TestFixture("literal LF", "A\nB", "A\nB")]
+    [TestFixture("literal CR", "A\rB", "A\rB")]
+    [TestFixture("literal CRLF", "A\r\nB", "A\r\nB")]
+    [TestFixture("numeric tab", "A&#9;B", "A\tB")]
+    [TestFixture("numeric CR", "A&#13;B", "A\rB")]
+    [TestFixture("numeric LF", "A&#10;B", "A\nB")]
+    public class Given_profile_xml_attribute_whitespace(
+        string description,
+        string attributeText,
+        string decodedName
+    )
+    {
+        private bool _matchesDecodedName;
+        private bool _matchesSpaceName;
+
+        [SetUp]
+        public void Setup()
+        {
+            var xml = $"""<Profile name="{attributeText}"><Resource name="School" /></Profile>""";
+
+            _matchesDecodedName = ProfileValidationUtils.XmlProfileNameMatches(decodedName, xml);
+            _matchesSpaceName = ProfileValidationUtils.XmlProfileNameMatches("A B", xml);
+        }
+
+        [Test]
+        public void It_preserves_exact_name_matching()
+        {
+            _matchesDecodedName.Should().BeTrue(description);
+        }
+
+        [Test]
+        public void It_only_matches_the_space_name_when_the_value_is_a_space()
+        {
+            _matchesSpaceName.Should().Be(decodedName == "A B", description);
+        }
+    }
+
+    [TestFixture]
+    public class Given_profile_xml_without_a_dtd
+    {
+        [Test]
+        public void It_decodes_predefined_entities_and_numeric_references()
+        {
+            const string xml =
+                """<Profile name="A&amp;B &lt;&gt; &quot;&apos; &#x41;&#66;"><Resource name="S&#99;hool" /></Profile>""";
+
+            ProfileValidationUtils.XmlProfileNameMatches("A&B <> \"' AB", xml).Should().BeTrue();
+            ProfileValidationUtils.XmlProfileNameMatches("A&amp;B", xml).Should().BeFalse();
+            ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeTrue();
+            ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_accepts_dtd_like_text_in_comments_and_cdata()
+        {
+            const string xml = """
+                <Profile name="P"><!-- <!DOCTYPE Profile [ <!ENTITY a "x"> ]> --><Resource name="School" /><![CDATA[<!DOCTYPE Profile>]]></Profile>
+                """;
+
+            ProfileValidationUtils.XmlProfileNameMatches("P", xml).Should().BeTrue();
+            ProfileValidationUtils.HasAtLeastOneResource(xml).Should().BeTrue();
+            ProfileValidationUtils.AllResourcesHaveNameAttribute(xml).Should().BeTrue();
+        }
+    }
 }

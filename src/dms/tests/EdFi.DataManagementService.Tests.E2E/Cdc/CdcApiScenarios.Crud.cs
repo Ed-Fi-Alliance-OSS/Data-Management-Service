@@ -7,6 +7,7 @@ using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 using EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 using EdFi.DataManagementService.Core.Configuration;
@@ -91,6 +92,7 @@ internal sealed partial class CdcApiScenarios
                     await phase.Gate.WaitUntilIdleAsync(ct);
                     phase.Gate.Pause(created.DocumentId);
                     body[updatedField] = "Updated";
+                    await AwaitLaterSecondAsync(created.ContentCreatedAt, ct);
                     await _context.Api.PutAsync(resource, uuid, body, ct);
                     held = await phase.Gate.WaitUntilPausedAsync(ct);
                     var updated = (await _context.Documents.ReadSourceAsync(uuid, ct))
@@ -102,6 +104,14 @@ internal sealed partial class CdcApiScenarios
                     updated.EffectiveSchemaHash.Should().Be(created.EffectiveSchemaHash);
                     updated.ContentVersion.Should().BeGreaterThan(created.ContentVersion);
                     updated.ContentLastModifiedAt.Should().BeOnOrAfter(created.ContentLastModifiedAt);
+                    updated.ContentCreatedAt.Should().Be(created.ContentCreatedAt);
+                    LastModifiedDateFormatter
+                        .Format(updated.ContentLastModifiedAt)
+                        .Should()
+                        .NotBe(
+                            LastModifiedDateFormatter.Format(updated.ContentCreatedAt),
+                            "the exact update envelope proves each timestamp's source column only when their seconds differ"
+                        );
                     await AssertHeldAsync(updated, held, ct);
                     var oldCache = (await _context.Documents.ReadCacheAsync(created.DocumentId, ct))
                         .Should()
@@ -226,6 +236,23 @@ internal sealed partial class CdcApiScenarios
         }
     }
 
+    // Wait on the database stamping clock, not a fixed delay, so the update stamps a later second.
+    private async Task AwaitLaterSecondAsync(DateTimeOffset createdAt, CancellationToken token)
+    {
+        string created = LastModifiedDateFormatter.Format(createdAt);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
+        timeout.CancelAfter(TimeSpan.FromMinutes(1));
+        while (
+            string.CompareOrdinal(
+                LastModifiedDateFormatter.Format(await _context.Documents.ReadClockAsync(timeout.Token)),
+                created
+            ) <= 0
+        )
+        {
+            await Task.Delay(TimeSpan.FromMilliseconds(100), timeout.Token);
+        }
+    }
+
     private Task CheckpointAsync(
         string scenarioId,
         string checkpoint,
@@ -270,7 +297,7 @@ internal static class CdcCrudAssertions
     {
         cache.DocumentUuid.Should().Be(source.DocumentUuid);
         cache.ContentVersion.Should().Be(source.ContentVersion);
-        cache.LastModifiedAt.Should().BeCloseTo(source.ContentLastModifiedAt, TimeSpan.FromTicks(10));
+        cache.LastModifiedAt.Should().Be(source.ContentLastModifiedAt);
         cache.ProjectName.Should().Be(source.ProjectName);
         cache.ResourceName.Should().Be(source.ResourceName);
         cache.ResourceVersion.Should().Be(source.ResourceVersion);

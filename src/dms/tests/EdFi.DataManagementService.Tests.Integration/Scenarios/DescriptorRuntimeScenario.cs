@@ -12,7 +12,7 @@ using FluentAssertions;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
-internal static class DescriptorRuntimeScenario
+internal static partial class DescriptorRuntimeScenario
 {
     private const string DescriptorEndpoint = "/data/ed-fi/schoolTypeDescriptors";
     private const string MergeItemsEndpoint = "/data/ed-fi/profileRootOnlyMergeItems";
@@ -83,6 +83,7 @@ internal static class DescriptorRuntimeScenario
     {
         DescriptorValues initial = CreateDescriptorValues("changed-put");
         (string locationPath, string initialPostEtag) = await CreateDescriptorAsync(harness, initial);
+        await BackdateDescriptorAsync(harness, locationPath);
 
         JsonObject created = await GetJsonObjectAsync(harness, locationPath);
         string resourceId = created["id"]!.GetValue<string>();
@@ -90,6 +91,7 @@ internal static class DescriptorRuntimeScenario
         string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
         initialPostEtag.Should().Be(initialGetEtag, "POST ETag header must match the initial GET _etag");
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
+        StoredDescriptor initialState = await ReadStoredDescriptorAsync(harness, locationPath);
 
         DescriptorValues updated = initial with
         {
@@ -98,9 +100,6 @@ internal static class DescriptorRuntimeScenario
             EffectiveBeginDate = "2025-02-03",
             EffectiveEndDate = "2025-12-30",
         };
-
-        // _lastModifiedDate is stamped at second precision, so wait for the UTC second to tick before the PUT.
-        await WaitForNextWireSecondAsync();
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
             harness,
@@ -130,6 +129,9 @@ internal static class DescriptorRuntimeScenario
                 "changed descriptor PUT must advance the GET response _lastModifiedDate"
             );
 
+        StoredDescriptor updatedState = await ReadStoredDescriptorAsync(harness, locationPath);
+        AssertChangedState(updatedState, initialState, updated);
+        await AssertResponseStateAsync(harness, locationPath, updated, putEtag, updatedState);
         DocumentMetadata updatedMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         updatedMetadata
             .ContentVersion.Should()
@@ -259,6 +261,7 @@ internal static class DescriptorRuntimeScenario
         string initialGetEtag = created["_etag"]!.GetValue<string>();
         string initialLastModifiedDate = created["_lastModifiedDate"]!.GetValue<string>();
         DocumentMetadata initialMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
+        StoredDescriptor initialState = await ReadStoredDescriptorAsync(harness, locationPath);
         DescriptorValues changedIdentity = mutateIdentity(descriptor);
 
         using HttpResponseMessage putResponse = await PutDescriptorAsync(
@@ -297,6 +300,7 @@ internal static class DescriptorRuntimeScenario
                 "rejected identity-change PUT must not advance the GET _lastModifiedDate"
             );
 
+        (await ReadStoredDescriptorAsync(harness, locationPath)).Should().Be(initialState);
         DocumentMetadata afterRejectionMetadata = await ReadDocumentMetadataAsync(harness, resourceId);
         afterRejectionMetadata
             .ContentVersion.Should()
@@ -600,7 +604,7 @@ internal static class DescriptorRuntimeScenario
             .Should()
             .Contain("validationErrors", "descriptor reference failures must explain the invalid path");
         rejectedBody.Should().Contain("primarySchoolTypeDescriptor");
-        rejectedBody.Should().Contain(descriptorUri.ToLowerInvariant());
+        rejectedBody.Should().Contain(descriptorUri);
         rejectedBody.Should().NotContain("unresolved-reference");
 
         await CreateDescriptorAsync(harness, descriptor);
@@ -629,11 +633,144 @@ internal static class DescriptorRuntimeScenario
             );
     }
 
+    private const string DescriptorTextRuleMessage =
+        "Descriptor values must not contain the NUL character (U+0000) or unpaired surrogate characters.";
+
+    public static async Task It_rejects_nul_in_descriptor_identity_components(ApiIntegrationHarness harness)
+    {
+        await PrepareCompactKeysAsync(harness);
+        DescriptorValues descriptor = CreateDescriptorValues("nul-identity");
+
+        // PostgreSQL text cannot hold NUL and SQL Server would store it, so the 400 must come first.
+        using HttpResponseMessage bothResponse = await PostJsonAsync(
+            harness,
+            DescriptorEndpoint,
+            CreateDescriptorPayload(
+                descriptor with
+                {
+                    Namespace = descriptor.Namespace + "\0",
+                    CodeValue = "Nul\0Code",
+                }
+            )
+        );
+        await AssertValidationErrorKeysAsync(bothResponse, "$.namespace", "$.codeValue");
+
+        using HttpResponseMessage codeValueResponse = await PostJsonAsync(
+            harness,
+            DescriptorEndpoint,
+            CreateDescriptorPayload(descriptor with { CodeValue = descriptor.CodeValue + "\0" })
+        );
+        await AssertValidationErrorKeysAsync(codeValueResponse, "$.codeValue");
+
+        (await GetJsonArrayAsync(harness, $"{DescriptorEndpoint}?namespace={Escape(descriptor.Namespace)}"))
+            .Should()
+            .BeEmpty("a rejected descriptor write must not store a row");
+
+        await CreateDescriptorAsync(harness, descriptor);
+    }
+
+    public static async Task It_rejects_nul_in_a_descriptor_reference(ApiIntegrationHarness harness)
+    {
+        await PrepareCompactKeysAsync(harness);
+        DescriptorValues descriptor = CreateDescriptorValues("nul-reference");
+
+        var payload = new JsonObject
+        {
+            ["profileRootOnlyMergeItemId"] = 1448,
+            ["displayName"] = "Descriptor reference with NUL",
+            ["primarySchoolTypeDescriptor"] = $"{descriptor.Namespace}#{descriptor.CodeValue}\0",
+        };
+
+        using HttpResponseMessage response = await PostJsonAsync(harness, MergeItemsEndpoint, payload);
+        string body = await AssertValidationErrorKeysAsync(response, "$.primarySchoolTypeDescriptor");
+
+        // Validation runs before reference resolution, so the unresolved-reference answer never appears.
+        body.Should().NotContain(descriptor.CodeValue.ToLowerInvariant());
+    }
+
+    public static async Task It_rejects_unpaired_surrogate_escapes_as_malformed_bodies(
+        ApiIntegrationHarness harness
+    )
+    {
+        await PrepareCompactKeysAsync(harness);
+
+        // A JsonObject cannot carry a lone surrogate, so the requests are raw JSON text.
+        string descriptorBody = $$"""
+            {"namespace":"{{CreateNamespace(
+                "surrogate"
+            )}}","codeValue":"Lone\uD800","shortDescription":"Lone surrogate"}
+            """;
+        string mergeItemBody = """
+            {"profileRootOnlyMergeItemId":1449,"displayName":"Lone\uD800","primarySchoolTypeDescriptor":"uri://ed-fi.org/SchoolTypeDescriptor#Regular"}
+            """;
+
+        await AssertMalformedBodyAsync(
+            await PostRawJsonAsync(harness, DescriptorEndpoint, descriptorBody),
+            "$.codeValue"
+        );
+        await AssertMalformedBodyAsync(
+            await PostRawJsonAsync(harness, MergeItemsEndpoint, mergeItemBody),
+            "$.displayName"
+        );
+    }
+
+    private static async Task<string> AssertValidationErrorKeysAsync(
+        HttpResponseMessage response,
+        params string[] expectedKeys
+    )
+    {
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+
+        JsonObject validationErrors = JsonNode.Parse(body)!["validationErrors"]!.AsObject();
+        validationErrors.Select(error => error.Key).Should().BeEquivalentTo(expectedKeys, body);
+        foreach (var error in validationErrors)
+        {
+            error
+                .Value!.AsArray()
+                .Select(message => message!.GetValue<string>())
+                .Should()
+                .Equal([DescriptorTextRuleMessage], body);
+        }
+
+        return body;
+    }
+
+    private static async Task AssertMalformedBodyAsync(HttpResponseMessage response, string expectedPath)
+    {
+        using (response)
+        {
+            string body = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
+
+            JsonNode problem = JsonNode.Parse(body)!;
+            problem["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:bad-request:data-validation-failed", body);
+            problem["validationErrors"]!["$."]![0]!
+                .GetValue<string>()
+                .Should()
+                .EndWith($" Path: {expectedPath}", body);
+        }
+    }
+
+    private static async Task<HttpResponseMessage> PostRawJsonAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        string json
+    )
+    {
+        using var content = new StringContent(json, Encoding.UTF8, StandardJsonContentType);
+        return await harness.HttpClient.PostAsync(endpoint, content);
+    }
+
     private static async Task<(string LocationPath, string Etag)> CreateDescriptorAsync(
         ApiIntegrationHarness harness,
         DescriptorValues descriptor
     )
     {
+        await PrepareCompactKeysAsync(harness);
         using HttpResponseMessage createResponse = await PostJsonAsync(
             harness,
             DescriptorEndpoint,
@@ -645,7 +782,11 @@ internal static class DescriptorRuntimeScenario
         createResponse.Headers.Location.Should().NotBeNull();
         createResponse.TryReadRawEtag(out string etag).Should().BeTrue("descriptor POST must emit an ETag");
 
-        return (ToPath(createResponse.Headers.Location!), etag);
+        string locationPath = ToPath(createResponse.Headers.Location!);
+        StoredDescriptor state = await ReadStoredDescriptorAsync(harness, locationPath);
+        AssertCompactKeys(state);
+        await AssertResponseStateAsync(harness, locationPath, descriptor, etag, state);
+        return (locationPath, etag);
     }
 
     private static async Task<HttpResponseMessage> PutDescriptorAsync(
@@ -737,9 +878,10 @@ internal static class DescriptorRuntimeScenario
     {
         await using DbCommand command = harness.DbConnection.CreateCommand();
         command.CommandText = """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid
+            SELECT document."ContentVersion", descriptor."ContentLastModifiedAt"
+            FROM "dms"."Document" document
+            JOIN "dms"."Descriptor" descriptor ON descriptor."DocumentId" = document."DocumentId"
+            WHERE document."DocumentUuid" = @documentUuid
             """;
         DbParameter parameter = command.CreateParameter();
         parameter.ParameterName = "@documentUuid";
@@ -755,11 +897,16 @@ internal static class DescriptorRuntimeScenario
         );
     }
 
-    private static Task WaitForNextWireSecondAsync() =>
-        // _lastModifiedDate is stamped by the database clock at second precision. Sleep an unconditional
-        // fixed delay (no test-host clock comparison) so any subsequent DB-side stamp lands in a later
-        // wire second, regardless of any skew between the test host and database container clocks.
-        Task.Delay(TimeSpan.FromMilliseconds(1500));
+    private static Task BackdateDescriptorAsync(ApiIntegrationHarness harness, string path) =>
+        ExecuteSqlAsync(
+            harness,
+            """
+            UPDATE "dms"."Descriptor" SET "ContentLastModifiedAt" = @modified
+            WHERE "DocumentId" = (SELECT "DocumentId" FROM "dms"."Document" WHERE "DocumentUuid" = @uuid)
+            """,
+            ("@modified", new DateTime(2001, 2, 3, 4, 5, 6, DateTimeKind.Utc)),
+            ("@uuid", Guid.Parse(path.Split('/')[^1]))
+        );
 
     private static JsonObject CreateDescriptorPayload(DescriptorValues descriptor) =>
         new()

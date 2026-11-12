@@ -87,6 +87,11 @@ $script:DocumentEmbedPathPrefix = @(
     # eng/verification/, which is already here; the readme itself would otherwise reach no rule,
     # and a pull request editing only that readme would skip the guard entirely.
     'src/config/contracts/EdFi.DmsConfigurationService.Secrets/'
+    # The identity contract's packed readme is the next checked document, and it lives under
+    # src/dms/ outside every prefix above. Its worked examples sit under eng/verification/, which
+    # is already here; the readme itself would otherwise reach no rule, and a pull request editing
+    # only that readme would skip the guard entirely.
+    'src/dms/core/EdFi.DataManagementService.Identity/'
 )
 
 # Operator documents checked by CdcRunbookLinkTests.Documents and their linked design targets.

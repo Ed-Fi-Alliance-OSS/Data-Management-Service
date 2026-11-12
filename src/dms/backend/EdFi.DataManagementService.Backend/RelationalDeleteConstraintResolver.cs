@@ -88,7 +88,7 @@ internal sealed class RelationalDeleteConstraintResolver(ILogger<RelationalDelet
 
                         // Shared-superclass case: the same physical FK is enumerated once per
                         // concrete resource that shares the superclass table (e.g. every concrete
-                        // descriptor resource carries FK_Descriptor_Document on the shared
+                        // descriptor resource carries FK_Descriptor_DocumentResourceKey on the shared
                         // dms.Descriptor table). First-writer-wins is correct here and stays silent.
                         if (existing.OwningTable == table.Table)
                         {

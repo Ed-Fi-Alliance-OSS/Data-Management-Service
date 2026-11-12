@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -237,7 +236,6 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
         ]);
         var documentInfo = new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -288,7 +286,6 @@ public class Given_A_Postgresql_Profiled_Put_With_Storage_Collapsed_Sibling_Iden
         ]);
         var documentInfo = new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

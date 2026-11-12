@@ -3,12 +3,17 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
 /// <summary>
-/// Outcome of reading the proposed namespace value out of the finalized merged root row.
+/// Outcome of reading the proposed namespace value out of the finalized merged root row, or out of the
+/// request body for a namespace derived from a deferred missing reference.
 /// </summary>
 internal abstract record ProposedNamespaceValueExtractionResult
 {
@@ -16,7 +21,7 @@ internal abstract record ProposedNamespaceValueExtractionResult
 
     /// <summary>
     /// The proposed namespace value was extracted. <paramref name="ProposedNamespace"/> is
-    /// <see langword="null"/> when the finalized value is null/empty, which the SQL maps to a
+    /// <see langword="null"/> when the value read is null/empty, which the SQL maps to a
     /// proposed-namespace-missing failure.
     /// </summary>
     public sealed record Ready(string? ProposedNamespace) : ProposedNamespaceValueExtractionResult;
@@ -33,13 +38,17 @@ internal abstract record ProposedNamespaceValueExtractionResult
 /// <summary>
 /// Reads the proposed namespace value from the finalized merged root row buffer, using the root
 /// table's <see cref="EdFi.DataManagementService.Backend.External.Plans.TableWritePlan.ColumnBindings"/>
-/// to locate the namespace column. Authorization never reads the raw request body.
+/// to locate the namespace column. The only exception is a namespace derived from a reference whose
+/// missing-document failure was deferred: the finalized row has no value for an unresolved reference, so
+/// the value the request body carries is authorized instead.
 /// </summary>
 internal static class ProposedNamespaceValueExtractor
 {
     public static ProposedNamespaceValueExtractionResult Extract(
         IReadOnlyList<NamespaceAuthorizationCheckSpec> checks,
-        RootWriteRowBuffer rootRow
+        RootWriteRowBuffer rootRow,
+        JsonNode requestBody,
+        IReadOnlySet<string> deferredMissingDocumentReferencePaths
     )
     {
         ArgumentNullException.ThrowIfNull(checks);
@@ -97,7 +106,28 @@ internal static class ProposedNamespaceValueExtractor
             );
         }
 
+        var rootBinding = bindings[bindingIndex];
         var boundValue = GetBoundSqlValue(rootRow.Values[bindingIndex]);
+
+        if (
+            deferredMissingDocumentReferencePaths.Count > 0
+            && (rootBinding.Source is not WriteValueSource.Precomputed || boundValue is null)
+            && ProposedAuthorizationReferenceProvenance.TryGetDeferredBodyPath(
+                rootRow.TableWritePlan,
+                bindingIndex,
+                deferredMissingDocumentReferencePaths,
+                out var bodyNamespacePath
+            )
+        )
+        {
+            RelationalWriteFlattener.TryGetRelativeLeafNode(
+                requestBody,
+                bodyNamespacePath,
+                out var bodyNamespaceNode
+            );
+
+            return ConvertBodyNamespace(bodyNamespaceNode, bodyNamespacePath, namespaceColumn);
+        }
 
         return boundValue switch
         {
@@ -110,6 +140,40 @@ internal static class ProposedNamespaceValueExtractor
                     + $"'{namespaceColumn.Value}' but found '{boundValue.GetType().Name}'."
             ),
         };
+    }
+
+    private static ProposedNamespaceValueExtractionResult ConvertBodyNamespace(
+        JsonNode? bodyNode,
+        JsonPathExpression bodyPath,
+        DbColumnName namespaceColumn
+    )
+    {
+        if (bodyNode is null)
+        {
+            return new ProposedNamespaceValueExtractionResult.Ready(null);
+        }
+
+        if (bodyNode is not JsonValue jsonValue || jsonValue.GetValueKind() is not JsonValueKind.String)
+        {
+            return Invalid(
+                $"Proposed namespace authorization expected a string namespace value for column "
+                    + $"'{namespaceColumn.Value}' but found JSON kind '{bodyNode.GetValueKind()}' at '{bodyPath.Canonical}'."
+            );
+        }
+
+        var proposedNamespace = (string)
+            RelationalWriteFlattener.ConvertRequestDerivedJsonValue(
+                jsonValue,
+                new RelationalScalarType(ScalarKind.String),
+                new RelationalWriteFlattener.RequestDerivedScalarConversionContext(
+                    bodyPath.Canonical,
+                    $"Namespace column '{namespaceColumn.Value}'"
+                )
+            );
+
+        return new ProposedNamespaceValueExtractionResult.Ready(
+            string.IsNullOrEmpty(proposedNamespace) ? null : proposedNamespace
+        );
     }
 
     private static object? GetBoundSqlValue(FlattenedWriteValue value)

@@ -260,7 +260,10 @@ public class ProfileRepository(
             return new ProfileDeleteResult.Success();
         }
         catch (PostgresException ex)
-            when (ex.SqlState == PostgresErrorCodes.ForeignKeyViolation
+            // The foreign key is ON DELETE RESTRICT: PostgreSQL 18 reports 23001, earlier versions 23503.
+            when (ex.SqlState
+                    is PostgresErrorCodes.RestrictViolation
+                        or PostgresErrorCodes.ForeignKeyViolation
                 && ex.ConstraintName == "FK_ApplicationProfile_Profile"
             )
         {

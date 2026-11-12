@@ -45,6 +45,26 @@ public class Given_MssqlRelationalWriteExceptionClassifier
     }
 
     [Test]
+    public void It_classifies_primary_key_violations_using_the_constraint_name()
+    {
+        var exception = CreateSqlException(
+            2627,
+            "Violation of PRIMARY KEY constraint 'PK_EducationOrganizationIdToEducationOrganizationId'. "
+                + "Cannot insert duplicate key in object 'auth.EducationOrganizationIdToEducationOrganizationId'. "
+                + "The duplicate key value is (255901, 255901)."
+        );
+
+        var classified = _sut.TryClassify(exception, out var classification);
+
+        classified.Should().BeTrue();
+        classification.Should().BeOfType<RelationalWriteExceptionClassification.UniqueConstraintViolation>();
+        classification
+            .As<RelationalWriteExceptionClassification.UniqueConstraintViolation>()
+            .ConstraintName.Should()
+            .Be("PK_EducationOrganizationIdToEducationOrganizationId");
+    }
+
+    [Test]
     public void It_classifies_unique_index_violations_using_the_final_index_name()
     {
         var exception = CreateSqlException(

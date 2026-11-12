@@ -99,6 +99,7 @@ public abstract class SqlDialectBase : ISqlDialect
                 $"{defaults.StringType}({scalarType.MaxLength.Value})",
             ScalarKind.String => defaults.StringType,
 
+            ScalarKind.Int16 => SmallintColumnType,
             ScalarKind.Int32 => defaults.Int32Type,
             ScalarKind.Int64 => defaults.Int64Type,
             ScalarKind.Boolean => defaults.BooleanType,
@@ -174,6 +175,7 @@ public abstract class SqlDialectBase : ISqlDialect
         {
             ReferentialAction.NoAction => "NO ACTION",
             ReferentialAction.Cascade => "CASCADE",
+            ReferentialAction.Restrict => "RESTRICT",
             _ => throw new ArgumentOutOfRangeException(
                 nameof(action),
                 action,
@@ -184,9 +186,6 @@ public abstract class SqlDialectBase : ISqlDialect
 
     /// <inheritdoc />
     public abstract string CreateExtensionIfNotExists(string extensionName);
-
-    /// <inheritdoc />
-    public abstract string CreateUuidv5Function(DbSchemaName schema);
 
     /// <inheritdoc />
     public abstract string CreateGetMaxChangeVersionFunction(DbSchemaName schema);
@@ -212,6 +211,9 @@ public abstract class SqlDialectBase : ISqlDialect
 
     /// <inheritdoc />
     public abstract string JsonColumnType { get; }
+
+    /// <inheritdoc />
+    public abstract string IdentityIntColumnType { get; }
 
     /// <inheritdoc />
     public abstract string IdentityBigintColumnType { get; }

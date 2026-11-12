@@ -3,9 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Globalization;
 using System.Xml.Linq;
-using Be.Vlaanderen.Basisregisters.Generators.Guid;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
@@ -22,7 +22,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
     long SessionDocumentId,
     long SurveyDocumentId,
     long CourseOfferingDocumentId,
-    long AlternateTermDescriptorDocumentId,
+    int AlternateTermDescriptorId,
     long ContactExtensionAuthorCollectionItemId,
     long ContactAddressCollectionItemId,
     long ContactExtensionAddressSchoolDistrictCollectionItemId,
@@ -33,6 +33,7 @@ internal sealed record AuthoritativeSampleSmokeSeedData(
 
 internal sealed record ExecutedPlanStatement(int ParentObjectId, string StatementText);
 
+/// <summary>Document version paired with the owning resource timestamp.</summary>
 internal sealed record DocumentStampState(long ContentVersion, DateTimeOffset ContentLastModifiedAt);
 
 internal sealed record CourseOfferingSessionReferenceState(
@@ -106,7 +107,6 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             _fixture.GeneratedDdl
         );
         _database = _databaseLease.Database;
-        await InstallReferentialIdentityAuditAsync();
         _contactExtensionAuthorForeignKeys = await _database.GetForeignKeyMetadataAsync(
             "sample",
             "ContactExtensionAuthor"
@@ -383,7 +383,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 _seedData.ContactAddressCollectionItemId,
                 _seedData.OtherContactDocumentId,
                 2,
-                _seedData.AlternateTermDescriptorDocumentId
+                _seedData.AlternateTermDescriptorId
             )
         );
     }
@@ -506,12 +506,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task It_should_stamp_child_inserts()
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
 
@@ -519,8 +517,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         await InsertContactAddressAsync(
             _seedData.ContactDocumentId,
             2,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78702",
             "200 Congress Ave"
@@ -545,12 +543,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // no plan and therefore contributes no plan node at all.
         var rootStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_Contact_Stamp");
         var childStampTriggerObjectId = await GetTriggerObjectIdAsync("edfi.TR_ContactAddress_Stamp");
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
@@ -570,16 +566,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (
                 @contactDocumentId,
                 3,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 N'Austin',
                 N'78703',
                 N'300 Congress Ave'
             );
             """,
             new SqlParameter("@contactDocumentId", _seedData.ContactDocumentId),
-            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId)
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId)
         );
 
         var after = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
@@ -679,7 +675,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // The @stamped pre-population sits outside the guard precisely so a root insert still carries
         // the document's existing stamp into the mirror. If the guard ever swallowed it, the mirror
         // would keep its DEFAULT 0 sentinel and this would fail.
-        await AssertRootMirrorMatchesDocumentAsync("edfi", "Contact", documentId);
+        await AssertRootVersionMatchesDocumentAsync("edfi", "Contact", documentId);
 
         // Control arm. The same statement is captured when the guard admits real work, so its
         // absence above is "it did not execute", not "it is not visible to this capture".
@@ -727,9 +723,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
             VALUES (
                 @documentId,
@@ -737,9 +731,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 N'uri://ed-fi.org/TermDescriptor',
                 N'Summer',
                 N'Summer',
-                N'Summer',
-                N'Ed-Fi:TermDescriptor',
-                N'uri://ed-fi.org/TermDescriptor#Summer'
+                N'Summer'
             );
             """,
             new SqlParameter("@documentId", documentId),
@@ -769,7 +761,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // The @stamped pre-population sits outside the guard precisely so a descriptor insert still
         // carries the document's existing stamp into the mirror. If the guard ever swallowed it, the
         // mirror would keep its DEFAULT 0 sentinel and this would fail.
-        await AssertRootMirrorMatchesDocumentAsync("dms", "Descriptor", documentId);
+        await AssertRootVersionMatchesDocumentAsync("dms", "Descriptor", documentId);
 
         // Control arm. The same statement is captured when the guard admits real work, so its
         // absence above is "it did not execute", not "it is not visible to this capture".
@@ -867,7 +859,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
             // The FORCESEEK-hinted mirror update has to land on every row of the workset, not only
             // on whichever row a single-row plan would have found.
-            await AssertRootMirrorMatchesDocumentAsync("edfi", "Contact", documentId);
+            await AssertRootVersionMatchesDocumentAsync("edfi", "Contact", documentId);
             contentVersions.Add(after.ContentVersion);
         }
 
@@ -884,7 +876,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -903,7 +895,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -935,7 +927,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -954,7 +946,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
@@ -1017,7 +1009,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         var before = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync("edfi", "Contact", _seedData.ContactDocumentId);
-        AssertMirrorContentMatchesDocument(beforeMirror, before);
+        AssertRootVersionMatchesDocument(beforeMirror, before);
 
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
@@ -1034,35 +1026,20 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         after.Should().Be(before);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, after);
+        AssertRootVersionMatchesDocument(afterMirror, after);
     }
 
     [Test]
     public async Task It_should_not_stamp_same_value_identity_column_root_updates()
     {
-        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId("Ed-Fi", "Contact", ("$.contactUniqueId", "10001")),
-                    _seedData.ContactDocumentId,
-                    contactResourceKeyId
-                ),
-            }
-        );
-
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var contactDocumentUuid = await GetDocumentUuidAsync(_seedData.ContactDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1074,51 +1051,33 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.ContactDocumentId);
 
         afterStamps.Should().Be(beforeStamps);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
-    public async Task It_should_avoid_referential_identity_rewrites_when_scalar_identity_column_is_self_assigned_alongside_content_change()
+    public async Task It_should_not_record_key_changes_when_scalar_identity_column_is_self_assigned_alongside_content_change()
     {
         // The pure same-value test above is filtered out before the inner identity-only
         // gate runs. This test sends a content change AND a same-value self-assignment
         // of the identity column in one UPDATE — UPDATE([ContactUniqueId]) returns true
         // (the column appeared in SET), so the inner null-safe value-diff predicate is
-        // what must keep dms.ReferentialIdentity untouched.
-        var contactResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Contact");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId("Ed-Fi", "Contact", ("$.contactUniqueId", "10001")),
-                    _seedData.ContactDocumentId,
-                    contactResourceKeyId
-                ),
-            }
-        );
+        // what must keep the tracked-change trigger from recording a key change.
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var contactDocumentUuid = await GetDocumentUuidAsync(_seedData.ContactDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1132,19 +1091,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.ContactDocumentId);
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(_seedData.ContactDocumentId);
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "Contact",
             contactDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(_seedData.ContactDocumentId);
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
@@ -1203,6 +1158,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var beforeSurveySessionReferenceState = await GetSurveySessionReferenceStateAsync(
             _seedData.SurveyDocumentId
         );
+        await SetOwnerCreatedAtAsync("edfi", "CourseOffering", _seedData.CourseOfferingDocumentId);
+        await SetOwnerCreatedAtAsync("edfi", "Survey", _seedData.SurveyDocumentId);
         var beforeSession = await GetDocumentStampStateAsync(_seedData.SessionDocumentId);
         var beforeCourseOffering = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var beforeSurvey = await GetDocumentStampStateAsync(_seedData.SurveyDocumentId);
@@ -1289,9 +1246,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         // Survey's identity is Namespace + SurveyIdentifier only; Session_SessionName is a reference
         // field, not part of Survey's identity. The cascade still changes its stored representation.
 
-        AssertMirrorContentMatchesDocument(afterSessionMirror, afterSession);
-        AssertMirrorContentMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
-        AssertMirrorContentMatchesDocument(afterSurveyMirror, afterSurvey);
+        AssertRootVersionMatchesDocument(afterSessionMirror, afterSession);
+        AssertRootVersionMatchesDocument(afterCourseOfferingMirror, afterCourseOffering);
+        AssertRootVersionMatchesDocument(afterSurveyMirror, afterSurvey);
+        (await GetOwnerCreatedAtAsync("edfi", "CourseOffering", _seedData.CourseOfferingDocumentId))
+            .Should()
+            .Be(CreatedAtSentinel, "a cascaded update keeps the referrer's creation time");
+        (await GetOwnerCreatedAtAsync("edfi", "Survey", _seedData.SurveyDocumentId))
+            .Should()
+            .Be(CreatedAtSentinel, "a cascaded update keeps the referrer's creation time");
 
         // The renamed Session and the cascade-updated CourseOffering each insert
         // exactly one key-change row. Survey's session reference is NOT part of its
@@ -1394,6 +1357,28 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
+    public async Task It_should_cascade_section_and_student_school_association_key_changes_to_their_association_referrers()
+    {
+        // DMS-1624: Section and StudentSchoolAssociation allow identity updates, so pruning keeps
+        // the edges from them and cuts the competing edge from the immutable
+        // EducationOrganization identity instead (matching ODS).
+        var updateActions = (await _database.GetForeignKeyMetadataAsync("edfi", "StudentSectionAssociation"))
+            .Concat(await _database.GetForeignKeyMetadataAsync("edfi", "StudentAssessmentRegistration"))
+            .ToDictionary(foreignKey => foreignKey.ConstraintName, foreignKey => foreignKey.UpdateAction);
+
+        updateActions["FK_StudentSectionAssociation_Section_RefKey"].Should().Be("CASCADE");
+        updateActions["FK_StudentSectionAssociation_DualCreditEducationOrganization_RefKey"]
+            .Should()
+            .Be("NO ACTION");
+        updateActions["FK_StudentAssessmentRegistration_StudentSchoolAssociation_RefKey"]
+            .Should()
+            .Be("CASCADE");
+        updateActions["FK_StudentAssessmentRegistration_AssessmentAdministration_RefKey"]
+            .Should()
+            .Be("NO ACTION");
+    }
+
+    [Test]
     public async Task It_should_not_install_any_retired_identity_propagation_trigger()
     {
         // DMS-1258 acceptance criterion: SQL Server integration coverage must prove the old
@@ -1414,6 +1399,38 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 "the retired identity-value propagation trigger must not be installed; "
                     + "identity renames cascade through native FKs"
             );
+    }
+
+    [Test]
+    public async Task It_should_not_install_any_referential_identity_artifact()
+    {
+        // DMS-1456 acceptance criterion: the provisioned schema carries no referential-identity table,
+        // constraint, function or trigger, no uuidv5 helper and no unlowered descriptor URI index. This
+        // asserts against the live catalog because the golden DDL is a regenerable snapshot, not an
+        // independent guarantee.
+        var retiredArtifacts = await _database.QueryRowsAsync(
+            """
+            SELECT objects.name AS [Artifact]
+            FROM sys.objects objects
+            WHERE objects.name LIKE N'%ReferentialIdentity%' OR objects.name = N'uuidv5'
+            UNION ALL
+            SELECT indexes.name
+            FROM sys.indexes indexes
+            WHERE indexes.name LIKE N'%ReferentialIdentity%'
+               OR indexes.name = N'UX_Descriptor_ResourceKeyId_Uri';
+            """
+        );
+        retiredArtifacts.Should().BeEmpty("no referential-identity artifact may be installed");
+
+        var loweredUriIndexes = await _database.ExecuteScalarAsync<int>(
+            """
+            SELECT COUNT(*)
+            FROM sys.indexes indexes
+            WHERE indexes.[object_id] = OBJECT_ID(N'dms.Descriptor')
+              AND indexes.name = N'UX_Descriptor_UriLowered_ResourceKeyId';
+            """
+        );
+        loweredUriIndexes.Should().Be(1);
     }
 
     private async Task AssertForeignKeysEnabledTrustedAndValidAsync(string schemaName, string tableName)
@@ -1447,29 +1464,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     public async Task It_should_not_stamp_same_value_propagated_identity_reference_updates()
     {
         // CourseOffering's INSTEAD OF UPDATE rewrites every column unconditionally, so the
-        // AFTER stamp/RI triggers see UPDATE([Session_SessionName]) = true even though the
+        // AFTER stamp triggers see UPDATE([Session_SessionName]) = true even though the
         // user-issued UPDATE was a same-value self-assignment. Only the null-safe value diff
         // in the trigger body should prevent a false content stamp bump and a
-        // redundant RI row rewrite.
-        var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId(
-                        "Ed-Fi",
-                        "CourseOffering",
-                        ("$.localCourseCode", "ALG-1-01"),
-                        ("$.schoolReference.schoolId", "100"),
-                        ("$.sessionReference.schoolId", "100"),
-                        ("$.sessionReference.schoolYear", "2025"),
-                        ("$.sessionReference.sessionName", "Fall")
-                    ),
-                    _seedData.CourseOfferingDocumentId,
-                    courseOfferingResourceKeyId
-                ),
-            }
-        );
+        // spurious key-change row.
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
         var beforeMirror = await GetRootMirrorStampStateAsync(
@@ -1477,19 +1475,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "CourseOffering",
             _seedData.CourseOfferingDocumentId
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeStamps);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
+        AssertRootVersionMatchesDocument(beforeMirror, beforeStamps);
         var courseOfferingDocumentUuid = await GetDocumentUuidAsync(_seedData.CourseOfferingDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1506,67 +1499,35 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "CourseOffering",
             _seedData.CourseOfferingDocumentId
         );
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
 
         afterStamps.Should().Be(beforeStamps);
         afterMirror.Should().Be(beforeMirror);
-        AssertMirrorContentMatchesDocument(afterMirror, afterStamps);
-        afterRiRows.Should().Equal(beforeRiRows);
+        AssertRootVersionMatchesDocument(afterMirror, afterStamps);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
-    public async Task It_should_avoid_referential_identity_rewrites_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
+    public async Task It_should_not_record_key_changes_when_propagated_identity_reference_is_self_assigned_alongside_content_change()
     {
         // Mixed-write counterpart for the propagated identity-source reference column:
         // a non-identity content column changes while the propagated identity column is
         // self-assigned to the same value. UPDATE([Session_SessionName]) returns true
         // (and CourseOffering's INSTEAD OF UPDATE rewrites every column anyway), so the
-        // null-safe value-diff predicate is the sole protection against redundant RI rewrites.
-        var courseOfferingResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "CourseOffering");
-        var expectedRiRows = SortReferentialIdentityRows(
-            new[]
-            {
-                new ReferentialIdentityRow(
-                    ComputeReferentialId(
-                        "Ed-Fi",
-                        "CourseOffering",
-                        ("$.localCourseCode", "ALG-1-01"),
-                        ("$.schoolReference.schoolId", "100"),
-                        ("$.sessionReference.schoolId", "100"),
-                        ("$.sessionReference.schoolYear", "2025"),
-                        ("$.sessionReference.sessionName", "Fall")
-                    ),
-                    _seedData.CourseOfferingDocumentId,
-                    courseOfferingResourceKeyId
-                ),
-            }
-        );
+        // null-safe value-diff predicate is the sole protection against a spurious key-change row.
 
         var beforeStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
-        var beforeRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var courseOfferingDocumentUuid = await GetDocumentUuidAsync(_seedData.CourseOfferingDocumentId);
         var beforeTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        beforeRiRows.Should().Equal(expectedRiRows);
 
-        await TruncateReferentialIdentityAuditAsync();
         await DelayForDistinctTimestampsAsync();
         await _database.ExecuteNonQueryAsync(
             """
@@ -1580,23 +1541,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterStamps = await GetDocumentStampStateAsync(_seedData.CourseOfferingDocumentId);
-        var afterRiRows = await GetReferentialIdentityRowsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
         var afterTrackedRows = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "CourseOffering",
             courseOfferingDocumentUuid
         );
-        var auditOps = await CountReferentialIdentityAuditOpsForDocumentAsync(
-            _seedData.CourseOfferingDocumentId
-        );
 
         afterStamps.ContentVersion.Should().BeGreaterThan(beforeStamps.ContentVersion);
         afterStamps.ContentLastModifiedAt.Should().BeAfter(beforeStamps.ContentLastModifiedAt);
-        afterRiRows.Should().Equal(beforeRiRows);
         afterTrackedRows.Should().Be(beforeTrackedRows);
-        auditOps.Should().Be(0);
     }
 
     [Test]
@@ -1634,7 +1587,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             Guid.Parse("abababab-abab-abab-abab-abababababab"),
             busResourceKeyId
         );
-        var beforeInsert = await GetDocumentStampStateAsync(busDocumentId);
+        var beforeInsertVersion = await GetDocumentVersionAsync(busDocumentId);
         var beforeInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
         var initialBusId = $"BUS-{busDocumentId}-001";
         var updatedBusId = $"BUS-{busDocumentId}-002";
@@ -1644,9 +1597,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
         var afterInsert = await GetDocumentStampStateAsync(busDocumentId);
         var afterInsertMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        afterInsert.Should().Be(beforeInsert);
+        afterInsert.ContentVersion.Should().Be(beforeInsertVersion);
         afterInsertMaxChangeVersion.Should().Be(beforeInsertMaxChangeVersion);
-        await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
+        (await GetOwnerCreatedAtAsync("sample", "Bus", busDocumentId))
+            .Should()
+            .Be(afterInsert.ContentLastModifiedAt, "insert initializes both timestamps from one value");
+        await AssertRootVersionMatchesDocumentAsync("sample", "Bus", busDocumentId);
+        await SetOwnerCreatedAtAsync("sample", "Bus", busDocumentId);
 
         await DelayForDistinctTimestampsAsync();
         var updateRowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1663,7 +1620,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterUpdate = await GetDocumentStampStateAsync(busDocumentId);
         afterUpdate.ContentVersion.Should().BeGreaterThan(afterInsert.ContentVersion);
         afterUpdate.ContentLastModifiedAt.Should().BeAfter(afterInsert.ContentLastModifiedAt);
-        await AssertRootMirrorMatchesDocumentAsync("sample", "Bus", busDocumentId);
+        await AssertRootVersionMatchesDocumentAsync("sample", "Bus", busDocumentId);
 
         var beforeNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
 
@@ -1682,7 +1639,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var afterNoOpMirror = await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId);
         afterNoOp.Should().Be(afterUpdate);
         afterNoOpMirror.Should().Be(beforeNoOpMirror);
-        AssertMirrorContentMatchesDocument(afterNoOpMirror, afterNoOp);
+        AssertRootVersionMatchesDocument(afterNoOpMirror, afterNoOp);
+        (await GetOwnerCreatedAtAsync("sample", "Bus", busDocumentId)).Should().Be(CreatedAtSentinel);
     }
 
     [Test]
@@ -1697,10 +1655,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
 
         var afterMaxChangeVersion = await ReadMaxChangeVersionAsync();
-        var documentStamps = await GetDocumentStampStateAsync(documentId);
+        var documentVersion = await GetDocumentVersionAsync(documentId);
 
         afterMaxChangeVersion.Should().Be(beforeMaxChangeVersion + 1);
-        documentStamps.ContentVersion.Should().Be(afterMaxChangeVersion);
+        documentVersion.Should().Be(afterMaxChangeVersion);
     }
 
     [Test]
@@ -1720,7 +1678,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var trackedChangeRowsBefore = await CountRowsAsync(
             "SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"
         );
-        AssertMirrorContentMatchesDocument(beforeMirror, beforeDocument);
+        AssertRootVersionMatchesDocument(beforeMirror, beforeDocument);
 
         await DelayForDistinctTimestampsAsync();
         var rowsAffected = await _database.ExecuteNonQueryAsync(
@@ -1745,6 +1703,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         trackedChangeRowsAfter.Should().Be(trackedChangeRowsBefore);
         afterMirror.ContentVersion.Should().Be(beforeMirror.ContentVersion + 1);
         afterMirror.ContentLastModifiedAt.Should().Be(beforeMirror.ContentLastModifiedAt);
+
+        // A creation-only update is stamp maintenance too: no version, no tracked change, and the
+        // last-modified time is untouched.
+        await SetOwnerCreatedAtAsync("sample", "Bus", busDocumentId);
+
+        (await GetDocumentStampStateAsync(busDocumentId)).Should().Be(beforeDocument);
+        (await GetRootMirrorStampStateAsync("sample", "Bus", busDocumentId)).Should().Be(afterMirror);
+        (await ReadMaxChangeVersionAsync()).Should().Be(beforeMaxChangeVersion);
+        (await CountRowsAsync("SELECT COUNT(*) FROM [tracked_changes_sample].[Bus];"))
+            .Should()
+            .Be(trackedChangeRowsBefore);
+        (await GetOwnerCreatedAtAsync("sample", "Bus", busDocumentId)).Should().Be(CreatedAtSentinel);
     }
 
     // GUID allocation convention for tracked-change tests:
@@ -1907,11 +1877,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.SchoolDocumentId)
         );
 
-        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+        var gradingPeriodDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("d2d2d2d2-d2d2-d2d2-d2d2-d2d2d2d2d2d2"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
             "First Six Weeks"
@@ -1928,7 +1896,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "First Grading Period"
         );
 
@@ -1943,7 +1911,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Second Grading Period"
         );
 
@@ -2039,11 +2007,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.SchoolDocumentId)
         );
 
-        var gradingPeriodDescriptorDocumentId = await InsertDescriptorAsync(
+        var gradingPeriodDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("d5d5d5d5-d5d5-d5d5-d5d5-d5d5d5d5d5d5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{GradingPeriodDescriptorNamespace}#{GradingPeriodDescriptorCodeValue}",
             GradingPeriodDescriptorNamespace,
             GradingPeriodDescriptorCodeValue,
             "Second Six Weeks"
@@ -2057,7 +2023,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Mixed Changed Period"
         );
 
@@ -2072,7 +2038,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            gradingPeriodDescriptorDocumentId,
+            gradingPeriodDescriptorId,
             "Mixed Unchanged Period"
         );
 
@@ -2142,20 +2108,16 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@documentId", _seedData.SchoolDocumentId)
         );
 
-        var originalDescriptorDocumentId = await InsertDescriptorAsync(
+        var originalDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("e5e5e5e5-e5e5-e5e5-e5e5-e5e5e5e5e5e5"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{DescriptorNamespace}#FourthSixWeeks",
             DescriptorNamespace,
             "FourthSixWeeks",
             "Fourth Six Weeks"
         );
-        var replacementDescriptorDocumentId = await InsertDescriptorAsync(
+        var replacementDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("e6e6e6e6-e6e6-e6e6-e6e6-e6e6e6e6e6e6"),
             gradingPeriodDescriptorResourceKeyId,
-            "Ed-Fi:GradingPeriodDescriptor",
-            $"{DescriptorNamespace}#FifthSixWeeks",
             DescriptorNamespace,
             "FifthSixWeeks",
             "Fifth Six Weeks"
@@ -2172,7 +2134,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             SchoolYear,
             _seedData.SchoolDocumentId,
             seededSchoolId,
-            originalDescriptorDocumentId,
+            originalDescriptorId,
             "Descriptor Swap Period"
         );
 
@@ -2182,10 +2144,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var rowsAffected = await _database.ExecuteNonQueryAsync(
             """
             UPDATE [edfi].[GradingPeriod]
-            SET [GradingPeriodDescriptor_DescriptorId] = @replacementDescriptorDocumentId
+            SET [GradingPeriodDescriptor_DescriptorId] = @replacementDescriptorId
             WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@replacementDescriptorDocumentId", replacementDescriptorDocumentId),
+            new SqlParameter("@replacementDescriptorId", replacementDescriptorId),
             new SqlParameter("@documentId", gradingPeriodDocumentId)
         );
         rowsAffected.Should().Be(1);
@@ -2480,9 +2442,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(seed.AssociationDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(seed.AssociationDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(seed.AssociationDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (
             await CountTrackedChangeRowsAsync(
@@ -2504,7 +2465,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(seed.AssociationDocumentUuid);
         Convert
             .ToInt64(
@@ -2546,22 +2507,23 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     }
 
     [Test]
-    public async Task It_should_insert_a_descriptor_tombstone_with_discriminator_on_delete()
+    public async Task It_should_insert_a_descriptor_tombstone_with_resource_key_on_delete()
     {
-        const string DescriptorDiscriminator = "Ed-Fi:TermDescriptor";
         const string DescriptorNamespace = "uri://ed-fi.org/TermDescriptor";
         const string DescriptorCodeValue = "Summer";
 
         var termDescriptorResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "TermDescriptor");
         var descriptorDocumentUuid = Guid.Parse("f1f1f1f1-f1f1-f1f1-f1f1-f1f1f1f1f1f1");
-        var descriptorDocumentId = await InsertDescriptorAsync(
+        var descriptorId = await InsertDescriptorAsync(
             descriptorDocumentUuid,
             termDescriptorResourceKeyId,
-            DescriptorDiscriminator,
-            $"{DescriptorNamespace}#{DescriptorCodeValue}",
             DescriptorNamespace,
             DescriptorCodeValue,
             "Summer"
+        );
+        var descriptorDocumentId = await _database.ExecuteScalarAsync<long>(
+            """SELECT [DocumentId] FROM [dms].[Descriptor] WHERE [DescriptorId] = @descriptorId;""",
+            new SqlParameter("@descriptorId", descriptorId)
         );
         var before = await GetDocumentStampStateAsync(descriptorDocumentId);
 
@@ -2575,9 +2537,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(descriptorDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(descriptorDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(descriptorDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "Descriptor", descriptorDocumentUuid))
             .Should()
@@ -2593,9 +2554,9 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(descriptorDocumentUuid);
-        trackedRow["Discriminator"].Should().Be(DescriptorDiscriminator);
+        trackedRow["ResourceKeyId"].Should().Be(termDescriptorResourceKeyId);
         trackedRow["OldNamespace"].Should().Be(DescriptorNamespace);
         trackedRow["OldCodeValue"].Should().Be(DescriptorCodeValue);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2643,9 +2604,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         resourceRowsAffected.Should().Be(1);
 
         (await CountDocumentRowsAsync(schoolDocumentId)).Should().Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().BeGreaterThan(before.ContentVersion);
-        afterResourceDelete.ContentLastModifiedAt.Should().BeAfter(before.ContentLastModifiedAt);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(schoolDocumentId);
+        afterResourceDeleteVersion.Should().BeGreaterThan(before.ContentVersion);
 
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "School", schoolDocumentUuid))
             .Should()
@@ -2661,7 +2621,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             CultureInfo.InvariantCulture
         );
 
-        tombstoneChangeVersion.Should().Be(afterResourceDelete.ContentVersion);
+        tombstoneChangeVersion.Should().Be(afterResourceDeleteVersion);
         trackedRow["Id"].Should().Be(schoolDocumentUuid);
         Convert.ToInt64(trackedRow["OldSchoolId"], CultureInfo.InvariantCulture).Should().Be(FreshSchoolId);
         AssertAllNewColumnsAreNull(trackedRow);
@@ -2762,21 +2722,19 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             StudentUniqueId
         );
 
-        var addressTypeDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:AddressTypeDescriptor",
-            "Home"
-        );
-        var stateAbbreviationDescriptorDocumentId = await GetDescriptorDocumentIdAsync(
-            "Ed-Fi:StateAbbreviationDescriptor",
+        var addressTypeDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "AddressTypeDescriptor", "Home");
+        var stateAbbreviationDescriptorId = await GetDescriptorIdAsync(
+            "Ed-Fi",
+            "StateAbbreviationDescriptor",
             "TX"
         );
-        var termDescriptorDocumentId = await GetDescriptorDocumentIdAsync("Ed-Fi:TermDescriptor", "Fall");
+        var termDescriptorId = await GetDescriptorIdAsync("Ed-Fi", "TermDescriptor", "Fall");
 
         var addressCollectionItemId = await InsertStudentEducationOrganizationAssociationAddressAsync(
             associationDocumentId,
             1,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78701",
             "100 Congress Ave"
@@ -2796,7 +2754,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             addressCollectionItemId,
             associationDocumentId,
             1,
-            termDescriptorDocumentId
+            termDescriptorId
         );
 
         (
@@ -2873,8 +2831,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(associationDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(associationDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(associationDocumentId);
+        afterResourceDeleteVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "StudentEducationOrganizationAssociation",
@@ -3019,8 +2977,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         (await CountDocumentRowsAsync(schoolDocumentId))
             .Should()
             .Be(1);
-        var afterResourceDelete = await GetDocumentStampStateAsync(schoolDocumentId);
-        afterResourceDelete.ContentVersion.Should().Be(tombstoneChangeVersion);
+        var afterResourceDeleteVersion = await GetDocumentVersionAsync(schoolDocumentId);
+        afterResourceDeleteVersion.Should().Be(tombstoneChangeVersion);
         await AssertMaxTrackedChangeVersionAsync(
             "tracked_changes_edfi",
             "School",
@@ -3122,38 +3080,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             "Accountability"
         );
 
-        var addressTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var addressTypeDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
             addressTypeDescriptorResourceKeyId,
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Home",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Home",
             "Home"
         );
-        var stateAbbreviationDescriptorDocumentId = await InsertDescriptorAsync(
+        var stateAbbreviationDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
             stateAbbreviationDescriptorResourceKeyId,
-            "Ed-Fi:StateAbbreviationDescriptor",
-            "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
             "Texas"
         );
-        var termDescriptorDocumentId = await InsertDescriptorAsync(
+        var termDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("55555555-5555-5555-5555-555555555555"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
-        var alternateTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var alternateTermDescriptorId = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Spring",
             "uri://ed-fi.org/TermDescriptor",
             "Spring",
             "Spring"
@@ -3179,7 +3129,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             2025,
             schoolDocumentId,
             100,
-            termDescriptorDocumentId,
+            termDescriptorId,
             new DateOnly(2025, 8, 1),
             new DateOnly(2025, 12, 31),
             "Fall",
@@ -3235,8 +3185,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var contactAddressCollectionItemId = await InsertContactAddressAsync(
             contactDocumentId,
             1,
-            addressTypeDescriptorDocumentId,
-            stateAbbreviationDescriptorDocumentId,
+            addressTypeDescriptorId,
+            stateAbbreviationDescriptorId,
             "Austin",
             "78701",
             "100 Congress Ave"
@@ -3260,7 +3210,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             contactAddressCollectionItemId,
             contactDocumentId,
             1,
-            termDescriptorDocumentId
+            termDescriptorId
         );
 
         return new(
@@ -3271,7 +3221,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             sessionDocumentId,
             surveyDocumentId,
             courseOfferingDocumentId,
-            alternateTermDescriptorDocumentId,
+            alternateTermDescriptorId,
             contactExtensionAuthorCollectionItemId,
             contactAddressCollectionItemId,
             contactExtensionAddressSchoolDistrictCollectionItemId,
@@ -3295,22 +3245,23 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task<long> GetDescriptorDocumentIdAsync(string discriminator, string codeValue)
+    private async Task<int> GetDescriptorIdAsync(string projectName, string resourceName, string codeValue)
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var resourceKeyId = await GetResourceKeyIdAsync(projectName, resourceName);
+        return await _database.ExecuteScalarAsync<int>(
             """
-            SELECT [DocumentId]
+            SELECT [DescriptorId]
             FROM [dms].[Descriptor]
-            WHERE [Discriminator] = @discriminator
-              AND [CodeValue] = @codeValue;
+            WHERE [ResourceKeyId] = @resourceKeyId AND [CodeValue] = @codeValue;
             """,
-            new SqlParameter("@discriminator", discriminator),
+            new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@codeValue", codeValue)
         );
     }
 
     private async Task<long> InsertDocumentAsync(Guid documentUuid, short resourceKeyId)
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         return await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
@@ -3332,52 +3283,39 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
-
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
-            INSERT INTO [dms].[Descriptor] (
-                [DocumentId],
-                [ResourceKeyId],
-                [Namespace],
-                [CodeValue],
-                [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
-            )
-            VALUES (
-                @documentId,
-                @resourceKeyId,
-                @namespace,
-                @codeValue,
-                @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+            DECLARE @descriptor TABLE ([DescriptorId] int);
+            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Description])
+            OUTPUT inserted.[DescriptorId] INTO @descriptor
+            VALUES (@documentId, @resourceKeyId, @namespace, @codeValue, @shortDescription, @shortDescription);
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@shortDescription", shortDescription)
         );
-
-        return documentId;
+        ((long)descriptorId).Should().NotBe(documentId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [DescriptorId] FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;""",
+                new SqlParameter("@documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(descriptorId);
+        return descriptorId;
     }
 
     private async Task InsertContactAsync(
@@ -3454,8 +3392,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            VALUES (@documentId, @educationOrganizationId, @discriminator);
+            INSERT INTO [edfi].[EducationOrganizationIdentity] (
+                [DocumentId],
+                [EducationOrganizationId],
+                [ResourceKeyId],
+                [Discriminator]
+            )
+            SELECT d.[DocumentId], @educationOrganizationId, d.[ResourceKeyId], @discriminator
+            FROM [dms].[Document] d
+            WHERE d.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
@@ -3506,7 +3451,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         int schoolYear,
         long schoolDocumentId,
         int schoolId,
-        long termDescriptorDocumentId,
+        int termDescriptorId,
         DateOnly beginDate,
         DateOnly endDate,
         string sessionName,
@@ -3533,7 +3478,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
-                @termDescriptorDocumentId,
+                @termDescriptorId,
                 @beginDate,
                 @endDate,
                 @sessionName,
@@ -3545,12 +3490,21 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
             new SqlParameter("@schoolId", schoolId),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId),
+            new SqlParameter("@termDescriptorId", termDescriptorId),
             new SqlParameter("@beginDate", beginDate),
             new SqlParameter("@endDate", endDate),
             new SqlParameter("@sessionName", sessionName),
             new SqlParameter("@totalInstructionalDays", totalInstructionalDays)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [TermDescriptor_DescriptorId] FROM [edfi].[Session] WHERE [DocumentId] = @documentId;""",
+                new SqlParameter("@documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
     }
 
     private async Task InsertCourseAsync(
@@ -3767,14 +3721,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> InsertContactAddressAsync(
         long contactDocumentId,
         int ordinal,
-        long addressTypeDescriptorDocumentId,
-        long stateAbbreviationDescriptorDocumentId,
+        int addressTypeDescriptorId,
+        int stateAbbreviationDescriptorId,
         string city,
         string postalCode,
         string streetNumberName
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[ContactAddress] (
@@ -3790,8 +3744,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (
                 @contactDocumentId,
                 @ordinal,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 @city,
                 @postalCode,
                 @streetNumberName
@@ -3800,12 +3754,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             """,
             new SqlParameter("@contactDocumentId", contactDocumentId),
             new SqlParameter("@ordinal", ordinal),
-            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId),
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId),
             new SqlParameter("@city", city),
             new SqlParameter("@postalCode", postalCode),
             new SqlParameter("@streetNumberName", streetNumberName)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [AddressTypeDescriptor_DescriptorId] FROM [edfi].[ContactAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(addressTypeDescriptorId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [StateAbbreviationDescriptor_DescriptorId] FROM [edfi].[ContactAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(stateAbbreviationDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertContactExtensionAddressAsync(
@@ -3860,7 +3832,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         long baseCollectionItemId,
         long contactDocumentId,
         int ordinal,
-        long termDescriptorDocumentId
+        int termDescriptorId
     )
     {
         return await _database.ExecuteScalarAsync<long>(
@@ -3873,13 +3845,13 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 [TermDescriptor_DescriptorId]
             )
             OUTPUT INSERTED.[CollectionItemId] INTO @Inserted ([CollectionItemId])
-            VALUES (@baseCollectionItemId, @contactDocumentId, @ordinal, @termDescriptorDocumentId);
+            VALUES (@baseCollectionItemId, @contactDocumentId, @ordinal, @termDescriptorId);
             SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
             new SqlParameter("@baseCollectionItemId", baseCollectionItemId),
             new SqlParameter("@contactDocumentId", contactDocumentId),
             new SqlParameter("@ordinal", ordinal),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId)
+            new SqlParameter("@termDescriptorId", termDescriptorId)
         );
     }
 
@@ -3939,14 +3911,14 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
     private async Task<long> InsertStudentEducationOrganizationAssociationAddressAsync(
         long studentEducationOrganizationAssociationDocumentId,
         int ordinal,
-        long addressTypeDescriptorDocumentId,
-        long stateAbbreviationDescriptorDocumentId,
+        int addressTypeDescriptorId,
+        int stateAbbreviationDescriptorId,
         string city,
         string postalCode,
         string streetNumberName
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [edfi].[StudentEducationOrganizationAssociationAddress] (
@@ -3962,8 +3934,8 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             VALUES (
                 @ordinal,
                 @studentEducationOrganizationAssociationDocumentId,
-                @addressTypeDescriptorDocumentId,
-                @stateAbbreviationDescriptorDocumentId,
+                @addressTypeDescriptorId,
+                @stateAbbreviationDescriptorId,
                 @city,
                 @postalCode,
                 @streetNumberName
@@ -3975,12 +3947,30 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 "@studentEducationOrganizationAssociationDocumentId",
                 studentEducationOrganizationAssociationDocumentId
             ),
-            new SqlParameter("@addressTypeDescriptorDocumentId", addressTypeDescriptorDocumentId),
-            new SqlParameter("@stateAbbreviationDescriptorDocumentId", stateAbbreviationDescriptorDocumentId),
+            new SqlParameter("@addressTypeDescriptorId", addressTypeDescriptorId),
+            new SqlParameter("@stateAbbreviationDescriptorId", stateAbbreviationDescriptorId),
             new SqlParameter("@city", city),
             new SqlParameter("@postalCode", postalCode),
             new SqlParameter("@streetNumberName", streetNumberName)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [AddressTypeDescriptor_DescriptorId] FROM [edfi].[StudentEducationOrganizationAssociationAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(addressTypeDescriptorId);
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [StateAbbreviationDescriptor_DescriptorId] FROM [edfi].[StudentEducationOrganizationAssociationAddress] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(stateAbbreviationDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertStudentEducationOrganizationAssociationExtensionAddressAsync(
@@ -4050,10 +4040,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         long baseCollectionItemId,
         long studentEducationOrganizationAssociationDocumentId,
         int ordinal,
-        long termDescriptorDocumentId
+        int termDescriptorId
     )
     {
-        return await _database.ExecuteScalarAsync<long>(
+        var collectionItemId = await _database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([CollectionItemId] bigint);
             INSERT INTO [sample].[StudentEducationOrganizationAssociationExtensionAddressTerm] (
@@ -4067,7 +4057,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @baseCollectionItemId,
                 @ordinal,
                 @studentEducationOrganizationAssociationDocumentId,
-                @termDescriptorDocumentId
+                @termDescriptorId
             );
             SELECT TOP (1) [CollectionItemId] FROM @Inserted;
             """,
@@ -4077,8 +4067,18 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 "@studentEducationOrganizationAssociationDocumentId",
                 studentEducationOrganizationAssociationDocumentId
             ),
-            new SqlParameter("@termDescriptorDocumentId", termDescriptorDocumentId)
+            new SqlParameter("@termDescriptorId", termDescriptorId)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [TermDescriptor_DescriptorId] FROM [sample].[StudentEducationOrganizationAssociationExtensionAddressTerm] WHERE [CollectionItemId] = @collectionItemId;""",
+                new SqlParameter("@collectionItemId", collectionItemId)
+            )
+        )
+            .Should()
+            .Be(termDescriptorId);
+        return collectionItemId;
     }
 
     private async Task InsertGradingPeriodAsync(
@@ -4087,7 +4087,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         int schoolYear,
         long schoolDocumentId,
         long schoolId,
-        long gradingPeriodDescriptorDocumentId,
+        int gradingPeriodDescriptorId,
         string gradingPeriodName
     )
     {
@@ -4111,7 +4111,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
                 @schoolYear,
                 @schoolDocumentId,
                 @schoolId,
-                @gradingPeriodDescriptorDocumentId,
+                @gradingPeriodDescriptorId,
                 @beginDate,
                 @endDate,
                 @gradingPeriodName,
@@ -4123,12 +4123,21 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             new SqlParameter("@schoolYear", schoolYear),
             new SqlParameter("@schoolDocumentId", schoolDocumentId),
             new SqlParameter("@schoolId", schoolId),
-            new SqlParameter("@gradingPeriodDescriptorDocumentId", gradingPeriodDescriptorDocumentId),
+            new SqlParameter("@gradingPeriodDescriptorId", gradingPeriodDescriptorId),
             new SqlParameter("@beginDate", new DateOnly(2025, 8, 1)),
             new SqlParameter("@endDate", new DateOnly(2025, 9, 15)),
             new SqlParameter("@gradingPeriodName", gradingPeriodName),
             new SqlParameter("@totalInstructionalDays", 30)
         );
+
+        (
+            await _database.ExecuteScalarAsync<int>(
+                """SELECT [GradingPeriodDescriptor_DescriptorId] FROM [edfi].[GradingPeriod] WHERE [DocumentId] = @documentId;""",
+                new SqlParameter("@documentId", documentId)
+            )
+        )
+            .Should()
+            .Be(gradingPeriodDescriptorId);
     }
 
     private async Task InsertAssessmentAsync(
@@ -4410,12 +4419,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
 
     private async Task<DocumentStampState> GetDocumentStampStateAsync(long documentId)
     {
-        var row = (
+        var document = (
             await _database.QueryRowsAsync(
                 """
-                SELECT
-                    [ContentVersion],
-                    [ContentLastModifiedAt]
+                SELECT [ContentVersion], [ResourceKeyId]
                 FROM [dms].[Document]
                 WHERE [DocumentId] = @documentId;
                 """,
@@ -4423,10 +4430,78 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
             )
         ).Single();
 
+        var resourceKeyId = Convert.ToInt16(document["ResourceKeyId"], CultureInfo.InvariantCulture);
+        var rootTable = _fixture
+            .ModelSet.ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.ResourceKeyId == resourceKeyId
+            )
+            .RelationalModel.Root.Table;
+        var owner = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT [ContentLastModifiedAt]
+                FROM [{rootTable.Schema.Value}].[{rootTable.Name}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
         return new(
-            Convert.ToInt64(row["ContentVersion"], CultureInfo.InvariantCulture),
-            ReadDateTimeOffset(row["ContentLastModifiedAt"])
+            Convert.ToInt64(document["ContentVersion"], CultureInfo.InvariantCulture),
+            ReadDateTimeOffset(owner["ContentLastModifiedAt"])
         );
+    }
+
+    private async Task<long> GetDocumentVersionAsync(long documentId) =>
+        await _database.ExecuteScalarAsync<long>(
+            """SELECT [ContentVersion] FROM [dms].[Document] WHERE [DocumentId] = @documentId;""",
+            new SqlParameter("@documentId", documentId)
+        );
+
+    // Whole microseconds, so the value round-trips exactly through datetime2(7).
+    private static readonly DateTimeOffset CreatedAtSentinel = new DateTimeOffset(
+        2000,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_560);
+
+    private async Task SetOwnerCreatedAtAsync(string schemaName, string tableName, long documentId)
+    {
+        // Stamp-only maintenance is excluded from representation stamping.
+        await _database.ExecuteNonQueryAsync(
+            $"""
+            UPDATE [{schemaName}].[{tableName}]
+            SET [ContentCreatedAt] = @createdAt
+            WHERE [DocumentId] = @documentId;
+            """,
+            new SqlParameter("@createdAt", SqlDbType.DateTime2) { Value = CreatedAtSentinel.UtcDateTime },
+            new SqlParameter("@documentId", documentId)
+        );
+    }
+
+    private async Task<DateTimeOffset> GetOwnerCreatedAtAsync(
+        string schemaName,
+        string tableName,
+        long documentId
+    )
+    {
+        var row = (
+            await _database.QueryRowsAsync(
+                $"""
+                SELECT [ContentCreatedAt]
+                FROM [{schemaName}].[{tableName}]
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("@documentId", documentId)
+            )
+        ).Single();
+
+        return ReadDateTimeOffset(row["ContentCreatedAt"]);
     }
 
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
@@ -4454,7 +4529,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         );
     }
 
-    private async Task AssertRootMirrorMatchesDocumentAsync(
+    private async Task AssertRootVersionMatchesDocumentAsync(
         string schemaName,
         string tableName,
         long documentId
@@ -4463,116 +4538,15 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_The_Authoritative_DS
         var document = await GetDocumentStampStateAsync(documentId);
         var mirror = await GetRootMirrorStampStateAsync(schemaName, tableName, documentId);
 
-        AssertMirrorContentMatchesDocument(mirror, document);
+        AssertRootVersionMatchesDocument(mirror, document);
     }
 
-    private static void AssertMirrorContentMatchesDocument(
+    private static void AssertRootVersionMatchesDocument(
         DocumentStampState mirror,
         DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
-        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
-    }
-
-    private async Task<IReadOnlyList<ReferentialIdentityRow>> GetReferentialIdentityRowsForDocumentAsync(
-        long documentId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId], [DocumentId], [ResourceKeyId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-            ORDER BY [ResourceKeyId], [ReferentialId];
-            """,
-            new SqlParameter("@documentId", documentId)
-        );
-
-        return rows.Select(r => new ReferentialIdentityRow(
-                (Guid)r["ReferentialId"]!,
-                Convert.ToInt64(r["DocumentId"], CultureInfo.InvariantCulture),
-                Convert.ToInt16(r["ResourceKeyId"], CultureInfo.InvariantCulture)
-            ))
-            .ToList();
-    }
-
-    // Test-only audit installed in OneTimeSetUp captures every INSERT/DELETE on
-    // dms.ReferentialIdentity. The same-value identity tests truncate the audit
-    // immediately before the UPDATE under test and assert zero ops afterwards,
-    // so a regression that ran a redundant DELETE+INSERT cycle (which produces
-    // identical deterministic UUIDv5 rows) would still be caught.
-    private async Task InstallReferentialIdentityAuditAsync()
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            IF SCHEMA_ID(N'dms_test') IS NULL EXEC(N'CREATE SCHEMA [dms_test];');
-
-            IF OBJECT_ID(N'[dms_test].[ReferentialIdentityAudit]', N'U') IS NULL
-            CREATE TABLE [dms_test].[ReferentialIdentityAudit]
-            (
-                [Op] char(1) NOT NULL,
-                [DocumentId] bigint NOT NULL,
-                [ResourceKeyId] smallint NOT NULL,
-                [ReferentialId] uniqueidentifier NOT NULL
-            );
-
-            IF OBJECT_ID(N'[dms].[TR_ReferentialIdentity_Audit]', N'TR') IS NOT NULL
-            EXEC(N'DROP TRIGGER [dms].[TR_ReferentialIdentity_Audit];');
-
-            EXEC(N'
-                CREATE TRIGGER [dms].[TR_ReferentialIdentity_Audit] ON [dms].[ReferentialIdentity]
-                AFTER INSERT, DELETE
-                AS
-                BEGIN
-                    SET NOCOUNT ON;
-                    INSERT INTO [dms_test].[ReferentialIdentityAudit] ([Op], [DocumentId], [ResourceKeyId], [ReferentialId])
-                    SELECT N''I'', [DocumentId], [ResourceKeyId], [ReferentialId] FROM inserted;
-                    INSERT INTO [dms_test].[ReferentialIdentityAudit] ([Op], [DocumentId], [ResourceKeyId], [ReferentialId])
-                    SELECT N''D'', [DocumentId], [ResourceKeyId], [ReferentialId] FROM deleted;
-                END;
-            ');
-            """
-        );
-    }
-
-    private async Task<long> CountReferentialIdentityAuditOpsForDocumentAsync(long documentId)
-    {
-        return await _database.ExecuteScalarAsync<long>(
-            """
-            SELECT COUNT_BIG(*)
-            FROM [dms_test].[ReferentialIdentityAudit]
-            WHERE [DocumentId] = @documentId;
-            """,
-            new SqlParameter("@documentId", documentId)
-        );
-    }
-
-    private async Task TruncateReferentialIdentityAuditAsync()
-    {
-        await _database.ExecuteNonQueryAsync("""TRUNCATE TABLE [dms_test].[ReferentialIdentityAudit];""");
-    }
-
-    // Mirrors ReferentialIdFactory in EdFi.DataManagementService.Core.External: the same
-    // UUIDv5 namespace + "{ProjectName}{ResourceName}{path1=value1#path2=value2}" hashing
-    // used by the generated dms.uuidv5() trigger calls.
-    private static readonly Guid s_edFiUuidv5Namespace = new("edf1edf1-3df1-3df1-3df1-3df1edf1edf1");
-
-    private static Guid ComputeReferentialId(
-        string projectName,
-        string resourceName,
-        params (string Path, string Value)[] identityElements
-    )
-    {
-        var identityHash = string.Join("#", identityElements.Select(e => $"{e.Path}={e.Value}"));
-        return Deterministic.Create(s_edFiUuidv5Namespace, $"{projectName}{resourceName}{identityHash}");
-    }
-
-    private static IReadOnlyList<ReferentialIdentityRow> SortReferentialIdentityRows(
-        IEnumerable<ReferentialIdentityRow> rows
-    )
-    {
-        return rows.OrderBy(r => r.ResourceKeyId).ThenBy(r => r.ReferentialId).ToList();
     }
 
     private async Task<CourseOfferingSessionReferenceState> GetCourseOfferingSessionReferenceStateAsync(

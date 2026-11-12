@@ -87,10 +87,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             return [pscustomobject]@{
@@ -184,10 +184,33 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 Set-Content -LiteralPath (Join-Path $bootstrapRoot "bootstrap-manifest.json") -Encoding utf8
         }
 
+        # The fixed vectors CMS, DMS and the provisioning reader all have to read, generated
+        # independently of each reader. They live with the CMS tests that own the format.
+        function script:Get-TestConnectionStringEncryptionVectors {
+            $path = Join-Path $script:sourceRepoRoot "src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/connection-string-encryption-vectors.json"
+            return Get-Content -LiteralPath $path -Raw | ConvertFrom-Json
+        }
+
+        # A legacy value with a fixed IV, changed through its IV alone (as someone who can write the data
+        # store tables could) so that it decrypts, with valid padding, to another host.
+        function script:New-TestLegacyValueWithRedirectedHost {
+            $original = "host=dbhost;port=5432;database=edfi;"
+            $redirected = "host=evil.exampl=5432;database=edfi;"
+            $value = [Convert]::FromBase64String((New-CmsEncryptedConnectionString -PlainText $original -InitializationVector ([byte[]]::new(16))))
+            $originalBytes = [System.Text.Encoding]::UTF8.GetBytes($original.Substring(0, 16))
+            $redirectedBytes = [System.Text.Encoding]::UTF8.GetBytes($redirected.Substring(0, 16))
+            for ($index = 0; $index -lt 16; $index++) {
+                $value[$index] = $value[$index] -bxor $originalBytes[$index] -bxor $redirectedBytes[$index]
+            }
+            return [Convert]::ToBase64String($value)
+        }
+
         function script:New-CmsEncryptedConnectionString {
             param(
                 [string]$PlainText,
-                [string]$EncryptionKey = "TestEncryptionKey123456789012345678901234567890"
+                [string]$EncryptionKey = "TestEncryptionKey123456789012345678901234567890",
+                # A fixed IV makes the cipher text reproducible; by default a random IV is drawn, as CMS does.
+                [byte[]]$InitializationVector = $null
             )
 
             $keyText = $EncryptionKey.PadRight(32, "0").Substring(0, 32)
@@ -196,7 +219,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $aes = [System.Security.Cryptography.Aes]::Create()
             try {
                 $aes.Key = $keyBytes
-                $aes.GenerateIV()
+                if ($null -ne $InitializationVector) { $aes.IV = $InitializationVector } else { $aes.GenerateIV() }
                 $encryptor = $aes.CreateEncryptor()
                 try {
                     $cipherText = $encryptor.TransformFinalBlock($plainTextBytes, 0, $plainTextBytes.Length)
@@ -261,6 +284,9 @@ exit $ExitCode
 
     BeforeEach {
         $script:repo = New-IsolatedBootstrapRepo
+        # The env resolver lets an ambient value win (as Compose does), so none may leak in.
+        $script:ambientAllowLegacy = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS")
+        Remove-Item Env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS -ErrorAction SilentlyContinue
     }
 
     AfterEach {
@@ -278,9 +304,70 @@ exit $ExitCode
         # newer pwsh/.NET on Unix stores as a present-but-blank variable instead of removing it.
         Remove-Item Env:DMS_SCHEMA_TOOL_PATH -ErrorAction SilentlyContinue
         Remove-Item Env:DMS_SCHEMA_TOOL_ALLOW_PATH_FALLBACK -ErrorAction SilentlyContinue
+        Remove-Item Env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS -ErrorAction SilentlyContinue
+        if ($null -ne $script:ambientAllowLegacy) {
+            [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS", $script:ambientAllowLegacy)
+        }
     }
 
     Context "public script contracts" {
+        # The connection string readers construct AesGcm(byte[], int), which PowerShell 7.4 (.NET 8)
+        # introduced, so every script that decrypts declares that floor.
+        It "<file> requires PowerShell 7.4" -ForEach @(
+            @{ File = "eng/docker-compose/provision-dms-schema.ps1" }
+            @{ File = "eng/docker-compose/configure-local-data-store.ps1" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1" }
+            @{ File = "eng/docker-compose/tests/Invoke-BootstrapRestoreSmoke.ps1" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.Tests.ps1" }
+        ) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
+
+            $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.4")
+        }
+
+        # The shared module is imported by every Compose entry point, most of which never decrypt, so
+        # it keeps their floor and its decrypting function checks for 7.4 itself.
+        It "database-safety.psm1 requires only PowerShell 7 and checks for 7.4 where it decrypts" {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot "eng/docker-compose/database-safety.psm1"), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq "ConvertFrom-CmsEncryptedConnectionString" }, $true)
+
+            $ast.ScriptRequirements.RequiredPSVersion | Should -Be ([version]"7.0")
+            $function.Body.Extent.Text | Should -Match ([regex]::Escape('$PSVersionTable.PSVersion -lt [version]"7.4"'))
+        }
+
+        # A runtime that cannot derive the key or construct AesGcm must fail with the reader's fixed
+        # text, never raw overload or platform text, and only a tag mismatch counts as an
+        # authentication failure.
+        It "<function> constructs AesGcm inside a try that catches a tag mismatch separately" -ForEach @(
+            @{ File = "eng/docker-compose/database-safety.psm1"; Function = "ConvertFrom-CmsEncryptedConnectionString" }
+            @{ File = "eng/docker-compose/tests/RestoreSmokeProbes.psm1"; Function = "ConvertFrom-RestoreSmokeDataStoreCipherText" }
+        ) {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $script:sourceRepoRoot $File), [ref]$null, [ref]$null)
+            $function = $ast.Find({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $Function }, $true)
+            $constructions = @($function.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                        $node.Member.Extent.Text -eq "new" -and
+                        $node.Expression.Extent.Text -in @("[System.Security.Cryptography.AesGcm]", "[System.Security.Cryptography.HKDF]")
+                    }, $true)) + @($function.FindAll({
+                        param($node)
+                        $node -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and
+                        $node.Member.Extent.Text -eq "DeriveKey"
+                    }, $true))
+
+            $constructions.Count | Should -Be 2
+            foreach ($construction in $constructions) {
+                $parent = $construction.Parent
+                while ($null -ne $parent -and $parent -isnot [System.Management.Automation.Language.TryStatementAst]) {
+                    $parent = $parent.Parent
+                }
+                $parent | Should -Not -BeNullOrEmpty -Because "$($construction.Extent.Text) has to be inside a try"
+                @($parent.CatchClauses | ForEach-Object { $_.CatchTypes.TypeName.FullName }) |
+                    Should -Contain "System.Security.Cryptography.AuthenticationTagMismatchException"
+                @($parent.CatchClauses | Where-Object { $_.IsCatchAll }).Count | Should -Be 1
+            }
+        }
+
         It "provision-dms-schema.ps1 exposes selectors, environment, topology, and managed provenance parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.ProvisionScript
 
@@ -330,7 +417,7 @@ exit $ExitCode
             $content | Should -Match 'Resolve-DatabaseEngineEnvironmentFile -DatabaseEngine \$DatabaseEngine -BaseEnvironmentFile \$resolvedEnvironmentFile -DockerComposeRoot \$PSScriptRoot'
         }
 
-        It "provision-e2e-database.ps1 exposes neutral reset and provision parameters" {
+        It "provision-e2e-database.ps1 exposes neutral reset, provision, and schema output parameters" {
             $params = Get-DeclaredScriptParameters -Path $script:repo.E2EProvisionScript
 
             $params | Should -Contain "EnvironmentFile"
@@ -342,14 +429,15 @@ exit $ExitCode
             # themselves, so this script has to stay self-sufficient by default; the build path is
             # the only caller that can promise compiled output.
             $params | Should -Contain "UsePrebuiltTools"
+            $params | Should -Contain "SchemaOutputDirectory"
             $params | Should -Not -Contain "SchemaToolPath"
             $params | Should -Not -Contain "DataStoreId"
             $params | Should -Not -Contain "SchoolYear"
-            $params.Count | Should -Be 6
+            $params.Count | Should -Be 7
         }
 
         It "provision-e2e-database.ps1 reuses prebuilt CLI output only when asked" {
-            # Both CLI invocations are dotnet run against a project, which restores and builds by
+            # All CLI invocations are dotnet run against a project, which restores and builds by
             # default - and SchemaTools' project references reach Core and Backend.Ddl, so that is a
             # large share of a solution build paid inside every E2E job. The workflow's E2E consumers
             # extract the shared artifact before reaching here, so they must not pay it again; a
@@ -366,8 +454,8 @@ exit $ExitCode
             # Both flags live on one shared argument set, gated by the switch.
             $content | Should -Match '\$script:PrebuiltToolDotnetRunArgs\s*=\s*if \(\$UsePrebuiltTools\) \{ @\("--no-build", "--no-restore"\) \} else \{ @\(\) \}'
 
-            # And both CLI invocations - the downloader arguments and the SchemaTools provisioning
-            # arguments - consume that set, so neither can silently fall back to rebuilding.
+            # The downloader, SchemaTools emission, and provisioning arguments all consume that
+            # set, so none can silently fall back to rebuilding.
             $argSetConsumer = @(
                 ($content -split "\r?\n") | Where-Object {
                     $_ -notmatch '^\s*#' -and
@@ -375,7 +463,7 @@ exit $ExitCode
                     $_ -notmatch '\$script:PrebuiltToolDotnetRunArgs\s*='
                 }
             )
-            $argSetConsumer.Count | Should -Be 2
+            $argSetConsumer.Count | Should -Be 3
         }
 
         It "provision-e2e-database.ps1 owns explicit E2E database reset and SchemaTools provisioning" {
@@ -422,13 +510,13 @@ exit $ExitCode
             foreach ($name in @("start-local-dms.ps1", "start-published-dms.ps1")) {
                 $content = Get-Content -LiteralPath (Join-Path $script:sourceDockerComposeRoot $name) -Raw
 
-                ([regex]::Matches($content, '"kafka\.yml"')).Count | Should -Be 1
+                ([regex]::Matches($content, '"kafka\.compose\.yml"')).Count | Should -Be 1
                 $content | Should -Match '\$enableKafkaInfrastructure\s*=\s*\$EnableKafka\s+-or\s+\$EnableKafkaUI'
                 # The MSSQL relational path does not use Debezium CDC, so start-local-dms.ps1 additionally
-                # gates the kafka.yml/kafka-ui.yml compose files on $DatabaseEngine -eq "postgresql"; that
+                # gates the kafka.compose.yml/kafka-ui.compose.yml compose files on $DatabaseEngine -eq "postgresql"; that
                 # extra clause is optional here so both start-local-dms.ps1 and start-published-dms.ps1 match.
-                $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.yml"\)\s*\}'
-                $content | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\) \{\s*\$files \+= @\("-f", "kafka-ui\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$enableKafkaInfrastructure( -and \$DatabaseEngine -eq "postgresql")?\) \{\s*\$files \+= @\("-f", "kafka\.compose\.yml"\)\s*\}'
+                $content | Should -Match 'if \(\$EnableKafkaUI -and \(\$DatabaseEngine -eq "postgresql" -or \$CdcKafkaInfrastructure\)\) \{\s*\$files \+= @\("-f", "kafka-ui\.compose\.yml"\)\s*\}'
                 $content | Should -Match 'docker compose \$files --env-file \$EnvironmentFile -p dms-(local|published) up \$upArgs kafka kafka-postgresql-source'
                 $content | Should -Match '"--remove-orphans"'
             }
@@ -680,6 +768,75 @@ exit $ExitCode
             $captured | Should -Contain "--create-database"
         }
 
+        Context 'DMS-1283 provisioning environment tool forwarding' {
+            BeforeEach {
+                $dotnetFunction = Get-Item Function:\dotnet -ErrorAction SilentlyContinue
+                $script:oldDotnetScriptBlock = if ($null -ne $dotnetFunction) { $dotnetFunction.ScriptBlock } else { $null }
+                $script:dms1283DotnetCalls = 0
+                Set-Item Function:\global:dotnet -Value { $script:dms1283DotnetCalls++; throw 'Unexpected api-schema-tools publish during provisioning override test' }
+            }
+
+            AfterEach {
+                if ($null -ne $script:oldDotnetScriptBlock) { Set-Item Function:\global:dotnet -Value $script:oldDotnetScriptBlock }
+                else { Remove-Item Function:\dotnet -ErrorAction SilentlyContinue }
+            }
+
+            It 'It_DMS1283_provision_environment_tool_beats_cache' {
+                New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+                $capturePath = Join-Path $script:repo.RepoRoot 'environment-tool-args.txt'
+                $environmentToolDirectory = Join-Path $script:repo.RepoRoot 'environment-tool'
+                New-Item -ItemType Directory -Path $environmentToolDirectory -Force | Out-Null
+                $environmentTool = New-FakeSchemaTool -Directory $environmentToolDirectory -CapturePath $capturePath
+                $env:DMS_SCHEMA_TOOL_PATH = $environmentTool
+                $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
+                New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
+
+                . $script:repo.ProvisionScript
+                function Add-CmsClient { }
+                function Get-CmsToken { return 'token' }
+                function Get-DataStore {
+                    return @([pscustomobject]@{
+                        id = 1283
+                        name = 'DMS1283EnvironmentOverride'
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=override_db;'
+                        dataStoreContexts = @()
+                    })
+                }
+
+                Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1283)
+
+                $captured = @(Get-Content -LiteralPath $capturePath)
+                $captured[1..2] | Should -Be @('ddl', 'provision')
+                $script:dms1283DotnetCalls | Should -Be 0
+            }
+
+            It 'It_DMS1283_provision_invalid_environment_tool_fails_closed' {
+                New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+                $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:repo.RepoRoot 'missing/environment-tool.exe'
+                $publishedDirectory = Join-Path $script:repo.BootstrapRoot 'tools/api-schema-tools'
+                New-Item -ItemType Directory -Path $publishedDirectory -Force | Out-Null
+                Set-Content -LiteralPath (Join-Path $publishedDirectory $(if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' })) -Value 'published cache sentinel'
+
+                . $script:repo.ProvisionScript
+                function Add-CmsClient { }
+                function Get-CmsToken { return 'token' }
+                function Get-DataStore {
+                    return @([pscustomobject]@{
+                        id = 1284
+                        name = 'DMS1283InvalidEnvironmentOverride'
+                        connectionString = 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=override_db;'
+                        dataStoreContexts = @()
+                    })
+                }
+
+                { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(1284) } |
+                    Should -Throw -ExpectedMessage '*configured api-schema-tools executable was not found*'
+
+                $script:dms1283DotnetCalls | Should -Be 0
+            }
+        }
+
         It "decrypts CMS-encrypted connection strings before provisioning" {
             New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
@@ -717,35 +874,223 @@ exit $ExitCode
             . $script:repo.ProvisionScript
 
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "AAAAAAAAAAAAAAAAAAAAAA==" -EnvValues @{} } |
-                Should -Throw -ExpectedMessage "*DMS_CONFIG_DATABASE_ENCRYPTION_KEY is not set*"
+                Should -Throw -ExpectedMessage "*CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set*"
+        }
+
+        It "reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS <case> as <expected>" -ForEach @(
+            @{ Case = "absent"; EnvValues = @{}; Expected = $true }
+            @{ Case = "empty"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "" }; Expected = $true }
+            @{ Case = "true"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "true" }; Expected = $true }
+            @{ Case = "false"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" }; Expected = $false }
+            @{ Case = "FALSE"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "FALSE" }; Expected = $false }
+            @{ Case = "quoted false"; EnvValues = @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = '"false"' }; Expected = $false }
+        ) {
+            . $script:repo.ProvisionScript
+
+            $allowed = Test-LegacyConnectionStringAllowed -EnvValues $EnvValues
+
+            $allowed | Should -BeOfType [bool]
+            $allowed | Should -Be $Expected
+        }
+
+        It "rejects a malformed CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS '<value>' without echoing it" -ForEach @(
+            @{ Value = "flase" }
+            @{ Value = "0" }
+            @{ Value = "no" }
+            # Compose's ${VAR:-true} passes whitespace through, and the services refuse it at startup.
+            @{ Value = '" "' }
+            @{ Value = "' '" }
+        ) {
+            . $script:repo.ProvisionScript
+
+            { Test-LegacyConnectionStringAllowed -EnvValues @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = $Value } } |
+                Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+        }
+
+        It "rejects a whitespace-only ambient CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS, which Compose passes through" {
+            . $script:repo.ProvisionScript
+            $env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = " "
+
+            { Test-LegacyConnectionStringAllowed -EnvValues @{} } |
+                Should -Throw -ExpectedMessage "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+        }
+
+        It "lets an ambient CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS win over the environment file, as Compose does" {
+            . $script:repo.ProvisionScript
+            $env:CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false"
+
+            Test-LegacyConnectionStringAllowed -EnvValues @{ CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "true" } |
+                Should -BeFalse
+        }
+
+        It "returns the redirected host of a legacy value changed through its IV while legacy values are allowed" {
+            . $script:repo.ProvisionScript
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString (New-TestLegacyValueWithRedirectedHost) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" } |
+                Should -BeExactly "host=evil.exampl=5432;database=edfi;"
+        }
+
+        It "rejects <case> when legacy values are disallowed" -ForEach @(
+            @{ Case = "the shared legacy vector"; Kind = "vector" }
+            @{ Case = "a legacy value changed through its IV"; Kind = "redirected" }
+            @{ Case = "a legacy-length value with invalid padding"; Kind = "padding" }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $key = if ($Kind -eq "vector") { $vectors.keyText } else { "TestEncryptionKey123456789012345678901234567890" }
+            $value = switch ($Kind) {
+                "vector" { $vectors.legacyCbc }
+                "redirected" { New-TestLegacyValueWithRedirectedHost }
+                "padding" { [Convert]::ToBase64String([byte[]]::new(32)) }
+            }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $value -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $key; CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false."
+        }
+
+        It "decrypts the shared envelope vector when legacy values are disallowed" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText; CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" } |
+                Should -BeExactly $vectors.plainText
+        }
+
+        It "still rejects a tampered envelope by authentication when legacy values are disallowed" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$payload.Length - 1] = $payload[$payload.Length - 1] -bxor 1
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String($payload)) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText; CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false" } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+
+        It "refuses to provision a legacy connection string when the environment file disallows legacy values" {
+            New-StagedSchemaWorkspace -DockerComposeRoot $script:repo.DockerComposeRoot
+            $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
+            $fakeTool = New-FakeSchemaTool -Directory $script:repo.RepoRoot -CapturePath $capturePath
+            $env:DMS_SCHEMA_TOOL_PATH = $fakeTool
+            Add-Content -LiteralPath $script:repo.EnvFile -Value "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=false"
+            $encryptedConnectionString = New-CmsEncryptedConnectionString `
+                -PlainText 'host=dms-postgresql;port=5432;username=postgres;password=${POSTGRES_PASSWORD};database=encrypted_db;'
+
+            . $script:repo.ProvisionScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore {
+                return @(
+                    [pscustomobject]@{
+                        id = 3
+                        name = "Encrypted"
+                        connectionString = $encryptedConnectionString
+                        dataStoreContexts = @()
+                    }
+                )
+            }
+
+            { Invoke-ProvisionDmsSchema -EnvironmentFile $script:repo.EnvFile -DataStoreId @(3) } |
+                Should -Throw -ExpectedMessage "*legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false*"
+            Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "nothing is provisioned"
         }
 
         It "rejects an encrypted connection string payload that is not valid base64" {
             . $script:repo.ProvisionScript
 
-            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString "@@@@" -EnvValues $envValues } |
-                Should -Throw -ExpectedMessage "*not valid CMS encrypted base64*"
+                Should -Throw -ExpectedMessage "*not valid Configuration Service encrypted base64*"
         }
 
         It "rejects an encrypted connection string payload too short to contain an IV" {
             . $script:repo.ProvisionScript
 
-            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
             $shortPayload = [Convert]::ToBase64String([byte[]]::new(8))
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $shortPayload -EnvValues $envValues } |
                 Should -Throw -ExpectedMessage "*payload is invalid*"
         }
 
+        It "rejects an encrypted connection string payload whose length fits neither CMS form" {
+            . $script:repo.ProvisionScript
+
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            # 33 bytes is neither whole AES blocks (legacy) nor 13 bytes past them (envelope).
+            $misshapen = [Convert]::ToBase64String([byte[]]::new(33))
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $misshapen -EnvValues $envValues } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string payload is invalid."
+        }
+
         It "rejects an encrypted connection string that cannot be decrypted with the configured key" {
             . $script:repo.ProvisionScript
 
-            $envValues = @{ DMS_CONFIG_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
-            # 16-byte IV plus a 17-byte ciphertext is not a whole AES block, so PKCS7 decryption
-            # fails deterministically rather than relying on a wrong-key padding collision.
-            $undecryptable = [Convert]::ToBase64String([byte[]]::new(33))
+            $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "TestEncryptionKey123456789012345678901234567890" }
+            # Legacy CMS cipher text under a different key: the padding check fails for this fixed value.
+            $undecryptable = New-CmsEncryptedConnectionString -PlainText "host=localhost;database=encrypted_db;" -EncryptionKey "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" -InitializationVector ([byte[]](0..15))
             { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $undecryptable -EnvValues $envValues } |
                 Should -Throw -ExpectedMessage "*could not be decrypted*"
+        }
+
+        It "decrypts the shared interoperability vector <vector>" -ForEach @(
+            @{ Vector = "envelopeV1"; PlainTextField = "plainText" }
+            @{ Vector = "blockAlignedEnvelopeV1"; PlainTextField = "blockAlignedPlainText" }
+            @{ Vector = "legacyCbc"; PlainTextField = "plainText" }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.$Vector -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } |
+                Should -BeExactly $vectors.$PlainTextField
+        }
+
+        It "decrypts the shared envelope vector with any key that shares its first 32 characters" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText + "-ignored-suffix" } |
+                Should -BeExactly $vectors.plainText
+        }
+
+        # Each change keeps the envelope on the envelope path: a changed marker byte keeps the length
+        # class, so it is refused there rather than decrypted as legacy CBC.
+        It "rejects the shared envelope vector with <case>" -ForEach (
+            @(0..15 | ForEach-Object { @{ Case = "marker byte $_ changed"; Index = $_; Value = $null; Expected = "Configuration Service data store encrypted connection string envelope is not recognized." } }) + @(
+                @{ Case = "version 0"; Index = 16; Value = 0; Expected = "Configuration Service data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "version 2"; Index = 16; Value = 2; Expected = "Configuration Service data store encrypted connection string uses an unsupported envelope format version." }
+                @{ Case = "a changed nonce"; Index = 17; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "a changed tag"; Index = 29; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+                @{ Case = "changed cipher text"; Index = 45; Value = $null; Expected = "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY." }
+            )
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $payload[$Index] = if ($null -eq $Value) { $payload[$Index] -bxor 1 } else { $Value }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String($payload)) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
+                Should -Throw -ExpectedMessage $Expected
+        }
+
+        It "rejects the shared envelope vector <case>" -ForEach @(
+            @{ Case = "truncated by one byte"; Length = -1 }
+            @{ Case = "without cipher text"; Length = 45 }
+        ) {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+            $payload = [Convert]::FromBase64String($vectors.envelopeV1)
+            $kept = if ($Length -lt 0) { $payload.Length + $Length } else { $Length }
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString ([Convert]::ToBase64String([byte[]]$payload[0..($kept - 1)])) -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $vectors.keyText } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string payload is invalid."
+        }
+
+        It "rejects the shared envelope vector under another key" {
+            . $script:repo.ProvisionScript
+            $vectors = Get-TestConnectionStringEncryptionVectors
+
+            { ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $vectors.envelopeV1 -EnvValues @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = "Rk3pQ8sT2vW9xZ4bC6dE1gH5jL7mN0rY" } } |
+                Should -Throw -ExpectedMessage "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
         }
 
         It "fails fast when CMS instance results reach the query page size" {
@@ -994,7 +1339,7 @@ exit $ExitCode
             }
 
             { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(9) } |
-                Should -Throw -ExpectedMessage "*CMS data store 9*name=StalePostgres*database=stale_pg*resolved to dialect 'pgsql'*DMS_DATASTORE is 'mssql'*expected dialect 'mssql'*-NoDataStore*"
+                Should -Throw -ExpectedMessage "*Configuration Service data store 9*name=StalePostgres*database=stale_pg*resolved to dialect 'pgsql'*DMS_DATASTORE is 'mssql'*expected dialect 'mssql'*-NoDataStore*"
             Test-Path -LiteralPath $capturePath | Should -BeFalse
         }
 
@@ -1063,6 +1408,69 @@ exit $ExitCode
     }
 
     Context "instance configuration" {
+        BeforeAll {
+            # Synthetic smoke credentials. '$' is a character CMS-generated secrets can contain, so the
+            # secret must reach the result unexpanded.
+            $script:syntheticSmokeKey = 'SYNTH-KEY-1292'
+            $script:syntheticSmokeSecret = 'SYNTH$SECRET-1292'
+
+            # Stages a SmokeTest.psm1 stand-in where configure imports it. The stand-in records the
+            # forwarded URL, data store ids, and tenant - never the credential - and returns the
+            # synthetic credential the way Get-SmokeTestCredential does.
+            function script:New-StubSmokeTestModule {
+                param([string]$CapturePath)
+
+                $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
+                New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
+                @"
+function Get-SmokeTestCredential {
+    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
+    Add-Content -LiteralPath '$CapturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
+    return @{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH`$SECRET-1292'; VendorId = [long]9; ApplicationName = 'Smoke Test Application' }
+}
+Export-ModuleMember -Function Get-SmokeTestCredential
+"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+            }
+
+            function script:Assert-SyntheticSmokeTestCredential {
+                param($Result)
+
+                @($Result.SmokeTestCredential.PSObject.Properties.Name) | Should -Be @("Key", "Secret", "ApplicationName")
+                $Result.SmokeTestCredential.Key | Should -BeExactly $script:syntheticSmokeKey
+                $Result.SmokeTestCredential.Secret | Should -BeExactly $script:syntheticSmokeSecret
+                $Result.SmokeTestCredential.ApplicationName | Should -BeExactly "Smoke Test Application"
+            }
+
+            # -Force is required: dot-prefixed files and directories (.bootstrap, .env.*) are hidden on
+            # Linux and would otherwise be silently missing from both snapshots.
+            function script:Get-FileHashSnapshot {
+                param([string]$Root)
+
+                $snapshot = @{}
+                foreach ($file in @(Get-ChildItem -LiteralPath $Root -Recurse -File -Force)) {
+                    $snapshot[$file.FullName] = (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash
+                }
+                return $snapshot
+            }
+
+            function script:Get-CreatedOrModifiedFile {
+                param([hashtable]$Before, [string]$Root)
+
+                $after = Get-FileHashSnapshot -Root $Root
+                return @($after.Keys | Where-Object { -not $Before.ContainsKey($_) -or $Before[$_] -ne $after[$_] })
+            }
+
+            function script:Test-IsStreamRecord {
+                param($Item)
+
+                return $Item -is [System.Management.Automation.InformationRecord] -or
+                    $Item -is [System.Management.Automation.WarningRecord] -or
+                    $Item -is [System.Management.Automation.ErrorRecord] -or
+                    $Item -is [System.Management.Automation.VerboseRecord] -or
+                    $Item -is [System.Management.Automation.DebugRecord]
+            }
+        }
+
         It "returns a structured object for NoDataStore route-unqualified selection" {
             . $script:repo.ConfigureScript
 
@@ -1104,22 +1512,14 @@ exit $ExitCode
                 Should -Throw -ExpectedMessage "*route-qualified*"
         }
 
-        It "creates smoke credentials for the selected NoDataStore target and tenant" {
+        It "returns the smoke credentials created for the selected NoDataStore target and tenant" {
             $envFile = Join-Path $script:repo.DockerComposeRoot "env-with-tenant.env"
             Get-Content -LiteralPath $script:repo.EnvFile |
                 Set-Content -LiteralPath $envFile -Encoding utf8
-            Add-Content -LiteralPath $envFile -Value "CONFIG_SERVICE_TENANT=tenant-a"
+            Add-Content -LiteralPath $envFile -Value "DMS_CONFIGURATION_SERVICE_TENANT=tenant-a"
 
             $capturePath = Join-Path $script:repo.RepoRoot "smoke-capture.txt"
-            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
-            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
-            @"
-function Get-SmokeTestCredential {
-    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
-    Add-Content -LiteralPath '$capturePath' -Value `"smoke url=`$ConfigServiceUrl ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
-}
-Export-ModuleMember -Function Get-SmokeTestCredential
-"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+            New-StubSmokeTestModule -CapturePath $capturePath
 
             . $script:repo.ConfigureScript
 
@@ -1137,22 +1537,17 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 )
             }
 
-            Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -NoDataStore -AddSmokeTestCredentials | Out-Null
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -NoDataStore -AddSmokeTestCredentials
 
-            @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke url=http://localhost:18081 ids=77 tenant=tenant-a"
+            @(Get-Content -LiteralPath $capturePath) | Should -Be @("smoke url=http://localhost:18081 ids=77 tenant=tenant-a")
+            Assert-SyntheticSmokeTestCredential -Result $result
+            $result.SelectedDataStoreIds | Should -Be @([long]77)
+            $result.Tenant | Should -Be "tenant-a"
         }
 
-        It "creates smoke credentials for all selected school-year data stores" {
+        It "returns the smoke credentials created for all selected school-year data stores" {
             $capturePath = Join-Path $script:repo.RepoRoot "smoke-schoolyear-capture.txt"
-            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
-            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
-            @"
-function Get-SmokeTestCredential {
-    param([string] `$ConfigServiceUrl, [long[]] `$DataStoreIds, [string] `$Tenant)
-    Add-Content -LiteralPath '$capturePath' -Value `"smoke ids=`$(`$DataStoreIds -join ',') tenant=`$Tenant`"
-}
-Export-ModuleMember -Function Get-SmokeTestCredential
-"@ | Set-Content -LiteralPath (Join-Path $smokeModuleDir "SmokeTest.psm1") -Encoding utf8
+            New-StubSmokeTestModule -CapturePath $capturePath
 
             . $script:repo.ConfigureScript
 
@@ -1165,9 +1560,147 @@ Export-ModuleMember -Function Get-SmokeTestCredential
                 )
             }
 
-            Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials | Out-Null
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -SchoolYearRange "2024-2025" -AddSmokeTestCredentials
 
-            @(Get-Content -LiteralPath $capturePath) | Should -Contain "smoke ids=101,102 tenant="
+            @(Get-Content -LiteralPath $capturePath) | Should -Be @("smoke url=http://localhost:18081 ids=101,102 tenant=")
+            Assert-SyntheticSmokeTestCredential -Result $result
+            $result.SelectedDataStoreIds | Should -Be @([long]101, [long]102)
+            @($result.RouteContexts).Count | Should -Be 2
+        }
+
+        It "returns the smoke credentials created for the default data store" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-default-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+
+            @(Get-Content -LiteralPath $capturePath) | Should -Be @("smoke url=http://localhost:18081 ids=303 tenant=")
+            Assert-SyntheticSmokeTestCredential -Result $result
+            $result.SelectedDataStoreIds | Should -Be @([long]303)
+        }
+
+        It "omits SmokeTestCredential and never creates credentials without the flag (<Branch>)" -ForEach @(
+            @{ Branch = "NoDataStore"; Arguments = @{ NoDataStore = $true } }
+            @{ Branch = "SchoolYearRange"; Arguments = @{ SchoolYearRange = "2024-2025" } }
+            @{ Branch = "default"; Arguments = @{} }
+        ) {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-unflagged-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Get-DataStore { return @([pscustomobject]@{ id = 77; name = "Existing"; dataStoreContexts = @() }) }
+            function Add-DmsSchoolYearInstances { return @(@{ DataStoreId = [long]101; Year = 2024 }, @{ DataStoreId = [long]102; Year = 2025 }) }
+            function Add-DataStore { return [long]303 }
+
+            # The configure script runs under StrictMode -Version Latest, so an unassigned credential
+            # variable would throw here rather than produce a result.
+            $results = @(Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile @Arguments)
+
+            $results.Count | Should -Be 1
+            $results[0].PSObject.Properties["SmokeTestCredential"] | Should -BeNullOrEmpty
+            Test-Path -LiteralPath $capturePath | Should -BeFalse -Because "no smoke application may be created without the flag"
+        }
+
+        It "does not carry a credential from a flagged call into a later unflagged call" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-repeat-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $flagged = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+            $unflagged = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile
+
+            Assert-SyntheticSmokeTestCredential -Result $flagged
+            $unflagged.PSObject.Properties["SmokeTestCredential"] | Should -BeNullOrEmpty
+            @(Get-Content -LiteralPath $capturePath).Count | Should -Be 1
+        }
+
+        It "emits exactly one result object with the existing fields unchanged when the flag is set" {
+            New-StubSmokeTestModule -CapturePath (Join-Path $script:repo.RepoRoot "smoke-shape-capture.txt")
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $results = @(Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials)
+
+            $results.Count | Should -Be 1
+            @($results[0].PSObject.Properties.Name | Where-Object { $_ -ne "CMSReadOnlyAccess" }) |
+                Should -Be @("SelectedDataStoreIds", "DataStoreIds", "RouteContexts", "Tenant", "SchoolYears", "HasRouteQualifiedDataStores", "SmokeTestCredential")
+            $results[0].DataStoreIds | Should -Be @([long]303)
+            $results[0].Tenant | Should -Be ""
+            $results[0].HasRouteQualifiedDataStores | Should -BeFalse
+        }
+
+        It "keeps smoke credentials off non-success streams and out of files the run writes" {
+            $capturePath = Join-Path $script:repo.RepoRoot "smoke-leak-capture.txt"
+            New-StubSmokeTestModule -CapturePath $capturePath
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            # Baseline after staging: the stand-in module deliberately embeds the synthetic secret, so
+            # only files the run itself creates or modifies are scanned.
+            $before = Get-FileHashSnapshot -Root $script:repo.RepoRoot
+            $all = @(& {
+                    $VerbosePreference = "Continue"
+                    $DebugPreference = "Continue"
+                    Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+                } *>&1)
+            $changed = @(Get-CreatedOrModifiedFile -Before $before -Root $script:repo.RepoRoot)
+
+            $records = @($all | Where-Object { Test-IsStreamRecord $_ })
+            $results = @($all | Where-Object { -not (Test-IsStreamRecord $_) })
+            $results.Count | Should -Be 1
+            Assert-SyntheticSmokeTestCredential -Result $results[0]
+            $records.Count | Should -BeGreaterThan 0 -Because "configure's progress messages must have been captured, or the leak check proves nothing"
+            foreach ($record in $records) {
+                $text = $record | Out-String
+                $text | Should -Not -Match ([regex]::Escape($script:syntheticSmokeKey))
+                $text | Should -Not -Match ([regex]::Escape($script:syntheticSmokeSecret))
+            }
+
+            @($changed | Where-Object { (Split-Path -Leaf $_) -eq (Split-Path -Leaf $capturePath) }).Count |
+                Should -Be 1 -Because "the run's own capture log must be among the scanned files, or the file check is vacuous"
+            foreach ($file in $changed) {
+                Select-String -LiteralPath $file -SimpleMatch -Pattern $script:syntheticSmokeKey, $script:syntheticSmokeSecret |
+                    Should -BeNullOrEmpty -Because "'$file' was written by this run"
+            }
+        }
+
+        It "round-trips the smoke credential through JSON unchanged" {
+            New-StubSmokeTestModule -CapturePath (Join-Path $script:repo.RepoRoot "smoke-json-capture.txt")
+
+            . $script:repo.ConfigureScript
+
+            function Add-CmsClient { }
+            function Get-CmsToken { return "token" }
+            function Add-DataStore { return [long]303 }
+
+            $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $script:repo.EnvFile -AddSmokeTestCredentials
+            $roundTripped = $result | ConvertTo-Json -Depth 5 | ConvertFrom-Json
+
+            $roundTripped.SmokeTestCredential.Key | Should -BeExactly $script:syntheticSmokeKey
+            $roundTripped.SmokeTestCredential.Secret | Should -BeExactly $script:syntheticSmokeSecret
+            $roundTripped.SmokeTestCredential.ApplicationName | Should -BeExactly "Smoke Test Application"
         }
 
         It "uses an explicit database name when creating the default local data store" {
@@ -1257,7 +1790,7 @@ else { Add-Content -LiteralPath '$sequencePath' -Value 'start-legacy' }
             @"
 param([string] `$EnvironmentFile, [string] `$SchoolYearRange, [switch] `$NoDataStore, [switch] `$AddSmokeTestCredentials)
 Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRange noDataStore=`$NoDataStore smoke=`$AddSmokeTestCredentials`"
-[pscustomobject]@{
+`$result = [pscustomobject]@{
     DataStoreIds = [long[]] @(101, 102)
     SelectedDataStoreIds = [long[]] @(101, 102)
     RouteContexts = @(
@@ -1268,7 +1801,12 @@ Add-Content -LiteralPath '$sequencePath' -Value `"configure range=`$SchoolYearRa
     SchoolYears = [int[]] @(2024, 2025)
     HasRouteQualifiedDataStores = `$true
 }
-"@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "configure-local-data-store.ps1") -Encoding utf8
+# Same contract as the real configure phase: the credential block is present only when requested.
+if (`$AddSmokeTestCredentials) {
+    `$result | Add-Member -NotePropertyName SmokeTestCredential -NotePropertyValue ([pscustomobject][ordered]@{ Key = 'SYNTH-KEY-1292'; Secret = 'SYNTH`$SECRET-1292'; ApplicationName = 'Smoke Test Application' })
+}
+`$result
+"@ | Set-Content -LiteralPath (Join-Path -Path $script:repo.DockerComposeRoot -ChildPath "configure-local-data-store.ps1") -Encoding utf8
 
             @"
 param([string] `$EnvironmentFile, [long[]] `$DataStoreId)
@@ -1280,12 +1818,21 @@ param([string] `$EnvironmentFile, [int[]] `$SchoolYear, [long[]] `$DataStoreId, 
 Add-Content -LiteralPath '$sequencePath' -Value `"seed years=`$(`$SchoolYear -join ',') ids=`$(`$DataStoreId -join ',')`"
 "@ | Set-Content -LiteralPath (Join-Path $script:repo.DockerComposeRoot "load-dms-seed-data.ps1") -Encoding utf8
 
-            & $script:repo.WrapperScript `
-                -EnvironmentFile $script:repo.EnvFile `
-                -LoadSeedData `
-                -SeedDataPath $script:repo.DockerComposeRoot `
-                -SchoolYearRange "2024-2025" `
-                -AddSmokeTestCredentials
+            # -AddSmokeTestCredentials makes the wrapper format its summary with the real smoke-test
+            # module from its repository-relative path.
+            $smokeModuleDir = Join-Path $script:repo.RepoRoot "eng/smoke_test/modules"
+            New-Item -ItemType Directory -Path $smokeModuleDir -Force | Out-Null
+            Copy-Item -LiteralPath (Join-Path $script:sourceRepoRoot "eng/smoke_test/modules/SmokeTest.psm1") -Destination $smokeModuleDir
+
+            $output = @(& $script:repo.WrapperScript `
+                    -EnvironmentFile $script:repo.EnvFile `
+                    -LoadSeedData `
+                    -SeedDataPath $script:repo.DockerComposeRoot `
+                    -SchoolYearRange "2024-2025" `
+                    -AddSmokeTestCredentials)
+
+            @($output | Where-Object { "$_" -eq "--- Smoke test credentials ---" }).Count | Should -Be 1
+            $output[-1] | Should -BeLike "Self-contained identity:*"
 
             $sequence = @(Get-Content -LiteralPath $sequencePath)
             $sequence[0] | Should -Be "start-infra EnableConfig=True"
@@ -1955,13 +2502,13 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-CONFIG_SERVICE_CLIENT_ID=CMSReadOnlyAccess
-CONFIG_SERVICE_CLIENT_SCOPE=edfi_admin_api/readonly_access
-CONFIG_SERVICE_CLIENT_SECRET=my-ro-secret
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+DMS_CONFIGURATION_SERVICE_CLIENT_ID=CMSReadOnlyAccess
+DMS_CONFIGURATION_SERVICE_CLIENT_SCOPE=edfi_admin_api/readonly_access
+DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=my-ro-secret
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             . $script:repo.ConfigureScript
@@ -2046,8 +2593,8 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             } *>&1 | Out-String
 
             $output | Should -Match "IDE next-step guidance"
-            $output | Should -Match "AppSettings__UseApiSchemaPath = true"
-            $output | Should -Match "AppSettings__ApiSchemaPath"
+            $output | Should -Match "AppSettings__ApiSchema__UseCustomPath = true"
+            $output | Should -Match "AppSettings__ApiSchema__Path"
             $output | Should -Match "runtime-authoritative"
         }
 
@@ -2243,14 +2790,14 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-CONFIG_SERVICE_TENANT=isolated-tenant
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+DMS_CONFIGURATION_SERVICE_TENANT=isolated-tenant
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
-            $env:CONFIG_SERVICE_TENANT = "process-tenant"
+            $env:DMS_CONFIGURATION_SERVICE_TENANT = "process-tenant"
             try {
                 . $script:repo.ConfigureScript
 
@@ -2271,7 +2818,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
                 $result.Tenant | Should -Be "process-tenant"
             }
             finally {
-                $env:CONFIG_SERVICE_TENANT = $null
+                $env:DMS_CONFIGURATION_SERVICE_TENANT = $null
             }
         }
 
@@ -2281,14 +2828,14 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-CONFIG_SERVICE_TENANT=isolated-tenant
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+DMS_CONFIGURATION_SERVICE_TENANT=isolated-tenant
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
-            Remove-Item Env:CONFIG_SERVICE_TENANT -ErrorAction SilentlyContinue
+            Remove-Item Env:DMS_CONFIGURATION_SERVICE_TENANT -ErrorAction SilentlyContinue
             . $script:repo.ConfigureScript
 
             function Add-CmsClient { }
@@ -2316,10 +2863,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $isolatedEnvFile = Join-Path $script:repo.DockerComposeRoot "env-mssql-ambient.env"
             @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
             $ambientPassword = 'Amb;ient "P@ss,word''=1 $x'
@@ -2364,10 +2911,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=9876
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args.txt"
@@ -2414,10 +2961,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=isolated_db
 POSTGRES_PORT=9876
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $isolatedEnvFile -Encoding utf8
 
             $capturePath = Join-Path $script:repo.RepoRoot "schema-tool-args-file-only.txt"
@@ -2631,7 +3178,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             . $script:repo.ConfigureScript
 
             $result = Resolve-CmsReadOnlyAccessFromEnv -EnvValues @{
-                CONFIG_SERVICE_CLIENT_SECRET = "explicit-secret"
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
             }
 
             $result | Should -Not -BeNullOrEmpty
@@ -2660,7 +3207,7 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             $result.PSObject.Properties.Name | Should -Not -Contain "CMSReadOnlyAccess"
         }
 
-        It "Get-ProvisionCmsReadOnlyAccessGuidance returns empty when no CONFIG_SERVICE_CLIENT_* keys are present" {
+        It "Get-ProvisionCmsReadOnlyAccessGuidance returns empty when no DMS_CONFIGURATION_SERVICE_CLIENT_* keys are present" {
             . $script:repo.ProvisionScript
 
             $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
@@ -2674,11 +3221,23 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
             . $script:repo.ProvisionScript
 
             $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
-                CONFIG_SERVICE_CLIENT_SECRET = "explicit-secret"
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
             }
 
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientId = CMSReadOnlyAccess"
             ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__ClientSecret = \(present in environment file\)"
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__AllowLegacyConnectionStrings = true "
+        }
+
+        It "Get-ProvisionCmsReadOnlyAccessGuidance passes CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS on to an IDE-run Ed-Fi API" {
+            . $script:repo.ProvisionScript
+
+            $lines = Get-ProvisionCmsReadOnlyAccessGuidance -EnvValues @{
+                DMS_CONFIGURATION_SERVICE_CLIENT_SECRET = "explicit-secret"
+                CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS = "false"
+            }
+
+            ($lines -join "`n") | Should -Match "ConfigurationServiceSettings__AllowLegacyConnectionStrings = false "
         }
     }
 
@@ -2900,10 +3459,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=configure-side-admin
 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=configure-side-secret
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
@@ -2952,10 +3511,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=provision-side-admin
 DMS_BOOTSTRAP_ADMIN_CLIENT_SECRET=provision-side-secret
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
@@ -3002,10 +3561,10 @@ POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
 MSSQL_PORT=15433
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 "@ | Set-Content -LiteralPath $overrideEnvFile -Encoding utf8
 
@@ -3055,7 +3614,7 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 
             $sourceText = Get-Content -LiteralPath $scriptPath -Raw
             $sourceText | Should -Not -Match ([regex]::Escape($legacyConnectorScript))
-            $sourceText | Should -Not -Match 'kafka\.yml'
+            $sourceText | Should -Not -Match 'kafka\.compose\.yml'
             $sourceText | Should -Not -Match ("dms" + "\.document")
 
             $sourceText | Should -Match '\$LASTEXITCODE -ne 0'
@@ -3159,10 +3718,10 @@ DMS_BOOTSTRAP_ADMIN_CLIENT_ID=$injectedId
 POSTGRES_PASSWORD=secret-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 # These stubs only record calls. Mismatch tests assert that neither schema
@@ -3288,7 +3847,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -SelectedExtensions @("tpdm") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*Automatic replacement*DMS-1271*"
+                    Should -Throw "*Automatic replacement*restore mode*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3307,7 +3866,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -SelectedPackages @("EdFi.DataStandard61.ApiSchema@1.0.335") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*does not match*DMS-1271*"
+                    Should -Throw "*does not match*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3329,7 +3888,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     ) | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*does not match*DMS-1271*"
+                    Should -Throw "*does not match*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3345,7 +3904,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 script:New-StandardModeManifestFile -DockerComposeRoot $fixture.DockerComposeRoot -Malformed | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*without a complete selectedPackages identity*DMS-1271*"
+                    Should -Throw "*without a complete selectedPackages identity*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3407,7 +3966,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                     -SelectedPackages @("$($corePackage.Id)@0.0.1") | Out-Null
 
                 { & $fixture.WrapperScript -EnvironmentFile $fixture.EnvFile } |
-                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*DMS-1271*"
+                    Should -Throw "*$($corePackage.Id)@$($corePackage.Version)*-RestoreTemplate*"
 
                 Test-Path -LiteralPath $fixture.PrepareSchemaCallLog | Should -BeFalse
                 Test-Path -LiteralPath $fixture.StartCallLog | Should -BeFalse
@@ -3439,9 +3998,9 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
         It "protects MSSQL_DB_NAME as a first-class database-name key" {
             {
                 Assert-E2EDatabaseIsDedicated `
-                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_datamanagementservice" } `
+                    -EnvironmentValues @{ MSSQL_DB_NAME = "edfi_dms_mssql" } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "Edfi_DataManagementService"
+                    -E2EDatabaseName "Edfi_Dms_Mssql"
             } | Should -Throw "*MSSQL_DB_NAME*"
         }
 
@@ -3449,10 +4008,10 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
-                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User ID=sa;Password=p;"
+                        DATABASE_CONNECTION_STRING_ADMIN = "Server=dms-mssql,1433;Initial Catalog=edfi_dms_admin;User ID=sa;Password=p;"
                     } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
+                    -E2EDatabaseName "edfi_dms_admin"
             } | Should -Throw "*DATABASE_CONNECTION_STRING_ADMIN*"
         }
 
@@ -3476,11 +4035,11 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
-                        DMS_CONFIG_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
+                        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING = '"Server=dms-mssql,1433;Initial Catalog=shared"'
                     } `
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
-            } | Should -Throw "*DMS_CONFIG_DATABASE_CONNECTION_STRING*"
+            } | Should -Throw "*CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING*"
         }
 
         It "rejects a Compose-quoted database-name key that matches the E2E database" {
@@ -3536,7 +4095,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{
-                        DMS_CONFIG_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
+                        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING = "Server=dms-mssql,1433;User ID=sa;Password=p;"
                     } `
                     -EnvironmentFilePath ".env.e2e" `
                     -E2EDatabaseName "shared"
@@ -3655,19 +4214,19 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{ $Key = "" } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
+                    -E2EDatabaseName "edfi_datamanagementservice_e2e"
             } | Should -Throw "*could not resolve $Key*"
         }
 
         It "fails closed when the protected <Key> connection string is explicitly present but blank" -ForEach @(
             @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
-            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
         ) {
             {
                 Assert-E2EDatabaseIsDedicated `
                     -EnvironmentValues @{ $Key = "" } `
                     -EnvironmentFilePath ".env.e2e" `
-                    -E2EDatabaseName "edfi_datamanagementservice"
+                    -E2EDatabaseName "edfi_datamanagementservice_e2e"
             } | Should -Throw "*could not resolve $Key*"
         }
 
@@ -3682,7 +4241,7 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
 
         It "fails closed when a direct ambient <Key> override targets the reset database" -ForEach @(
             @{ Key = "DATABASE_CONNECTION_STRING_ADMIN" }
-            @{ Key = "DMS_CONFIG_DATABASE_CONNECTION_STRING" }
+            @{ Key = "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING" }
         ) {
             $priorExists = Test-Path "Env:$Key"
             $priorValue = [System.Environment]::GetEnvironmentVariable($Key)
@@ -3756,15 +4315,15 @@ Add-Content -LiteralPath '$startCallLog' -Value "start"
                 $path = Join-Path $script:repo.DockerComposeRoot "env-separate-topology-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabaseName;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -3786,16 +4345,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=$CmsDatabas
             $envFile = Join-Path $script:repo.DockerComposeRoot "env-export-dependency-$([Guid]::NewGuid().ToString('N')).env"
             @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
             $result = Invoke-ConfigureLocalDataStore -EnvironmentFile $envFile -DatabaseEngine mssql -NoDataStore
@@ -3828,16 +4387,16 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 $envFile = Join-Path $script:repo.DockerComposeRoot "env-provision-export-dep-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=edfi_datamanagementservice
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATASTORE=mssql
 export CMS_DB_OVERRIDE_XYZ=edfi_configurationservice
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_OVERRIDE_XYZ};User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 { Invoke-ProvisionDmsSchema -EnvironmentFile $envFile -DataStoreId @(98) -DatabaseEngine mssql } |
@@ -4017,15 +4576,15 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=`${CMS_DB_O
                 $path = Join-Path $script:repo.DockerComposeRoot "env-guard-mssql-$([Guid]::NewGuid().ToString('N')).env"
                 @"
 POSTGRES_PASSWORD=isolated-pass
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -4038,10 +4597,10 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=$DatastoreName
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -4366,6 +4925,611 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
         }
     }
 
+    Context "restore separate-config data store reuse at the configure boundary (DMS-1271)" {
+        # A -SeparateConfigDatabase restore replaces only the DMS datastore; the Configuration Service
+        # database survives, so the configure phase after the restore can meet the data store an
+        # earlier run registered, and CMS rejects a second registration under the same name. With the
+        # wrapper's -RestoreTargetDatabaseName handoff the phase reuses that data store only when its
+        # STORED (CMS-encrypted) connection string names the composed database service and exactly the
+        # restored database, creates one when CMS holds none, and otherwise refuses - after the restore,
+        # so every refusal says the target is already restored.
+        BeforeAll {
+            # The key the CMS literal fixtures below were encrypted under (by the CMS service itself).
+            $script:reuseCmsKey = "RestoreSmokeProbe-TestKey-0123456789ABCDEF"
+            $script:reusePassword = "Reuse-S3cret!"
+            $script:reuseTarget = "edfi_datamanagementservice"
+            # The env resolver lets an ambient value win (as Compose does), so none may leak in.
+            $script:reuseAmbientKey = [System.Environment]::GetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY")
+            Remove-Item Env:CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY -ErrorAction SilentlyContinue
+
+            function script:New-ReuseEnvFile {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Engine,
+
+                    [string]$EncryptionKey = $script:reuseCmsKey
+                )
+
+                $path = Join-Path $script:repo.DockerComposeRoot "env-reuse-$Engine-$([Guid]::NewGuid().ToString('N')).env"
+                $lines = if ($Engine -eq "mssql") {
+                    @(
+                        "POSTGRES_PASSWORD=isolated-pass"
+                        "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081"
+                        "DMS_HTTP_PORTS=18080"
+                        "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained"
+                        "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$EncryptionKey"
+                        "MSSQL_SA_PASSWORD=abcdefgh1!"
+                        "MSSQL_DB_NAME=$($script:reuseTarget)"
+                        "DMS_DATASTORE=mssql"
+                        "CONFIGURATION_SERVICE_DATASTORE=mssql"
+                        "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;"
+                    )
+                }
+                else {
+                    @(
+                        "POSTGRES_PASSWORD=isolated-pass"
+                        "POSTGRES_DB_NAME=$($script:reuseTarget)"
+                        "POSTGRES_PORT=5544"
+                        "CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081"
+                        "DMS_HTTP_PORTS=18080"
+                        "CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained"
+                        "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=$EncryptionKey"
+                    )
+                }
+                $lines | Set-Content -LiteralPath $path -Encoding utf8
+                return $path
+            }
+
+            # The plaintext the configure phase itself registers for the composed service, through the
+            # production serializer; the caller encrypts it as CMS would.
+            function script:New-ReusePlainConnectionString {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Engine,
+
+                    [string]$DbHost,
+
+                    [int]$Port = 0,
+
+                    [string]$DatabaseName = $script:reuseTarget
+                )
+
+                if ($Engine -eq "mssql") {
+                    if (-not $DbHost) { $DbHost = "dms-mssql" }
+                    if ($Port -eq 0) { $Port = 1433 }
+                    return New-DataStoreConnectionString -DatabaseEngine mssql -DbHost $DbHost -Port $Port -Username "sa" -Password $script:reusePassword -DatabaseName $DatabaseName
+                }
+
+                if (-not $DbHost) { $DbHost = "dms-postgresql" }
+                if ($Port -eq 0) { $Port = 5432 }
+                return New-DataStoreConnectionString -DatabaseEngine postgresql -DbHost $DbHost -Port $Port -Username "postgres" -Password $script:reusePassword -DatabaseName $DatabaseName
+            }
+
+            function script:New-ReuseDataStore {
+                param(
+                    [long]$Id = 77,
+
+                    [string]$ConnectionString,
+
+                    [AllowEmptyString()]
+                    [string]$Provider = "",
+
+                    [object[]]$Contexts = @(),
+
+                    [string]$Name = "Local Development Data Store"
+                )
+
+                return [pscustomobject]@{
+                    id = $Id
+                    name = $Name
+                    dataStoreType = "Development"
+                    connectionString = $ConnectionString
+                    provider = $Provider
+                    dataStoreContexts = @($Contexts)
+                }
+            }
+
+            function script:Get-ReuseProvider {
+                param([Parameter(Mandatory)] [string]$Engine)
+                if ($Engine -eq "mssql") { "sqlserver" } else { "postgresql" }
+            }
+
+            # Runs the REAL configure phase with CMS replaced by recording stubs. Every parameter is
+            # Reuse-prefixed: dot-sourcing configure-local-data-store.ps1 runs its own param() block in
+            # this scope and would reset same-named variables ($EnvironmentFile, $DatabaseEngine, ...).
+            # -ReuseStoreFactory runs after the dot-source, so it can use the production serializer.
+            function script:Invoke-ReuseConfigure {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$ReuseEngine,
+
+                    [scriptblock]$ReuseStoreFactory = { @() },
+
+                    [string]$ReuseEnvFile = "",
+
+                    [hashtable]$ReuseParameters = @{},
+
+                    [switch]$ReuseRealAddDataStore
+                )
+
+                . $script:repo.ConfigureScript
+
+                $script:reuseTrace = [System.Collections.Generic.List[string]]::new()
+                $script:reuseRegisteredName = $null
+                $script:reuseStores = @(& $ReuseStoreFactory)
+
+                $script:reuseAuthority = $null
+                function Assert-MssqlTopologyPhysicalConsistency {
+                    # A simple function: the credential the phase also passes lands in $args unread.
+                    param($EnvironmentFile, $ContainerName, $RegisteredDatastoreDatabaseName, $RegisteredDatastoreDatabaseSourceKey, $TimeoutSeconds)
+                    $script:reuseTrace.Add("authority")
+                    $script:reuseAuthority = [pscustomobject]@{
+                        Registered = $RegisteredDatastoreDatabaseName
+                        SourceKey = $RegisteredDatastoreDatabaseSourceKey
+                    }
+                }
+                function Add-CmsClient { $script:reuseTrace.Add("Add-CmsClient") }
+                function Get-CmsToken { return "token" }
+                function Get-DataStore {
+                    param($CmsUrl, $AccessToken, $Offset, $Limit, $Tenant)
+                    $script:reuseTrace.Add("Get-DataStore limit=$Limit")
+                    return $script:reuseStores
+                }
+                if (-not $ReuseRealAddDataStore) {
+                    function Add-DataStore {
+                        param($CmsUrl, $DataStoreType, $Name, $PostgresCredential, $PostgresDbName, $PostgresHost, $PostgresPort, $ConnectionString, $DatabaseEngine, $AccessToken, $Tenant)
+                        $script:reuseTrace.Add("Add-DataStore")
+                        $script:reuseRegisteredName = $Name
+                        return 9001
+                    }
+                }
+                else {
+                    # The real Add-DataStore builds and posts the registration; only its HTTP call is
+                    # replaced, so the body is exactly what CMS would store. The override goes into the
+                    # exact module instance configure just imported from this fixture (selected by path),
+                    # not through Mock -ModuleName, which refuses to bind when earlier suites in the same
+                    # process left other Dms-Management copies loaded.
+                    $script:reuseDmsModule = @(Get-Module -Name Dms-Management |
+                            Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" })[0]
+                    $script:reuseDmsModule | Should -Not -BeNullOrEmpty
+                    & $script:reuseDmsModule {
+                        $script:reuseCreatedBody = $null
+                        Set-Item function:script:Invoke-Api {
+                            param($BaseUrl, $RelativeUrl, $Method, $ContentType, $Body, $Headers)
+                            $script:reuseCreatedBody = $Body
+                            return [pscustomobject]@{ id = 9001 }
+                        }
+                    }
+                }
+                # Any other CMS call made from this phase (an update, a delete) would land here.
+                function Invoke-Api { $script:reuseTrace.Add("Invoke-Api $($args -join ' ')") }
+
+                $envFile = if ($ReuseEnvFile) { $ReuseEnvFile } else { New-ReuseEnvFile -Engine $ReuseEngine }
+                $arguments = @{
+                    EnvironmentFile = $envFile
+                    DatabaseEngine = $ReuseEngine
+                    SeparateConfigDatabase = $true
+                    RestoreTargetDatabaseName = $script:reuseTarget
+                }
+                foreach ($key in $ReuseParameters.Keys) { $arguments[$key] = $ReuseParameters[$key] }
+
+                return Invoke-ConfigureLocalDataStore @arguments
+            }
+
+            # Everything a refusal must never carry.
+            function script:Assert-ReuseRefusalSecretFree {
+                param(
+                    [Parameter(Mandatory)]
+                    [string]$Message,
+
+                    [string[]]$AlsoWithheld = @()
+                )
+
+                foreach ($secret in @($script:reusePassword, $script:reuseCmsKey, "abcdefgh1!", $script:reuseTarget) + $AlsoWithheld) {
+                    if (-not [string]::IsNullOrEmpty($secret)) {
+                        $Message.Contains($secret) | Should -BeFalse -Because "a refusal must not carry '$secret'"
+                    }
+                }
+                foreach ($store in @($script:reuseStores)) {
+                    $stored = [string]$store.connectionString
+                    if ($stored.Length -gt 8) {
+                        $Message.Contains($stored) | Should -BeFalse -Because "a refusal must not carry the stored connection string"
+                    }
+                }
+            }
+        }
+
+        AfterAll {
+            if ($null -ne $script:reuseAmbientKey) {
+                [System.Environment]::SetEnvironmentVariable("CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY", $script:reuseAmbientKey)
+            }
+        }
+
+        It "creates the normal registration when CMS holds no data store (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            $expected = @("Add-CmsClient", "Get-DataStore limit=500", "Add-DataStore")
+            if ($Engine -eq "mssql") { $expected = @("authority") + $expected }
+            @($script:reuseTrace) | Should -Be $expected
+            $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store"
+        }
+
+        It "registers a distinct data store beside another target's registration, preserving it and returning only the new id (<engine>: <case>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "it names another database"; Kind = "database" }
+            @{ Engine = "postgresql"; Case = "the same database name on another host"; Kind = "host" }
+            @{ Engine = "postgresql"; Case = "the same database name on another port"; Kind = "port" }
+            @{ Engine = "postgresql"; Case = "it is the other engine's data store"; Kind = "provider" }
+            @{ Engine = "postgresql"; Case = "it is the other engine's connection string"; Kind = "otherform" }
+            @{ Engine = "mssql"; Case = "it names another database"; Kind = "database" }
+            @{ Engine = "mssql"; Case = "the same database name on another host"; Kind = "host" }
+            @{ Engine = "mssql"; Case = "the same database name on another port"; Kind = "port" }
+            @{ Engine = "mssql"; Case = "it is the other engine's data store"; Kind = "provider" }
+        ) {
+            $engine = $Engine
+            $kind = $Kind
+            $otherEngine = if ($Engine -eq "mssql") { "postgresql" } else { "mssql" }
+            $factory = {
+                $provider = Get-ReuseProvider -Engine $engine
+                $encrypt = { param($text) New-CmsEncryptedConnectionString -PlainText $text -EncryptionKey $script:reuseCmsKey }
+                switch ($kind) {
+                    "database" { New-ReuseDataStore -Id 41 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -DatabaseName "edfi_other")) }
+                    "host" { New-ReuseDataStore -Id 41 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -DbHost "other-host")) }
+                    "port" {
+                        $otherPort = if ($engine -eq "mssql") { 1434 } else { 5433 }
+                        New-ReuseDataStore -Id 41 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -Port $otherPort))
+                    }
+                    "provider" { New-ReuseDataStore -Id 41 -Provider (Get-ReuseProvider -Engine $otherEngine) -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $otherEngine)) }
+                    "otherform" { New-ReuseDataStore -Id 41 -Provider "" -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $otherEngine)) }
+                }
+            }
+
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $factory
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001) -Because "only the restored target's data store is returned"
+            @($result.DataStoreIds) | Should -Be @(9001)
+            $script:reuseTrace | Should -Contain "Add-DataStore"
+            $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store (2)" -Because "the new registration must not collide with the preserved one's name"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty -Because "the other target's registration is neither updated nor deleted"
+        }
+
+        It "selects each target's own registration across repeated single-target restores A, B, A, B (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # CMS starts with A's registration. Restoring B registers B beside it (through the REAL
+            # Add-DataStore, so B's stored form is exactly what creation posts); restoring A then
+            # reuses A, and restoring B again reuses B - each run returning only its own id.
+            $engine = $Engine
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            $provider = Get-ReuseProvider -Engine $Engine
+            # Built inside each run: the plain form uses the production serializer configure loads.
+            $storeA = {
+                New-ReuseDataStore -Id 41 -Provider $provider -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $engine -DatabaseName "edfi_target_a") -EncryptionKey $script:reuseCmsKey)
+            }
+
+            $restoreB = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseRealAddDataStore -ReuseParameters @{ RestoreTargetDatabaseName = "edfi_target_b" } -ReuseStoreFactory { & $storeA }
+            @($restoreB.SelectedDataStoreIds) | Should -Be @(9001)
+            $registeredB = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $registeredB.name | Should -BeExactly "Local Development Data Store (2)"
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.set_ConnectionString([string]$registeredB.connectionString)
+            $builder.get_Item("database") | Should -BeExactly "edfi_target_b"
+            $storeB = New-ReuseDataStore -Id 9001 -Name ([string]$registeredB.name) -Provider ([string]$registeredB.provider) -ConnectionString (New-CmsEncryptedConnectionString -PlainText ([string]$registeredB.connectionString) -EncryptionKey $script:reuseCmsKey)
+
+            $restoreA = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseParameters @{ RestoreTargetDatabaseName = "edfi_target_a" } -ReuseStoreFactory { & $storeA; $storeB }
+            @($restoreA.SelectedDataStoreIds) | Should -Be @(41)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+
+            $restoreBAgain = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseParameters @{ RestoreTargetDatabaseName = "edfi_target_b" } -ReuseStoreFactory { & $storeA; $storeB }
+            @($restoreBAgain.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+        }
+
+        It "reuses the one route-unqualified data store whose decrypted target is the restored database, keeping its id and never registering (<engine>: <case>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "the registered form"; Plain = $null; Provider = "postgresql" }
+            @{ Engine = "postgresql"; Case = "no provider reported"; Plain = $null; Provider = "" }
+            @{ Engine = "postgresql"; Case = "port omitted (provider default)"; Plain = "host=dms-postgresql;username=postgres;password=Reuse-S3cret!;database=edfi_datamanagementservice"; Provider = "postgresql" }
+            @{ Engine = "postgresql"; Case = "host case differs"; Plain = "host=DMS-PostgreSQL;port=5432;username=postgres;password=Reuse-S3cret!;database=edfi_datamanagementservice"; Provider = "postgresql" }
+            @{ Engine = "mssql"; Case = "the registered form"; Plain = $null; Provider = "sqlserver" }
+            @{ Engine = "mssql"; Case = "no provider reported"; Plain = $null; Provider = "" }
+            @{ Engine = "mssql"; Case = "port omitted (provider default)"; Plain = "Server=dms-mssql;Database=edfi_datamanagementservice;User Id=sa;Password=Reuse-S3cret!"; Provider = "sqlserver" }
+            @{ Engine = "mssql"; Case = "SqlClient synonyms"; Plain = "Data Source=tcp:dms-mssql,1433;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=Reuse-S3cret!"; Provider = "sqlserver" }
+        ) {
+            $plainText = $Plain
+            $provider = $Provider
+            $engine = $Engine
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $text = if ($plainText) { $plainText } else { New-ReusePlainConnectionString -Engine $engine }
+                New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (New-CmsEncryptedConnectionString -PlainText $text -EncryptionKey $script:reuseCmsKey)
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(77) -Because "the existing registration keeps its id"
+            @($result.DataStoreIds) | Should -Be @(77)
+            $result.HasRouteQualifiedDataStores | Should -BeFalse
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "CMS already holds the data store; a second registration is what CMS rejects"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty -Because "the registration is reused as-is, never updated"
+            $script:reuseTrace | Should -Contain "Get-DataStore limit=500"
+        }
+
+        It "reuses a value encrypted by the CMS service itself (<name>)" -ForEach @(
+            # Cipher text produced by the CMS's own ConnectionStringEncryptionService (random IV) under
+            # the key above - the DMS-1271 smoke's compatibility fixtures - with zero, one, and two
+            # Base64 padding characters per engine.
+            @{ Name = "PgPad1"; Engine = "postgresql"; CipherText = "4j9U0etELPg41jXuZUKpdoDxm6uHVm9LfeGXEgmCdtQIx6EGEVXiNiIagqFyXjz0nM6sYrOzBp396gZo8dAjGRdUoMIbOVrrC3IUfntPi39jy9mQKFqxzrzC0OPwPokktE3IaO4+DyT9uzRV/MM6GXyOfQlw/A3HOXwGTspfdnw=" }
+            @{ Name = "PgPad0"; Engine = "postgresql"; CipherText = "2bNfoFoqgBz3OA7Nd0ym29P9OE6r0igrGPHIkO1oGWii1eXfX+w5YNZNjCDJqBjDKw+YbBzJHtPSWxWkh4IDPfqYS6huwoHxM23ixC/HlRb0vflmtK8xTdhhMRGDPn2Sq61NLR8D1mE7wV6+zyQjoNxGYy9tYfsaa/7Gj8AXvVzuE1b1pGhHMnL2sQRq9o65" }
+            @{ Name = "PgPad2"; Engine = "postgresql"; CipherText = "ip4lZz+DZtr+SHFDNmCE9+BBKkmpgsCijSyqpTlHzxrGMhbSZfTRXUgEK6RMtflXkjWgQw7wcTXQNUq/9ZCW1JWbb7iGYnUgXZNl25uwC6IoaA0OhTEcYrHxWtXseFHeu7VaEIOOPf/rSipAC9VBxtW9CzsKMBkiG6iWAS2qOMgOU1va0dIG2C2Dob0Fh7oTFEa9FUtWS0ciSYe7Q7ADRg==" }
+            @{ Name = "MsPad0"; Engine = "mssql"; CipherText = "gu5rgREwGLOnWU+pLqbSGNh/gzVyn9kXQ+dmwvVfWBLoNtubyeCC9XhVePNz+9vK4aiZvcZxVO/9/zPKXx1dz8++kY+icxop1UZaKGY84s7M6PiEkdrYixNe9yh0jUG3tT9UMxx/0UGwH+QXF6QCK6UBkMqBy1tPzGVxwri891VRuLt0d/pURWCpof4DBfev" }
+            @{ Name = "MsPad1"; Engine = "mssql"; CipherText = "INJ3NT2lGcNnwQYTNa1MeLUw8//yNE4jeRpyunObYrqewcpC2rN5zGXBxZen2uj678EoXhhLsSZGKiUeQQOnikaEhkFtMlZCwgP1ZM+uXH8Y005coYZlDL91TAlPj+G6g21ZxdVTnzYUcGGbEJ2nDZnYroaB0soh5wXdyZGSzdY=" }
+            @{ Name = "MsPad2"; Engine = "mssql"; CipherText = "vZu4uoPh2nPQy33MRoORArdeS5aGYq3RjyvZCwEjo0fOVoidMHYIjWuz+hUHXqsJKMk/U2viEfcmd+yQI2aE3PHsGNQG7k4i/DNR2iqMteuGCOEx9f1b1Mr/Wasx+AoggHjoVMFCW3MGaQpzphLbCibaXEq0G9N0HZ//F9rijd1qpPIlvMl46m3RkEOr8PpJ5CnG7dms3jHCMiZsKgFuxg==" }
+        ) {
+            $cipherText = $CipherText
+            $provider = Get-ReuseProvider -Engine $Engine
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                New-ReuseDataStore -Id 31 -Provider $provider -ConnectionString $cipherText
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(31)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "reuses exactly what its own creation registered (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # Round trip through the REAL Add-DataStore: the registration a create posts, encrypted as
+            # CMS stores it, is what the next restore's configure phase must accept.
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            $created = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseRealAddDataStore
+            @($created.SelectedDataStoreIds) | Should -Be @(9001)
+            $registered = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $registered | Should -Not -BeNullOrEmpty
+
+            $storedConnectionString = New-CmsEncryptedConnectionString -PlainText ([string]$registered.connectionString) -EncryptionKey $script:reuseCmsKey
+            $storedProvider = [string]$registered.provider
+            $reused = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseStoreFactory {
+                New-ReuseDataStore -Id 9001 -Provider $storedProvider -ConnectionString $storedConnectionString
+            }
+
+            @($reused.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "creates the registration for a non-default restore target, not the environment's name, and reuses it next time (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # The env names the default database; the restore replaced another one. With CMS empty the
+            # new registration must name the restored database - inspected in the payload the REAL
+            # Add-DataStore posts - and the next restore must accept exactly that registration.
+            $restoredTarget = "edfi_restored_target"
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            $created = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseRealAddDataStore -ReuseParameters @{ RestoreTargetDatabaseName = $restoredTarget }
+
+            @($created.SelectedDataStoreIds) | Should -Be @(9001)
+            $registered = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $registered.provider | Should -BeExactly (Get-ReuseProvider -Engine $Engine)
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.set_ConnectionString([string]$registered.connectionString)
+            $builder.get_Item("database") | Should -BeExactly $restoredTarget
+            if ($Engine -eq "mssql") {
+                $builder.get_Item("server") | Should -BeExactly "dms-mssql,1433"
+                # The live distinctness authority is asked about the name that is registered, under
+                # the parameter it came from.
+                $script:reuseAuthority.Registered | Should -BeExactly $restoredTarget
+                $script:reuseAuthority.SourceKey | Should -BeExactly "-RestoreTargetDatabaseName"
+            }
+            else {
+                $builder.get_Item("host") | Should -BeExactly "dms-postgresql"
+                $builder.get_Item("port") | Should -BeExactly "5432"
+            }
+
+            $storedConnectionString = New-CmsEncryptedConnectionString -PlainText ([string]$registered.connectionString) -EncryptionKey $script:reuseCmsKey
+            $storedProvider = [string]$registered.provider
+            $reused = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseParameters @{ RestoreTargetDatabaseName = $restoredTarget } -ReuseStoreFactory {
+                New-ReuseDataStore -Id 9001 -Provider $storedProvider -ConnectionString $storedConnectionString
+            }
+            @($reused.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+        }
+
+        It "accepts an explicit -DataStoreDatabaseName that repeats the restore target and registers it (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $restoredTarget = "edfi_restored_target"
+            $created = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRealAddDataStore -ReuseParameters @{
+                RestoreTargetDatabaseName = $restoredTarget
+                DataStoreDatabaseName = $restoredTarget
+            }
+
+            @($created.SelectedDataStoreIds) | Should -Be @(9001)
+            $registered = (& $script:reuseDmsModule { $script:reuseCreatedBody }) | ConvertFrom-Json
+            $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+            $builder.set_ConnectionString([string]$registered.connectionString)
+            $builder.get_Item("database") | Should -BeExactly $restoredTarget
+        }
+
+        It "refuses a conflicting -DataStoreDatabaseName before any CMS write when CMS holds no data store (<engine>: <case>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "another database"; Conflicting = "edfi_other" }
+            @{ Engine = "postgresql"; Case = "the env's default while the restore replaced another"; Conflicting = "edfi_datamanagementservice" }
+            @{ Engine = "postgresql"; Case = "a name differing only in case"; Conflicting = "EDFI_Restored_Target" }
+            @{ Engine = "mssql"; Case = "another database"; Conflicting = "edfi_other" }
+            @{ Engine = "mssql"; Case = "the env's default while the restore replaced another"; Conflicting = "edfi_datamanagementservice" }
+            @{ Engine = "mssql"; Case = "a name differing only in case"; Conflicting = "EDFI_Restored_Target" }
+        ) {
+            # CMS is empty, so the reuse comparison never runs: without this refusal the phase would
+            # register the explicit name, pointing DMS at a database the restore did not populate.
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseParameters @{
+                    RestoreTargetDatabaseName = "edfi_restored_target"
+                    DataStoreDatabaseName = $Conflicting
+                } } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeExactly "-DataStoreDatabaseName names a different database than the one this restore replaced (-RestoreTargetDatabaseName), so the data store would be registered against a database the restore did not populate. The restore has already replaced its target: DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply. Rerun the restore without -DataStoreDatabaseName (the restore target comes from POSTGRES_DB_NAME or MSSQL_DB_NAME), or with the same name. Both values are withheld."
+            @($script:reuseTrace) | Should -BeNullOrEmpty -Because "nothing reaches CMS - no admin client, no listing, no registration - and the MSSQL authority is not consulted either"
+            Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld @($Conflicting, "edfi_restored_target")
+        }
+
+        It "refuses, after the restore and before any registration, when <case> (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "CMS holds two data stores serving the target"; Kind = "two"; Expected = "*found 2 Configuration Service data stores*that serve the restored target*it reuses only a single route-unqualified data store*" }
+            @{ Engine = "postgresql"; Case = "the matching data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse Configuration Service data store id=77*it is route-qualified*" }
+            @{ Engine = "postgresql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*cannot tell whether Configuration Service data store id=77*the Configuration Service returned no connection string*" }
+            @{ Engine = "postgresql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64.)*" }
+            @{ Engine = "postgresql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY.)*" }
+            @{ Engine = "postgresql"; Case = "its database differs only in case"; Kind = "case"; Expected = "*its database differs from the restored target database only in letter case*" }
+            @{ Engine = "postgresql"; Case = "it names two databases"; Kind = "twodatabases"; Expected = "*its connection string names 2 databases*" }
+            @{ Engine = "postgresql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 Configuration Service data stores*the query page size*" }
+            @{ Engine = "mssql"; Case = "CMS holds two data stores serving the target"; Kind = "two"; Expected = "*found 2 Configuration Service data stores*that serve the restored target*it reuses only a single route-unqualified data store*" }
+            @{ Engine = "mssql"; Case = "the matching data store is route-qualified"; Kind = "routed"; Expected = "*cannot reuse Configuration Service data store id=77*it is route-qualified*" }
+            @{ Engine = "mssql"; Case = "CMS returns no connection string"; Kind = "missing"; Expected = "*cannot tell whether Configuration Service data store id=77*the Configuration Service returned no connection string*" }
+            @{ Engine = "mssql"; Case = "the stored value is plaintext, not CMS cipher text"; Kind = "plaintext"; Expected = "*could not be read (Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64.)*" }
+            @{ Engine = "mssql"; Case = "it was encrypted under another key"; Kind = "wrongkey"; Expected = "*could not be read (Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY.)*" }
+            @{ Engine = "mssql"; Case = "it is the other engine's connection string without a provider"; Kind = "otherform"; Expected = "*cannot tell whether Configuration Service data store id=77*its decrypted connection string does not name a mssql server and database*" }
+            @{ Engine = "mssql"; Case = "its database differs only in case"; Kind = "case"; Expected = "*its database differs from the restored target database only in letter case*" }
+            @{ Engine = "mssql"; Case = "it names two databases"; Kind = "twodatabases"; Expected = "*its connection string names 2 databases*" }
+            @{ Engine = "mssql"; Case = "the listing reaches the query page size"; Kind = "page"; Expected = "*listed 500 Configuration Service data stores*the query page size*" }
+        ) {
+            $engine = $Engine
+            $kind = $Kind
+            $otherEngine = if ($Engine -eq "mssql") { "postgresql" } else { "mssql" }
+            $withheld = @("other-host", "edfi_other", "EDFI_DataManagementService")
+            $factory = {
+                $provider = Get-ReuseProvider -Engine $engine
+                $encrypt = { param($text) New-CmsEncryptedConnectionString -PlainText $text -EncryptionKey $script:reuseCmsKey }
+                $matching = & $encrypt (New-ReusePlainConnectionString -Engine $engine)
+                switch ($kind) {
+                    "two" {
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString $matching
+                        New-ReuseDataStore -Id 78 -Provider $provider -ConnectionString $matching
+                    }
+                    "routed" {
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString $matching -Contexts @([pscustomobject]@{ id = 1; dataStoreId = 77; contextKey = "schoolYear"; contextValue = "2025" })
+                    }
+                    "missing" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString "" }
+                    "plaintext" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (New-ReusePlainConnectionString -Engine $engine) }
+                    "wrongkey" {
+                        # Fixed IV: with a random one the wrong key passes PKCS7 padding by chance (about
+                        # 1 in 400), which the next test covers on its own.
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $engine) -EncryptionKey "Another-Key-Entirely-0123456789ABCDEF" -InitializationVector ([byte[]](0..15)))
+                    }
+                    "otherform" { New-ReuseDataStore -Id 77 -Provider "" -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $otherEngine)) }
+                    "case" { New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt (New-ReusePlainConnectionString -Engine $engine -DatabaseName "EDFI_DataManagementService")) }
+                    "twodatabases" {
+                        $plain = if ($engine -eq "mssql") {
+                            "Server=dms-mssql,1433;Database=edfi_other;Initial Catalog=edfi_datamanagementservice;User Id=sa;Password=Reuse-S3cret!"
+                        }
+                        else {
+                            "host=dms-postgresql;port=5432;username=postgres;password=Reuse-S3cret!;database=edfi_datamanagementservice;db=edfi_other"
+                        }
+                        New-ReuseDataStore -Id 77 -Provider $provider -ConnectionString (& $encrypt $plain)
+                    }
+                    "page" {
+                        foreach ($index in 1..500) { New-ReuseDataStore -Id $index -Provider $provider -ConnectionString "x" }
+                    }
+                }
+            }
+
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $factory } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeLike $Expected
+            $message | Should -BeLike "*This check runs after the restore replaced the target database: the target is restored, DMS was not started, and the scratch-validation guarantee that a refused restore leaves the target untouched does not apply.*"
+            $script:reuseTrace | Should -Contain "Get-DataStore limit=500"
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "a refusal registers nothing"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+            Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld $withheld
+        }
+
+        It "refuses a legacy data store when the environment file <case> (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "disallows legacy values"; Setting = "false"; Expected = "*could not be read (Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false.)*" }
+            @{ Engine = "mssql"; Case = "disallows legacy values"; Setting = "false"; Expected = "*could not be read (Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false.)*" }
+            @{ Engine = "postgresql"; Case = "has a malformed legacy setting"; Setting = "flase"; Expected = "*could not be read (CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false.)*" }
+        ) {
+            # The same matching legacy store is reused when the setting is absent (tests above).
+            $engine = $Engine
+            $envFile = New-ReuseEnvFile -Engine $Engine
+            Add-Content -LiteralPath $envFile -Value "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS=$Setting"
+            $factory = {
+                New-ReuseDataStore -Id 77 -Provider (Get-ReuseProvider -Engine $engine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $engine) -EncryptionKey $script:reuseCmsKey)
+            }
+
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseStoreFactory $factory } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeLike $Expected
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore" -Because "a refusal registers nothing"
+            Assert-ReuseRefusalSecretFree -Message $message -AlsoWithheld @("flase")
+        }
+
+        It "refuses a wrong-key value whose padding happens to validate, reading its garbage as no target (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            # AES-CBC under the wrong key still ends in valid PKCS7 padding for some IVs, and then
+            # decryption "succeeds" with garbage text. Search deterministic IVs for one such value and
+            # prove the garbage is refused like any other unreadable or foreign target.
+            $engine = $Engine
+            $factory = {
+                $plainText = New-ReusePlainConnectionString -Engine $engine
+                $envValues = @{ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY = $script:reuseCmsKey }
+                $collision = $null
+                for ($seed = 0; $seed -lt 20000 -and $null -eq $collision; $seed++) {
+                    $iv = [byte[]]::new(16)
+                    [System.BitConverter]::GetBytes([int]$seed).CopyTo($iv, 0)
+                    $candidate = New-CmsEncryptedConnectionString -PlainText $plainText -EncryptionKey "Another-Key-Entirely-0123456789ABCDEF" -InitializationVector $iv
+                    try {
+                        $null = ConvertFrom-CmsEncryptedConnectionString -ProtectedConnectionString $candidate -EnvValues $envValues
+                        $collision = $candidate
+                    }
+                    catch {
+                        $null = $_
+                    }
+                }
+                if ($null -eq $collision) { throw "test setup: no wrong-key padding collision found in 20000 IVs" }
+                New-ReuseDataStore -Id 77 -Provider (Get-ReuseProvider -Engine $engine) -ConnectionString $collision
+            }
+
+            $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $factory } | Should -Throw -PassThru
+            $message = $thrown.Exception.Message
+
+            $message | Should -BeLike "*cannot tell whether Configuration Service data store id=77 (name=Local Development Data Store) serves the restored target:*"
+            $message | Should -BeLike "*This check runs after the restore replaced the target database*"
+            $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+            Assert-ReuseRefusalSecretFree -Message $message
+        }
+
+        It "rejects -RestoreTargetDatabaseName <case> before any CMS call (<engine>)" -ForEach @(
+            @{ Engine = "postgresql"; Case = "without -SeparateConfigDatabase"; Parameters = @{ SeparateConfigDatabase = $false }; Expected = "-RestoreTargetDatabaseName requires -SeparateConfigDatabase.*" }
+            @{ Engine = "postgresql"; Case = "with -NoDataStore"; Parameters = @{ NoDataStore = $true }; Expected = "-RestoreTargetDatabaseName cannot be combined with -NoDataStore.*" }
+            @{ Engine = "postgresql"; Case = "with -SchoolYearRange"; Parameters = @{ SchoolYearRange = "2024-2025" }; Expected = "-RestoreTargetDatabaseName cannot be combined with -SchoolYearRange.*" }
+            @{ Engine = "mssql"; Case = "without -SeparateConfigDatabase"; Parameters = @{ SeparateConfigDatabase = $false }; Expected = "-RestoreTargetDatabaseName requires -SeparateConfigDatabase.*" }
+            @{ Engine = "mssql"; Case = "with -NoDataStore"; Parameters = @{ NoDataStore = $true }; Expected = "-RestoreTargetDatabaseName cannot be combined with -NoDataStore.*" }
+            @{ Engine = "mssql"; Case = "with -SchoolYearRange"; Parameters = @{ SchoolYearRange = "2024-2025" }; Expected = "-RestoreTargetDatabaseName cannot be combined with -SchoolYearRange.*" }
+        ) {
+            { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseParameters $Parameters } | Should -Throw -ExpectedMessage $Expected
+            @($script:reuseTrace) | Should -BeNullOrEmpty -Because "a malformed handoff must not reach CMS"
+        }
+
+        It "leaves the non-restore separate-topology registration unchanged: no listing, one registration (<engine>)" -ForEach @(
+            @{ Engine = "postgresql" }
+            @{ Engine = "mssql" }
+        ) {
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseParameters @{ RestoreTargetDatabaseName = "" } -ReuseStoreFactory {
+                New-ReuseDataStore -Id 77 -Provider "" -ConnectionString "unused"
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }) | Should -BeNullOrEmpty
+            $script:reuseTrace | Should -Contain "Add-DataStore"
+        }
+    }
+
     Context "separate-topology target guard at the provisioning boundary" {
         # The configure guard can only judge a name it is about to REGISTER. Under -NoDataStore it
         # registers none: it selects an existing data store whose STORED connection string is what
@@ -4381,16 +5545,16 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=$DatastoreName
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
 
             function script:New-ProvisionGuardMssqlEnvFile {
-                # MssqlPort is parameterized because mssql.yml permits MSSQL_PORT=1434, which is exactly the
+                # MssqlPort is parameterized because mssql.compose.yml permits MSSQL_PORT=1434, which is exactly the
                 # DAC port a portless admin: endpoint resolves to. Default unchanged, so every existing
                 # caller is unaffected.
                 param(
@@ -4405,12 +5569,12 @@ MSSQL_PORT=$MssqlPort
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -4782,7 +5946,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
         }
 
         It "refuses a PostgreSQL target spelled 127.0.0.1, the address the Compose service actually publishes" {
-            # postgresql.yml publishes on 127.0.0.1 while the host-side translation writes
+            # postgresql.compose.yml publishes on 127.0.0.1 while the host-side translation writes
             # "localhost", so matching one canonical spelling would classify the OTHER spelling of
             # the same server as external and skip the guard entirely.
             $capturePath = Initialize-ProvisionGuardWorkspace
@@ -5096,7 +6260,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
         }
 
         It "reaches the MSSQL authority for portless 'admin:localhost' when the published port IS the DAC port 1434" {
-            # mssql.yml permits MSSQL_PORT=1434, and a portless admin: endpoint resolves to exactly that
+            # mssql.compose.yml permits MSSQL_PORT=1434, and a portless admin: endpoint resolves to exactly that
             # port, so this reaches the host's published listener. Reported as a non-TCP transport it
             # classified as external and skipped the authority entirely.
             $capturePath = Initialize-ProvisionGuardWorkspace
@@ -5220,7 +6384,7 @@ DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_config
         ) {
             # InferLocalServerName localizes Environment.MachineName to the local server for the Admin
             # protocol only. With MSSQL_PORT=1434 - the DAC port a portless admin: endpoint resolves to, and
-            # a port mssql.yml permits - a localized target names the published Compose listener, so the
+            # a port mssql.compose.yml permits - a localized target names the published Compose listener, so the
             # authority must be consulted. Read as an ordinary hostname it looked external and the guard was
             # skipped.
             #
@@ -5780,12 +6944,12 @@ MSSQL_PORT=$($script:canonicalMssqlPort)
 MSSQL_SA_PASSWORD=abcdefgh1!
 MSSQL_DB_NAME=$DatastoreName
 DMS_DATASTORE=mssql
-DMS_CONFIG_DATASTORE=mssql
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_DATASTORE=mssql
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
-DMS_CONFIG_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING=Server=dms-mssql,1433;Database=edfi_configurationservice;User Id=sa;Password=abcdefgh1!;TrustServerCertificate=true;
 "@ | Set-Content -LiteralPath $path -Encoding utf8
                 return $path
             }
@@ -6325,10 +7489,10 @@ if (Test-Path -LiteralPath $ChildCapturePath) {
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 $invoke = { Invoke-ProvisionDmsSchema `
@@ -6531,10 +7695,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 $invoke = { Invoke-ProvisionDmsSchema `
@@ -6583,10 +7747,10 @@ DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey1234567890123456789012345678
 POSTGRES_PASSWORD=isolated-pass
 POSTGRES_DB_NAME=edfi_datamanagementservice
 POSTGRES_PORT=5544
-DMS_CONFIG_ASPNETCORE_HTTP_PORTS=18081
+CONFIGURATION_SERVICE_ASPNETCORE_HTTP_PORTS=18081
 DMS_HTTP_PORTS=18080
-DMS_CONFIG_IDENTITY_PROVIDER=self-contained
-DMS_CONFIG_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
+CONFIGURATION_SERVICE_IDENTITY_PROVIDER=self-contained
+CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey123456789012345678901234567890
 "@ | Set-Content -LiteralPath $envFile -Encoding utf8
 
                 { Invoke-ProvisionDmsSchema `

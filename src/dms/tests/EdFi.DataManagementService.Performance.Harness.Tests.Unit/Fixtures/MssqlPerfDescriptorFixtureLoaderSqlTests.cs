@@ -24,6 +24,14 @@ public class Given_The_Mssql_Descriptor_Loader_Sql
     }
 
     [Test]
+    public void It_leaves_descriptor_identity_to_the_native_allocator()
+    {
+        MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("DescriptorId");
+        MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("Discriminator");
+        MssqlPerfDescriptorFixtureLoaderSql.DescriptorInsertSql.Should().NotContain("Uri");
+    }
+
+    [Test]
     public void It_interleaves_the_namespaces_on_ordinal_parity()
     {
         MssqlPerfDescriptorFixtureLoaderSql
@@ -34,17 +42,6 @@ public class Given_The_Mssql_Descriptor_Loader_Sql
         MssqlPerfDescriptorFixtureLoaderSql
             .DescriptorInsertSql.Should()
             .Contain("'perf-' + RIGHT(REPLICATE('0', 9) + CAST(s.value AS varchar(19)), 9)");
-    }
-
-    [Test]
-    public void It_derives_referential_identities_through_the_database_uuidv5_function()
-    {
-        string sql = MssqlPerfDescriptorFixtureLoaderSql.ReferentialIdentityInsertSql;
-
-        sql.Should().Contain("[dms].[uuidv5]");
-        sql.Should().Contain("'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'");
-        sql.Should().Contain("N'Ed-FiAcademicSubjectDescriptor'");
-        sql.Should().Contain("N'$.descriptor=' + LOWER(");
     }
 
     [Test]
@@ -69,6 +66,23 @@ public class Given_The_Mssql_Descriptor_Loader_Sql
                 PgsqlPerfDescriptorFixtureLoaderSql
                     .VerificationQueries(definition)
                     .Select(query => (query.Name, query.ExpectedValue))
+            );
+    }
+
+    [Test]
+    public void It_compares_code_value_bytes_so_trailing_spaces_fail()
+    {
+        PerfVerificationQuery uriShape = MssqlPerfDescriptorFixtureLoaderSql
+            .VerificationQueries(
+                new PerfDescriptorFixtureDefinition(PerfDescriptorFixtureKind.Descriptors25k)
+            )
+            .Single(query => query.Name == "uri-shape-count");
+
+        uriShape.Sql.Should().Contain("CAST(r.[CodeValue] AS varbinary(100))");
+        uriShape
+            .Sql.Should()
+            .Contain(
+                "= CAST(N'perf-' + RIGHT(REPLICATE(N'0', 9) + CAST(r.[DocumentId] AS nvarchar(19)), 9) AS varbinary(100))"
             );
     }
 }

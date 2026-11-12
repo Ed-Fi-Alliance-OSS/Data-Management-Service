@@ -5,7 +5,6 @@
 
 using System.Collections.Concurrent;
 using System.Collections.Immutable;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -62,6 +61,18 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>Mutated only under <see cref="_publicationLock" />.</summary>
     private long _ownershipVersion;
 
+    /// <summary>
+    /// The legacy values already warned about, by row and stored value, so each is reported once per
+    /// process rather than on every tenant reload. A request that matches no data store reloads its
+    /// tenant, so warning on every load would let such requests flood the log while legacy rows remain.
+    /// A row whose stored value changes, such as a legacy value restored after re-encryption, is
+    /// reported again.
+    /// </summary>
+    private readonly ConcurrentDictionary<
+        (string Tenant, long DataStoreId, long? DerivativeId, string StoredValue),
+        byte
+    > _reportedLegacyValues = new();
+
     /// <inheritdoc />
     public bool IsLoaded(string? tenant = null) => _instancesByTenant.ContainsKey(GetTenantKey(tenant));
 
@@ -75,27 +86,15 @@ public class ConfigurationServiceDataStoreProvider(
     )
     {
         logger.LogInformation(
-            "Requesting authentication token from Configuration Service at {BaseUrl}",
+            "Loading from Configuration Service at {BaseUrl}",
             configurationServiceApiClient.Client.BaseAddress
         );
 
         try
         {
-            // Get token for the Configuration Service API
-            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope,
-                cancellationToken
-            );
-
             logger.LogInformation("Fetching data stores from Configuration Service");
 
-            IList<DataStore> instances = await FetchDataStores(
-                configurationServiceToken,
-                tenant,
-                cancellationToken
-            );
+            IList<DataStore> instances = await FetchDataStores(tenant, cancellationToken);
             cancellationToken.ThrowIfCancellationRequested();
 
             logger.LogInformation("Successfully fetched {InstanceCount} data stores", instances.Count);
@@ -365,23 +364,15 @@ public class ConfigurationServiceDataStoreProvider(
     public async Task<IList<string>> LoadTenants(CancellationToken cancellationToken = default)
     {
         logger.LogInformation(
-            "Requesting authentication token from Configuration Service at {BaseUrl}",
+            "Loading from Configuration Service at {BaseUrl}",
             configurationServiceApiClient.Client.BaseAddress
         );
 
         try
         {
-            // Get token for the Configuration Service API
-            string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope,
-                cancellationToken
-            );
-
             logger.LogInformation("Fetching tenants from Configuration Service");
 
-            IList<string> tenants = await FetchTenants(configurationServiceToken, cancellationToken);
+            IList<string> tenants = await FetchTenants(cancellationToken);
 
             logger.LogInformation("Successfully fetched {TenantCount} tenants", tenants.Count);
 
@@ -437,20 +428,17 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches tenant names from the Configuration Service API
     /// </summary>
-    private async Task<IList<string>> FetchTenants(
-        string configurationServiceToken,
-        CancellationToken cancellationToken
-    )
+    private async Task<IList<string>> FetchTenants(CancellationToken cancellationToken)
     {
         const string TenantsEndpoint = "v3/tenants/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", TenantsEndpoint);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
         // No tenant header needed for tenants endpoint
-        using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
-            request,
+        using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+            configurationServiceTokenHandler,
+            configurationServiceContext,
+            () => new HttpRequestMessage(HttpMethod.Get, TenantsEndpoint),
             cancellationToken
         );
 
@@ -464,19 +452,13 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string tenantsJson = await response.Content.ReadAsStringAsync(cancellationToken);
-
-        logger.LogDebug(
-            "Received response from Configuration Service, deserializing {ByteCount} bytes",
-            tenantsJson.Length
+        List<TenantResponse>? tenantResponses = await ConfigurationServiceApiClient.ReadResponseAsync(
+            response,
+            body => JsonSerializer.Deserialize<List<TenantResponse>>(body, _jsonOptions),
+            cancellationToken
         );
 
-        List<TenantResponse>? tenantResponses = JsonSerializer.Deserialize<List<TenantResponse>>(
-            tenantsJson,
-            _jsonOptions
-        );
-
-        if (tenantResponses == null)
+        if (tenantResponses is null)
         {
             throw new JsonException(
                 $"Configuration Service {TenantsEndpoint} response deserialized to null."
@@ -499,24 +481,28 @@ public class ConfigurationServiceDataStoreProvider(
     /// <summary>
     /// Fetches data stores from the Configuration Service API
     /// </summary>
-    private async Task<IList<DataStore>> FetchDataStores(
-        string configurationServiceToken,
-        string? tenant,
-        CancellationToken cancellationToken
-    )
+    private async Task<IList<DataStore>> FetchDataStores(string? tenant, CancellationToken cancellationToken)
     {
         const string DataStoresEndpoint = "v3/dataStores/";
 
         logger.LogDebug("Sending GET request to {Endpoint}", DataStoresEndpoint);
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, DataStoresEndpoint);
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", configurationServiceToken);
-        if (!string.IsNullOrEmpty(tenant))
-        {
-            request.Headers.Add(TenantHeaderName, tenant);
-        }
-        HttpResponseMessage response = await configurationServiceApiClient
-            .Client.SendAsync(request, cancellationToken)
+        using HttpResponseMessage response = await configurationServiceApiClient
+            .SendAuthenticatedAsync(
+                configurationServiceTokenHandler,
+                configurationServiceContext,
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, DataStoresEndpoint);
+                    if (!string.IsNullOrEmpty(tenant))
+                    {
+                        request.Headers.Add(TenantHeaderName, tenant);
+                    }
+
+                    return request;
+                },
+                cancellationToken
+            )
             .ConfigureAwait(false);
 
         if (!response.IsSuccessStatusCode)
@@ -529,20 +515,13 @@ public class ConfigurationServiceDataStoreProvider(
 
         response.EnsureSuccessStatusCode();
 
-        string dataStoresJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        cancellationToken.ThrowIfCancellationRequested();
-
-        logger.LogDebug(
-            "Received response from Configuration Service, deserializing {ByteCount} bytes",
-            dataStoresJson.Length
+        List<DataStoreResponse>? dataStoreResponses = await ConfigurationServiceApiClient.ReadResponseAsync(
+            response,
+            body => JsonSerializer.Deserialize<List<DataStoreResponse>>(body, _jsonOptions),
+            cancellationToken
         );
 
-        List<DataStoreResponse>? dataStoreResponses = JsonSerializer.Deserialize<List<DataStoreResponse>>(
-            dataStoresJson,
-            _jsonOptions
-        );
-
-        if (dataStoreResponses == null)
+        if (dataStoreResponses is null)
         {
             logger.LogWarning("Deserialization returned null - treating as empty instance list");
             return [];
@@ -561,15 +540,31 @@ public class ConfigurationServiceDataStoreProvider(
             RelationalProviderMetadataStatus relationalProviderMetadataStatus
         ) = NormalizeRelationalProviderMetadata(response);
 
+        // The primary connection string is decrypted here, inside the enclosing projection, so an
+        // undecryptable primary fails the whole tenant data-store load. Derivatives are decrypted one
+        // at a time in their own fault boundary below, so an unusable optional derivative cannot take
+        // its parent, its siblings, or another data store down with it.
+        string? connectionString = _connectionStringDecryptionService.DecryptFromBase64(
+            response.ConnectionString
+        );
+
+        if (
+            _connectionStringDecryptionService.IsLegacyFormat(response.ConnectionString)
+            && IsFirstLegacyReport(tenant, response.Id, null, response.ConnectionString!)
+        )
+        {
+            logger.LogWarning(
+                "The connection string for data store {DataStoreId} of tenant {Tenant} is in the legacy AES-CBC format, which has no integrity protection. Re-encrypt it in the Configuration Service before setting ConfigurationServiceSettings:AllowLegacyConnectionStrings to false",
+                response.Id,
+                LoggingSanitizer.SanitizeInternalValueForLogging(tenant ?? "(default)")
+            );
+        }
+
         return new DataStore(
             response.Id,
             response.DataStoreType,
             response.Name,
-            // The primary connection string is decrypted here, inside the enclosing projection, so an
-            // undecryptable primary fails the whole tenant data-store load. Derivatives are decrypted
-            // one at a time in their own fault boundary below, so an unusable optional derivative
-            // cannot take its parent, its siblings, or another data store down with it.
-            _connectionStringDecryptionService.DecryptFromBase64(response.ConnectionString),
+            connectionString,
             response.DataStoreContexts.ToDictionary(
                 rc => new RouteQualifierName(rc.ContextKey),
                 rc => new RouteQualifierValue(rc.ContextValue)
@@ -633,11 +628,29 @@ public class ConfigurationServiceDataStoreProvider(
                     _connectionStringDecryptionService.DecryptFromBase64(derivative.ConnectionString)
                     ?? string.Empty;
             }
+            catch (LegacyConnectionStringRejectedException)
+            {
+                // Kept apart from the catch below, so a value awaiting re-encryption does not read as a
+                // key problem. The exception is withheld for the same reason as below.
+#pragma warning disable S6667 // Logging in a catch clause should pass the caught exception - Deliberate: the exception object is withheld so nothing it might carry can reach the log
+                logger.LogError(
+                    "The connection string for the {DerivativeType} derivative of tenant {Tenant}, parent data store {DataStoreId}, is in the legacy AES-CBC format, which is rejected because ConfigurationServiceSettings:AllowLegacyConnectionStrings is false. That derivative is treated as not configured; the parent data store and its remaining derivatives are unaffected",
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
+#pragma warning restore S6667
+                continue;
+            }
             catch (InvalidOperationException ex)
             {
-                // The decryption service wraps invalid Base64, a payload no longer than the IV, and a
-                // wrong-key failure in this one exception type. Catching only it keeps an unrelated
-                // runtime or programming defect from being reinterpreted as absent configuration.
+                // The decryption service wraps each of its failures in this one exception type: invalid
+                // Base64; a length that fits neither stored form; an envelope that is malformed,
+                // unrecognized, of an unsupported version, or fails authentication, or whose
+                // authenticated plain text has invalid padding or is not UTF-8; a legacy value when
+                // legacy values are disabled; and a legacy value whose key is not 32 bytes of key
+                // material or whose padding does not verify, usually a wrong key. Catching only it keeps an unrelated runtime or programming defect from
+                // being reinterpreted as absent configuration.
                 // The exception object itself is not logged, so the no-secret guarantee is this
                 // boundary's own rather than the decryptor's message discipline: the tenant, parent
                 // data store, derivative type, and exception type identify the bad row, and nothing
@@ -652,6 +665,20 @@ public class ConfigurationServiceDataStoreProvider(
                 );
 #pragma warning restore S6667
                 continue;
+            }
+
+            if (
+                _connectionStringDecryptionService.IsLegacyFormat(derivative.ConnectionString)
+                && IsFirstLegacyReport(tenant, response.Id, derivative.Id, derivative.ConnectionString)
+            )
+            {
+                logger.LogWarning(
+                    "The connection string for derivative {DerivativeId} ({DerivativeType}) of tenant {Tenant}, parent data store {DataStoreId}, is in the legacy AES-CBC format, which has no integrity protection. Re-encrypt it in the Configuration Service before setting ConfigurationServiceSettings:AllowLegacyConnectionStrings to false",
+                    derivative.Id,
+                    derivativeType,
+                    sanitizedTenant,
+                    response.Id
+                );
             }
 
             if (string.IsNullOrWhiteSpace(plainText))
@@ -675,6 +702,13 @@ public class ConfigurationServiceDataStoreProvider(
 
         return derivatives;
     }
+
+    private bool IsFirstLegacyReport(
+        string? tenant,
+        long dataStoreId,
+        long? derivativeId,
+        string storedValue
+    ) => _reportedLegacyValues.TryAdd((GetTenantKey(tenant), dataStoreId, derivativeId, storedValue), 0);
 
     private static (
         RelationalProviderToken? Token,

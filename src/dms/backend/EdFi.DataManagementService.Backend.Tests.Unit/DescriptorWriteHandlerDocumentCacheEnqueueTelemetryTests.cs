@@ -884,7 +884,6 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             DescriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            new ReferentialId(Guid.Parse("cccccccc-1111-2222-3333-dddddddddddd")),
             new TraceId("descriptor-post-enqueue-telemetry"),
             tenantKey: tenantKey
         );
@@ -902,7 +901,6 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             DescriptorResource,
             CreateRequestBody(description),
             documentUuid,
-            referentialId: null,
             new TraceId("descriptor-put-enqueue-telemetry"),
             tenantKey: tenantKey
         );
@@ -944,7 +942,6 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
             {
                 ["Namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
                 ["CodeValue"] = "Charter",
-                ["Uri"] = "uri://ed-fi.org/SchoolTypeDescriptor#Charter",
                 ["ShortDescription"] = "Charter",
                 ["Description"] = description,
                 ["EffectiveBeginDate"] = new DateOnly(2024, 1, 1),
@@ -1340,10 +1337,10 @@ public class Given_DescriptorWriteHandler_DocumentCacheEnqueueTelemetry
         public RelationalWriteTargetLookupResult PutResult { get; set; } =
             new RelationalWriteTargetLookupResult.NotFound();
 
-        public Task<RelationalWriteTargetLookupResult> ResolveForPostAsync(
+        public Task<RelationalWriteTargetLookupResult> ResolveDescriptorForPostAsync(
             MappingSet mappingSet,
             QualifiedResourceName resource,
-            ReferentialId referentialId,
+            string descriptorUri,
             DocumentUuid candidateDocumentUuid,
             CancellationToken cancellationToken = default
         )

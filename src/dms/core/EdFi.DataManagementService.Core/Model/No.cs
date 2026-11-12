@@ -44,11 +44,6 @@ internal static class No
     /// </summary>
     public static readonly DocumentUuid DocumentUuid = new(Guid.Empty);
 
-    /// <summary>
-    /// The null object for ReferentialId
-    /// </summary>
-    public static readonly ReferentialId ReferentialId = new(Guid.Empty);
-
     public static readonly JsonNode JsonNode = new JsonObject();
 
     public static readonly PaginationParameters PaginationParameters = new(0, 0, false, 0);
@@ -86,7 +81,6 @@ internal static class No
     /// </summary>
     public static readonly DocumentInfo DocumentInfo = new(
         DocumentIdentity: new DocumentIdentity([]),
-        ReferentialId: new(Guid.Empty),
         DocumentReferences: [],
         DocumentReferenceArrays: [],
         DescriptorReferences: [],

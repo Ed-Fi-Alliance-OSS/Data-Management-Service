@@ -21,7 +21,10 @@ public interface IOpenIddictTokenRepository
 
     /// <summary>
     /// Stores a new token in the repository, unless the application already holds the maximum
-    /// number of active tokens.
+    /// number of active tokens. Every store, whatever <paramref name="maxActiveTokens"/> is, locks
+    /// the application row and then, in a separate statement, re-reads the stored client secret and
+    /// the API client approval state, so a credential reset, deletion, un-approval or removal of the
+    /// client's API client row that commits first is never answered with a stored token.
     /// </summary>
     /// <param name="tokenId">The unique identifier for the token.</param>
     /// <param name="applicationId">The application ID associated with the token.</param>
@@ -29,23 +32,41 @@ public interface IOpenIddictTokenRepository
     /// <param name="expiration">The token expiration date.</param>
     /// <param name="maxActiveTokens">
     /// The maximum number of simultaneously active tokens the application may hold. Any value
-    /// below 1 disables enforcement and the token is always stored.
+    /// below 1 disables the count, but not the lock or the re-validation.
+    /// </param>
+    /// <param name="expectedClientSecret">
+    /// The stored secret hash the grant authenticated against. It must still equal the stored
+    /// value, compared ordinally, under the lock.
+    /// </param>
+    /// <param name="expectedApiClientApproval">
+    /// The API client approval state the grant authenticated with:
+    /// <see cref="ApiClientApprovalState.Approved"/> or
+    /// <see cref="ApiClientApprovalState.NoApiClientRow"/>. It must still be the stored state under
+    /// the lock. Any other value is a programming error, rejected before a connection is opened.
     /// </param>
     /// <returns>
     /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
     /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at least
     /// <paramref name="maxActiveTokens"/> active tokens,
-    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+    /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists,
+    /// <see cref="TokenStoreOutcome.ClientChanged"/> when its stored secret no longer matches
+    /// <paramref name="expectedClientSecret"/> or its API client approval state is no longer
+    /// <paramref name="expectedApiClientApproval"/>, or
     /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
     /// out, whether behind a competing grant for this application or another writer such as the
     /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
     /// </returns>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// <paramref name="expectedApiClientApproval"/> is neither approved nor no API client row.
+    /// </exception>
     Task<TokenStoreOutcome> StoreTokenAsync(
         Guid tokenId,
         Guid applicationId,
         string subject,
         DateTimeOffset expiration,
-        int maxActiveTokens
+        int maxActiveTokens,
+        string expectedClientSecret,
+        ApiClientApprovalState expectedApiClientApproval
     );
 
     /// <summary>
@@ -56,11 +77,25 @@ public interface IOpenIddictTokenRepository
     Task<string?> GetTokenStatusAsync(Guid tokenId);
 
     /// <summary>
-    /// Revokes a token by its ID.
+    /// Gets the status of a token only when the token is stored for <paramref name="applicationId"/>.
+    /// </summary>
+    /// <param name="tokenId">The token ID.</param>
+    /// <param name="applicationId">The application the token must be stored for.</param>
+    /// <returns>The token status when it is stored for that application, null otherwise.</returns>
+    Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId);
+
+    /// <summary>
+    /// Revokes a token by its ID, provided it is stored for the given application and not already
+    /// revoked. The ownership and status conditions are part of the UPDATE, so no other
+    /// application's token can change and a repeated revocation keeps the original redemption date.
     /// </summary>
     /// <param name="tokenId">The token ID to revoke.</param>
-    /// <returns>True if the token was successfully revoked, false otherwise.</returns>
-    Task<bool> RevokeTokenAsync(Guid tokenId);
+    /// <param name="applicationId">The stored Id of the authenticated application.</param>
+    /// <returns>
+    /// True if a row changed; false if the token is unknown, already revoked, or stored for a
+    /// different application.
+    /// </returns>
+    Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
 
     /// <summary>
     /// Deletes tokens that expired before the given UTC bound, regardless of status.
@@ -96,9 +131,46 @@ public interface IOpenIddictTokenRepository
     Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId);
 
     /// <summary>
+    /// Reads only what client authentication needs, before the presented secret is verified.
+    /// <see cref="GetApplicationByClientIdAsync"/> also loads an application's scopes, permissions,
+    /// data stores and protocol mappers, so it does more work when the client exists than when it
+    /// does not; the token manager authenticates from this narrow read and loads the full
+    /// application only once the secret has been verified and the client's API client approval
+    /// state is one it may proceed with.
+    /// </summary>
+    /// <param name="clientId">The client ID to search for.</param>
+    /// <returns>
+    /// The credential, or <c>null</c> when no application is registered under the client id. Its
+    /// <see cref="ClientCredential.ApiClientApproval"/> reports a client with no API client row as
+    /// <see cref="ApiClientApprovalState.NoApiClientRow"/>, never as approved.
+    /// </returns>
+    Task<ClientCredential?> GetClientCredentialAsync(string clientId);
+
+    /// <summary>
     /// Gets the roles associated with a client.
     /// </summary>
     /// <param name="clientId">The client ID.</param>
     /// <returns>Collection of role names.</returns>
     Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId);
+
+    /// <summary>
+    /// Gets the names of the scopes registered to an application.
+    /// </summary>
+    /// <param name="applicationId">The application ID.</param>
+    /// <returns>
+    /// Each registered scope name once; empty when the application has no scopes or no
+    /// application has the ID.
+    /// </returns>
+    Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId);
+
+    /// <summary>
+    /// Gets whether two role names resolve to one stored role row.
+    /// </summary>
+    /// <param name="firstRoleName">One role name.</param>
+    /// <param name="secondRoleName">The other role name.</param>
+    /// <returns>
+    /// True when one role row matches both names under the comparison role resolution uses; false
+    /// when they match different rows or none.
+    /// </returns>
+    Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName);
 }

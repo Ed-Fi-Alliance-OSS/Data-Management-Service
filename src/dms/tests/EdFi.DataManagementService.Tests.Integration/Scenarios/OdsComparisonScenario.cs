@@ -485,18 +485,31 @@ internal static class OdsComparisonScenario
         );
     }
 
+    /// <summary>
+    /// Resolves a pointer to its value, or to <see langword="null"/> when a property along it is
+    /// absent.
+    /// </summary>
+    /// <remarks>
+    /// A recorded null means the property is absent, so a property present with an explicit JSON
+    /// null fails here rather than resolving to the same null and passing as absent.
+    /// </remarks>
     private static JsonNode? ResolvePointer(JsonNode document, string pointer)
     {
-        JsonNode? current = document;
+        JsonNode current = document;
 
         foreach (string segment in pointer.Split('/', StringSplitOptions.RemoveEmptyEntries))
         {
-            current = current?[segment];
-
-            if (current is null)
+            if (!current.AsObject().TryGetPropertyValue(segment, out JsonNode? next))
             {
                 return null;
             }
+
+            current =
+                next
+                ?? throw new AssertionException(
+                    $"Pointer '{pointer}' reaches property '{segment}' with an explicit JSON null; "
+                        + "a recorded null expects the property to be absent."
+                );
         }
 
         return current.DeepClone();

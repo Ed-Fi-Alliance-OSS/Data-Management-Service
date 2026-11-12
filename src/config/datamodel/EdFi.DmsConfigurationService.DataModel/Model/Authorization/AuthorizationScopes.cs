@@ -11,15 +11,15 @@ public static class AuthorizationScopes
 {
     public static readonly ScopeDefinition AdminScope = new(
         "edfi_admin_api/full_access",
-        "Full access to the CMS API endpoints"
+        "Full access to the Management API"
     );
     public static readonly ScopeDefinition ReadOnlyScope = new(
         "edfi_admin_api/readonly_access",
-        "Read only access"
+        "Read-only access to the Management API"
     );
     public static readonly ScopeDefinition AuthMetadataReadOnlyAccessScope = new(
         "edfi_admin_api/authMetadata_readonly_access",
-        "Limited access to specific endpoints"
+        "Read-only access to the configuration and authorization metadata an Ed-Fi API instance loads"
     );
 
     public static readonly IEnumerable<ScopeDefinition> AllScopes =

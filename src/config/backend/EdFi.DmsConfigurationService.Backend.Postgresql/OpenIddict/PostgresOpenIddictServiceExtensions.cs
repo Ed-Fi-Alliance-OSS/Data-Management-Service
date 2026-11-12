@@ -8,13 +8,12 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
@@ -32,15 +31,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddSigningKeyServices();
             services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IUnapprovalTokenRevocation, OpenIddictUnapprovalTokenRevocation>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<OpenIddictTokenManager>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
+            services.AddSingleton<ITokenIntrospectionManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+            services.TryAddSingleton<ClientSecretPlaceholderHash>();
 
-            // Add enhanced OpenIddict-compatible services
+            // Add OpenIddict-compatible services
             services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
-            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
 
             // Add minimal OpenIddict validation support
             var issuer = configuration["IdentitySettings:Authority"];
@@ -57,12 +58,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
 
             // Register JWT authentication with default settings (keeping existing implementation)
             services.AddJwtAuthentication(
-                new JwtSettings
-                {
-                    Issuer = issuer ?? string.Empty,
-                    Audience = audience ?? string.Empty,
-                    ExpirationMinutes = 30,
-                },
+                new JwtSettings { Issuer = issuer ?? string.Empty, Audience = audience ?? string.Empty },
                 configuration
             );
 
@@ -90,14 +86,16 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.OpenIddict
             services.AddSigningKeyServices();
 
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IUnapprovalTokenRevocation, OpenIddictUnapprovalTokenRevocation>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
+            services.AddSingleton<ITokenIntrospectionManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+            services.TryAddSingleton<ClientSecretPlaceholderHash>();
 
-            // Add enhanced OpenIddict-compatible services
+            // Add OpenIddict-compatible services
             services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
-            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
 
             services.AddJwtAuthentication(jwtSettings, configuration);
 

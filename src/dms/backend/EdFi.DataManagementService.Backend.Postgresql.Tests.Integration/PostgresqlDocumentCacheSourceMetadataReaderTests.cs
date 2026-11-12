@@ -22,14 +22,27 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
 {
     private const long ExistingDocumentId = 970001;
     private const long MissingDocumentId = 970002;
+    private const long MissingOwnerDocumentId = 970003;
     private static readonly Guid DocumentGuid = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 30, 14, 15, 16, TimeSpan.Zero);
+
+    // timestamptz keeps whole microseconds.
+    private static readonly DateTimeOffset ContentCreatedAt = new DateTimeOffset(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        TimeSpan.Zero
+    ).AddTicks(1_234_560);
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
 
     private PostgresqlGeneratedDdlTestDatabase _database = null!;
     private NpgsqlDataSource _dataSource = null!;
     private DocumentCacheSourceMetadataReadResult _foundResult = null!;
     private DocumentCacheSourceMetadataReadResult _missingResult = null!;
+    private DocumentCacheSourceMetadataReadResult _missingOwnerResult = null!;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -43,15 +56,20 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                 connection,
                 """
                 CREATE SCHEMA dms;
+                CREATE SCHEMA edfi;
 
                 CREATE TABLE dms."Document" (
                     "DocumentId" bigint PRIMARY KEY,
                     "DocumentUuid" uuid NOT NULL,
                     "ResourceKeyId" smallint NOT NULL,
                     "CreatedByOwnershipTokenId" smallint NULL,
-                    "ContentVersion" bigint NOT NULL,
+                    "ContentVersion" bigint NOT NULL
+                );
+
+                CREATE TABLE edfi."School" (
+                    "DocumentId" bigint PRIMARY KEY,
                     "ContentLastModifiedAt" timestamptz NOT NULL,
-                    "CreatedAt" timestamptz NOT NULL
+                    "ContentCreatedAt" timestamptz NOT NULL
                 );
 
                 INSERT INTO dms."Document" (
@@ -59,19 +77,24 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                     "DocumentUuid",
                     "ResourceKeyId",
                     "CreatedByOwnershipTokenId",
-                    "ContentVersion",
-                    "ContentLastModifiedAt",
-                    "CreatedAt"
+                    "ContentVersion"
                 )
                 VALUES (
                     970001,
                     'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
                     11,
                     NULL,
-                    222,
-                    '2026-07-30T14:15:16Z',
-                    '2026-07-30T14:15:16Z'
+                    222
+                ), (
+                    970003,
+                    'bbbbbbbb-bbbb-cccc-dddd-eeeeeeeeeeee',
+                    11,
+                    NULL,
+                    223
                 );
+
+                INSERT INTO edfi."School" ("DocumentId", "ContentLastModifiedAt", "ContentCreatedAt")
+                VALUES (970001, '2026-07-30T14:15:16Z', '2001-02-03T04:05:06.123456Z');
                 """
             );
         }
@@ -86,6 +109,7 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
 
         _foundResult = await sut.ReadAsync(CreateRequest(ExistingDocumentId));
         _missingResult = await sut.ReadAsync(CreateRequest(MissingDocumentId));
+        _missingOwnerResult = await sut.ReadAsync(CreateRequest(MissingOwnerDocumentId));
     }
 
     [OneTimeTearDown]
@@ -103,7 +127,7 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
     }
 
     [Test]
-    public void It_reads_source_metadata_from_the_canonical_document_row()
+    public void It_reads_document_version_and_authoritative_root_timestamp()
     {
         var found = _foundResult.Should().BeOfType<DocumentCacheSourceMetadataReadResult.Found>().Subject;
         var metadata = found
@@ -122,9 +146,35 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
     }
 
     [Test]
+    public void It_reads_the_exact_authoritative_root_creation_timestamp()
+    {
+        var metadata = _foundResult
+            .Should()
+            .BeOfType<DocumentCacheSourceMetadataReadResult.Found>()
+            .Subject.Metadata;
+
+        metadata.ContentCreatedAt.Should().Be(ContentCreatedAt);
+        metadata.ContentCreatedAt.Offset.Should().Be(TimeSpan.Zero);
+        metadata.ContentCreatedAt.Should().NotBe(metadata.ContentLastModifiedAt);
+    }
+
+    [Test]
     public void It_returns_missing_source_when_the_document_row_is_absent()
     {
         _missingResult.Should().BeSameAs(DocumentCacheSourceMetadataReadResult.MissingSource.Instance);
+    }
+
+    [Test]
+    public void It_preserves_the_document_observation_when_the_root_is_absent()
+    {
+        var missing = _missingOwnerResult
+            .Should()
+            .BeOfType<DocumentCacheSourceMetadataReadResult.OwnerMissing>()
+            .Subject;
+        missing.Metadata.DocumentId.Should().Be(MissingOwnerDocumentId);
+        missing.Metadata.ContentVersion.Should().Be(223);
+        missing.Metadata.ContentLastModifiedAt.Should().BeNull();
+        missing.Metadata.ContentCreatedAt.Should().BeNull();
     }
 
     private static DocumentCacheMaterializationRequest CreateRequest(long documentId) =>
@@ -203,6 +253,14 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                     null,
                     null
                 ),
+                new DbColumnModel(
+                    new DbColumnName("ContentLastModifiedAt"),
+                    ColumnKind.AuthoritativeContentLastModifiedAt,
+                    new RelationalScalarType(ScalarKind.DateTime),
+                    false,
+                    null,
+                    null
+                ),
             ],
             []
         )
@@ -227,7 +285,7 @@ public class Given_Postgresql_DocumentCacheSourceMetadataReader
                 []
             ),
             KeysetTableConventions.GetKeysetTableContract(dialect),
-            [new TableReadPlan(rootTable, "select DocumentId")],
+            [new TableReadPlan(rootTable with { Columns = [rootTable.Columns[0]] }, "select DocumentId")],
             [],
             []
         );

@@ -28,7 +28,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Modules;
 [NonParallelizable]
 public class Given_HealthCheckEndpointModule
 {
-    private const string ValidRequiredRole = "dms-document-cache-operator";
+    private const string ValidRequiredRole = "dms-client";
     private const string RoleClaimType = "operator_role";
     private const string ValidBearerToken = "valid-token";
 
@@ -151,7 +151,7 @@ public class Given_HealthCheckEndpointModule
     [Test]
     public async Task It_warns_and_omits_document_cache_status_when_required_role_is_present_but_invalid()
     {
-        const string invalidRequiredRole = "dms document cache operator";
+        const string invalidRequiredRole = "dms client";
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
         var loggerProvider = new RecordingLoggerProvider();
         await using WebApplicationFactory<Program> factory = CreateFactory(
@@ -173,6 +173,7 @@ public class Given_HealthCheckEndpointModule
                 && entry.Message.Contains("DataManagement:DocumentCache:Status:RequiredRole is invalid")
             )
             .Subject;
+        warning.Message.Should().Contain("such as dms-client");
         warning.Message.Should().NotContain(invalidRequiredRole);
     }
 
@@ -207,6 +208,7 @@ public class Given_HealthCheckEndpointModule
         HttpResponseMessage response = await client.GetAsync("/health/document-cache");
 
         response.StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         documentCacheStatusService.CallCount.Should().Be(0);
     }
 
@@ -269,6 +271,7 @@ public class Given_HealthCheckEndpointModule
         HttpResponseMessage response = await client.GetAsync("/health/document-cache");
 
         response.StatusCode.Should().Be(HttpStatusCode.Forbidden);
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
         jwtValidationService.CallCount.Should().Be(1);
         documentCacheStatusService.CallCount.Should().Be(0);
     }
@@ -304,6 +307,27 @@ public class Given_HealthCheckEndpointModule
     }
 
     [Test]
+    public async Task It_marks_document_cache_status_no_store()
+    {
+        ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
+        await using WebApplicationFactory<Program> factory = CreateFactory(
+            documentCacheStatusService,
+            ValidRequiredRole,
+            ValidJwtWithClaims(new Claim(RoleClaimType, ValidRequiredRole))
+        );
+        using HttpClient client = factory.CreateClient();
+        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            ValidBearerToken
+        );
+
+        HttpResponseMessage response = await client.GetAsync("/health/document-cache");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Headers.NonValidated["Cache-Control"].Should().Equal("no-store");
+    }
+
+    [Test]
     public async Task It_keeps_the_existing_health_endpoint_independent_from_document_cache_status()
     {
         ScriptedDocumentCacheStatusService documentCacheStatusService = EmptyStatusService();
@@ -319,6 +343,7 @@ public class Given_HealthCheckEndpointModule
         response.StatusCode.Should().Be(HttpStatusCode.OK);
         content.Should().Contain("\"Name\": \"ApplicationHealthCheck\"");
         content.Should().NotContain("document-cache");
+        response.Headers.CacheControl.Should().BeNull();
         documentCacheStatusService.CallCount.Should().Be(0);
     }
 

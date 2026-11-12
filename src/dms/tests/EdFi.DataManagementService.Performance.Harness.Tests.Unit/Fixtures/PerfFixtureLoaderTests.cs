@@ -35,3 +35,38 @@ public class Given_The_Loader_Chunking
             .Equal((1, 3_000), (3_001, 6_000));
     }
 }
+
+[TestFixture]
+public class Given_Compact_Descriptor_Loader_Parameters
+{
+    private IReadOnlyList<(string Name, int Value)> _parameters = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _parameters = PerfFixtureLoader.DescriptorParameters(
+            new Dictionary<string, int>
+            {
+                [PerfFixtureDefinition.SexDescriptorResource] = 31,
+                [PerfFixtureDefinition.OtherNameTypeDescriptorResource] = 47,
+                [PerfFixtureDefinition.IdentificationDocumentUseDescriptorResource] = 59,
+                [PerfFixtureDefinition.PersonalInformationVerificationDescriptorResource] = 71,
+                [PerfFixtureDefinition.VisaDescriptorResource] = 89,
+            }
+        );
+    }
+
+    [Test]
+    public void It_binds_the_returned_compact_ids_by_resource()
+    {
+        _parameters
+            .Should()
+            .Equal(
+                (PerfFixtureLoaderParameters.BirthSexDescriptorId, 31),
+                (PerfFixtureLoaderParameters.OtherNameTypeDescriptorId, 47),
+                (PerfFixtureLoaderParameters.IdentificationDocumentUseDescriptorId, 59),
+                (PerfFixtureLoaderParameters.PersonalInformationVerificationDescriptorId, 71),
+                (PerfFixtureLoaderParameters.VisaDescriptorId, 89)
+            );
+    }
+}

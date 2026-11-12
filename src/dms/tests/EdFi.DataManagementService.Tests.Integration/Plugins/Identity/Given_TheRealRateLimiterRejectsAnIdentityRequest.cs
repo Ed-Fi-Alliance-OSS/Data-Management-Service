@@ -15,14 +15,19 @@ namespace EdFi.DataManagementService.Tests.Integration.Plugins.Identity;
 /// too-many-requests problem type, and the provider is never invoked.
 /// </summary>
 /// <remarks>
-/// The permit is spent on <c>GET /metadata</c>, not <c>/health</c>, whose database check would dial.
-/// The limiter partitions by host, and every in-process request shares one partition. The negative
-/// control is a host at the default limit: the same identity request reaches the provider.
+/// The permit is spent on the metadata root under tenant one's first district, not on
+/// <c>/health</c>, whose database check would dial, and not on the unqualified <c>/metadata</c>,
+/// which the multi-tenant host answers with the guidance 404. The limiter partitions by host, and
+/// every in-process request shares one partition. The negative control is a host at the default
+/// limit: the same identity request reaches the provider.
 /// </remarks>
 [Category("PluginIntegration")]
 public sealed class Given_TheRealRateLimiterRejectsAnIdentityRequest
 {
     private const string Create = """{ "LastSurname": "Rivera" }""";
+
+    private static readonly string MetadataRootUrl =
+        $"http://localhost{IdentityTestClients.MetadataRoute(IdentityTestClients.TenantOne, IdentityTestClients.DistrictsOf(IdentityTestClients.TenantOne)[0], string.Empty)}";
 
     private IdentityHttpRun? _limited;
     private IdentityHttpRun? _unlimited;
@@ -41,11 +46,11 @@ public sealed class Given_TheRealRateLimiterRejectsAnIdentityRequest
                 ["RateLimit:QueueLimit"] = "0",
             }
         );
-        _permitSpender = await _limited.GetAsync("http://localhost/metadata");
+        _permitSpender = await _limited.GetAsync(MetadataRootUrl);
         _rejected = await _limited.PostAsync("identities", Create);
 
         _unlimited = await IdentityHttpRun.StartAsync();
-        _ = await _unlimited.GetAsync("http://localhost/metadata");
+        _ = await _unlimited.GetAsync(MetadataRootUrl);
         _unlimitedCreate = await _unlimited.PostAsync("identities", Create);
     }
 

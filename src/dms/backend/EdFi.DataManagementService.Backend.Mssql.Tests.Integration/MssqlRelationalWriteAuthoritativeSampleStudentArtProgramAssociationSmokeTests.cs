@@ -16,7 +16,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -124,34 +123,6 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
     public static string FormatReferenceFailure(UpdateResult.UpdateFailureReference failure) =>
         FormatReferenceFailure(failure.InvalidDocumentReferences, failure.InvalidDescriptorReferences);
 
-    public static ReferentialId CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    ) =>
-        ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-
-    public static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    ) =>
-        CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
-
     private static DocumentReference CreateProgramDocumentReference(JsonNode requestBody)
     {
         var educationOrganizationId = requestBody["programReference"]
@@ -188,7 +159,6 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
         return new(
             ResourceInfo: programResourceInfo,
             DocumentIdentity: programIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(programResourceInfo, programIdentity),
             Path: new JsonPath("$.programReference")
         );
     }
@@ -248,7 +218,7 @@ file static class MssqlStudentArtProgramAssociationIntegrationTestSupport
 internal sealed record MssqlStudentArtProgramAssociationSeedData(
     long SchoolDocumentId,
     long StudentDocumentId,
-    long ExtracurricularProgramTypeDescriptorId,
+    int ExtracurricularProgramTypeDescriptorId,
     long RoboticsClubProgramDocumentId
 );
 
@@ -259,7 +229,7 @@ internal sealed record MssqlStudentArtProgramAssociationPersistedState(
     long ProgramDocumentId,
     long ProgramEducationOrganizationId,
     string ProgramName,
-    long ProgramTypeDescriptorId,
+    int ProgramTypeDescriptorId,
     long StudentDocumentId,
     string StudentUniqueId,
     DateOnly BeginDate,
@@ -413,7 +383,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 (
                     "$.programReference.programTypeDescriptor",
                     "ProgramTypeDescriptor",
-                    ExtracurricularProgramTypeDescriptorUri.ToLowerInvariant()
+                    ExtracurricularProgramTypeDescriptorUri
                 )
             );
     }
@@ -487,10 +457,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
 
     private async Task<MssqlStudentArtProgramAssociationSeedData> SeedReferenceDataAsync()
     {
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
         var programResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Program");
@@ -514,54 +480,19 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             (int)EducationOrganizationId,
             "Ed-Fi:School"
         );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentArtProgramAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "School", false),
-                ("$.schoolId", EducationOrganizationId.ToString(CultureInfo.InvariantCulture))
-            ),
-            schoolDocumentId,
-            schoolResourceKeyId
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentArtProgramAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", EducationOrganizationId.ToString(CultureInfo.InvariantCulture))
-            ),
-            schoolDocumentId,
-            educationOrganizationResourceKeyId
-        );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             studentResourceKeyId
         );
         await InsertStudentAsync(studentDocumentId, StudentUniqueId, "Casey", "Cole");
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentArtProgramAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "Student", false),
-                ("$.studentUniqueId", StudentUniqueId)
-            ),
-            studentDocumentId,
-            studentResourceKeyId
-        );
 
-        var extracurricularProgramTypeDescriptorId = await InsertDescriptorAsync(
+        var extracurricularProgramTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("33333333-cccc-cccc-cccc-ccccccccccc1"),
             programTypeDescriptorResourceKeyId,
-            "Ed-Fi:ProgramTypeDescriptor",
-            ExtracurricularProgramTypeDescriptorUri,
             "uri://ed-fi.org/ProgramTypeDescriptor",
             "Extracurricular",
             "Extracurricular"
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentArtProgramAssociationIntegrationTestSupport.CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "ProgramTypeDescriptor",
-                ExtracurricularProgramTypeDescriptorUri
-            ),
-            extracurricularProgramTypeDescriptorId,
-            programTypeDescriptorResourceKeyId
         );
 
         var roboticsClubProgramDocumentId = await InsertDocumentAsync(
@@ -572,28 +503,15 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             roboticsClubProgramDocumentId,
             schoolDocumentId,
             (int)EducationOrganizationId,
-            extracurricularProgramTypeDescriptorId,
+            extracurricularProgramTypeDescriptor.DescriptorId,
             "PRG-01",
             RoboticsClubProgramName
-        );
-        await UpsertReferentialIdentityAsync(
-            MssqlStudentArtProgramAssociationIntegrationTestSupport.CreateReferentialId(
-                ("Ed-Fi", "Program", false),
-                (
-                    "$.educationOrganizationReference.educationOrganizationId",
-                    EducationOrganizationId.ToString(CultureInfo.InvariantCulture)
-                ),
-                ("$.programName", RoboticsClubProgramName),
-                ("$.programTypeDescriptor", ExtracurricularProgramTypeDescriptorUri.ToLowerInvariant())
-            ),
-            roboticsClubProgramDocumentId,
-            programResourceKeyId
         );
 
         return new(
             SchoolDocumentId: schoolDocumentId,
             StudentDocumentId: studentDocumentId,
-            ExtracurricularProgramTypeDescriptorId: extracurricularProgramTypeDescriptorId,
+            ExtracurricularProgramTypeDescriptorId: extracurricularProgramTypeDescriptor.DescriptorId,
             RoboticsClubProgramDocumentId: roboticsClubProgramDocumentId
         );
     }
@@ -648,10 +566,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
                 row,
                 "ProgramProgram_ProgramName"
             ),
-            ProgramTypeDescriptorId: MssqlStudentArtProgramAssociationIntegrationTestSupport.GetInt64(
-                row,
-                "ProgramProgram_ProgramTypeDescriptor_DescriptorId"
-            ),
+            ProgramTypeDescriptorId: (int)row["ProgramProgram_ProgramTypeDescriptor_DescriptorId"]!,
             StudentDocumentId: MssqlStudentArtProgramAssociationIntegrationTestSupport.GetInt64(
                 row,
                 "Student_DocumentId"
@@ -697,52 +612,48 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -766,8 +677,15 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
     {
         await _database.ExecuteNonQueryAsync(
             """
-            INSERT INTO [edfi].[EducationOrganizationIdentity] ([DocumentId], [EducationOrganizationId], [Discriminator])
-            VALUES (@documentId, @educationOrganizationId, @discriminator);
+            INSERT INTO [edfi].[EducationOrganizationIdentity] (
+                [DocumentId],
+                [EducationOrganizationId],
+                [ResourceKeyId],
+                [Discriminator]
+            )
+            SELECT d.[DocumentId], @educationOrganizationId, d.[ResourceKeyId], @discriminator
+            FROM [dms].[Document] d
+            WHERE d.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@educationOrganizationId", educationOrganizationId),
@@ -799,7 +717,7 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
         long documentId,
         long educationOrganizationDocumentId,
         int educationOrganizationId,
-        long programTypeDescriptorId,
+        int programTypeDescriptorId,
         string programId,
         string programName
     )
@@ -829,47 +747,6 @@ public class Given_A_Mssql_Relational_Write_Smoke_With_The_Authoritative_Sample_
             new SqlParameter("@programTypeDescriptorId", programTypeDescriptorId),
             new SqlParameter("@programId", programId),
             new SqlParameter("@programName", programName)
-        );
-    }
-
-    private async Task UpsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        if (rows.Count > 0)
-        {
-            rows.Should().ContainSingle();
-            var existingReferentialId = rows[0]["ReferentialId"] switch
-            {
-                Guid value => value,
-                _ => throw new InvalidOperationException("Expected ReferentialId to be a Guid."),
-            };
-
-            existingReferentialId.Should().Be(referentialId.Value);
-            return;
-        }
-
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
         );
     }
 

@@ -120,6 +120,12 @@ public class Given_Provisioned_Pgsql_Database_When_Introspecting_Schema
     }
 
     [Test]
+    public void It_keeps_versions_on_documents_and_authoritative_timestamps_on_owners()
+    {
+        ProvisionTestHelper.AssertContentStampOwnership(_manifest);
+    }
+
+    [Test]
     public void Manifest_reports_e18_fixed_inventory()
     {
         _manifest.ManifestVersion.Should().Be("1");

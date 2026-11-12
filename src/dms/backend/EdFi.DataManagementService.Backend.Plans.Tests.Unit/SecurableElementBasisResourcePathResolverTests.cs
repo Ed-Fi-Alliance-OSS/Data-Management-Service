@@ -1571,11 +1571,14 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().ContainSingle();
+        result.Should().HaveCount(2);
         result[0].SourceTable.Should().Be(Table("StudentTransportation"));
         result[0].SourceColumnName.Should().Be(Col("TransportationTypeDescriptor_DescriptorId"));
         result[0].TargetTable.Should().Be(DescriptorTable);
-        result[0].TargetColumnName.Should().Be(Col("DocumentId"));
+        result[0].TargetColumnName.Should().Be(Col("DescriptorId"));
+        result[^1].SourceTable.Should().Be(DescriptorTable);
+        result[^1].SourceColumnName.Should().Be(Col("DocumentId"));
+        result[^1].TargetTable.Should().BeNull();
     }
 
     [Test]
@@ -1633,7 +1636,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().ContainSingle();
+        result.Should().HaveCount(2);
         result[0].SourceColumnName.Should().Be(Col("IdentityTransportationTypeDescriptor_DescriptorId"));
     }
 
@@ -1696,7 +1699,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().ContainSingle();
+        result.Should().HaveCount(2);
         result[0].SourceColumnName.Should().Be(Col("TransportationTypeDescriptor_DescriptorId"));
     }
 
@@ -1764,7 +1767,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().HaveCount(2);
+        result.Should().HaveCount(3);
         result[0].SourceTable.Should().Be(Table("StudentSectionAssociation"));
         result[0].SourceColumnName.Should().Be(Col("Section_DocumentId"));
         result[0].TargetTable.Should().Be(Table("Section"));
@@ -1772,7 +1775,10 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
         result[1].SourceTable.Should().Be(Table("Section"));
         result[1].SourceColumnName.Should().Be(Col("ProgramTypeDescriptor_DescriptorId"));
         result[1].TargetTable.Should().Be(DescriptorTable);
-        result[1].TargetColumnName.Should().Be(Col("DocumentId"));
+        result[1].TargetColumnName.Should().Be(Col("DescriptorId"));
+        result[^1].SourceTable.Should().Be(DescriptorTable);
+        result[^1].SourceColumnName.Should().Be(Col("DocumentId"));
+        result[^1].TargetTable.Should().BeNull();
     }
 
     [Test]
@@ -1840,7 +1846,7 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
             []
         );
 
-        result.Should().HaveCount(2);
+        result.Should().HaveCount(3);
         result[0].SourceTable.Should().Be(Table("StudentSectionAssociation"));
         result[0].SourceColumnName.Should().Be(Col("Intermediate_DocumentId"));
         result[0].TargetTable.Should().Be(Table("Intermediate"));
@@ -1848,7 +1854,10 @@ public class Given_SecurableElementColumnPathResolver_BasisPath
         result[1].SourceTable.Should().Be(Table("Intermediate"));
         result[1].SourceColumnName.Should().Be(Col("ProgramTypeDescriptor_DescriptorId"));
         result[1].TargetTable.Should().Be(DescriptorTable);
-        result[1].TargetColumnName.Should().Be(Col("DocumentId"));
+        result[1].TargetColumnName.Should().Be(Col("DescriptorId"));
+        result[^1].SourceTable.Should().Be(DescriptorTable);
+        result[^1].SourceColumnName.Should().Be(Col("DocumentId"));
+        result[^1].TargetTable.Should().BeNull();
     }
 
     [Test]

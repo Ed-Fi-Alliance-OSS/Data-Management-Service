@@ -114,6 +114,8 @@ if (-not (Test-Path $RepoDir)) {
 }
 $composeDir = Join-Path $RepoDir "compose"
 if (-not (Test-Path $composeDir)) { throw "compose dir not found at $composeDir" }
+# Resolved now: $RepoDir may be relative, and the steps below run from inside $composeDir.
+$envUtilityModule = (Resolve-Path -LiteralPath (Join-Path $RepoDir "../docker-compose/env-utility.psm1")).Path
 
 # docker group sanity check (cloud-init adds the user; needs a fresh login to take effect).
 docker info *> $null
@@ -138,6 +140,12 @@ try {
     Write-Output "Writing .env host values..."
     Set-EnvValue -File ".env" -Key "PUBLIC_BASE_URL" -Value "https://$PublicHost"
     Set-EnvValue -File ".env" -Key "PUBLIC_HOST" -Value $PublicHost
+    # Retired variable names are no longer read; name each one before Compose fails on a missing
+    # replacement, and before the removal below deletes one from .env. This Keycloak-only stack never
+    # reads CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY, so the old name is reported as removed.
+    Import-Module $envUtilityModule -Force
+    Write-LegacyEnvironmentVariableWarning -EnvironmentFile ".env" -AdditionalRemovedVariable 'DMS_CONFIG_IDENTITY_ENCRYPTION_KEY'
+
     # Removed from this Keycloak-only stack: it was consumed only by self-contained OpenIddict.
     # Clean legacy .env files too, particularly ones that still carry a CHANGEME placeholder.
     Remove-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_ENCRYPTION_KEY"
@@ -169,7 +177,7 @@ try {
         }
         if ($existingStateVolumes.Count -gt 0) {
             throw ("-RotateSecrets would regenerate secrets that the EXISTING volumes (Postgres/" +
-                "Keycloak/CMS-encrypted state) are keyed to, breaking auth and decryption when they " +
+                "Keycloak and Configuration Service encrypted state) are keyed to, breaking auth and decryption when they " +
                 "restart. Existing state: $($existingStateVolumes -join ', '). Run ./down.sh -v first " +
                 "(drops ALL data, including Keycloak), then re-run -- " +
                 "or pass -Force to rotate anyway (only if the volumes will be recreated).")
@@ -179,11 +187,11 @@ try {
         Write-Output "Writing generated secrets to .env..."
         Set-EnvValue -File ".env" -Key "POSTGRES_PASSWORD" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "KEYCLOAK_ADMIN_PASSWORD" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "CONFIG_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" -Value (New-ComplexSecret)
+        Set-EnvValue -File ".env" -Key "DMS_CONFIGURATION_SERVICE_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "BOOTSTRAP_ADMIN_CLIENT_SECRET" -Value (New-ComplexSecret)
         Set-EnvValue -File ".env" -Key "PGADMIN_DEFAULT_PASSWORD" -Value (New-ComplexSecret)
-        Set-EnvValue -File ".env" -Key "DMS_CONFIG_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
+        Set-EnvValue -File ".env" -Key "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY" -Value (New-Key32)
     }
     else {
         Write-Output "Preserving existing secrets in .env (pass -RotateSecrets to regenerate)."
@@ -258,11 +266,11 @@ try {
     docker network inspect dms-sec *> $null
     if ($LASTEXITCODE -ne 0) { docker network create dms-sec | Out-Null }
 
-    Write-Output "Starting infrastructure (postgres, keycloak, config services, gateway)..."
+    Write-Output "Starting infrastructure (postgres, keycloak, Configuration Service instances, gateway)..."
     # --no-deps so the gateway (which depends_on the DMS services) does not pull them up early;
     # the gateway resolves upstreams at request time, so it starts fine without the DMS backends.
-    docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d --no-deps `
-        postgres keycloak st-config mt-config pgadmin gateway
+    docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d --no-deps `
+        postgres keycloak st-config mt-config pgadmin swagger-ui gateway
     if ($LASTEXITCODE -ne 0) { throw "docker compose up (infrastructure) failed ($LASTEXITCODE)." }
 
     # Persist the image that ACTUALLY created/started the Keycloak H2 realm. A later plain
@@ -272,7 +280,7 @@ try {
     bash ./record-keycloak-image.sh
     if ($LASTEXITCODE -ne 0) { throw "record-keycloak-image.sh failed ($LASTEXITCODE)." }
 
-    Write-Output "Waiting for Keycloak + config services to report healthy..."
+    Write-Output "Waiting for Keycloak and Configuration Service instances to report healthy..."
     $deadline = (Get-Date).AddMinutes(8)
     do {
         Start-Sleep -Seconds 10
@@ -284,8 +292,8 @@ try {
         $kcCode = (curl -s -k --connect-timeout 5 --max-time 10 -o /dev/null -w "%{http_code}" "https://localhost/auth/realms/master")
         if ($kcCode -ne "200") { $healthy = $false }
     } while (-not $healthy -and (Get-Date) -lt $deadline)
-    if ($healthy) { Write-Output "Identity + config services healthy." }
-    else { throw "Identity/config services did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets; bootstrap has not been attempted yet, so the retry runs it cleanly)." }
+    if ($healthy) { Write-Output "Identity and Configuration Service instances healthy." }
+    else { throw "Identity and Configuration Service instances did not report healthy within 8 minutes. Check './logs.sh', then re-run (re-runs preserve secrets; bootstrap has not been attempted yet, so the retry runs it cleanly)." }
 
     # Bootstrap state is tracked with TWO markers, not .env existence: bootstrap.ps1's
     # data-store/vendor/application creates are NOT idempotent, so a bootstrap that dies partway
@@ -305,13 +313,13 @@ try {
             Write-Output "Skipping bootstrap: already completed (reset.sh clears this after it empties the config DB)."
         }
         elseif (Test-Path $bootstrapAttempted) {
-            throw ("A previous bootstrap started but did not complete; the CMS config DB may hold " +
+            throw ("A previous bootstrap started but did not complete; the Configuration Service database may hold " +
                 "partial vendors/applications/data stores that a retry would DUPLICATE. Run " +
-                "./reset.sh (clears partial CMS and Keycloak state), then re-run.")
+                "./reset.sh (clears partial Configuration Service and Keycloak state), then re-run.")
         }
         else {
             Write-Output "Running bootstrap (over loopback)..."
-            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure
+            & "$composeDir/bootstrap/bootstrap.ps1" -BaseUrl "https://localhost" -Insecure -SkipLegacyEnvironmentVariableWarning
         }
     }
 
@@ -323,7 +331,7 @@ try {
     # with -StartDms (or `./up.sh st-dms mt-dms`).
     if ($StartDms) {
         # The DMS services bind-mount ./.bootstrap/ApiSchema at /app/ApiSchema and read the API
-        # schema exclusively from there (AppSettings__UseApiSchemaPath=true). Docker auto-creates
+        # schema exclusively from there (AppSettings__ApiSchema__UseCustomPath=true). Docker auto-creates
         # the directory empty if it was never staged, and a DMS booted against an empty schema
         # directory fails startup/health even with the databases provisioned -- so refuse early.
         $apiSchemaDir = Join-Path $composeDir ".bootstrap/ApiSchema"
@@ -335,7 +343,7 @@ try {
                 "copy that folder here), then re-run with -StartDms. See ../docs/infrastructure.md 'Provisioning method'.")
         }
         Write-Output "Starting DMS services..."
-        docker compose -f docker-compose.yml -f keycloak.yml --env-file .env up -d st-dms mt-dms
+        docker compose -f docker-compose.yml -f keycloak.compose.yml --env-file .env up -d st-dms mt-dms
         if ($LASTEXITCODE -ne 0) { throw "docker compose up st-dms/mt-dms failed ($LASTEXITCODE)." }
         Write-Output "Waiting for DMS services to report healthy (requires provisioned schema)..."
         $deadline = (Get-Date).AddMinutes(8)

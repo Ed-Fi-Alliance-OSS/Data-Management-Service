@@ -9,14 +9,15 @@ namespace EdFi.DataManagementService.Backend;
 /// Runs proposed-value namespace authorization as a separate statement inside the write session,
 /// after merge has produced the finalized root row and before persist/commit. It is the namespace
 /// sibling of <see cref="ProposedRelationshipAuthorizationOrchestrator"/>: it reads the namespace
-/// value from the finalized merged root row (never the raw request body) and binds it to the same
-/// single-record namespace SQL used by reads, so the <c>LIKE</c> semantics and AUTH1 failure mapping
-/// stay identical across read and write paths.
+/// value from the finalized merged root row (or from the request body when the namespace is derived
+/// from a reference whose missing-document failure was deferred, because the finalized row has no value
+/// for it) and binds it to the same single-record namespace SQL used by reads, so the <c>LIKE</c>
+/// semantics and AUTH1 failure mapping stay identical across read and write paths.
 /// </summary>
 /// <remarks>
 /// This orchestrator authorizes the proposed namespace value for both new-document and existing-target
 /// writes. The stored namespace of an existing target is authorized separately in the locked-target
-/// boundary, so this stage only ever evaluates the finalized proposed value.
+/// boundary, so this stage only ever evaluates the proposed value.
 /// </remarks>
 internal sealed class ProposedNamespaceAuthorizationOrchestrator(
     IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null
@@ -45,7 +46,9 @@ internal sealed class ProposedNamespaceAuthorizationOrchestrator(
 
         var extraction = ProposedNamespaceValueExtractor.Extract(
             namespaceAuthorization.Checks,
-            RelationalWriteFinalizedRootRow.Build(request, mergeResult)
+            RelationalWriteFinalizedRootRow.Build(request, mergeResult),
+            request.SelectedBody,
+            mergeResult.DeferredMissingDocumentReferencePaths
         );
 
         if (extraction is ProposedNamespaceValueExtractionResult.InvalidAuthorizationPlan invalid)

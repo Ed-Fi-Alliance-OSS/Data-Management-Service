@@ -42,14 +42,15 @@ on:
       # the DS 6.1 educator-prep filter + tolerance). Listed so a change to any engine/DS leg is
       # validated on PRs instead of only the cron run (DMS-1136).
       - '.github/workflows/build-populated-template.yml'
-      - 'eng/docker-compose/mssql.yml'
+      - 'eng/docker-compose/mssql.compose.yml'
       - 'eng/docker-compose/.env.mssql'
-      - 'eng/docker-compose/postgresql.yml'
+      - 'eng/docker-compose/postgresql.compose.yml'
       - 'eng/docker-compose/.env.smoke'
       - 'eng/docker-compose/.env.smoke.ds61'
       - 'eng/docker-compose/start-local-dms.ps1'
-      - 'eng/docker-compose/local-dms.yml'
-      - 'eng/docker-compose/local-config.yml'
+      - 'eng/docker-compose/local-dms.compose.yml'
+      - 'eng/docker-compose/local-config.compose.yml'
+      - 'eng/docker-compose/dms-cms-proxy.yml'
       - 'eng/docker-compose/env-utility.psm1'
       - 'eng/Dms-Management.psm1'
       - 'eng/DatabaseTemplates/**'
@@ -71,7 +72,9 @@ jobs:
   # downstream jobs below consume via ${{ needs.select-legs.outputs.include }}.
   select-legs:
     name: Select Smoke Legs
-    if: github.event.pull_request.draft != true
+    # Scheduled runs only in Ed-Fi-Alliance-OSS: a fork inherits the schedule but not the Slack
+    # webhook or the Ed-Fi resources the run acts on. workflow_dispatch still runs anywhere.
+    if: github.event.pull_request.draft != true && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -122,14 +125,14 @@ jobs:
       environment_file: ${{ matrix.environment_file }}
       verify_restore: true
       require_populated_data: true
+    # No Azure Artifacts secret: this call never publishes, and the build restores from the feed
+    # anonymously.
     secrets:
-      AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
-      AZURE_ARTIFACTS_USER_NAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
   build-ci-docker-images:
     name: Build CI Docker Images
-    if: github.event.pull_request.draft != true
+    if: github.event.pull_request.draft != true && (github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS')
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -246,7 +249,7 @@ jobs:
 
     env:
       DMS_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.dms_compose_image }}
-      DMS_CONFIG_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
+      CONFIGURATION_SERVICE_DOCKER_IMAGE: ${{ needs.build-ci-docker-images.outputs.config_compose_image }}
       SMOKE_DATABASE_NAME: edfi_datamanagementservice_smoke
 
     defaults:
@@ -343,6 +346,13 @@ jobs:
       # so the smoke test reuses the same .env.smoke the in-run template was
       # built from. This is smoke coverage only; the product template stays Core+TPDM.
       - name: Start DMS with Core, TPDM, Sample, and Homograph (SmokeTest)
+        # The pinned Smoke Test Utility requests a new token for each resource GET.
+        # Override only this stack startup; tracked environment defaults remain 15.
+        # The self-contained DMS proxies each token request to the Configuration Service,
+        # so the /connect/* rate limit is disabled for the same reason.
+        env:
+          CONFIGURATION_SERVICE_IDENTITY_BEARER_TOKEN_PER_CLIENT_LIMIT: "-1"
+          CONFIGURATION_SERVICE_CONNECT_RATE_LIMIT_ENABLED: "false"
         run: |
           $env:LOG_LEVEL="Warning"
           ./start-local-dms.ps1 -EnvironmentFile "${{ matrix.environment_file }}" -EnableConfig -DatabaseEngine "${{ matrix.database_engine }}"
@@ -549,7 +559,7 @@ jobs:
     name: Notify Results
     runs-on: ubuntu-latest
     needs: [smoke-test]
-    if: always() && github.event_name != 'workflow_dispatch' && github.event_name != 'pull_request'
+    if: always() && github.event_name != 'workflow_dispatch' && github.event_name != 'pull_request' && github.repository_owner == 'Ed-Fi-Alliance-OSS'
     steps:
       - name: Notify Slack on success
         if: ${{ needs.smoke-test.result == 'success' }}

@@ -19,7 +19,8 @@ namespace EdFi.DataManagementService.Backend;
 
 internal sealed class DefaultRelationalWriteExecutor(
     IRelationalWriteSessionFactory writeSessionFactory,
-    IReferenceResolverAdapterFactory referenceResolverAdapterFactory,
+    INaturalKeyLookupCommandBuilder naturalKeyLookupCommandBuilder,
+    IResolvedDocumentReferenceMapFactory resolvedDocumentReferenceMapFactory,
     IRelationalWriteFlattener writeFlattener,
     IRelationalWriteNoProfileMergeSynthesizer noProfileMergeSynthesizer,
     IRelationalWriteProfileMergeSynthesizer profileMergeSynthesizer,
@@ -76,8 +77,10 @@ internal sealed class DefaultRelationalWriteExecutor(
     private readonly IRelationalWriteFirstPhase _writeFirstPhase =
         writeFirstPhase
         ?? new CompositeRelationalWriteFirstPhase(
-            referenceResolverAdapterFactory
-                ?? throw new ArgumentNullException(nameof(referenceResolverAdapterFactory)),
+            naturalKeyLookupCommandBuilder
+                ?? throw new ArgumentNullException(nameof(naturalKeyLookupCommandBuilder)),
+            resolvedDocumentReferenceMapFactory
+                ?? throw new ArgumentNullException(nameof(resolvedDocumentReferenceMapFactory)),
             relationalParameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor,
             logger,
@@ -264,18 +267,38 @@ internal sealed class DefaultRelationalWriteExecutor(
             if (
                 HasDescriptorReferenceFailures(resolvedReferences)
                 || HasNonMissingDocumentReferenceFailures(resolvedReferences)
-                || (executionRequest.ProfileWriteContext is not null && hasMissingDocumentReferenceFailures)
+                || (
+                    executionRequest.ProfileWriteContext is not null
+                    && hasMissingDocumentReferenceFailures
+                    && !executionRequest.HasPendingProposedAuthorization
+                )
             )
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                // Descriptor/type validation still precedes proposed authorization. Do not aggregate
+                // missing document details here: they would disclose reference existence before
+                // the caller's proposed values have been authorized.
                 return RelationalWriteExecutorResults.BuildReferenceFailureResult(
                     executionRequest.OperationKind,
-                    resolvedReferences
+                    executionRequest.HasPendingProposedAuthorization
+                        ? resolvedReferences with
+                        {
+                            InvalidDocumentReferences =
+                            [
+                                .. resolvedReferences.InvalidDocumentReferences.Where(static failure =>
+                                    failure.Reason is not DocumentReferenceFailureReason.Missing
+                                ),
+                            ],
+                        }
+                        : resolvedReferences
                 );
             }
 
-            var deferMissingDocumentReferenceFailures =
-                executionRequest.ProfileWriteContext is null && hasMissingDocumentReferenceFailures;
+            // Missing document references are reported only after proposed authorization runs without DML,
+            // so an unauthorized caller cannot learn whether a referenced document exists. Profiles without
+            // pending proposed authorization retain their immediate reference failures above. Profile merge
+            // finalizes only the root on this path; unresolved collections need not be matched for authorization.
+            var deferMissingDocumentReferenceFailures = hasMissingDocumentReferenceFailures;
 
             var targetContext = executionRequest.TargetContext;
             var mergeBoundary = _mergeOrchestrator.Resolve(
@@ -292,13 +315,13 @@ internal sealed class DefaultRelationalWriteExecutor(
                 return mergeBoundary.ImmediateResult;
             }
 
-            var mergeResult = mergeBoundary.MergeResult!;
-
             // Identity comparison needs the finalized merged root row, but immutable identity
-            // failures must win before any proposed authorization evaluates rejected values.
-            var identityStabilityFailure = RelationalWriteIdentityStability.TryBuildFailureResult(
+            // failures must win before any proposed authorization evaluates rejected values. The
+            // returned merge result carries stored values for identity columns that differ only
+            // under the identity comparer, so authorization, no-op detection and DML see them.
+            var (mergeResult, identityStabilityFailure) = RelationalWriteIdentityStability.Apply(
                 executionRequest,
-                mergeResult
+                mergeBoundary.MergeResult!
             );
 
             if (identityStabilityFailure is not null)
@@ -331,6 +354,7 @@ internal sealed class DefaultRelationalWriteExecutor(
 
             var requiresDataModifyingStatements =
                 deferredPreconditionResult is null
+                && mergeBoundary.DeferredProfileFailureResult is null
                 && !deferMissingDocumentReferenceFailures
                 && guardedNoOpTarget is null;
 
@@ -377,6 +401,12 @@ internal sealed class DefaultRelationalWriteExecutor(
             {
                 await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
                 return secondCommand.ImmediateResult;
+            }
+
+            if (mergeBoundary.DeferredProfileFailureResult is { } profileFailureResult)
+            {
+                await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                return profileFailureResult;
             }
 
             if (deferredPreconditionResult is not null)
@@ -445,6 +475,15 @@ internal sealed class DefaultRelationalWriteExecutor(
         }
         catch (RelationalWriteRequestValidationException ex)
         {
+            if (ex.Diagnostic is not null)
+            {
+                _logger.LogDebug(
+                    ex,
+                    "Relational write request validation failed: {Diagnostic}",
+                    LogSanitizer.SanitizeFreeTextForLog(ex.Diagnostic)
+                );
+            }
+
             await writeSession.RollbackAsync(cancellationToken).ConfigureAwait(false);
             return RelationalWriteExecutorResults.BuildValidationFailureResult(
                 input.OperationKind,
@@ -612,9 +651,7 @@ internal sealed class DefaultRelationalWriteExecutor(
         );
 
     private static bool HasMissingDocumentReferenceFailures(ResolvedReferenceSet resolvedReferences) =>
-        resolvedReferences.InvalidDocumentReferences.Any(static failure =>
-            failure.Reason is DocumentReferenceFailureReason.Missing
-        );
+        resolvedReferences.MissingDocumentReferences.Any();
 
     /// <summary>
     /// Composes the served <c>_etag</c> for a just-committed write. The write response carries only

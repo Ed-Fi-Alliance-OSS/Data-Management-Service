@@ -46,11 +46,10 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -69,18 +68,41 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Enrollment] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt
+            FROM [edfi].[Enrollment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
+            FROM [edfi].[Enrollment] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
 END;
 GO
@@ -93,11 +115,10 @@ BEGIN
     SET NOCOUNT ON;
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -116,18 +137,41 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[School] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt
+            FROM [edfi].[School] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
+            FROM [edfi].[School] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
 END;
 GO

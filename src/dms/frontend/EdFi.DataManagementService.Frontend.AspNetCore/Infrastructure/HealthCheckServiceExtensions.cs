@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Core.Configuration;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Npgsql;
@@ -29,29 +30,69 @@ public class ApplicationHealthCheck(ILogger<ApplicationHealthCheck> logger) : IH
     }
 }
 
-public class DbHealthCheck(string connectionString, string providerName, ILogger<DbHealthCheck> logger)
-    : IHealthCheck
+/// <summary>
+/// Checks that a loaded data store's database accepts connections.
+/// </summary>
+/// <remarks>
+/// The connection string is resolved on every check rather than once at construction. This check is
+/// a singleton, and with multi-tenancy the data stores load on demand, so a pod that starts with no
+/// tenants would otherwise keep the empty value it saw at its first probe for its whole lifetime.
+/// With no data store to probe the result is <see cref="HealthStatus.Degraded"/>, not Healthy: the
+/// state is expected at multi-tenant startup, but a cache refresh can also replace a working
+/// tenant's data stores with an empty list, and that must stay visible in the report. Degraded maps
+/// to HTTP 200, so it does not fail probes. Data stores that are loaded but have no connection string
+/// are a misconfiguration, not a wait, so that state is <see cref="HealthStatus.Unhealthy"/> with
+/// its own description.
+/// </remarks>
+public class DbHealthCheck(
+    IConnectionStringProvider connectionStringProvider,
+    string providerName,
+    ILogger<DbHealthCheck> logger
+) : IHealthCheck
 {
+    internal const string NoDataStoresDescription =
+        "No data stores are loaded yet, so there is no database to check.";
+
+    internal static string NoConnectionStringDescription(int dataStoreCount) =>
+        $"{dataStoreCount} data store(s) are loaded, but none has a connection string. "
+        + "Check the data store configuration in the Configuration Service.";
+
+    private readonly IConnectionStringProvider _connectionStringProvider =
+        connectionStringProvider ?? throw new ArgumentNullException(nameof(connectionStringProvider));
     private readonly ILogger<DbHealthCheck> _logger =
         logger ?? throw new ArgumentNullException(nameof(logger));
-    private readonly string _connectionString =
-        connectionString ?? throw new ArgumentNullException(nameof(connectionString));
-    private readonly string _providerName =
-        providerName ?? throw new ArgumentNullException(nameof(providerName));
+
+    // Validated here rather than on first connection: with no data store loaded the check never
+    // reaches CreateConnection, so an unsupported value would otherwise stay hidden until one loads.
+    private readonly string _providerName = ValidateProviderName(providerName);
 
     public async Task<HealthCheckResult> CheckHealthAsync(
         HealthCheckContext context,
         CancellationToken cancellationToken = default
     )
     {
+        HealthCheckTarget target = _connectionStringProvider.GetHealthCheckTarget();
+
+        switch (target.Status)
+        {
+            // Multi-tenant startup with zero tenants is a supported state, not a database fault:
+            // data stores load when tenants are created and requests arrive.
+            case HealthCheckTargetStatus.NoDataStoresLoaded:
+                return HealthCheckResult.Degraded(NoDataStoresDescription);
+            case HealthCheckTargetStatus.NoConnectionString:
+                return HealthCheckResult.Unhealthy(NoConnectionStringDescription(target.DataStoreCount));
+        }
+
+        string connectionString = target.ConnectionString!;
+
         try
         {
-            await using var connection = CreateConnection(_providerName, _connectionString);
-            _logger.LogInformation("Attempting to open a connection to the database.");
+            await using var connection = CreateConnection(_providerName, connectionString);
+            _logger.LogDebug("Attempting to open a connection to the database.");
 
             await connection.OpenAsync(cancellationToken);
 
-            _logger.LogInformation("Database connection established successfully.");
+            _logger.LogDebug("Database connection established successfully.");
 
             return HealthCheckResult.Healthy("Database connection is healthy.");
         }
@@ -59,6 +100,22 @@ public class DbHealthCheck(string connectionString, string providerName, ILogger
         {
             return HealthCheckResult.Unhealthy("Database connection is unhealthy.", ex);
         }
+    }
+
+    private static string ValidateProviderName(string providerName)
+    {
+        ArgumentNullException.ThrowIfNull(providerName);
+        if (
+            !providerName.Equals("postgresql", StringComparison.OrdinalIgnoreCase)
+            && !providerName.Equals("mssql", StringComparison.OrdinalIgnoreCase)
+        )
+        {
+            throw new ArgumentException(
+                $"Unsupported provider: '{providerName}'. Expected 'postgresql' or 'mssql'.",
+                nameof(providerName)
+            );
+        }
+        return providerName;
     }
 
     private static DbConnection CreateConnection(string providerName, string connectionString)

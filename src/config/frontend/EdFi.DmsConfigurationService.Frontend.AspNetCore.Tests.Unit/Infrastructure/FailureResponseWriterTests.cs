@@ -60,7 +60,7 @@ public class FailureResponseWriterTests
 
         [Test]
         public void It_has_the_not_found_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
 
         [Test]
         public void It_sets_the_correlation_id_from_the_trace_identifier() =>
@@ -115,7 +115,7 @@ public class FailureResponseWriterTests
 
         [Test]
         public void It_writes_the_full_body() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
     }
 
     [TestFixture]
@@ -128,7 +128,7 @@ public class FailureResponseWriterTests
         {
             var context = new DefaultHttpContext();
             context.Response.Body = new MemoryStream();
-            JsonNode node = new JsonObject { ["type"] = "urn:ed-fi:api:not-found" };
+            JsonNode node = new JsonObject { ["type"] = "urn:ed-fi:management-api:not-found" };
             try
             {
                 await FailureResponseWriter.WriteAsync(context, node);

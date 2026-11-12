@@ -33,12 +33,16 @@ Source documents:
 
 - Canonical storage is relational (root table per resource, child tables per collection) and is the source of truth.
 - DMS remains schema/behavior-driven by `ApiSchema.json` (no handwritten per-resource code; no checked-in per-resource SQL artifacts).
-- Relationships are stored as stable `DocumentId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
-- Resolve references and POST upserts through generated natural-key probes over `RefKey`, abstract-identity, descriptor, and root natural-key indexes.
-- SQL Server + PostgreSQL API and behavioral parity is required except where the design explicitly
-  defines engine-specific identity equality: regular string natural keys follow the declared SQL
-  Server CI versus PostgreSQL ordinal contracts, and non-ASCII descriptor folding follows each
-  engine's pinned collation semantics (see `natural-key-resolution.md`).
+- Document relationships are stored as stable `bigint DocumentId` foreign keys; descriptor relationships use independent `int DescriptorId` foreign keys, with referenced identity natural-key fields available locally for query/reconstitution and kept consistent via dialect-specific propagation rules (no FK rewrites): PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise); SQL Server retains native cascades where legal and uses safe full-composite `NO ACTION` cuts selected by `sql-server-pruning.md`. That document supersedes the blanket SQL Server `ON UPDATE NO ACTION` plus `MssqlIdentityPropagationTrigger` design. Under key unification, equality-constrained per-site/per-path bindings may be generated/persisted, presence-gated aliases of canonical stored columns (see `key-unification.md`).
+- References and descriptor-valued filters resolve through generated natural-key/lowered-URI
+  probes that carry the raw validated URI and fold case in SQL; a NUL in a descriptor reference or
+  filter is a 400. Resource POST upserts detect existing documents through the own-natural-key
+  capture, and descriptor writes through the lowered-URI probe with stored-wins identity (see
+  [natural-key-resolution.md](natural-key-resolution.md)). Core computes no referential ids,
+  and DMS DDL creates no `dms.ReferentialIdentity` table or referential-identity triggers.
+- SQL Server identity string columns carry the explicit DMS collation
+  `SQL_Latin1_General_CP1_CI_AS`, independent of the database default; PostgreSQL keeps its
+  existing collation verdicts. Compact descriptor storage introduces no normalization.
 - `DocumentCache`, `DocumentProjectionWork`, and the constrained lifecycle singleton are
   always provisioned. Canonical transactions record coalesced work in every
   enqueue-enabled lifecycle state; optional projection/read behavior and relational CDC
@@ -54,7 +58,8 @@ Source documents:
 ## Core concepts and terms
 
 - `DocumentUuid`: stable external identifier for API `id` (does not change on identity updates).
-- `DocumentId`: internal surrogate key (`bigint`) used for FKs and clustering.
+- `DocumentId`: owning document surrogate (`bigint`) for document references, metadata, locks, cache, restamping and paging.
+- `DescriptorId`: separately generated descriptor surrogate (`int`) for stored descriptor FKs, filtering and URI hydration. It is not the owning `DocumentId`.
 - **Natural-key probe**: generated lookup metadata that converts a resource's ordered `DocumentIdentity` values into the persisted `DocumentId` by probing the target's `RefKey`, abstract-identity, descriptor, or root natural-key index.
 - **Identity component**: a reference whose projected identity participates in a document’s identity (`identityJsonPaths`). Identity-component values are stored locally as reference-identity bindings (which may be generated/persisted aliases of canonical stored columns under key unification) so natural-key probes and reconstitution read row-local values.
 - **Representation dependency** (1 hop): any referenced non-descriptor document whose identity values are embedded in the full resource-state representation before readable profile projection. Indirect representation changes are realized as native FK-cascade updates to canonical stored identity columns that back the local bindings, including presence-gated aliases that preserve “absent ⇒ `NULL` at the binding columns”, which trigger normal stamping of stored `ContentVersion` / `ContentLastModifiedAt`; `_etag` is composed from `ContentVersion` plus `variantKey`.
@@ -74,12 +79,30 @@ Source documents:
   - Holds `DocumentId`, `DocumentUuid`, `ResourceKeyId` (resource type), and update-tracking token columns (see below).
   - Stores ownership-based authorization stamping (`CreatedByOwnershipTokenId`; see `auth.md`).
   - `DocumentUuid` is unique and stable across identity updates.
-  - Exposes a narrow `(DocumentId, ResourceKeyId)` candidate key only for descriptor and abstract identity document/resource invariants; it is not a resource-type scan path.
+  - `UX_Document_DocumentId_ResourceKeyId` is the candidate key that `FK_Descriptor_DocumentResourceKey`
+    references, so the database enforces descriptor type agreement; it is not a descriptor
+    resource-type scan path.
 
 - `dms.Descriptor` (unified)
-  - Unified descriptor table keyed by the descriptor document’s `DocumentId` so descriptor references can FK to `dms.Descriptor(DocumentId)` without per-descriptor tables.
-  - Used for descriptor resolution through lowered URI + `ResourceKeyId`, for “is a descriptor” enforcement, and for type diagnostics/read compatibility.
-  - Constrains `(DocumentId, ResourceKeyId)` back to `dms.Document(DocumentId, ResourceKeyId)` so descriptor type identity cannot drift from the owning document.
+  - Shared table with native `int DescriptorId` primary key: PostgreSQL `GENERATED ALWAYS AS IDENTITY`
+    with its own sequence, SQL Server `IDENTITY(1,1)`. A unique non-null `bigint DocumentId` FK
+    associates each row with its owner; resource descriptor FKs target `DescriptorId`.
+  - `ResourceKeyId` identifies the qualified type. No live descriptor discriminator or physically
+    stored URI remains. SQL Server keeps a non-persisted, unindexed computed
+    `Uri AS ([Namespace] + N'#' + [CodeValue])` that reconstructs the whole URI and inherits the
+    `SQL_Latin1_General_CP1_CI_AS` identity collation of its `Namespace` and `CodeValue` components.
+    `UX_Descriptor_UriLowered_ResourceKeyId`, the only descriptor URI index, enforces lowered
+    whole-URI uniqueness within the type: PostgreSQL expression
+    `lower((Namespace || '#' || CodeValue) COLLATE "pg_c_utf8"), ResourceKeyId`; SQL Server
+    non-persisted `UriLowered AS LOWER(([Namespace] + N'#' + [CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)`
+    indexed with `ResourceKeyId`.
+  - The natural-key resolver returns both IDs from its lowered-URI probe. Original-case
+    responses reconstruct the whole string; stored reference joins use the compact key.
+  - The composite `FK_Descriptor_DocumentResourceKey (DocumentId, ResourceKeyId)` rejects
+    `ResourceKeyId` drift from the owning document and is the safety-net FK, with `RESTRICT` on
+    PostgreSQL and `NO ACTION` on SQL Server. Delete the
+    descriptor before its owning document in the same transaction so stamping and tombstone
+    capture can read the document metadata before it is removed.
 
 - `dms.DataStoreIdentity`
   - Always-provisioned singleton random source UUID, stable during ordinary operation and
@@ -110,12 +133,15 @@ Source documents:
 `reference/design/backend-redesign/design-docs/update-tracking.md` adds representation-sensitive metadata using write-time stamping, with indirect impacts realized via retained native FK-cascade updates to canonical stored identity columns that back local reference-identity bindings. Identity projection changes do not allocate a separate document-level stamp; they are reflected through the same content stamp when they change the stored representation:
 
 - Global sequence: `dms.ChangeVersionSequence` (`bigint`).
-- `dms.Document` token columns:
-  - `ContentVersion` (global monotonic stamp for representation changes and identity-projection changes; also serves as `ChangeVersion`).
-  - `ContentLastModifiedAt`. Identity-projection changes are captured by the same content stamps because they change the stored representation.
+- `dms.Document.ContentVersion` is the global monotonic stamp for representation and identity-projection changes; it also serves as `ChangeVersion` and drives concurrency/enqueueing.
+- `ContentLastModifiedAt` is authoritative on the resource root or `dms.Descriptor`. Changes advance the document version and refresh the owner timestamp in the same transaction; `dms.Document` has no copy of the timestamp.
 - Change Queries surface (see [change-queries.md](change-queries.md)):
-  - per-resource `ContentVersion` / `ContentLastModifiedAt` mirror on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
-  - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`; back `/deletes` and `/keyChanges`. Populated by the same `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
+  - per-resource `ContentVersion` mirror and authoritative `ContentLastModifiedAt` on every `StorageKind = RelationalTables` root and on `dms.Descriptor`; backs resource and descriptor `?minChangeVersion=X&maxChangeVersion=Y` reads as a single-table range filter.
+  - per-resource `tracked_changes_<schema>.<resource>` tables and shared `tracked_changes_edfi.Descriptor`;
+    back `/deletes` and `/keyChanges`. Descriptor history routes by `ResourceKeyId`, retains owning
+    `DocumentId`/UUID and old/new namespace/code snapshots without a live-owner FK. Resource
+    history dereferences descriptor values through `DescriptorId`. Populated by the same
+    `*_Stamp` triggers extended with `DocumentStamping.ChangeTracking`.
   - `GetMaxChangeVersion` function (`"dms"."GetMaxChangeVersion"()` in PostgreSQL, `[dms].[GetMaxChangeVersion]` in SQL Server); backs `/availableChangeVersions`.
 - Served metadata:
   - `_etag` is composed from `ContentVersion` plus a representation `variantKey` (schema epoch, format, profile code, link flag, and content-coding code); the document body is not hashed for etag construction.
@@ -126,14 +152,14 @@ Source documents:
 For each project, create a physical schema derived from `ProjectEndpointName` (e.g., `ed-fi` → `edfi`), with:
 
 - Root table `{schema}.{ResourceName}`:
-  - PK `DocumentId` (FK to `dms.Document(DocumentId)` ON DELETE CASCADE).
+  - PK `DocumentId` (FK to `dms.Document(DocumentId)` ON DELETE RESTRICT, NO ACTION on SQL Server: a safety net, since the write path deletes the root row before the `dms.Document` row).
   - Unique constraint for the resource’s natural key derived from `identityJsonPaths`:
     - scalar identity elements become scalar columns,
     - identity elements sourced from reference objects use the corresponding `..._DocumentId` FK columns (stable), with referenced identity values bound at `{RefBaseName}_{IdentityPart}` columns for query/reconstitution (under key unification these may be presence-gated aliases of canonical stored columns; see `key-unification.md`).
   - Reference FK columns:
     - for each document reference site: store `..._DocumentId` and the identity-part bindings, with a composite FK to the target identity key `(<IdentityParts...>, DocumentId)`. PostgreSQL uses `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets (`ON UPDATE NO ACTION` otherwise). SQL Server assigns native cascade or a safe full-composite `NO ACTION` cut under `sql-server-pruning.md`. Under key unification, composite FKs are built over canonical stored identity columns (single source of truth), while per-site/per-path identity-part bindings can remain as generated/persisted aliases.
     - polymorphic targets: composite FK to `{schema}.{AbstractResource}Identity(<AbstractIdentityParts...>, DocumentId)` with the same dialect-specific update behavior (native cascade on PostgreSQL; SQL Server action selected by `sql-server-pruning.md`); the abstract identity row's projected concrete `ResourceKeyId` is constrained back to its owning `dms.Document` row by the document/resource invariant,
-    - descriptors: FK to `dms.Descriptor(DocumentId)` via `..._DescriptorId`.
+    - descriptors: `int` FK to `dms.Descriptor(DescriptorId)` via `..._DescriptorId`, including copied identity bindings; existing `NO ACTION` deletion protection remains.
 
 - Collection tables `{schema}.{Resource}_{CollectionPath}`:
   - Stable internal row identity for every persisted collection item:
@@ -160,7 +186,7 @@ For each project, create a physical schema derived from `ProjectEndpointName` (e
 
 - Abstract identity artifacts:
   - `{schema}.{AbstractResource}Identity` tables provide FK targets for polymorphic references with cascade support.
-  - `{schema}.{AbstractResource}_View` union views remain useful for query/diagnostics but are no longer required to project reference identity values in responses.
+  - `{schema}.{AbstractResource}_View` union views remain useful for query/diagnostics but are no longer required to project reference identity values in responses. Abstract discriminator columns/output and authorization behavior remain unchanged; descriptor projections use `Int32`.
 
 ### Extensions (`_ext`) mapping
 
@@ -205,10 +231,10 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - Core MUST reject any writable profile definition that excludes a field required to compute the compiled semantic identity of a persisted multi-item collection scope.
 
 2. **Bulk reference and descriptor resolution**
-   - Resolve references through the generated natural-key resolver:
-     - concrete references probe the target's `UX_<R>_RefKey`,
-     - abstract references probe `{AbstractResource}Identity` and project the concrete `ResourceKeyId`, and
-     - descriptors probe the lowered-URI + `ResourceKeyId` descriptor index.
+   - The batched natural-key resolver probes each target's compiled natural-key index in one
+     command and maps rows back by explicit ordinal. Document references return `DocumentId`;
+     descriptor results additionally carry `DescriptorId` from the same probe, which folds the raw
+     URI in SQL. Abstract targets return the concrete `ResourceKeyId` for the compatibility check.
 
 3. **DB-enforced identity propagation**
    - Composite foreign keys keep canonical stored identity columns consistent when referenced identities change (PostgreSQL `ON UPDATE CASCADE` for abstract targets and transitively mutable concrete targets; SQL Server retained native cascades plus safe cuts selected by `sql-server-pruning.md`). Per-site/per-path identity bindings may be generated/persisted (and presence-gated) aliases of those canonical columns under key unification.
@@ -224,16 +250,21 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
      - preserve hidden profile rows/columns by overlaying visible values onto current stored rows using `HiddenMemberPaths`, while matched rows keep stable `CollectionItemId`s, and
      - for profile-scoped collection/common-type/extension collection writes, start from the current full sibling sequence for that scope instance, replace the visible-row subsequence with the merged visible rows in request order, preserve hidden rows in their existing relative gaps, append extra visible inserts after the last previously visible row for that scope instance (or at the end when there was no previously visible row), and renumber `Ordinal` contiguously using the same deterministic post-merge sibling-order rule as no-op detection.
    - Write extension tables similarly (root extension rows only when extension values exist; scope-aligned rows for nested extension sites).
-   - For each document reference site, write the stable `..._DocumentId` FK column (resolved by natural-key lookup) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
+   - Descriptor writes to resource rows bind `int DescriptorId`; hydration and descriptor-valued
+     filters use that same key. Descriptor CRUD preserves both IDs and keeps the stored identity:
+     a probe-matched POST and an identity-equal PUT keep the stored components, a PUT with a
+     different identity returns 400, descriptive changes stamp normally, and unchanged bodies
+     preserve stamps/ETags.
+   - For each document reference site, write the stable `..._DocumentId` FK column (resolved by the natural-key resolver) and the referenced identity-part values to the table’s canonical stored columns (the per-site binding columns used for query/reconstitution may be generated/persisted aliases under key unification). Composite FKs enforce consistency.
 
 5. **Strict identity maintenance (row-local triggers)**
    - Abstract identity maintenance keeps `{AbstractResource}Identity` rows aligned with concrete root identity values.
    - Identity changes therefore propagate transitively via retained native FK cascades, without application-managed closure traversal.
 
 6. **Update tracking (stored metadata + tracked-change rows)**
-   - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion/ContentLastModifiedAt`.
+   - Any representation-affecting change (including cascaded updates to canonical stored identity columns backing local bindings) bumps `dms.Document.ContentVersion` and refreshes the authoritative root/descriptor `ContentLastModifiedAt` in the same transaction.
    - Identity projection changes are captured by the same content stamps because they change the stored representation.
-   - The `*_Stamp` triggers mirror the new `ContentVersion`/`ContentLastModifiedAt` onto the resource root (or `dms.Descriptor`) and append tombstone/key-change rows to the corresponding `tracked_changes_*` table when applicable (see [change-queries.md](change-queries.md)).
+   - The `*_Stamp` triggers mirror the new `ContentVersion` onto the resource root (or `dms.Descriptor`), generate its authoritative timestamp there, and append tombstone/key-change rows to the corresponding `tracked_changes_*` table when applicable (see [change-queries.md](change-queries.md)).
 
 ## Read path (GET by id / query)
 
@@ -242,7 +273,7 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
 - **GET by id**
   1. Resolve `DocumentUuid → DocumentId`.
   2. Authorize the request against stored values (namespace/ownership/relationship/custom-view strategies as configured) using token-derived authorization context; see `auth.md`.
-  3. Hydrate relational tables and reconstitute JSON; compose `_etag` from `ContentVersion` plus the current representation `variantKey`; serve `_lastModifiedDate/ChangeVersion` from `dms.Document`; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
+  3. Hydrate relational tables and reconstitute JSON; compose `_etag` from `ContentVersion` plus the current representation `variantKey`; serve `ChangeVersion` from `dms.Document` and `_lastModifiedDate` from the joined resource root/descriptor; and project reference identity fields from local reference-identity binding columns (which may be presence-gated aliases under key unification).
 
 - **Query**
   - Query compilation is constrained to root-table paths (`queryFieldMapping` does not cross array boundaries).
@@ -250,8 +281,8 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
   - Reconstitution is page-based (not “GET by id N times”):
     - materialize a page keyset of `DocumentId`s,
     - hydrate root + child + extension tables by joining each table to the page keyset in one command (multiple result sets),
-    - batch descriptor URI lookups,
-    - compose `_etag` from `ContentVersion` plus the current representation `variantKey`, and serve `_lastModifiedDate/ChangeVersion` from `dms.Document` without dependency-token expansion.
+    - batch descriptor URI reconstruction keyed by compact `DescriptorId`,
+    - compose `_etag` from `ContentVersion` plus the current representation `variantKey`, and serve `ChangeVersion` from `dms.Document` and `_lastModifiedDate` from the joined resource root/descriptor without dependency-token expansion.
 
 ## Schema management and DDL generation
 
@@ -272,6 +303,35 @@ Combined view from `transactions-and-concurrency.md`, `flattening-reconstitution
   - provision semantics: create-only (no migrations), optional database creation as a pre-step, and a single transaction for schema + seeds.
 - (Optional) ahead-of-time mapping pack compilation and file distribution keyed by `EffectiveSchemaHash` to avoid runtime plan compilation under load (see `reference/design/backend-redesign/design-docs/aot-compilation.md`).
 - DMS runtime remains validate-only and fails fast on schema mismatch per database (no in-process migration/hot reload).
+
+<a id="reprovisioning-and-dms-1401-handoff"></a>
+
+### Reprovisioning and the combined DMS-1401 schema
+
+The combined DMS-1404/DMS-1401 schema retains `RelationalMappingVersion = v3` for 8.1. Bump at most once per release
+when mapping changes; do not lower it or bump again before 8.1 ships. Generated DDL and
+mapping-set output are not included in `EffectiveSchemaHash`, so this mapping-only change
+can leave it unchanged. Older databases need deliberate reprovisioning on currently
+supported engines. Schema counts are coverage inventories, not measured savings or
+performance results; neither benchmarks nor database-version upgrades gate this story.
+
+The [developer guide](../../../../docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward)
+describes the working PostgreSQL legacy-dump conversion into a fresh target with a reviewed
+exact-schema manifest: source-shaped staging, independent descriptor allocation, remapping
+stored references, translating history types without live owners, preserving documents and stamps,
+skipping legacy RI rows, and validating the allocator. Restoring an unchanged legacy schema does not perform that conversion.
+
+DMS-1404's closure/handoff includes its working RI runtime on fresh schemas on both engines,
+regenerated fixtures, reusable descriptor catalog assertions, working loaders/copy conversion,
+and unequal-ID metadata/stamping/restamping/cache checks. At that historical handoff, both document stamp columns were
+present and authoritative. The combined DMS-1401 schema retains only the document version and
+makes root/descriptor timestamps authoritative. DMS-1401 also owns the
+planned combined Minimal/Populated template source/restore matrix and affected consumer pins.
+Its package gates are deferred from DMS-1404 closure; assertions must check both catalogs
+against the implementation baseline before API probes and alongside the timestamp gate.
+Until compatible packages are verified, use databases freshly provisioned from the combined current DDL and defer
+template-backed deployment. Final v8.1 publication, release-view promotion and deployment pins
+remain in the release workflow. See the [full handoff](../../../../docs/RELATIONAL-BACKEND.md#descriptor-catalog-checks-and-template-handoff).
 
 ## Key risks and mitigations (from the docs)
 

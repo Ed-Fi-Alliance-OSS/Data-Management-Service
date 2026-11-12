@@ -1,0 +1,222 @@
+[
+  {
+    "claimSetName": "Alpha",
+    "claims": [
+      {
+        "name": "action-case",
+        "authorizationId": 3
+      },
+      {
+        "name": "different-strategy",
+        "authorizationId": 2
+      },
+      {
+        "name": "first",
+        "authorizationId": 1
+      },
+      {
+        "name": "multiplicity",
+        "authorizationId": 5
+      },
+      {
+        "name": "reordered",
+        "authorizationId": 1
+      },
+      {
+        "name": "strategy-case",
+        "authorizationId": 4
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 1,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Z"
+              },
+              {
+                "name": "A"
+              }
+            ]
+          },
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "C"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 2,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 3,
+        "actions": [
+          {
+            "name": "read",
+            "authorizationStrategies": [
+              {
+                "name": "Other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 4,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 5,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Other"
+              },
+              {
+                "name": "Other"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "claimSetName": "Beta",
+    "claims": [
+      {
+        "name": "action-case",
+        "authorizationId": 8
+      },
+      {
+        "name": "different-strategy",
+        "authorizationId": 7
+      },
+      {
+        "name": "first",
+        "authorizationId": 6
+      },
+      {
+        "name": "multiplicity",
+        "authorizationId": 10
+      },
+      {
+        "name": "reordered",
+        "authorizationId": 6
+      },
+      {
+        "name": "strategy-case",
+        "authorizationId": 9
+      }
+    ],
+    "authorizations": [
+      {
+        "id": 6,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Z"
+              },
+              {
+                "name": "A"
+              }
+            ]
+          },
+          {
+            "name": "Create",
+            "authorizationStrategies": [
+              {
+                "name": "C"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 7,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 8,
+        "actions": [
+          {
+            "name": "read",
+            "authorizationStrategies": [
+              {
+                "name": "Other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 9,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "other"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": 10,
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "Other"
+              },
+              {
+                "name": "Other"
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+]

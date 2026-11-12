@@ -10,6 +10,7 @@ Import-Module (Join-Path $PSScriptRoot 'cdc-lifecycle.psm1')
 Import-Module (Join-Path $PSScriptRoot 'database-safety.psm1')
 Import-Module (Join-Path $PSScriptRoot 'env-utility.psm1')
 Import-Module (Join-Path $PSScriptRoot 'dms-schema-environment.psm1')
+. (Join-Path $PSScriptRoot 'cdc-worker-diagnostics.ps1')
 
 function Assert-E2ECdcWorkspaceAvailable {
     <#
@@ -128,7 +129,7 @@ function Write-E2ECdcApiHandoff {
     No provider, binding, generation, schema, credential, or worker inventory is copied.
     The fixture loads runtime/controller configuration through CdcCommandConfiguration.Load
     and resolves the retained binding through the production state store. That settings file
-    owns admitted targets, host CMS URL, provider setup connection, Kafka advertised endpoint,
+    owns admitted targets, host Configuration Service URL, provider setup connection, Kafka advertised endpoint,
     Connect/metrics endpoints, Compose/worker identity and schema assets. Preserve connector
     ProviderConnectionProperties (container endpoints); any fixture host adaptations belong
     only in memory, using Cdc:Compose:DatabaseHostPort. Never fall back to static E2E settings.
@@ -336,6 +337,7 @@ function Invoke-E2ECdcSetup {
     if ($DatabaseName -cne (Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name 'E2E_DATABASE_NAME') -or
         $SnapshotDatabaseName -cne (Get-ComposeResolvedEnvValue -EnvironmentValues $values -Name 'E2E_SNAPSHOT_DATABASE_NAME') -or
         $DatabaseName -eq $SnapshotDatabaseName) { throw 'CDC E2E requires the actual, distinct primary and snapshot database names from the selected environment.' }
+    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $EnvironmentFile -EnvironmentValues $values
     foreach ($name in @($DatabaseName, $SnapshotDatabaseName)) {
         Assert-E2EDatabaseIsDedicated -EnvironmentValues $values -EnvironmentFilePath $EnvironmentFile -E2EDatabaseName $name
     }
@@ -374,6 +376,12 @@ function Invoke-E2ECdcSetup {
         $failureCodes = @($_.Exception.Data['CdcFailureCodes'] | Where-Object {
             $_ -cmatch '^(Request|WorkflowState|Projection|ProviderSetup|Kafka|Connect|Worker|Metrics|WriterPublication)/(InvalidInput|Unavailable|Timeout|AuthenticationFailed|Conflict|ValidationFailed)$'
         })
+        # Qualification opts in. Capture the failed worker before stop changes its state.
+        $workerDiagnostic = @{}
+        if ($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
+            try { $workerDiagnostic = Get-CdcRunbookWorkerDiagnostic -Project $project }
+            catch { $workerDiagnostic = @{ Status = 'CollectionFailed' } }
+        }
         # An HTTP-only rollout failure must not change the connector, offsets or worker.
         # The caller retains the original inventory for explicit governed teardown.
         $cleanup = if ($httpRolloutStarted) { 'RetainedForGovernedTeardown' } else { 'NotStarted' }
@@ -388,6 +396,7 @@ function Invoke-E2ECdcSetup {
         # Never persist raw exceptions, CLI output, connection strings, or settings. Detailed typed
         # controller evidence remains at its original state root for cdc status/retirement.
         $diagnostic = @{ operation = 'e2e-setup'; succeeded = $false; cancelled = $cancelled; cleanup = $cleanup; provider = $DatabaseEngine; failureCodes = $failureCodes }
+        if ($workerDiagnostic.Count) { $diagnostic.worker = ConvertTo-CdcRunbookWorkerDiagnostic $workerDiagnostic }
         $diagnosticRoot = if ($env:CDC_RUNBOOK_EVIDENCE_DIRECTORY) {
             Join-Path $env:CDC_RUNBOOK_EVIDENCE_DIRECTORY 'e2e-setup'
         } else { Join-Path ([IO.Path]::GetTempPath()) ('dms-cdc-diagnostics-' + [guid]::NewGuid().ToString('N')) }

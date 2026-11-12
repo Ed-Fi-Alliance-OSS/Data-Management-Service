@@ -1,0 +1,97 @@
+[
+  {
+    "file": "catalog-whitespace.json",
+    "kind": "InvalidCatalogName",
+    "value": "Review Set",
+    "paths": [
+      "$.claimSets[1].claimSetName"
+    ]
+  },
+  {
+    "file": "catalog-too-long.json",
+    "kind": "InvalidCatalogName",
+    "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+    "paths": [
+      "$.claimSets[1].claimSetName"
+    ]
+  },
+  {
+    "file": "catalog-duplicate-exact.json",
+    "kind": "DuplicateCatalogName",
+    "value": "ReviewSet",
+    "paths": [
+      "$.claimSets[0].claimSetName",
+      "$.claimSets[1].claimSetName"
+    ]
+  },
+  {
+    "file": "catalog-duplicate-case.json",
+    "kind": "DuplicateCatalogName",
+    "value": "REVIEWSET",
+    "paths": [
+      "$.claimSets[0].claimSetName",
+      "$.claimSets[1].claimSetName"
+    ]
+  },
+  {
+    "file": "undeclared-root.json",
+    "kind": "UndeclaredClaimSet",
+    "value": "MissingSet",
+    "paths": [
+      "$.claimsHierarchy[0].claimSets[0].name"
+    ]
+  },
+  {
+    "file": "undeclared-child.json",
+    "kind": "UndeclaredClaimSet",
+    "value": "MissingSet",
+    "paths": [
+      "$.claimsHierarchy[0].claims[0].claimSets[0].name"
+    ]
+  },
+  {
+    "file": "duplicate-siblings-identical.json",
+    "kind": "DuplicateClaimName",
+    "value": "urn:leaf",
+    "paths": [
+      "$.claimsHierarchy[0].claims[0].name",
+      "$.claimsHierarchy[0].claims[1].name"
+    ]
+  },
+  {
+    "file": "duplicate-siblings-conflicting.json",
+    "kind": "DuplicateClaimName",
+    "value": "urn:leaf",
+    "paths": [
+      "$.claimsHierarchy[0].claims[0].name",
+      "$.claimsHierarchy[0].claims[1].name"
+    ]
+  },
+  {
+    "file": "duplicate-branches.json",
+    "kind": "DuplicateClaimName",
+    "value": "urn:leaf",
+    "paths": [
+      "$.claimsHierarchy[0].claims[0].name",
+      "$.claimsHierarchy[1].claims[0].name"
+    ]
+  },
+  {
+    "file": "duplicate-parent-child.json",
+    "kind": "DuplicateClaimName",
+    "value": "urn:root",
+    "paths": [
+      "$.claimsHierarchy[0].name",
+      "$.claimsHierarchy[0].claims[0].name"
+    ]
+  },
+  {
+    "file": "duplicate-nonleaf-roots.json",
+    "kind": "DuplicateClaimName",
+    "value": "urn:root",
+    "paths": [
+      "$.claimsHierarchy[0].name",
+      "$.claimsHierarchy[1].name"
+    ]
+  }
+]

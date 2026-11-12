@@ -314,7 +314,7 @@ public class Given_DdlPipelineHelpers_With_Focused_Stable_Key_Positive_Fixture(S
 /// when a fixture exposes a PrimaryAssociation resource whose root table is missing the
 /// post-key-unification column that authorization-index emission needs, the production
 /// (strict) DDL path must fail fast instead of silently dropping the index. The
-/// <c>small/referential-identity</c> fixture is a known synthetic case that defines
+/// <c>small/identity-references</c> fixture is a known synthetic case that defines
 /// <c>StudentSchoolAssociation</c> without the unified column; the permissive (non-strict)
 /// path keeps it building so the rest of the small-fixture goldens still work.
 /// </summary>
@@ -324,7 +324,7 @@ public class Given_DdlPipelineHelpers_With_Pa_Resource_Missing_Unified_Column
     [Test]
     public void Strict_mode_throws_a_descriptive_exception()
     {
-        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("referential-identity");
+        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("identity-references");
 
         Action build = () =>
             DdlPipelineHelpers.BuildDdlForDialect(effectiveSchemaSet, SqlDialect.Pgsql, strict: true);
@@ -338,7 +338,7 @@ public class Given_DdlPipelineHelpers_With_Pa_Resource_Missing_Unified_Column
     [Test]
     public void Non_strict_mode_still_builds_with_the_pa_index_silently_skipped()
     {
-        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("referential-identity");
+        var effectiveSchemaSet = SmallFixtureEffectiveSchemaSetLoader.Load("identity-references");
 
         var (modelSet, _) = DdlPipelineHelpers.BuildDdlForDialect(
             effectiveSchemaSet,

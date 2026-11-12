@@ -105,14 +105,21 @@ described above, this is also why an incorrectly cased property is dropped.)
 > The `id` property is an exception to this rule. On `POST`, a request body that
 > contains an `id` property — in **any** casing (`id`, `ID`, `Id`) — is
 > **rejected with HTTP 400** rather than dropped, because resource identifiers
-> cannot be assigned by the client. On `PUT`, `id` is a **required** body property
-> that must match the resource id in the URL path.
+> cannot be assigned by the client. On `PUT`, `id` may be omitted, `null`, or any
+> GUID string accepted by `Guid.TryParse` (including a different ID or the empty GUID).
+> The URL ID always determines the target resource and replaces the body `id`.
+> A malformed GUID, empty string, or non-string/non-null `id` returns **HTTP 400**
+> before coercion or normalization. PUT property names remain case-sensitive;
+> incorrectly cased names such as `Id` are dropped as unexpected properties.
+> All other validation, authorization, and resource-existence rules still apply.
 
 ### Null values are dropped
 
 A property explicitly set to `null` is removed from the request. For an
 **optional** property this is silent. For a **required** property, dropping the
 `null` leaves the property missing, which fails validation with **HTTP 400**.
+PUT's `id` is an exception: an omitted or null `id` is populated from the URL
+before this rule runs, so clients do not need to supply it.
 
 ### Empty arrays are dropped
 

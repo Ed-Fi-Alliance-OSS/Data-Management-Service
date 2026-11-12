@@ -17,6 +17,7 @@ public class Given_CMS_PostgreSQL_database_shape
     [
         "ApiClient",
         "ApiClientDataStore",
+        "ApiClientEducationOrganization",
         "ApiClientOwnershipToken",
         "Application",
         "ApplicationEducationOrganization",
@@ -108,6 +109,30 @@ public class Given_CMS_PostgreSQL_database_shape
         new("CK_DataStoreDerivative_DerivativeType", "DataStoreDerivative", "c", ["DerivativeType"], false),
         new("UX_DataStore_TenantId_Name", "DataStore", "u", ["TenantId", "Name"], true),
         new("UX_ApiClient_ApplicationId_Name", "ApiClient", "u", ["ApplicationId", "Name"], false),
+        new("UX_ApiClient_ClientId", "ApiClient", "u", ["ClientId"], false),
+        new("UX_ApiClient_ClientUuid", "ApiClient", "u", ["ClientUuid"], false),
+        new("UX_ApiClient_Id_ApplicationId", "ApiClient", "u", ["Id", "ApplicationId"], false),
+        new(
+            "PK_ApiClientEducationOrganization",
+            "ApiClientEducationOrganization",
+            "p",
+            ["ApiClientId", "EducationOrganizationId"],
+            false
+        ),
+        new(
+            "FK_ApiClientEducationOrganization_ApplicationEducationOrg",
+            "ApiClientEducationOrganization",
+            "f",
+            ["ApplicationId", "EducationOrganizationId"],
+            false
+        ),
+        new(
+            "FK_ApiClientEducationOrganization_ApiClient",
+            "ApiClientEducationOrganization",
+            "f",
+            ["ApiClientId", "ApplicationId"],
+            false
+        ),
     ];
 
     private static readonly string[] ExpectedNonUniqueLookupIndexes =
@@ -122,6 +147,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "IX_OpenIddictToken_Subject",
         "IX_OpenIddictToken_ReferenceId",
         "IX_OpenIddictToken_ExpirationDate",
+        "IX_ApiClientEducationOrganization_EducationOrganizationId",
     ];
 
     /// <summary>
@@ -137,6 +163,7 @@ public class Given_CMS_PostgreSQL_database_shape
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
+        ("ApiClientEducationOrganization", "EducationOrganizationId"),
         ("ApplicationEducationOrganization", "EducationOrganizationId"),
         ("AuthorizationStrategy", "TenantId"),
         ("ClaimSet", "TenantId"),
@@ -358,6 +385,26 @@ public class Given_CMS_PostgreSQL_database_shape
             );
     }
 
+    /// <summary>
+    /// DMS-1639: the repository writes and reads this column as a UTC instant. Declared without a
+    /// time zone, PostgreSQL would convert the bound instant through the session time zone, and two
+    /// instants an hour apart at a daylight-saving fall-back would be stored as the same wall clock.
+    /// </summary>
+    [Test]
+    public void It_should_declare_the_ApiClient_sync_pending_time_as_an_instant()
+    {
+        ColumnShape pendingColumn = _columns
+            .Should()
+            .ContainSingle(column =>
+                column.TableName == "ApiClient" && column.ColumnName == "IdentityProviderSyncPendingSince"
+            )
+            .Which;
+
+        pendingColumn
+            .DataType.Should()
+            .Be("timestamp with time zone", "the sync-pending time must round-trip in any session time zone");
+    }
+
     [Test]
     public void It_should_use_DMS_style_constraint_names_for_representative_core_tenant_and_OpenIddict_tables()
     {
@@ -389,6 +436,8 @@ public class Given_CMS_PostgreSQL_database_shape
             "UX_OpenIddictApplication_ClientId",
             "UX_OpenIddictScope_Name",
             "UX_OpenIddictRole_Name",
+            "UX_ApiClient_ClientId",
+            "UX_ApiClient_ClientUuid",
         ];
 
         foreach (string constraintName in globalUniqueNames)

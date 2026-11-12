@@ -1,5 +1,12 @@
 # Claims Migration: Options, Recommendations, and Two-Phase Approach for Ed-Fi API Transition
 
+> **Tooling update (DMS-1617):** The tool references and command examples below are
+> superseded. `eng/CmsHierarchy` and `ParseXml` are retired; use
+> [security-metadata-tools convert-ods-xml](../../../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
+> to convert supported ODS XML exports into complete CMS claims documents, then
+> follow the [CMS loading procedure](../../../docs/CLAIMS-LOADING-GUIDE.md).
+> The converter does not implement the proposed `SeedDatabase` or `ConvertClaimSet` commands.
+
 - [Executive Summary](#executive-summary)
 - [Existing Utility: CmsHierarchy](#existing-utility-cmshierarchy)
 - [Option 1: Bulk XML Migration](#option-1-bulk-xml-migration)

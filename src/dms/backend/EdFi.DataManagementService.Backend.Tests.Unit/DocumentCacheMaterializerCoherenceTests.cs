@@ -26,6 +26,130 @@ public class Given_DocumentCacheMaterializer_Coherence
     private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
 
+    [TestCase(false, "Stable")]
+    [TestCase(false, "Deleted")]
+    [TestCase(false, "VersionChanged")]
+    [TestCase(true, "Stable")]
+    [TestCase(true, "Deleted")]
+    [TestCase(true, "VersionChanged")]
+    public async Task It_classifies_an_initial_missing_owner_from_the_final_document_observation(
+        bool isDescriptor,
+        string finalState
+    )
+    {
+        var testContext = CreateMaterializerTestContext();
+        var source = isDescriptor
+            ? (DocumentCacheResolvedSourceMetadata)testContext.DescriptorSource
+            : testContext.OrdinarySource;
+        var initial = CreateCurrentMetadata(source) with
+        {
+            ContentLastModifiedAt = null,
+            ContentCreatedAt = null,
+        };
+        DocumentCacheCurrentSourceMetadataReadResult final = finalState switch
+        {
+            "Deleted" => DocumentCacheCurrentSourceMetadataReadResult.MissingSource.Instance,
+            "VersionChanged" => new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                new DocumentCacheCurrentSourceMetadata(
+                    initial.DocumentId,
+                    initial.DocumentUuid,
+                    initial.ResourceKeyId,
+                    initial.ContentVersion + 1,
+                    null,
+                    null
+                )
+            ),
+            _ => new DocumentCacheCurrentSourceMetadataReadResult.Found(initial),
+        };
+        var sourceReader = new SequencedSourceMetadataReader(
+            new DocumentCacheSourceMetadataReadResult.OwnerMissing(initial),
+            final
+        );
+        var descriptorHydrator = new RecordingDescriptorHydrator();
+        var readMaterializer = new RecordingReadMaterializer();
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            descriptorHydrator,
+            new ThrowingDocumentHydrator(),
+            readMaterializer,
+            new RecordingServedEtagComposer("stream-etag")
+        );
+
+        if (finalState == "Stable")
+        {
+            Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
+            var exception = (
+                await act.Should().ThrowAsync<DocumentCacheProjectionProcessingException>()
+            ).Subject.Single();
+            exception
+                .Reason.Should()
+                .Be(DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing);
+            exception.FailureMetadata.ResourceKeyId.Should().Be(source.ResourceKeyId);
+        }
+        else
+        {
+            var result = await sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
+            result
+                .Should()
+                .BeSameAs(
+                    finalState == "Deleted"
+                        ? DocumentCacheMaterializationResult.MissingSource.Instance
+                        : DocumentCacheMaterializationResult.SourceChangedDuringHydration.Instance
+                );
+        }
+
+        descriptorHydrator.CallCount.Should().Be(0);
+        readMaterializer.CallCount.Should().Be(0);
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reports_a_stable_owner_that_disappeared_during_hydration(bool isDescriptor)
+    {
+        var testContext = CreateMaterializerTestContext();
+        var source = isDescriptor
+            ? (DocumentCacheResolvedSourceMetadata)testContext.DescriptorSource
+            : testContext.OrdinarySource;
+        var sourceReader = new SequencedSourceMetadataReader(
+            new DocumentCacheSourceMetadataReadResult.Found(source),
+            new DocumentCacheCurrentSourceMetadataReadResult.Found(
+                CreateCurrentMetadata(source) with
+                {
+                    ContentLastModifiedAt = null,
+                    ContentCreatedAt = null,
+                }
+            )
+        );
+        var descriptorHydrator = new RecordingDescriptorHydrator
+        {
+            Result = new DocumentCacheDescriptorHydrationResult.Found(
+                CreateDescriptorRow(testContext.DescriptorSource)
+            ),
+        };
+        var hydrator = new RecordingDocumentHydrator
+        {
+            Result = CreateHydratedPage(testContext.ReadPlan, testContext.OrdinarySource),
+        };
+        var readMaterializer = new RecordingReadMaterializer();
+        var sut = new DocumentCacheMaterializer(
+            sourceReader,
+            descriptorHydrator,
+            hydrator,
+            readMaterializer,
+            new RecordingServedEtagComposer("stream-etag")
+        );
+
+        Func<Task> act = () => sut.MaterializeAsync(CreateRequest(testContext.MappingSet));
+
+        var exception = (
+            await act.Should().ThrowAsync<DocumentCacheProjectionProcessingException>()
+        ).Subject.Single();
+        exception.Reason.Should().Be(DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing);
+        descriptorHydrator.CallCount.Should().Be(isDescriptor ? 1 : 0);
+        hydrator.CallCount.Should().Be(isDescriptor ? 0 : 1);
+        readMaterializer.CallCount.Should().Be(0);
+    }
+
     [Test]
     public async Task It_returns_missing_source_when_the_final_metadata_read_finds_no_canonical_row()
     {
@@ -61,6 +185,7 @@ public class Given_DocumentCacheMaterializer_Coherence
     [TestCase("ResourceKeyId")]
     [TestCase("ContentVersion")]
     [TestCase("ContentLastModifiedAt")]
+    [TestCase("ContentCreatedAt")]
     public async Task It_returns_source_changed_when_the_final_metadata_read_differs(string changedField)
     {
         var testContext = CreateMaterializerTestContext();
@@ -121,21 +246,18 @@ public class Given_DocumentCacheMaterializer_Coherence
         exception.Reason.Should().Be(DocumentCacheProjectionProcessingFailureReason.StableSourceBodyMissing);
     }
 
-    [Test]
-    public async Task It_returns_source_changed_for_descriptors_when_the_final_metadata_read_differs()
+    [TestCase("ContentVersion")]
+    [TestCase("ContentCreatedAt")]
+    public async Task It_returns_source_changed_for_descriptors_when_the_final_metadata_read_differs(
+        string changedField
+    )
     {
         var testContext = CreateMaterializerTestContext();
         var source = testContext.DescriptorSource;
         var sourceReader = new SequencedSourceMetadataReader(
             new DocumentCacheSourceMetadataReadResult.Found(source),
             new DocumentCacheCurrentSourceMetadataReadResult.Found(
-                new DocumentCacheCurrentSourceMetadata(
-                    source.DocumentId,
-                    source.DocumentUuid,
-                    source.ResourceKeyId,
-                    source.ContentVersion + 1,
-                    source.ContentLastModifiedAt
-                )
+                CreateChangedMetadata(source, changedField)
             )
         );
         var descriptorHydrator = new RecordingDescriptorHydrator
@@ -210,28 +332,40 @@ public class Given_DocumentCacheMaterializer_Coherence
                 new DocumentUuid(Guid.Parse("22222222-2222-3333-4444-555555555555")),
                 source.ResourceKeyId,
                 source.ContentVersion,
-                source.ContentLastModifiedAt
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt
             ),
             "ResourceKeyId" => new DocumentCacheCurrentSourceMetadata(
                 source.DocumentId,
                 source.DocumentUuid,
                 (short)(source.ResourceKeyId + 1),
                 source.ContentVersion,
-                source.ContentLastModifiedAt
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt
             ),
             "ContentVersion" => new DocumentCacheCurrentSourceMetadata(
                 source.DocumentId,
                 source.DocumentUuid,
                 source.ResourceKeyId,
                 source.ContentVersion + 1,
-                source.ContentLastModifiedAt
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt
             ),
             "ContentLastModifiedAt" => new DocumentCacheCurrentSourceMetadata(
                 source.DocumentId,
                 source.DocumentUuid,
                 source.ResourceKeyId,
                 source.ContentVersion,
-                source.ContentLastModifiedAt.AddSeconds(1)
+                source.ContentLastModifiedAt.AddSeconds(1),
+                source.ContentCreatedAt
+            ),
+            "ContentCreatedAt" => new DocumentCacheCurrentSourceMetadata(
+                source.DocumentId,
+                source.DocumentUuid,
+                source.ResourceKeyId,
+                source.ContentVersion,
+                source.ContentLastModifiedAt,
+                source.ContentCreatedAt.AddTicks(1)
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(changedField), changedField, "Unknown field."),
         };
@@ -244,7 +378,8 @@ public class Given_DocumentCacheMaterializer_Coherence
             source.DocumentUuid,
             source.ResourceKeyId,
             source.ContentVersion,
-            source.ContentLastModifiedAt
+            source.ContentLastModifiedAt,
+            source.ContentCreatedAt
         );
 
     private static HydratedPage CreateHydratedPage(
@@ -286,8 +421,7 @@ public class Given_DocumentCacheMaterializer_Coherence
             "Alternative",
             "Alternative school type",
             null,
-            null,
-            "SchoolTypeDescriptor"
+            null
         );
 
     private static MaterializerTestContext CreateMaterializerTestContext()
@@ -358,6 +492,7 @@ public class Given_DocumentCacheMaterializer_Coherence
                 ordinaryModel,
                 ContentVersion,
                 LastModifiedAt,
+                new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
                 readPlan
             ),
             new DocumentCacheResolvedSourceMetadata.DescriptorResource(
@@ -367,7 +502,8 @@ public class Given_DocumentCacheMaterializer_Coherence
                 descriptorKey,
                 descriptorModel,
                 ContentVersion,
-                LastModifiedAt
+                LastModifiedAt,
+                new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero)
             )
         );
     }

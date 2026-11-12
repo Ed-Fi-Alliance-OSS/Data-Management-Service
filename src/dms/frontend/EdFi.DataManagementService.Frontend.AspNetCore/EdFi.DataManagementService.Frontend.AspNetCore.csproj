@@ -18,8 +18,6 @@
         <PackageReference Include="EdFi.DataStandard52.ApiSchema" GeneratePathProperty="true" />
         <PackageReference Include="EdFi.DataStandard52.TPDM.ApiSchema" GeneratePathProperty="true" />
         <PackageReference Include="Microsoft.CodeAnalysis" />
-        <PackageReference Include="Polly.Core" />
-        <PackageReference Include="Polly.Extensions" />
         <PackageReference Include="Serilog" />
         <PackageReference Include="Serilog.Extensions.Logging" />
         <PackageReference Include="Serilog.Settings.Configuration" />

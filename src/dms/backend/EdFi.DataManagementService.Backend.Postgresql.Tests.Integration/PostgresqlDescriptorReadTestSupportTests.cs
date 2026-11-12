@@ -146,8 +146,7 @@ public class Given_A_Postgresql_DescriptorRead_Test_Support
         GetRequiredGuid(documentRow, "DocumentUuid").Should().Be(seed.DocumentUuid.Value);
         GetRequiredInt16(documentRow, "ResourceKeyId").Should().Be(expectedResourceKeyId);
         GetRequiredInt64(documentRow, "ContentVersion").Should().BeGreaterThan(0);
-        documentRow["ContentLastModifiedAt"].Should().NotBeNull();
-        documentRow["CreatedAt"].Should().NotBeNull();
+        descriptorRow["ContentLastModifiedAt"].Should().NotBeNull();
 
         GetRequiredString(descriptorRow, "Namespace").Should().Be(seed.Namespace);
         GetRequiredString(descriptorRow, "CodeValue").Should().Be(seed.CodeValue);
@@ -155,7 +154,9 @@ public class Given_A_Postgresql_DescriptorRead_Test_Support
         GetRequiredString(descriptorRow, "Description").Should().Be(seed.Description);
         GetRequiredDateOnly(descriptorRow, "EffectiveBeginDate").Should().Be(seed.EffectiveBeginDate);
         GetRequiredDateOnly(descriptorRow, "EffectiveEndDate").Should().Be(seed.EffectiveEndDate);
-        GetRequiredString(descriptorRow, "Discriminator").Should().Be("SchoolTypeDescriptor");
+        GetRequiredInt64(descriptorRow, "DocumentId").Should().Be(documentId);
+        ((long)descriptorRow["DescriptorId"].Should().BeOfType<int>().Subject).Should().NotBe(documentId);
+        GetRequiredInt16(descriptorRow, "ResourceKeyId").Should().Be(expectedResourceKeyId);
         GetRequiredString(descriptorRow, "Uri").Should().Be(seed.Uri);
     }
 

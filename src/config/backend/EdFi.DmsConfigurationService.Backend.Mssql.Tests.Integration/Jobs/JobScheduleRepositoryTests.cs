@@ -200,19 +200,38 @@ public class JobScheduleRepositoryTests
         protected async Task<long> JobCountAsync() =>
             await Connection!.ExecuteScalarAsync<long>("SELECT COUNT_BIG(*) FROM dmscs.Job;");
 
-        /// <summary>Makes a schedule due 5 s ago, later than any occurrence it already has; returns the occurrence.</summary>
-        protected async Task<DateTime> MakeDueAsync(long scheduleId) =>
-            Utc(
+        /// <summary>
+        /// Makes a schedule due at <paramref name="candidate"/> (default 5 s before database time), or one tick after
+        /// its latest job occurrence when that is not earlier, so the occurrence is always new; returns it.
+        /// SYSUTCDATETIME() repeats a value for several milliseconds on Linux, so the default alone can repeat.
+        /// </summary>
+        protected async Task<DateTime> MakeDueAsync(long scheduleId, DateTime? candidate = null)
+        {
+            DynamicParameters parameters = new(new { Id = scheduleId });
+            parameters.Add("Candidate", candidate, DbType.DateTime2);
+            return Utc(
                 await Connection!.ExecuteScalarAsync<DateTime>(
                     """
-                    UPDATE dmscs.JobSchedule
-                    SET NextRunAt = DATEADD(second, -5, SYSUTCDATETIME())
+                    UPDATE s
+                    SET NextRunAt =
+                        CASE
+                            WHEN latest.Occurrence >= c.Candidate THEN DATEADD(nanosecond, 100, latest.Occurrence)
+                            ELSE c.Candidate
+                        END
                     OUTPUT inserted.NextRunAt
-                    WHERE Id = @Id;
+                    FROM dmscs.JobSchedule AS s
+                    CROSS APPLY (
+                        SELECT COALESCE(@Candidate, DATEADD(second, -5, SYSUTCDATETIME())) AS Candidate) AS c
+                    OUTER APPLY (
+                        SELECT MAX(j.ScheduledOccurrence) AS Occurrence
+                        FROM dmscs.Job AS j
+                        WHERE j.SourceScheduleId = s.Id) AS latest
+                    WHERE s.Id = @Id;
                     """,
-                    new { Id = scheduleId }
+                    parameters
                 )
             );
+        }
 
         /// <summary>Puts the schedule's latest job into <paramref name="state"/>, as a worker would have left it.</summary>
         protected async Task SetLatestJobStateAsync(long scheduleId, string state)
@@ -1219,6 +1238,67 @@ public class JobScheduleRepositoryTests
             _behindTheNewJob.Should().BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>();
             _jobCountAtEnd.Should().Be(2);
         }
+    }
+
+    [TestFixture]
+    public class Given_two_forced_due_times_that_share_one_database_clock_value : JobScheduleTestBase
+    {
+        private long _scheduleId;
+        private DateTime _candidate;
+        private DateTime _firstDue;
+        private JobScheduleMaterializeResult _first = null!;
+        private DateTime _secondDue;
+        private DateTime _storedSecondDue;
+        private JobScheduleMaterializeResult _second = null!;
+        private List<JobRepositoryTests.StoredJob> _jobs = [];
+        private DateTime _laterDue;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _scheduleId = await SeedScheduleAsync(nextRunOffset: -10, intervalMinutes: 60);
+            // One clock value, as SYSUTCDATETIME() returns for both calls when they land inside one tick.
+            _candidate = (await DatabaseNowAsync()).AddSeconds(-5);
+
+            _firstDue = await MakeDueAsync(_scheduleId, _candidate);
+            _first = await MaterializeAsync();
+
+            _secondDue = await MakeDueAsync(_scheduleId, _candidate);
+            _storedSecondDue = (await ReadScheduleAsync(_scheduleId)).NextRunAt;
+            _second = await MaterializeAsync();
+            _jobs = await JobsOfAsync(_scheduleId);
+
+            _laterDue = await MakeDueAsync(_scheduleId, _candidate.AddSeconds(1));
+        }
+
+        [Test]
+        public void It_uses_the_candidate_when_the_schedule_has_no_job()
+        {
+            _firstDue.Should().Be(_candidate);
+            MaterializedOf(_first).Occurrence.Should().Be(_candidate);
+        }
+
+        [Test]
+        public void It_moves_a_repeated_candidate_one_tick_past_the_latest_occurrence()
+        {
+            _secondDue.Should().Be(_candidate.AddTicks(1));
+            _storedSecondDue.Should().Be(_secondDue);
+        }
+
+        [Test]
+        public void It_suppresses_the_new_occurrence_behind_the_active_job()
+        {
+            JobScheduleMaterializeResult.SkippedActiveJob skipped = _second
+                .Should()
+                .BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>()
+                .Subject;
+            skipped.Occurrence.Should().Be(_secondDue);
+            _jobs.Should().ContainSingle();
+        }
+
+        [Test]
+        public void It_uses_a_candidate_later_than_the_latest_occurrence() =>
+            _laterDue.Should().Be(_candidate.AddSeconds(1));
     }
 
     [TestFixture("owner")]

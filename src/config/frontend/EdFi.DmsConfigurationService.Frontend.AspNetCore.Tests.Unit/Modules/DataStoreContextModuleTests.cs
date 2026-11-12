@@ -168,7 +168,7 @@ public class DataStoreContextModuleTests
                 """
                 {
                   "detail": "Reference 'DataStoreId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -208,7 +208,7 @@ public class DataStoreContextModuleTests
                 """
                 {
                   "detail": "Reference 'DataStoreId' does not exist.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",

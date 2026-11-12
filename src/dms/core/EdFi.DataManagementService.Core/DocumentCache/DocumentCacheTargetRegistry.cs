@@ -439,7 +439,7 @@ public sealed class DocumentCacheTargetRegistry(
         DocumentCacheResolutionRetryState retryState = CreateRetryState(
             previousState,
             DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure,
-            "CMS refresh failed for configured target."
+            "Configuration Service refresh failed for configured target."
         );
 
         if (
@@ -450,7 +450,7 @@ public sealed class DocumentCacheTargetRegistry(
             DocumentCacheTargetDiagnostic diagnostic = CreateDiagnostic(
                 previousState.StableObservation,
                 DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure,
-                "CMS refresh failed for configured target; retaining current target context generation.",
+                "Configuration Service refresh failed for configured target; retaining current target context generation.",
                 retryState
             );
 
@@ -468,7 +468,7 @@ public sealed class DocumentCacheTargetRegistry(
             targetKey,
             retryState,
             DocumentCacheTargetDiagnosticCategory.TransientCmsRefreshFailure,
-            "CMS refresh failed for configured target."
+            "Configuration Service refresh failed for configured target."
         );
 
         DocumentCacheTargetObservation unresolvedObservation = DocumentCacheTargetObservation.Unresolved(
@@ -494,13 +494,13 @@ public sealed class DocumentCacheTargetRegistry(
         DocumentCacheResolutionRetryState retryState = CreateRetryState(
             previousState,
             DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
-            "Configured target is not present in CMS refresh result."
+            "Configured target is not present in the Configuration Service refresh result."
         );
         DocumentCacheTargetDiagnostic diagnostic = CreateUnresolvedDiagnostic(
             targetKey,
             retryState,
             DocumentCacheTargetDiagnosticCategory.TargetUnresolved,
-            "Configured target is not present in CMS refresh result."
+            "Configured target is not present in the Configuration Service refresh result."
         );
 
         DocumentCacheTargetObservation unresolvedObservation = DocumentCacheTargetObservation.Unresolved(

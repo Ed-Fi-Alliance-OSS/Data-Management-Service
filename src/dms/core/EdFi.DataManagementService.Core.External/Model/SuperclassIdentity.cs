@@ -38,11 +38,7 @@ public record SuperclassIdentity(
     /// </summary>
     DocumentIdentity DocumentIdentity,
     /// <summary>
-    /// The referentialId derived from the DocumentIdentity
-    /// </summary>
-    ReferentialId ReferentialId,
-    /// <summary>
     /// The concrete JsonPath to the reference object in the document, including numeric indices
     /// </summary>
     JsonPath Path
-) : DocumentReference(ResourceInfo, DocumentIdentity, ReferentialId, Path);
+) : DocumentReference(ResourceInfo, DocumentIdentity, Path);

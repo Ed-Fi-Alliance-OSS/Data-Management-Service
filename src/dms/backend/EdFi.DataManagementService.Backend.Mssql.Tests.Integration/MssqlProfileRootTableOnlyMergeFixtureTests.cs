@@ -21,7 +21,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -156,10 +155,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProfileRootOnlyMergeItemResourceInfo,
-                identity
-            ),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -304,9 +299,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     //  Prerequisite-seed helpers (MSSQL dialect). Mirror of the pgsql sibling
     //  file; dialect differences: bracket identifiers, SqlParameter, bit (0/1)
     //  for boolean, OUTPUT INSERTED for scalar return. See pgsql file header
-    //  comment for rationale + trigger behavior; triggers on edfi.Student and
-    //  edfi.ProfileRootOnlyMergeItem manage dms.ReferentialIdentity for their
-    //  own rows, but descriptors need manual insertion.
+    //  comment for rationale.
     // ─────────────────────────────────────────────────────────────────────────
 
     public static async Task<short> GetResourceKeyIdAsync(
@@ -348,27 +341,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         );
     }
 
-    public static async Task InsertReferentialIdentityRowAsync(
-        MssqlGeneratedDdlTestDatabase database,
-        Guid referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dms].[ReferentialIdentity] WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
     public static async Task<long> SeedStudentAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
@@ -390,7 +362,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         return documentId;
     }
 
-    public static async Task<long> SeedSchoolTypeDescriptorAsync(
+    public static async Task<int> SeedSchoolTypeDescriptorAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string @namespace,
@@ -399,56 +371,38 @@ internal static class MssqlProfileRootOnlyFixtureSupport
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "SchoolTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentRowAsync(database, documentUuid, resourceKeyId);
-        var uri = $"{@namespace}#{codeValue}";
-        const string discriminator = "Ed-Fi:SchoolTypeDescriptor";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @shortDescription,
-                @discriminator,
-                @uri
+                @shortDescription
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@shortDescription", shortDescription)
         );
 
-        var descriptorResourceInfo = new BaseResourceInfo(
-            new ProjectName("Ed-Fi"),
-            new ResourceName("SchoolTypeDescriptor"),
-            true
-        );
-        var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
-        ]);
-        var referentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
-        await InsertReferentialIdentityRowAsync(database, referentialId.Value, documentId, resourceKeyId);
-
-        return documentId;
+        return descriptorId;
     }
 
     public static async Task<long> SeedProfileRootOnlyMergeItemRowAsync(
@@ -460,7 +414,7 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         string? preservedText,
         long? studentDocumentId,
         string? studentUniqueId,
-        long? unifiedDescriptorId,
+        int? unifiedDescriptorId,
         bool primaryPresent,
         bool secondaryPresent
     )
@@ -551,10 +505,6 @@ internal static class MssqlProfileRootOnlyFixtureSupport
         ]);
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                ProfileRootOnlyMergeItemResourceInfo,
-                identity
-            ),
             DocumentReferences: documentReferences,
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -570,15 +520,11 @@ internal static class MssqlProfileRootOnlyFixtureSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }
@@ -891,7 +837,7 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
     private long _studentDocumentId;
-    private long _publicDescriptorDocumentId;
+    private int _publicDescriptorId;
     private UpdateResult _putResult = null!;
     private IReadOnlyDictionary<string, object?> _rowAfterPut = null!;
 
@@ -917,7 +863,7 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
             StudentDocumentUuid,
             StudentUniqueId
         );
-        _publicDescriptorDocumentId = await MssqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
+        _publicDescriptorId = await MssqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
             _database,
             PublicDescriptorDocumentUuid,
             DescriptorNamespace,
@@ -933,7 +879,7 @@ public class Given_Mssql_ProfiledRootOnly_HiddenSubReferenceMember_PreservesFKAn
             preservedText: null,
             studentDocumentId: _studentDocumentId,
             studentUniqueId: StudentUniqueId,
-            unifiedDescriptorId: _publicDescriptorDocumentId,
+            unifiedDescriptorId: _publicDescriptorId,
             primaryPresent: true,
             secondaryPresent: true
         );
@@ -1061,7 +1007,7 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
     private MappingSet _mappingSet = null!;
     private MssqlGeneratedDdlTestDatabase _database = null!;
     private ServiceProvider _serviceProvider = null!;
-    private long _publicDescriptorDocumentId;
+    private int _publicDescriptorId;
     private UpdateResult _putResult = null!;
     private IReadOnlyDictionary<string, object?> _rowAfterPut = null!;
 
@@ -1082,7 +1028,7 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
         _database = await MssqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _serviceProvider = MssqlProfileRootOnlyFixtureSupport.CreateServiceProvider();
 
-        _publicDescriptorDocumentId = await MssqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
+        _publicDescriptorId = await MssqlProfileRootOnlyFixtureSupport.SeedSchoolTypeDescriptorAsync(
             _database,
             PublicDescriptorDocumentUuid,
             DescriptorNamespace,
@@ -1098,7 +1044,7 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
             preservedText: null,
             studentDocumentId: null,
             studentUniqueId: null,
-            unifiedDescriptorId: _publicDescriptorDocumentId,
+            unifiedDescriptorId: _publicDescriptorId,
             primaryPresent: true,
             secondaryPresent: true
         );
@@ -1137,9 +1083,7 @@ public class Given_Mssql_ProfiledRootOnly_KeyUnificationHiddenMember_AgreementSu
 
     [Test]
     public void It_preserves_unified_descriptor_canonical_fk() =>
-        _rowAfterPut["PrimarySchoolTypeDescriptor_Unified_DescriptorId"]
-            .Should()
-            .Be(_publicDescriptorDocumentId);
+        _rowAfterPut["PrimarySchoolTypeDescriptor_Unified_DescriptorId"].Should().Be(_publicDescriptorId);
 
     [Test]
     public void It_preserves_primary_descriptor_synthetic_presence() =>

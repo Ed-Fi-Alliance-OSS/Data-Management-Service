@@ -78,11 +78,11 @@ $normalizedFilter = $TestFilter -replace '(Test)?Category\s*(!?[=~])\s*@', '$1Ca
 
 $processEnvironment = [ordered]@{
     # Invoke-WithE2EIdentityEnvironment (self-contained)
-    DMS_CONFIG_IDENTITY_PROVIDER                  = 'self-contained'
+    CONFIGURATION_SERVICE_IDENTITY_PROVIDER                  = 'self-contained'
     OAUTH_TOKEN_ENDPOINT                          = $environmentValues['SELF_CONTAINED_OAUTH_TOKEN_ENDPOINT']
     DMS_JWT_AUTHORITY                             = $environmentValues['SELF_CONTAINED_DMS_JWT_AUTHORITY']
     DMS_JWT_METADATA_ADDRESS                      = $environmentValues['SELF_CONTAINED_DMS_JWT_METADATA_ADDRESS']
-    DMS_CONFIG_IDENTITY_AUTHORITY                 = $environmentValues['SELF_CONTAINED_DMS_JWT_AUTHORITY']
+    CONFIGURATION_SERVICE_IDENTITY_AUTHORITY                 = $environmentValues['SELF_CONTAINED_DMS_JWT_AUTHORITY']
     # Invoke-WithE2ETestProcessContext
     AppSettings__DataStoreDatabaseName            = $databaseName
     AppSettings__DmsContainerName                 = $dmsContainerName

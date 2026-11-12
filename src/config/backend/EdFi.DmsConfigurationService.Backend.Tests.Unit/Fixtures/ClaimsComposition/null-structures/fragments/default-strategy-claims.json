@@ -1,0 +1,32 @@
+{
+  "name": "Policy\nName",
+  "resourceClaims": [
+    {
+      "name": "edfi/domain",
+      "isParent": true
+    },
+    {
+      "name": "edfi/parent\u2028name",
+      "isParent": true,
+      "_defaultAuthorizationStrategiesForCrud": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "Base"
+            }
+          ]
+        },
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "Base"
+            },
+            null
+          ]
+        }
+      ]
+    }
+  ]
+}

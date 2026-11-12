@@ -8,7 +8,7 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Profile;
-using EdFi.DataManagementService.Core.External.Model;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Core.Profile;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
@@ -201,7 +201,7 @@ internal static class ProfileTestDoubles
         };
         var contentLastModifiedAtColumn = Column(
             "ContentLastModifiedAt",
-            ColumnKind.MirroredContentLastModifiedAt,
+            ColumnKind.AuthoritativeContentLastModifiedAt,
             new RelationalScalarType(ScalarKind.DateTime),
             isNullable: false
         ) with
@@ -226,7 +226,8 @@ internal static class ProfileTestDoubles
     /// Build a root plan with a KeyUnificationWritePlan whose single member is a
     /// ReferenceDerivedMember. Useful for tests that need the resolver's reference-rooted
     /// governance path. Bindings: [0] = canonical (Precomputed), [1] = ReferenceDerived
-    /// member value column. No presence column.
+    /// member value column. No presence column. When <paramref name="scalarMemberPath"/> is
+    /// supplied, a scalar member precedes the reference member and binds at [2].
     /// </summary>
     internal static (
         ResourceWritePlan Plan,
@@ -235,20 +236,40 @@ internal static class ProfileTestDoubles
         DbColumnName MemberColumnName
     ) BuildRootPlanWithReferenceDerivedKeyUnificationMember(
         string referenceMemberPath,
-        string derivedMemberPath
+        string derivedMemberPath,
+        bool canonicalIsNullable = true,
+        string? scalarMemberPath = null
     )
     {
         var referenceObjectPath = Path(referenceMemberPath);
         var identitySegment = derivedMemberPath[(referenceMemberPath.Length + 1)..];
 
-        var canonicalColumn = Column("KU_Canonical", ColumnKind.Scalar, Int32Type());
+        var canonicalColumn = Column(
+            "KU_Canonical",
+            ColumnKind.Scalar,
+            Int32Type(),
+            isNullable: canonicalIsNullable
+        );
         var memberColumn = Column(
             "KU_" + SanitizePath(identitySegment) + "_FromReference",
             ColumnKind.Scalar,
             Int32Type(),
             sourceJsonPath: Path(derivedMemberPath)
         );
-        var rootModel = RootTable("RefKUHost", [canonicalColumn, memberColumn]);
+        var scalarMemberColumn = scalarMemberPath is null
+            ? null
+            : Column(
+                MemberPathColumnFor(scalarMemberPath).Value,
+                ColumnKind.Scalar,
+                Int32Type(),
+                sourceJsonPath: Path(scalarMemberPath)
+            );
+        var rootModel = RootTable(
+            "RefKUHost",
+            scalarMemberColumn is null
+                ? [canonicalColumn, memberColumn]
+                : [canonicalColumn, memberColumn, scalarMemberColumn]
+        );
 
         var canonicalBinding = new WriteColumnBinding(
             canonicalColumn,
@@ -272,6 +293,19 @@ internal static class ProfileTestDoubles
             CanonicalBindingIndex: 0,
             MembersInOrder:
             [
+                .. scalarMemberColumn is null
+                    ? []
+                    : new KeyUnificationMemberWritePlan[]
+                    {
+                        new KeyUnificationMemberWritePlan.ScalarMember(
+                            MemberPathColumn: scalarMemberColumn.ColumnName,
+                            RelativePath: Path(scalarMemberPath!),
+                            ScalarType: Int32Type(),
+                            PresenceColumn: null,
+                            PresenceBindingIndex: null,
+                            PresenceIsSynthetic: false
+                        ),
+                    },
                 new KeyUnificationMemberWritePlan.ReferenceDerivedMember(
                     MemberPathColumn: memberColumn.ColumnName,
                     RelativePath: Path(derivedMemberPath),
@@ -283,11 +317,20 @@ internal static class ProfileTestDoubles
             ]
         );
 
-        var rootPlan = RootPlan(
-            rootModel,
-            [canonicalBinding, memberBinding],
-            keyUnificationPlans: [keyUnificationPlan]
-        );
+        List<WriteColumnBinding> bindings = [canonicalBinding, memberBinding];
+
+        if (scalarMemberColumn is not null)
+        {
+            bindings.Add(
+                new WriteColumnBinding(
+                    scalarMemberColumn,
+                    new WriteValueSource.Scalar(Path(scalarMemberPath!), Int32Type()),
+                    scalarMemberColumn.ColumnName.Value
+                )
+            );
+        }
+
+        var rootPlan = RootPlan(rootModel, bindings, keyUnificationPlans: [keyUnificationPlan]);
 
         // Register a DocumentReferenceBinding so the resource model carries the owning reference.
         var fkColumn = Column("UnusedRef_DocumentId", ColumnKind.DocumentFk, Int64Type());
@@ -1676,16 +1719,7 @@ internal static class ProfileTestDoubles
         ResourceWritePlan writePlan
     ) => FlatteningResolvedReferenceLookupSet.Create(writePlan, EmptyResolvedReferenceSet());
 
-    internal static ResolvedReferenceSet EmptyResolvedReferenceSet() =>
-        new(
-            SuccessfulDocumentReferencesByPath: new Dictionary<JsonPath, ResolvedDocumentReference>(),
-            SuccessfulDescriptorReferencesByPath: new Dictionary<JsonPath, ResolvedDescriptorReference>(),
-            LookupsByReferentialId: new Dictionary<ReferentialId, ReferenceLookupSnapshot>(),
-            InvalidDocumentReferences: [],
-            InvalidDescriptorReferences: [],
-            DocumentReferenceOccurrences: [],
-            DescriptorReferenceOccurrences: []
-        );
+    internal static ResolvedReferenceSet EmptyResolvedReferenceSet() => ResolvedReferenceSets.Create();
 
     // ── Synthesizer builders and stubs ─────────────────────────────────────
 
@@ -1776,7 +1810,10 @@ internal static class ProfileTestDoubles
             [
                 .. writeRootModel.Columns.Where(column =>
                     column.Kind
-                        is not (ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt)
+                        is not (
+                            ColumnKind.MirroredContentVersion
+                            or ColumnKind.AuthoritativeContentLastModifiedAt
+                        )
                 ),
             ],
         };

@@ -18,6 +18,7 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     private const int DiscriminatorMaxLength = 256;
     private static readonly DbSchemaName _dmsSchemaName = new("dms");
     private static readonly DbTableName _documentTableName = new(_dmsSchemaName, "Document");
+    private static readonly RelationalScalarType _resourceKeyIdScalarType = new(ScalarKind.Int16);
 
     /// <summary>
     /// Executes abstract identity table and union view derivation across all abstract resources.
@@ -77,11 +78,12 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 var identityColumns = identityDerivations
                     .Select(derivation => derivation.IdentityColumn)
                     .ToArray();
-                var columns = new List<DbColumnModel>(1 + identityColumns.Length + 1)
+                var columns = new List<DbColumnModel>(1 + identityColumns.Length + 2)
                 {
                     BuildDocumentIdColumn(),
                 };
                 columns.AddRange(identityColumns);
+                columns.Add(BuildResourceKeyIdColumn());
                 columns.Add(BuildDiscriminatorColumn());
 
                 var rootBaseName = ResolveRootBaseName(abstractEntry.ResourceSchema, abstractResource);
@@ -866,13 +868,13 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
     /// <summary>
     /// Builds union-view output columns in the deterministic select-list order:
-    /// <c>DocumentId</c>, abstract identity columns, then <c>Discriminator</c>.
+    /// <c>DocumentId</c>, abstract identity columns, <c>ResourceKeyId</c>, then <c>Discriminator</c>.
     /// </summary>
     private static IReadOnlyList<AbstractUnionViewOutputColumn> BuildViewOutputColumns(
         IReadOnlyList<IdentityColumnDerivation> identityDerivations
     )
     {
-        List<AbstractUnionViewOutputColumn> outputColumns = new(1 + identityDerivations.Count + 1)
+        List<AbstractUnionViewOutputColumn> outputColumns = new(1 + identityDerivations.Count + 2)
         {
             new AbstractUnionViewOutputColumn(
                 RelationalNameConventions.DocumentIdColumnName,
@@ -904,6 +906,15 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
 
         outputColumns.Add(
             new AbstractUnionViewOutputColumn(
+                RelationalNameConventions.ResourceKeyIdColumnName,
+                _resourceKeyIdScalarType,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+        );
+
+        outputColumns.Add(
+            new AbstractUnionViewOutputColumn(
                 new DbColumnName(DiscriminatorColumnLabel),
                 new RelationalScalarType(ScalarKind.String, DiscriminatorMaxLength),
                 SourceJsonPath: null,
@@ -923,7 +934,7 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
         RelationalModelSetBuilderContext context
     )
     {
-        var projectionCapacity = 1 + identityDerivations.Count + 1;
+        var projectionCapacity = 1 + identityDerivations.Count + 2;
         List<AbstractUnionViewArm> arms = new(members.Count);
 
         for (var memberIndex = 0; memberIndex < members.Count; memberIndex++)
@@ -967,14 +978,16 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
                 );
             }
 
+            var memberResourceKey = context.GetResourceKeyEntry(member.Resource);
+
+            // The compile-time member key, never parsed from the discriminator.
+            projections.Add(
+                new AbstractUnionViewProjectionExpression.Int16Literal(memberResourceKey.ResourceKeyId)
+            );
             projections.Add(new AbstractUnionViewProjectionExpression.StringLiteral(discriminatorValue));
 
             arms.Add(
-                new AbstractUnionViewArm(
-                    context.GetResourceKeyEntry(member.Resource),
-                    member.Model.Root.Table,
-                    projections.ToArray()
-                )
+                new AbstractUnionViewArm(memberResourceKey, member.Model.Root.Table, projections.ToArray())
             );
         }
 
@@ -1060,6 +1073,22 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
     }
 
     /// <summary>
+    /// Builds the <c>ResourceKeyId</c> payload column that records the concrete member's resource key in the
+    /// abstract identity table. Like <c>Discriminator</c>, it is never part of the natural or reference key.
+    /// </summary>
+    private static DbColumnModel BuildResourceKeyIdColumn()
+    {
+        return new DbColumnModel(
+            RelationalNameConventions.ResourceKeyIdColumnName,
+            ColumnKind.Scalar,
+            _resourceKeyIdScalarType,
+            IsNullable: false,
+            SourceJsonPath: null,
+            TargetResource: null
+        );
+    }
+
+    /// <summary>
     /// Builds the discriminator column used to record the concrete member type in the abstract identity table.
     /// </summary>
     private static DbColumnModel BuildDiscriminatorColumn()
@@ -1114,14 +1143,18 @@ public sealed class AbstractIdentityTableAndUnionViewDerivationPass : IRelationa
             constraints.Add(new TableConstraint.Unique(referenceKeyName, referenceKeyColumns.ToArray()));
         }
 
-        var fkName = ConstraintNaming.BuildForeignKeyName(tableName, ConstraintNaming.DocumentToken);
-
+        // The composite FK makes the database enforce that each row's ResourceKeyId matches its owning
+        // dms.Document row.
+        var fkName = ConstraintNaming.BuildForeignKeyName(
+            tableName,
+            ConstraintNaming.DocumentResourceKeyToken
+        );
         constraints.Add(
             new TableConstraint.ForeignKey(
                 fkName,
-                [RelationalNameConventions.DocumentIdColumnName],
+                RelationalNameConventions.DocumentResourceKeyColumns,
                 _documentTableName,
-                [RelationalNameConventions.DocumentIdColumnName],
+                RelationalNameConventions.DocumentResourceKeyColumns,
                 OnDelete: ReferentialAction.Cascade
             )
         );

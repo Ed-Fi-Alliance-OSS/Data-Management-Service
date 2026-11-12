@@ -1150,7 +1150,7 @@ Change Query database semantics are compiled into the shared `DerivedRelationalM
 
 The derived model must include SQL-free inventory for:
 
-- `TrackedChangeTableInfo` entries for per-resource tracked-change tables and the shared descriptor tracked-change table, including the standard `Id`, `ChangeVersion`, `DocumentId`, `CreatedAt`, and routing-only descriptor `Discriminator` system columns.
+- `TrackedChangeTableInfo` entries for per-resource tracked-change tables and the shared descriptor tracked-change table, including the standard `Id`, `ChangeVersion`, `DocumentId`, `CreatedAt`, and routing-only descriptor `ResourceKeyId` system columns.
 - `TrackedChangeColumnInfo` entries for each tracked old/new value in `ValueColumnsInTableOrder`, including the source JsonPath, canonical storage column when key unification applies, separate old/new nullability, scalar type, and column role.
 - `TrackedChangeDescriptorJoinInfo` entries for descriptor reference paths that must be materialized as `Namespace` and `CodeValue`.
 - `TrackedChangePersonJoinInfo` entries for Student, Contact, and Staff `SecurableElements` paths that must materialize the person resource `DocumentId`.
@@ -1172,25 +1172,38 @@ Tracked-change system columns are fixed by role, not by ApiSchema value metadata
 - `ChangeVersion` stores the bumped `dms.Document.ContentVersion` as `bigint`.
 - `DocumentId` stores the tracked document's `dms.Document.DocumentId` as `bigint NOT NULL`, read from the row being deleted or changed (the `OLD` row in PostgreSQL, the `deleted` row in SQL Server). It has no `Old`/`New` pairing because a document's DocumentId never changes, so it carries no prefix. It is present on every tracked-change table, including the shared descriptor table. Custom view-based `ReadChanges` authorization reads it for a self-basis and for tombstone-aware views; see "Custom view-based strategies" below.
 - `CreatedAt` stores the tracked row insert timestamp as PostgreSQL `timestamp with time zone DEFAULT now()` / SQL Server `datetime2(7) DEFAULT sysutcdatetime()`.
-- `Discriminator` is present only for shared descriptor tracked-change tables and uses PostgreSQL `varchar(128)` / SQL Server `nvarchar(128)`. It routes historical rows to the requested descriptor endpoint; it is not used to identify or type-check a live descriptor.
+- `ResourceKeyId smallint NOT NULL` is present on the shared descriptor tracked-change table.
+  It captures the deleted/changed row's qualified type and routes historical rows to the requested
+  endpoint through `MappingSet.ResourceKeyIdByResource`. It remains usable after both live descriptor
+  and document are deleted, without a live-owner FK. The history index leads with
+  `(ResourceKeyId, ChangeVersion)`. No descriptor Discriminator is stored. Abstract identity
+  discriminators and the preceding historical ODS examples are unchanged.
 
 The `TrackedChangeColumnInfo` value-column list should include the corresponding columns that result from combining the `IdentityJsonPaths` and `SecurableElements` paths from the resource's ApiSchema.json. They should be included twice, with `Old` and `New` prefixes applied directly to the source column name, for example `OldSchoolId_Unified` and `NewStudent_DocumentId`.
 
 On SQL Server, every string `TrackedChangeColumnInfo` whose origin includes identity is a copied
 identity value and must be emitted with the DMS identity collation,
 `COLLATE SQL_Latin1_General_CP1_CI_AS`. This includes descriptor `Namespace`/`CodeValue`
-projections. Change Query `/deletes` anti-joins compare these historical `Old*` values to live
-identity columns and descriptor lowered-URI expressions to detect recreated rows; letting them
-inherit a case-sensitive database default would make those probes default-dependent or
-collation-conflicted. Routing-only values such as the shared descriptor `Discriminator` do not carry
-this identity collation unless another explicit contract applies. This identity-collation contract is
-owned by Epic 21 (DMS-1443, SQL Server identity collation contract; DMS-1455 for the Change Query
-descriptor probes) and is not emitted yet: the tracked-change DDL emitter currently lets these columns
-inherit the database default collation, which is what the example DDL below shows.
+projections and the shared descriptor table's `Old*`/`New*` `Namespace`/`CodeValue`. Change Query
+`/deletes` anti-joins compare these historical `Old*` values to live identity columns to detect
+recreated rows; letting them inherit a case-sensitive database default would make those probes
+default-dependent or collation-conflicted. Routing-only values such as the shared descriptor
+`ResourceKeyId` are not identity text. Descriptor recreation probes and history custom-view seeks
+compare the lowered whole URI rebuilt from the retained `Namespace` and `CodeValue`, folded inside
+`LOWER` under the identity collation (see "/deletes endpoints" below), so the column collation also
+pins what the fold reads. This identity-collation contract is owned by Epic 21 (DMS-1443, SQL Server
+identity collation contract; DMS-1455 for the Change Query descriptor probes).
 
 Each `TrackedChangeColumnInfo` carries `IsOldColumnNullable` and `IsNewColumnNullable` separately because tombstones populate only old values. `IsOldColumnNullable` follows the tracked source value's nullability. `IsNewColumnNullable` is normally `true` because delete tombstones leave `New*` columns null; key-change rows populate the new values when present.
 
-If a path is a descriptor reference, the inventory will include two columns: the descriptor's `Namespace` and `CodeValue`. The corresponding `TrackedChangeDescriptorJoinInfo` describes the join to `dms.Descriptor` that trigger emitters use for the old and new rows and identifies the qualified descriptor resource. The two `TrackedChangeColumnInfo` entries reference that table-level join by `DescriptorJoinName`; they do not duplicate the join definition. When runtime Change Query planning must resolve those stored values back to a live descriptor, it gets the descriptor's compile-time `ResourceKeyId` from `MappingSet.ResourceKeyIdByResource`; it never maps `Discriminator` to a resource key.
+If a path is a descriptor reference, the inventory includes the descriptor's `Namespace` and
+`CodeValue`. `TrackedChangeDescriptorJoinInfo` joins the old/new `int ..._DescriptorId` storage
+value to `dms.Descriptor.DescriptorId`, including copied document-reference identity parts and
+unified canonical storage, and identifies the qualified descriptor resource. The two value-column
+entries reference that join by `DescriptorJoinName`. Runtime seeks use that type's compile-time
+`ResourceKeyId` from `MappingSet.ResourceKeyIdByResource`, preserving same-named types across
+projects. Responses reconstruct original-case `<namespace>#<codeValue>` from retained snapshots;
+they do not require the live descriptor or document row to survive.
 
 If a path is backed by a column that participates in key unification, include the canonical storage column instead of the generated alias column. This is both a de-duplication rule and an ODS compatibility rule: tracked-change rows record the shared stored identity value, not each presence-gated binding-site value.
 
@@ -1209,30 +1222,30 @@ MSSQL table definition example for the Grade resource:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Grade]
 (
-    [OldGradeTypeDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewGradeTypeDescriptor_Namespace] nvarchar(255) NULL,
-    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) NULL,
-    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NOT NULL,
-    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) NULL,
+    [OldGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradeTypeDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradeTypeDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewGradingPeriodGradingPeriod_GradingPeriodName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldSchoolId_Unified] bigint NOT NULL,
     [NewSchoolId_Unified] bigint NULL,
     [OldSchoolYear_Unified] int NOT NULL,
     [NewSchoolYear_Unified] int NULL,
     [OldStudentSectionAssociation_BeginDate] date NOT NULL,
     [NewStudentSectionAssociation_BeginDate] date NULL,
-    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) NOT NULL,
-    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) NULL,
-    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) NOT NULL,
-    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) NULL,
-    [OldStudentSectionAssociation_SessionName] nvarchar(60) NOT NULL,
-    [NewStudentSectionAssociation_SessionName] nvarchar(60) NULL,
-    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) NOT NULL,
-    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) NULL,
+    [OldStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_LocalCourseCode] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_SectionIdentifier] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_SessionName] nvarchar(60) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewStudentSectionAssociation_StudentUniqueId] nvarchar(32) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
     [OldStudentSectionAssociation_Student_DocumentId] bigint NOT NULL,
     [NewStudentSectionAssociation_Student_DocumentId] bigint NULL,
     [Id] uniqueidentifier NOT NULL,
@@ -1250,11 +1263,11 @@ MSSQL table definition example for the shared `tracked_changes_edfi.Descriptor`:
 ```sql
 CREATE TABLE [tracked_changes_edfi].[Descriptor]
 (
-    [OldNamespace] nvarchar(255) NOT NULL,
-    [NewNamespace] nvarchar(255) NULL,
-    [OldCodeValue] nvarchar(50) NOT NULL,
-    [NewCodeValue] nvarchar(50) NULL,
-    [Discriminator] nvarchar(128) NOT NULL,
+    [OldNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewNamespace] nvarchar(255) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [OldCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NOT NULL,
+    [NewCodeValue] nvarchar(50) COLLATE SQL_Latin1_General_CP1_CI_AS NULL,
+    [ResourceKeyId] smallint NOT NULL,
     [Id] uniqueidentifier NOT NULL,
     [ChangeVersion] bigint NOT NULL,
     [DocumentId] bigint NOT NULL,
@@ -1262,6 +1275,9 @@ CREATE TABLE [tracked_changes_edfi].[Descriptor]
     CONSTRAINT [PK_tracked_changes_edfi_Descriptor] PRIMARY KEY CLUSTERED ([ChangeVersion])
 );
 ```
+
+The shared descriptor history has no FK to a live owner. Its `DocumentId` remains `bigint` for
+self-basis/tombstone-aware custom views; it is not the descriptor's compact primary key.
 
 ##### Operational considerations: tracked-change table volume
 
@@ -1271,13 +1287,15 @@ DMS does not automate truncation of these tables in v1. The same operational gui
 
 Because typical ODS deployments rotate per school year, ODS does not automate this either, and DMS adopts the same default.
 
-#### Concrete-resource `ContentVersion` / `ContentLastModifiedAt` mirror
+<a id="concrete-resource-contentversion--contentlastmodifiedat-mirror"></a>
 
-Each `ConcreteResourceModel` with `StorageKind = RelationalTables` gets two columns mirrored onto its root table: `ContentVersion` and `ContentLastModifiedAt`. The shared `dms.Descriptor` table gets the same two columns. The columns are kept in lock-step with `dms.Document` by the existing `*_Stamp` triggers (see the next subsection).
+#### Concrete-resource version mirror and authoritative timestamp
 
-This mirror lets SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and lets live resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
+Each `ConcreteResourceModel` with `StorageKind = RelationalTables` has a `ContentVersion` mirror, an authoritative `ContentLastModifiedAt` and a creation-time `ContentCreatedAt` on its root table. The shared `dms.Descriptor` table has the same three columns. The `*_Stamp` triggers copy the document version and generate the owner timestamp in the same transaction, and an owner insert sets `ContentCreatedAt` and the initial `ContentLastModifiedAt` from one timestamp; `dms.Document` has neither timestamp. `ContentCreatedAt` is not a representation stamp; [update-tracking.md](update-tracking.md) §"Creation time (normative)" defines its lifetime rules.
 
-**Scope** — receive the columns and a supporting index:
+These owner stamps let SQL-side integrators (and the existing ODS-shaped community tooling, including the API Publisher and dashboard datastores) read change-version and last-modified per row without joining `dms.Document`, and let live resource and descriptor endpoints serve `?minChangeVersion=X&maxChangeVersion=Y` as a single-table range seek.
+
+**Scope** — receive the columns and a supporting `ContentVersion` index (`ContentCreatedAt` is not indexed):
 
 - Every `ConcreteResourceModel` whose `StorageKind = RelationalTables`, regardless of project schema. This includes core resource roots (`edfi.Student`, `edfi.School`, …) and extension-project resource roots (`tpdm.Candidate`, …); they are all roots of root resources.
 - The shared descriptor table `dms.Descriptor`.
@@ -1285,18 +1303,18 @@ This mirror lets SQL-side integrators (and the existing ODS-shaped community too
 Do not receive the columns:
 
 - Child / collection tables (`edfi.SchoolAddress`, …). No independent endpoint and no window-filter consumer.
-- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the mirror on the base root is authoritative.
+- `*Extension` resource-extension tables (`tpdm.ContactExtension`, …). Not new resources; the `DocumentId` is shared with the base document, so the base root carries their version mirror, authoritative timestamp and creation time.
 - Abstract-resource union views. The columns surface through the underlying concrete root tables.
 
 **Invariants:**
 
-1. `dms.Document` remains the source of truth. The mirror is written only by the `*_Stamp` triggers; the relational write path MUST NOT include `ContentVersion` or `ContentLastModifiedAt` in client-writable column projections.
-2. For every committed transaction, `<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt` for the same `DocumentId`.
-3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing stamp to the mirror without allocating another content version. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
+1. `dms.Document.ContentVersion` remains the lock/concurrency and enqueue authority; the root/descriptor owns its timestamp. Stamps are server-maintained by defaults, `*_Stamp` triggers and the explicit representation-restamp utility; the relational write path MUST NOT include `ContentVersion`, `ContentLastModifiedAt` or `ContentCreatedAt` in client-writable column projections.
+2. For every committed transaction, `<root>.ContentVersion = dms.Document.ContentVersion` for the same `DocumentId`; the authoritative owner timestamp and representation must belong to that version. This also applies to `dms.Descriptor`, joined by its unique `DocumentId`, not its compact `DescriptorId`.
+3. For representation-changing updates and deletes, a trigger fire allocates exactly one `dms.ChangeVersionSequence` value per affected document and writes it to both `dms.Document` and the mirror, captured via `OUTPUT` (SQL Server) / `RETURNING` (PostgreSQL). Root-resource and descriptor inserts are the exception: `dms.Document` defaults allocate the initial content stamp before the root/descriptor row is inserted, and the root/descriptor insert trigger copies that existing version and initializes its own UTC timestamp and creation time without allocating another content version. Owner timestamps are generated directly on the surviving root/descriptor, never captured from `dms.Document`. `NEXT VALUE FOR` MUST NOT be invoked a second time for the same document in the same fire.
 4. There is no separate document-level identity counter; identity-projection changes are handled by the key-change workset and do not add extra mirrored document columns.
-5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the two content stamp columns (`ContentVersion`, `ContentLastModifiedAt`). This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes to the root mirror.
-6. On SQL Server, the root-resource and descriptor content stamps MUST be **skipped outright** — not merely evaluated to an empty workset — when the firing cannot change anything. Invariant 5 makes the workset empty; it does not stop the optimizer from resolving the join against `dms.Document` to discover that, and that resolution takes update locks on rows the statement will never modify. The guard is `IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(<stored column>) OR …)`, which closes two cases in one predicate: a pure `INSERT`, where both `affectedDocs` branches require a matching `deleted` row; and a stamp-only re-firing, where `deleted` is non-empty but no stored column appears in the `SET` clause. `UPDATE(column)` is a **performance pre-filter only** — it reports SET-clause membership, not value change — so it MUST range over exactly the stored columns the invariant-5 value diff uses, and that diff remains authoritative. The child / `_ext` shape is deliberately unguarded: its inserted-side branch legitimately matches pure inserts, because a new collection row must stamp its root document.
-7. On SQL Server, the mirror `UPDATE` MUST be hinted `WITH (FORCESEEK)`. It joins the mirror table to a table variable, whose fixed cardinality estimate lets a cached plan scan the mirror and take update locks across rows the transaction never touched. The hint is only satisfiable while the mirror target exposes an index whose leading key column is the joined column — `DocumentId` for every mirror target — because SQL Server does not fall back to a scan when it cannot honor the hint; it fails the statement with error 8622. Any change that moves a mirror target's primary key off the joined column MUST therefore drop the hint at the same time.
+5. The `affectedDocs` CTE inside each `*_Stamp` trigger MUST exclude rows whose `inserted` / `deleted` images differ **only** in the owner metadata columns (`ContentVersion`, `ContentLastModifiedAt`, `ContentCreatedAt`): the generated value diff omits all three. This tightens the existing "no-op updates are not representation changes" rule from [update-tracking.md](update-tracking.md) §"Stamping rules" and is the mechanism that keeps nested-trigger fire safe when a child / `_ext` trigger writes the root stamps.
+6. On SQL Server, the root-resource and descriptor content stamps MUST be **skipped outright** — not merely evaluated to an empty workset — when the firing cannot change anything. Invariant 5 makes the workset empty; it does not stop the optimizer from resolving the join against `dms.Document` to discover that, and that resolution takes update locks on rows the statement will never modify. The guard is `IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE(<stored column>) OR …)`, which closes two cases in one predicate: a pure `INSERT`, where both `affectedDocs` branches require a matching `deleted` row; and a stamp-only re-firing, where `deleted` is non-empty but no stored column appears in the `SET` clause. `UPDATE(column)` is a **performance pre-filter only** — it reports SET-clause membership, not value change — so it MUST range over exactly the stored columns the invariant-5 value diff uses (never the three owner metadata columns), and that diff remains authoritative. The child / `_ext` shape is deliberately unguarded: its inserted-side branch legitimately matches pure inserts, because a new collection row must stamp its root document.
+7. On SQL Server, the owner stamp `UPDATE` MUST retain `WITH (FORCESEEK)`. It joins the owner table to a table variable; without the hint, the fixed cardinality estimate can permit a scan and take update locks across untouched owners. The target needs an index whose leading key is the joined `DocumentId`. Ordinary roots provide that primary key; the compact descriptor provides a unique document-association index even though its primary key is `DescriptorId`. Preserve that access path and the existing projection-work locking strategy. A missing usable index makes the hint fail with error 8622; changing the primary key alone is no reason to remove this protection.
 
 **MSSQL column additions** — illustrated on `edfi.Student`:
 
@@ -1304,15 +1322,21 @@ Do not receive the columns:
 ALTER TABLE [edfi].[Student]
     ADD [ContentVersion] bigint NOT NULL
         CONSTRAINT DF_Student_ContentVersion DEFAULT 0,
+    [ContentCreatedAt] datetime2(7) NOT NULL
+        CONSTRAINT DF_Student_ContentCreatedAt DEFAULT (sysutcdatetime()),
     [ContentLastModifiedAt] datetime2(7) NOT NULL
         CONSTRAINT DF_Student_ContentLastModifiedAt DEFAULT (sysutcdatetime());
 
 CREATE INDEX [IX_Student_ContentVersion] ON [edfi].[Student] ([ContentVersion]);
 ```
 
-PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and a `timestamp with time zone` column type.
+PostgreSQL is the same shape with `DEFAULT 0` and `now()` defaults and `timestamp with time zone` column types.
 
-The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing `dms.Document` content stamp initialized by document defaults; updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value.
+The `ContentCreatedAt` default only satisfies `NOT NULL` before the stamping trigger runs. On SQL Server the default reads `sysutcdatetime()` separately from the `AFTER` trigger, so the root and descriptor insert firings overwrite both timestamps from one value (see the trigger excerpt below). PostgreSQL's `now()` is the transaction start time, so its root `BEFORE` trigger and descriptor `AFTER` trigger assign both columns the same value.
+
+Every SQL Server `*_Stamp` trigger owner stamp takes its timestamp from a transaction-stable clock, matching PostgreSQL's `now()`: the first trigger stamp in a transaction reads `sysutcdatetime()` and stores it in the session context keyed by `CURRENT_TRANSACTION_ID()`, and later trigger stamps in that transaction reuse it. A creating write inserts the root and then its child and `_ext` rows as later statements; without the shared value, their restamps would leave the root's `ContentLastModifiedAt` later than its `ContentCreatedAt`.
+
+The mirror `ContentVersion` default is a non-null sentinel, not a real change-version allocation. The production write path always goes through the `*_Stamp` trigger. Root-resource and descriptor inserts copy the existing document version initialized by its default and initialize the owner timestamp. Updates, deletes, child writes, and `_ext` writes allocate a fresh `dms.Document.ContentVersion` and mirror that captured value to surviving owners while generating their timestamps. A deleted root/descriptor has no owner timestamp to update; its allocated version still feeds history.
 
 **`dms.Descriptor` has two ResourceKeyId-leading paging indexes.** Descriptor GET-many page
 selection roots on `dms.Descriptor` and uses `ResourceKeyId` as the authoritative,
@@ -1333,22 +1357,25 @@ range predicate on the `ContentVersion` key, not a different access path. A min-
 from a snapshot rides it for the same reason a max-bearing window does: the distribution the seek
 exploits is a property of the data, which the copy preserves.
 
-No `Discriminator`-leading index is emitted on the live `dms.Descriptor` table. Shared descriptor
-tracked-change queries may filter their own historical rows by the routing-only `Discriminator`, but
-every probe of the live descriptor table uses the authoritative `ResourceKeyId`: page queries use
-the `ResourceKeyId`-leading indexes above, while recreated-row detection uses
-`UX_Descriptor_UriLowered_ResourceKeyId`.
+Both live and historical descriptor type predicates use the qualified `ResourceKeyId`. The live
+primary key is independently allocated `int DescriptorId`; `bigint DocumentId` is its unique,
+non-null document association and remains the paging key when that anchor is selected. Descriptor
+uniqueness and identity are the lowered whole URI under `UX_Descriptor_UriLowered_ResourceKeyId`,
+the only descriptor URI index, and every Change Query probe of a
+live descriptor (recreation and custom-view seeks) is a seek on that index: PostgreSQL's expression
+index on `lower(("Namespace" || '#' || "CodeValue") COLLATE "pg_c_utf8")` and SQL Server's
+non-persisted `UriLowered` computed column.
 
 **Compiled-mapping-set additions** (defined in [compiled-mapping-set.md](compiled-mapping-set.md)):
 
-- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds two synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion` and `MirroredContentLastModifiedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `MirroredContentLastModifiedAt`).
+- The per-resource derivation pass that builds `ConcreteResourceModel.RelationalModel` adds three synthesized columns to the root `DbTableModel` whenever `StorageKind = RelationalTables`. Their `ColumnKind` is `MirroredContentVersion`, `AuthoritativeContentLastModifiedAt` and `AuthoritativeContentCreatedAt` respectively (defined in [flattening-reconstitution.md](flattening-reconstitution.md)). `SourceJsonPath` and `TargetResource` are null. The write-path `TableWritePlan.ColumnBindings` exclusion rule (also defined in [flattening-reconstitution.md](flattening-reconstitution.md)) keeps them out of client-writable column lists, and read hydration omits them from reconstituted JSON; dialect emitters render the correct DDL defaults for each kind (`0` for `MirroredContentVersion`, current-UTC for `AuthoritativeContentLastModifiedAt` and `AuthoritativeContentCreatedAt`).
 - For `StorageKind = SharedDescriptorTable`, the columns are added by the core DDL pass that owns `dms.Descriptor`, not by the per-resource pass, because `dms.Descriptor` is a core table.
 - `DeriveIndexInventoryPass` adds one `IX_<Table>_ContentVersion` per in-scope root table and
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` for live descriptor
   change-version-windowed page selection into `IndexesInCreateOrder`. The core DDL pass continues to
   own `IX_Descriptor_ResourceKeyId_DocumentId` and
   `UX_Descriptor_UriLowered_ResourceKeyId`. No live-descriptor index has `Discriminator` as a key.
-- `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `MirrorStampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the mirror UPDATE against `MirrorStampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
+- `DbTriggerInfo` for entries with `Kind = DocumentStamping` gains a required `StampTargetTable: DbTableName` field. The derivation pass assigns the target by rule: same table for root-table triggers, resource's root for child / `_ext` triggers, `dms.Descriptor` for the descriptor trigger. Dialect emitters render the owner stamp UPDATE against `StampTargetTable` and MUST NOT re-derive the target from the trigger's source table.
 
 #### Triggers that populate the `tracked_changes*` tables
 
@@ -1381,15 +1408,14 @@ BEGIN
 
     DECLARE @stamped TABLE (
         [DocumentId] bigint NOT NULL PRIMARY KEY,
-        [ContentVersion] bigint NOT NULL,
-        [ContentLastModifiedAt] datetime2(7) NOT NULL
+        [ContentVersion] bigint NOT NULL
     );
 
     -- Root-resource INSERT rows copy the dms.Document defaults that were allocated when
     -- the document row was created. Child / _ext INSERT rows still flow through
     -- affectedDocs below because they change an existing root document.
-    INSERT INTO @stamped ([DocumentId], [ContentVersion], [ContentLastModifiedAt])
-    SELECT d.[DocumentId], d.[ContentVersion], d.[ContentLastModifiedAt]
+    INSERT INTO @stamped ([DocumentId], [ContentVersion])
+    SELECT d.[DocumentId], d.[ContentVersion]
     FROM [dms].[Document] d
     INNER JOIN inserted i ON d.[DocumentId] = i.[DocumentId]
     LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1404,7 +1430,7 @@ BEGIN
     IF EXISTS (SELECT 1 FROM deleted) AND (NOT EXISTS (SELECT 1 FROM inserted) OR UPDATE([DocumentId]) OR UPDATE([SchoolId_Unified]))
     BEGIN
         ;WITH affectedDocs AS (
-            -- Avoids mirror-stamp self-fires; see "Concrete-resource ContentVersion / ContentLastModifiedAt mirror" above).
+            -- Avoids mirror-stamp self-fires; see "Concrete-resource version mirror and authoritative timestamp" above).
             SELECT i.[DocumentId]
             FROM inserted i
             LEFT JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
@@ -1424,13 +1450,13 @@ BEGIN
             WHERE i.[DocumentId] IS NULL
         )
         UPDATE d
-        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence], d.[ContentLastModifiedAt] = sysutcdatetime()
-        OUTPUT inserted.[DocumentId], inserted.[ContentVersion], inserted.[ContentLastModifiedAt] INTO @stamped
+        SET d.[ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
+        OUTPUT inserted.[DocumentId], inserted.[ContentVersion] INTO @stamped
         FROM [dms].[Document] d
         INNER JOIN affectedDocs a ON d.[DocumentId] = a.[DocumentId];
     END
 
-    -- Mirror the stamped values onto MirrorStampTargetTable from this trigger's DbTriggerInfo.
+    -- Copy the version and generate the timestamp on StampTargetTable from this trigger's DbTriggerInfo.
     -- For TR_Grade_Stamp the target is [edfi].[Grade] itself; for child / _ext stamping triggers
     -- the target is the resource's root table (e.g. TR_SchoolAddress_Stamp targets [edfi].[School]).
     --
@@ -1438,13 +1464,43 @@ BEGIN
     -- so without it this self-UPDATE re-fires the trigger on an empty workset and recurses to the
     -- nesting limit where RECURSIVE_TRIGGERS is ON. Invariant 7: FORCESEEK forbids a scan of the
     -- mirror table, which a table-variable cardinality estimate would otherwise permit.
+    --
+    -- @stampedAt is one value per transaction (the transaction-stable clock described above).
+    -- Root and descriptor triggers split the owner stamp by firing kind. Update and delete
+    -- firings never assign ContentCreatedAt. An insert firing (empty deleted) assigns both
+    -- timestamps, because the column defaults read the clock separately.
+    -- Child / _ext triggers keep only the first UPDATE: their insert firings stamp an existing
+    -- root and must never touch its creation time.
     IF EXISTS (SELECT 1 FROM @stamped)
     BEGIN
-        UPDATE r
-        SET r.[ContentVersion] = s.[ContentVersion],
-            r.[ContentLastModifiedAt] = s.[ContentLastModifiedAt]
-        FROM [edfi].[Grade] r WITH (FORCESEEK)
-        INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        DECLARE @stampTransactionId bigint = CURRENT_TRANSACTION_ID();
+        DECLARE @stampedAt datetime2(7) = CASE
+            WHEN CAST(SESSION_CONTEXT(N'dms.StampTransactionId') AS bigint) = @stampTransactionId
+            THEN CAST(SESSION_CONTEXT(N'dms.StampedAt') AS datetime2(7))
+        END;
+        IF @stampedAt IS NULL
+        BEGIN
+            SET @stampedAt = sysutcdatetime();
+            EXEC sys.sp_set_session_context @key = N'dms.StampedAt', @value = @stampedAt;
+            EXEC sys.sp_set_session_context @key = N'dms.StampTransactionId', @value = @stampTransactionId;
+        END
+        IF EXISTS (SELECT 1 FROM deleted)
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt
+            FROM [edfi].[Grade] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
+        ELSE
+        BEGIN
+            UPDATE r
+            SET r.[ContentVersion] = s.[ContentVersion],
+                r.[ContentLastModifiedAt] = @stampedAt,
+                r.[ContentCreatedAt] = @stampedAt
+            FROM [edfi].[Grade] r WITH (FORCESEEK)
+            INNER JOIN @stamped s ON s.[DocumentId] = r.[DocumentId];
+        END
     END
 
     IF EXISTS (SELECT 1 FROM deleted) AND NOT EXISTS (SELECT 1 FROM inserted)
@@ -1487,8 +1543,8 @@ BEGIN
             del.[DocumentId]
         FROM deleted del
         INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = del.[DocumentId]
-        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
-        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]
+        INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
         INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId];
     END
     IF EXISTS (SELECT 1 FROM deleted) AND EXISTS (SELECT 1 FROM inserted)
@@ -1567,11 +1623,11 @@ BEGIN
             INNER JOIN inserted i ON i.[DocumentId] = cd.[DocumentId]
             INNER JOIN deleted del ON del.[DocumentId] = i.[DocumentId]
             INNER JOIN [dms].[Document] doc ON doc.[DocumentId] = i.[DocumentId]
-            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DocumentId] = del.[GradeTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DocumentId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj0 ON oldDj0.[DescriptorId] = del.[GradeTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] oldDj1 ON oldDj1.[DescriptorId] = del.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] oldPj0 ON oldPj0.[StudentUniqueId] = del.[StudentSectionAssociation_StudentUniqueId]
-            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DocumentId] = i.[GradeTypeDescriptor_DescriptorId]
-            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DocumentId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId]
+            INNER JOIN [dms].[Descriptor] newDj1 ON newDj1.[DescriptorId] = i.[GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId]
             INNER JOIN [edfi].[Student] newPj0 ON newPj0.[StudentUniqueId] = i.[StudentSectionAssociation_StudentUniqueId];
         END
     END
@@ -1581,7 +1637,7 @@ END;
 
 ##### Cascade-ordering requirement for deletes
 
-Because the `_Stamp` trigger's DELETE branch joins `dms.Document` to read `DocumentUuid` and `ContentVersion`, DMS MUST delete the concrete resource row (or the `dms.Descriptor` row for descriptor resources) before deleting the corresponding `dms.Document` row, within the same transaction. If `dms.Document` were deleted first, the `ON DELETE CASCADE` FK from the resource row to `dms.Document(DocumentId)` would remove the resource row inside the same statement, and the resource's `AFTER DELETE` trigger would fire after the parent row is already gone, causing the `INNER JOIN [dms].[Document]` (and the trigger's leading `UPDATE [dms].[Document] SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]`) to match no rows and silently drop the tombstone.
+Because the `_Stamp` trigger's DELETE branch joins `dms.Document` to read `DocumentUuid` and `ContentVersion`, DMS MUST delete the concrete resource row (or the `dms.Descriptor` row for descriptor resources) before deleting the corresponding `dms.Document` row, within the same transaction. The FK from the resource row to `dms.Document(DocumentId)` is `ON DELETE RESTRICT` (`NO ACTION` on SQL Server; DMS-1268), so deleting `dms.Document` first is rejected while the resource row exists. Before DMS-1268 that FK cascaded: deleting `dms.Document` first removed the resource row inside the same statement, and the resource's `AFTER DELETE` trigger fired after the parent row was already gone, causing the `INNER JOIN [dms].[Document]` (and the trigger's leading `UPDATE [dms].[Document] SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]`) to match no rows and silently drop the tombstone.
 
 DMS therefore issues two `DELETE` statements per document deletion, in order, within the same transaction:
 
@@ -1590,15 +1646,20 @@ DMS therefore issues two `DELETE` statements per document deletion, in order, wi
 
 The leading trigger `UPDATE` of `dms.Document.ContentVersion` therefore runs against a row that the second statement removes. This is intentional: it gives the tombstone the standard read-after-bump `ChangeVersion`, at the cost of one sequence value and one transient row write per delete.
 
-The mirror UPDATE (the second UPDATE in the trigger body, against `MirrorStampTargetTable`) is naturally a zero-row no-op for deleted documents because the resource row is already gone before the trigger fires. The `dms.Document` UPDATE still bumps `ContentVersion` via the first half of the trigger, which is what the tombstone `INSERT` reads from — so the mirror's absence here does not affect the tracked-change row.
+The owner stamp UPDATE (the second UPDATE in the trigger body, against `StampTargetTable`) is naturally a zero-row no-op for deleted documents because the resource row is already gone before the trigger fires. The `dms.Document` UPDATE still bumps `ContentVersion` via the first half of the trigger, which is what the tombstone `INSERT` reads from — so the owner's absence here does not affect the tracked-change row.
 
 Root deletes have one additional trigger-ordering contract: a supported resource or descriptor delete produces exactly one visible tombstone for the deleted root. The tombstone's `ChangeVersion` is the version allocated by the root resource or descriptor delete trigger before the corresponding `dms.Document` row is removed.
 
 Child, nested-child, and `_ext` table deletes caused by database cascades from that root delete MUST NOT create another visible root tombstone, and MUST NOT leave a later visible root stamp that can move a Change Query extraction watermark past the root tombstone. This contract applies to PostgreSQL and SQL Server despite their different trigger and cascade execution behavior.
 
-The `ON DELETE CASCADE` FK from the resource row to `dms.Document` (see [data-model.md](data-model.md)) is retained as a referential-integrity safety net. Any direct `DELETE FROM dms.Document` issued outside the DMS write path will succeed without producing a tombstone; this is acceptable because the supported deletion path is exclusively through DMS.
+The FK from the resource row to `dms.Document` (see [data-model.md](data-model.md)) is a referential-integrity safety net with `ON DELETE RESTRICT` (`NO ACTION` on SQL Server; DMS-1268). A direct `DELETE FROM dms.Document` issued outside the DMS write path fails while the resource row exists, so it cannot silently remove a document without producing a tombstone; the supported deletion path is exclusively through DMS.
 
-There is no `*_Stamp` trigger in `dms.Descriptor`, so we will create one that follows the existing convention.
+The emitted `dms.Descriptor_Stamp` trigger follows the same document-owned convention. It pairs
+descriptor updates by the stable compact `DescriptorId`, captures/stamps the owning `DocumentId`,
+and copies `ContentVersion` while generating authoritative `ContentLastModifiedAt` on the descriptor through that document association.
+Its insert path also sets `ContentCreatedAt` from the same timestamp; its update path never assigns it.
+Descriptor component updates stamp content but do not emit delete/key-change history rows; unchanged
+bodies preserve stamps and history. These are the combined DMS-1401 timestamp-ownership rules.
 
 ### Authorization
 
@@ -1757,13 +1818,13 @@ AND EXISTS (
 )
 ```
 
-Transitive bases work the same way: `CourseOfferingWithX` on `/grades/deletes` seeks `edfi.CourseOffering` by `OldStudentSectionAssociation_LocalCourseCode`, `OldSchoolId_Unified`, `OldSchoolYear_Unified`, and `OldStudentSectionAssociation_SessionName`. Descriptor-valued identity parts of the basis key are matched through `dms.Descriptor` on the tombstone's old `Namespace` and `CodeValue`, and a basis that is itself a descriptor is sought in `dms.Descriptor` the same way; an abstract basis such as `EducationOrganization` is sought through its union view. Person bases read the person `DocumentId` columns the tombstone already stores, and the self basis reads the system column; a person reference that is not a securable element of the subject has no such column and is treated like any other basis, so it is sought live by the unique id when the reference is identifying and otherwise fails under the first-hop rule (ODS applies its identifying-only rule to `StaffUSI` alike). Because every seek key is a value stored on the row, seek bases have exact old-value semantics: a deleted basis is denied, since the seek finds nothing whatever the view returns, and a re-keyed basis is denied too, as in ODS for a natural-key basis. Stored-DocumentId bases (self and person) follow the current-membership rule described above instead, as in ODS for a surrogate-keyed basis. No new index is needed: the seek lands on the basis table's `*_RefKey` index, which already exists for every referenced resource and leads with the identity columns (see "`*_RefKey` index ordering for `/deletes`" below).
+Transitive bases work the same way: `CourseOfferingWithX` on `/grades/deletes` seeks `edfi.CourseOffering` by `OldStudentSectionAssociation_LocalCourseCode`, `OldSchoolId_Unified`, `OldSchoolYear_Unified`, and `OldStudentSectionAssociation_SessionName`. Descriptor-valued identity parts of the basis key are matched through `dms.Descriptor` by the lowered whole URI rebuilt from the tombstone's old `Namespace` and `CodeValue` under the descriptor's compiled `ResourceKeyId`, and a basis that is itself a descriptor is sought in `dms.Descriptor` the same way (see "Descriptor comparisons" below); an abstract basis such as `EducationOrganization` is sought through its union view. Person bases read the person `DocumentId` columns the tombstone already stores, and the self basis reads the system column; a person reference that is not a securable element of the subject has no such column and is treated like any other basis, so it is sought live by the unique id when the reference is identifying and otherwise fails under the first-hop rule (ODS applies its identifying-only rule to `StaffUSI` alike). Because every seek key is a value stored on the row, seek bases have exact old-value semantics: a deleted basis is denied, since the seek finds nothing whatever the view returns, and a re-keyed basis is denied too, as in ODS for a natural-key basis. Stored-DocumentId bases (self and person) follow the current-membership rule described above instead, as in ODS for a surrogate-keyed basis. No new index is needed: the seek lands on the basis table's `*_RefKey` index, which already exists for every referenced resource and leads with the identity columns (see "`*_RefKey` index ordering for `/deletes`" below).
 
 The planning cost lives in metadata, not in SQL. To pair each basis key column with the tombstone column holding its value, the planner walks the reference identity bindings from the subject to the basis (Grade's binding to StudentSectionAssociation, the association's to Section, Section's to CourseOffering) rather than relying on column names, which are not reliable under key unification and role names. This happens once per resource and strategy; see "Plan shape and SQL" below.
 
 **Tombstone probe, opt-in per view.** With the live seek alone, tombstone-aware custom views in the `*IncludingDeletes` style, which ODS allows, would be impossible for any basis other than a person or the subject itself. So a strategy whose name ends with `IncludingDeletes` (for example `SchoolWithAlternativeTypeIncludingDeletes`) resolves the basis DocumentId as "live basis by natural key, or else basis tombstone by old natural key": the live seek is unioned with a probe of the basis tracked-change table on the same old values, returning that table's `DocumentId` column. An author then unions a tombstone arm (`SELECT DocumentId FROM tracked_changes_edfi.School WHERE ...`) with the view's live rows, and a tombstone stays authorized after the basis it named was deleted. The probe matches key-change rows as well as delete tombstones, so a suffixed view also resolves a basis that was re-keyed after the tombstone was written, and authorizes it by the document's current membership: a Section renamed from an excluded identifier to an accepted one authorizes the Grade tombstones that still name the excluded key, where the live seek without the suffix denies them. The view returns DocumentIds, so membership is per document, never per historical key; an author opting into the suffix accepts that a document's live row and every tracked-change row of it authorize together. The SQL is shown under "Plan shape and SQL" below. The suffix sits inside the `{Description}` part of the naming convention, so basis parsing is unchanged, and it reads the same way as the built-in `*IncludingDeletes` strategies. It is a DMS-only convention: in ODS a custom view's name carries no meaning beyond its basis, and a tombstone arm simply works because ODS joins on natural keys the tombstone always has. Here it is an explicit opt-in to extra work.
 
-DMS emits no index for the probe. Tracked-change tables stay indexed on `ChangeVersion` only, so the probe hash-joins over the basis tombstone table unless the implementer adds a natural-key index on the tombstone tables of the basis resources their suffixed views use (for example on `tracked_changes_edfi.School (OldSchoolId)`), typically one or two small tables rather than every tracked-change table in the deployment. Deployments that never configure a suffixed view pay nothing for the probe at read time and nothing on write.
+DMS emits no index for the probe. Tracked-change tables stay indexed on `ChangeVersion` only, so the probe hash-joins over the basis tombstone table unless the implementer adds a natural-key index on the tombstone tables of the basis resources their suffixed views use (for example on `tracked_changes_edfi.School (OldSchoolId)`), typically one or two small tables rather than every tracked-change table in the deployment. Descriptor-valued parts are compared through the lowered `namespace#codeValue` (see "Descriptor comparisons" below), so a plain index on their `Old*_Namespace` and `Old*_CodeValue` columns cannot be sought: index the non-descriptor `Old*` columns, or index the same fold expression, as an expression index on PostgreSQL or an indexed computed column shaped like `dms.Descriptor.UriLowered` on SQL Server. This includes a descriptor basis, whose arm over `tracked_changes_edfi.Descriptor` has `ResourceKeyId` as its only plain-column predicate. Deployments that never configure a suffixed view pay nothing for the probe at read time and nothing on write.
 
 **Person columns.** Independently of the custom-view work, the person `DocumentId` columns (`OldStudentSectionAssociation_Student_DocumentId`, ...) are populated by seeking the person table with the unique id stored on the row rather than by hopping live intermediates, which recorded the wrong person under a cascading key change (see "Triggers that populate the `tracked_changes*` tables" above). Person-basis custom views read those columns, so they depend on the fix.
 
@@ -1804,9 +1865,15 @@ Both endpoints already build `FROM tracked_changes_x.Y c WHERE ...` and splice `
 The plan carries a `ReadChangesCustomViewCheckSpec` carrying the configured strategy, its CMS local order, the view name, the probe flag, and a basis resolution with three shapes:
 
 - **Stored DocumentId.** A self basis reads the `DocumentId` system column. A person basis reads the existing person `Old*_DocumentId` column, chosen by matching the resolved path against the person join chains as the relationship planner does today; when the resolved path is not a securable person path, no such column exists and the basis falls through to the live seek below. The predicate is `c.X IN (SELECT DocumentId FROM auth.View)`, so the basis is authorized by its current membership.
-- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with a `dms.Descriptor` row matched on the tombstone's old `Namespace` and `CodeValue`, reusing the shape of `BuildDescriptorIdentityJoin`. An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
-- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts compare old `Namespace` and `CodeValue` directly, with no descriptor join. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
-- **Descriptor basis.** When the basis resource is itself a descriptor, the check seeks `dms.Descriptor` on the tombstone's old `Namespace` and `CodeValue`, restricted to that descriptor's discriminator, and tests the matched row's `DocumentId` against the view. With the suffix, the same union shape adds one arm over the shared `tracked_changes_edfi.Descriptor` table, filtered by the same discriminator and returning the tombstone's `DocumentId`.
+- **Live seek.** For every other basis. The planner resolves the path with `SecurableElementColumnPathResolver` under the same preferred-path rule as the live page planner, then walks each hop's `DocumentReferenceBinding.IdentityBindings` from the basis back to the subject root to pair each basis identity column with the canonical tombstone column holding its old value. Descriptor identity parts pair the basis FK column with a `dms.Descriptor` row found by the lowered whole URI of the tombstone's old `Namespace` and `CodeValue` under the descriptor's `ResourceKeyId`, the same probe `BuildDescriptorIdentityJoin` emits for recreation. An abstract basis seeks the abstract union view by its identity column. A first hop whose values are not on the tombstone fails planning; see the error section below.
+- **Live seek plus tombstone probe.** When the strategy name carries the suffix, the live seek is unioned with one arm per basis tracked-change table. Each arm seeks that table's `Old*` identity columns with the same paired values and returns its `DocumentId`. Descriptor parts have no descriptor join: the basis tombstone's and the subject tombstone's old `<namespace>#<codeValue>` are both lowered under the per-engine fold and compared. An abstract basis gets one arm per concrete member table, derived from the union view's arms.
+- **Descriptor basis.** The check seeks `dms.Descriptor` by the lowered whole URI of the old
+  `Namespace` and `CodeValue`, restricted by the qualified descriptor's compiled `smallint
+  ResourceKeyId`, and tests its owning `bigint DocumentId` against the view. With the suffix, the
+  union adds an arm over shared `tracked_changes_edfi.Descriptor`, routed by that same
+  `ResourceKeyId` and matched by the two-sided lowered-URI fold, returning the retained `DocumentId`
+  even after the live rows are gone. A descriptor self-basis uses the subject history's stored
+  `DocumentId` directly.
 
 ```sql
 -- /studentSchoolAssociations/deletes with SchoolWithAlternativeTypeIncludingDeletes
@@ -1820,7 +1887,41 @@ AND EXISTS (
 )
 ```
 
-`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after the namespace predicate and the relationship OR-group, in CMS order, which is the composition rule in [auth.md](auth.md); the predicate list is `[namespace, relationship OR-group, custom views...]`, so requests without custom views render the same SQL as before. Custom views bind no claim parameters; the only parameters they add are descriptor discriminator values (`@CustomViewDescriptorDiscriminator{n}` and its `Qualified` twin, numbered across the plan's custom views and distinct from the planner's `@DescriptorDiscriminator{n}`), so they enter the existing SQL Server parameter-cap check without a new rule. A null old value on a nullable securable first hop never matches, so the row is denied without special casing, the same outcome the relationship strategies produce.
+**Descriptor comparisons.** All four descriptor comparisons above (the live-seek descriptor join, the
+descriptor-basis live match, and both tombstone arms) follow the descriptor identity contract of
+[natural-key-resolution.md](natural-key-resolution.md): the lowered whole URI plus `ResourceKeyId`,
+never the components one by one. Live comparisons seek `UX_Descriptor_UriLowered_ResourceKeyId`;
+tombstone arms compare two tracked rows, so they lower both sides:
+
+```sql
+-- live seek / descriptor-basis live match (SQL Server, then PostgreSQL)
+d.[ResourceKeyId] = 23
+  AND d.[UriLowered] = LOWER((c.[OldGradeTypeDescriptor_Namespace] + N'#' + c.[OldGradeTypeDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)
+d."ResourceKeyId" = 23
+  AND lower((d."Namespace" || '#' || d."CodeValue") COLLATE "pg_c_utf8")
+    = lower((c."OldGradeTypeDescriptor_Namespace" || '#' || c."OldGradeTypeDescriptor_CodeValue") COLLATE "pg_c_utf8")
+
+-- tombstone arm (SQL Server)
+LOWER((t.[OldNamespace] + N'#' + t.[OldCodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)
+  = LOWER((c.[OldGradeTypeDescriptor_Namespace] + N'#' + c.[OldGradeTypeDescriptor_CodeValue]) COLLATE SQL_Latin1_General_CP1_CI_AS)
+```
+
+The fold is applied to the rebuilt URI, not to each component, and on SQL Server the identity
+collation sits inside `LOWER`, so the database default never decides the casing table. A descriptor
+match only makes the basis row eligible; the view membership and every other identity part still
+apply. Compared with component equality this changes custom-view verdicts in four ways: case-only
+variants match on both engines (PostgreSQL newly), dotted `İ` matches `i` on both engines (newly on
+both), component re-splits of the same URI (`ns/components` + `Campus#Code` against `ns/components#Campus` + `Code`)
+match on both engines, and on SQL Server a namespace that differs only by a trailing space no longer
+matches, so those rows are denied where `=`'s trailing-pad rule used to authorize them.
+
+`TrackedChangeAuthorizationSqlEmitter` appends custom-view predicates as separate AND terms after
+the namespace predicate and relationship OR-group, in CMS order as defined in [auth.md](auth.md).
+The predicate list is `[namespace, relationship OR-group, custom views...]`. Custom views bind no
+parameters at all: a descriptor seek renders its compiled `smallint ResourceKeyId` as an integer
+literal. The value comes from the compiled `MappingSet`, never from the request. A null old value on
+a nullable securable first hop makes the rebuilt URI null, so it never matches and the row is denied
+as before.
 
 The first hop of the path may be an identity reference or any securable element the tombstone stores; later hops are identity-only. This is what the shared resolver already returns, and it is wider than the ODS rule, which admits identifying properties only. The difference is deliberate: DMS tombstones store securable values that ODS tombstones lack (ODS stores model-declared authorization columns such as `DisciplineAction.OldResponsibilitySchoolId`, but not C#-level overrides such as StudentAssessment's reported school), and the built-in relationship strategies already authorize those tombstones from those columns, so restricting custom views to identity references would protect nothing. In Data Standard 5.2 and 6.1 the non-identity securable elements are the EdOrg paths on `disciplineActions` (responsibility school), `organizationDepartments` (parent EdOrg), and `studentAssessments` (reported school, nullable), plus the Namespace paths on namespace-secured resources; none are person paths.
 
@@ -1889,21 +1990,20 @@ FROM
   tracked_changes_edfi.Grade AS c
   LEFT JOIN dms.Descriptor AS OldGradeTypeDescriptor 
     ON OldGradeTypeDescriptor.ResourceKeyId = @GradeTypeDescriptorResourceKeyId
-    AND OldGradeTypeDescriptor.UriLowered = LOWER(CONCAT(
-      c.OldGradeTypeDescriptor_Namespace,
-      '#',
-      c.OldGradeTypeDescriptor_CodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
+    AND OldGradeTypeDescriptor.UriLowered = LOWER(
+      (c.OldGradeTypeDescriptor_Namespace + N'#' + c.OldGradeTypeDescriptor_CodeValue)
+      COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN dms.Descriptor AS OldGradingPeriodDescriptor
     ON OldGradingPeriodDescriptor.ResourceKeyId = @GradingPeriodDescriptorResourceKeyId
-    AND OldGradingPeriodDescriptor.UriLowered = LOWER(CONCAT(
-      c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace,
-      '#',
-      c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
+    AND OldGradingPeriodDescriptor.UriLowered = LOWER(
+      (c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_Namespace + N'#'
+        + c.OldGradingPeriodGradingPeriod_GradingPeriodDescriptor_CodeValue)
+      COLLATE SQL_Latin1_General_CP1_CI_AS)
 
   LEFT JOIN edfi.Grade AS src 
-    ON OldGradeTypeDescriptor.DocumentId                    = src.GradeTypeDescriptor_DescriptorId 
-    AND OldGradingPeriodDescriptor.DocumentId               = src.GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId 
+    ON OldGradeTypeDescriptor.DescriptorId                    = src.GradeTypeDescriptor_DescriptorId
+    AND OldGradingPeriodDescriptor.DescriptorId               = src.GradingPeriodGradingPeriod_GradingPeriodDescriptor_DescriptorId
     AND c.OldGradingPeriodGradingPeriod_GradingPeriodName  = src.GradingPeriodGradingPeriod_GradingPeriodName
     AND c.OldSchoolId_Unified                              = src.SchoolId_Unified
     AND c.OldSchoolYear_Unified                            = src.SchoolYear_Unified
@@ -1929,7 +2029,16 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-In the SQL Server example above, we join with the live table using identifying values instead of surrogate keys so that we can hide entries that were recreated. Descriptor-valued identity parts use the same descriptor identity as write-time resolution: the computed `UriLowered` plus the descriptor resource's compile-time `ResourceKeyId`. The PostgreSQL renderer emits the equivalent `lower(descriptor."Uri" COLLATE "pg_c_utf8") = lower((old_namespace || '#' || old_code_value) COLLATE "pg_c_utf8")` expression so `UX_Descriptor_UriLowered_ResourceKeyId` serves the join on both engines without inheriting the database default collation. The `ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each `TrackedChangeDescriptorJoinInfo.DescriptorResource`.
+The example (SQL Server) seeks a recreated descriptor by the lowered whole URI rebuilt from the
+retained namespace/code components and the qualified `ResourceKeyId`, then joins its new compact
+`DescriptorId` to the recreated resource's stored FK. The PostgreSQL renderer emits
+`lower((d."Namespace" || '#' || d."CodeValue") COLLATE "pg_c_utf8") = lower((c."Old…_Namespace" || '#' ||
+c."Old…_CodeValue") COLLATE "pg_c_utf8")`, which matches its expression index. Both are the predicate
+the descriptor write probe uses, so a descriptor recreation the engine considers the same identity
+suppresses the old tombstone, and the probe seeks `UX_Descriptor_UriLowered_ResourceKeyId`.
+`ResourceKeyId` parameters come from `MappingSet.ResourceKeyIdByResource` through each
+`TrackedChangeDescriptorJoinInfo.DescriptorResource`. A null old component makes the rebuilt URI
+null, so the join cannot match.
 
 #### `*_RefKey` index ordering for `/deletes`
 
@@ -1939,11 +2048,25 @@ This makes the physical order of the `UX_<Table>_RefKey` key columns important. 
 
 For DMS, emit `*_RefKey` with `DocumentId` last: `(<identity storage columns...>, DocumentId)`. The composite reference FKs that target `*_RefKey` must use the same target-column ordering. This preserves the uniqueness contract while giving `/deletes` a useful seek path for the anti-join against the live table.
 
-`*_RefKey` is emitted only for resources that some other resource references (`EnsureTargetUnique`). Never-referenced resources have no RefKey; their recreated-row anti-join keeps the plan available from `UX_<Table>_NK` (a partial seek on leading scalar identity parts plus a residual filter). That is the pre-existing behavior and is not changed by the natural-key design. If measurement shows it is too slow on high-volume never-referenced tables, the agreed remedy is to re-shape the anti-join onto the resource's own natural key using the compiled `OwnNaturalKeyProbe` (reference-sourced parts resolved by scalar subselects over the referenced targets' `RefKey`s, bound from the tombstone `Old*` scalars; descriptor parts via the lowered-URI + `ResourceKeyId` subselect), so the outer join seeks `UX_<Table>_NK`. See `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
+`*_RefKey` is emitted only for resources that some other resource references (`EnsureTargetUnique`). Never-referenced resources have no RefKey; their recreated-row anti-join keeps the plan available from `UX_<Table>_NK` (a partial seek on leading scalar identity parts plus a residual filter). That is the pre-existing behavior and is not changed by the natural-key design. If measurement shows it is too slow on high-volume never-referenced tables, the agreed remedy is to re-shape the anti-join onto the resource's own natural key using the compiled `OwnNaturalKeyProbe` in the future natural-key workstream (reference-sourced parts resolved by scalar subselects over the referenced targets' `RefKey`s, bound from the tombstone `Old*` scalars; descriptor parts via the lowered-URI + `ResourceKeyId` subselect), so the outer join seeks `UX_<Table>_NK`. See `natural-key-resolution.md` § "`/deletes` recreated-row detection on never-referenced resources".
 
-Descriptor `/deletes` uses the same conceptual anti-join and the same identity contract as descriptor writes, references, and filters: `(UriLowered, ResourceKeyId)`. The planner resolves the requested descriptor endpoint to its compile-time `ResourceKeyId` and compares the live descriptor URI with the lowered tombstoned `<namespace>#<codeValue>` value. The existing `UX_Descriptor_UriLowered_ResourceKeyId` serves this probe, so no separate descriptor identity index is needed. Because both sides use the engine-lowered URI contract, a descriptor recreation differing only in casing (as folded by the engine's descriptor identity contract) suppresses the old tombstone on both engines.
+Descriptor `/deletes` anti-joins the live descriptor by `ResourceKeyId` and the lowered whole URI
+rebuilt from the old `Namespace` and `CodeValue`, the same probe as resource `/deletes` above. On SQL
+Server the rebuilt URI is collated under the DMS identity collation (`SQL_Latin1_General_CP1_CI_AS`)
+inside `LOWER`, independent of the database default; PostgreSQL lowers both sides under
+`pg_c_utf8`. A recreation suppresses the old tombstone exactly when the engine would treat the two URIs
+as one descriptor on the write path; a different qualified descriptor type does not. The required
+regressions, on both providers: case-only recreation is suppressed; a component re-split of the same
+URI (`ns/components` + `Campus#Code` against `ns/components#Campus` + `Code`) is suppressed; a
+namespace that differs only by a trailing space is retained, because the space is part of the URI
+(SQL Server's `=` used to pad it away). A trailing code-value space keeps the engine's padding rule:
+suppressed on SQL Server, retained on PostgreSQL. Responses still reconstruct the whole
+original-case URI from old components.
 
-The shared `tracked_changes_edfi.Descriptor.Discriminator` remains only as a routing value for selecting historical rows belonging to the requested endpoint. The planner obtains that value from the resolved endpoint metadata independently of `ResourceKeyId`; it must not parse the discriminator or use it to probe or type-check `dms.Descriptor`.
+The shared `tracked_changes_edfi.Descriptor.ResourceKeyId` routes retained history to the requested
+endpoint using the fully qualified mapping-set resource. Neither live nor historical descriptors
+store Discriminator. The old namespace/code, owning `DocumentId`, and UUID remain available after
+deletion; no join back to a live owner is needed to select or authorize a retained history row.
 
 An example SQL Server query used to fulfill the `GET crisisTypeDescriptors/deletes` request is:
 
@@ -1957,9 +2080,9 @@ FROM
   tracked_changes_edfi.Descriptor AS c 
   LEFT JOIN dms.Descriptor AS src 
     ON src.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId
-    AND src.UriLowered = LOWER(CONCAT(c.OldNamespace, '#', c.OldCodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
+    AND src.UriLowered = LOWER((c.OldNamespace + N'#' + c.OldCodeValue) COLLATE SQL_Latin1_General_CP1_CI_AS)
 WHERE 
-  c.Discriminator = @CrisisTypeDescriptorDiscriminator -- Route rows in the shared tombstone table only
+  c.ResourceKeyId = @CrisisTypeDescriptorResourceKeyId -- Route this qualified type's history
   AND src.DocumentId IS NULL             -- Exclude entries that were recreated
   AND c.NewCodeValue IS NULL            -- Exclude key changes, use any New* identity column
   AND (
@@ -1972,11 +2095,11 @@ ORDER BY
   c.ChangeVersion OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY
 ```
 
-PostgreSQL emits
-`lower(src."Uri" COLLATE "pg_c_utf8") = lower((c."OldNamespace" || '#' || c."OldCodeValue") COLLATE "pg_c_utf8")`
-for the URI predicate and uses the same compile-time `ResourceKeyId` predicate. The explicit
-`"pg_c_utf8"` collation is required; an unqualified `lower(...)` would inherit the database default
-and is not part of the Change Query SQL contract.
+PostgreSQL emits `lower((src."Namespace" || '#' || src."CodeValue") COLLATE "pg_c_utf8") =
+lower((c."OldNamespace" || '#' || c."OldCodeValue") COLLATE "pg_c_utf8")` with the same compiled
+`smallint ResourceKeyId` predicate. Both forms come from the helper that also emits the descriptor
+write probe, so Change Queries cannot drift from the write path's descriptor identity. No component
+trimming is introduced.
 
 ### /keyChanges endpoints
 
@@ -2161,7 +2284,7 @@ The planner uses this path for every resource with a `MirroredContentVersion` co
 
 `/deletes`, `/keyChanges`, and `/availableChangeVersions` are unchanged. The mirror affects only the live resource read path.
 
-Reads of `_lastModifiedDate` and per-item `ChangeVersion` in response bodies remain sourced from `dms.Document` for now; switching to the concrete-table mirror is an optional future read-path optimization (the values are identical per Invariant #2).
+Response `ChangeVersion` remains sourced from `dms.Document`; `_lastModifiedDate` comes from the authoritative resource root or descriptor. Resource-aware metadata SELECTs join the owner by `DocumentId` within the existing hydration batch, including single-document, page and candidate paths. There is one owner timestamp projection for the batch, with no per-document timestamp query. Descriptor responses project their timestamp from `dms.Descriptor` alongside the body; stored descriptor-reference expansion continues to join by `DescriptorId`.
 
 
 #### Page-selection ordering
@@ -2284,35 +2407,42 @@ Tests should assert the shared inventory before asserting rendered SQL. At minim
 
 - `TrackedChangeTableInfo` creation for regular resources, concrete abstract resources, and the shared descriptor table.
 - `TrackedChangeColumnInfo` old/new column pairs and separate old/new nullability for identity paths, securable element paths, canonical key-unification storage columns, descriptor `Namespace`/`CodeValue` projections, and person `DocumentId` projections.
-- SQL Server emitted DDL applies `COLLATE SQL_Latin1_General_CP1_CI_AS` to every string
-  tracked-change old/new identity column, including descriptor `Namespace`/`CodeValue` projections,
-  while routing-only columns such as `Discriminator` do not inherit that identity rule.
+- SQL Server tracked-change `Old*`/`New*` string columns whose origin includes identity carry
+  `COLLATE SQL_Latin1_General_CP1_CI_AS`; PostgreSQL history strings keep the database collation.
+  Routing uses `smallint ResourceKeyId`; it does not use the lowered-URI probes.
 - `TrackedChangeDescriptorJoinInfo` and `TrackedChangePersonJoinInfo` paths used by trigger emitters, with value columns referencing them by join name rather than duplicating join definitions.
 - `DocumentStamping.ChangeTracking` attachment to the correct `TriggerKindParameters.DocumentStamping` trigger entries.
 - ChangeTracking key-change rows using the owning `DbTriggerInfo.IdentityProjectionColumns` workset, including key-unification cases where canonical storage columns change without direct alias-column updates, and presence-only alias changes do not emit key-change rows when the canonical identity storage values are unchanged.
 - `ReadChangesAuthorizationViewInfo` union arms for current/current, current/tracked, tracked/current, and tracked/tracked association combinations.
 - Manifest output for tracked-change tables, triggers, and ReadChanges authorization views so SQL generation tests are checking renderer behavior, not hidden semantic compilation in the DDL emitter.
-- Mirror columns (`ContentVersion`, `ContentLastModifiedAt`) tagged with `ColumnKind.MirroredContentVersion` and `ColumnKind.MirroredContentLastModifiedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
+- Version mirror, authoritative timestamp and creation-time columns (`ContentVersion`, `ContentLastModifiedAt`, `ContentCreatedAt`) tagged with `ColumnKind.MirroredContentVersion`, `ColumnKind.AuthoritativeContentLastModifiedAt` and `ColumnKind.AuthoritativeContentCreatedAt` on every `ConcreteResourceModel` with `StorageKind = RelationalTables`, including extension-project resources; absent on `StorageKind = SharedDescriptorTable` resources (the columns live on `dms.Descriptor` instead, added by the core DDL pass).
 - `IX_<Table>_ContentVersion` per in-scope root in `IndexesInCreateOrder` (single-column), plus
   `IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId` with key columns in the order
   `[ResourceKeyId, ContentVersion, DocumentId]` for live descriptor change-version-windowed page
   selection; no live-descriptor index has `Discriminator` as a key.
-- Emitted-SQL snapshots for resource and descriptor `/deletes` use the descriptor resource's
-  compile-time `ResourceKeyId` plus the dialect's lowered-URI expression when probing
-  `dms.Descriptor`; `Discriminator` appears only in the predicate that routes shared historical
-  descriptor rows.
-- DB-behavior on PostgreSQL and SQL Server: deleting a descriptor and recreating it with the same
-  URI under casing differences (as folded by the engine's descriptor identity contract) suppresses
-  the old descriptor tombstone, and also allows
-  resource `/deletes` recreation detection to resolve descriptor-valued identity parts to the
-  recreated descriptor. Reusing the same URI for a different descriptor `ResourceKeyId` does not
-  suppress the tombstone.
+- Emitted-SQL snapshots use qualified `ResourceKeyId` for live descriptor seeks and shared history
+  routing, and compact `DescriptorId` for resource-FK joins. No descriptor Discriminator is emitted.
+- PostgreSQL and SQL Server regressions cover exact recreation, case-only recreation (suppressed on
+  both), component re-splits of the same URI (suppressed on both), a trailing namespace space
+  (retained on both), copied resource identity parts, same-named cross-project descriptor types, and
+  custom-view live/tombstone document membership on all four descriptor comparison paths, including
+  dotted `İ`/`i`. Reusing URI/components for another type does not suppress the
+  original type's tombstone.
+- Descriptor probe SQL guard: every SQL Server `LOWER(` in emitted Change Query SQL collates its
+  input under the identity collation, and every PostgreSQL `lower(` carries `COLLATE "pg_c_utf8"`.
+- DB-behavior under a `Turkish_100_CS_AS` SQL Server database default: every descriptor probe surface
+  (write probe and POST, reference resolution, descriptor-valued identity, query filter, `/deletes`,
+  custom-view descriptor seek) resolves an existing `I`-bearing descriptor from an uppercase-`I`
+  case variant, where an unqualified `LOWER(N'I')` would yield dotless `ı`.
+- The cross-engine descriptor verdict matrix pins, per engine, the collation verdict and the
+  `OrdinalIgnoreCase` verdict for each listed Unicode pair, and requires the write probe, reference
+  resolution, stored-wins POST and `/deletes` to reach the collation verdict.
 - DB-behavior on SQL Server under a `Latin1_General_100_CS_AS_SC_UTF8` database default:
   deleting and recreating a regular resource with only string identity casing differences suppresses
   the old tombstone, proving tracked-change identity copies use the DMS CI identity collation rather
   than the database default.
-- Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `MirrorStampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
-- DB-behavior: mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion` and `<root>.ContentLastModifiedAt = dms.Document.ContentLastModifiedAt`) after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
+- Every `DbTriggerInfo` with `Kind = DocumentStamping` has a non-null `StampTargetTable` matching the per-trigger rule (same table for root, resource's root for child / `_ext`, `dms.Descriptor` for the descriptor trigger).
+- DB-behavior: version mirror equals source (`<root>.ContentVersion = dms.Document.ContentVersion`) and the authoritative owner timestamp matches the persisted representation after every write path — insert, update, no-op update, identity change, child-collection write, `_ext` write, FK-cascade update, descriptor write. Run on at least a root-only resource (`edfi.Student`), a child-bearing resource (`edfi.School` with `SchoolAddress` writes), an `_ext`-bearing resource, an extension-project resource (e.g. `tpdm.Candidate`), and a descriptor.
 - DB-behavior: stamp-only updates (`UPDATE <root> SET ContentVersion = ContentVersion + 1 …`) do not allocate a new sequence value, do not fire additional mirror UPDATEs, and do not insert `tracked_changes_*` rows; multi-row UPDATEs that stamp N documents allocate N distinct `ContentVersion` values, and each document's mirror equals its `dms.Document` stamp.
 - DB-behavior: root deletes with cascaded child, nested-child, or `_ext` rows produce exactly one visible root tombstone in the relevant `tracked_changes_*` table. The tombstone's `ChangeVersion` is the final delete ChangeVersion exposed to Change Queries, and no later visible root stamp or tracked-change row can advance an extraction watermark past that tombstone. Run this on PostgreSQL and SQL Server for at least one child-bearing resource and one extension-bearing resource.
 - DB-behavior: there is no separate document-level identity counter on any in-scope root table or `dms.Descriptor`; identity-projection changes are reflected through `ContentVersion` and `ContentLastModifiedAt`.

@@ -31,6 +31,17 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTime LastModifiedAt = new(2026, 8, 1, 12, 1, 0, DateTimeKind.Utc);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
 
     private MssqlGeneratedDdlFixture _fixture = null!;
     private IMssqlGeneratedDdlBaselineDatabase _baseline = null!;
@@ -274,23 +285,20 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
 
             SELECT [DocumentId] FROM @inserted;
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = documentUuid },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
 
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
@@ -341,6 +349,7 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -353,6 +362,7 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -377,6 +387,10 @@ public class Given_A_Mssql_DocumentCacheAdministrativeClear_Primitive
                 Value = $"etag-{source.ContentVersion}",
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LastModifiedAt },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
             {
                 Value = new JsonObject { ["value"] = $"cache-{source.ContentVersion}" }.ToJsonString(),

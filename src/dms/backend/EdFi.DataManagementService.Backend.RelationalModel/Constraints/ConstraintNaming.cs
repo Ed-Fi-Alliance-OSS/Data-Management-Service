@@ -17,6 +17,7 @@ internal static class ConstraintNaming
     internal const string AllNoneToken = "AllNone";
     internal const string NullOrTrueToken = "NullOrTrue";
     internal const string DocumentToken = "Document";
+    internal const string DocumentResourceKeyToken = "DocumentResourceKey";
 
     private const string DescriptorIdSuffix = "_DescriptorId";
 

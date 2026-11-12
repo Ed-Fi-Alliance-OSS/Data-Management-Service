@@ -36,6 +36,17 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly QualifiedResourceName DescriptorResource = new("Ed-Fi", "SchoolTypeDescriptor");
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 7, 31, 12, 0, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCacheTargetKey TargetKey = DocumentCacheTargetKey.Create(
         "tenant-cache-read",
         7
@@ -490,21 +501,18 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return new SourceDocument(
@@ -549,14 +557,12 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 source_documents."DocumentUuid",
                 source_documents."ResourceKeyId",
-                source_documents."ContentVersion",
-                @lastModifiedAt
+                source_documents."ContentVersion"
             FROM source_documents
             ORDER BY source_documents."Ordinal"
             RETURNING
@@ -568,8 +574,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             new NpgsqlParameter("sourceDocumentsJson", NpgsqlDbType.Jsonb)
             {
                 Value = JsonSerializer.Serialize(seed),
-            },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+            }
         );
 
         return rows.OrderBy(static row => Convert.ToInt64(row["ContentVersion"]))
@@ -594,9 +599,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 "ShortDescription",
                 "Description",
                 "EffectiveBeginDate",
-                "EffectiveEndDate",
-                "Discriminator",
-                "Uri"
+                "EffectiveEndDate"
             )
             VALUES (
                 @documentId,
@@ -606,9 +609,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 @shortDescription,
                 @description,
                 @effectiveBeginDate,
-                @effectiveEndDate,
-                @discriminator,
-                @uri
+                @effectiveEndDate
             );
             """,
             new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = descriptor.DocumentId },
@@ -624,15 +625,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
             {
                 Value = new DateOnly(2025, 1, 15),
             },
-            new NpgsqlParameter("effectiveEndDate", NpgsqlDbType.Date) { Value = new DateOnly(2025, 12, 31) },
-            new NpgsqlParameter("discriminator", NpgsqlDbType.Varchar)
-            {
-                Value = DescriptorResource.ResourceName,
-            },
-            new NpgsqlParameter("uri", NpgsqlDbType.Varchar)
-            {
-                Value = "uri://ed-fi.org/SchoolTypeDescriptor#Alternative",
-            }
+            new NpgsqlParameter("effectiveEndDate", NpgsqlDbType.Date) { Value = new DateOnly(2025, 12, 31) }
         );
     }
 
@@ -660,6 +653,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -672,6 +666,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 cache_row."ContentVersion",
                 cache_row."StreamEtag",
                 @lastModifiedAt,
+                @contentCreatedAt,
                 cache_row."DocumentJson"::jsonb,
                 @computedAt
             FROM jsonb_to_recordset(CAST(@cacheRowsJson AS jsonb)) AS cache_row(
@@ -699,6 +694,10 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 Value = resourceKey.ResourceVersion,
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = LastModifiedAt.AddMinutes(1),
@@ -728,6 +727,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -740,6 +740,7 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -768,6 +769,10 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
                 ),
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
                 Value = new JsonObject { ["value"] = $"cache-{contentVersion}" }.ToJsonString(),
@@ -805,16 +810,11 @@ public class Given_A_Postgresql_DocumentCacheReadLookupAdapter
         await _database.ExecuteNonQueryAsync(
             """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = @contentVersion,
-                "ContentLastModifiedAt" = @lastModifiedAt
+            SET "ContentVersion" = @contentVersion
             WHERE "DocumentId" = @documentId;
             """,
             new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-            {
-                Value = LastModifiedAt.AddMinutes(5),
-            }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
     }
 

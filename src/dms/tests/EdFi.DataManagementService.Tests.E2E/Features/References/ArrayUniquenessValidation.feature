@@ -324,6 +324,54 @@ Feature: Validate array uniqueness
                   }
                   """
 
+        @e2e-ci-shard-4 @MssqlRepresentative @DMS-1453
+        Scenario: 06a Verify clients cannot create a resource with descriptors differing only in case
+            # Core compares descriptor URIs ordinally, so this pair passes Core's check. Both URIs
+            # resolve to the same stored descriptor, and the backend's storage-resolved duplicate
+            # check rejects the second item with the same response shape as Scenario 06.
+            Given the system has these descriptors
+                  | descriptorValue                                                |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Sixth grade               |
+                  | uri://ed-fi.org/GradeLevelDescriptor#Seventh grade             |
+                  | uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School |
+             When a POST request is made to "/ed-fi/schools" with
+                  """
+                  {
+                      "schoolId": 255901010,
+                      "nameOfInstitution": "School Test",
+                      "gradeLevels": [
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#Sixth grade"
+                          },
+                          {
+                              "gradeLevelDescriptor": "uri://ed-fi.org/GradeLevelDescriptor#SIXTH GRADE"
+                          }
+                      ],
+                      "educationOrganizationCategories": [
+                          {
+                              "educationOrganizationCategoryDescriptor": "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School"
+                          }
+                      ]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                      "validationErrors": {
+                          "$.gradeLevels": [
+                              "The 2nd item of the gradeLevels has the same identifying values as another item earlier in the list."
+                          ]
+                      },
+                      "errors": [],
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "correlationId": null
+                  }
+                  """
+
     Rule: Duplicate References on Student Assessments
         Background:
             Given the system has these descriptors

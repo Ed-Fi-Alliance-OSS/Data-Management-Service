@@ -146,6 +146,8 @@ public sealed class Given_MessageContractSqlServer
             _rows[0]
         );
         _public["LIVE"].Records.Count.Should().Be(7);
+        // Updates reuse each row's contentCreatedAt, so these exact comparisons also prove an
+        // update republishes documentCreatedAt unchanged while lastModifiedAt changes.
         foreach (MessageContractProviderRow row in _rows.Skip(1).Concat(_updates))
         {
             MessageContractKafkaRecord record = _public["LIVE"]
@@ -187,6 +189,12 @@ public sealed class Given_MessageContractSqlServer
             MessageContractProviderAssertions.AssertSchema(input.GetProperty("jsonSchema"), "STRING", "", 0);
             MessageContractProviderAssertions.AssertSchema(
                 input.GetProperty("timeSchema"),
+                "STRING",
+                "io.debezium.time.IsoTimestamp",
+                1
+            );
+            MessageContractProviderAssertions.AssertSchema(
+                input.GetProperty("createdTimeSchema"),
                 "STRING",
                 "io.debezium.time.IsoTimestamp",
                 1

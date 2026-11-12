@@ -87,8 +87,11 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 "ResourceKeyId" => (short)1,
                 "CreatedByOwnershipTokenId" => DBNull.Value,
                 "ContentVersion" => row.GetProperty("contentVersion").GetInt64(),
-                "LastModifiedAt" or "ContentLastModifiedAt" or "CreatedAt" or "ComputedAt" => DateTimeOffset
+                "LastModifiedAt" or "ComputedAt" => DateTimeOffset
                     .Parse(row.GetProperty("lastModifiedAt").GetString()!, CultureInfo.InvariantCulture)
+                    .UtcDateTime,
+                "ContentCreatedAt" => DateTimeOffset
+                    .Parse(row.GetProperty("contentCreatedAt").GetString()!, CultureInfo.InvariantCulture)
                     .UtcDateTime,
                 "DocumentJson" => row.GetProperty("documentJson").GetRawText(),
                 _ => row.GetProperty(char.ToLowerInvariant(name[0]) + name[1..]).GetString()!,
@@ -98,7 +101,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 parameter.DbType = DbType.Int16;
             }
 
-            if (name is "LastModifiedAt" or "ContentLastModifiedAt" or "CreatedAt" or "ComputedAt")
+            if (name is "LastModifiedAt" or "ContentCreatedAt" or "ComputedAt")
             {
                 parameter.DbType = Provider == CdcProvider.Postgresql ? DbType.DateTime : DbType.DateTime2;
             }

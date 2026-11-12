@@ -27,7 +27,7 @@
         * IntegrationTest: executes NUnit test in projects named `*.IntegrationTests`,
           which connect to a database.
         * BuildAndPublish: build and publish with `dotnet publish`
-        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are packed at -DMSVersion; the custom-validation, plugin contract, and identity contract packages are packed at the version each declares in its own project and ignore -DMSVersion. The identity contract package is built and verified only, and is deliberately not published yet. Use -PackageTarget to build only one package.
+        * Package: builds NuGet packages. The DMS API application, SchemaTools, and DocumentCacheAdmin packages are packed at -DMSVersion; the custom-validation, plugin contract, and identity contract packages are packed at the version each declares in its own project and ignore -DMSVersion. The identity contract package is published like the others. Use -PackageTarget to build only one package.
         * Push: uploads a NuGet package to the NuGet feed.
         * DockerBuild: builds a Docker image from source code
         * DockerRun: runs the Docker image that was built from source code
@@ -150,6 +150,23 @@ param(
     [switch]
     $SeparateConfigDatabase,
 
+    # Restore mode, StartEnvironment only: restores the DMS datastore from a trusted
+    # database-template package of this kind before services start. Forwarded unchanged to the
+    # bootstrap wrapper, which owns every restore-mode preflight and exclusion. build-dms adds
+    # one refusal of its own: -LoadSeedData, because restore mode's supplemental seed needs a
+    # -SeedTemplate or -SeedDataPath that build-dms does not expose.
+    [string]
+    [ValidateSet("Minimal", "Populated")]
+    $RestoreTemplate,
+
+    # Restore mode, StartEnvironment only: explicit local package source directory (must hold
+    # exactly one matching template .nupkg plus its sibling attestation document). Normalized
+    # against the caller's working directory before the wrapper is invoked from
+    # eng/docker-compose, then forwarded unchanged; the wrapper enforces that it requires
+    # -RestoreTemplate.
+    [string]
+    $PackageDirectory,
+
     # Identity provider type
     [string]
     [ValidateSet("keycloak", "self-contained")]
@@ -164,7 +181,14 @@ param(
     [string]
     $EnvironmentOverlayFile,
 
-    # Optional test filter for dotnet test operations
+    # Optional test filter for dotnet test operations. A leading @ on a category is stripped, also
+    # inside | and parenthesized groups. E2E scenarios tagged @MssqlOnly or @PostgresqlOnly run on
+    # one engine only, so each E2E lane excludes the other engine's tag:
+    #   PostgreSQL shard:       (Category=@e2e-ci-shard-N)&(Category!=@MssqlOnly)
+    #   PostgreSQL DS 6.1:      (Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)
+    #   Partition sizing:       (Category=@CursorPartitionSizing)&(Category!=@MssqlOnly)
+    #   SQL Server:             (Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)
+    #   SQL Server DS 6.1:      (Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)
     [string]
     $TestFilter,
 
@@ -314,6 +338,11 @@ function SetAuthenticationServiceURL {
         [string]
         $E2EDirectory
     )
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -eq "1") {
+        # The launcher scopes AppSettings__AuthenticationService to the test process. Leave the
+        # compiled settings intact so later prebuilt runs cannot inherit the removed proxy URL.
+        return
+    }
     $appSettingsPath = Join-Path -Path $E2EDirectory -ChildPath "appsettings.json"
     $json = Get-Content $appSettingsPath -Raw | ConvertFrom-Json
     if ($IdentityProvider -eq  "self-contained") {
@@ -901,7 +930,7 @@ function Invoke-WithE2EIdentityEnvironment {
     $prefix = if ($IdentityProvider -eq "keycloak") { "KEYCLOAK" } else { "SELF_CONTAINED" }
     # Keycloak's issuer (DMS_JWT_AUTHORITY) differs from the in-network URL the Configuration
     # Service calls; self-contained uses one value for both.
-    $configAuthorityKey = if ($IdentityProvider -eq "keycloak") { "DMS_CONFIG_IDENTITY_AUTHORITY" } else { "DMS_JWT_AUTHORITY" }
+    $configAuthorityKey = if ($IdentityProvider -eq "keycloak") { "CONFIGURATION_SERVICE_IDENTITY_AUTHORITY" } else { "DMS_JWT_AUTHORITY" }
     foreach ($key in 'OAUTH_TOKEN_ENDPOINT', 'DMS_JWT_AUTHORITY', 'DMS_JWT_METADATA_ADDRESS', $configAuthorityKey | Select-Object -Unique) {
         $sourceKey = "${prefix}_$key"
         if ([string]::IsNullOrWhiteSpace($environmentValues[$sourceKey])) {
@@ -911,11 +940,11 @@ function Invoke-WithE2EIdentityEnvironment {
     # Match startup's provider-specific endpoint selection. Startup restores its temporary values;
     # tests that recreate DMS with Compose must receive the selected identity settings explicitly.
     $identityEnvironment = @{
-        DMS_CONFIG_IDENTITY_PROVIDER = $IdentityProvider
+        CONFIGURATION_SERVICE_IDENTITY_PROVIDER = $IdentityProvider
         OAUTH_TOKEN_ENDPOINT = $environmentValues["${prefix}_OAUTH_TOKEN_ENDPOINT"]
         DMS_JWT_AUTHORITY = $environmentValues["${prefix}_DMS_JWT_AUTHORITY"]
         DMS_JWT_METADATA_ADDRESS = $environmentValues["${prefix}_DMS_JWT_METADATA_ADDRESS"]
-        DMS_CONFIG_IDENTITY_AUTHORITY = $environmentValues["${prefix}_$configAuthorityKey"]
+        CONFIGURATION_SERVICE_IDENTITY_AUTHORITY = $environmentValues["${prefix}_$configAuthorityKey"]
     }
     $previousEnvironment = @{}
     foreach ($name in $identityEnvironment.Keys) {
@@ -960,12 +989,26 @@ function RunE2E {
     # Run only the standard E2E tests, excluding instance management tests
     # Instance management tests require special setup (route qualifiers, additional databases)
     # and should be run separately using the instance management test scripts
+    # DMS-1606 provider fixtures need a dedicated proxy + endpoint overlay. Keep them out of ordinary
+    # local runs, including explicit full-suite filters. The launcher sets the marker only while
+    # the proxy and endpoint overlay are active, and selects root/qualified cases explicitly.
+    $effectiveTestFilter = $TestFilter
+    if ($env:DMS_TOKEN_CONTRACT_PROXY_ACTIVE -ne '1') {
+        $fixtureExclusions = '(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)'
+        $effectiveTestFilter = if ([string]::IsNullOrWhiteSpace($TestFilter)) {
+            $fixtureExclusions
+        }
+        else {
+            "($TestFilter)&$fixtureExclusions"
+        }
+    }
+
     Invoke-WithE2EIdentityEnvironment -EnvironmentFile $E2ETestSettings.EnvironmentFile -IdentityProvider $IdentityProvider -Action {
         Invoke-WithE2ETestProcessContext -E2ETestSettings $E2ETestSettings -Action {
             Invoke-Execute {
                 RunTests `
                     -Filter "EdFi.DataManagementService.Tests.E2E" `
-                    -TestFilter $TestFilter `
+                    -TestFilter $effectiveTestFilter `
                     -ResultNameSuffix $E2ETestSettings.TestResultSuffix
             }
         }
@@ -1034,8 +1077,8 @@ function Write-DmsSchemaContainerEnvironment {
     Write-Output "DMS container schema environment:"
     foreach ($key in @(
             "AppSettings__Datastore",
-            "AppSettings__UseApiSchemaPath",
-            "AppSettings__ApiSchemaPath",
+            "AppSettings__ApiSchema__UseCustomPath",
+            "AppSettings__ApiSchema__Path",
             "SCHEMA_PACKAGES"
         )) {
         if ($EnvironmentValues.ContainsKey($key)) {
@@ -1263,10 +1306,33 @@ function Start-BootstrapDockerEnvironment {
         $DataStandardVersion,
 
         [switch]
-        $DataStandardVersionSupplied
+        $DataStandardVersionSupplied,
+
+        # Restore mode: forwarded to the bootstrap wrapper only when supplied; the wrapper owns
+        # every restore-mode preflight and exclusion except the -LoadSeedData refusal below.
+        # Plain strings so forwarding an unset value from the caller does not trip validation.
+        [string]
+        $RestoreTemplate,
+
+        [string]
+        $PackageDirectory
     )
 
+    # The wrapper accepts restore plus -LoadSeedData only with an explicit -SeedTemplate or
+    # -SeedDataPath, which StartEnvironment does not expose, so the combination could only fail
+    # later. Refuse it here, before any image build, teardown, or bootstrap work.
+    if (-not [string]::IsNullOrWhiteSpace($RestoreTemplate) -and $LoadSeedData) {
+        throw "StartEnvironment does not support -RestoreTemplate with -LoadSeedData: restore mode's supplemental API seed needs an explicit -SeedTemplate or -SeedDataPath, which build-dms.ps1 does not expose. Run eng/docker-compose/bootstrap-local-dms.ps1 (or bootstrap-published-dms.ps1) with -RestoreTemplate, -LoadSeedData, and -SeedTemplate or -SeedDataPath, or omit -LoadSeedData. Nothing was built, stopped, or started."
+    }
+
     $environmentFilePath = Resolve-E2EEnvironmentFilePath -Path $EnvironmentFile
+
+    # Normalize -PackageDirectory against the CALLER's working directory now: the wrapper is
+    # invoked from eng/docker-compose below, where a relative source path would resolve wrongly.
+    if (-not [string]::IsNullOrWhiteSpace($PackageDirectory) -and -not [System.IO.Path]::IsPathRooted($PackageDirectory)) {
+        $PackageDirectory = [System.IO.Path]::GetFullPath((Join-Path (Get-Location).Path $PackageDirectory))
+    }
+
     $effectiveDatabaseEngine =
         if ([string]::IsNullOrWhiteSpace($DatabaseEngine)) {
             "postgresql"
@@ -1275,14 +1341,51 @@ function Start-BootstrapDockerEnvironment {
             $DatabaseEngine
         }
 
+    $restoreModeRequested = (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) -or
+        (-not [string]::IsNullOrWhiteSpace($PackageDirectory))
+
+    # In restore mode the image build is handed to the wrapper, which runs it only after the
+    # package is authenticated, staged, and cross-checked against the candidate workspace, so a
+    # rejected package never triggers Docker activity. It runs from the caller's location, as
+    # DockerBuild's relative src/dms path expects.
+    $restoreImageBuild = $null
     if (-not $SkipDockerBuild -and -not $UsePublishedImage) {
-        Invoke-Step { DockerBuild }
+        if ($restoreModeRequested) {
+            $restoreImageBuildLocation = (Get-Location).Path
+            $restoreImageBuild = {
+                Push-Location -LiteralPath $restoreImageBuildLocation
+                try {
+                    Invoke-Step { DockerBuild }
+                }
+                finally {
+                    Pop-Location
+                }
+            }
+        }
+        else {
+            Invoke-Step { DockerBuild }
+        }
     }
 
-    Stop-DockerEnvironment `
-        -EnvironmentFilePath $environmentFilePath `
-        -IdentityProvider $IdentityProvider `
-        -DatabaseEngine $effectiveDatabaseEngine
+    # A restore-SHAPED invocation must NOT be preceded by this teardown: Stop-DockerEnvironment
+    # delegates to start-*-dms.ps1 -d -v, which deletes the database volumes before the restore
+    # package has been resolved, authenticated, staged, or cross-checked. Destroying data on the
+    # strength of an unproven package is exactly what the restore branch's fail-closed ordering
+    # exists to prevent, so the wrapper's own stop-proof sequence owns that decision instead: it
+    # refuses a running stack without deleting volumes or workspaces.
+    #
+    # EITHER restore input suppresses the teardown, not just -RestoreTemplate. -PackageDirectory
+    # alone is an invalid restore request, but the wrapper is what rejects it ("-PackageDirectory
+    # requires -RestoreTemplate"), and that rejection happens after this point - so gating on
+    # -RestoreTemplate alone still deleted the datastore for a mistyped restore command. Skipping
+    # the teardown for both inputs keeps every restore-mode rule wrapper-owned; build-dms.ps1
+    # stays thin and duplicates no validation.
+    if (-not $restoreModeRequested) {
+        Stop-DockerEnvironment `
+            -EnvironmentFilePath $environmentFilePath `
+            -IdentityProvider $IdentityProvider `
+            -DatabaseEngine $effectiveDatabaseEngine
+    }
 
     Invoke-Execute {
         try {
@@ -1309,6 +1412,18 @@ function Start-BootstrapDockerEnvironment {
 
             if ($DataStandardVersionSupplied) {
                 $bootstrapArgs.DataStandardVersion = $DataStandardVersion
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($RestoreTemplate)) {
+                $bootstrapArgs.RestoreTemplate = $RestoreTemplate
+            }
+
+            if (-not [string]::IsNullOrWhiteSpace($PackageDirectory)) {
+                $bootstrapArgs.PackageDirectory = $PackageDirectory
+            }
+
+            if ($null -ne $restoreImageBuild) {
+                $bootstrapArgs.RestoreImageBuild = $restoreImageBuild
             }
 
             Invoke-WithDmsEnvironmentFileSchemaAuthority -Action {
@@ -1474,7 +1589,7 @@ function E2ETests {
 }
 
 function Wait-ForConfigServiceAndClientRegistration {
-    Write-Host "Waiting for config service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
+    Write-Host "Waiting for Configuration Service and OpenIddict clients to be fully initialized..." -ForegroundColor Cyan
     $maxAttempts = 60
     $attempt = 0
     $ready = $false
@@ -1497,11 +1612,11 @@ function Wait-ForConfigServiceAndClientRegistration {
 
             if ($response.access_token) {
                 $ready = $true
-                Write-Host "Config service is ready and clients are registered!" -ForegroundColor Green
+                Write-Host "Configuration Service is ready and clients are registered!" -ForegroundColor Green
             }
         }
         catch {
-            Write-Host "Config service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
+            Write-Host "Configuration Service or clients not ready yet. Error: $($_.Exception.Message)" -ForegroundColor Yellow
         }
 
         if (-not $ready) {
@@ -1510,7 +1625,7 @@ function Wait-ForConfigServiceAndClientRegistration {
     }
 
     if (-not $ready) {
-        throw "Config service did not become ready with registered clients within the timeout period"
+        throw "Configuration Service did not become ready with registered clients within the timeout period"
     }
 }
 
@@ -1682,7 +1797,9 @@ function Get-InstanceE2ETestEnvironmentContext {
     # in the admin/CMS connection strings) - BEFORE any registration connection string is built and
     # BEFORE the setup script provisions anything, so an unsafe or shared name fails fast and can never
     # reach a DROP/CREATE. provision-e2e-database.ps1 re-checks each name when it provisions (defense in
-    # depth); this is the earliest gate in the Instance flow.
+    # depth); this is the earliest gate in the Instance flow. The file is first refused if Compose could
+    # resolve a protected setting differently from the map the guard compares.
+    Assert-UnambiguousProtectedDeclaration -EnvironmentFilePath $resolvedEnvironmentFile -EnvironmentValues $environmentValues
     foreach ($databaseName in $databaseNames) {
         Assert-E2EDatabaseIsDedicated `
             -EnvironmentValues $environmentValues `
@@ -1738,13 +1855,6 @@ function Register-InstanceE2EFixture {
         -ClientId $bootstrapAdmin.ClientId `
         -ClientSecret $bootstrapAdmin.ClientSecret
 
-    # Resolved with Compose precedence for consistency with the registration connection strings;
-    # Add-DataStore ignores this credential whenever an explicit -ConnectionString is supplied, so
-    # this only matters if a future caller registers without one.
-    $postgresUser = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_USER" -DefaultValue "postgres"
-    $postgresPassword = Get-ComposeResolvedEnvValue -EnvironmentValues $environmentValues -Name "POSTGRES_PASSWORD" -DefaultValue "abcdefgh1!"
-    $postgresCredential = ConvertTo-PostgresCredential -UserName $postgresUser -Secret $postgresPassword
-
     # Canonical fixture routes: three data stores under two tenants (255901/2024 and 255901/2025 under
     # Tenant_255901; 255902/2024 under Tenant_255902). Index maps to the resolved database/registration
     # string in $InstanceE2ESettings.
@@ -1781,7 +1891,6 @@ function Register-InstanceE2EFixture {
                         -Tenant $tenantName `
                         -DataStoreType "District" `
                         -Name "Instance E2E $($route.DistrictId)/$($route.SchoolYear)" `
-                        -PostgresCredential $postgresCredential `
                         -ConnectionString $InstanceE2ESettings.RegistrationConnectionStrings[$route.Index] `
                         -DatabaseEngine $InstanceE2ESettings.DatabaseEngine
 
@@ -2639,7 +2748,7 @@ Invoke-Main {
         DockerBuild { Invoke-Step { DockerBuild } }
         DockerRun { Invoke-Step { DockerRun } }
         Run { Invoke-Step { Run } }
-        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied } }
+        StartEnvironment { Invoke-Step { Start-BootstrapDockerEnvironment -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -DatabaseEngine $DatabaseEngine -SeparateConfigDatabase:$SeparateConfigDatabase -IdentityProvider $IdentityProvider -DataStandardVersion $DataStandardVersion -DataStandardVersionSupplied:$dataStandardVersionSupplied -RestoreTemplate $RestoreTemplate -PackageDirectory $PackageDirectory } }
         default { throw "Command '$Command' is not recognized" }
     }
 }

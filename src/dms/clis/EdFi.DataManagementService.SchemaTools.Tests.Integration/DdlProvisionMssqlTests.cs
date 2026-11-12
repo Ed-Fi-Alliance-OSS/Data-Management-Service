@@ -98,6 +98,12 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
         );
         connection.Open();
         ProvisionTestHelper.AssertCoreTablesExist(connection);
+        ProvisionTestHelper.AssertContentStampOwnership(
+            new MssqlSchemaIntrospector().Introspect(
+                MssqlTestDatabaseHelper.BuildConnectionString(_databaseName),
+                ["dms", "testproject"]
+            )
+        );
     }
 
     [Test]
@@ -165,21 +171,6 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
             reader.IsDBNull(2).Should().BeTrue("the trigger should not use EXECUTE AS");
             reader.GetString(3).Should().NotContain("EXECUTE AS");
         }
-    }
-
-    [Test]
-    public void It_creates_the_uuidv5_function()
-    {
-        using var connection = new SqlConnection(
-            MssqlTestDatabaseHelper.BuildConnectionString(_databaseName)
-        );
-        connection.Open();
-
-        using var command = connection.CreateCommand();
-        command.CommandText = "SELECT OBJECT_ID(N'dms.uuidv5', N'FN');";
-        var result = command.ExecuteScalar();
-        result.Should().NotBeNull("the dms.uuidv5 function should exist after provisioning");
-        result.Should().NotBe(DBNull.Value, "the dms.uuidv5 function should exist after provisioning");
     }
 
     [Test]
@@ -305,6 +296,55 @@ public class Given_Mssql_Provisioning_Against_A_Case_Sensitive_Utf8_Database_Col
         }
     }
 
+    /// <summary>
+    /// AC3: generated identity text columns are pinned to the DMS identity collation, independent of the
+    /// case-sensitive database default, while non-identity strings keep the database default.
+    /// </summary>
+    [Test]
+    public void It_pins_identity_columns_to_the_DMS_identity_collation()
+    {
+        AssertProvisionSucceeded();
+
+        const string IdentityCollation = "SQL_Latin1_General_CP1_CI_AS";
+        Dictionary<string, string> expectedCollations = new()
+        {
+            ["testproject.Gadget.GadgetCode"] = IdentityCollation,
+            ["dms.Descriptor.Namespace"] = IdentityCollation,
+            ["dms.Descriptor.CodeValue"] = IdentityCollation,
+            ["dms.Descriptor.Uri"] = IdentityCollation,
+            ["tracked_changes_testproject.Gadget.OldGadgetCode"] = IdentityCollation,
+            ["tracked_changes_testproject.Gadget.NewGadgetCode"] = IdentityCollation,
+            ["testproject.Gadget.Description"] = RepresentativeCollation,
+            ["dms.Descriptor.ShortDescription"] = RepresentativeCollation,
+        };
+
+        using var connection = new SqlConnection(_connectionString);
+        connection.Open();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT s.name + N'.' + t.name + N'.' + c.name, c.collation_name
+            FROM sys.columns c
+            INNER JOIN sys.tables t ON t.object_id = c.object_id
+            INNER JOIN sys.schemas s ON s.schema_id = t.schema_id
+            WHERE c.collation_name IS NOT NULL
+            """;
+
+        Dictionary<string, string> actualCollations = new(StringComparer.Ordinal);
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                actualCollations[reader.GetString(0)] = reader.GetString(1);
+            }
+        }
+
+        actualCollations
+            .Where(entry => expectedCollations.ContainsKey(entry.Key))
+            .Should()
+            .BeEquivalentTo(expectedCollations);
+    }
+
     [Test]
     public void It_rejects_lifecycle_values_under_the_representative_database_collation()
     {
@@ -373,6 +413,8 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     private string? _secondManifestJson;
     private ProvisionTestHelper.DocumentCacheMutableStateSnapshot? _beforeRerun;
     private ProvisionTestHelper.DocumentCacheMutableStateSnapshot? _afterRerun;
+    private DateTime _beforeRerunTimestamp;
+    private DateTime _afterRerunTimestamp;
 
     [OneTimeSetUp]
     public void OneTimeSetUp()
@@ -399,6 +441,7 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         var schemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
         var introspector = new MssqlSchemaIntrospector();
         var firstManifest = introspector.Introspect(connectionString, schemaAllowlist);
+        ProvisionTestHelper.AssertContentStampOwnership(firstManifest);
         _firstManifestJson = ProvisionedSchemaManifestEmitter.Emit(firstManifest);
 
         using (var connection = new SqlConnection(connectionString))
@@ -406,6 +449,11 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
             connection.Open();
             ProvisionTestHelper.InsertRowsThatMustSurviveRerun(connection, "mssql");
             _beforeRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "mssql");
+            _beforeRerunTimestamp = ProvisionTestHelper.AssertCachedContentStamp(
+                connection,
+                "dms",
+                "Descriptor"
+            );
         }
 
         // Second provisioning run (idempotent rerun)
@@ -419,12 +467,18 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
         // Introspect after second run (rediscover schemas to catch accidental new schemas)
         var secondSchemaAllowlist = ProvisionTestHelper.DiscoverProvisionedSchemasMssql(connectionString);
         var secondManifest = introspector.Introspect(connectionString, secondSchemaAllowlist);
+        ProvisionTestHelper.AssertContentStampOwnership(secondManifest);
         _secondManifestJson = ProvisionedSchemaManifestEmitter.Emit(secondManifest);
 
         using (var connection = new SqlConnection(connectionString))
         {
             connection.Open();
             _afterRerun = ProvisionTestHelper.ReadDocumentCacheMutableStateSnapshot(connection, "mssql");
+            _afterRerunTimestamp = ProvisionTestHelper.AssertCachedContentStamp(
+                connection,
+                "dms",
+                "Descriptor"
+            );
         }
     }
 
@@ -464,6 +518,7 @@ public class Given_Mssql_Provisioning_Rerun_On_Same_Database
     public void It_preserves_document_cache_mutable_rows_on_second_run()
     {
         _afterRerun.Should().Be(_beforeRerun);
+        _afterRerunTimestamp.Should().Be(_beforeRerunTimestamp);
     }
 }
 
@@ -1172,15 +1227,13 @@ public class Given_Mssql_ResourceKey_Table_Dropped_After_Provisioning
             createDatabase: true
         );
 
-        // Drop FK constraints that reference ResourceKey, then drop the table
+        // Drop the FK constraint that references ResourceKey, then drop the table
         using (var connection = new SqlConnection(connectionString))
         {
             connection.Open();
             using var command = connection.CreateCommand();
             command.CommandText = """
-                ALTER TABLE [dms].[Descriptor] DROP CONSTRAINT [FK_Descriptor_ResourceKey];
                 ALTER TABLE [dms].[Document] DROP CONSTRAINT [FK_Document_ResourceKey];
-                ALTER TABLE [dms].[ReferentialIdentity] DROP CONSTRAINT [FK_ReferentialIdentity_ResourceKey];
                 DROP TABLE [dms].[ResourceKey];
                 """;
             command.ExecuteNonQuery();
@@ -1744,15 +1797,13 @@ public class Given_Mssql_DocumentProjectionSafety
         using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
         MssqlDocumentProjectionTestSupport.SetLifecycle(connection, "Tracking");
 
-        var documentId = MssqlDocumentProjectionTestSupport
-            .InsertDocuments(connection, 1)
-            .Single()
-            .DocumentId;
+        var documentId = MssqlDocumentProjectionTestSupport.InsertWidget(connection, 1, "Widget 1");
         MssqlDocumentProjectionTestSupport.InsertDocumentCache(
             connection,
             documentId,
             """{"id":"matching"}"""
         );
+        ProvisionTestHelper.AssertCachedContentStamp(connection, "testproject", "Widget");
 
         MssqlDocumentProjectionTestSupport
             .TryExecuteNonQuery(
@@ -1762,10 +1813,11 @@ public class Given_Mssql_DocumentProjectionSafety
             .Message.Should()
             .Contain("DocumentUuid diverges");
 
-        var invalidJsonDocumentId = MssqlDocumentProjectionTestSupport
-            .InsertDocuments(connection, 1)
-            .Single()
-            .DocumentId;
+        var invalidJsonDocumentId = MssqlDocumentProjectionTestSupport.InsertWidget(
+            connection,
+            2,
+            "Widget 2"
+        );
         MssqlDocumentProjectionTestSupport
             .TryExecuteNonQuery(
                 connection,
@@ -1799,7 +1851,10 @@ public class Given_Mssql_DocumentProjectionSafety
 
         MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
             connection,
-            $"DELETE FROM [dms].[Document] WHERE [DocumentId] = {documentId}"
+            $"""
+            DELETE FROM [testproject].[Widget] WHERE [DocumentId] = {documentId};
+            DELETE FROM [dms].[Document] WHERE [DocumentId] = {documentId};
+            """
         );
 
         MssqlDocumentProjectionTestSupport
@@ -2062,8 +2117,7 @@ internal static class MssqlDocumentProjectionTestSupport
             );
 
             UPDATE document
-            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence],
-                [ContentLastModifiedAt] = SYSUTCDATETIME()
+            SET [ContentVersion] = NEXT VALUE FOR [dms].[ChangeVersionSequence]
             OUTPUT inserted.[DocumentId], inserted.[ContentVersion]
             INTO @updated_document
             FROM [dms].[Document] document
@@ -2297,6 +2351,7 @@ internal static class MssqlDocumentProjectionTestSupport
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson]
             )
             SELECT
@@ -2307,9 +2362,12 @@ internal static class MssqlDocumentProjectionTestSupport
                 resource_key.[ResourceVersion],
                 document.[ContentVersion],
                 CONCAT(N'etag-', CONVERT(varchar(20), document.[ContentVersion])),
-                document.[ContentLastModifiedAt],
+                widget.[ContentLastModifiedAt],
+                widget.[ContentCreatedAt],
                 N'{{escapedJson}}'
             FROM [dms].[Document] document
+            INNER JOIN [testproject].[Widget] widget
+                ON widget.[DocumentId] = document.[DocumentId]
             INNER JOIN [dms].[ResourceKey] resource_key
                 ON resource_key.[ResourceKeyId] = document.[ResourceKeyId]
             WHERE document.[DocumentId] = {{documentId}}

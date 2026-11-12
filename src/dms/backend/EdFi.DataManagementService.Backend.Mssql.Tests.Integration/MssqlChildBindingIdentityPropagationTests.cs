@@ -144,8 +144,17 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             CultureInfo.InvariantCulture
         );
 
-        var beforeBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
-        var beforeClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
+        await _database.ExecuteNonQueryAsync(
+            "UPDATE [edfi].[BellSchedule] SET [ContentLastModifiedAt] = '2000-01-01'; UPDATE [edfi].[ClassPeriod] SET [ContentLastModifiedAt] = '2000-01-01';"
+        );
+        var beforeBellSchedule = await GetChildBindingDocumentStampStateAsync(
+            bellScheduleDocumentId,
+            "BellSchedule"
+        );
+        var beforeClassPeriod = await GetChildBindingDocumentStampStateAsync(
+            classPeriodDocumentId,
+            "ClassPeriod"
+        );
         var bellScheduleKeyChangesBefore = await CountTrackedChangeRowsAsync(
             "tracked_changes_edfi",
             "BellSchedule",
@@ -155,10 +164,6 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             "tracked_changes_edfi",
             "ClassPeriod",
             classPeriodDocumentUuid
-        );
-
-        await _database.WaitForUtcClockToAdvancePastAsync(
-            new[] { beforeBellSchedule.ContentLastModifiedAt, beforeClassPeriod.ContentLastModifiedAt }.Max()
         );
 
         // Act — update the upstream ClassPeriod identity column.
@@ -215,8 +220,14 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
                 "the cascade must update the child row in place, not delete and re-insert it"
             );
 
-        var afterBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
-        var afterClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
+        var afterBellSchedule = await GetChildBindingDocumentStampStateAsync(
+            bellScheduleDocumentId,
+            "BellSchedule"
+        );
+        var afterClassPeriod = await GetChildBindingDocumentStampStateAsync(
+            classPeriodDocumentId,
+            "ClassPeriod"
+        );
         var afterBellScheduleMirror = await GetRootMirrorStampStateAsync(
             "edfi",
             "BellSchedule",
@@ -238,7 +249,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
                 "child stamp trigger must fire from the cascade UPDATE and bump the owning root ContentVersion"
             );
         afterBellSchedule.ContentLastModifiedAt.Should().BeAfter(beforeBellSchedule.ContentLastModifiedAt);
-        AssertMirrorContentMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
+        AssertRootVersionMatchesDocument(afterBellScheduleMirror, afterBellSchedule);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "BellSchedule", bellScheduleDocumentUuid))
             .Should()
             .Be(
@@ -250,7 +261,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         // exactly one key-change row.
         afterClassPeriod.ContentVersion.Should().BeGreaterThan(beforeClassPeriod.ContentVersion);
         afterClassPeriod.ContentLastModifiedAt.Should().BeAfter(beforeClassPeriod.ContentLastModifiedAt);
-        AssertMirrorContentMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
+        AssertRootVersionMatchesDocument(afterClassPeriodMirror, afterClassPeriod);
         (await CountTrackedChangeRowsAsync("tracked_changes_edfi", "ClassPeriod", classPeriodDocumentUuid))
             .Should()
             .Be(
@@ -427,8 +438,17 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         var bellScheduleDocumentUuid = await QueryDocumentUuidAsync(bellScheduleDocumentId);
 
         // Committed baselines (each read opens a fresh connection).
-        var baselineClassPeriod = await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId);
-        var baselineBellSchedule = await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId);
+        await _database.ExecuteNonQueryAsync(
+            "UPDATE [edfi].[BellSchedule] SET [ContentLastModifiedAt] = '2000-01-01'; UPDATE [edfi].[ClassPeriod] SET [ContentLastModifiedAt] = '2000-01-01';"
+        );
+        var baselineClassPeriod = await GetChildBindingDocumentStampStateAsync(
+            classPeriodDocumentId,
+            "ClassPeriod"
+        );
+        var baselineBellSchedule = await GetChildBindingDocumentStampStateAsync(
+            bellScheduleDocumentId,
+            "BellSchedule"
+        );
         var baselineClassPeriodMirror = await GetRootMirrorStampStateAsync(
             "edfi",
             "ClassPeriod",
@@ -448,14 +468,6 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             "tracked_changes_edfi",
             "BellSchedule",
             bellScheduleDocumentUuid
-        );
-
-        await _database.WaitForUtcClockToAdvancePastAsync(
-            new[]
-            {
-                baselineClassPeriod.ContentLastModifiedAt,
-                baselineBellSchedule.ContentLastModifiedAt,
-            }.Max()
         );
 
         await using var connection = new SqlConnection(_database.ConnectionString);
@@ -502,12 +514,14 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         var pendingClassPeriod = await GetChildBindingDocumentStampStateInTransactionAsync(
             connection,
             transaction,
-            classPeriodDocumentId
+            classPeriodDocumentId,
+            "ClassPeriod"
         );
         var pendingBellSchedule = await GetChildBindingDocumentStampStateInTransactionAsync(
             connection,
             transaction,
-            bellScheduleDocumentId
+            bellScheduleDocumentId,
+            "BellSchedule"
         );
         var pendingClassPeriodMirror = await GetRootMirrorStampStateInTransactionAsync(
             connection,
@@ -527,14 +541,14 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         // Upstream ClassPeriod: content stamps advance; mirror tracks the document.
         pendingClassPeriod.ContentVersion.Should().BeGreaterThan(baselineClassPeriod.ContentVersion);
         pendingClassPeriod.ContentLastModifiedAt.Should().BeAfter(baselineClassPeriod.ContentLastModifiedAt);
-        AssertMirrorContentMatchesDocument(pendingClassPeriodMirror, pendingClassPeriod);
+        AssertRootVersionMatchesDocument(pendingClassPeriodMirror, pendingClassPeriod);
 
         // Owning root BellSchedule: content stamps advance and the mirror tracks the document.
         pendingBellSchedule.ContentVersion.Should().BeGreaterThan(baselineBellSchedule.ContentVersion);
         pendingBellSchedule
             .ContentLastModifiedAt.Should()
             .BeAfter(baselineBellSchedule.ContentLastModifiedAt);
-        AssertMirrorContentMatchesDocument(pendingBellScheduleMirror, pendingBellSchedule);
+        AssertRootVersionMatchesDocument(pendingBellScheduleMirror, pendingBellSchedule);
 
         // ClassPeriod key-change delta is exactly one, with the full composite identity and three-way linkage.
         (
@@ -602,10 +616,10 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
             .ToString(restoredChildRow["ClassPeriod_ClassPeriodName"], CultureInfo.InvariantCulture)
             .Should()
             .Be(OldClassPeriodName);
-        (await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId))
+        (await GetChildBindingDocumentStampStateAsync(classPeriodDocumentId, "ClassPeriod"))
             .Should()
             .Be(baselineClassPeriod);
-        (await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId))
+        (await GetChildBindingDocumentStampStateAsync(bellScheduleDocumentId, "BellSchedule"))
             .Should()
             .Be(baselineBellSchedule);
         (await GetRootMirrorStampStateAsync("edfi", "ClassPeriod", classPeriodDocumentId))
@@ -1004,16 +1018,18 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         );
     }
 
-    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(long documentId)
+    private async Task<DocumentStampState> GetChildBindingDocumentStampStateAsync(
+        long documentId,
+        string rootTable
+    )
     {
         var row = (
             await _database.QueryRowsAsync(
-                """
-                SELECT
-                    [ContentVersion],
-                    [ContentLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentId] = @documentId;
+                $"""
+                SELECT doc.[ContentVersion], owner.[ContentLastModifiedAt]
+                FROM [dms].[Document] doc
+                JOIN [edfi].[{rootTable}] owner ON owner.[DocumentId] = doc.[DocumentId]
+                WHERE doc.[DocumentId] = @documentId;
                 """,
                 new SqlParameter("@documentId", documentId)
             )
@@ -1025,8 +1041,7 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         );
     }
 
-    // Root tables carry ContentVersion/ContentLastModifiedAt mirror columns that resource
-    // change-version queries filter on; this reads the mirror pair for the owning root row.
+    // Root tables carry the version mirror and authoritative timestamp.
     private async Task<DocumentStampState> GetRootMirrorStampStateAsync(
         string schemaName,
         string tableName,
@@ -1052,13 +1067,12 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
         );
     }
 
-    private static void AssertMirrorContentMatchesDocument(
+    private static void AssertRootVersionMatchesDocument(
         DocumentStampState mirror,
         DocumentStampState document
     )
     {
         mirror.ContentVersion.Should().Be(document.ContentVersion);
-        mirror.ContentLastModifiedAt.Should().Be(document.ContentLastModifiedAt);
     }
 
     // tracked_changes_* rows are keyed by [Id], which holds the DocumentUuid (not DocumentId).
@@ -1209,19 +1223,19 @@ public class Given_A_Provisioned_Mssql_Database_With_A_ClassPeriod_To_BellSchedu
     private static async Task<DocumentStampState> GetChildBindingDocumentStampStateInTransactionAsync(
         SqlConnection connection,
         SqlTransaction transaction,
-        long documentId
+        long documentId,
+        string rootTable
     )
     {
         var row = (
             await QueryRowsInTransactionAsync(
                 connection,
                 transaction,
-                """
-                SELECT
-                    [ContentVersion],
-                    [ContentLastModifiedAt]
-                FROM [dms].[Document]
-                WHERE [DocumentId] = @documentId;
+                $"""
+                SELECT doc.[ContentVersion], owner.[ContentLastModifiedAt]
+                FROM [dms].[Document] doc
+                JOIN [edfi].[{rootTable}] owner ON owner.[DocumentId] = doc.[DocumentId]
+                WHERE doc.[DocumentId] = @documentId;
                 """,
                 new SqlParameter("@documentId", documentId)
             )

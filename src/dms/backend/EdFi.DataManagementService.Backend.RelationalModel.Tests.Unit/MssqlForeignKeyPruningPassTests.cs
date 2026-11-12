@@ -329,6 +329,42 @@ internal static class PruningTopologyTestHelpers
         return builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
     }
 
+    /// <summary>
+    /// Builds a hand-made cascade candidate for fixtures that call
+    /// <see cref="MssqlForeignKeyPruningPass.SelectCutEdges"/> directly. The trailing local and
+    /// target columns are the DocumentId anchor pairing.
+    /// </summary>
+    public static MssqlForeignKeyPruningPass.PruningCandidate BuildCandidate(
+        string name,
+        DbTableName receiver,
+        IReadOnlyList<string> localColumns,
+        DbTableName target,
+        IReadOnlyList<string> targetColumns,
+        bool required = true
+    )
+    {
+        var foreignKey = new TableConstraint.ForeignKey(
+            name,
+            [.. localColumns.Select(column => new DbColumnName(column))],
+            target,
+            [.. targetColumns.Select(column => new DbColumnName(column))],
+            ReferentialAction.NoAction,
+            ReferentialAction.Cascade
+        );
+
+        return new MssqlForeignKeyPruningPass.PruningCandidate(
+            MssqlForeignKeyPruningPass.PruningEdgeKey.From(receiver, foreignKey),
+            name,
+            receiver,
+            target,
+            foreignKey.Columns,
+            foreignKey.Columns[^1],
+            LocalDocumentIdIsRequired: required,
+            foreignKey.TargetColumns,
+            ReferentialAction.NoAction
+        );
+    }
+
     public static TableConstraint.ForeignKey FindForeignKeyOnTable(
         DerivedRelationalModelSet result,
         string resourceName,
@@ -1566,6 +1602,1453 @@ public class Given_Mssql_Pruning_With_Disjoint_Convergences_On_One_Receiver
 }
 
 /// <summary>
+/// DMS-1624 regression on the real DS 5.2 shape: from the immutable
+/// <c>EducationOrganizationIdentity</c> origin, <c>StudentSectionAssociation</c> converges through
+/// the optional DualCreditEducationOrganization edge and the Section edge
+/// (EducationOrganizationIdentity → Course → CourseOffering → Section). The DualCredit edge sorts
+/// first, but keeping it would cut the Section edge although Section, an intermediate on that
+/// path, can change its own key; a Section key change then fails with error 547. The candidates
+/// use the column lists of the authoritative DS 5.2 golden.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_The_Ds52_Student_Section_Association_Convergence
+{
+    private static readonly DbTableName _educationOrganizationIdentity = new(
+        new DbSchemaName("edfi"),
+        "EducationOrganizationIdentity"
+    );
+    private static readonly DbTableName _course = new(new DbSchemaName("edfi"), "Course");
+    private static readonly DbTableName _courseOffering = new(new DbSchemaName("edfi"), "CourseOffering");
+    private static readonly DbTableName _section = new(new DbSchemaName("edfi"), "Section");
+    private static readonly DbTableName _studentSectionAssociation = new(
+        new DbSchemaName("edfi"),
+        "StudentSectionAssociation"
+    );
+
+    private MssqlForeignKeyPruningPass.PruningCandidate _dualCreditEdge = default!;
+    private MssqlForeignKeyPruningPass.PruningCandidate _sectionEdge = default!;
+    private HashSet<MssqlForeignKeyPruningPass.PruningEdgeKey> _cutEdges = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var courseEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Course_EducationOrganization_RefKey",
+            _course,
+            ["EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId"],
+            _educationOrganizationIdentity,
+            ["EducationOrganizationId", "DocumentId"]
+        );
+        var courseOfferingEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_CourseOffering_Course_RefKey",
+            _courseOffering,
+            ["Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId"],
+            _course,
+            ["CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId"]
+        );
+        var sectionCourseOfferingEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Section_CourseOffering_RefKey",
+            _section,
+            [
+                "CourseOffering_LocalCourseCode",
+                "SchoolId_Unified",
+                "CourseOffering_SchoolYear",
+                "CourseOffering_SessionName",
+                "CourseOffering_DocumentId",
+            ],
+            _courseOffering,
+            ["LocalCourseCode", "SchoolId_Unified", "Session_SchoolYear", "Session_SessionName", "DocumentId"]
+        );
+        _sectionEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_StudentSectionAssociation_Section_RefKey",
+            _studentSectionAssociation,
+            [
+                "Section_LocalCourseCode",
+                "Section_SchoolId",
+                "Section_SchoolYear",
+                "Section_SessionName",
+                "Section_SectionIdentifier",
+                "Section_DocumentId",
+            ],
+            _section,
+            [
+                "CourseOffering_LocalCourseCode",
+                "SchoolId_Unified",
+                "CourseOffering_SchoolYear",
+                "CourseOffering_SessionName",
+                "SectionIdentifier",
+                "DocumentId",
+            ]
+        );
+        _dualCreditEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_StudentSectionAssociation_DualCreditEducationOrganization_RefKey",
+            _studentSectionAssociation,
+            [
+                "DualCreditEducationOrganization_EducationOrganizationId",
+                "DualCreditEducationOrganization_DocumentId",
+            ],
+            _educationOrganizationIdentity,
+            ["EducationOrganizationId", "DocumentId"],
+            required: false
+        );
+
+        _cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            ["edfi.EducationOrganizationIdentity", "edfi.Section"],
+            new[] { courseEdge, courseOfferingEdge, sectionCourseOfferingEdge, _sectionEdge, _dualCreditEdge }
+                .OrderBy(candidate => candidate.EdgeKey)
+                .ToArray(),
+            new HashSet<string> { "edfi.EducationOrganizationIdentity" }
+        );
+    }
+
+    /// <summary>
+    /// It should keep the Section edge cascading and cut only the DualCredit edge, matching ODS.
+    /// </summary>
+    [Test]
+    public void It_should_cut_exactly_the_dual_credit_edge()
+    {
+        _cutEdges.Should().BeEquivalentTo([_dualCreditEdge.EdgeKey]);
+    }
+}
+
+/// <summary>
+/// The directly-mutable-intermediate rule on a schema-built topology: Origin → Middle → Bridge →
+/// Receiver, with Receiver also referencing Origin under the AlternateOrigin role, which sorts
+/// first. Middle allows identity updates, so cutting the Bridge edge would leave a Middle key
+/// change without a carrier. The cut's own target (Bridge) is not directly mutable, so a rule that
+/// checked only the cut's target would still keep AlternateOrigin.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Directly_Mutable_Intermediate_On_The_Cut_Path
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _result = PruningTopologyTestHelpers.BuildMssqlModelSet(
+            MutableIntermediateTopology.Build(middleAllowsIdentityUpdates: true)
+        );
+    }
+
+    /// <summary>
+    /// It should keep the Bridge edge cascading and cut the AlternateOrigin edge, leaving every
+    /// upstream edge cascading.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_edge_through_the_mutable_intermediate()
+    {
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "Bridge_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "AlternateOrigin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Bridge", "Middle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Middle", "Origin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
+/// The same topology with Middle only transitively mutable: it cannot change its own key, so the
+/// rule does not apply and the first stable survivor (AlternateOrigin) stands.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Transitively_Mutable_Intermediate_On_The_Cut_Path
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _result = PruningTopologyTestHelpers.BuildMssqlModelSet(
+            MutableIntermediateTopology.Build(middleAllowsIdentityUpdates: false)
+        );
+    }
+
+    /// <summary>
+    /// It should keep the AlternateOrigin edge cascading and cut the Bridge edge.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_first_stable_survivor()
+    {
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "AlternateOrigin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "Bridge_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// Origin → Middle → Bridge → Receiver plus Receiver → Origin under the AlternateOrigin role, shared
+/// by the directly and transitively mutable intermediate fixtures.
+/// </summary>
+internal static class MutableIntermediateTopology
+{
+    public static System.Text.Json.Nodes.JsonObject Build(bool middleAllowsIdentityUpdates) =>
+        PruningTestSchemaBuilder.BuildProjectSchema(
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Origin",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["originKey"]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Middle",
+                AllowIdentityUpdates: middleAllowsIdentityUpdates,
+                IdentityScalars: ["middleKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Bridge",
+                IdentityScalars: ["bridgeKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Receiver",
+                IdentityScalars: ["receiverKey"],
+                References:
+                [
+                    new PruningTestSchemaBuilder.ReferenceSpec("Origin", RoleName: "AlternateOrigin"),
+                    new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                ]
+            )
+        );
+}
+
+/// <summary>
+/// A carried intermediate rename: Alpha → Middle → BridgeOne and BridgeTwo → Receiver, with
+/// Middle directly mutable and the middle and alpha keys unified across both bridge references.
+/// Alpha sorts before Middle, so Alpha's walk owns the Receiver convergence. Cutting BridgeTwo is
+/// safe because the required BridgeOne edge updates the same canonical columns through the same
+/// Middle pairings, so a Middle key change is still carried.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Carried_Intermediate_Rename
+{
+    private DerivedRelationalModelSet _result = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var projectSchema = PruningTestSchemaBuilder.BuildProjectSchema(
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Alpha",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["alphaKey"]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Middle",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["middleKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "BridgeOne",
+                IdentityScalars: ["bridgeOneKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "BridgeTwo",
+                IdentityScalars: ["bridgeTwoKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Receiver",
+                IdentityScalars: ["receiverKey"],
+                References:
+                [
+                    new PruningTestSchemaBuilder.ReferenceSpec("BridgeOne"),
+                    new PruningTestSchemaBuilder.ReferenceSpec("BridgeTwo"),
+                ],
+                EqualityConstraints:
+                [
+                    ("$.bridgeOneReference.middleKey", "$.bridgeTwoReference.middleKey"),
+                    ("$.bridgeOneReference.alphaKey", "$.bridgeTwoReference.alphaKey"),
+                ]
+            )
+        );
+
+        _result = PruningTopologyTestHelpers.BuildMssqlModelSet(projectSchema);
+    }
+
+    /// <summary>
+    /// It should derive, keeping BridgeOne cascading and cutting BridgeTwo.
+    /// </summary>
+    [Test]
+    public void It_should_cut_the_second_bridge_edge()
+    {
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "BridgeOne_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(_result, "Receiver", "BridgeTwo_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// Uncarried intermediate renames under a genuinely mutable origin: Alpha → SectionA and SectionB
+/// → Receiver, where both sections allow identity updates and their references are not unified.
+/// Whichever edge is kept, cutting the other leaves that section's key change without a carrier,
+/// so no survivor is safe and derivation fails.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_Uncarried_Intermediate_Renames
+{
+    internal static System.Text.Json.Nodes.JsonObject BuildProjectSchema() =>
+        PruningTestSchemaBuilder.BuildProjectSchema(
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Alpha",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["alphaKey"]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "SectionA",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["sectionAKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "SectionB",
+                AllowIdentityUpdates: true,
+                IdentityScalars: ["sectionBKey"],
+                References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+            ),
+            new PruningTestSchemaBuilder.ResourceSpec(
+                "Receiver",
+                IdentityScalars: ["receiverKey"],
+                References:
+                [
+                    new PruningTestSchemaBuilder.ReferenceSpec("SectionA"),
+                    new PruningTestSchemaBuilder.ReferenceSpec("SectionB"),
+                ]
+            )
+        );
+
+    /// <summary>
+    /// It should fail with the no-safe-pruning diagnostic naming the origin, the receiver, both
+    /// constraints, and the native-coverage condition.
+    /// </summary>
+    [Test]
+    public void It_should_fail_with_the_native_coverage_diagnostic()
+    {
+        var act = () => PruningTopologyTestHelpers.BuildMssqlModelSet(BuildProjectSchema());
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Alpha'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+                    + "'FK_Receiver_SectionA_RefKey'*"
+                    + "'FK_Receiver_SectionB_RefKey'*"
+                    + "First failed condition: native coverage*"
+            );
+    }
+}
+
+/// <summary>
+/// An independent mutable feed into a cut: Alpha and Other allow identity updates, Bridge's identity
+/// references both, the directly mutable Section references Alpha, and Receiver references Bridge
+/// and Section through disjoint columns. Alpha's walk converges at Receiver. Keeping Bridge leaves
+/// Section's key change uncarried; keeping Section cuts Bridge, which is Other's only cascade route
+/// to Receiver, although the first-arrival trace of Bridge's Other key stops at Bridge. No survivor
+/// is safe, so derivation fails whichever Receiver edge sorts first and however deep the feed is.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_An_Independent_Mutable_Feed_Into_The_Cut
+{
+    private static DerivedRelationalModelSet Build(string sectionName, bool feedThroughOtherMid) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Alpha",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["alphaKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Other",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["otherKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "OtherMid",
+                    IdentityScalars: ["otherMidKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Other", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Bridge",
+                    IdentityScalars: ["bridgeKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(
+                            feedThroughOtherMid ? "OtherMid" : "Other",
+                            PartOfIdentity: true
+                        ),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sectionName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sectionKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sectionName),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail with the native-coverage diagnostic, whether Other feeds Bridge directly or
+    /// through the transitively mutable OtherMid.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_should_fail_when_the_bridge_edge_sorts_first(bool feedThroughOtherMid)
+    {
+        var act = () => Build("Section", feedThroughOtherMid);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Alpha'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+                    + "'FK_Receiver_Bridge_RefKey'*"
+                    + "'FK_Receiver_Section_RefKey'*"
+                    + "First failed condition: native coverage*"
+            );
+    }
+
+    /// <summary>
+    /// It should name Other as the uncarried source when the section edge sorts first, so keeping
+    /// it is the first choice tried and the independent feed is the first failed condition.
+    /// </summary>
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_should_name_the_independent_feed_when_the_section_edge_sorts_first(
+        bool feedThroughOtherMid
+    )
+    {
+        var act = () => Build("Asection", feedThroughOtherMid);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "First failed condition: native coverage: cut 'FK_Receiver_Bridge_RefKey'*"
+                    + "directly mutable 'edfi.Other'*"
+            );
+    }
+}
+
+/// <summary>
+/// Two independent mutable feeds into one cut column: Bridge's scalar identity bKey is unified with
+/// optional references to two directly mutable resources, and Receiver references Bridge, the
+/// directly mutable Section, and the first of those resources. Alpha's walk converges at Receiver.
+/// Keeping Bridge leaves Section's key change uncarried; keeping Section cuts Bridge, which the
+/// reaching resource can bypass through its own Receiver reference but which is the stranded
+/// resource's only cascade route to Receiver. Every feed must be checked, so derivation fails
+/// whichever feed sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_Two_Independent_Mutable_Feeds_Into_One_Cut_Column
+{
+    private static string Camel(string name) => char.ToLowerInvariant(name[0]) + name[1..];
+
+    private static DerivedRelationalModelSet Build(string reachingName, string strandedName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Alpha",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["alphaKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    reachingName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["reachingKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    strandedName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["strandedKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Bridge",
+                    IdentityScalars: ["bKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(reachingName, Required: false),
+                        new PruningTestSchemaBuilder.ReferenceSpec(strandedName, Required: false),
+                    ],
+                    EqualityConstraints:
+                    [
+                        ("$.bKey", $"$.{Camel(reachingName)}Reference.reachingKey"),
+                        ("$.bKey", $"$.{Camel(strandedName)}Reference.strandedKey"),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Section",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sectionKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Section"),
+                        new PruningTestSchemaBuilder.ReferenceSpec(reachingName),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail derivation both when the reaching feed sorts before the stranded one (Other1)
+    /// and when it sorts after (Zeta).
+    /// </summary>
+    [TestCase("Other1", "Other2")]
+    [TestCase("Zeta", "Other2")]
+    public void It_should_fail_derivation_whichever_feed_sorts_first(string reachingName, string strandedName)
+    {
+        var act = () => Build(reachingName, strandedName);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Alpha'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+            );
+    }
+}
+
+/// <summary>
+/// An independent mutable feed that joins the walked origin's chain instead of ending it: Bridge's
+/// scalar identity bKey is unified with optional Alpha and Other references, and a required identity
+/// reference to the directly mutable ZRoot makes Bridge transitively mutable. In Alpha's walk the
+/// Bridge key traces to Alpha through the unified column, while Other feeds the same column. Keeping
+/// Section cuts Bridge, Other's only cascade route to Receiver, so derivation fails. Receiver also
+/// references ZRoot so that ZRoot's own feed into Bridge has another route; without it, ZRoot would
+/// be a stranded feed itself and the case would fail for a different reason.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_An_Independent_Mutable_Feed_Joining_The_Traced_Chain
+{
+    private static DerivedRelationalModelSet Build() =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Alpha",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["alphaKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Other",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["otherKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "ZRoot",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["zRootKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Bridge",
+                    IdentityScalars: ["bKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("ZRoot", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Alpha", Required: false),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Other", Required: false),
+                    ],
+                    EqualityConstraints:
+                    [
+                        ("$.bKey", "$.alphaReference.alphaKey"),
+                        ("$.bKey", "$.otherReference.otherKey"),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Section",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sectionKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Alpha", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Section"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("ZRoot"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail derivation instead of cutting Bridge's Receiver edge.
+    /// </summary>
+    [Test]
+    public void It_should_fail_derivation()
+    {
+        var act = Build;
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Alpha'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+            );
+    }
+}
+
+/// <summary>
+/// A shared column fed by an independent mutable source: Receiver's references to BridgeOne
+/// (optional) and the directly mutable BridgeTwo are unified on the source's key, and both bridges'
+/// identities reference Origin and the source. Keeping BridgeOne leaves BridgeTwo's key change
+/// uncarried; keeping BridgeTwo cuts BridgeOne while sharing the source key column, so BridgeTwo
+/// must be a required carrier fed by the same source. The Settled Decision 8 exemption covers only
+/// columns the survivor does not update, so an optional BridgeTwo fails derivation and a required
+/// one is kept, whichever origin's walk reaches the convergence first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Shared_Column_From_An_Independent_Mutable_Feed
+{
+    private static DerivedRelationalModelSet Build(string sourceName, bool bridgeTwoRequired) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Origin",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["originKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sourceName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sourceKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "BridgeOne",
+                    IdentityScalars: ["oneKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "BridgeTwo",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["twoKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("BridgeOne", Required: false),
+                        new PruningTestSchemaBuilder.ReferenceSpec("BridgeTwo", Required: bridgeTwoRequired),
+                    ],
+                    EqualityConstraints:
+                    [
+                        ("$.bridgeOneReference.sourceKey", "$.bridgeTwoReference.sourceKey"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail derivation with an optional BridgeTwo, both when the source's walk runs after
+    /// Origin's (Source) and when it runs first (Asource).
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_fail_derivation_with_an_optional_carrier(string sourceName)
+    {
+        var act = () => Build(sourceName, bridgeTwoRequired: false);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+
+    /// <summary>
+    /// It should keep a required BridgeTwo cascading and cut BridgeOne, in both name orders: the
+    /// required survivor is fed by the same source, so it carries the shared column.
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_keep_a_required_carrier_fed_by_the_same_source(string sourceName)
+    {
+        var result = Build(sourceName, bridgeTwoRequired: true);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "BridgeOne_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "BridgeTwo_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
+/// An independent mutable feed that bypasses the cut through its own Receiver reference sharing the
+/// cut column: Bridge's identity references Origin and the source, the directly mutable Section
+/// references Origin, and Receiver references Bridge, Section, and the source, with the source
+/// reference unified with Bridge's source key. Keeping Bridge leaves Section's key change uncarried;
+/// keeping Section cuts Bridge, so the bypass reference must carry the source's key change: it must
+/// be required and paired with the same source column. Otherwise derivation fails, whichever
+/// origin's walk reaches the convergence first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_An_Independent_Mutable_Feed_Bypassing_The_Cut_On_A_Shared_Column
+{
+    private static DerivedRelationalModelSet Build(
+        string sourceName,
+        bool bypassRequired,
+        string bypassLeaf
+    ) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Origin",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["originKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sourceName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sourceKey", "sourceKey2"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Bridge",
+                    IdentityScalars: ["bridgeKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Section",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sectionKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Bridge"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Section"),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName, Required: bypassRequired),
+                    ],
+                    EqualityConstraints:
+                    [
+                        (
+                            "$.bridgeReference.sourceKey",
+                            $"$.{char.ToLowerInvariant(sourceName[0]) + sourceName[1..]}Reference.{bypassLeaf}"
+                        ),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should fail derivation with an optional bypass, both when the source's walk runs after
+    /// Origin's (Source) and when it runs first (Asource).
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_fail_derivation_with_an_optional_bypass(string sourceName)
+    {
+        var act = () => Build(sourceName, bypassRequired: false, bypassLeaf: "sourceKey");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+
+    /// <summary>
+    /// It should fail derivation with a required bypass paired with a different source column, in
+    /// both name orders: it does not carry the source key the cut column follows.
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_fail_derivation_with_a_bypass_paired_with_another_source_column(string sourceName)
+    {
+        var act = () => Build(sourceName, bypassRequired: true, bypassLeaf: "sourceKey2");
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+
+    /// <summary>
+    /// It should cut Bridge and keep Section and a required bypass paired with the same source
+    /// column cascading, in both name orders: the bypass carries the shared column.
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_keep_a_required_bypass_paired_with_the_same_source_column(string sourceName)
+    {
+        var result = Build(sourceName, bypassRequired: true, bypassLeaf: "sourceKey");
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Bridge_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Section_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", $"{sourceName}_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
+/// A required carrier fed through the walked origin: Origin's identity references the source, Target's
+/// identity references Origin and Target also references the source with the source key unified, and
+/// Receiver references a required Origin and an optional Target sharing their identity columns. Origin's
+/// walk must recognize that Receiver's Origin reference carries the source's key change through Origin,
+/// so the schema derives identically whichever origin's walk runs first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_With_A_Carrier_Fed_Through_The_Walked_Origin
+{
+    private static DerivedRelationalModelSet Build(string sourceName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    sourceName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["sourceKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Origin",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["originKey"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec(sourceName, PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Target",
+                    IdentityScalars: ["targetKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin", PartOfIdentity: true),
+                        new PruningTestSchemaBuilder.ReferenceSpec(sourceName),
+                    ],
+                    EqualityConstraints:
+                    [
+                        (
+                            "$.originReference.sourceKey",
+                            $"$.{char.ToLowerInvariant(sourceName[0]) + sourceName[1..]}Reference.sourceKey"
+                        ),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Origin"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Target", Required: false),
+                    ],
+                    EqualityConstraints:
+                    [
+                        ("$.originReference.originKey", "$.targetReference.originKey"),
+                        ("$.originReference.sourceKey", "$.targetReference.sourceKey"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should cut Receiver's Target reference and Target's source reference and keep Receiver's
+    /// Origin reference and Target's Origin reference cascading, both when Origin's walk runs first
+    /// (Source) and when the source's walk runs first (Asource).
+    /// </summary>
+    [TestCase("Source")]
+    [TestCase("Asource")]
+    public void It_should_keep_the_carrier_fed_through_the_walked_origin(string sourceName)
+    {
+        var result = Build(sourceName);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Target_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "Origin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Target", "Origin_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Target", $"{sourceName}_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// Settled Decision 8 for a directly mutable intermediate: Upstream → Middle → Receiver, where
+/// Receiver references Middle under two non-unified roles and both Upstream and Middle allow
+/// identity updates. Middle's own walk passes the disjoint cut as a plain NO ACTION reference, so
+/// the upstream walk must reach the same result whichever origin sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Roles_To_A_Directly_Mutable_Intermediate
+{
+    private static DerivedRelationalModelSet Build(string upstreamName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    upstreamName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["upstreamKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Middle",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["middleKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec(upstreamName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Receiver",
+                    IdentityScalars: ["receiverKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Middle", RoleName: "FirstMiddle"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Middle", RoleName: "SecondMiddle"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should keep the first role cascading and cut the second, both when the upstream origin
+    /// sorts before Middle (Alpha) and when it sorts after (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_cut_the_second_role_regardless_of_origin_order(string upstreamName)
+    {
+        var result = Build(upstreamName);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "FirstMiddle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "SecondMiddle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+    }
+}
+
+/// <summary>
+/// The same Decision 8 shape under the immutable <c>EducationOrganizationIdentity</c> origin, on
+/// the real DS 5.2 Section chain: Receiver references Section under two non-unified roles.
+/// EducationOrganizationIdentity sorts before Section, so its walk owns the convergence and must
+/// not fail derivation where Section's own walk would derive.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Section_Roles_Under_An_Immutable_Origin
+{
+    private static readonly DbTableName _educationOrganizationIdentity = new(
+        new DbSchemaName("edfi"),
+        "EducationOrganizationIdentity"
+    );
+    private static readonly DbTableName _course = new(new DbSchemaName("edfi"), "Course");
+    private static readonly DbTableName _courseOffering = new(new DbSchemaName("edfi"), "CourseOffering");
+    private static readonly DbTableName _section = new(new DbSchemaName("edfi"), "Section");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    private static readonly string[] _sectionKey =
+    [
+        "CourseOffering_LocalCourseCode",
+        "SchoolId_Unified",
+        "CourseOffering_SchoolYear",
+        "CourseOffering_SessionName",
+        "SectionIdentifier",
+        "DocumentId",
+    ];
+
+    private MssqlForeignKeyPruningPass.PruningCandidate _secondSectionEdge = default!;
+    private HashSet<MssqlForeignKeyPruningPass.PruningEdgeKey> _cutEdges = default!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _secondSectionEdge = SectionRoleEdge("SecondSection");
+
+        _cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            ["edfi.EducationOrganizationIdentity", "edfi.Section"],
+            new[]
+            {
+                PruningTopologyTestHelpers.BuildCandidate(
+                    "FK_Course_EducationOrganization_RefKey",
+                    _course,
+                    ["EducationOrganization_EducationOrganizationId", "EducationOrganization_DocumentId"],
+                    _educationOrganizationIdentity,
+                    ["EducationOrganizationId", "DocumentId"]
+                ),
+                PruningTopologyTestHelpers.BuildCandidate(
+                    "FK_CourseOffering_Course_RefKey",
+                    _courseOffering,
+                    ["Course_CourseCode", "Course_EducationOrganizationId", "Course_DocumentId"],
+                    _course,
+                    ["CourseCode", "EducationOrganization_EducationOrganizationId", "DocumentId"]
+                ),
+                PruningTopologyTestHelpers.BuildCandidate(
+                    "FK_Section_CourseOffering_RefKey",
+                    _section,
+                    [
+                        "CourseOffering_LocalCourseCode",
+                        "SchoolId_Unified",
+                        "CourseOffering_SchoolYear",
+                        "CourseOffering_SessionName",
+                        "CourseOffering_DocumentId",
+                    ],
+                    _courseOffering,
+                    [
+                        "LocalCourseCode",
+                        "SchoolId_Unified",
+                        "Session_SchoolYear",
+                        "Session_SessionName",
+                        "DocumentId",
+                    ]
+                ),
+                SectionRoleEdge("FirstSection"),
+                _secondSectionEdge,
+            }
+                .OrderBy(candidate => candidate.EdgeKey)
+                .ToArray(),
+            new HashSet<string> { "edfi.EducationOrganizationIdentity" }
+        );
+    }
+
+    private static MssqlForeignKeyPruningPass.PruningCandidate SectionRoleEdge(string role) =>
+        PruningTopologyTestHelpers.BuildCandidate(
+            $"FK_Receiver_{role}_RefKey",
+            _receiver,
+            [
+                $"{role}_LocalCourseCode",
+                $"{role}_SchoolId",
+                $"{role}_SchoolYear",
+                $"{role}_SessionName",
+                $"{role}_SectionIdentifier",
+                $"{role}_DocumentId",
+            ],
+            _section,
+            _sectionKey
+        );
+
+    /// <summary>
+    /// It should derive and cut exactly the second Section role.
+    /// </summary>
+    [Test]
+    public void It_should_cut_exactly_the_second_section_role()
+    {
+        _cutEdges.Should().BeEquivalentTo([_secondSectionEdge.EdgeKey]);
+    }
+}
+
+/// <summary>
+/// Settled Decision 8 through a directly mutable descendant: from an immutable origin, Middle and
+/// Descendant (whose identity includes Middle) both allow identity updates, and Receiver references
+/// Descendant and, under the non-unified RoleMiddle role, Middle itself. The retained Descendant
+/// edge reaches Receiver from Middle by a disjoint route, so the upstream walk must exempt the
+/// RoleMiddle cut exactly as Middle's own walk does, whichever origin sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Roles_Through_A_Directly_Mutable_Descendant
+{
+    private static readonly DbTableName _middle = new(new DbSchemaName("edfi"), "Middle");
+    private static readonly DbTableName _descendant = new(new DbSchemaName("edfi"), "Descendant");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    /// <summary>
+    /// It should cut exactly the RoleMiddle edge both when the origin sorts first (Alpha) and when it
+    /// sorts last (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_cut_the_middle_role_regardless_of_origin_order(string originName)
+    {
+        var origin = new DbTableName(new DbSchemaName("edfi"), originName);
+        var roleMiddleEdge = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Receiver_RoleMiddle",
+            _receiver,
+            ["RoleMiddle_OriginKey", "RoleMiddle_MiddleKey", "RoleMiddle_DocumentId"],
+            _middle,
+            ["Origin_OriginKey", "MiddleKey", "DocumentId"]
+        );
+        MssqlForeignKeyPruningPass.PruningCandidate[] candidates =
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle_Origin",
+                _middle,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Descendant_Middle",
+                _descendant,
+                ["Middle_OriginKey", "Middle_MiddleKey", "Middle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_Descendant",
+                _receiver,
+                [
+                    "Descendant_OriginKey",
+                    "Descendant_MiddleKey",
+                    "Descendant_DescendantKey",
+                    "Descendant_DocumentId",
+                ],
+                _descendant,
+                ["Middle_OriginKey", "Middle_MiddleKey", "DescendantKey", "DocumentId"]
+            ),
+            roleMiddleEdge,
+        ];
+
+        var cutEdges = MssqlForeignKeyPruningPass.SelectCutEdges(
+            new[] { $"edfi.{originName}", "edfi.Descendant", "edfi.Middle" }
+                .OrderBy(name => name, StringComparer.Ordinal)
+                .ToArray(),
+            candidates.OrderBy(candidate => candidate.EdgeKey).ToArray(),
+            new HashSet<string> { $"edfi.{originName}" }
+        );
+
+        cutEdges.Should().BeEquivalentTo([roleMiddleEdge.EdgeKey]);
+    }
+}
+
+/// <summary>
+/// Settled Decision 8 through a mutable descendant first reached around the intermediate: the
+/// upstream origin reaches Descendant through S1 (two hops) before its retained route through the
+/// directly mutable Middle and U1 (three hops), and Collector references Middle and Descendant
+/// through disjoint columns. Collector and Descendant both sit at depth 2 and Collector sorts first,
+/// so the upstream walk decides Collector while Descendant's first arrival still bypasses Middle.
+/// Middle still reaches Collector through the retained Descendant edge, so the walk must exempt the
+/// Middle cut exactly as Middle's own walk does, whichever origin sorts first. The receiver must
+/// sort before Descendant: named Receiver, the Descendant convergence resolves first and this shape
+/// no longer arises.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Disjoint_Roles_Through_A_Descendant_Reached_Around_The_Intermediate
+{
+    private static DerivedRelationalModelSet Build(string upstreamName) =>
+        PruningTopologyTestHelpers.BuildMssqlModelSet(
+            PruningTestSchemaBuilder.BuildProjectSchema(
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    upstreamName,
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["upstreamKey"]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Middle",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["middleKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec(upstreamName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "U1",
+                    IdentityScalars: ["u1Key"],
+                    References: [new PruningTestSchemaBuilder.ReferenceSpec("Middle", PartOfIdentity: true)]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "S1",
+                    IdentityScalars: ["s1Key"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec(upstreamName, PartOfIdentity: true),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Descendant",
+                    AllowIdentityUpdates: true,
+                    IdentityScalars: ["descendantKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("S1"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("U1"),
+                    ]
+                ),
+                new PruningTestSchemaBuilder.ResourceSpec(
+                    "Collector",
+                    IdentityScalars: ["collectorKey"],
+                    References:
+                    [
+                        new PruningTestSchemaBuilder.ReferenceSpec("Middle"),
+                        new PruningTestSchemaBuilder.ReferenceSpec("Descendant"),
+                    ]
+                )
+            )
+        );
+
+    /// <summary>
+    /// It should cut the Middle role and Descendant's S1 edge, keeping the Descendant and U1 edges
+    /// cascading, both when the upstream origin sorts first (Alpha) and when it sorts last (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_cut_the_middle_role_regardless_of_origin_order(string upstreamName)
+    {
+        var result = Build(upstreamName);
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Collector", "Middle_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Collector", "Descendant_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Descendant", "S1_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.NoAction);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Descendant", "U1_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+}
+
+/// <summary>
+/// The Decision 8 exemption covers only non-unified roles: from an immutable origin, Receiver
+/// references the directly mutable Middle under two optional roles that share a unified origin-key
+/// column. Neither optional role can carry the shared column, so Middle's own walk fails with the
+/// required-binding condition, and the upstream walk must fail too, whichever origin sorts first.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Of_Unified_Optional_Roles_To_A_Directly_Mutable_Intermediate
+{
+    private static readonly DbTableName _middle = new(new DbSchemaName("edfi"), "Middle");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    /// <summary>
+    /// It should fail derivation both when the origin sorts first (Alpha) and when it sorts last
+    /// (Zulu).
+    /// </summary>
+    [TestCase("Alpha")]
+    [TestCase("Zulu")]
+    public void It_should_fail_derivation_regardless_of_origin_order(string originName)
+    {
+        var origin = new DbTableName(new DbSchemaName("edfi"), originName);
+        MssqlForeignKeyPruningPass.PruningCandidate[] candidates =
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle_Origin",
+                _middle,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_FirstMiddle",
+                _receiver,
+                ["OriginKey_Unified", "FirstMiddle_MiddleKey", "FirstMiddle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"],
+                required: false
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_SecondMiddle",
+                _receiver,
+                ["OriginKey_Unified", "SecondMiddle_MiddleKey", "SecondMiddle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"],
+                required: false
+            ),
+        ];
+
+        var act = () =>
+            MssqlForeignKeyPruningPass.SelectCutEdges(
+                new[] { $"edfi.{originName}", "edfi.Middle" }
+                    .OrderBy(name => name, StringComparer.Ordinal)
+                    .ToArray(),
+                candidates.OrderBy(candidate => candidate.EdgeKey).ToArray(),
+                new HashSet<string> { $"edfi.{originName}" }
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("NoSafeSqlServerForeignKeyPruning:*convergence receiver 'edfi.Receiver'*");
+    }
+}
+
+/// <summary>
+/// The immutable-origin rescue waives only the origin's own rename. Hand-built candidates: from
+/// the immutable Origin, Receiver converges through the optional First edge (Origin → Receiver)
+/// and the optional Second edge (Origin → Middle → Bridge → Receiver), where edfi.Middle stands in
+/// for a directly mutable resource. Both edges share SharedKey, which traces to Origin.OriginKey on
+/// both sides, and both are optional, so neither survivor is locally safe and the convergence
+/// reaches the rescue. Keeping First would cut Second, whose Second_MiddleKey traces to the
+/// uncarried Middle.MiddleKey, so the rescue must keep Second instead.
+/// </summary>
+[TestFixture]
+public class Given_Mssql_Pruning_Rescue_With_A_Directly_Mutable_Intermediate
+{
+    private static readonly DbTableName _origin = new(new DbSchemaName("edfi"), "Origin");
+    private static readonly DbTableName _middle = new(new DbSchemaName("edfi"), "Middle");
+    private static readonly DbTableName _middle2 = new(new DbSchemaName("edfi"), "Middle2");
+    private static readonly DbTableName _bridge = new(new DbSchemaName("edfi"), "Bridge");
+    private static readonly DbTableName _receiver = new(new DbSchemaName("edfi"), "Receiver");
+
+    private static MssqlForeignKeyPruningPass.PruningCandidate[] BuildSecondPath() =>
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle_Origin",
+                _middle,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                _origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Bridge_Middle",
+                _bridge,
+                ["Middle_OriginKey", "Middle_MiddleKey", "Middle_DocumentId"],
+                _middle,
+                ["Origin_OriginKey", "MiddleKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_Second",
+                _receiver,
+                ["SharedKey", "Second_MiddleKey", "Second_DocumentId"],
+                _bridge,
+                ["Middle_OriginKey", "Middle_MiddleKey", "DocumentId"],
+                required: false
+            ),
+        ];
+
+    private static HashSet<MssqlForeignKeyPruningPass.PruningEdgeKey> Select(
+        IReadOnlyList<string> origins,
+        IEnumerable<MssqlForeignKeyPruningPass.PruningCandidate> candidates
+    ) =>
+        MssqlForeignKeyPruningPass.SelectCutEdges(
+            origins,
+            candidates.OrderBy(candidate => candidate.EdgeKey).ToArray(),
+            new HashSet<string> { "edfi.Origin" }
+        );
+
+    /// <summary>
+    /// It should keep the Second edge, cutting exactly the First edge, whose only identity column
+    /// traces to the walked origin alone.
+    /// </summary>
+    [Test]
+    public void It_should_keep_the_first_candidate_whose_cuts_leave_no_uncarried_intermediate()
+    {
+        var first = PruningTopologyTestHelpers.BuildCandidate(
+            "FK_Receiver_First",
+            _receiver,
+            ["SharedKey", "First_DocumentId"],
+            _origin,
+            ["OriginKey", "DocumentId"],
+            required: false
+        );
+
+        var cutEdges = Select(["edfi.Middle", "edfi.Origin"], [first, .. BuildSecondPath()]);
+
+        cutEdges.Should().BeEquivalentTo([first.EdgeKey]);
+    }
+
+    /// <summary>
+    /// It should fail with the native-coverage condition when First also runs through a directly
+    /// mutable intermediate (edfi.Middle2) that Second does not carry, so every rescue candidate
+    /// leaves an intermediate rename uncarried.
+    /// </summary>
+    [Test]
+    public void It_should_fail_when_every_candidate_leaves_an_intermediate_uncarried()
+    {
+        MssqlForeignKeyPruningPass.PruningCandidate[] firstPath =
+        [
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Middle2_Origin",
+                _middle2,
+                ["Origin_OriginKey", "Origin_DocumentId"],
+                _origin,
+                ["OriginKey", "DocumentId"]
+            ),
+            PruningTopologyTestHelpers.BuildCandidate(
+                "FK_Receiver_First",
+                _receiver,
+                ["SharedKey", "First_Middle2Key", "First_DocumentId"],
+                _middle2,
+                ["Origin_OriginKey", "Middle2Key", "DocumentId"],
+                required: false
+            ),
+        ];
+
+        var act = () =>
+            Select(["edfi.Middle", "edfi.Middle2", "edfi.Origin"], [.. firstPath, .. BuildSecondPath()]);
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage(
+                "NoSafeSqlServerForeignKeyPruning:*"
+                    + "mutable origin 'edfi.Origin'*"
+                    + "convergence receiver 'edfi.Receiver'*"
+                    + "First failed condition: native coverage*"
+            );
+    }
+}
+
+/// <summary>
 /// Design verification case 13 (parallel FKs): two distinct physical FKs between the same tables
 /// are a convergence in the multigraph; one survives and the other is cut.
 /// </summary>
@@ -2037,6 +3520,26 @@ public class Given_Pgsql_Derivation_Of_Sql_Server_Only_Failure_Topologies
             .Be(ReferentialAction.Cascade);
         PruningTopologyTestHelpers
             .FindReferenceForeignKey(result, "Receiver", "BridgeThree_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+    }
+
+    /// <summary>
+    /// It should derive the uncarried-intermediate topology with both cascades retained.
+    /// </summary>
+    [Test]
+    public void It_should_derive_the_uncarried_intermediate_topology_with_cascades_retained()
+    {
+        var result = PruningTopologyTestHelpers.BuildPgsqlModelSet(
+            Given_Mssql_Pruning_With_Uncarried_Intermediate_Renames.BuildProjectSchema()
+        );
+
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "SectionA_DocumentId")
+            .OnUpdate.Should()
+            .Be(ReferentialAction.Cascade);
+        PruningTopologyTestHelpers
+            .FindReferenceForeignKey(result, "Receiver", "SectionB_DocumentId")
             .OnUpdate.Should()
             .Be(ReferentialAction.Cascade);
     }

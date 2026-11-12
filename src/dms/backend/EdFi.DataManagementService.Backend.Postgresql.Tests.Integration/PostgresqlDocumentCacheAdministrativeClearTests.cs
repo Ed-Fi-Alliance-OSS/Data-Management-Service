@@ -31,6 +31,17 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeClear_Primitive
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = new(2026, 8, 1, 12, 0, 0, TimeSpan.Zero);
     private static readonly DateTimeOffset LastModifiedAt = new(2026, 8, 1, 12, 1, 0, TimeSpan.Zero);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
 
     private PostgresqlGeneratedDdlFixture _fixture = null!;
     private PostgresqlGeneratedDdlBaselineDatabase _baseline = null!;
@@ -271,21 +282,18 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeClear_Primitive
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
@@ -339,6 +347,7 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeClear_Primitive
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -351,6 +360,7 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeClear_Primitive
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -375,6 +385,10 @@ public class Given_A_Postgresql_DocumentCacheAdministrativeClear_Primitive
                 Value = $"etag-{source.ContentVersion}",
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LastModifiedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
                 Value = new JsonObject { ["value"] = $"cache-{source.ContentVersion}" }.ToJsonString(),

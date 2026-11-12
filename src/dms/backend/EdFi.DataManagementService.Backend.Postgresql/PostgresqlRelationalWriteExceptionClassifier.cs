@@ -33,12 +33,14 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
                     constraintName
                 )
             ),
-            PostgresErrorCodes.ForeignKeyViolation => BuildConstraintClassification(
-                postgresException.ConstraintName,
-                static constraintName => new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
-                    constraintName
-                )
-            ),
+            // ON DELETE RESTRICT: PostgreSQL 18 reports restrict_violation (23001), earlier versions 23503.
+            PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.RestrictViolation =>
+                BuildConstraintClassification(
+                    postgresException.ConstraintName,
+                    static constraintName => new RelationalWriteExceptionClassification.ForeignKeyConstraintViolation(
+                        constraintName
+                    )
+                ),
             PostgresErrorCodes.DeadlockDetected
             or PostgresErrorCodes.SerializationFailure
             or PostgresErrorCodes.LockNotAvailable => null,
@@ -52,9 +54,11 @@ internal sealed class PostgresqlRelationalWriteExceptionClassifier : IRelational
     {
         ArgumentNullException.ThrowIfNull(exception);
 
-        // Rely on SqlState 23503 directly so FK violations still map to a 409
-        // DeleteFailureReference even if the constraint name is absent.
-        return exception is PostgresException { SqlState: PostgresErrorCodes.ForeignKeyViolation };
+        // Rely on SqlState directly so FK violations still map to a 409 DeleteFailureReference
+        // even if the constraint name is absent. DMS generates ON DELETE RESTRICT foreign keys,
+        // which PostgreSQL 18 reports as restrict_violation (23001) rather than 23503.
+        return exception is PostgresException { SqlState: var sqlState }
+            && sqlState is PostgresErrorCodes.ForeignKeyViolation or PostgresErrorCodes.RestrictViolation;
     }
 
     public bool IsUniqueConstraintViolation(DbException exception)

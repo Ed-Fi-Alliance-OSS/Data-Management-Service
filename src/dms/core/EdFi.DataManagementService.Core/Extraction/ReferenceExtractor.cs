@@ -9,7 +9,6 @@ using EdFi.DataManagementService.Core.ApiSchema.Helpers;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using Microsoft.Extensions.Logging;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
 
 namespace EdFi.DataManagementService.Core.Extraction;
 
@@ -229,7 +228,6 @@ internal static class ReferenceExtractor
                 var documentReference = new DocumentReference(
                     resourceInfo,
                     documentIdentity,
-                    ReferentialIdFrom(resourceInfo, documentIdentity),
                     new JsonPath(referenceOccurrence.jsonPath)
                 );
 

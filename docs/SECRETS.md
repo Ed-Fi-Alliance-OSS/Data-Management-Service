@@ -54,15 +54,11 @@ An unprefixed environment variable or a command-line argument does; see
 moving a value into a vault removes it from the environment.
 
 **On the shipped Docker Compose files, removing it from `.env` does not work.**
-`local-dms.yml`, `published-dms.yml`, `local-config.yml` and `published-config.yml`
-map five of these keys from `.env` variables: `ConfigurationServiceSettings__ClientSecret`
-and `ConfigurationServiceSettings__EncryptionKey` on `dms`, and
-`DatabaseSettings__EncryptionKey`, `IdentitySettings__ClientSecret` and
-`IdentitySettings__EncryptionKey` on `config`. Deleting the variable sets the key to
-an empty string, which still outranks the vault, so the host sees no value. Unset
-each key in a deployment-owned override file instead, and keep the `.env` variables
-set, because the local launch scripts read them; see
-[Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
+`local-dms.compose.yml`, `published-dms.compose.yml`, `local-config.compose.yml` and `published-config.compose.yml` map six of these keys from `.env` variables: `ConfigurationServiceSettings__ClientSecret` and `ConfigurationServiceSettings__EncryptionKey` on `dms`, and `DatabaseSettings__DatabaseConnection`, `DatabaseSettings__EncryptionKey`, `IdentitySettings__ClientSecret` and `IdentitySettings__EncryptionKey` on `config`.
+In the local files, deleting the variable sets the key to an empty string, which still outranks the vault, so the host sees no value.
+The published files require both encryption-key variables, `CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY` (feeding the two database-key mappings) and `CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY` (feeding `IdentitySettings__EncryptionKey`), so deleting either stops Compose with an error instead; their two client secrets still become empty strings.
+`DatabaseSettings__DatabaseConnection` has a default in `local-config.compose.yml` and `published-config.compose.yml`, the only files that map it, so deleting its variable sends the Configuration Service to the bundled `dms-postgresql` database rather than the one the vault names.
+Unset each key in a deployment-owned override file instead, and keep the `.env` variables set, because the local launch scripts read them and the published files require the encryption-key variables; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files), including its limitation for the combined DMS and Configuration Service stack.
 
 **DMS, two keys:**
 
@@ -75,7 +71,7 @@ set, because the local launch scripts read them; see
 
 | Key | What it is |
 | --- | --- |
-| `DatabaseSettings:DatabaseConnection` | The Configuration Service's own database connection string, password included. See the stock-image note below. |
+| `DatabaseSettings:DatabaseConnection` | The Configuration Service's own database connection string, password included. See the entry point note below. |
 | `DatabaseSettings:EncryptionKey` | The key the Configuration Service encrypts stored connection strings with. |
 | `IdentitySettings:ClientSecret` | The Configuration Service's own client secret. |
 | `IdentitySettings:EncryptionKey` | The key protecting the OpenIddict signing keys held in the database. |
@@ -95,22 +91,25 @@ configuration. It is a section of arbitrarily many values rather than one key, a
 each header is an ordinary key: `OtlpLogging:Headers:Authorization` is served by a
 vault key of that name like any other.
 
-**On the stock Configuration Service image, keep `DatabaseSettings__DatabaseConnection`
-in the environment.** The container entry point, `src/config/run.sh`, reads that
-variable before .NET starts, to wait for the database, and the environment value
-then outranks any plugin source for .NET as well. A deployment with its own entry
-point, or outside a container, has neither constraint. See
-[Configuration Service plugins](./CONFIGURATION.md#configuration-service-plugins).
+**On the stock Configuration Service image, `DatabaseSettings__DatabaseConnection` can be removed from the environment and served from a vault.**
+The container entry point, `src/config/run.sh`, reads that variable before .NET starts, to wait for the database.
+When it finds no `host` setting in the variable, because the variable is absent or empty, it prints that it is skipping the readiness wait and starts .NET without waiting.
+It matches keys in any case, as .NET does, so `Host=` and `host=` both count.
+A value in the environment still outranks any plugin source, so a key the vault serves must not also be set there.
+Without the wait, .NET reports a connection error itself if the database is not ready yet, and with the default `AppSettings:DeployDatabaseOnStartup=true` the process exits.
+A restart policy, such as the `restart: unless-stopped` on the shipped Compose files, brings it back once the database is up; without one it stays down.
+See [Configuration Service plugins](./CONFIGURATION.md#configuration-service-plugins).
 
 ### The one deployment credential Phase A cannot serve
 
-**`DATABASE_CONNECTION_STRING_ADMIN` is out of reach, structurally.** It carries
-elevated database credentials, and its only consumer is the DMS container entry
-point: `src/dms/run.sh:14-16` parses the host, port, and username out of it in the
-shell, to wait for PostgreSQL, before the .NET host exists. No configuration source
-of any origin can serve a value read before there is a configuration to read it
-from, so it stays a deployment-environment value, supplied the way the deployment
-already supplies its other secret environment variables.
+**`DATABASE_CONNECTION_STRING_ADMIN` is out of reach, structurally, and it is optional.**
+It carries elevated database credentials, and its only consumer is the DMS container entry point: `connection_string_value` in `src/dms/run.sh` parses the host, port, and username out of it in the shell, to wait for PostgreSQL, before the .NET host exists.
+No configuration source of any origin can serve a value read before there is a configuration to read it from, so a deployment that sets it supplies it from the deployment environment, the way it already supplies its other secret environment variables.
+A deployment that does not need the wait can leave it unset: when the entry point cannot parse a PostgreSQL host from it, it prints that it is skipping the readiness wait and starts DMS without waiting.
+DMS itself never reads the variable, and if the database is not up yet, its startup check retries on the first request.
+On the shipped Compose files, only `local-dms.compose.yml` gives the variable a default, a superuser connection string for the bundled `dms-postgresql` service, so deleting it from `.env` still puts that credential in the container.
+`published-dms.compose.yml` has no default: a missing or empty variable stops Compose with an error.
+To leave it out of the container on either file, keep the variable set and reset it under `dms` with `DATABASE_CONNECTION_STRING_ADMIN: !reset null` in a deployment-owned override; see [Secrets on the shipped Compose files](./OPERATIONS.md#secrets-on-the-shipped-compose-files).
 
 ### Rotating a process-global secret takes a restart
 
@@ -283,6 +282,6 @@ client secret as a PBKDF2 hash without the iteration count, and verifies at what
 count is configured now, so raising the work factor (or lowering it) makes every
 existing client secret fail verification. The remedy is to re-issue those client
 secrets. In the provided Docker Compose files this value is set from
-`DMS_CONFIG_IDENTITY_HASHING_ITERATIONS`, which also sets the count the bootstrap
+`CONFIGURATION_SERVICE_IDENTITY_HASHING_ITERATIONS`, which also sets the count the bootstrap
 script hashes its own client secrets with. See
 [Identity Provider Configuration](./CONFIGURATION.md#identity-provider-configuration).

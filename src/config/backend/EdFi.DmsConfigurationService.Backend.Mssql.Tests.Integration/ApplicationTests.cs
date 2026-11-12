@@ -4,8 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Keycloak;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -193,11 +195,8 @@ public class ApplicationTests : DatabaseTest
                 EducationOrganizationIds = [],
             };
 
-            var applicationUpdateResult = await _applicationRepository.UpdateApplication(
-                applicationUpdate,
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
-            applicationUpdateResult.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
+            var applicationUpdateResult = await _applicationRepository.SaveApplication(applicationUpdate);
+            applicationUpdateResult.Should().BeOfType<ApplicationSaveResult.FailureVendorNotFound>();
         }
     }
 
@@ -246,7 +245,7 @@ public class ApplicationTests : DatabaseTest
             command.ApplicationName = "Update Application Name";
             command.EducationOrganizationIds = [1, 2];
 
-            var vendorUpdateResult = await _applicationRepository.UpdateApplication(
+            var vendorUpdateResult = await _applicationRepository.SaveApplication(
                 new ApplicationUpdateCommand()
                 {
                     Id = _id,
@@ -254,10 +253,9 @@ public class ApplicationTests : DatabaseTest
                     ClaimSetName = command.ClaimSetName,
                     EducationOrganizationIds = command.EducationOrganizationIds,
                     VendorId = command.VendorId,
-                },
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                }
             );
-            vendorUpdateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+            vendorUpdateResult.Should().BeOfType<ApplicationSaveResult.Success>();
         }
 
         [Test]
@@ -522,13 +520,10 @@ public class ApplicationTests : DatabaseTest
                 EducationOrganizationIds = [9, 10],
             };
 
-            var updateResult = await _applicationRepository.UpdateApplication(
-                updateCommand,
-                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
-            );
+            var updateResult = await _applicationRepository.SaveApplication(updateCommand);
 
-            updateResult.Should().BeOfType<ApplicationUpdateResult.FailureDuplicateApplication>();
-            var failureResult = (ApplicationUpdateResult.FailureDuplicateApplication)updateResult;
+            updateResult.Should().BeOfType<ApplicationSaveResult.FailureDuplicateApplication>();
+            var failureResult = (ApplicationSaveResult.FailureDuplicateApplication)updateResult;
             failureResult.ApplicationName.Should().Be("Duplicate Test Application");
         }
     }
@@ -695,7 +690,8 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         [SetUp]
@@ -779,7 +775,8 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         private readonly IDataStoreRepository _dataStoreRepository;
@@ -944,7 +941,8 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         private readonly IDataStoreRepository _dataStoreRepository;
@@ -1104,11 +1102,13 @@ public class ApplicationTests : DatabaseTest
             MssqlTestConfiguration.DatabaseOptions,
             NullLogger<ApiClientRepository>.Instance,
             new TestAuditContext(),
-            new TenantContextProvider()
+            new TenantContextProvider(),
+            new NoOpUnapprovalTokenRevocation()
         );
 
         private readonly OpenIddictDataRepository _openIddictDataRepository = new(
-            MssqlTestConfiguration.DatabaseOptions
+            MssqlTestConfiguration.DatabaseOptions,
+            NullLogger<OpenIddictDataRepository>.Instance
         );
 
         [SetUp]
@@ -1166,27 +1166,33 @@ public class ApplicationTests : DatabaseTest
                 }
             );
 
-            // InsertApplication auto-creates an ApiClient with IsApproved = true using _clientId.
-            // Adding a second client with IsApproved = false AND THE SAME ClientId makes BOOL_AND return false.
-            var clientResult = await _apiClientRepository.InsertApiClient(
-                new ApiClientInsertCommand
+            // InsertApplication auto-creates an approved ApiClient keyed by _clientId. The OpenIddict
+            // approval gate reads that row's IsApproved (aggregated over the rows sharing the key, of
+            // which UX_ApiClient_ClientId allows exactly one), so the row is disapproved in place.
+            var queryResult = await _apiClientRepository.QueryApiClient(
+                new ApiClientQuery { ApplicationId = applicationId }
+            );
+            var autoCreatedClient = ((ApiClientQueryResult.Success)queryResult).ApiClientResponses.Single();
+
+            var updateResult = await _apiClientRepository.UpdateApiClient(
+                new ApiClientUpdateCommand
                 {
+                    Id = autoCreatedClient.Id,
                     ApplicationId = applicationId,
-                    Name = "Unapproved OpenIddict Client",
+                    Name = autoCreatedClient.Name,
                     IsApproved = false,
                     DataStoreIds = [],
-                },
-                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+                }
             );
-            clientResult.Should().BeOfType<ApiClientInsertResult.Success>();
+            updateResult.Should().BeOfType<ApiClientUpdateResult.Success>();
         }
 
         [Test]
-        public async Task It_should_return_IsApproved_false_from_GetApplicationByClientIdAsync()
+        public async Task It_should_report_the_client_unapproved_from_GetApplicationByClientIdAsync()
         {
             var result = await _openIddictDataRepository.GetApplicationByClientIdAsync(_clientId);
             result.Should().NotBeNull();
-            result!.IsApproved.Should().BeFalse();
+            result!.ApiClientApproval.Should().Be(ApiClientApprovalState.Unapproved);
         }
     }
 
@@ -1410,8 +1416,8 @@ public class ApplicationTests : DatabaseTest
             return ((ApplicationGetResult.Success)result).ApplicationResponse.ProfileIds;
         }
 
-        private Task<ApplicationUpdateResult> UpdateTenantBApplicationProfiles(params int[] profileIds) =>
-            _tenantBRepository.UpdateApplication(
+        private Task<ApplicationSaveResult> UpdateTenantBApplicationProfiles(params int[] profileIds) =>
+            _tenantBRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _tenantBApplicationId,
@@ -1420,8 +1426,7 @@ public class ApplicationTests : DatabaseTest
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [],
                     ProfileIds = profileIds,
-                },
-                new ApiClientCommand { ClientId = _tenantBClientId, ClientUuid = Guid.NewGuid() }
+                }
             );
 
         [Test]
@@ -1456,7 +1461,7 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task It_should_not_update_another_tenants_application()
         {
-            var result = await _tenantBRepository.UpdateApplication(
+            var result = await _tenantBRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _tenantAApplicationId,
@@ -1464,10 +1469,9 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _tenantBVendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [],
-                },
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                }
             );
-            result.Should().BeOfType<ApplicationUpdateResult.FailureNotExists>();
+            result.Should().BeOfType<ApplicationSaveResult.FailureNotExists>();
 
             var unchanged = await _tenantARepository.GetApplication(_tenantAApplicationId);
             unchanged.Should().BeOfType<ApplicationGetResult.Success>();
@@ -1479,7 +1483,7 @@ public class ApplicationTests : DatabaseTest
         [Test]
         public async Task It_should_not_move_an_application_to_another_tenants_vendor()
         {
-            var result = await _tenantBRepository.UpdateApplication(
+            var result = await _tenantBRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _tenantBApplicationId,
@@ -1487,10 +1491,9 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _tenantAVendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [],
-                },
-                new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                }
             );
-            result.Should().BeOfType<ApplicationUpdateResult.FailureVendorNotFound>();
+            result.Should().BeOfType<ApplicationSaveResult.FailureVendorNotFound>();
         }
 
         [Test]
@@ -1542,24 +1545,6 @@ public class ApplicationTests : DatabaseTest
                 new ApiClientCommand { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
             );
             result.Should().BeOfType<ApplicationInsertResult.FailureDataStoreNotFound>();
-        }
-
-        [Test]
-        public async Task It_should_not_update_an_application_with_another_tenants_data_store()
-        {
-            var result = await _tenantBRepository.UpdateApplication(
-                new ApplicationUpdateCommand
-                {
-                    Id = _tenantBApplicationId,
-                    ApplicationName = "Tenant B Application",
-                    VendorId = _tenantBVendorId,
-                    ClaimSetName = "Test Claim set",
-                    EducationOrganizationIds = [],
-                    DataStoreIds = [_tenantADataStoreId],
-                },
-                new ApiClientCommand { ClientId = _tenantBClientId, ClientUuid = Guid.NewGuid() }
-            );
-            result.Should().BeOfType<ApplicationUpdateResult.FailureDataStoreNotFound>();
         }
 
         [Test]
@@ -1637,7 +1622,7 @@ public class ApplicationTests : DatabaseTest
         public async Task It_should_update_an_application_with_its_own_tenants_profile()
         {
             var result = await UpdateTenantBApplicationProfiles(_tenantBProfileId);
-            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+            result.Should().BeOfType<ApplicationSaveResult.Success>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1649,10 +1634,10 @@ public class ApplicationTests : DatabaseTest
         {
             (await UpdateTenantBApplicationProfiles(_tenantBProfileId))
                 .Should()
-                .BeOfType<ApplicationUpdateResult.Success>();
+                .BeOfType<ApplicationSaveResult.Success>();
 
             var result = await UpdateTenantBApplicationProfiles(_tenantAProfileId);
-            result.Should().BeOfType<ApplicationUpdateResult.FailureProfileNotFound>();
+            result.Should().BeOfType<ApplicationSaveResult.FailureProfileNotFound>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1691,7 +1676,7 @@ public class ApplicationTests : DatabaseTest
             var result = await UpdateTenantBApplicationProfiles([
                 .. Enumerable.Repeat(_tenantBProfileId, 3000),
             ]);
-            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+            result.Should().BeOfType<ApplicationSaveResult.Success>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1728,7 +1713,7 @@ public class ApplicationTests : DatabaseTest
             int[] profileIds = await InsertProfiles(_tenantBProvider, 2101);
 
             var result = await UpdateTenantBApplicationProfiles(profileIds);
-            result.Should().BeOfType<ApplicationUpdateResult.Success>();
+            result.Should().BeOfType<ApplicationSaveResult.Success>();
 
             (await GetProfileIds(_tenantBRepository, _tenantBApplicationId))
                 .Should()
@@ -1891,7 +1876,9 @@ public class ApplicationTests : DatabaseTest
         {
             await AssertEveryReadPathPreservesTheEducationOrganizationId("after the insert");
 
-            var updateResult = await _applicationRepository.UpdateApplication(
+            // The save leaves the client's data store links intact, so QueryApplicationByDataStore
+            // still finding this application afterwards proves it.
+            var saveResult = await _applicationRepository.SaveApplication(
                 new ApplicationUpdateCommand
                 {
                     Id = _applicationId,
@@ -1899,18 +1886,17 @@ public class ApplicationTests : DatabaseTest
                     VendorId = _vendorId,
                     ClaimSetName = "Test Claim set",
                     EducationOrganizationIds = [LargeEducationOrganizationId],
-                    DataStoreIds = [_dataStoreId],
-                },
-                // Reuse the ClientId the insert created: UpdateApplication resolves the ApiClient by
-                // ClientId before rebuilding the data store links, so a fresh one would strand them
-                // and remove this application from QueryApplicationByDataStore.
-                new ApiClientCommand { ClientId = _clientId, ClientUuid = Guid.NewGuid() }
+                }
             );
-            updateResult.Should().BeOfType<ApplicationUpdateResult.Success>();
+            saveResult.Should().BeOfType<ApplicationSaveResult.Success>();
+            AssertPreserved(
+                [.. ((ApplicationSaveResult.Success)saveResult).State.EducationOrganizationIds],
+                "SaveApplication",
+                "in the save result"
+            );
 
-            // ApplicationUpdateResult.Success carries no payload, so re-reading is the only thing that
-            // can prove the rewritten value survived.
-            await AssertEveryReadPathPreservesTheEducationOrganizationId("after the update");
+            // Re-reading proves the rewritten value survived.
+            await AssertEveryReadPathPreservesTheEducationOrganizationId("after the save");
         }
 
         /// <summary>
@@ -1962,19 +1948,14 @@ public class ApplicationTests : DatabaseTest
                 when
             );
 
-            // The reconciliation read behind PUT /v3/applications/{id}. It projects the ids through a
-            // standalone QueryAsync<long> rather than a multi-map, and ApplicationModule both compares
-            // them against the command and rebuilds the identity provider's educationOrganizationIds
-            // claim from them on the rollback path, so a narrowing here would corrupt an authorization
-            // scope instead of failing visibly.
-            var updateStateResult = await _applicationRepository.GetApplicationUpdateState(
-                _applicationId,
-                _clientId
-            );
-            updateStateResult.Should().BeOfType<ApplicationUpdateStateResult.Success>();
+            // The committed-state read behind PUT /v3/applications/{id}. Its ids become the identity
+            // provider's educationOrganizationIds claim for every inheriting client, so a narrowing
+            // here would corrupt an authorization scope instead of failing visibly.
+            var syncStateResult = await _applicationRepository.GetApplicationSyncState(_applicationId);
+            syncStateResult.Should().BeOfType<ApplicationSyncStateResult.Success>();
             AssertPreserved(
-                [.. ((ApplicationUpdateStateResult.Success)updateStateResult).State.EducationOrganizationIds],
-                "GetApplicationUpdateState",
+                [.. ((ApplicationSyncStateResult.Success)syncStateResult).State.EducationOrganizationIds],
+                "GetApplicationSyncState",
                 when
             );
         }
@@ -1987,6 +1968,427 @@ public class ApplicationTests : DatabaseTest
                     new[] { LargeEducationOrganizationId },
                     $"{readPath} should preserve an education organization id above int.MaxValue {when}"
                 );
+        }
+    }
+
+    /// <summary>
+    /// DMS-1529: the application's initial client is inserted inside the aggregate transaction, so a
+    /// repeated key or UUID is a classified failure that rolls the whole aggregate back, whichever
+    /// application or tenant holds the identifier and whichever writer got there first.
+    /// </summary>
+    [TestFixture]
+    public class Given_application_inserts_whose_initial_client_repeats_an_identifier : ApplicationTests
+    {
+        private const string RepeatKeyApplicationName = "DMS1529 Repeat Key Application";
+        private const string RepeatUuidApplicationName = "DMS1529 Repeat Uuid Application";
+        private const string RepeatBothApplicationName = "DMS1529 Repeat Both Application";
+        private const string LosingApplicationName = "DMS1529 Losing Application";
+        private const string TenantTwoApplicationName = "DMS1529 Tenant Two Application";
+
+        private readonly string _takenClientId = Guid.NewGuid().ToString();
+        private readonly Guid _takenClientUuid = Guid.NewGuid();
+        private readonly string _secondClientId = Guid.NewGuid().ToString();
+        private readonly Guid _secondClientUuid = Guid.NewGuid();
+        private int _identifierVendorId;
+        private int _secondApplicationId;
+        private int _duplicateAttemptDataStoreId;
+        private int _tenantTwoVendorId;
+        private ApplicationInsertResult _repeatKeyInsert = null!;
+        private ApplicationInsertResult _repeatUuidInsert = null!;
+        private ApplicationInsertResult _repeatBothInsert = null!;
+        private ApplicationInsertResult _repeatKeyOtherTenantInsert = null!;
+        private ApplicationInsertResult _losingConcurrentInsert = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _identifierVendorId = await InsertVendor(new TenantContextProvider());
+            _duplicateAttemptDataStoreId = await Connection!.ExecuteScalarAsync<int>(
+                """
+                INSERT INTO dmscs.DataStore (DataStoreType, Name)
+                OUTPUT INSERTED.Id VALUES ('Production', @Name);
+                """,
+                new { Name = $"DMS1529 Data Store {Guid.NewGuid()}" }
+            );
+
+            (await InsertApplication("DMS1529 Taken Application", _takenClientId, _takenClientUuid, []))
+                .Should()
+                .BeOfType<ApplicationInsertResult.Success>();
+            var secondInsert = await InsertApplication(
+                "DMS1529 Second Application",
+                _secondClientId,
+                _secondClientUuid,
+                []
+            );
+            _secondApplicationId = ((ApplicationInsertResult.Success)secondInsert).Id;
+
+            _repeatKeyInsert = await InsertApplication(
+                RepeatKeyApplicationName,
+                _takenClientId,
+                Guid.NewGuid(),
+                [_duplicateAttemptDataStoreId]
+            );
+            _repeatUuidInsert = await InsertApplication(
+                RepeatUuidApplicationName,
+                Guid.NewGuid().ToString(),
+                _takenClientUuid,
+                [_duplicateAttemptDataStoreId]
+            );
+            _repeatBothInsert = await InsertApplication(
+                RepeatBothApplicationName,
+                _takenClientId,
+                _takenClientUuid,
+                [_duplicateAttemptDataStoreId]
+            );
+            _repeatKeyOtherTenantInsert = await InsertApplicationRepeatingAnotherTenantsKey();
+            _losingConcurrentInsert = await RunLosingConcurrentInsert();
+        }
+
+        private static async Task<int> InsertVendor(TenantContextProvider tenantContextProvider)
+        {
+            var vendorResult = await new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                tenantContextProvider
+            ).InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = $"DMS1529 Vendor {Guid.NewGuid()}",
+                    ContactEmailAddress = "identifiers@test.com",
+                    ContactName = "Identifiers Tester",
+                    NamespacePrefixes = "uri://identifiers-test.example",
+                }
+            );
+            return ((VendorInsertResult.Success)vendorResult).Id;
+        }
+
+        private Task<ApplicationInsertResult> InsertApplication(
+            string name,
+            string clientId,
+            Guid clientUuid,
+            int[] dataStoreIds
+        ) =>
+            InsertApplication(
+                _applicationRepository,
+                _identifierVendorId,
+                name,
+                clientId,
+                clientUuid,
+                dataStoreIds
+            );
+
+        private static Task<ApplicationInsertResult> InsertApplication(
+            IApplicationRepository applicationRepository,
+            int vendorId,
+            string name,
+            string clientId,
+            Guid clientUuid,
+            int[] dataStoreIds
+        ) =>
+            applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = name,
+                    VendorId = vendorId,
+                    ClaimSetName = "TestClaimSet",
+                    EducationOrganizationIds = [1, 2],
+                    DataStoreIds = dataStoreIds,
+                },
+                new ApiClientCommand { ClientId = clientId, ClientUuid = clientUuid }
+            );
+
+        /// <summary>
+        /// A tenant of its own with a vendor, and the tenant-scoped application repository that
+        /// writes under it.
+        /// </summary>
+        private async Task<(IApplicationRepository ApplicationRepository, int VendorId)> CreateTenant(
+            string tenantName
+        )
+        {
+            long tenantId = await Connection!.ExecuteScalarAsync<long>(
+                """INSERT INTO dmscs.Tenant (Name) OUTPUT INSERTED.Id VALUES (@Name);""",
+                new { Name = $"{tenantName}-{Guid.NewGuid():N}" }
+            );
+            var tenantProvider = new TenantContextProvider
+            {
+                Context = new TenantContext.Multitenant(tenantId, tenantName),
+            };
+            int vendorId = await InsertVendor(tenantProvider);
+            IApplicationRepository applicationRepository = new ApplicationRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext(),
+                tenantProvider
+            );
+            return (applicationRepository, vendorId);
+        }
+
+        /// <summary>
+        /// Two tenants, each with its own vendor and tenant-scoped repository. The key is taken by
+        /// the first tenant's application; the second tenant's application insert with the same key
+        /// is rejected and its aggregate rolled back.
+        /// </summary>
+        private async Task<ApplicationInsertResult> InsertApplicationRepeatingAnotherTenantsKey()
+        {
+            string tenantOneClientId = Guid.NewGuid().ToString();
+            var tenantOne = await CreateTenant("dms1529-tenant-one");
+            (
+                await InsertApplication(
+                    tenantOne.ApplicationRepository,
+                    tenantOne.VendorId,
+                    "DMS1529 Tenant One Application",
+                    tenantOneClientId,
+                    Guid.NewGuid(),
+                    []
+                )
+            )
+                .Should()
+                .BeOfType<ApplicationInsertResult.Success>();
+
+            var tenantTwo = await CreateTenant("dms1529-tenant-two");
+            _tenantTwoVendorId = tenantTwo.VendorId;
+            return await InsertApplication(
+                tenantTwo.ApplicationRepository,
+                tenantTwo.VendorId,
+                TenantTwoApplicationName,
+                tenantOneClientId,
+                Guid.NewGuid(),
+                [_duplicateAttemptDataStoreId]
+            );
+        }
+
+        /// <summary>
+        /// Another session inserts a client with a fresh key and holds its transaction open; the
+        /// application insert whose initial client carries the same key is started, then the session
+        /// commits. The outcome is the same classified failure for every interleaving.
+        /// </summary>
+        private async Task<ApplicationInsertResult> RunLosingConcurrentInsert()
+        {
+            string contestedClientId = Guid.NewGuid().ToString();
+
+            await using var winner = await OpenConnectionAsync();
+            await using var winnerTransaction = await winner.BeginTransactionAsync();
+            await winner.ExecuteAsync(
+                """
+                INSERT INTO dmscs.ApiClient (ApplicationId, Name, ClientId, ClientUuid, IsApproved, CreatedBy)
+                VALUES (@ApplicationId, 'Winner', @ClientId, @ClientUuid, 1, 'dms1529-winner');
+                """,
+                new
+                {
+                    ApplicationId = _secondApplicationId,
+                    ClientId = contestedClientId,
+                    ClientUuid = Guid.NewGuid(),
+                },
+                winnerTransaction
+            );
+
+            Task<ApplicationInsertResult> loser = InsertApplication(
+                LosingApplicationName,
+                contestedClientId,
+                Guid.NewGuid(),
+                [_duplicateAttemptDataStoreId]
+            );
+
+            await winnerTransaction.CommitAsync();
+            return await loser;
+        }
+
+        [Test]
+        public void It_rejects_an_initial_client_whose_key_is_taken() =>
+            _repeatKeyInsert.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_rejects_an_initial_client_whose_uuid_is_taken() =>
+            _repeatUuidInsert.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClientUuid>();
+
+        [Test]
+        public void It_rejects_an_initial_client_repeating_both_identifiers_as_one_of_the_two_conflicts() =>
+            _repeatBothInsert
+                .Should()
+                .Match<ApplicationInsertResult>(result =>
+                    result is ApplicationInsertResult.FailureDuplicateClientId
+                    || result is ApplicationInsertResult.FailureDuplicateClientUuid
+                );
+
+        [Test]
+        public void It_rejects_an_initial_client_whose_key_another_tenant_holds() =>
+            _repeatKeyOtherTenantInsert.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public void It_classifies_the_losing_write_of_a_concurrent_insert() =>
+            _losingConcurrentInsert.Should().BeOfType<ApplicationInsertResult.FailureDuplicateClientId>();
+
+        [Test]
+        public async Task It_rolls_back_the_application_rows()
+        {
+            var applications = await Connection!.QueryAsync<string>(
+                """SELECT ApplicationName FROM dmscs.Application WHERE VendorId IN @VendorIds ORDER BY 1;""",
+                new { VendorIds = new[] { _identifierVendorId, _tenantTwoVendorId } }
+            );
+            applications.Should().Equal("DMS1529 Second Application", "DMS1529 Taken Application");
+        }
+
+        [Test]
+        public async Task It_rolls_back_the_education_organization_rows() => (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """
+                    SELECT count(*) FROM dmscs.ApplicationEducationOrganization aeo
+                    WHERE NOT EXISTS (SELECT 1 FROM dmscs.Application a WHERE a.Id = aeo.ApplicationId);
+                    """
+                )
+            ).Should().Be(0);
+
+        [Test]
+        public async Task It_rolls_back_the_initial_client_and_its_data_store_assignment()
+        {
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT count(*) FROM dmscs.ApiClient WHERE Name IN @Names;""",
+                    new
+                    {
+                        Names = new[]
+                        {
+                            RepeatKeyApplicationName,
+                            RepeatUuidApplicationName,
+                            RepeatBothApplicationName,
+                            LosingApplicationName,
+                            TenantTwoApplicationName,
+                        },
+                    }
+                )
+            )
+                .Should()
+                .Be(0);
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    """SELECT count(*) FROM dmscs.ApiClientDataStore WHERE DataStoreId = @DataStoreId;""",
+                    new { DataStoreId = _duplicateAttemptDataStoreId }
+                )
+            )
+                .Should()
+                .Be(0);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_application_inserted_without_a_client : ApplicationTests
+    {
+        private ApplicationInsertResult _result = null!;
+        private ApplicationInsertResult _missingProfileResult = null!;
+        private int _profileId;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IVendorRepository vendorRepository = new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var vendorResult = await vendorRepository.InsertVendor(
+                new VendorInsertCommand
+                {
+                    Company = "Zero Client Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = "FakePrefix1",
+                }
+            );
+            _vendorId = ((VendorInsertResult.Success)vendorResult).Id;
+
+            IProfileRepository profileRepository = new ProfileRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ProfileRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            var profileResult = await profileRepository.InsertProfile(
+                new ProfileInsertCommand
+                {
+                    Name = "Zero Client Profile",
+                    Definition = "<Profile name=\"Zero Client Profile\"/>",
+                }
+            );
+            _profileId = ((ProfileInsertResult.Success)profileResult).Id;
+
+            _result = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Zero Client Application",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [1, 255911001],
+                    ProfileIds = [_profileId],
+                    CreateDefaultCredentials = false,
+                },
+                // A fully populated client command shows the flag, not the argument, decides.
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+
+            _missingProfileResult = await _applicationRepository.InsertApplication(
+                new ApplicationInsertCommand
+                {
+                    ApplicationName = "Zero Client Application With Missing Profile",
+                    VendorId = _vendorId,
+                    ClaimSetName = "Test Claim set",
+                    EducationOrganizationIds = [1],
+                    ProfileIds = [_profileId + 1000],
+                    CreateDefaultCredentials = false,
+                },
+                // A fully populated client command shows the flag, not the argument, decides.
+                new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+            );
+        }
+
+        private int ApplicationId => ((ApplicationInsertResult.Success)_result).Id;
+
+        [Test]
+        public void It_inserts_the_application() =>
+            _result.Should().BeOfType<ApplicationInsertResult.Success>();
+
+        [Test]
+        public async Task It_inserts_no_api_client()
+        {
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dmscs.ApiClient WHERE ApplicationId = @ApplicationId;",
+                    new { ApplicationId }
+                )
+            )
+                .Should()
+                .Be(0);
+
+            var clients = await _applicationRepository.GetApplicationApiClients(ApplicationId);
+            clients.Should().BeOfType<ApplicationApiClientsResult.Success>().Which.Clients.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_stores_the_education_organizations_and_profiles()
+        {
+            var getResult = await _applicationRepository.GetApplication(ApplicationId);
+            var application = getResult
+                .Should()
+                .BeOfType<ApplicationGetResult.Success>()
+                .Which.ApplicationResponse;
+            application.ApplicationName.Should().Be("Zero Client Application");
+            application.EducationOrganizationIds.Should().BeEquivalentTo([1L, 255911001L]);
+            application.ProfileIds.Should().Equal(_profileId);
+        }
+
+        [Test]
+        public async Task It_rolls_back_an_insert_with_a_missing_profile()
+        {
+            _missingProfileResult.Should().BeOfType<ApplicationInsertResult.FailureProfileNotFound>();
+            (
+                await Connection!.ExecuteScalarAsync<int>(
+                    "SELECT COUNT(1) FROM dmscs.Application WHERE ApplicationName = @ApplicationName;",
+                    new { ApplicationName = "Zero Client Application With Missing Profile" }
+                )
+            )
+                .Should()
+                .Be(0);
         }
     }
 }

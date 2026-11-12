@@ -1,3 +1,10 @@
+> **DMS-1454 supersession:** Natural-key resolution below computes a UUIDv5 `ReferentialId`
+> (`ReferentialIdCalculator`, `DocumentInfo.ReferentialId`) and finds the document by it.
+> DMS-1454 removed Core's referential-ID surface, and no runtime path reads
+> `dms.ReferentialIdentity`. A batch natural-key lookup must use the natural-key lookups described
+> in [natural-key-resolution.md](../backend-redesign/design-docs/natural-key-resolution.md)
+> instead.
+
 [X] **1. Public API & Frontend wiring**
       [X] Extend IApiService with ExecuteBatchAsync() and add a VersionedLazy<PipelineProvider> field in ApiService to drive the /batch pipeline, mirroring how the existing _upsertSteps etc. operate.
       [X] Add a static Batch adapter in AspNetCoreFrontend that reuses FromRequest/ToResult, then create BatchEndpointModule that maps POST /batch to that adapter so routing stays consistent with other modules.

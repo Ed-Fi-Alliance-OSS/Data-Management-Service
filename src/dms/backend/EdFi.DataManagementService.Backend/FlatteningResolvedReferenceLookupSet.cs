@@ -16,9 +16,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     private readonly OrdinalPathMap<ResolvedDocumentReference>?[] _documentReferenceMapsByBindingIndex;
     private readonly OrdinalPathMap<bool>?[] _deferredMissingDocumentReferenceMapsByBindingIndex;
     private readonly Dictionary<string, IdentityBindingLookup>[] _identityBindingByColumnByBindingIndex;
-    private readonly Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> _descriptorIdMapsByKey;
+    private readonly Dictionary<DescriptorLookupKey, OrdinalPathMap<int>> _descriptorIdMapsByKey;
     private readonly Dictionary<string, QualifiedResourceName> _descriptorResourceByPath;
-    private readonly Dictionary<DescriptorUriLookupKey, long> _descriptorIdByUri;
+    private readonly Dictionary<DescriptorUriLookupKey, int> _descriptorIdByUri;
 
     private readonly record struct IdentityBindingLookup(
         int IdentityBindingIndex,
@@ -35,9 +35,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         OrdinalPathMap<ResolvedDocumentReference>?[] documentReferenceMapsByBindingIndex,
         OrdinalPathMap<bool>?[] deferredMissingDocumentReferenceMapsByBindingIndex,
         Dictionary<string, IdentityBindingLookup>[] identityBindingByColumnByBindingIndex,
-        Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey,
+        Dictionary<DescriptorLookupKey, OrdinalPathMap<int>> descriptorIdMapsByKey,
         Dictionary<string, QualifiedResourceName> descriptorResourceByPath,
-        Dictionary<DescriptorUriLookupKey, long> descriptorIdByUri
+        Dictionary<DescriptorUriLookupKey, int> descriptorIdByUri
     )
     {
         _documentReferenceBindings =
@@ -61,7 +61,8 @@ internal sealed class FlatteningResolvedReferenceLookupSet
     public static FlatteningResolvedReferenceLookupSet Create(
         ResourceWritePlan writePlan,
         ResolvedReferenceSet resolvedReferences,
-        bool allowMissingDocumentReferencesForPrecedence = false
+        bool allowMissingDocumentReferencesForPrecedence = false,
+        IReadOnlyList<HydratedDescriptorRows>? storedDescriptorRows = null
     )
     {
         ArgumentNullException.ThrowIfNull(writePlan);
@@ -96,7 +97,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         }
 
         var descriptorLookupKeys = GetDescriptorLookupKeys(writePlan);
-        Dictionary<DescriptorLookupKey, OrdinalPathMap<long>> descriptorIdMapsByKey = [];
+        Dictionary<DescriptorLookupKey, OrdinalPathMap<int>> descriptorIdMapsByKey = [];
 
         foreach (var entry in resolvedReferences.SuccessfulDescriptorReferencesByPath)
         {
@@ -117,11 +118,11 @@ internal sealed class FlatteningResolvedReferenceLookupSet
 
             if (ordinalPathMap is null)
             {
-                ordinalPathMap = new OrdinalPathMap<long>();
+                ordinalPathMap = new OrdinalPathMap<int>();
                 descriptorIdMapsByKey.Add(lookupKey, ordinalPathMap);
             }
 
-            ordinalPathMap.Add(parsedPath.OrdinalPath, entry.Value.DocumentId);
+            ordinalPathMap.Add(parsedPath.OrdinalPath, entry.Value.DescriptorId);
         }
 
         return new(
@@ -138,41 +139,53 @@ internal sealed class FlatteningResolvedReferenceLookupSet
             BuildIdentityBindingByColumnByBindingIndex(documentReferenceBindings),
             descriptorIdMapsByKey,
             BuildDescriptorResourceByPath(writePlan),
-            BuildDescriptorIdByUri(resolvedReferences)
+            BuildDescriptorIdByUri(resolvedReferences, storedDescriptorRows)
         );
     }
 
     /// <summary>
     /// Looks up a resolved descriptor id by URI string. Used at the top-level collection
-    /// merge boundary to canonicalize stored-side descriptor URIs to Int64 ids. Returns
+    /// merge boundary to canonicalize stored-side descriptor URIs to Int32 ids. Returns
     /// <c>true</c> and sets <paramref name="descriptorId"/> when the URI is found in the
     /// request-cycle resolution cache; returns <c>false</c> otherwise.
     /// </summary>
     /// <remarks>
-    /// The cache is keyed by descriptor resource and the lowercase form of the URI; the
-    /// JSON path the URI was published at is intentionally not part of the key, because
-    /// the resolver invariant guarantees a given URI resolves to a single id within a
-    /// request regardless of where it appeared. Lowercase normalization matches the
-    /// resolver pipeline (<c>DescriptorExtractor.CreateDescriptorReference</c>), letting
-    /// callers pass the raw stored-document or request value without prior normalization.
+    /// The cache is keyed by descriptor resource and the exact URI text; the JSON path the URI
+    /// was published at is intentionally not part of the key, because the resolver invariant
+    /// guarantees a given URI resolves to a single id within a request regardless of where it
+    /// appeared. C# never folds case: a stored spelling that differs from the request's hits
+    /// only when the caller seeded the stored descriptor projection, whose URI for the same
+    /// <c>DescriptorId</c> is the database's own verdict that the two spellings are equal.
     /// </remarks>
     public bool TryGetDescriptorIdByUri(
         QualifiedResourceName descriptorResource,
         string uri,
-        out long descriptorId
+        out int descriptorId
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(uri);
 
-        var key = new DescriptorUriLookupKey(descriptorResource, uri.ToLowerInvariant());
+        var key = new DescriptorUriLookupKey(descriptorResource, uri);
         return _descriptorIdByUri.TryGetValue(key, out descriptorId);
     }
 
-    private static Dictionary<DescriptorUriLookupKey, long> BuildDescriptorIdByUri(
-        ResolvedReferenceSet resolvedReferences
+    /// <summary>
+    /// Maps each request-resolved descriptor's (resource, URI) to its id. When
+    /// <paramref name="storedDescriptorRows"/> is supplied, each resolved descriptor is also mapped under the
+    /// stored URI of the same <c>DescriptorId</c>, so stored-side spellings resolve without C# case folding.
+    /// </summary>
+    private static Dictionary<DescriptorUriLookupKey, int> BuildDescriptorIdByUri(
+        ResolvedReferenceSet resolvedReferences,
+        IReadOnlyList<HydratedDescriptorRows>? storedDescriptorRows
     )
     {
-        Dictionary<DescriptorUriLookupKey, long> result = [];
+        Dictionary<DescriptorUriLookupKey, int> result = [];
+        Dictionary<int, string> storedUriByDescriptorId = [];
+
+        foreach (var row in storedDescriptorRows?.SelectMany(rows => rows.Rows) ?? [])
+        {
+            storedUriByDescriptorId.TryAdd(row.DescriptorId, row.Uri);
+        }
 
         foreach (var resolved in resolvedReferences.SuccessfulDescriptorReferencesByPath.Values)
         {
@@ -194,15 +207,21 @@ internal sealed class FlatteningResolvedReferenceLookupSet
                 continue;
             }
 
-            // Normalize the URI to lowercase so lookup matches whether the caller has the
-            // already-lowercased resolver value or the raw stored-document casing.
-            var lookupKey = new DescriptorUriLookupKey(descriptorResource, uri.ToLowerInvariant());
+            var lookupKey = new DescriptorUriLookupKey(descriptorResource, uri);
 
             // Use TryAdd to handle duplicate URIs mapping to the same id (same descriptor
             // referenced at multiple positions/paths). The resolver invariant guarantees a
             // given URI resolves to a single id within a request, so first-write-wins is
             // safe regardless of which path the URI was first observed at.
-            result.TryAdd(lookupKey, resolved.DocumentId);
+            result.TryAdd(lookupKey, resolved.DescriptorId);
+
+            if (storedUriByDescriptorId.TryGetValue(resolved.DescriptorId, out var storedUri))
+            {
+                result.TryAdd(
+                    new DescriptorUriLookupKey(descriptorResource, storedUri),
+                    resolved.DescriptorId
+                );
+            }
         }
 
         return result;
@@ -247,7 +266,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         )?.IdentityValue;
     }
 
-    public long? GetReferenceIdentityDescriptorId(
+    public int? GetReferenceIdentityDescriptorId(
         ReferenceDerivedValueSourceMetadata referenceSource,
         DbColumnName columnName,
         ReadOnlySpan<int> ordinalPath
@@ -299,7 +318,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         );
     }
 
-    public long? GetDescriptorId(
+    public int? GetDescriptorId(
         TableWritePlan tableWritePlan,
         WriteValueSource.DescriptorReference descriptorReference,
         ReadOnlySpan<int> ordinalPath
@@ -315,7 +334,7 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         );
     }
 
-    public long? GetDescriptorId(
+    public int? GetDescriptorId(
         QualifiedResourceName descriptorResource,
         string wildcardPath,
         ReadOnlySpan<int> ordinalPath
@@ -664,11 +683,9 @@ internal sealed class FlatteningResolvedReferenceLookupSet
         }
 
         foreach (
-            var failurePath in resolvedReferences
-                .InvalidDocumentReferences.Where(static failure =>
-                    failure.Reason is DocumentReferenceFailureReason.Missing
-                )
-                .Select(static failure => failure.Path)
+            var failurePath in resolvedReferences.MissingDocumentReferences.Select(static failure =>
+                failure.Path
+            )
         )
         {
             var parsedPath = RelationalJsonPathSupport.ParseConcretePath(failurePath);

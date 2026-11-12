@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -146,7 +145,6 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
 
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -415,13 +413,14 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
     public static ImmutableArray<string> HiddenAddressTypeDescriptorPath() =>
         ImmutableArray.Create("addressTypeDescriptor");
 
-    public static async Task<long> SeedAddressTypeDescriptorAsync(
+    public static async Task<int> SeedAddressTypeDescriptorAsync(
         MssqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string codeValue
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "AddressTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         var documentId = await database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
@@ -434,56 +433,35 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
 
-        var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @codeValue,
-                @codeValue,
-                @discriminator,
-                @uri
+                @codeValue
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
-            new SqlParameter("@codeValue", codeValue),
-            new SqlParameter("@discriminator", "Ed-Fi:AddressTypeDescriptor"),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@codeValue", codeValue)
         );
 
-        var descriptorReference = CreateAddressTypeDescriptorReference(
-            uri,
-            "$.addresses[0].addressTypeDescriptor"
-        );
-        await database.ExecuteNonQueryAsync(
-            """
-            IF NOT EXISTS (
-                SELECT 1 FROM [dms].[ReferentialIdentity] WHERE [ReferentialId] = @referentialId
-            )
-            INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-            VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", descriptorReference.ReferentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        return documentId;
+        return descriptorId;
     }
 
     private static CollectionRowAddress CreateCollectionRowAddress(string identityPath, string city) =>
@@ -531,16 +509,12 @@ internal static class MssqlProfileTopLevelCollectionMergeSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
 
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }

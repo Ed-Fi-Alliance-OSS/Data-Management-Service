@@ -361,7 +361,10 @@ internal sealed class RelationalQueryCapabilityCompiler
         return target switch
         {
             RelationalQueryFieldTarget.DocumentUuid => IsStringQueryType(queryPath),
-            RelationalQueryFieldTarget.DescriptorIdColumn => IsStringQueryType(queryPath),
+            RelationalQueryFieldTarget.DescriptorIdColumn(var column, _) => IsStringQueryType(queryPath)
+                && rootColumnsByName.TryGetValue(column, out var descriptorColumn)
+                && descriptorColumn.Kind is ColumnKind.DescriptorFk
+                && descriptorColumn.ScalarType?.Kind is ScalarKind.Int32,
             RelationalQueryFieldTarget.RootColumn(var column) => rootColumnsByName.TryGetValue(
                 column,
                 out var rootColumn

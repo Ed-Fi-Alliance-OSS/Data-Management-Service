@@ -10,12 +10,12 @@ namespace EdFi.DataManagementService.Performance.Harness.Tests.Unit.Configuratio
 
 internal static class EvidenceSettingsTestValues
 {
-    public const string Digest = "sha256:951d0626662c85a25e1ba0a89e64f314a2b99abced2c85b4423506249c2d82b0";
+    public const string Digest = "sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873";
 
     public static Dictionary<string, string?> Valid() =>
         new()
         {
-            [PerfEnvironmentVariables.ImageTag] = "postgres:16.8-alpine",
+            [PerfEnvironmentVariables.ImageTag] = "postgres:18.6-alpine",
             [PerfEnvironmentVariables.ImageDigest] = Digest,
             [PerfEnvironmentVariables.StorageNote] = "local docker volume, not tmpfs",
         };
@@ -40,7 +40,7 @@ public class Given_Valid_Evidence_Settings
     [Test]
     public void It_parses_the_image_pin()
     {
-        _settings.ImageTag.Should().Be("postgres:16.8-alpine");
+        _settings.ImageTag.Should().Be("postgres:18.6-alpine");
         _settings.ImageDigest.Should().Be(EvidenceSettingsTestValues.Digest);
     }
 

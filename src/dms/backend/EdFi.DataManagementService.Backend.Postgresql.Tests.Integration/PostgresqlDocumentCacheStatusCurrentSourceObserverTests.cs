@@ -34,6 +34,17 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
     private static readonly DateTimeOffset LaterEnqueuedAt = FirstEnqueuedAt.AddMinutes(1);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
@@ -341,21 +352,18 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = Guid.NewGuid() },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = FirstEnqueuedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return Convert.ToInt64(rows.Single()["DocumentId"]);
@@ -423,14 +431,12 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 ('00000000-0000-0000-0000-' || lpad(series::text, 12, '0'))::uuid,
                 @resourceKeyId,
-                series,
-                @lastModifiedAt
+                series
             FROM generate_series(1, @documentCount) AS series;
 
             INSERT INTO "dms"."DocumentCache" (
@@ -442,6 +448,7 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -454,6 +461,7 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
                 source."ContentVersion",
                 'status-etag-' || source."ContentVersion",
                 @lastModifiedAt,
+                @contentCreatedAt,
                 jsonb_build_object('value', 'cache-' || source."ContentVersion"),
                 @computedAt
             FROM "dms"."Document" AS source
@@ -498,6 +506,10 @@ public class Given_A_Postgresql_DocumentCacheStatusCurrentSourceObserver
                 Value = resourceKey.ResourceVersion,
             },
             new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz) { Value = LaterEnqueuedAt },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CacheContentCreatedAt,
+            },
             new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz)
             {
                 Value = LaterEnqueuedAt.AddMinutes(1),

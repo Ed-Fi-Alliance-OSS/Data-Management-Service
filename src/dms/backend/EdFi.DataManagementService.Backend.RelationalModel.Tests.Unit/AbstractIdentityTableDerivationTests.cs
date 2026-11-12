@@ -47,16 +47,38 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     /// <summary>
-    /// It should order columns with document id identity and discriminator.
+    /// It should order columns with document id, identity, resource key id and discriminator.
     /// </summary>
     [Test]
-    public void It_should_order_columns_with_document_id_identity_and_discriminator()
+    public void It_should_order_columns_with_document_id_identity_resource_key_id_and_discriminator()
     {
         var columns = _abstractIdentityTable
             .TableModel.Columns.Select(column => column.ColumnName.Value)
             .ToArray();
 
-        columns.Should().Equal("DocumentId", "EducationOrganizationId", "OrganizationName", "Discriminator");
+        columns
+            .Should()
+            .Equal(
+                "DocumentId",
+                "EducationOrganizationId",
+                "OrganizationName",
+                "ResourceKeyId",
+                "Discriminator"
+            );
+    }
+
+    [Test]
+    public void It_derives_ResourceKeyId_as_a_non_null_Int16_payload_column()
+    {
+        var resourceKeyId = _abstractIdentityTable.TableModel.Columns.Single(column =>
+            column.ColumnName.Value == "ResourceKeyId"
+        );
+
+        resourceKeyId.Kind.Should().Be(ColumnKind.Scalar);
+        resourceKeyId.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.Int16));
+        resourceKeyId.IsNullable.Should().BeFalse();
+        resourceKeyId.SourceJsonPath.Should().BeNull();
+        resourceKeyId.TargetResource.Should().BeNull();
     }
 
     /// <summary>
@@ -96,43 +118,85 @@ public class Given_Abstract_Identity_Table_Derivation
     }
 
     /// <summary>
-    /// It should include natural and reference-key unique constraints.
+    /// It should include exactly the natural and reference-key unique constraints.
     /// </summary>
     [Test]
     public void It_should_include_natural_and_reference_key_unique_constraints()
     {
-        var uniqueByName = _abstractIdentityTable
+        _abstractIdentityTable
             .TableModel.Constraints.OfType<TableConstraint.Unique>()
-            .ToDictionary(constraint => constraint.Name, StringComparer.Ordinal);
-
-        uniqueByName
-            .Keys.Should()
+            .Select(constraint => constraint.Name)
+            .Should()
             .Equal("UX_EducationOrganizationIdentity_NK", "UX_EducationOrganizationIdentity_RefKey");
-        uniqueByName["UX_EducationOrganizationIdentity_NK"]
+    }
+
+    [Test]
+    public void It_keeps_payload_columns_out_of_the_natural_key()
+    {
+        var naturalKey = GetUnique("UX_EducationOrganizationIdentity_NK");
+
+        naturalKey
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("EducationOrganizationId", "OrganizationName");
-        uniqueByName["UX_EducationOrganizationIdentity_RefKey"]
+        SourcePathsOf(naturalKey.Columns).Should().Equal(IdentityJsonPaths);
+    }
+
+    [Test]
+    public void It_keeps_payload_columns_out_of_the_reference_key()
+    {
+        var referenceKey = GetUnique("UX_EducationOrganizationIdentity_RefKey");
+
+        referenceKey
             .Columns.Select(column => column.Value)
             .Should()
             .Equal("EducationOrganizationId", "OrganizationName", "DocumentId");
+        SourcePathsOf(referenceKey.Columns.SkipLast(1)).Should().Equal(IdentityJsonPaths);
     }
 
-    /// <summary>
-    /// It should use no action on update for document fk.
-    /// </summary>
     [Test]
-    public void It_should_use_no_action_on_update_for_document_fk()
+    public void It_replaces_the_document_foreign_key_with_the_document_resource_key()
     {
         var foreignKey = _abstractIdentityTable
             .TableModel.Constraints.OfType<TableConstraint.ForeignKey>()
             .Single();
 
+        foreignKey.Name.Should().Be("FK_EducationOrganizationIdentity_DocumentResourceKey");
+        foreignKey.Columns.Select(column => column.Value).Should().Equal("DocumentId", "ResourceKeyId");
         foreignKey.TargetTable.Schema.Value.Should().Be("dms");
         foreignKey.TargetTable.Name.Should().Be("Document");
+        foreignKey.TargetColumns.Select(column => column.Value).Should().Equal("DocumentId", "ResourceKeyId");
         foreignKey.OnDelete.Should().Be(ReferentialAction.Cascade);
         foreignKey.OnUpdate.Should().Be(ReferentialAction.NoAction);
     }
+
+    [Test]
+    public void It_derives_no_foreign_key_named_Identity_Document()
+    {
+        _modelSet
+            .AbstractIdentityTablesInNameOrder.SelectMany(table =>
+                table.TableModel.Constraints.OfType<TableConstraint.ForeignKey>()
+            )
+            .Should()
+            .NotContain(foreignKey =>
+                foreignKey.Name.EndsWith("Identity_Document", StringComparison.Ordinal)
+            );
+    }
+
+    // abstractResources.EducationOrganization.identityJsonPaths in the test schema.
+    private static readonly string[] IdentityJsonPaths = ["$.educationOrganizationId", "$.organizationName"];
+
+    private TableConstraint.Unique GetUnique(string name) =>
+        _abstractIdentityTable
+            .TableModel.Constraints.OfType<TableConstraint.Unique>()
+            .Single(constraint => constraint.Name == name);
+
+    private IEnumerable<string?> SourcePathsOf(IEnumerable<DbColumnName> columnNames) =>
+        columnNames.Select(columnName =>
+            _abstractIdentityTable
+                .TableModel.Columns.Single(column => column.ColumnName == columnName)
+                .SourceJsonPath?.Canonical
+        );
 
     /// <summary>
     /// It should carry ApiSchema superclass metadata on subclass concrete resources.

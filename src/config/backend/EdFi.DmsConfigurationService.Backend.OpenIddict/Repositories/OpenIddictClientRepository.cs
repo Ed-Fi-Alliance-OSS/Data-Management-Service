@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Text.Json;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Configuration;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using static EdFi.DmsConfigurationService.DataModel.LoggingUtility;
 
 namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 {
@@ -185,18 +187,34 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                 var requirementsArray = Array.Empty<string>();
                 var protocolMappersJson = JsonSerializer.Serialize(protocolMappers);
 
-                await dataRepository.InsertApplicationAsync(
-                    clientUuid,
-                    clientId,
-                    hashedClientSecret,
-                    displayName,
-                    permissions,
-                    requirementsArray,
-                    "confidential",
-                    protocolMappersJson,
-                    connection,
-                    transaction
-                );
+                OpenIddictApplicationInsertOutcome insertOutcome =
+                    await dataRepository.InsertApplicationAsync(
+                        clientUuid,
+                        clientId,
+                        hashedClientSecret,
+                        displayName,
+                        permissions,
+                        requirementsArray,
+                        "confidential",
+                        protocolMappersJson,
+                        connection,
+                        transaction
+                    );
+
+                if (insertOutcome == OpenIddictApplicationInsertOutcome.DuplicateClientId)
+                {
+                    // The provider already holds a client under this key and nothing for this
+                    // request was persisted: the rollback discards the role created above, if any,
+                    // and no scope or client-role row has been written yet. There is nothing to
+                    // compensate. Role and scope uniqueness violations are not classified here.
+                    // They throw and remain unknown failures below.
+                    transaction.Rollback();
+                    logger.LogWarning(
+                        "The client key {ClientId} is already registered at the identity provider; no client was created",
+                        SanitizeForLog(clientId)
+                    );
+                    return new ClientCreateResult.FailureDuplicateClientId();
+                }
 
                 // 3. Insert scopes and join records if scope is not null
                 if (!string.IsNullOrWhiteSpace(scope))
@@ -253,10 +271,11 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             string educationOrganizationIds,
             int[]? dataStoreIds = null,
             // isApproved is intentionally unused here: for the OpenIddict backend the approval gate is
-            // enforced in OpenIddictTokenManager which reads BOOL_AND(ApiClient.IsApproved) from the
-            // database; this repository only manages the OpenIddictApplication record. For the Keycloak
-            // backend counterpart (KeycloakClientRepository) this value IS used to set Client.Enabled
-            // directly in Keycloak.
+            // enforced in OpenIddictTokenManager, which reads ApiClient.IsApproved, and again under the
+            // application row lock when a token is stored. Un-approval revokes the client's tokens
+            // through OpenIddictUnapprovalTokenRevocation, inside the ApiClientRepository transaction
+            // that writes IsApproved = false, not here. For the Keycloak backend counterpart
+            // (KeycloakClientRepository) this value IS used to set Client.Enabled directly in Keycloak.
             bool isApproved = true,
             string role = ""
         )
@@ -429,7 +448,32 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         {
             try
             {
-                var rows = await dataRepository.DeleteApplicationByIdAsync(Guid.Parse(clientUuid));
+                var applicationId = Guid.Parse(clientUuid);
+                using var connection = await dataRepository.CreateConnectionAsync();
+                using var transaction = await dataRepository.BeginTransactionAsync(connection);
+
+                // The delete is the first statement so that it takes the application row lock every
+                // token store waits on before the tokens are revoked. Token rows have no foreign key to
+                // the application, so the revocation runs even when no row was deleted: tokens left by
+                // an earlier deletion converge to revoked, and the module treats not found as done.
+                var rows = await dataRepository.DeleteApplicationByIdAsync(
+                    applicationId,
+                    connection,
+                    transaction
+                );
+                var revokedCount = await dataRepository.RevokeTokensForApplicationAsync(
+                    applicationId,
+                    connection,
+                    transaction
+                );
+
+                transaction.Commit();
+                logger.LogInformation(
+                    "Revoked {Count} outstanding tokens for client {ClientUuid}",
+                    revokedCount,
+                    SanitizeForLog(applicationId.ToString())
+                );
+
                 if (rows == 0)
                 {
                     return new ClientDeleteResult.FailureClientNotFound($"Client {clientUuid} not found");
@@ -452,19 +496,39 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
                     clientSecretValidationOptionsAccessor.Value
                 );
                 var hashedNewSecret = await secretHasher.HashSecretAsync(newSecret);
+                var applicationId = Guid.Parse(clientUuid);
                 using var connection = await dataRepository.CreateConnectionAsync();
+                using var transaction = await dataRepository.BeginTransactionAsync(connection);
 
+                // The secret write is the first statement so that it takes the application row lock
+                // every token store waits on before the tokens are revoked. A grant that stored a token
+                // before it is caught by the revocation below; a grant blocked behind it re-validates
+                // the secret once this transaction commits and is refused.
                 var rows = await dataRepository.UpdateClientSecretAsync(
-                    Guid.Parse(clientUuid),
+                    applicationId,
                     hashedNewSecret,
-                    connection
+                    connection,
+                    transaction
                 );
 
                 if (rows == 0)
                 {
+                    transaction.Rollback();
                     return new ClientResetResult.FailureClientNotFound($"Client {clientUuid} not found");
                 }
 
+                var revokedCount = await dataRepository.RevokeTokensForApplicationAsync(
+                    applicationId,
+                    connection,
+                    transaction
+                );
+
+                transaction.Commit();
+                logger.LogInformation(
+                    "Revoked {Count} outstanding tokens for client {ClientUuid}",
+                    revokedCount,
+                    SanitizeForLog(applicationId.ToString())
+                );
                 return new ClientResetResult.Success(newSecret);
             }
             catch (Exception ex)

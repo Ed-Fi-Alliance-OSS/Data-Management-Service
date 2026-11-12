@@ -4,8 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Microsoft.Extensions.Logging;
-using NuGet.Common;
 using NuGet.Configuration;
+using NuGet.Credentials;
 using NuGet.Packaging;
 using NuGet.Packaging.Core;
 using NuGet.Protocol.Core.Types;
@@ -127,6 +127,9 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
     {
         string validatedPackageId = PackageIdPathSegmentValidator.Validate(packageId);
 
+        var nugetLogger = new NuGetLoggerAdapter(_logger);
+        DefaultCredentialServiceUtility.SetupDefaultCredentialService(nugetLogger, nonInteractive: true);
+
         _logger.LogInformation(
             "Downloading NuGet package {PackageId} from {FeedUrl}",
             validatedPackageId,
@@ -147,7 +150,7 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
                     true,
                     false,
                     cacheContext,
-                    NullLogger.Instance,
+                    nugetLogger,
                     CancellationToken.None
                 )
             )
@@ -175,7 +178,7 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
                 true,
                 false,
                 cacheContext,
-                NullLogger.Instance,
+                nugetLogger,
                 CancellationToken.None
             )
         ).FirstOrDefault(p => p.Identity.Version == packageIdentity.Version);
@@ -197,7 +200,7 @@ public class ApiSchemaDownloader(ILogger<ApiSchemaDownloader> logger) : IApiSche
             packageIdentity,
             new PackageDownloadContext(cacheContext),
             outputDir,
-            NullLogger.Instance,
+            nugetLogger,
             CancellationToken.None
         );
 

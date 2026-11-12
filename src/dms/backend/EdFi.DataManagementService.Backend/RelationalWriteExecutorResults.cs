@@ -30,6 +30,22 @@ internal static class RelationalWriteExecutorResults
         };
     }
 
+    public static RelationalWriteExecutorResult BuildNonUniqueValuesFailureResult(
+        RelationalWriteOperationKind operationKind
+    )
+    {
+        return operationKind switch
+        {
+            RelationalWriteOperationKind.Post => new RelationalWriteExecutorResult.Upsert(
+                new UpsertResult.UpsertFailureNonUniqueValues()
+            ),
+            RelationalWriteOperationKind.Put => new RelationalWriteExecutorResult.Update(
+                new UpdateResult.UpdateFailureNonUniqueValues()
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
+        };
+    }
+
     public static RelationalWriteExecutorResult BuildRelationshipAuthorizationFailureResult(
         RelationalWriteOperationKind operationKind,
         RelationshipAuthorizationFailure relationshipFailure

@@ -1,0 +1,56 @@
+{
+    "options": {
+        "bearerTokenRefreshMinutes": 28,
+        "retryStartingDelayMilliseconds": 100,
+        "maxRetryAttempts": 5,
+        "maxDegreeOfParallelismForResourceProcessing": 7,
+        "maxDegreeOfParallelismForPostResourceItem": 15,
+        "maxDegreeOfParallelismForStreamResourcePages": 5,
+        "maxConcurrentSourceRequests": 0,
+        "tooManyRequestsRetryAttempts": -1,
+        "streamingPagesWaitDurationSeconds": 10,
+        "streamingPageSize": 500,
+        "processingBlockBoundedCapacity": 0,
+        "includeDescriptors": false,
+        "errorPublishingBatchSize": 25,
+        "toleratedItemErrorCount": 0,
+        "useChangeVersionPaging": false,
+        "changeVersionPagingWindowSize": 25000,
+        "enableRateLimit": false,
+        "rateLimitNumberExecutions": 30,
+        "rateLimitTimeSeconds": 1,
+        "rateLimitMaxRetries": 10,
+        "useReversePaging": false,
+        "disableCursorPaging": false,
+        "cursorPagingPartitionCount": null,
+        "resumeLastRun": false,
+        "runStatePath": null
+    },
+    "authorizationFailureHandling": [
+        {
+            "path": "/ed-fi/students",
+            "updatePrerequisitePaths": ["/ed-fi/studentSchoolAssociations"]
+        },
+        {
+            "path": "/ed-fi/staffs",
+            "updatePrerequisitePaths": [
+                "/ed-fi/staffEducationOrganizationEmploymentAssociations",
+                "/ed-fi/staffEducationOrganizationAssignmentAssociations"
+            ]
+        },
+        {
+            "path": "/ed-fi/contacts",
+            "updatePrerequisitePaths": ["/ed-fi/studentContactAssociations"]
+        }
+    ],
+    "resourcesWithUpdatableKeys": [
+        "/ed-fi/classPeriods",
+        "/ed-fi/grades",
+        "/ed-fi/gradebookEntries",
+        "/ed-fi/locations",
+        "/ed-fi/sections",
+        "/ed-fi/sessions",
+        "/ed-fi/studentSchoolAssociations",
+        "/ed-fi/studentSectionAssociations"
+    ]
+}

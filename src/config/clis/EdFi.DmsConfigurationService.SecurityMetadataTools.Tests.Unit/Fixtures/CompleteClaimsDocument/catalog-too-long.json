@@ -1,0 +1,44 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "ReviewSet",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "isSystemReserved": true
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "urn:root",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "reviewset",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "urn:leaf"
+        }
+      ]
+    }
+  ]
+}

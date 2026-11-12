@@ -423,6 +423,7 @@ public class ValidateDocumentMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    // This isolated normalized-document schema test omits the NormalizePutIdMiddleware that populates id in the full PUT pipeline.
     public class Given_A_Update_Request_With_No_Id_Property : ValidateDocumentMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();

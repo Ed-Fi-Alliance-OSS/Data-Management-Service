@@ -12,4 +12,4 @@
 services:
   config:
     environment:
-      DatabaseSettings__DatabaseConnection: "${DMS_CONFIG_DATABASE_CONNECTION_STRING}Maximum Pool Size=16;"
+      DatabaseSettings__DatabaseConnection: "${CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING}Maximum Pool Size=16;"

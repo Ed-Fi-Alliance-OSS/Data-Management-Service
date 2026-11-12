@@ -218,7 +218,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         CancellationToken token
     )
     {
-        string digest = _settings.ConnectImage[(_settings.ConnectImage.IndexOf('@') + 1)..];
+        string digest = ConnectImageDigest;
         // Inspection and telemetry correlation must describe this live connector and broker.
         var request = await CreateControllerSmokeObservationRequestAsync(template, token);
         var inspector = new CdcWorkerDeployment(
@@ -251,7 +251,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         var telemetry = new CdcConnectorTelemetryAdapter(
             metrics,
             new CdcConnectRestAdapter(_httpClient),
-            inspector
+            inspector,
+            TimeProvider.System,
+            // The candidate image is trusted explicitly; it is not yet the embedded qualified pin.
+            new HashSet<string> { digest }
         );
         var collected = await telemetry.CollectAsync(request, telemetryPass, token);
         collected

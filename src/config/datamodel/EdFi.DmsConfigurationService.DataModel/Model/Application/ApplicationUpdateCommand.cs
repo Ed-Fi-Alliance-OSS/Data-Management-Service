@@ -16,7 +16,6 @@ public class ApplicationUpdateCommand
     public int VendorId { get; set; }
     public required string ClaimSetName { get; set; }
     public long[] EducationOrganizationIds { get; set; } = [];
-    public int[] DataStoreIds { get; set; } = [];
     public int[] ProfileIds { get; set; } = [];
 
     public class Validator : AbstractValidator<ApplicationUpdateCommand>
@@ -24,14 +23,15 @@ public class ApplicationUpdateCommand
         public Validator()
         {
             RuleFor(a => a.Id).GreaterThan(0);
-            RuleFor(a => a.ApplicationName).NotEmpty().MaximumLength(256);
+            RuleFor(a => a.ApplicationName)
+                .NotEmpty()
+                .MaximumLength(ValidationConstants.ApplicationNameMaxLength);
             RuleFor(a => a.ClaimSetName).NotEmpty().MaximumLength(256);
             RuleFor(m => m.ClaimSetName)
                 .Matches(new Regex(ValidationConstants.ClaimSetNameNoWhiteSpaceRegex))
                 .When(m => !string.IsNullOrEmpty(m.ClaimSetName))
                 .WithMessage(ValidationConstants.ClaimSetNameNoWhiteSpaceMessage);
             RuleForEach(a => a.EducationOrganizationIds).GreaterThan(0);
-            RuleForEach(a => a.DataStoreIds).GreaterThan(0);
             RuleForEach(a => a.ProfileIds).GreaterThan(0);
         }
     }

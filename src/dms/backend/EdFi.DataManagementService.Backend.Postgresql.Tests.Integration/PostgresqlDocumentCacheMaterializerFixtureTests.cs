@@ -264,6 +264,8 @@ public class Given_Postgresql_DocumentCacheMaterializer_Fixtures
 
             CREATE TABLE IF NOT EXISTS edfi."School" (
                 "DocumentId" bigint NOT NULL PRIMARY KEY,
+                "ContentLastModifiedAt" timestamptz NOT NULL,
+                "ContentCreatedAt" timestamptz NOT NULL,
                 "SchoolId" integer NULL,
                 "NameOfInstitution" varchar(1024) NULL
             );
@@ -278,7 +280,7 @@ public class Given_Postgresql_DocumentCacheMaterializer_Fixtures
         await using var connection = await _dataSource.OpenConnectionAsync();
         await using var command = new NpgsqlCommand(
             """
-            UPDATE dms."Document"
+            UPDATE dms."Descriptor"
             SET "ContentLastModifiedAt" = @lastModifiedAt
             WHERE "DocumentId" = @documentId;
             """,
@@ -390,6 +392,7 @@ public class Given_Postgresql_DocumentCacheMaterializer_Fixtures
                 candidate.ResourceVersion,
                 candidate.ContentVersion,
                 candidate.LastModifiedAt,
+                candidate.ContentCreatedAt,
                 candidate.StreamEtag,
                 candidate.DocumentJson
             ),

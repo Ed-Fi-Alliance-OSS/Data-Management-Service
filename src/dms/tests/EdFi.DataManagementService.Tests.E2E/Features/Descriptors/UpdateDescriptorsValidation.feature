@@ -318,6 +318,7 @@ Feature: Update a Descriptor
 
         @API-044
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 12 Put an empty JSON body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -343,9 +344,6 @@ Feature: Update a Descriptor
                         ],
                         "$.shortDescription": [
                         "shortDescription is required."
-                        ],
-                        "$.id": [
-                        "id is required."
                         ]
                     },
                     "errors": []
@@ -354,7 +352,8 @@ Feature: Update a Descriptor
 
         @API-045
         @e2e-ci-shard-2
-        Scenario: 13 Update a descriptor with mismatch between URL and id
+        @DMS-1623-PutBodyId
+        Scenario: 13 Update a descriptor using the URL id when the body id differs
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
                   """
@@ -366,24 +365,21 @@ Feature: Update a Descriptor
                     "shortDescription": "Sick Leave"
                   }
                   """
-             Then it should respond with 400
-              And the response body is
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
-                    "status": 400,
-                    "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "description": "Sick Leave Edited",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave"
                   }
                   """
 
         @API-046
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 14 Update a descriptor with a blank id
             # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -399,21 +395,24 @@ Feature: Update a Descriptor
              Then it should respond with 400
               And the response body is
                   """
-                   {
-                     "detail": "The request could not be processed. See 'errors' for details.",
-                     "type": "urn:ed-fi:api:bad-request",
-                     "title": "Bad Request",
-                     "status": 400,
-                     "correlationId": null,
-                     "validationErrors": {},
-                     "errors": [
-                         "Request body id must match the id in the url."
-                     ]
-                   }
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "correlationId": null,
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be omitted, null, or a valid GUID string."
+                        ]
+                    },
+                    "errors": []
+                  }
                   """
 
         @API-047
         @e2e-ci-shard-2
+        @DMS-1623-PutBodyId
         Scenario: 15 Update a descriptor with an invalid id format in the body
              # The id value should be replaced with the resource created in the Background section
              When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
@@ -430,15 +429,17 @@ Feature: Update a Descriptor
               And the response body is
                   """
                   {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type": "urn:ed-fi:api:bad-request",
-                    "title": "Bad Request",
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:api:bad-request:data-validation-failed",
+                    "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": null,
-                    "validationErrors": {},
-                    "errors": [
-                        "Request body id must match the id in the url."
-                    ]
+                    "validationErrors": {
+                        "$.id": [
+                            "id must be omitted, null, or a valid GUID string."
+                        ]
+                    },
+                    "errors": []
                   }
                   """
 
@@ -598,5 +599,33 @@ Feature: Update a Descriptor
                         ]
                       },
                       "errors": []
+                  }
+                  """
+
+        @DMS-1623-PutBodyId @PUT
+        @e2e-ci-shard-2 @MssqlRepresentative
+        Scenario: 21 Update an existing descriptor with the body id omitted
+             When a PUT request is made to "/ed-fi/absenceEventCategoryDescriptors/{id}" with
+                  """
+                  {
+                    "codeValue": "Sick Leave",
+                    "description": "Updated without a body id",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave Short Description",
+                    "effectiveBeginDate": "2025-05-14",
+                    "effectiveEndDate": "2027-05-14"
+                  }
+                  """
+             Then it should respond with 204
+              And the record can be retrieved with a GET request
+                  """
+                  {
+                    "id": "{id}",
+                    "codeValue": "Sick Leave",
+                    "description": "Updated without a body id",
+                    "namespace": "uri://ed-fi.org/AbsenceEventCategoryDescriptor",
+                    "shortDescription": "Sick Leave Short Description",
+                    "effectiveBeginDate": "2025-05-14",
+                    "effectiveEndDate": "2027-05-14"
                   }
                   """

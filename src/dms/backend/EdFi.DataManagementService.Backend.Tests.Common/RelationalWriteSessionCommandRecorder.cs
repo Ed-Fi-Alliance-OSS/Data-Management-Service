@@ -38,8 +38,8 @@ public sealed record RecordedSessionCommandParameter(string Name, object? Value)
 /// <remarks>
 /// <para>
 /// Every in-session command is created through
-/// <see cref="IRelationalWriteSession.CreateCommand(RelationalCommand)"/>, including reference
-/// resolution, the in-session POST target lookup, and current-state hydration, so wrapping that one
+/// <see cref="IRelationalWriteSession.CreateCommand(RelationalCommand)"/>, including the first phase's
+/// target capture, reference resolution, and current-state hydration, so wrapping that one
 /// method observes the whole stream. Consumers that take an
 /// <see cref="IRelationalCommandExecutor"/> are covered too, because the default
 /// <see cref="IRelationalWriteSession.CreateCommandExecutor"/> routes back through

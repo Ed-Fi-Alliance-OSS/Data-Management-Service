@@ -50,17 +50,20 @@ public sealed class Given_Postgresql_OdsComparison : PostgresqlApiIntegrationTes
 }
 
 /// <summary>
-/// The omitted-limit boundary, on a host left at its deployed maximum page size.
+/// The omitted-limit boundary and pageSize beside limit, on a host left at its deployed maximum page
+/// size.
 /// </summary>
 /// <remarks>
-/// The whole point of the case is a runtime maximum well above the published Ed-Fi default of
-/// twenty-five, over a seed one document past that boundary. Running it on the lowered host would only
-/// show that a test override is honored, which is not the difference under test.
+/// The whole point of the omitted-limit case is a runtime maximum well above the published Ed-Fi
+/// default of twenty-five, over a seed one document past that boundary. Running it on the lowered host
+/// would only show that a test override is honored, which is not the difference under test. The
+/// pageSize-beside-limit case sends the limit the epic's precedence table states, which the lowered
+/// host would reject on its range before the request could show which paging path it selected.
 /// </remarks>
 public sealed class Given_Postgresql_OdsComparisonDefaultPageSize : PostgresqlApiIntegrationTestBase
 {
-    /// <summary>The group this binding executes. See <see cref="Given_Postgresql_OdsComparison.BoundGroups" />.</summary>
-    internal static readonly string[] BoundGroups = ["omitted-limit-default"];
+    /// <summary>The groups this binding executes. See <see cref="Given_Postgresql_OdsComparison.BoundGroups" />.</summary>
+    internal static readonly string[] BoundGroups = ["omitted-limit-default", "page-size-beside-limit"];
 
     protected override FixtureKey Fixture => FixtureKey.CursorPartitionContract;
 

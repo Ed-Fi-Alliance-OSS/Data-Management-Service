@@ -166,6 +166,24 @@ public class Given_OpenIdConfiguration_With_A_Configured_Base_And_Untrusted_Requ
     }
 
     [Test]
+    public void It_advertises_basic_then_post_for_introspection_endpoint_auth() =>
+        _document
+            .RootElement.GetProperty("introspection_endpoint_auth_methods_supported")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .Should()
+            .Equal("client_secret_basic", "client_secret_post");
+
+    [Test]
+    public void It_advertises_basic_then_post_for_revocation_endpoint_auth() =>
+        _document
+            .RootElement.GetProperty("revocation_endpoint_auth_methods_supported")
+            .EnumerateArray()
+            .Select(value => value.GetString())
+            .Should()
+            .Equal("client_secret_basic", "client_secret_post");
+
+    [Test]
     public void It_disables_storage_without_varying_by_host()
     {
         foreach (var response in new[] { _firstResponse, _secondResponse })

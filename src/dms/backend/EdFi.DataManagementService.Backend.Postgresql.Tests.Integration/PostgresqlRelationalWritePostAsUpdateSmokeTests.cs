@@ -19,7 +19,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -182,17 +181,14 @@ file static class PostAsUpdateIntegrationTestSupport
     public static NoProfilePostAsUpdateScenarios.AuthoritativePostAsUpdateSnapshot ToSnapshot(
         AuthoritativeStudentAcademicRecordPersistedState state,
         long academicRecordContentVersion,
-        DateTimeOffset academicRecordContentLastModifiedAt,
-        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> referentialIdentities
+        DateTimeOffset academicRecordContentLastModifiedAt
     ) =>
         new(
             new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
                 state.Document.DocumentId,
                 state.Document.DocumentUuid,
                 state.Document.ResourceKeyId,
-                state.Document.ContentVersion,
-                state.Document.ContentLastModifiedAt,
-                state.Document.CreatedAt
+                state.Document.ContentVersion
             ),
             new NoProfilePostAsUpdateScenarios.AuthoritativeAcademicRecordSnapshot(
                 state.AcademicRecord.DocumentId,
@@ -260,8 +256,7 @@ file static class PostAsUpdateIntegrationTestSupport
                         row.IssuerName
                     )
                 ),
-            ],
-            referentialIdentities
+            ]
         );
 
     public static short GetInt16(IReadOnlyDictionary<string, object?> row, string columnName) =>
@@ -349,491 +344,6 @@ internal sealed record FocusedPostAsUpdateSchoolExtensionAddressRow(
     long SchoolDocumentId,
     string Zone
 );
-
-[TestFixture]
-[Category("DatabaseIntegration")]
-[Category("PostgresqlIntegration")]
-public class Given_A_Postgresql_Relational_Post_As_Update_Immutable_Identity_Change_With_A_Focused_Stable_Key_Fixture
-{
-    private const string FixtureRelativePath =
-        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
-
-    private const string CreateRequestBodyJson = """
-        {
-          "schoolId": 255901,
-          "shortName": "LHS",
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                },
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-2"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        """;
-
-    private const string ImmutableIdentityPostAsUpdateRequestBodyJson = """
-        {
-          "schoolId": 255902,
-          "shortName": "LHS",
-          "addresses": [
-            {
-              "city": "Austin"
-            },
-            {
-              "city": "Dallas"
-            }
-          ],
-          "_ext": {
-            "sample": {
-              "addresses": [
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-1"
-                    }
-                  }
-                },
-                {
-                  "_ext": {
-                    "sample": {
-                      "zone": "Zone-2"
-                    }
-                  }
-                }
-              ]
-            }
-          }
-        }
-        """;
-
-    private static readonly QualifiedResourceName SchoolResource = new("Ed-Fi", "School");
-    private static readonly ResourceInfo SchoolResourceInfo = new(
-        ProjectName: new ProjectName("Ed-Fi"),
-        ResourceName: new ResourceName("School"),
-        IsDescriptor: false,
-        ResourceVersion: new SemVer("1.0.0"),
-        AllowIdentityUpdates: false
-    );
-    private static readonly DocumentUuid ExistingSchoolDocumentUuid = new(
-        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000005")
-    );
-    private static readonly DocumentUuid RejectedPostAsUpdateDocumentUuid = new(
-        Guid.Parse("bbbbbbbb-0000-0000-0000-000000000006")
-    );
-
-    private PostgresqlGeneratedDdlFixture _fixture = null!;
-    private MappingSet _mappingSet = null!;
-    private PostgresqlGeneratedDdlTestDatabase _database = null!;
-    private ServiceProvider _serviceProvider = null!;
-    private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentBeforeRejectedPostAsUpdate =
-        null!;
-    private NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot _documentAfterRejectedPostAsUpdate =
-        null!;
-    private NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot _schoolBeforeRejectedPostAsUpdate = null!;
-    private NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot _schoolAfterRejectedPostAsUpdate = null!;
-    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesBeforeRejectedPostAsUpdate = null!;
-    private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRejectedPostAsUpdate = null!;
-    private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesBeforeRejectedPostAsUpdate =
-        null!;
-    private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesAfterRejectedPostAsUpdate =
-        null!;
-    private UpsertResult _rejectedPostAsUpdateResult = null!;
-    private ReferentialId _persistedSchoolReferentialId;
-    private Guid _schoolReferentialIdAfterRejectedPostAsUpdate;
-    private long _schoolTrackedChangeCountBeforeRejectedPostAsUpdate;
-    private long _schoolTrackedChangeCountAfterRejectedPostAsUpdate;
-    private long _documentCount;
-    private long _incomingDocumentUuidCount;
-
-    [OneTimeSetUp]
-    public async Task OneTimeSetUp()
-    {
-        _fixture = PostgresqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
-            FixtureRelativePath,
-            strict: true
-        );
-        _mappingSet = _fixture.MappingSet;
-        _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
-        _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider();
-
-        var createResult = await ExecuteUpsertAsync(
-            CreateRequestBodyJson,
-            ExistingSchoolDocumentUuid,
-            "pg-post-as-update-immutable-identity-create"
-        );
-
-        createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
-
-        _documentBeforeRejectedPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
-        _schoolBeforeRejectedPostAsUpdate = await ReadSchoolAsync(
-            _documentBeforeRejectedPostAsUpdate.DocumentId
-        );
-        _addressesBeforeRejectedPostAsUpdate = await ReadSchoolAddressesAsync(
-            _documentBeforeRejectedPostAsUpdate.DocumentId
-        );
-        _extensionAddressesBeforeRejectedPostAsUpdate = await ReadSchoolExtensionAddressesAsync(
-            _documentBeforeRejectedPostAsUpdate.DocumentId
-        );
-        _persistedSchoolReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforeRejectedPostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolResource]
-                )
-            ).ReferentialId
-        );
-        _schoolTrackedChangeCountBeforeRejectedPostAsUpdate = await ReadSchoolTrackedChangeCountAsync();
-
-        _rejectedPostAsUpdateResult = await ExecuteUpsertAsync(
-            ImmutableIdentityPostAsUpdateRequestBodyJson,
-            RejectedPostAsUpdateDocumentUuid,
-            "pg-post-as-update-immutable-identity-reject",
-            schoolId: 255902,
-            referentialId: _persistedSchoolReferentialId
-        );
-
-        _documentAfterRejectedPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
-        _schoolAfterRejectedPostAsUpdate = await ReadSchoolAsync(
-            _documentAfterRejectedPostAsUpdate.DocumentId
-        );
-        _addressesAfterRejectedPostAsUpdate = await ReadSchoolAddressesAsync(
-            _documentAfterRejectedPostAsUpdate.DocumentId
-        );
-        _extensionAddressesAfterRejectedPostAsUpdate = await ReadSchoolExtensionAddressesAsync(
-            _documentAfterRejectedPostAsUpdate.DocumentId
-        );
-        _schoolReferentialIdAfterRejectedPostAsUpdate = (
-            await ReadReferentialIdentityRowAsync(
-                _documentAfterRejectedPostAsUpdate.DocumentId,
-                _mappingSet.ResourceKeyIdByResource[SchoolResource]
-            )
-        ).ReferentialId;
-        _schoolTrackedChangeCountAfterRejectedPostAsUpdate = await ReadSchoolTrackedChangeCountAsync();
-        _documentCount = await ReadDocumentCountAsync();
-        _incomingDocumentUuidCount = await ReadDocumentCountAsync(RejectedPostAsUpdateDocumentUuid.Value);
-    }
-
-    [OneTimeTearDown]
-    public async Task OneTimeTearDown()
-    {
-        if (_serviceProvider is not null)
-        {
-            await _serviceProvider.DisposeAsync();
-        }
-
-        if (_database is not null)
-        {
-            await _database.DisposeAsync();
-        }
-    }
-
-    [Test]
-    public void It_returns_explicit_immutable_identity_failure_for_post_as_update() =>
-        NoProfilePostAsUpdateScenarios.AssertImmutableIdentityRejected(
-            _rejectedPostAsUpdateResult,
-            "Identifying values for the School resource cannot be changed. Delete and recreate the resource item instead."
-        );
-
-    [Test]
-    public void It_does_not_commit_row_changes_for_rejected_post_as_update() =>
-        NoProfilePostAsUpdateScenarios.AssertRejectedPostAsUpdateCommittedNoChanges(
-            _documentBeforeRejectedPostAsUpdate,
-            _documentAfterRejectedPostAsUpdate,
-            _schoolBeforeRejectedPostAsUpdate,
-            _schoolAfterRejectedPostAsUpdate,
-            [
-                .. _addressesBeforeRejectedPostAsUpdate.Select(row =>
-                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
-                ),
-            ],
-            [
-                .. _addressesAfterRejectedPostAsUpdate.Select(row =>
-                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
-                ),
-            ],
-            [
-                .. _extensionAddressesBeforeRejectedPostAsUpdate.Select(row =>
-                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
-                ),
-            ],
-            [
-                .. _extensionAddressesAfterRejectedPostAsUpdate.Select(row =>
-                    PostAsUpdateIntegrationTestSupport.ToNeutral(row)
-                ),
-            ],
-            _persistedSchoolReferentialId.Value,
-            _schoolReferentialIdAfterRejectedPostAsUpdate,
-            _schoolTrackedChangeCountBeforeRejectedPostAsUpdate,
-            _schoolTrackedChangeCountAfterRejectedPostAsUpdate,
-            _documentCount,
-            _incomingDocumentUuidCount
-        );
-
-    private async Task<UpsertResult> ExecuteUpsertAsync(
-        string requestBodyJson,
-        DocumentUuid documentUuid,
-        string traceId,
-        long schoolId = 255901,
-        ReferentialId? referentialId = null
-    )
-    {
-        using var scope = _serviceProvider.CreateScope();
-
-        scope
-            .ServiceProvider.GetRequiredService<IDataStoreSelection>()
-            .SetSelectedDataStore(
-                new DataStore(
-                    Id: 1,
-                    DataStoreType: "test",
-                    Name: "PostgresqlRelationalWritePostAsUpdateImmutableIdentity",
-                    ConnectionString: _database.ConnectionString,
-                    RouteContext: []
-                )
-            );
-
-        var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, schoolId, referentialId)
-        );
-    }
-
-    private UpsertRequest CreateUpsertRequest(
-        string requestBodyJson,
-        DocumentUuid documentUuid,
-        string traceId,
-        long schoolId,
-        ReferentialId? referentialId
-    ) =>
-        new(
-            ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(schoolId, referentialId),
-            MappingSet: _mappingSet,
-            EdfiDoc: JsonNode.Parse(requestBodyJson)!,
-            Headers: [],
-            TraceId: new TraceId(traceId),
-            DocumentUuid: documentUuid
-        )
-        {
-            ActionAuthorization =
-                UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
-        };
-
-    private static DocumentInfo CreateSchoolDocumentInfo(long schoolId, ReferentialId? referentialId = null)
-    {
-        var schoolIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(
-                new JsonPath("$.schoolId"),
-                schoolId.ToString(CultureInfo.InvariantCulture)
-            ),
-        ]);
-
-        return new DocumentInfo(
-            DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
-            DocumentReferences: [],
-            DocumentReferenceArrays: [],
-            DescriptorReferences: [],
-            SuperclassIdentity: null
-        );
-    }
-
-    // The rejected-write proof compares the complete stored stamp set, so this fixture reads the
-    // stamp-complete document row rather than the narrow focused projection.
-    private async Task<NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot> ReadDocumentAsync(
-        Guid documentUuid
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt", "CreatedAt"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid)
-        );
-
-        return rows.Count == 1
-            ? new NoProfilePostAsUpdateScenarios.AuthoritativeDocumentSnapshot(
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
-            );
-    }
-
-    // The rejected-write proof compares the School root row including its replicated
-    // ContentVersion/ContentLastModifiedAt stamps, so this fixture reads the stamp-complete shape.
-    private async Task<NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot> ReadSchoolAsync(long documentId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "DocumentId", "SchoolId", "ShortName", "ContentVersion", "ContentLastModifiedAt"
-            FROM "edfi"."School"
-            WHERE "DocumentId" = @documentId;
-            """,
-            new NpgsqlParameter("documentId", documentId)
-        );
-
-        return rows.Count == 1
-            ? new NoProfilePostAsUpdateScenarios.RejectedSchoolSnapshot(
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "SchoolId"),
-                PostAsUpdateIntegrationTestSupport.GetNullableString(rows[0], "ShortName"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one school row for document id '{documentId}', but found {rows.Count}."
-            );
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
-    }
-
-    private async Task<long> ReadDocumentCountAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document";
-            """
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
-            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM "dms"."Document"
-            WHERE "DocumentUuid" = @documentUuid;
-            """,
-            new NpgsqlParameter("documentUuid", documentUuid)
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
-            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    // The rejected-write proof surveys the tracked-change rowset alongside the stamped rows: a direct
-    // tracked-change insert is the one authoritative write the document/root stamp equality cannot detect.
-    private async Task<long> ReadSchoolTrackedChangeCountAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT COUNT(*) AS "Count"
-            FROM "tracked_changes_edfi"."School";
-            """
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
-            : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow>> ReadSchoolAddressesAsync(
-        long documentId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "CollectionItemId", "School_DocumentId", "Ordinal", "City"
-            FROM "edfi"."SchoolAddress"
-            WHERE "School_DocumentId" = @documentId
-            ORDER BY "Ordinal", "CollectionItemId";
-            """,
-            new NpgsqlParameter("documentId", documentId)
-        );
-
-        return rows.Select(row => new FocusedPostAsUpdateSchoolAddressRow(
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
-                PostAsUpdateIntegrationTestSupport.GetString(row, "City")
-            ))
-            .ToArray();
-    }
-
-    private async Task<
-        IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow>
-    > ReadSchoolExtensionAddressesAsync(long documentId)
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "BaseCollectionItemId", "School_DocumentId", "Zone"
-            FROM "sample"."SchoolExtensionAddress"
-            WHERE "School_DocumentId" = @documentId
-            ORDER BY "BaseCollectionItemId";
-            """,
-            new NpgsqlParameter("documentId", documentId)
-        );
-
-        return rows.Select(row => new FocusedPostAsUpdateSchoolExtensionAddressRow(
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "BaseCollectionItemId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetString(row, "Zone")
-            ))
-            .ToArray();
-    }
-}
 
 [TestFixture]
 [Category("DatabaseIntegration")]
@@ -1045,7 +555,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     2026,
                     _seedData.StudentDocumentId,
                     "10001",
-                    _seedData.FallTermDescriptorDocumentId,
+                    _seedData.FallTermDescriptorId,
                     18.500m,
                     "2028-05-20"
                 )
@@ -1133,7 +643,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                     2026,
                     _seedData.StudentDocumentId,
                     "10001",
-                    _seedData.FallTermDescriptorDocumentId,
+                    _seedData.FallTermDescriptorId,
                     21.750m,
                     "2028-05-24"
                 )
@@ -1523,10 +1033,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
 
     private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
     {
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
@@ -1553,290 +1059,140 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             schoolResourceKeyId
         );
         await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "School", false), ("$.schoolId", "100")),
-            schoolDocumentId,
-            schoolResourceKeyId
-        );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", "100")
-            ),
-            schoolDocumentId,
-            educationOrganizationResourceKeyId
-        );
 
         var schoolYearTypeDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-2222-2222-2222-222222222222"),
             schoolYearTypeResourceKeyId
         );
         await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "SchoolYearType", false), ("$.schoolYear", "2026")),
-            schoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),
             studentResourceKeyId
         );
         await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "Student", false), ("$.studentUniqueId", "10001")),
-            studentDocumentId,
-            studentResourceKeyId
-        );
 
-        var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var fallTermDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-4444-4444-4444-444444444444"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            FallTermDescriptorUri,
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", FallTermDescriptorUri),
-            fallTermDescriptorDocumentId,
-            termDescriptorResourceKeyId
-        );
 
-        var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorRollAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("55555555-5555-5555-5555-555555555555"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            HonorRollAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "HonorRoll",
             "Honor Roll"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                HonorRollAcademicHonorCategoryDescriptorUri
-            ),
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
-        var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var scholarAthleteAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("66666666-6666-6666-6666-666666666666"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            ScholarAthleteAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
             "Scholar Athlete"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                ScholarAthleteAcademicHonorCategoryDescriptorUri
-            ),
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
-        var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var communityServiceAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("77777777-7777-7777-7777-777777777777"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            CommunityServiceAcademicHonorCategoryDescriptorUri,
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "CommunityService",
             "Community Service"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                CommunityServiceAcademicHonorCategoryDescriptorUri
-            ),
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
-        var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var standardDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("88888888-8888-8888-8888-888888888888"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            StandardDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
             "Standard Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", StandardDiplomaTypeDescriptorUri),
-            standardDiplomaTypeDescriptorDocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
-        var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var careerDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("99999999-9999-9999-9999-999999999999"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            CareerDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "CareerDiploma",
             "Career Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", CareerDiplomaTypeDescriptorUri),
-            careerDiplomaTypeDescriptorDocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
-        var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorsDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            HonorsDiplomaTypeDescriptorUri,
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
             "Honors Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "DiplomaTypeDescriptor", HonorsDiplomaTypeDescriptorUri),
-            honorsDiplomaTypeDescriptorDocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
-        var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var cumulativeGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            CumulativeGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Cumulative",
             "Cumulative"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                CumulativeGradePointAverageTypeDescriptorUri
-            ),
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
-        var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var sessionGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            SessionGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
             "Session"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                SessionGradePointAverageTypeDescriptorUri
-            ),
-            sessionGradePointAverageTypeDescriptorDocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
-        var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var weightedGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            WeightedGradePointAverageTypeDescriptorUri,
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Weighted",
             "Weighted"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                WeightedGradePointAverageTypeDescriptorUri
-            ),
-            weightedGradePointAverageTypeDescriptorDocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
-        var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var meritRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            MeritRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
             "Merit"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                MeritRecognitionTypeDescriptorUri
-            ),
-            meritRecognitionTypeDescriptorDocumentId,
-            recognitionTypeDescriptorResourceKeyId
-        );
 
-        var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var leadershipRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("ffffffff-ffff-ffff-ffff-ffffffffffff"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            LeadershipRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Leadership",
             "Leadership"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                LeadershipRecognitionTypeDescriptorUri
-            ),
-            leadershipRecognitionTypeDescriptorDocumentId,
-            recognitionTypeDescriptorResourceKeyId
-        );
 
-        var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var attendanceRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("12121212-1212-1212-1212-121212121212"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            AttendanceRecognitionTypeDescriptorUri,
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
             "Attendance"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                AttendanceRecognitionTypeDescriptorUri
-            ),
-            attendanceRecognitionTypeDescriptorDocumentId,
-            recognitionTypeDescriptorResourceKeyId
         );
 
         return new(
             schoolDocumentId,
             schoolYearTypeDocumentId,
             studentDocumentId,
-            fallTermDescriptorDocumentId,
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
-            standardDiplomaTypeDescriptorDocumentId,
-            careerDiplomaTypeDescriptorDocumentId,
-            honorsDiplomaTypeDescriptorDocumentId,
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
-            sessionGradePointAverageTypeDescriptorDocumentId,
-            weightedGradePointAverageTypeDescriptorDocumentId,
-            meritRecognitionTypeDescriptorDocumentId,
-            leadershipRecognitionTypeDescriptorDocumentId,
-            attendanceRecognitionTypeDescriptorDocumentId
+            fallTermDescriptor.DescriptorId,
+            honorRollAcademicHonorCategoryDescriptor.DescriptorId,
+            scholarAthleteAcademicHonorCategoryDescriptor.DescriptorId,
+            communityServiceAcademicHonorCategoryDescriptor.DescriptorId,
+            standardDiplomaTypeDescriptor.DescriptorId,
+            careerDiplomaTypeDescriptor.DescriptorId,
+            honorsDiplomaTypeDescriptor.DescriptorId,
+            cumulativeGradePointAverageTypeDescriptor.DescriptorId,
+            sessionGradePointAverageTypeDescriptor.DescriptorId,
+            weightedGradePointAverageTypeDescriptor.DescriptorId,
+            meritRecognitionTypeDescriptor.DescriptorId,
+            leadershipRecognitionTypeDescriptor.DescriptorId,
+            attendanceRecognitionTypeDescriptor.DescriptorId
         );
     }
 
@@ -1867,19 +1223,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -1887,9 +1242,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -1897,22 +1250,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -1977,56 +1326,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         );
     }
 
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
-    }
-
     private int CalculateCreateCollectionInsertParameterCount()
     {
         var writePlan = _mappingSet.GetWritePlanOrThrow(StudentAcademicRecordResource);
@@ -2073,8 +1372,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt", "CreatedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -2086,9 +1384,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -2128,7 +1424,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "SchoolYear_SchoolYear"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Student_DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "Student_StudentUniqueId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "TermDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "TermDescriptor_DescriptorId"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(rows[0], "CumulativeEarnedCredits"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "ProjectedGraduationDate")
             )
@@ -2184,10 +1480,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "AcademicHonorCategoryDescriptor_DescriptorId"
-                ),
+                (int)row["AcademicHonorCategoryDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "HonorDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
@@ -2218,7 +1511,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DiplomaTypeDescriptor_DescriptorId"),
+                (int)row["DiplomaTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaAwardDate"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaDescription")
             ))
@@ -2250,10 +1543,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "GradePointAverageTypeDescriptor_DescriptorId"
-                ),
+                (int)row["GradePointAverageTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
@@ -2285,7 +1575,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "RecognitionTypeDescriptor_DescriptorId"),
+                (int)row["RecognitionTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "RecognitionDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
@@ -2422,45 +1712,43 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
             StringComparer.Ordinal
         );
 
-    private long ResolveAcademicHonorDescriptorId(string descriptorUri)
+    private int ResolveAcademicHonorDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
             HonorRollAcademicHonorCategoryDescriptorUri =>
-                _seedData.HonorRollAcademicHonorCategoryDescriptorDocumentId,
+                _seedData.HonorRollAcademicHonorCategoryDescriptorId,
             ScholarAthleteAcademicHonorCategoryDescriptorUri =>
-                _seedData.ScholarAthleteAcademicHonorCategoryDescriptorDocumentId,
+                _seedData.ScholarAthleteAcademicHonorCategoryDescriptorId,
             CommunityServiceAcademicHonorCategoryDescriptorUri =>
-                _seedData.CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
+                _seedData.CommunityServiceAcademicHonorCategoryDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported academic honor category descriptor '{descriptorUri}'."
             ),
         };
     }
 
-    private long ResolveDiplomaDescriptorId(string descriptorUri)
+    private int ResolveDiplomaDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
-            StandardDiplomaTypeDescriptorUri => _seedData.StandardDiplomaTypeDescriptorDocumentId,
-            CareerDiplomaTypeDescriptorUri => _seedData.CareerDiplomaTypeDescriptorDocumentId,
-            HonorsDiplomaTypeDescriptorUri => _seedData.HonorsDiplomaTypeDescriptorDocumentId,
+            StandardDiplomaTypeDescriptorUri => _seedData.StandardDiplomaTypeDescriptorId,
+            CareerDiplomaTypeDescriptorUri => _seedData.CareerDiplomaTypeDescriptorId,
+            HonorsDiplomaTypeDescriptorUri => _seedData.HonorsDiplomaTypeDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported diploma type descriptor '{descriptorUri}'."
             ),
         };
     }
 
-    private long ResolveGradePointAverageDescriptorId(string descriptorUri)
+    private int ResolveGradePointAverageDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
             CumulativeGradePointAverageTypeDescriptorUri =>
-                _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
-            SessionGradePointAverageTypeDescriptorUri =>
-                _seedData.SessionGradePointAverageTypeDescriptorDocumentId,
-            WeightedGradePointAverageTypeDescriptorUri =>
-                _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
+                _seedData.CumulativeGradePointAverageTypeDescriptorId,
+            SessionGradePointAverageTypeDescriptorUri => _seedData.SessionGradePointAverageTypeDescriptorId,
+            WeightedGradePointAverageTypeDescriptorUri => _seedData.WeightedGradePointAverageTypeDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported grade point average type descriptor '{descriptorUri}'."
             ),
@@ -2471,10 +1759,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         return descriptorId switch
         {
-            var value when value == _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId =>
-                "Cumulative",
-            var value when value == _seedData.SessionGradePointAverageTypeDescriptorDocumentId => "Session",
-            var value when value == _seedData.WeightedGradePointAverageTypeDescriptorDocumentId => "Weighted",
+            var value when value == _seedData.CumulativeGradePointAverageTypeDescriptorId => "Cumulative",
+            var value when value == _seedData.SessionGradePointAverageTypeDescriptorId => "Session",
+            var value when value == _seedData.WeightedGradePointAverageTypeDescriptorId => "Weighted",
             _ => throw new InvalidOperationException(
                 $"Unsupported grade point average descriptor id '{descriptorId}'."
             ),
@@ -2494,13 +1781,13 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
         };
     }
 
-    private long ResolveRecognitionDescriptorId(string descriptorUri)
+    private int ResolveRecognitionDescriptorId(string descriptorUri)
     {
         return descriptorUri switch
         {
-            MeritRecognitionTypeDescriptorUri => _seedData.MeritRecognitionTypeDescriptorDocumentId,
-            LeadershipRecognitionTypeDescriptorUri => _seedData.LeadershipRecognitionTypeDescriptorDocumentId,
-            AttendanceRecognitionTypeDescriptorUri => _seedData.AttendanceRecognitionTypeDescriptorDocumentId,
+            MeritRecognitionTypeDescriptorUri => _seedData.MeritRecognitionTypeDescriptorId,
+            LeadershipRecognitionTypeDescriptorUri => _seedData.LeadershipRecognitionTypeDescriptorId,
+            AttendanceRecognitionTypeDescriptorUri => _seedData.AttendanceRecognitionTypeDescriptorId,
             _ => throw new InvalidOperationException(
                 $"Unsupported recognition type descriptor '{descriptorUri}'."
             ),
@@ -2511,9 +1798,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Sa
     {
         return descriptorId switch
         {
-            var value when value == _seedData.MeritRecognitionTypeDescriptorDocumentId => "Merit",
-            var value when value == _seedData.LeadershipRecognitionTypeDescriptorDocumentId => "Leadership",
-            var value when value == _seedData.AttendanceRecognitionTypeDescriptorDocumentId => "Attendance",
+            var value when value == _seedData.MeritRecognitionTypeDescriptorId => "Merit",
+            var value when value == _seedData.LeadershipRecognitionTypeDescriptorId => "Leadership",
+            var value when value == _seedData.AttendanceRecognitionTypeDescriptorId => "Attendance",
             _ => throw new InvalidOperationException(
                 $"Unsupported recognition descriptor id '{descriptorId}'."
             ),
@@ -2633,7 +1920,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     private IReadOnlyList<FocusedPostAsUpdateSchoolExtensionAddressRow> _extensionAddressesAfterPostAsUpdate =
         null!;
     private UpsertResult _postAsUpdateResult = null!;
-    private ReferentialId _persistedSchoolReferentialId;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -2661,20 +1947,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         _extensionAddressesBeforePostAsUpdate = await ReadSchoolExtensionAddressesAsync(
             _documentBeforePostAsUpdate.DocumentId
         );
-        _persistedSchoolReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforePostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolResource]
-                )
-            ).ReferentialId
-        );
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             IncomingPostAsUpdateDocumentUuid,
-            "pg-post-as-update-existing-document",
-            _persistedSchoolReferentialId
+            "pg-post-as-update-existing-document"
         );
 
         _documentAfterPostAsUpdate = await ReadDocumentAsync(ExistingSchoolDocumentUuid.Value);
@@ -2744,8 +2021,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -2763,20 +2039,17 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -2788,7 +2061,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
                 UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
-    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = new DocumentIdentity([
             new DocumentIdentityElement(new JsonPath("$.schoolId"), "255901"),
@@ -2796,8 +2069,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -2840,33 +2111,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
     }
 
     private async Task<long> ReadDocumentCountAsync(Guid documentUuid)
@@ -2958,6 +2202,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_A_Focused_Stable_
 [Category("PostgresqlIntegration")]
 public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Stable_Key_Fixture
 {
+    private const long SharedSchoolId = 255901;
+
     private const string FixtureRelativePath =
         "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-update-semantics";
 
@@ -3010,7 +2256,6 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     private ConcurrentPostCreateRaceCoordinator _raceCoordinator = null!;
     private UpsertResult _createWinnerResult = null!;
     private UpsertResult _staleCreateCandidateResult = null!;
-    private ReferentialId _sharedSchoolReferentialId;
     private FocusedPostAsUpdateDocumentRow _documentAfterRequests = null!;
     private FocusedPostAsUpdateSchoolRow _schoolAfterRequests = null!;
     private IReadOnlyList<FocusedPostAsUpdateSchoolAddressRow> _addressesAfterRequests = null!;
@@ -3028,13 +2273,11 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         _database = await PostgresqlGeneratedDdlTestDatabase.CreateProvisionedAsync(_fixture.GeneratedDdl);
         _raceCoordinator = new ConcurrentPostCreateRaceCoordinator();
         _serviceProvider = PostAsUpdateIntegrationTestSupport.CreateServiceProvider(_raceCoordinator);
-        _sharedSchoolReferentialId = new ReferentialId(await ComputeSchoolReferentialIdAsync());
 
         var staleCreateCandidateTask = ExecuteUpsertAsync(
             StaleCreateCandidateRequestBodyJson,
             StaleCreateCandidateDocumentUuid,
-            "pg-post-create-race-stale-candidate",
-            _sharedSchoolReferentialId
+            "pg-post-create-race-stale-candidate"
         );
 
         // Race readiness against the worker task under a bounded timeout — a bare readiness wait would
@@ -3053,12 +2296,11 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
         _createWinnerResult = await ExecuteUpsertAsync(
             CreateWinnerRequestBodyJson,
             CreateWinnerDocumentUuid,
-            "pg-post-create-race-create-winner",
-            _sharedSchoolReferentialId
+            "pg-post-create-race-create-winner"
         );
 
         (await ReadDocumentCountAsync(CreateWinnerDocumentUuid.Value)).Should().Be(1);
-        (await ReadReferentialIdentityCountAsync(_sharedSchoolReferentialId.Value)).Should().Be(1);
+        (await ReadSchoolCountAsync(SharedSchoolId)).Should().Be(1);
 
         _raceCoordinator.ReleaseFirstWriteSession();
 
@@ -3116,8 +2358,7 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -3135,20 +2376,17 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolResourceInfo,
-            DocumentInfo: CreateSchoolDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -3160,14 +2398,12 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
                 UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
-    private static DocumentInfo CreateSchoolDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolDocumentInfo()
     {
         var schoolIdentity = CreateSchoolIdentity();
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -3231,39 +2467,20 @@ public class Given_A_Postgresql_Relational_Post_Create_Race_With_The_Focused_Sta
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
     }
 
-    private async Task<long> ReadReferentialIdentityCountAsync(Guid referentialId)
+    private async Task<long> ReadSchoolCountAsync(long schoolId)
     {
         var rows = await _database.QueryRowsAsync(
             """
             SELECT COUNT(*) AS "Count"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "ReferentialId" = @referentialId;
+            FROM "edfi"."School"
+            WHERE "SchoolId" = @schoolId;
             """,
-            new NpgsqlParameter("referentialId", referentialId)
+            new NpgsqlParameter("schoolId", schoolId)
         );
 
         return rows.Count == 1
             ? PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Count")
             : throw new InvalidOperationException($"Expected exactly one count row, but found {rows.Count}.");
-    }
-
-    private async Task<Guid> ComputeSchoolReferentialIdAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "dms"."uuidv5"(
-                'edf1edf1-3df1-3df1-3df1-3df1edf1edf1'::uuid,
-                'Ed-FiSchool' || '$.schoolId=' || @schoolId
-            ) AS "ReferentialId";
-            """,
-            new NpgsqlParameter("schoolId", "255901")
-        );
-
-        return rows.Count == 1
-            ? PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId")
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential-id row, but found {rows.Count}."
-            );
     }
 
     private async Task<FocusedPostAsUpdateSchoolRow> ReadSchoolAsync(long documentId)
@@ -3316,9 +2533,7 @@ internal sealed record AuthoritativePostAsUpdateDocumentRow(
     long DocumentId,
     Guid DocumentUuid,
     short ResourceKeyId,
-    long ContentVersion,
-    DateTimeOffset ContentLastModifiedAt,
-    DateTimeOffset CreatedAt
+    long ContentVersion
 );
 
 internal sealed record AuthoritativeSchoolYearTypeRow(
@@ -3374,7 +2589,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private AuthoritativePostAsUpdateDocumentRow _documentAfterPostAsUpdate = null!;
     private AuthoritativeSchoolYearTypeRow _schoolYearTypeAfterPostAsUpdate = null!;
     private UpsertResult _postAsUpdateResult = null!;
-    private ReferentialId _persistedSchoolYearTypeReferentialId;
     private long _documentCount;
     private long _incomingDocumentUuidCount;
 
@@ -3398,20 +2612,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
 
         _documentBeforePostAsUpdate = await ReadDocumentAsync(ExistingSchoolYearTypeDocumentUuid.Value);
-        _persistedSchoolYearTypeReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _documentBeforePostAsUpdate.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[SchoolYearTypeResource]
-                )
-            ).ReferentialId
-        );
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             IncomingSchoolYearTypeDocumentUuid,
-            "pg-authoritative-school-year-type-post-as-update",
-            _persistedSchoolYearTypeReferentialId
+            "pg-authoritative-school-year-type-post-as-update"
         );
 
         _documentAfterPostAsUpdate = await ReadDocumentAsync(ExistingSchoolYearTypeDocumentUuid.Value);
@@ -3462,8 +2667,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -3481,20 +2685,17 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     ) =>
         new(
             ResourceInfo: SchoolYearTypeResourceInfo,
-            DocumentInfo: CreateSchoolYearTypeDocumentInfo(referentialId),
+            DocumentInfo: CreateSchoolYearTypeDocumentInfo(),
             MappingSet: _mappingSet,
             EdfiDoc: JsonNode.Parse(requestBodyJson)!,
             Headers: [],
@@ -3506,7 +2707,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 UpsertActionAuthorizationTestSupport.NoFurtherAuthorizationRequiredForCreateAndUpdate,
         };
 
-    private static DocumentInfo CreateSchoolYearTypeDocumentInfo(ReferentialId? referentialId = null)
+    private static DocumentInfo CreateSchoolYearTypeDocumentInfo()
     {
         var schoolYearIdentity = new DocumentIdentity([
             new DocumentIdentityElement(new JsonPath("$.schoolYear"), "2026"),
@@ -3514,8 +2715,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
         return new DocumentInfo(
             DocumentIdentity: schoolYearIdentity,
-            ReferentialId: referentialId
-                ?? ReferentialIdCalculator.ReferentialIdFrom(SchoolYearTypeResourceInfo, schoolYearIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],
@@ -3527,8 +2726,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt", "CreatedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -3540,9 +2738,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -3601,52 +2797,25 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 $"Expected exactly one SchoolYearType row for document id '{documentId}', but found {rows.Count}."
             );
     }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-                AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
-    }
 }
 
 internal sealed record AuthoritativeStudentAcademicRecordSeedData(
     long SchoolDocumentId,
     long SchoolYearTypeDocumentId,
     long StudentDocumentId,
-    long FallTermDescriptorDocumentId,
-    long HonorRollAcademicHonorCategoryDescriptorDocumentId,
-    long ScholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-    long CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
-    long StandardDiplomaTypeDescriptorDocumentId,
-    long CareerDiplomaTypeDescriptorDocumentId,
-    long HonorsDiplomaTypeDescriptorDocumentId,
-    long CumulativeGradePointAverageTypeDescriptorDocumentId,
-    long SessionGradePointAverageTypeDescriptorDocumentId,
-    long WeightedGradePointAverageTypeDescriptorDocumentId,
-    long MeritRecognitionTypeDescriptorDocumentId,
-    long LeadershipRecognitionTypeDescriptorDocumentId,
-    long AttendanceRecognitionTypeDescriptorDocumentId
+    int FallTermDescriptorId,
+    int HonorRollAcademicHonorCategoryDescriptorId,
+    int ScholarAthleteAcademicHonorCategoryDescriptorId,
+    int CommunityServiceAcademicHonorCategoryDescriptorId,
+    int StandardDiplomaTypeDescriptorId,
+    int CareerDiplomaTypeDescriptorId,
+    int HonorsDiplomaTypeDescriptorId,
+    int CumulativeGradePointAverageTypeDescriptorId,
+    int SessionGradePointAverageTypeDescriptorId,
+    int WeightedGradePointAverageTypeDescriptorId,
+    int MeritRecognitionTypeDescriptorId,
+    int LeadershipRecognitionTypeDescriptorId,
+    int AttendanceRecognitionTypeDescriptorId
 );
 
 internal sealed record AuthoritativeStudentAcademicRecordRow(
@@ -3657,7 +2826,7 @@ internal sealed record AuthoritativeStudentAcademicRecordRow(
     int SchoolYear,
     long StudentDocumentId,
     string StudentUniqueId,
-    long TermDescriptorId,
+    int TermDescriptorId,
     decimal CumulativeEarnedCredits,
     string ProjectedGraduationDate
 );
@@ -3668,7 +2837,7 @@ internal sealed record AuthoritativeStudentAcademicRecordAcademicHonorRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long AcademicHonorCategoryDescriptorId,
+    int AcademicHonorCategoryDescriptorId,
     string HonorDescription,
     string IssuerName
 );
@@ -3677,7 +2846,7 @@ internal sealed record AuthoritativeStudentAcademicRecordDiplomaRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long DiplomaTypeDescriptorId,
+    int DiplomaTypeDescriptorId,
     string DiplomaAwardDate,
     string DiplomaDescription
 );
@@ -3686,7 +2855,7 @@ internal sealed record AuthoritativeStudentAcademicRecordGradePointAverageRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long GradePointAverageTypeDescriptorId,
+    int GradePointAverageTypeDescriptorId,
     decimal GradePointAverageValue,
     decimal MaxGradePointAverageValue,
     bool IsCumulative
@@ -3696,7 +2865,7 @@ internal sealed record AuthoritativeStudentAcademicRecordRecognitionRow(
     long CollectionItemId,
     int Ordinal,
     long StudentAcademicRecordDocumentId,
-    long RecognitionTypeDescriptorId,
+    int RecognitionTypeDescriptorId,
     string RecognitionDescription,
     string IssuerName
 );
@@ -3890,13 +3059,8 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private AuthoritativeStudentAcademicRecordPersistedState _stateAfterRepeatPostAsUpdate = null!;
     private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterPostAsUpdate;
     private (long ContentVersion, DateTimeOffset ContentLastModifiedAt) _rootStampsAfterRepeatPostAsUpdate;
-    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterPostAsUpdate =
-        null!;
-    private IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow> _referentialIdentitiesAfterRepeatPostAsUpdate =
-        null!;
     private UpsertResult _postAsUpdateResult = null!;
     private UpsertResult _repeatPostAsUpdateResult = null!;
-    private ReferentialId _persistedStudentAcademicRecordReferentialId;
     private long _resourceDocumentCount;
     private long _incomingDocumentUuidCount;
     private long _repeatIncomingDocumentUuidCount;
@@ -3942,20 +3106,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
         createResult.Should().BeOfType<UpsertResult.InsertSuccess>();
         _stateAfterCreate = await ReadPersistedStateAsync(ExistingStudentAcademicRecordDocumentUuid.Value);
-        _persistedStudentAcademicRecordReferentialId = new ReferentialId(
-            (
-                await ReadReferentialIdentityRowAsync(
-                    _stateAfterCreate.Document.DocumentId,
-                    _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
-                )
-            ).ReferentialId
-        );
 
         _postAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             IncomingStudentAcademicRecordDocumentUuid,
-            "pg-authoritative-sample-student-academic-record-post-as-update",
-            _persistedStudentAcademicRecordReferentialId
+            "pg-authoritative-sample-student-academic-record-post-as-update"
         );
 
         if (_postAsUpdateResult is UpsertResult.UpsertFailureReference postAsUpdateReferenceFailure)
@@ -3971,12 +3126,10 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _rootStampsAfterPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
             _stateAfterPostAsUpdate.AcademicRecord.DocumentId
         );
-        _referentialIdentitiesAfterPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _repeatPostAsUpdateResult = await ExecuteUpsertAsync(
             PostAsUpdateRequestBodyJson,
             RepeatStudentAcademicRecordDocumentUuid,
-            "pg-authoritative-sample-student-academic-record-repeat-post-as-update",
-            _persistedStudentAcademicRecordReferentialId
+            "pg-authoritative-sample-student-academic-record-repeat-post-as-update"
         );
 
         if (_repeatPostAsUpdateResult is UpsertResult.UpsertFailureReference repeatPostReferenceFailure)
@@ -3992,7 +3145,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         _rootStampsAfterRepeatPostAsUpdate = await ReadAcademicRecordRootStampsAsync(
             _stateAfterRepeatPostAsUpdate.AcademicRecord.DocumentId
         );
-        _referentialIdentitiesAfterRepeatPostAsUpdate = await ReadAllReferentialIdentityRowsAsync();
         _resourceDocumentCount = await ReadDocumentCountAsync(
             _mappingSet.ResourceKeyIdByResource[StudentAcademicRecordResource]
         );
@@ -4028,26 +3180,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             : throw new InvalidOperationException(
                 $"Expected exactly one StudentAcademicRecord row for document id '{documentId}', but found {rows.Count}."
             );
-    }
-
-    private async Task<
-        IReadOnlyList<NoProfilePostAsUpdateScenarios.ReferentialIdentityRow>
-    > ReadAllReferentialIdentityRowsAsync()
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            ORDER BY "ReferentialId";
-            """
-        );
-
-        return rows.Select(row => new NoProfilePostAsUpdateScenarios.ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(row, "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(row, "ResourceKeyId")
-            ))
-            .ToArray();
     }
 
     [OneTimeTearDown]
@@ -4097,7 +3229,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     2026,
                     _seedData.StudentDocumentId,
                     "10001",
-                    _seedData.FallTermDescriptorDocumentId,
+                    _seedData.FallTermDescriptorId,
                     19.250m,
                     "2028-05-22"
                 )
@@ -4122,7 +3254,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.AcademicHonors[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.HonorRollAcademicHonorCategoryDescriptorDocumentId,
+                    _seedData.HonorRollAcademicHonorCategoryDescriptorId,
                     "Honor Roll",
                     "District Honors Board"
                 ),
@@ -4130,7 +3262,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.AcademicHonors[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.CommunityServiceAcademicHonorCategoryDescriptorDocumentId,
+                    _seedData.CommunityServiceAcademicHonorCategoryDescriptorId,
                     "Community Service",
                     "Community Foundation"
                 )
@@ -4148,7 +3280,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Diplomas[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.StandardDiplomaTypeDescriptorDocumentId,
+                    _seedData.StandardDiplomaTypeDescriptorId,
                     "2028-05-24",
                     "Revised Standard Path"
                 ),
@@ -4156,7 +3288,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.Diplomas[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.HonorsDiplomaTypeDescriptorDocumentId,
+                    _seedData.HonorsDiplomaTypeDescriptorId,
                     "2028-05-26",
                     "Honors Path"
                 )
@@ -4174,7 +3306,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.GradePointAverages[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.CumulativeGradePointAverageTypeDescriptorDocumentId,
+                    _seedData.CumulativeGradePointAverageTypeDescriptorId,
                     3.6100m,
                     4.0000m,
                     true
@@ -4183,7 +3315,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.GradePointAverages[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.WeightedGradePointAverageTypeDescriptorDocumentId,
+                    _seedData.WeightedGradePointAverageTypeDescriptorId,
                     4.1200m,
                     5.0000m,
                     false
@@ -4202,7 +3334,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterCreate.Recognitions[0].CollectionItemId,
                     0,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.MeritRecognitionTypeDescriptorDocumentId,
+                    _seedData.MeritRecognitionTypeDescriptorId,
                     "State Merit",
                     "State Board"
                 ),
@@ -4210,7 +3342,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     _stateAfterPostAsUpdate.Recognitions[1].CollectionItemId,
                     1,
                     _stateAfterCreate.Document.DocumentId,
-                    _seedData.AttendanceRecognitionTypeDescriptorDocumentId,
+                    _seedData.AttendanceRecognitionTypeDescriptorId,
                     "Perfect Attendance",
                     "District Office"
                 )
@@ -4230,14 +3362,12 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             PostAsUpdateIntegrationTestSupport.ToSnapshot(
                 _stateAfterPostAsUpdate,
                 _rootStampsAfterPostAsUpdate.ContentVersion,
-                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt,
-                _referentialIdentitiesAfterPostAsUpdate
+                _rootStampsAfterPostAsUpdate.ContentLastModifiedAt
             ),
             PostAsUpdateIntegrationTestSupport.ToSnapshot(
                 _stateAfterRepeatPostAsUpdate,
                 _rootStampsAfterRepeatPostAsUpdate.ContentVersion,
-                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt,
-                _referentialIdentitiesAfterRepeatPostAsUpdate
+                _rootStampsAfterRepeatPostAsUpdate.ContentLastModifiedAt
             ),
             _repeatIncomingDocumentUuidCount
         );
@@ -4245,8 +3375,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     private async Task<UpsertResult> ExecuteUpsertAsync(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId = null
+        string traceId
     )
     {
         using var scope = _serviceProvider.CreateScope();
@@ -4264,23 +3393,20 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             );
 
         var repository = scope.ServiceProvider.GetRequiredService<RelationalDocumentStoreRepository>();
-        return await repository.UpsertDocument(
-            CreateUpsertRequest(requestBodyJson, documentUuid, traceId, referentialId)
-        );
+        return await repository.UpsertDocument(CreateUpsertRequest(requestBodyJson, documentUuid, traceId));
     }
 
     private UpsertRequest CreateUpsertRequest(
         string requestBodyJson,
         DocumentUuid documentUuid,
-        string traceId,
-        ReferentialId? referentialId
+        string traceId
     )
     {
         var requestBody = JsonNode.Parse(requestBodyJson)!;
 
         return new(
             ResourceInfo: _resourceInfo,
-            DocumentInfo: CreateDocumentInfo(requestBody, referentialId),
+            DocumentInfo: CreateDocumentInfo(requestBody),
             MappingSet: _mappingSet,
             EdfiDoc: requestBody,
             Headers: [],
@@ -4293,7 +3419,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         };
     }
 
-    private DocumentInfo CreateDocumentInfo(JsonNode requestBody, ReferentialId? referentialId = null)
+    private DocumentInfo CreateDocumentInfo(JsonNode requestBody)
     {
         return RelationalDocumentInfoTestHelper.CreateDocumentInfo(
             requestBody,
@@ -4308,7 +3434,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                     UseRelationalDescriptorExtraction: false
                 ),
             ],
-            referentialIdOverride: referentialId,
             logger: NullLogger.Instance
         );
     }
@@ -4372,10 +3497,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
 
     private async Task<AuthoritativeStudentAcademicRecordSeedData> SeedReferenceDataAsync()
     {
-        var educationOrganizationResourceKeyId = await GetResourceKeyIdAsync(
-            "Ed-Fi",
-            "EducationOrganization"
-        );
         var schoolResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "School");
         var schoolYearTypeResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "SchoolYearType");
         var studentResourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", "Student");
@@ -4402,302 +3523,140 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
             schoolResourceKeyId
         );
         await InsertSchoolAsync(schoolDocumentId, 100, "Alpha Academy");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "School", false), ("$.schoolId", "100")),
-            schoolDocumentId,
-            schoolResourceKeyId
-        );
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(
-                ("Ed-Fi", "EducationOrganization", false),
-                ("$.educationOrganizationId", "100")
-            ),
-            schoolDocumentId,
-            educationOrganizationResourceKeyId
-        );
 
         var schoolYearTypeDocumentId = await InsertDocumentAsync(
             Guid.Parse("22222222-0000-0000-0000-000000000002"),
             schoolYearTypeResourceKeyId
         );
         await InsertSchoolYearTypeAsync(schoolYearTypeDocumentId, 2026, true, "2025-2026");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "SchoolYearType", false), ("$.schoolYear", "2026")),
-            schoolYearTypeDocumentId,
-            schoolYearTypeResourceKeyId
-        );
 
         var studentDocumentId = await InsertDocumentAsync(
             Guid.Parse("33333333-0000-0000-0000-000000000003"),
             studentResourceKeyId
         );
         await InsertStudentAsync(studentDocumentId, "10001", "Casey", "Cole");
-        await InsertReferentialIdentityAsync(
-            CreateReferentialId(("Ed-Fi", "Student", false), ("$.studentUniqueId", "10001")),
-            studentDocumentId,
-            studentResourceKeyId
-        );
 
-        var fallTermDescriptorDocumentId = await InsertDescriptorAsync(
+        var fallTermDescriptor = await InsertDescriptorAsync(
             Guid.Parse("44444444-0000-0000-0000-000000000004"),
             termDescriptorResourceKeyId,
-            "Ed-Fi:TermDescriptor",
-            "uri://ed-fi.org/TermDescriptor#Fall",
             "uri://ed-fi.org/TermDescriptor",
             "Fall",
             "Fall"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", "TermDescriptor", "uri://ed-fi.org/TermDescriptor#Fall"),
-            fallTermDescriptorDocumentId,
-            termDescriptorResourceKeyId
-        );
 
-        var honorRollAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorRollAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("55555555-0000-0000-0000-000000000005"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "HonorRoll",
             "Honor Roll"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#HonorRoll"
-            ),
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
-        var scholarAthleteAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var scholarAthleteAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("66666666-0000-0000-0000-000000000006"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "ScholarAthlete",
             "Scholar Athlete"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#ScholarAthlete"
-            ),
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
-        var communityServiceAcademicHonorCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        var communityServiceAcademicHonorCategoryDescriptor = await InsertDescriptorAsync(
             Guid.Parse("77777777-0000-0000-0000-000000000007"),
             academicHonorCategoryDescriptorResourceKeyId,
-            "Ed-Fi:AcademicHonorCategoryDescriptor",
-            "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService",
             "uri://ed-fi.org/AcademicHonorCategoryDescriptor",
             "CommunityService",
             "Community Service"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "AcademicHonorCategoryDescriptor",
-                "uri://ed-fi.org/AcademicHonorCategoryDescriptor#CommunityService"
-            ),
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
-            academicHonorCategoryDescriptorResourceKeyId
-        );
 
-        var standardDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var standardDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("88888888-0000-0000-0000-000000000008"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "StandardDiploma",
             "Standard Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "DiplomaTypeDescriptor",
-                "uri://ed-fi.org/DiplomaTypeDescriptor#StandardDiploma"
-            ),
-            standardDiplomaTypeDescriptorDocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
-        var careerDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var careerDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("99999999-0000-0000-0000-000000000009"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "CareerDiploma",
             "Career Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "DiplomaTypeDescriptor",
-                "uri://ed-fi.org/DiplomaTypeDescriptor#CareerDiploma"
-            ),
-            careerDiplomaTypeDescriptorDocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
-        var honorsDiplomaTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var honorsDiplomaTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("aaaaaaaa-0000-0000-0000-00000000000a"),
             diplomaTypeDescriptorResourceKeyId,
-            "Ed-Fi:DiplomaTypeDescriptor",
-            "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma",
             "uri://ed-fi.org/DiplomaTypeDescriptor",
             "HonorsDiploma",
             "Honors Diploma"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "DiplomaTypeDescriptor",
-                "uri://ed-fi.org/DiplomaTypeDescriptor#HonorsDiploma"
-            ),
-            honorsDiplomaTypeDescriptorDocumentId,
-            diplomaTypeDescriptorResourceKeyId
-        );
 
-        var cumulativeGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var cumulativeGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("bbbbbbbb-0000-0000-0000-00000000000b"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Cumulative",
             "Cumulative"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Cumulative"
-            ),
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
-        var sessionGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var sessionGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("cccccccc-0000-0000-0000-00000000000c"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Session",
             "Session"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Session"
-            ),
-            sessionGradePointAverageTypeDescriptorDocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
-        var weightedGradePointAverageTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var weightedGradePointAverageTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("dddddddd-0000-0000-0000-00000000000d"),
             gradePointAverageTypeDescriptorResourceKeyId,
-            "Ed-Fi:GradePointAverageTypeDescriptor",
-            "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted",
             "uri://ed-fi.org/GradePointAverageTypeDescriptor",
             "Weighted",
             "Weighted"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "GradePointAverageTypeDescriptor",
-                "uri://ed-fi.org/GradePointAverageTypeDescriptor#Weighted"
-            ),
-            weightedGradePointAverageTypeDescriptorDocumentId,
-            gradePointAverageTypeDescriptorResourceKeyId
-        );
 
-        var meritRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var meritRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("eeeeeeee-0000-0000-0000-00000000000e"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            "uri://ed-fi.org/RecognitionTypeDescriptor#Merit",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Merit",
             "Merit"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                "uri://ed-fi.org/RecognitionTypeDescriptor#Merit"
-            ),
-            meritRecognitionTypeDescriptorDocumentId,
-            recognitionTypeDescriptorResourceKeyId
-        );
 
-        var leadershipRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var leadershipRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("ffffffff-0000-0000-0000-00000000000f"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Leadership",
             "Leadership"
         );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                "uri://ed-fi.org/RecognitionTypeDescriptor#Leadership"
-            ),
-            leadershipRecognitionTypeDescriptorDocumentId,
-            recognitionTypeDescriptorResourceKeyId
-        );
 
-        var attendanceRecognitionTypeDescriptorDocumentId = await InsertDescriptorAsync(
+        var attendanceRecognitionTypeDescriptor = await InsertDescriptorAsync(
             Guid.Parse("12121212-0000-0000-0000-000000000010"),
             recognitionTypeDescriptorResourceKeyId,
-            "Ed-Fi:RecognitionTypeDescriptor",
-            "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance",
             "uri://ed-fi.org/RecognitionTypeDescriptor",
             "Attendance",
             "Attendance"
-        );
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId(
-                "Ed-Fi",
-                "RecognitionTypeDescriptor",
-                "uri://ed-fi.org/RecognitionTypeDescriptor#Attendance"
-            ),
-            attendanceRecognitionTypeDescriptorDocumentId,
-            recognitionTypeDescriptorResourceKeyId
         );
 
         return new(
             schoolDocumentId,
             schoolYearTypeDocumentId,
             studentDocumentId,
-            fallTermDescriptorDocumentId,
-            honorRollAcademicHonorCategoryDescriptorDocumentId,
-            scholarAthleteAcademicHonorCategoryDescriptorDocumentId,
-            communityServiceAcademicHonorCategoryDescriptorDocumentId,
-            standardDiplomaTypeDescriptorDocumentId,
-            careerDiplomaTypeDescriptorDocumentId,
-            honorsDiplomaTypeDescriptorDocumentId,
-            cumulativeGradePointAverageTypeDescriptorDocumentId,
-            sessionGradePointAverageTypeDescriptorDocumentId,
-            weightedGradePointAverageTypeDescriptorDocumentId,
-            meritRecognitionTypeDescriptorDocumentId,
-            leadershipRecognitionTypeDescriptorDocumentId,
-            attendanceRecognitionTypeDescriptorDocumentId
+            fallTermDescriptor.DescriptorId,
+            honorRollAcademicHonorCategoryDescriptor.DescriptorId,
+            scholarAthleteAcademicHonorCategoryDescriptor.DescriptorId,
+            communityServiceAcademicHonorCategoryDescriptor.DescriptorId,
+            standardDiplomaTypeDescriptor.DescriptorId,
+            careerDiplomaTypeDescriptor.DescriptorId,
+            honorsDiplomaTypeDescriptor.DescriptorId,
+            cumulativeGradePointAverageTypeDescriptor.DescriptorId,
+            sessionGradePointAverageTypeDescriptor.DescriptorId,
+            weightedGradePointAverageTypeDescriptor.DescriptorId,
+            meritRecognitionTypeDescriptor.DescriptorId,
+            leadershipRecognitionTypeDescriptor.DescriptorId,
+            attendanceRecognitionTypeDescriptor.DescriptorId
         );
     }
 
@@ -4728,19 +3687,18 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -4748,9 +3706,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -4758,22 +3714,18 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return new(descriptorId, documentId);
     }
 
     private async Task InsertSchoolAsync(long documentId, int schoolId, string nameOfInstitution)
@@ -4838,56 +3790,6 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
         );
     }
 
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
-    }
-
     private async Task<AuthoritativeStudentAcademicRecordPersistedState> ReadPersistedStateAsync(
         Guid documentUuid
     )
@@ -4909,8 +3811,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion",
-                "ContentLastModifiedAt", "CreatedAt"
+            SELECT "DocumentId", "DocumentUuid", "ResourceKeyId", "ContentVersion"
             FROM "dms"."Document"
             WHERE "DocumentUuid" = @documentUuid;
             """,
@@ -4922,9 +3823,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "DocumentUuid"),
                 PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "ContentLastModifiedAt"),
-                PostAsUpdateIntegrationTestSupport.GetDateTimeOffset(rows[0], "CreatedAt")
+                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "ContentVersion")
             )
             : throw new InvalidOperationException(
                 $"Expected exactly one document row for '{documentUuid}', but found {rows.Count}."
@@ -4964,7 +3863,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "SchoolYear_SchoolYear"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "Student_DocumentId"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "Student_StudentUniqueId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "TermDescriptor_DescriptorId"),
+                PostAsUpdateIntegrationTestSupport.GetInt32(rows[0], "TermDescriptor_DescriptorId"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(rows[0], "CumulativeEarnedCredits"),
                 PostAsUpdateIntegrationTestSupport.GetString(rows[0], "ProjectedGraduationDate")
             )
@@ -5020,10 +3919,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "AcademicHonorCategoryDescriptor_DescriptorId"
-                ),
+                (int)row["AcademicHonorCategoryDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "HonorDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
@@ -5054,7 +3950,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "DiplomaTypeDescriptor_DescriptorId"),
+                (int)row["DiplomaTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaAwardDate"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "DiplomaDescription")
             ))
@@ -5086,10 +3982,7 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(
-                    row,
-                    "GradePointAverageTypeDescriptor_DescriptorId"
-                ),
+                (int)row["GradePointAverageTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "GradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetDecimal(row, "MaxGradePointAverageValue"),
                 PostAsUpdateIntegrationTestSupport.GetBoolean(row, "IsCumulative")
@@ -5121,38 +4014,11 @@ public class Given_A_Postgresql_Relational_Post_As_Update_With_The_Authoritative
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 PostAsUpdateIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 PostAsUpdateIntegrationTestSupport.GetInt64(row, "StudentAcademicRecord_DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(row, "RecognitionTypeDescriptor_DescriptorId"),
+                (int)row["RecognitionTypeDescriptor_DescriptorId"]!,
                 PostAsUpdateIntegrationTestSupport.GetString(row, "RecognitionDescription"),
                 PostAsUpdateIntegrationTestSupport.GetString(row, "IssuerName")
             ))
             .ToArray();
-    }
-
-    private async Task<ReferentialIdentityRow> ReadReferentialIdentityRowAsync(
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        var rows = await _database.QueryRowsAsync(
-            """
-            SELECT "ReferentialId", "DocumentId", "ResourceKeyId"
-            FROM "dms"."ReferentialIdentity"
-            WHERE "DocumentId" = @documentId
-              AND "ResourceKeyId" = @resourceKeyId;
-            """,
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return rows.Count == 1
-            ? new ReferentialIdentityRow(
-                PostAsUpdateIntegrationTestSupport.GetGuid(rows[0], "ReferentialId"),
-                PostAsUpdateIntegrationTestSupport.GetInt64(rows[0], "DocumentId"),
-                PostAsUpdateIntegrationTestSupport.GetInt16(rows[0], "ResourceKeyId")
-            )
-            : throw new InvalidOperationException(
-                $"Expected exactly one referential identity row for document id '{documentId}' and resource key '{resourceKeyId}', but found {rows.Count}."
-            );
     }
 
     private async Task<long> ReadDocumentCountAsync(short resourceKeyId)

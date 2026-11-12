@@ -15,6 +15,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Authorization;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FakeItEasy;
 using FluentAssertions;
@@ -23,6 +24,7 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -37,6 +39,7 @@ public class VendorModuleTests
     private readonly RecordingLockManager _lockManager = new();
     private readonly HttpContext _httpContext = A.Fake<HttpContext>();
     private readonly WebApplicationFactoryTracker<Program> _factoryTracker = new();
+    private RecordingLogger<VendorModule> _vendorLogger = new();
 
     protected VendorModuleTests()
     {
@@ -55,6 +58,10 @@ public class VendorModuleTests
 
     private HttpClient SetUpClient()
     {
+        // A fresh recorder per request, so a fixture reads only what its own request logged.
+        RecordingLogger<VendorModule> vendorLogger = new();
+        _vendorLogger = vendorLogger;
+
         var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
@@ -85,7 +92,8 @@ public class VendorModuleTests
                         .AddTransient((_) => _applicationRepository)
                         .AddTransient((_) => _apiClientRepository)
                         .AddTransient((_) => _identityProviderRepository)
-                        .AddSingleton<IApplicationLockManager>(_lockManager);
+                        .AddSingleton<IApplicationLockManager>(_lockManager)
+                        .AddSingleton<ILogger<VendorModule>>(vendorLogger);
                 }
             );
         });
@@ -105,7 +113,7 @@ public class VendorModuleTests
             """
             {
               "detail": "Unable to process the request due to a concurrent modification. Retry the request.",
-              "type": "urn:ed-fi:api:conflict",
+              "type": "urn:ed-fi:management-api:conflict",
               "title": "Conflict",
               "status": 409,
               "correlationId": "{correlationId}",
@@ -157,7 +165,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.Success());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
                 .Returns(new VendorDeleteResult.Success());
         }
 
@@ -217,6 +230,161 @@ public class VendorModuleTests
         }
     }
 
+    [TestFixture("POST", "\"\"", "")]
+    [TestFixture("POST", "", "")]
+    [TestFixture("POST", "null", "")]
+    [TestFixture("POST", "\"   \"", "")]
+    [TestFixture("POST", "\" , prefix1, , prefix2 , \"", "prefix1,prefix2")]
+    [TestFixture("PUT", "\"\"", "")]
+    [TestFixture("PUT", "", "")]
+    [TestFixture("PUT", "null", "")]
+    [TestFixture("PUT", "\"   \"", "")]
+    [TestFixture("PUT", "\" , prefix1, , prefix2 , \"", "prefix1,prefix2")]
+    public class Given_namespace_prefixes_in_vendor_requests(
+        string method,
+        string namespacePrefixesJson,
+        string expectedPrefixes
+    ) : VendorModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+        private readonly List<string> _repositoryPrefixes = [];
+        private readonly List<string> _providerPrefixes = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _repositoryPrefixes.Clear();
+            _providerPrefixes.Clear();
+
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Invokes(call =>
+                    _repositoryPrefixes.Add(call.GetArgument<VendorInsertCommand>(0)!.NamespacePrefixes)
+                )
+                .Returns(new VendorInsertResult.Success(1));
+            Guid clientUuid = Guid.NewGuid();
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .Returns(
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Test Company",
+                            "Test Contact",
+                            "test@example.com",
+                            "uri://old.org",
+                            [new VendorApiClient(51, "client-51", clientUuid, 10)]
+                        )
+                    )
+                );
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        clientUuid.ToString(),
+                        A<string>.Ignored
+                    )
+                )
+                .Invokes(call => _providerPrefixes.Add(call.GetArgument<string>(1)!))
+                .Returns(new ClientUpdateResult.Success(clientUuid));
+            A.CallTo(() => _apiClientRepository.SyncApiClientUuid(51, clientUuid, clientUuid))
+                .Returns(new ApiClientUuidSyncResult.AlreadyApplied());
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Invokes(call =>
+                    _repositoryPrefixes.Add(call.GetArgument<VendorUpdateCommand>(0)!.NamespacePrefixes)
+                )
+                .Returns(new VendorUpdateResult.Success());
+
+            JsonObject body = new()
+            {
+                ["id"] = 1,
+                ["company"] = "Test Company",
+                ["contactName"] = "Test Contact",
+                ["contactEmailAddress"] = "test@example.com",
+            };
+            if (namespacePrefixesJson.Length > 0)
+            {
+                body["namespacePrefixes"] = JsonNode.Parse(namespacePrefixesJson);
+            }
+
+            using var client = SetUpClient();
+            using var request = new HttpRequestMessage(
+                new HttpMethod(method),
+                method is "POST" ? "/v3/vendors" : "/v3/vendors/1"
+            )
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
+            };
+            _response = await client.SendAsync(request);
+        }
+
+        [Test]
+        public void It_returns_success() =>
+            _response
+                .StatusCode.Should()
+                .Be(method is "POST" ? HttpStatusCode.Created : HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_passes_canonical_prefixes_to_the_repository() =>
+            _repositoryPrefixes.Should().Equal(expectedPrefixes);
+
+        [Test]
+        public void It_updates_existing_client_claims_only_on_put()
+        {
+            string[] expectedProviderPrefixes = method is "PUT" ? [expectedPrefixes] : [];
+            _providerPrefixes.Should().Equal(expectedProviderPrefixes);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_repeat_vendor_post_without_namespace_prefixes : VendorModuleTests
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            A.CallTo(() => _vendorRepository.InsertVendor(A<VendorInsertCommand>.Ignored))
+                .Returns(new VendorInsertResult.FailureDuplicateCompanyName());
+            using var client = SetUpClient();
+
+            _response = await client.PostAsync(
+                "/v3/vendors",
+                new StringContent(
+                    """
+                    {
+                      "company": "Existing Company",
+                      "contactName": "Replacement Contact",
+                      "contactEmailAddress": "replacement@example.com"
+                    }
+                    """,
+                    Encoding.UTF8,
+                    "application/json"
+                )
+            );
+        }
+
+        [Test]
+        public void It_returns_bad_request() => _response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        [Test]
+        public async Task It_returns_the_company_validation_error() =>
+            await AssertDuplicateCompanyNameBodyAsync(_response);
+
+        [Test]
+        public void It_sets_no_location_header() => _response.Headers.Location.Should().BeNull();
+
+        [Test]
+        public void It_does_not_start_the_vendor_update_workflow()
+        {
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(A<int>.Ignored)).MustNotHaveHappened();
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .MustNotHaveHappened();
+            A.CallTo(() =>
+                    _identityProviderRepository.UpdateClientNamespaceClaimAsync(
+                        A<string>.Ignored,
+                        A<string>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+        }
+    }
+
     /// <summary>
     /// The complete 400 body a duplicate company name answers, on both create and rename.
     /// </summary>
@@ -227,7 +395,7 @@ public class VendorModuleTests
             """
             {
               "detail": "Data validation failed. See 'validationErrors' for details.",
-              "type": "urn:ed-fi:api:bad-request:data",
+              "type": "urn:ed-fi:management-api:bad-request:data",
               "title": "Data Validation Failed",
               "status": 400,
               "correlationId": "{correlationId}",
@@ -300,7 +468,7 @@ public class VendorModuleTests
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactEmailAddress": "INVALID",
-                  "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                  "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345"
                 }
                 """;
 
@@ -310,7 +478,7 @@ public class VendorModuleTests
                   "company": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactName": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
                   "contactEmailAddress": "INVALID",
-                  "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789"
+                  "namespacePrefixes": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345"
                 }
                 """;
 
@@ -331,7 +499,7 @@ public class VendorModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -346,7 +514,7 @@ public class VendorModuleTests
                       "'Contact Email Address' is not a valid email address."
                     ],
                     "NamespacePrefixes": [
-                      "Each NamespacePrefix length must be 128 characters or fewer."
+                      "Each NamespacePrefix length must be 255 characters or fewer."
                     ]
                   },
                   "errors": []
@@ -359,7 +527,7 @@ public class VendorModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -374,7 +542,7 @@ public class VendorModuleTests
                       "'Contact Email Address' is not a valid email address."
                     ],
                     "NamespacePrefixes": [
-                      "Each NamespacePrefix length must be 128 characters or fewer."
+                      "Each NamespacePrefix length must be 255 characters or fewer."
                     ]
                   },
                   "errors": []
@@ -461,7 +629,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureNotExists());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
                 .Returns(new VendorDeleteResult.FailureNotExists());
         }
 
@@ -548,7 +721,12 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult.FailureUnknown(""));
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored))
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
                 .Returns(new VendorDeleteResult.FailureUnknown(""));
         }
 
@@ -620,7 +798,13 @@ public class VendorModuleTests
             A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
                 .Returns(new VendorUpdateResult());
 
-            A.CallTo(() => _vendorRepository.DeleteVendor(A<int>.Ignored)).Returns(new VendorDeleteResult());
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
+                .Returns(new VendorDeleteResult());
         }
 
         [Test]
@@ -967,7 +1151,7 @@ public class VendorModuleTests
             // Asserting the type keeps an out-of-range id from regressing to a bodiless framework 400
             // or to the generic bad-request classification.
             var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:parameter");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
             body["status"]!.GetValue<int>().Should().Be(400);
         }
     }
@@ -2508,6 +2692,185 @@ public class VendorModuleTests
                 .MustNotHaveHappened();
     }
 
+    /// <summary>
+    /// The provider reports, for the second client, a UUID another ApiClient row already holds.
+    /// That provider client belongs to the other row, so nothing may restore, delete or
+    /// re-synchronize it, while the client this request changed before it is still compensated.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_forward_sync_whose_reported_uuid_another_client_holds : VendorLockTestBase
+    {
+        private Guid _conflictingUuid;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            // The fixture instance, and so its fakes, outlives each test, so the sync count below
+            // must cover only this test's request.
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNewUuidInUse());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+            _conflictingUuid = UpdateCalls[1].ReportedUuid;
+        }
+
+        [Test]
+        public void It_returns_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_stops_before_the_remaining_client() =>
+            UpdateCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(_clients[0].ClientUuid.ToString(), _clients[1].ClientUuid.ToString());
+
+        [Test]
+        public void It_restores_only_the_client_it_changed_before_the_conflict() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(UpdateCalls[0].ReportedUuid.ToString());
+
+        [Test]
+        public void It_never_targets_the_conflicting_client_at_the_provider() =>
+            _providerCalls.Should().NotContain(call => call.TargetedUuid == _conflictingUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_the_conflicting_client_again() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(_clients[1].Id, A<Guid>.Ignored, A<Guid>.Ignored)
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_persists_the_compensation_of_the_earlier_client() =>
+            _syncCalls
+                .Should()
+                .Equal(
+                    new SyncCall(_clients[0].Id, _clients[0].ClientUuid, UpdateCalls[0].ReportedUuid),
+                    new SyncCall(_clients[0].Id, UpdateCalls[0].ReportedUuid, RollbackCalls[0].ReportedUuid)
+                );
+
+        [Test]
+        public void It_logs_the_conflicting_uuid_and_client() =>
+            _vendorLogger
+                .Entries.Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message
+                        == $"The reported client UUID {_conflictingUuid} for ApiClient {_clients[1].Id} of Vendor 1 is already held by another API client; stored client state is inconsistent; it was neither restored nor deleted"
+                );
+
+        [Test]
+        public void It_compensates_before_releasing_the_locks() => AssertCompensationRanUnderTheLocks();
+
+        [Test]
+        public void It_releases_the_lock_set() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The rename is rejected, so every changed client is restored, newest first. The rollback of
+    /// the middle client reports a UUID another ApiClient row already holds: that provider client
+    /// belongs to the other row, so it is neither deleted nor synchronized again, and the
+    /// restoration of the remaining client still runs.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_rollback_sync_whose_reported_uuid_another_client_holds : VendorLockTestBase
+    {
+        private Guid _conflictingUuid;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _rotateClientUuids = true;
+            Fake.ClearRecordedCalls(_apiClientRepository);
+            A.CallTo(() => _vendorRepository.UpdateVendor(A<VendorUpdateCommand>.Ignored))
+                .Returns(new VendorUpdateResult.FailureDuplicateCompanyName());
+            // Only the rollback's sync is scripted: the forward sync is guarded by the UUID the
+            // snapshot resolved, the rollback's by the rotated one the forward pass persisted.
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(
+                        _clients[1].Id,
+                        A<Guid>.That.Not.IsEqualTo(_clients[1].ClientUuid),
+                        A<Guid>.Ignored
+                    )
+                )
+                .Returns(new ApiClientUuidSyncResult.FailureNewUuidInUse());
+
+            using var client = SetUpClient();
+            await ActUpdateAsync(client);
+            _conflictingUuid = RollbackCalls[1].ReportedUuid;
+        }
+
+        [Test]
+        public void It_replaces_the_rejection_with_a_sanitized_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public void It_continues_restoring_every_client_it_changed() =>
+            RollbackCalls
+                .Select(call => call.TargetedUuid)
+                .Should()
+                .Equal(Enumerable.Reverse(UpdateCalls).Select(call => call.ReportedUuid.ToString()));
+
+        [Test]
+        public void It_never_targets_the_conflicting_client_at_the_provider() =>
+            _providerCalls.Should().NotContain(call => call.TargetedUuid == _conflictingUuid.ToString());
+
+        [Test]
+        public void It_deletes_nothing() => _deletedClientUuids.Should().BeEmpty();
+
+        [Test]
+        public void It_does_not_synchronize_the_conflicting_client_again() =>
+            A.CallTo(() =>
+                    _apiClientRepository.SyncApiClientUuid(
+                        _clients[1].Id,
+                        A<Guid>.That.Not.IsEqualTo(_clients[1].ClientUuid),
+                        A<Guid>.Ignored
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_persists_the_restorations_of_the_other_clients() =>
+            _syncCalls
+                .Should()
+                .Equal(
+                    new SyncCall(_clients[0].Id, _clients[0].ClientUuid, UpdateCalls[0].ReportedUuid),
+                    new SyncCall(_clients[1].Id, _clients[1].ClientUuid, UpdateCalls[1].ReportedUuid),
+                    new SyncCall(_clients[2].Id, _clients[2].ClientUuid, UpdateCalls[2].ReportedUuid),
+                    new SyncCall(_clients[2].Id, UpdateCalls[2].ReportedUuid, RollbackCalls[0].ReportedUuid),
+                    new SyncCall(_clients[0].Id, UpdateCalls[0].ReportedUuid, RollbackCalls[2].ReportedUuid)
+                );
+
+        [Test]
+        public void It_logs_the_conflicting_rollback_uuid_and_client() =>
+            _vendorLogger
+                .Entries.Should()
+                .ContainSingle(entry =>
+                    entry.Level == LogLevel.Error
+                    && entry.Message
+                        == $"The rollback client UUID {_conflictingUuid} for ApiClient {_clients[1].Id} of Vendor 1 is already held by another API client; stored client state is inconsistent; nothing was deleted"
+                );
+
+        [Test]
+        public void It_compensates_before_releasing_the_locks() => AssertCompensationRanUnderTheLocks();
+
+        [Test]
+        public void It_releases_the_lock_set() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
     [TestFixture]
     public class Given_an_unrecognized_provider_result : VendorNamespaceUpdateTestBase
     {
@@ -3347,5 +3710,355 @@ public class VendorModuleTests
 
         [Test]
         public void It_does_not_compensate() => CompensationCalls.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Vendor deletion with clients in two applications. The provider fake behaves like a real
+    /// provider: a client it has deleted answers not found afterwards. Provider deletions and the
+    /// vendor delete are recorded in one ordered event list, which each lock handle also samples
+    /// when it is released.
+    /// </summary>
+    public abstract class VendorDeleteTestBase : VendorModuleTests
+    {
+        protected const int LowerApplicationId = 10;
+        protected const int HigherApplicationId = 30;
+
+        protected VendorApiClient[] _clients = null!;
+        protected readonly List<string> _events = [];
+        protected readonly HashSet<string> _deletedProviderClients = [];
+        protected readonly List<ClientDeleteResult> _providerResults = [];
+
+        /// <summary>
+        /// The provider client whose deletion fails, and how; null when every deletion succeeds.
+        /// </summary>
+        protected string? _failingProviderClient;
+        protected Func<ClientDeleteResult>? _providerFailure;
+
+        [SetUp]
+        public void SetUpVendorDelete()
+        {
+            _lockManager.Reset();
+            _events.Clear();
+            _deletedProviderClients.Clear();
+            _providerResults.Clear();
+            _failingProviderClient = null;
+            _providerFailure = null;
+            Fake.ClearRecordedCalls(_vendorRepository);
+            Fake.ClearRecordedCalls(_identityProviderRepository);
+            _lockManager.ProviderCallCount = () => _events.Count;
+            _clients =
+            [
+                new VendorApiClient(61, "client-61", Guid.NewGuid(), LowerApplicationId),
+                new VendorApiClient(62, "client-62", Guid.NewGuid(), LowerApplicationId),
+                new VendorApiClient(63, "client-63", Guid.NewGuid(), HigherApplicationId),
+            ];
+
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1))
+                .ReturnsLazily(() =>
+                    new VendorUpdateStateResult.Success(
+                        new VendorUpdateState(
+                            "Test Company",
+                            "Test",
+                            "test@test.com",
+                            "Test Prefix",
+                            _clients
+                        )
+                    )
+                );
+            A.CallTo(() => _identityProviderRepository.DeleteClientAsync(A<string>.Ignored))
+                .ReturnsLazily(
+                    (string clientUuid) =>
+                    {
+                        _events.Add(ProviderEvent(clientUuid));
+                        ClientDeleteResult result;
+                        if (clientUuid == _failingProviderClient && _providerFailure is not null)
+                        {
+                            result = _providerFailure();
+                        }
+                        else if (_deletedProviderClients.Add(clientUuid))
+                        {
+                            result = new ClientDeleteResult.Success();
+                        }
+                        else
+                        {
+                            result = new ClientDeleteResult.FailureClientNotFound("already deleted");
+                        }
+                        _providerResults.Add(result);
+                        return result;
+                    }
+                );
+            A.CallTo(() => _vendorRepository.DeleteVendor(1, A<IReadOnlyCollection<VendorApiClient>>.Ignored))
+                .ReturnsLazily(() =>
+                {
+                    _events.Add("vendor");
+                    return new VendorDeleteResult.Success();
+                });
+        }
+
+        protected static string ProviderEvent(string clientUuid) => $"provider:{clientUuid}";
+
+        protected static string ProviderEvent(VendorApiClient client) =>
+            ProviderEvent(client.ClientUuid.ToString());
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_whose_clients_span_two_applications_is_deleted : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            using var client = SetUpClient();
+            _response = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_returns_no_content() => _response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_deletes_every_provider_client_before_the_vendor() =>
+            _events.Should().Equal(_clients.Select(ProviderEvent).Append("vendor"));
+
+        [Test]
+        public void It_guards_the_cascade_with_exactly_the_clients_it_deleted() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        1,
+                        A<IReadOnlyCollection<VendorApiClient>>.That.IsSameSequenceAs(_clients)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_reads_the_clients_under_one_lock_set_over_their_applications()
+        {
+            _lockManager.Handles.Should().HaveCount(1);
+            _lockManager.AcquiredApplicationIds.Should().Equal(LowerApplicationId, HigherApplicationId);
+            A.CallTo(() => _vendorRepository.GetVendorUpdateState(1)).MustHaveHappenedTwiceExactly();
+        }
+
+        [Test]
+        public void It_releases_the_locks_after_the_vendor_is_deleted()
+        {
+            RecordingLockHandle handle = _lockManager.Handles.Should().ContainSingle().Subject;
+            handle.Disposed.Should().BeTrue();
+            handle.ProviderCallsWhenReleased.Should().Be(_clients.Length + 1);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_delete_whose_provider_deletion_fails : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failingProviderClient = _clients[1].ClientUuid.ToString();
+            _providerFailure = () =>
+                new ClientDeleteResult.FailureIdentityProvider(
+                    new IdentityProviderError.Unreachable("the provider is down")
+                );
+
+            using var client = SetUpClient();
+            _response = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_returns_bad_gateway() => _response.StatusCode.Should().Be(HttpStatusCode.BadGateway);
+
+        [Test]
+        public void It_stops_at_the_failed_client() =>
+            _events.Should().Equal(ProviderEvent(_clients[0]), ProviderEvent(_clients[1]));
+
+        [Test]
+        public void It_does_not_delete_the_vendor() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_releases_the_locks() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_a_vendor_delete_whose_provider_deletion_throws : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _response = null!;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failingProviderClient = _clients[0].ClientUuid.ToString();
+            _providerFailure = () => throw new InvalidOperationException("the provider connection dropped");
+
+            using var client = SetUpClient();
+            _response = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_returns_a_server_error() =>
+            _response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+
+        [Test]
+        public async Task It_does_not_leak_the_thrown_message() =>
+            (await _response.Content.ReadAsStringAsync())
+                .Should()
+                .NotContain("the provider connection dropped");
+
+        [Test]
+        public void It_does_not_delete_the_vendor() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        A<int>.Ignored,
+                        A<IReadOnlyCollection<VendorApiClient>>.Ignored
+                    )
+                )
+                .MustNotHaveHappened();
+
+        [Test]
+        public void It_releases_the_locks() =>
+            _lockManager.Handles.Should().ContainSingle().Which.Disposed.Should().BeTrue();
+    }
+
+    /// <summary>
+    /// The first attempt deletes the first provider client and then fails on the second, so the
+    /// vendor and all of its ApiClient rows survive as the retry's work list. The retry meets the
+    /// already deleted provider client as not found and completes the deletion.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_vendor_delete_retried_after_a_partial_provider_cleanup : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _firstResponse = null!;
+        private HttpResponseMessage _retryResponse = null!;
+        private int _firstAttemptProviderCalls;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _failingProviderClient = _clients[1].ClientUuid.ToString();
+            _providerFailure = () =>
+                new ClientDeleteResult.FailureUnknown("the provider rejected the delete");
+
+            using var client = SetUpClient();
+            _firstResponse = await client.DeleteAsync("/v3/vendors/1");
+            _firstAttemptProviderCalls = _providerResults.Count;
+
+            _providerFailure = null;
+            _retryResponse = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public void It_fails_the_first_attempt_without_deleting_the_vendor()
+        {
+            _firstResponse.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            _events.Take(_firstAttemptProviderCalls).Should().NotContain("vendor");
+        }
+
+        [Test]
+        public void It_completes_the_retry() =>
+            _retryResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_treats_the_client_the_first_attempt_deleted_as_already_absent() =>
+            _providerResults
+                .Skip(_firstAttemptProviderCalls)
+                .Should()
+                .Equal(
+                    new ClientDeleteResult.FailureClientNotFound("already deleted"),
+                    new ClientDeleteResult.Success(),
+                    new ClientDeleteResult.Success()
+                );
+
+        [Test]
+        public void It_deletes_every_provider_client_before_the_vendor_on_the_retry() =>
+            _events
+                .Skip(_firstAttemptProviderCalls)
+                .Should()
+                .Equal(_clients.Select(ProviderEvent).Append("vendor"));
+
+        [Test]
+        public void It_deletes_the_vendor_once() =>
+            A.CallTo(() => _vendorRepository.DeleteVendor(1, A<IReadOnlyCollection<VendorApiClient>>.Ignored))
+                .MustHaveHappenedOnceExactly();
+
+        [Test]
+        public void It_releases_the_locks_of_both_attempts() =>
+            _lockManager.Handles.Should().HaveCount(2).And.OnlyContain(handle => handle.Disposed);
+    }
+
+    /// <summary>
+    /// A client appears under the vendor after the first attempt read its clients, so the guarded
+    /// cascade refuses: the first attempt answers the retriable conflict and deletes nothing. The
+    /// retry reads the new client, deletes it from the provider with the others, and completes.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_vendor_delete_whose_cascade_finds_a_client_it_did_not_clean : VendorDeleteTestBase
+    {
+        private HttpResponseMessage _firstResponse = null!;
+        private HttpResponseMessage _retryResponse = null!;
+        private VendorApiClient _newClient = null!;
+        private int _firstAttemptEvents;
+
+        [SetUp]
+        public async Task Act()
+        {
+            _newClient = new VendorApiClient(64, "client-64", Guid.NewGuid(), HigherApplicationId);
+            int deleteAttempts = 0;
+            A.CallTo(() => _vendorRepository.DeleteVendor(1, A<IReadOnlyCollection<VendorApiClient>>.Ignored))
+                .ReturnsLazily(() =>
+                {
+                    if (++deleteAttempts == 1)
+                    {
+                        // The client committed between the first attempt's read and its cascade.
+                        _clients = [.. _clients, _newClient];
+                        return new VendorDeleteResult.FailureClientsChanged();
+                    }
+
+                    _events.Add("vendor");
+                    return new VendorDeleteResult.Success();
+                });
+
+            using var client = SetUpClient();
+            _firstResponse = await client.DeleteAsync("/v3/vendors/1");
+            _firstAttemptEvents = _events.Count;
+            _retryResponse = await client.DeleteAsync("/v3/vendors/1");
+        }
+
+        [Test]
+        public async Task It_answers_the_first_attempt_with_the_retriable_conflict() =>
+            await AssertLockConflictContract(_firstResponse);
+
+        [Test]
+        public void It_deletes_nothing_on_the_first_attempt() =>
+            _events.Take(_firstAttemptEvents).Should().NotContain("vendor");
+
+        [Test]
+        public void It_releases_the_first_attempts_locks_before_the_retry() =>
+            _lockManager.Handles[0].ProviderCallsWhenReleased.Should().Be(_firstAttemptEvents);
+
+        [Test]
+        public void It_completes_the_retry() =>
+            _retryResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+
+        [Test]
+        public void It_deletes_the_new_client_from_the_provider_before_the_vendor_on_the_retry() =>
+            _events.Skip(_firstAttemptEvents).Should().Equal(_clients.Select(ProviderEvent).Append("vendor"));
+
+        [Test]
+        public void It_guards_the_retry_cascade_with_the_new_client_included() =>
+            A.CallTo(() =>
+                    _vendorRepository.DeleteVendor(
+                        1,
+                        A<IReadOnlyCollection<VendorApiClient>>.That.Contains(_newClient)
+                    )
+                )
+                .MustHaveHappenedOnceExactly();
     }
 }

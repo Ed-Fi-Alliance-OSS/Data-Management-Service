@@ -9,7 +9,6 @@ using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Security;
-using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using FluentAssertions;
@@ -26,6 +25,7 @@ internal static class PostActionAuthorizationScenario
     public const string AuthorizedPrefix = "uri://ns1.org/";
     private const string UnauthorizedNamespace = "uri://other.example/AcademicSubjectDescriptor";
     private const string AuthorizedNamespace = "uri://ns1.org/AcademicSubjectDescriptor";
+    private const string CaseVariantAuthorizedNamespace = "URI://NS1.ORG/AcademicSubjectDescriptor";
     private const string NullableResourcesEndpoint = "/data/authz/authorizationNullableResources";
     private const string AcademicSubjectDescriptorsEndpoint = "/data/ed-fi/academicSubjectDescriptors";
 
@@ -38,7 +38,7 @@ internal static class PostActionAuthorizationScenario
     public static IReadOnlyList<string> ConfiguredPrefixes { get; } = [AuthorizedPrefix];
 
     public static IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
-        new SwitchablePostActionGrants(fixture);
+        new SwitchablePostActionGrants(fixture, IsWrittenResource);
 
     public static async Task It_creates_but_refuses_every_update_for_a_create_only_client(
         ApiIntegrationHarness harness
@@ -302,6 +302,88 @@ internal static class PostActionAuthorizationScenario
             .Be("Changed");
     }
 
+    public static async Task It_refuses_a_case_variant_descriptor_repost_with_the_update_denial_for_a_create_only_client(
+        ApiIntegrationHarness harness
+    )
+    {
+        Grants(harness).Set(create: _noFurther, update: null);
+        using HttpResponseMessage created = await PostAsync(
+            harness,
+            AcademicSubjectDescriptorsEndpoint,
+            DescriptorBody(AuthorizedNamespace, "Original")
+        );
+        created.StatusCode.Should().Be(HttpStatusCode.Created, await created.Content.ReadAsStringAsync());
+        var (_, originalEtag) = await GetAsync(harness, GetLocationPath(created));
+
+        // The probe matches the stored descriptor case-insensitively on both engines, so the re-POST selects the
+        // update branch: the create-only client gets the Update denial, never a second descriptor or a conflict.
+        using HttpResponseMessage casing = await PostAsync(
+            harness,
+            AcademicSubjectDescriptorsEndpoint,
+            DescriptorBody(CaseVariantAuthorizedNamespace, "Original")
+        );
+        await AssertActionDeniedAsync(casing, "Update", "AcademicSubjectDescriptor");
+
+        var (body, etag) = await GetAsync(harness, GetLocationPath(created));
+        body["namespace"]!.GetValue<string>().Should().Be(AuthorizedNamespace);
+        etag.Should().Be(originalEtag);
+        (await GetManyAsync(harness, AcademicSubjectDescriptorsEndpoint))
+            .Should()
+            .ContainSingle(descriptor => descriptor["codeValue"]!.GetValue<string>() == "PostActionSubject");
+    }
+
+    public static async Task It_updates_through_a_case_variant_descriptor_repost_for_an_update_only_client(
+        ApiIntegrationHarness harness
+    )
+    {
+        Grants(harness).Set(create: _noFurther, update: _noFurther);
+        using HttpResponseMessage seeded = await PostAsync(
+            harness,
+            AcademicSubjectDescriptorsEndpoint,
+            DescriptorBody(AuthorizedNamespace, "Original")
+        );
+        seeded.StatusCode.Should().Be(HttpStatusCode.Created, await seeded.Content.ReadAsStringAsync());
+
+        Grants(harness).Set(create: null, update: _noFurther);
+        using HttpResponseMessage changed = await PostAsync(
+            harness,
+            AcademicSubjectDescriptorsEndpoint,
+            DescriptorBody(CaseVariantAuthorizedNamespace, "Changed")
+        );
+
+        changed.StatusCode.Should().Be(HttpStatusCode.OK, await changed.Content.ReadAsStringAsync());
+        GetLocationPath(changed).Should().Be(GetLocationPath(seeded));
+        var (body, _) = await GetAsync(harness, GetLocationPath(seeded));
+        body["shortDescription"]!.GetValue<string>().Should().Be("Changed");
+        body["namespace"]!.GetValue<string>().Should().Be(AuthorizedNamespace);
+    }
+
+    public static async Task It_applies_the_update_namespace_check_to_the_stored_namespace_of_a_case_variant_descriptor_repost(
+        ApiIntegrationHarness harness
+    )
+    {
+        Grants(harness).Set(create: _noFurther, update: _namespaceBased);
+        using HttpResponseMessage seeded = await PostAsync(
+            harness,
+            AcademicSubjectDescriptorsEndpoint,
+            DescriptorBody(AuthorizedNamespace, "Original")
+        );
+        seeded.StatusCode.Should().Be(HttpStatusCode.Created, await seeded.Content.ReadAsStringAsync());
+
+        // The request's upper-case namespace is outside the prefix on PostgreSQL's case-sensitive check, but the
+        // stored namespace binds before the proposed check runs, and that is the value the update writes.
+        using HttpResponseMessage changed = await PostAsync(
+            harness,
+            AcademicSubjectDescriptorsEndpoint,
+            DescriptorBody(CaseVariantAuthorizedNamespace, "Changed")
+        );
+
+        changed.StatusCode.Should().Be(HttpStatusCode.OK, await changed.Content.ReadAsStringAsync());
+        var (body, _) = await GetAsync(harness, GetLocationPath(seeded));
+        body["shortDescription"]!.GetValue<string>().Should().Be("Changed");
+        body["namespace"]!.GetValue<string>().Should().Be(AuthorizedNamespace);
+    }
+
     public static async Task It_keeps_put_on_the_update_action(ApiIntegrationHarness harness)
     {
         Grants(harness).Set(create: _noFurther, update: _noFurther);
@@ -367,6 +449,16 @@ internal static class PostActionAuthorizationScenario
 
     private static SwitchablePostActionGrants Grants(ApiIntegrationHarness harness) =>
         (SwitchablePostActionGrants)harness.Services.GetRequiredService<IClaimSetProvider>();
+
+    private static bool IsWrittenResource(QualifiedResourceName resource) =>
+        (
+            string.Equals(resource.ProjectName, "Authz", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(resource.ResourceName, "AuthorizationNullableResource", StringComparison.Ordinal)
+        )
+        || (
+            string.Equals(resource.ProjectName, "Ed-Fi", StringComparison.OrdinalIgnoreCase)
+            && string.Equals(resource.ResourceName, "AcademicSubjectDescriptor", StringComparison.Ordinal)
+        );
 
     private static JsonObject NullableBody(string name, string? id = null)
     {
@@ -517,56 +609,5 @@ internal static class PostActionAuthorizationScenario
             .Select(static error => error!.GetValue<string>())
             .Should()
             .Equal(expectedErrors);
-    }
-
-    /// <summary>
-    /// The claim set under test. Read and Delete are always granted, as is every action on resources the
-    /// scenario does not write; Create and Update on the written resources are whatever the test last set,
-    /// where <see langword="null"/> leaves the action ungranted. The middleware reads the claim set on every
-    /// request, so a test can seed with both actions and then narrow them.
-    /// </summary>
-    private sealed class SwitchablePostActionGrants : IClaimSetProvider
-    {
-        private readonly ConfigurableClaimSetProvider _inner;
-        private IReadOnlyList<string>? _create = _noFurther;
-        private IReadOnlyList<string>? _update = _noFurther;
-
-        public SwitchablePostActionGrants(FixtureContext fixture) =>
-            _inner = new ConfigurableClaimSetProvider(fixture, Resolve);
-
-        public void Set(IReadOnlyList<string>? create, IReadOnlyList<string>? update)
-        {
-            _create = create;
-            _update = update;
-        }
-
-        public Task<IList<ClaimSet>> GetAllClaimSets(
-            string? tenant = null,
-            CancellationToken cancellationToken = default
-        ) => _inner.GetAllClaimSets(tenant, cancellationToken);
-
-        private IReadOnlyList<string>? Resolve(QualifiedResourceName resource, string action) =>
-            IsWrittenResource(resource)
-                ? action switch
-                {
-                    "Create" => _create,
-                    "Update" => _update,
-                    _ => _noFurther,
-                }
-                : _noFurther;
-
-        private static bool IsWrittenResource(QualifiedResourceName resource) =>
-            (
-                string.Equals(resource.ProjectName, "Authz", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(
-                    resource.ResourceName,
-                    "AuthorizationNullableResource",
-                    StringComparison.Ordinal
-                )
-            )
-            || (
-                string.Equals(resource.ProjectName, "Ed-Fi", StringComparison.OrdinalIgnoreCase)
-                && string.Equals(resource.ResourceName, "AcademicSubjectDescriptor", StringComparison.Ordinal)
-            );
     }
 }

@@ -29,19 +29,6 @@
   "abstract_union_views": [],
   "indexes": [
     {
-      "name": "IX_Descriptor_Discriminator_ContentVersion",
-      "table": {
-        "schema": "dms",
-        "name": "Descriptor"
-      },
-      "kind": "Explicit",
-      "is_unique": false,
-      "key_columns": [
-        "Discriminator",
-        "ContentVersion"
-      ]
-    },
-    {
       "name": "IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId",
       "table": {
         "schema": "dms",
@@ -166,6 +153,19 @@
         "ParentCollectionItemId",
         "Ordinal"
       ]
+    },
+    {
+      "name": "IX_Descriptor_ResourceKeyId_ChangeVersion",
+      "table": {
+        "schema": "tracked_changes_edfi",
+        "name": "Descriptor"
+      },
+      "kind": "Explicit",
+      "is_unique": false,
+      "key_columns": [
+        "ResourceKeyId",
+        "ChangeVersion"
+      ]
     }
   ],
   "triggers": [
@@ -180,7 +180,7 @@
         "DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "dms",
         "name": "Descriptor"
       },
@@ -190,29 +190,6 @@
           "name": "Descriptor"
         }
       }
-    },
-    {
-      "name": "TR_School_ReferentialIdentity",
-      "table": {
-        "schema": "edfi",
-        "name": "School"
-      },
-      "kind": "ReferentialIdentityMaintenance",
-      "key_columns": [
-        "DocumentId"
-      ],
-      "identity_projection_columns": [
-        "SchoolId"
-      ],
-      "resource_key_id": 2,
-      "project_name": "Ed-Fi",
-      "resource_name": "School",
-      "identity_elements": [
-        {
-          "column": "SchoolId",
-          "identity_json_path": "$.schoolId"
-        }
-      ]
     },
     {
       "name": "TR_School_Stamp",
@@ -227,7 +204,7 @@
       "identity_projection_columns": [
         "SchoolId"
       ],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       },
@@ -249,7 +226,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -265,7 +242,7 @@
         "School_DocumentId"
       ],
       "identity_projection_columns": [],
-      "mirror_stamp_target_table": {
+      "stamp_target_table": {
         "schema": "edfi",
         "name": "School"
       }
@@ -315,12 +292,9 @@
       ],
       "system_columns": [
         {
-          "role": "Discriminator",
-          "column": "Discriminator",
-          "scalar_type": {
-            "kind": "String",
-            "max_length": 128
-          },
+          "role": "ResourceKeyId",
+          "column": "ResourceKeyId",
+          "scalar_type": null,
           "is_nullable": false,
           "is_primary_key": false
         },
@@ -437,6 +411,133 @@
       },
       "physical_schema": "edfi",
       "storage_kind": "SharedDescriptorTable",
+      "shared_descriptor_table": {
+        "schema": "dms",
+        "name": "Descriptor",
+        "scope": "$",
+        "key_columns": [
+          {
+            "name": "DescriptorId",
+            "kind": "ParentKeyPart"
+          }
+        ],
+        "columns": [
+          {
+            "name": "DescriptorId",
+            "kind": "ParentKeyPart",
+            "type": {
+              "kind": "Int32"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "DocumentId",
+            "kind": "DocumentFk",
+            "type": {
+              "kind": "Int64"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "ResourceKeyId",
+            "kind": "Scalar",
+            "type": {
+              "kind": "Int16"
+            },
+            "is_nullable": false,
+            "source_path": null,
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "CodeValue",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 50
+            },
+            "is_nullable": false,
+            "source_path": "$.codeValue",
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "Namespace",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 255
+            },
+            "is_nullable": false,
+            "source_path": "$.namespace",
+            "storage": {
+              "kind": "Stored"
+            }
+          },
+          {
+            "name": "ShortDescription",
+            "kind": "Scalar",
+            "type": {
+              "kind": "String",
+              "max_length": 75
+            },
+            "is_nullable": false,
+            "source_path": "$.shortDescription",
+            "storage": {
+              "kind": "Stored"
+            }
+          }
+        ],
+        "key_unification_classes": [],
+        "identity_metadata": {
+          "table_kind": "Root",
+          "physical_row_identity_columns": [
+            "DescriptorId"
+          ],
+          "root_scope_locator_columns": [
+            "DocumentId"
+          ],
+          "immediate_parent_scope_locator_columns": [],
+          "semantic_identity_bindings": []
+        },
+        "constraints": [
+          {
+            "kind": "Unique",
+            "name": "UX_Descriptor_DocumentId",
+            "columns": [
+              "DocumentId"
+            ]
+          },
+          {
+            "kind": "ForeignKey",
+            "name": "FK_Descriptor_DocumentResourceKey",
+            "columns": [
+              "DocumentId",
+              "ResourceKeyId"
+            ],
+            "target_table": {
+              "schema": "dms",
+              "name": "Document"
+            },
+            "target_columns": [
+              "DocumentId",
+              "ResourceKeyId"
+            ],
+            "on_delete": "Restrict",
+            "on_update": "NoAction"
+          }
+        ]
+      },
       "tables": [],
       "key_unification_equality_constraints": {
         "applied": [],
@@ -481,8 +582,20 @@
               }
             },
             {
+              "name": "ContentCreatedAt",
+              "kind": "AuthoritativeContentCreatedAt",
+              "type": {
+                "kind": "DateTime"
+              },
+              "is_nullable": false,
+              "source_path": null,
+              "storage": {
+                "kind": "Stored"
+              }
+            },
+            {
               "name": "ContentLastModifiedAt",
-              "kind": "MirroredContentLastModifiedAt",
+              "kind": "AuthoritativeContentLastModifiedAt",
               "type": {
                 "kind": "DateTime"
               },
@@ -551,7 +664,7 @@
               "target_columns": [
                 "DocumentId"
               ],
-              "on_delete": "Cascade",
+              "on_delete": "Restrict",
               "on_update": "NoAction"
             }
           ]

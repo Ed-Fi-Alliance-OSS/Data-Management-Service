@@ -1,0 +1,221 @@
+# Namespace-based authorization with two vendors that own different namespace prefixes.
+#
+# - Descriptors are readable by everyone; creating or changing one requires its `namespace` to
+#   start with one of the vendor's namespace prefixes.
+# - Assessments are namespace-based for reads AND writes: a vendor sees only assessments in its
+#   own namespace (others come back as an empty array) and is denied (403) writing outside it.
+# - Any vendor may *reference* another vendor's descriptor in its own records.
+#
+# Credentials: the single-tenant review-variant applications (add-review-variants.ps1 output):
+#   Vendor One = AssessmentVendor District  - 255901, namespace uri://one.example.com
+#   Vendor Two = EdFiSandbox District       - 255901, namespace uri://ed-fi.org
+# The same walkthrough works on /mt-dms/{tenant}/{schoolYear} with that tenant's variant keys.
+# Re-running: creates return 201 the first time and 200 (upsert) after that.
+#
+# Assessment bodies carry both the Data Standard 5.2 `academicSubjects` array and the 6.1
+# `academicSubjectDescriptor` field; DMS drops whichever one the deployed standard does not define.
+
+@base = https://your-label.eastus.cloudapp.azure.com
+@realm = edfi
+@dms = {{base}}/st-dms
+
+# The raw `Basic key:secret` form below is base64-encoded automatically by VS Code REST Client.
+# Pre-encode it instead (`Authorization: Basic <base64(key:secret)>`) if a secret contains
+# characters REST Client treats as variables ({{ }}) or your client does not auto-encode the raw form.
+@oneKey = REPLACE_WITH_ASSESSMENTVENDOR_DISTRICT_KEY
+@oneSecret = REPLACE_WITH_ASSESSMENTVENDOR_DISTRICT_SECRET
+@twoKey = REPLACE_WITH_EDFISANDBOX_DISTRICT_KEY
+@twoSecret = REPLACE_WITH_EDFISANDBOX_DISTRICT_SECRET
+
+### Get a token for Vendor One
+# @name tokenRequestOne
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{oneKey}}:{{oneSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@tokenOne = {{tokenRequestOne.response.body.access_token}}
+
+### Use the token_info endpoint to review what this token is authorized to do (see namespace_prefixes)
+POST {{dms}}/oauth/token_info
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "token": "{{tokenOne}}"
+}
+
+### Get a token for Vendor Two
+# @name tokenRequestTwo
+POST {{base}}/auth/realms/{{realm}}/protocol/openid-connect/token
+Authorization: Basic {{twoKey}}:{{twoSecret}}
+Content-Type: application/x-www-form-urlencoded
+
+grant_type=client_credentials
+
+###
+@tokenTwo = {{tokenRequestTwo.response.body.access_token}}
+
+#
+# Simple namespace demonstration, with a descriptor
+#
+
+### Use One to get academicSubjectDescriptors for uri://ed-fi.org
+GET {{dms}}/data/ed-fi/academicSubjectDescriptors?namespace=uri://ed-fi.org/AcademicSubjectDescriptor
+Authorization: Bearer {{tokenOne}}
+
+### Use Two to get the same academicSubjectDescriptors
+GET {{dms}}/data/ed-fi/academicSubjectDescriptors?namespace=uri://ed-fi.org/AcademicSubjectDescriptor
+Authorization: Bearer {{tokenTwo}}
+
+# These two return the same data, because everyone can read all descriptors regardless of namespace.
+
+### Now create a new one just for Vendor One. ALLOWED.
+# @name descriptor
+POST {{dms}}/data/ed-fi/academicSubjectDescriptors
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "codeValue": "codeValueOne",
+  "namespace": "uri://one.example.com/AcademicSubjectDescriptor",
+  "shortDescription": "description"
+}
+
+###
+@descriptorUrl = {{descriptor.response.headers.Location}}
+
+### Read it with Vendor One's token
+# @name descriptorRead
+GET {{descriptorUrl}}
+Authorization: Bearer {{tokenOne}}
+
+### Read it with Vendor Two's token. ALLOWED.
+GET {{descriptorUrl}}
+Authorization: Bearer {{tokenTwo}}
+
+### Update it with Vendor One's token. ALLOWED (204).
+PUT {{descriptorUrl}}
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "id": "{{descriptorRead.response.body.id}}",
+  "codeValue": "codeValueOne",
+  "namespace": "uri://one.example.com/AcademicSubjectDescriptor",
+  "shortDescription": "description!!!!"
+}
+
+### Update it with Vendor Two's token. DENIED (403): modifications to descriptors ARE protected by namespace.
+PUT {{descriptorUrl}}
+Authorization: Bearer {{tokenTwo}}
+Content-Type: application/json
+
+{
+  "id": "{{descriptorRead.response.body.id}}",
+  "codeValue": "codeValueOne",
+  "namespace": "uri://one.example.com/AcademicSubjectDescriptor",
+  "shortDescription": "description!!!!"
+}
+
+### Vendor One creates a descriptor in the wrong namespace. DENIED (403).
+POST {{dms}}/data/ed-fi/academicSubjectDescriptors
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "codeValue": "codeValueOne",
+  "namespace": "uri://ed-fi.org/AcademicSubjectDescriptor",
+  "shortDescription": "description"
+}
+
+#
+# Writing Assessment data
+#
+
+### Vendor One creates an assessment in its own namespace, using its custom academic subject. ALLOWED.
+POST {{dms}}/data/ed-fi/assessments
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "assessmentIdentifier": "security-review-assessment-one",
+  "namespace": "uri://one.example.com/Assessment/Assessment.xml",
+  "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+  "assessmentTitle": "Security Review Assessment One",
+  "academicSubjects": [
+    { "academicSubjectDescriptor": "uri://one.example.com/AcademicSubjectDescriptor#codeValueOne" }
+  ],
+  "academicSubjectDescriptor": "uri://one.example.com/AcademicSubjectDescriptor#codeValueOne"
+}
+
+### Vendor One creates an assessment in the uri://ed-fi.org namespace. DENIED (403): outside its prefix.
+POST {{dms}}/data/ed-fi/assessments
+Authorization: Bearer {{tokenOne}}
+Content-Type: application/json
+
+{
+  "assessmentIdentifier": "security-review-assessment-two",
+  "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+  "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+  "assessmentTitle": "Security Review Assessment Two",
+  "academicSubjects": [
+    { "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics" }
+  ],
+  "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics"
+}
+
+### Vendor Two creates that assessment in its own uri://ed-fi.org namespace, referencing Vendor One's
+# descriptor. ALLOWED: the assessment's namespace is checked, not the namespaces of the descriptors it uses.
+POST {{dms}}/data/ed-fi/assessments
+Authorization: Bearer {{tokenTwo}}
+Content-Type: application/json
+
+{
+  "assessmentIdentifier": "security-review-assessment-two",
+  "namespace": "uri://ed-fi.org/Assessment/Assessment.xml",
+  "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+  "assessmentTitle": "Security Review Assessment Two",
+  "academicSubjects": [
+    { "academicSubjectDescriptor": "uri://one.example.com/AcademicSubjectDescriptor#codeValueOne" }
+  ],
+  "academicSubjectDescriptor": "uri://one.example.com/AcademicSubjectDescriptor#codeValueOne"
+}
+
+### Vendor Two tries to write into Vendor One's namespace. DENIED (403).
+POST {{dms}}/data/ed-fi/assessments
+Authorization: Bearer {{tokenTwo}}
+Content-Type: application/json
+
+{
+  "assessmentIdentifier": "security-review-assessment-three",
+  "namespace": "uri://one.example.com/Assessment/Assessment.xml",
+  "assessmentCategoryDescriptor": "uri://ed-fi.org/AssessmentCategoryDescriptor#Benchmark test",
+  "assessmentTitle": "Security Review Assessment Three",
+  "academicSubjects": [
+    { "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics" }
+  ],
+  "academicSubjectDescriptor": "uri://ed-fi.org/AcademicSubjectDescriptor#Mathematics"
+}
+
+#
+# Reading Assessment data
+#
+
+### Read Vendor One's assessment with Vendor One's token. ALLOWED: the record is returned.
+GET {{dms}}/data/ed-fi/assessments?assessmentIdentifier=security-review-assessment-one
+Authorization: Bearer {{tokenOne}}
+
+### Read Vendor One's assessment with Vendor Two's token. Not available: EMPTY array.
+GET {{dms}}/data/ed-fi/assessments?assessmentIdentifier=security-review-assessment-one
+Authorization: Bearer {{tokenTwo}}
+
+### Read Vendor Two's assessment with Vendor One's token. Not available: EMPTY array.
+GET {{dms}}/data/ed-fi/assessments?assessmentIdentifier=security-review-assessment-two
+Authorization: Bearer {{tokenOne}}
+
+### Vendor One has no claim on schools at all. DENIED (403).
+GET {{dms}}/data/ed-fi/schools
+Authorization: Bearer {{tokenOne}}

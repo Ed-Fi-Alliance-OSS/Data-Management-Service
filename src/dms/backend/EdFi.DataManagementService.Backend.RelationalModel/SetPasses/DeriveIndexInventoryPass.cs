@@ -15,6 +15,12 @@ namespace EdFi.DataManagementService.Backend.RelationalModel.SetPasses;
 /// </summary>
 public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
 {
+    private static readonly DbTableName _documentTableName = new(new DbSchemaName("dms"), "Document");
+    private static readonly DbColumnName[] _documentIdKeyColumns =
+    [
+        RelationalNameConventions.DocumentIdColumnName,
+    ];
+
     /// <summary>
     /// Populates <see cref="RelationalModelSetBuilderContext.IndexInventory"/> with PK-implied,
     /// UK-implied, and FK-support indexes for each derived table.
@@ -45,14 +51,12 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
     }
 
     /// <summary>
-    /// Derives the shared <c>dms.Descriptor</c> composite change-version indexes once, when the
+    /// Derives the shared <c>dms.Descriptor</c> composite change-version index once, when the
     /// content-version mirror feature is active and the schema contains any descriptor resource:
-    /// <c>IX_Descriptor_Discriminator_ContentVersion</c> serves tracked-change probes, which qualify by
-    /// <c>Discriminator</c> (tracked-change tables carry no <c>ResourceKeyId</c>), and
     /// <c>IX_Descriptor_ResourceKeyId_ContentVersion_DocumentId</c> serves live change-version-windowed
     /// page selection (<c>ResourceKeyId</c> equality plus ordered <c>ContentVersion</c> range, with
     /// <c>DocumentId</c> included for index-only page/count reads). The columns themselves live on the
-    /// core-owned <c>dms.Descriptor</c> table; these indexes are derived into the inventory and rendered
+    /// core-owned <c>dms.Descriptor</c> table; this index is derived into the inventory and rendered
     /// by the relational DDL emitter against <c>dms.Descriptor</c>.
     /// </summary>
     private static void DeriveDescriptorContentVersionIndex(RelationalModelSetBuilderContext context)
@@ -72,22 +76,6 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         }
 
         var descriptorTable = new DbTableName(new DbSchemaName("dms"), "Descriptor");
-        IReadOnlyList<DbColumnName> keyColumns =
-        [
-            new DbColumnName("Discriminator"),
-            RelationalNameConventions.ContentVersionColumnName,
-        ];
-
-        context.IndexInventory.Add(
-            new DbIndexInfo(
-                new DbIndexName(ConstraintNaming.BuildExplicitIndexName(descriptorTable, keyColumns)),
-                descriptorTable,
-                keyColumns,
-                IsUnique: false,
-                DbIndexKind.Explicit
-            )
-        );
-
         IReadOnlyList<DbColumnName> pageSelectionKeyColumns =
         [
             new DbColumnName("ResourceKeyId"),
@@ -154,9 +142,14 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
             .OrderByDescending(fk => fk.Columns.Count)
             .ThenBy(fk => fk.Name, StringComparer.Ordinal);
 
-        foreach (var columns in orderedFks.Select(fk => fk.Columns))
+        foreach (var foreignKey in orderedFks)
         {
-            if (IsLeftmostPrefixCovered(columns, tableIndexes))
+            var columns = foreignKey.Columns;
+
+            if (
+                IsLeftmostPrefixCovered(columns, tableIndexes)
+                || IsDocumentResourceKeyForeignKeyOnDocumentIdKeyedTable(foreignKey, table)
+            )
             {
                 continue;
             }
@@ -196,6 +189,21 @@ public sealed class DeriveIndexInventoryPass : IRelationalModelSetPass
         }
 
         inventory.AddRange(tableIndexes);
+    }
+
+    /// <summary>
+    /// Returns true for the <c>(DocumentId, ResourceKeyId)</c> foreign key to <c>dms.Document</c> on a table whose
+    /// primary key is exactly <c>(DocumentId)</c>. The PK already makes <c>DocumentId</c> unique, so a helper index
+    /// would only duplicate it. Deliberately narrow: other FKs that merely start with the PK still get one.
+    /// </summary>
+    private static bool IsDocumentResourceKeyForeignKeyOnDocumentIdKeyedTable(
+        TableConstraint.ForeignKey foreignKey,
+        DbTableModel table
+    )
+    {
+        return foreignKey.TargetTable.Equals(_documentTableName)
+            && foreignKey.Columns.SequenceEqual(RelationalNameConventions.DocumentResourceKeyColumns)
+            && table.Key.Columns.Select(column => column.ColumnName).SequenceEqual(_documentIdKeyColumns);
     }
 
     /// <summary>

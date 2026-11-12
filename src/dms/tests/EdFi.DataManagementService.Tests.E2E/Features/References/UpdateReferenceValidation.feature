@@ -47,7 +47,7 @@ Feature: Update Reference Validation
                       "correlationId": null,
                       "validationErrors": {
                           "$.categories[0].educationOrganizationCategoryDescriptor": [
-                              "EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/educationorganizationcategorydescriptor#fake' does not exist."
+                              "EducationOrganizationCategoryDescriptor value 'uri://ed-fi.org/EducationOrganizationCategoryDescriptor#Fake' does not exist."
                           ]
                       },
                       "errors": []
@@ -119,7 +119,7 @@ Feature: Update Reference Validation
                               "The referenced Person item does not exist."
                           ],
                           "$.personReference.sourceSystemDescriptor": [
-                              "SourceSystemDescriptor value 'uri://ed-fi.org/sourcesystemdescriptor#district' does not exist."
+                              "SourceSystemDescriptor value 'uri://ed-fi.org/SourceSystemDescriptor#District' does not exist."
                           ]
                       },
                       "errors": [],

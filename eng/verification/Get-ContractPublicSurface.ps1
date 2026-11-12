@@ -19,11 +19,12 @@
     the compiler placed NullableAttribute and NullableContextAttribute), and the nullable-flow
     attributes from System.Diagnostics.CodeAnalysis (AllowNull, DisallowNull, MaybeNull, NotNull,
     MaybeNullWhen, NotNullWhen, NotNullIfNotNull, DoesNotReturn, DoesNotReturnIf) on the rows the
-    compiler places them on. A type with an abstract private protected member gets one CLOSURE
-    line, because such a member closes the hierarchy to every external deriver; the member's own
-    name and signature are not rendered, since no consumer can see them, and a non-abstract private
-    protected member is not rendered at all. Outside this comparison,
-    deliberately: the nullability of a type's base type and interfaces, MemberNotNull and
+    compiler places them on, and the C# required modifier (RequiredMemberAttribute on a property
+    or field, and SetsRequiredMembersAttribute on a constructor). A type with an abstract private
+    protected member gets one CLOSURE line, because such a member closes the hierarchy to every
+    external deriver; the member's own name and signature are not rendered, since no consumer can
+    see them, and a non-abstract private protected member is not rendered at all. Outside this
+    comparison, deliberately: the nullability of a type's base type and interfaces, MemberNotNull and
     MemberNotNullWhen, and every other attribute, such as [Obsolete]; so it is not a claim that
     every externally observable change is caught.
 

@@ -18,7 +18,8 @@ public class Given_DescriptorReadRowReader
 
         await using var reader = CreateReader(
             RelationalAccessTestData.CreateRow(
-                ("DocumentId", 101L),
+                ("DescriptorId", 42),
+                ("DocumentId", 5000000042L),
                 ("DocumentUuid", documentUuid),
                 ("ContentVersion", 777L),
                 ("ContentLastModifiedAt", new DateTime(2026, 5, 5, 14, 30, 45, DateTimeKind.Unspecified)),
@@ -28,8 +29,7 @@ public class Given_DescriptorReadRowReader
                 ("ShortDescription", "Alternative"),
                 ("Description", "Alternative school type"),
                 ("EffectiveBeginDate", new DateTime(2025, 1, 15, 0, 0, 0, DateTimeKind.Unspecified)),
-                ("EffectiveEndDate", new DateOnly(2025, 12, 31)),
-                ("Discriminator", "SchoolTypeDescriptor")
+                ("EffectiveEndDate", new DateOnly(2025, 12, 31))
             )
         );
 
@@ -39,7 +39,7 @@ public class Given_DescriptorReadRowReader
             .Should()
             .Be(
                 new DescriptorReadRow(
-                    DocumentId: 101L,
+                    DocumentId: 5000000042L,
                     DocumentUuid: documentUuid,
                     ContentVersion: 777L,
                     ContentLastModifiedAt: new DateTimeOffset(2026, 5, 5, 14, 30, 45, TimeSpan.Zero),
@@ -49,14 +49,13 @@ public class Given_DescriptorReadRowReader
                     ShortDescription: "Alternative",
                     Description: "Alternative school type",
                     EffectiveBeginDate: new DateOnly(2025, 1, 15),
-                    EffectiveEndDate: new DateOnly(2025, 12, 31),
-                    Discriminator: "SchoolTypeDescriptor"
+                    EffectiveEndDate: new DateOnly(2025, 12, 31)
                 )
             );
     }
 
     [Test]
-    public async Task It_preserves_null_optional_descriptor_fields_and_absent_discriminator()
+    public async Task It_preserves_null_optional_descriptor_fields()
     {
         var documentUuid = Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc");
 
@@ -82,7 +81,32 @@ public class Given_DescriptorReadRowReader
         result!.Description.Should().BeNull();
         result.EffectiveBeginDate.Should().BeNull();
         result.EffectiveEndDate.Should().BeNull();
-        result.Discriminator.Should().BeNull();
+    }
+
+    [Test]
+    public async Task It_rejects_a_missing_descriptor_timestamp_as_an_owner_invariant()
+    {
+        await using var reader = CreateReader(
+            RelationalAccessTestData.CreateRow(
+                ("DescriptorId", 42),
+                ("DocumentId", 5000000042L),
+                ("DocumentUuid", Guid.Parse("aaaaaaaa-1111-2222-3333-cccccccccccc")),
+                ("ContentVersion", 202L),
+                ("ContentLastModifiedAt", null),
+                ("ResourceKeyId", (short)13),
+                ("Namespace", null),
+                ("CodeValue", null),
+                ("ShortDescription", null)
+            )
+        );
+
+        var act = async () => await DescriptorReadRowReader.ReadSingleOrDefaultAsync(reader);
+
+        var exception = await act.Should().ThrowAsync<DescriptorReadInvariantException>();
+        exception
+            .Which.Message.Should()
+            .Contain("dms.Descriptor.ContentLastModifiedAt must not be null.")
+            .And.Contain("DocumentId 5000000042");
     }
 
     [TestCase("CodeValue")]
@@ -180,12 +204,11 @@ public class Given_DescriptorReadRowReader
                 ("ShortDescription", "Second"),
                 ("Description", "Second item"),
                 ("EffectiveBeginDate", new DateOnly(2025, 2, 1)),
-                ("EffectiveEndDate", null),
-                ("Discriminator", "SchoolTypeDescriptor")
+                ("EffectiveEndDate", null)
             )
         );
 
-        var result = await DescriptorReadRowReader.ReadAllAsync(reader, carriesSelectedAnchor: false);
+        var result = await DescriptorReadRowReader.ReadAllAsync(reader);
 
         result.Select(row => row.DocumentId).Should().Equal(401L, 402L);
         result.Select(row => row.CodeValue).Should().Equal("First", "Second");
@@ -228,112 +251,6 @@ public class Given_DescriptorReadRowReader
         await act.Should()
             .ThrowAsync<InvalidOperationException>()
             .WithMessage("Descriptor single-row read returned multiple rows.");
-    }
-
-    /// <summary>
-    /// A page told it carries the anchor reads it from the aliased column the page-rows statement
-    /// projects it under, rather than from the row's own <c>dms.Document</c> ContentVersion.
-    /// </summary>
-    [Test]
-    public async Task It_reads_the_selected_anchor_when_the_statement_carries_it()
-    {
-        await using var reader = CreateReader(
-            AnchoredRow(documentId: 601L, contentVersion: 900L, selectedAnchor: 610L),
-            AnchoredRow(documentId: 602L, contentVersion: 901L, selectedAnchor: 620L)
-        );
-
-        var result = await DescriptorReadRowReader.ReadAllAsync(reader, carriesSelectedAnchor: true);
-
-        result.Select(row => row.SelectedAnchor).Should().Equal(610L, 620L);
-        result
-            .Select(row => row.ContentVersion)
-            .Should()
-            .Equal([900L, 901L], "the document's own ContentVersion is a different column");
-    }
-
-    /// <summary>
-    /// The unwindowed page is the common case, and it must not go looking for a column its statement
-    /// never projected — on a real provider that lookup is reported by throwing, once per row.
-    /// </summary>
-    [Test]
-    public async Task It_does_not_look_for_the_selected_anchor_when_the_statement_carries_none()
-    {
-        await using var inner = CreateReader(
-            AnchoredRow(documentId: 701L, contentVersion: 900L, selectedAnchor: null),
-            AnchoredRow(documentId: 702L, contentVersion: 901L, selectedAnchor: null)
-        );
-        var reader = new AnchorLookupCountingReader(inner);
-
-        var result = await DescriptorReadRowReader.ReadAllAsync(reader, carriesSelectedAnchor: false);
-
-        result.Select(row => row.SelectedAnchor).Should().Equal(default(long?), default(long?));
-        reader
-            .AnchorLookups.Should()
-            .Be(0, "a page carrying no anchor must not pay a lookup per row to discover that");
-    }
-
-    /// <summary>
-    /// Counts how often the reader is asked for the anchor column. A real provider reports an absent
-    /// name by throwing, so a per-row probe on a page that carries no anchor is a thrown and caught
-    /// exception per row — invisible in behavior and visible only in this count.
-    /// </summary>
-    private sealed class AnchorLookupCountingReader(IRelationalCommandReader inner) : IRelationalCommandReader
-    {
-        public int AnchorLookups { get; private set; }
-
-        public int GetOrdinal(string name)
-        {
-            if (string.Equals(name, "SelectedAnchor", StringComparison.Ordinal))
-            {
-                AnchorLookups++;
-            }
-
-            return inner.GetOrdinal(name);
-        }
-
-        public Task<bool> ReadAsync(CancellationToken cancellationToken = default) =>
-            inner.ReadAsync(cancellationToken);
-
-        public Task<bool> NextResultAsync(CancellationToken cancellationToken = default) =>
-            inner.NextResultAsync(cancellationToken);
-
-        public T GetFieldValue<T>(int ordinal) => inner.GetFieldValue<T>(ordinal);
-
-        public bool IsDBNull(int ordinal) => inner.IsDBNull(ordinal);
-
-        public ValueTask DisposeAsync() => inner.DisposeAsync();
-    }
-
-    /// <summary>
-    /// A descriptor row whose <c>SelectedAnchor</c> is deliberately different from its
-    /// <c>ContentVersion</c>, so a reader that confused the two would be caught. Omits the column
-    /// entirely when no anchor is supplied, matching the statement an unwindowed page emits.
-    /// </summary>
-    private static IReadOnlyDictionary<string, object?> AnchoredRow(
-        long documentId,
-        long contentVersion,
-        long? selectedAnchor
-    )
-    {
-        (string, object?)[] columns =
-        [
-            ("DocumentId", documentId),
-            ("DocumentUuid", Guid.NewGuid()),
-            ("ContentVersion", contentVersion),
-            ("ContentLastModifiedAt", new DateTimeOffset(2026, 5, 5, 17, 0, 0, TimeSpan.Zero)),
-            ("ResourceKeyId", (short)13),
-            ("Namespace", "uri://ed-fi.org/SchoolTypeDescriptor"),
-            ("CodeValue", $"Code{documentId}"),
-            ("ShortDescription", $"Short{documentId}"),
-            ("Description", null),
-            ("EffectiveBeginDate", null),
-            ("EffectiveEndDate", null),
-            ("Discriminator", "SchoolTypeDescriptor"),
-        ];
-
-        return RelationalAccessTestData.CreateRow(
-            selectedAnchor is null ? columns : [.. columns, ("SelectedAnchor", (object?)selectedAnchor)]
-        );
     }
 
     private static InMemoryRelationalCommandReader CreateReader(

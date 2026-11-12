@@ -5,8 +5,9 @@
 
 using System.Diagnostics;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using static EdFi.DataManagementService.Core.Extraction.ReferentialIdCalculator;
+using EdFi.DataManagementService.Core.Extraction;
 
 namespace EdFi.DataManagementService.Core.Model;
 
@@ -19,7 +20,9 @@ internal class DescriptorDocument(JsonNode _document)
     public static readonly JsonPath DescriptorIdentityPath = new("$.descriptor");
 
     /// <summary>
-    /// Creates a new DocumentIdentity from the DescriptorDocument
+    /// Creates a new DocumentIdentity from the DescriptorDocument. Throws
+    /// <see cref="ReferenceExtractionValidationException"/> with one failure per identity field that
+    /// contains NUL or an unpaired surrogate.
     /// </summary>
     public DocumentIdentity ToDocumentIdentity()
     {
@@ -37,12 +40,23 @@ internal class DescriptorDocument(JsonNode _document)
             ""
         );
 
+        List<WriteValidationFailure> failures = [];
+        if (!DescriptorText.IsWellFormedWithoutNul(namespaceName))
+        {
+            failures.Add(new(new JsonPath("$.namespace"), DescriptorText.InvalidValueMessage));
+        }
+        if (!DescriptorText.IsWellFormedWithoutNul(codeValue))
+        {
+            failures.Add(new(new JsonPath("$.codeValue"), DescriptorText.InvalidValueMessage));
+        }
+        if (failures.Count > 0)
+        {
+            throw new ReferenceExtractionValidationException([.. failures]);
+        }
+
         DocumentIdentityElement[] descriptorElement =
         [
-            new(
-                IdentityJsonPath: DescriptorIdentityPath,
-                IdentityValue: $"{namespaceName.ToLowerInvariant()}#{codeValue.ToLowerInvariant()}"
-            ),
+            new(IdentityJsonPath: DescriptorIdentityPath, IdentityValue: $"{namespaceName}#{codeValue}"),
         ];
         return new DocumentIdentity(descriptorElement);
     }
@@ -50,13 +64,12 @@ internal class DescriptorDocument(JsonNode _document)
     /// <summary>
     /// Creates a new DocumentInfo from the DescriptorDocument
     /// </summary>
-    public DocumentInfo ToDocumentInfo(BaseResourceInfo resourceInfo)
+    public DocumentInfo ToDocumentInfo()
     {
         DocumentIdentity documentIdentity = ToDocumentIdentity();
 
         return new(
             DocumentIdentity: documentIdentity,
-            ReferentialId: ReferentialIdFrom(resourceInfo, documentIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: [],

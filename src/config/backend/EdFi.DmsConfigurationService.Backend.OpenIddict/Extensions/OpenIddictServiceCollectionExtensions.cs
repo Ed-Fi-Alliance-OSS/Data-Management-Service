@@ -33,6 +33,12 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     configuration.GetValue<string>("IdentitySettings:Audience") ?? string.Empty;
                 options.Authority =
                     configuration.GetValue<string>("IdentitySettings:Authority") ?? string.Empty;
+                // Bound as configured, without trimming or case folding: token issuance compares
+                // role names ordinally, as the ServicePolicy compares the role claim.
+                options.ConfigServiceRole =
+                    configuration.GetValue<string>("IdentitySettings:ConfigServiceRole") ?? string.Empty;
+                options.ClientRole =
+                    configuration.GetValue<string>("IdentitySettings:ClientRole") ?? string.Empty;
                 options.TokenExpirationMinutes = configuration.GetValue<int>(
                     "IdentitySettings:TokenExpirationMinutes",
                     30
@@ -55,25 +61,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                     configuration.GetValue<string>("IdentitySettings:CertificatePassword") ?? string.Empty;
                 options.EncryptionKey =
                     configuration.GetValue<string>("IdentitySettings:EncryptionKey") ?? string.Empty;
-                options.KeyFormatCacheSize = configuration.GetValue<int>(
-                    "IdentitySettings:KeyFormatCacheSize",
-                    100
-                );
                 options.ClientSecretHashingIterations = configuration.GetValue<int>(
                     "IdentitySettings:ClientSecretHashingIterations",
                     options.ClientSecretHashingIterations
                 );
-                options.TokenCleanupEnabled = configuration.GetValue<bool>(
-                    "IdentitySettings:TokenCleanupEnabled",
+                options.TokenCleanup.Enabled = configuration.GetValue<bool>(
+                    "IdentitySettings:TokenCleanup:Enabled",
                     true
                 );
-                options.TokenCleanupIntervalMinutes = configuration.GetValue<int>(
-                    "IdentitySettings:TokenCleanupIntervalMinutes",
+                options.TokenCleanup.IntervalMinutes = configuration.GetValue<int>(
+                    "IdentitySettings:TokenCleanup:IntervalMinutes",
                     30
                 );
                 options.BearerTokenPerClientLimit = configuration.GetValue<int>(
                     "IdentitySettings:BearerTokenPerClientLimit",
-                    5
+                    15
                 );
                 options.SigningKeyRefreshIntervalSeconds = configuration.GetValue<int>(
                     "IdentitySettings:SigningKeyRefreshIntervalSeconds",
@@ -107,6 +109,21 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions
                 .Validate(
                     options => options.ClientSecretHashingIterations > 0,
                     "IdentitySettings:ClientSecretHashingIterations must be greater than zero."
+                )
+                .ValidateOnStart();
+
+            // A non-positive lifetime mints tokens that are already expired when issued, with a zero or
+            // negative expires_in; validators then accept them only within their clock skew. A
+            // lifetime above the maximum overflows expires_in. Both fail startup instead.
+            services
+                .AddOptions<IdentityOptions>()
+                .Validate(
+                    options => options.TokenExpirationMinutes > 0,
+                    "IdentitySettings:TokenExpirationMinutes must be greater than zero."
+                )
+                .Validate(
+                    options => options.TokenExpirationMinutes <= IdentityOptions.MaxTokenExpirationMinutes,
+                    $"IdentitySettings:TokenExpirationMinutes must be at most {IdentityOptions.MaxTokenExpirationMinutes}."
                 )
                 .ValidateOnStart();
 

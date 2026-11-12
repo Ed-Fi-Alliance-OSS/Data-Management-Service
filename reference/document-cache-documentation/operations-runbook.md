@@ -50,7 +50,7 @@ Owning design sections:
 
 Use `--json` for automation. Stdout is the shared contract document; logs and sanitized
 diagnostics go to stderr or configured sinks. Do not put connection strings, credentials,
-client secrets, or protected CMS values on the command line. Load those through the normal
+client secrets, or protected Configuration Service values on the command line. Load those through the normal
 DMS configuration, environment, user-secrets, or deployment secret provider.
 
 Every command targets exactly one data store:
@@ -59,8 +59,8 @@ Every command targets exactly one data store:
 dms-document-cache status --data-store-id 1 --tenant-key district-a --settings ./appsettings.Production.json --environment Production --datastore postgresql --json
 ```
 
-The `--datastore` value must match the deployed DMS/CMS database platform and the selected
-CMS data store's `Provider` metadata. Mixed-provider CMS-backed DocumentCache targets are
+The `--datastore` value must match the deployed DMS and Configuration Service database platform and the selected
+Configuration Service data store's `Provider` metadata. Mixed-provider DocumentCache targets backed by the Configuration Service are
 not a supported production topology.
 
 Omit `--tenant-key` for the normalized default tenant:
@@ -297,7 +297,7 @@ whether this procedure applies.
    attest to history. Preserve the root according to the
    [CDC state inventory](../cdc-documentation/operations-runbook.md#deployment-state).
 3. **Confirm the target and fingerprint.** Run `status` with those complete settings
-   and the intended CMS data-store ID, tenant, and provider. Match the returned
+   and the intended Configuration Service data-store ID, tenant, and provider. Match the returned
    `targetKey` to the incident target and retain its `physicalSourceFingerprint` for
    `--expected-physical-source-fingerprint`. Status supplies the current source identity;
    it does not grant history-based permission to recover. In the commands below, replace

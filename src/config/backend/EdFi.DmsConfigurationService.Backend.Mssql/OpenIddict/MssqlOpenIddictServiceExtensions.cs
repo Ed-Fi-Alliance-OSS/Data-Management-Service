@@ -8,12 +8,11 @@ using EdFi.DmsConfigurationService.Backend.OpenIddict.Extensions;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Models;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Token;
-using EdFi.DmsConfigurationService.Backend.OpenIddict.Validation;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Secrets;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
 {
@@ -25,20 +24,25 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
             string authority
         )
         {
+            // The OpenIddict stores open their connections from DatabaseOptions too.
+            services.AddMssqlSessionLanguagePin();
+
             // Add identity options
             services.AddOpenIddictIdentityOptions(configuration);
             services.AddSigningKeyServices();
             services.AddSingleton<IOpenIddictDataRepository, OpenIddictDataRepository>();
             services.AddSingleton<IIdentityProviderRepository, OpenIddictClientRepository>();
+            services.AddSingleton<IUnapprovalTokenRevocation, OpenIddictUnapprovalTokenRevocation>();
             services.AddSingleton<IOpenIddictTokenRepository, OpenIddictTokenRepository>();
             services.AddSingleton<OpenIddictTokenManager>();
             services.AddSingleton<ITokenManager, OpenIddictTokenManager>();
             services.AddSingleton<ITokenRevocationManager, OpenIddictTokenManager>();
+            services.AddSingleton<ITokenIntrospectionManager, OpenIddictTokenManager>();
             services.AddSingleton<IClientSecretHasher, ClientSecretHasher>();
+            services.TryAddSingleton<ClientSecretPlaceholderHash>();
 
-            // Add enhanced OpenIddict-compatible services
+            // Add OpenIddict-compatible services
             services.AddScoped<IOpenIdConnectConfigurationProvider, OpenIdConnectConfigurationProvider>();
-            services.AddScoped<IEnhancedTokenValidator, EnhancedTokenValidator>();
 
             // Add minimal OpenIddict validation support
             var issuer = configuration["IdentitySettings:Authority"];
@@ -55,12 +59,7 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict
 
             // Register JWT authentication with default settings (keeping existing implementation)
             services.AddJwtAuthentication(
-                new JwtSettings
-                {
-                    Issuer = issuer ?? string.Empty,
-                    Audience = audience ?? string.Empty,
-                    ExpirationMinutes = 30,
-                },
+                new JwtSettings { Issuer = issuer ?? string.Empty, Audience = audience ?? string.Empty },
                 configuration
             );
 

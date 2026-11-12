@@ -297,7 +297,7 @@ public class Given_DocumentCacheServiceRegistration
     private static void AddSharedReferenceResolverForTest(IServiceCollection services)
     {
         ReferenceResolverServiceCollectionExtensions.AddReferenceResolver<
-            PostgresqlReferenceResolverAdapterFactory,
+            PostgresqlNaturalKeyLookupCommandBuilder,
             PostgresqlRelationalCommandExecutor,
             PostgresqlRelationalWriteSessionFactory,
             PostgresqlDocumentHydrator,

@@ -25,7 +25,7 @@ CI-run smoke tests live in `EdFi.DataManagementService.Performance.Harness.Tests
 ## Prerequisites
 
 - A local PostgreSQL reachable through `ConnectionStrings__DatabaseConnection` (the compose
-  container `dms-postgresql`, host port 5435, pinned `postgres:16.8-alpine`).
+  container `dms-postgresql`, host port 5435, pinned `postgres:18.6-alpine`).
 - A local SQL Server 2025 reachable through `ConnectionStrings__MssqlAdmin` (the
   `dms-mssql-integration-2025` container, host port 14333). `GENERATE_SERIES` requires
   SQL Server 2022+ at database compatibility level 160+; the loader guards this.
@@ -48,7 +48,8 @@ dotnet test src/dms/tests/EdFi.DataManagementService.Performance.Harness -c Rele
 Available smokes, per provider (`Given_Postgresql_*` / `Given_Mssql_*`):
 
 - `PerfFixtureLoaderSmoke` — loads 10k rows and runs the loader-vs-POST proof gate across
-  `dms.Document`, `edfi.Student`, `dms.ReferentialIdentity`, and tracked-change side effects.
+  `dms.Document`, `edfi.Student` and its child collections, `dms.Descriptor`, and tracked-change
+  side effects.
 - `ObserverProbe` — the instrumentation checkpoint: recorder and driver observer signals.
 - `ScenarioExecutorSmoke` — the six-cell matrix with per-request guardrails.
 - `BaselineRunSmoke` — the full pipeline writing validated artifacts to a temp directory.

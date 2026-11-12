@@ -353,7 +353,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         }
 
         return new PlannedPredicate(
-            new QueryValuePredicate(column, comparisonOperator, parameterName, scalarType.Kind),
+            new QueryValuePredicate(column, comparisonOperator, parameterName),
             convertedValue!
         );
     }
@@ -391,19 +391,28 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         QueryComparisonOperator comparisonOperator
     )
     {
-        if (queryElement.Value is not PreprocessedRelationalQueryValue.DescriptorDocumentId(var descriptorId))
+        if (queryElement.Value is not PreprocessedRelationalQueryValue.DescriptorId(var descriptorId))
         {
             throw new InvalidOperationException(
-                $"Relational query planning expected a resolved descriptor document id for query field "
+                $"Relational query planning expected a resolved compact descriptor id for query field "
                     + $"'{queryElement.SupportedField.QueryFieldName}', but received '{queryElement.Value.GetType().Name}'."
             );
         }
 
         var rootColumn = GetRootColumnOrThrow(rootTable, rootColumnsByName, column);
-        var scalarKind = rootColumn.ScalarType?.Kind ?? ScalarKind.Int64;
+        if (
+            rootColumn.Kind is not ColumnKind.DescriptorFk
+            || rootColumn.ScalarType?.Kind is not ScalarKind.Int32
+        )
+        {
+            throw new InvalidOperationException(
+                $"Relational query planning requires descriptor column '{column.Value}' on table '{rootTable.Table}' "
+                    + $"to expose Int32 descriptor FK metadata for query field '{queryElement.SupportedField.QueryFieldName}'."
+            );
+        }
 
         return new PlannedPredicate(
-            new QueryValuePredicate(column, comparisonOperator, parameterName, scalarKind),
+            new QueryValuePredicate(column, comparisonOperator, parameterName),
             descriptorId
         );
     }
@@ -460,8 +469,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 new QueryValuePredicate(
                     contentVersionColumn,
                     QueryComparisonOperator.GreaterThanOrEqual,
-                    MinChangeVersionParameterName,
-                    ScalarKind.Int64
+                    MinChangeVersionParameterName
                 )
             );
             parameterValues[MinChangeVersionParameterName] = minChangeVersion;
@@ -473,8 +481,7 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
                 new QueryValuePredicate(
                     contentVersionColumn,
                     QueryComparisonOperator.LessThanOrEqual,
-                    MaxChangeVersionParameterName,
-                    ScalarKind.Int64
+                    MaxChangeVersionParameterName
                 )
             );
             parameterValues[MaxChangeVersionParameterName] = maxChangeVersion;

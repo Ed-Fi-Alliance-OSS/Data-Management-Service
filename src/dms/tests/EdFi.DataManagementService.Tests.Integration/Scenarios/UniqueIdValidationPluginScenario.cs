@@ -43,8 +43,7 @@ internal static class UniqueIdValidationPluginScenario
     /// </summary>
     private const string NonPersonEndpoint = "/data/ed-fi/absenceEventCategoryDescriptors";
 
-    private const string NonPersonDescriptorNamespace =
-        "uri://ed-fi.org/AbsenceEventCategoryDescriptor";
+    private const string NonPersonDescriptorNamespace = "uri://ed-fi.org/AbsenceEventCategoryDescriptor";
 
     private const string JsonContentType = "application/json";
 
@@ -120,8 +119,7 @@ internal static class UniqueIdValidationPluginScenario
     /// </summary>
     private const string LoggingProofStudentUniqueId = "uidv-log-proof-001";
 
-    private const string DataValidationFailedType =
-        "urn:ed-fi:api:bad-request:data-validation-failed";
+    private const string DataValidationFailedType = "urn:ed-fi:api:bad-request:data-validation-failed";
     private const string DataValidationFailedTitle = "Data Validation Failed";
     private const string KeyChangeNotSupportedType =
         "urn:ed-fi:api:bad-request:data-validation-failed:key-change-not-supported";
@@ -136,11 +134,7 @@ internal static class UniqueIdValidationPluginScenario
     {
         stub.Know(StudentResourceName, KnownStudentUniqueId);
 
-        using HttpResponseMessage response = await PostStudentAsync(
-            harness,
-            KnownStudentUniqueId,
-            "Ada"
-        );
+        using HttpResponseMessage response = await PostStudentAsync(harness, KnownStudentUniqueId, "Ada");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
@@ -154,11 +148,7 @@ internal static class UniqueIdValidationPluginScenario
     {
         stub.Know(StaffResourceName, KnownStaffUniqueId);
 
-        using HttpResponseMessage response = await PostStaffAsync(
-            harness,
-            KnownStaffUniqueId,
-            "Ada"
-        );
+        using HttpResponseMessage response = await PostStaffAsync(harness, KnownStaffUniqueId, "Ada");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
@@ -172,11 +162,7 @@ internal static class UniqueIdValidationPluginScenario
     {
         stub.Know(ContactResourceName, KnownContactUniqueId);
 
-        using HttpResponseMessage response = await PostContactAsync(
-            harness,
-            KnownContactUniqueId,
-            "Ada"
-        );
+        using HttpResponseMessage response = await PostContactAsync(harness, KnownContactUniqueId, "Ada");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
@@ -185,9 +171,7 @@ internal static class UniqueIdValidationPluginScenario
 
     // ---- B2: a write whose UniqueId the stub does not know is refused, and nothing is persisted ----
 
-    public static async Task It_rejects_a_student_with_an_unknown_unique_id(
-        ApiIntegrationHarness harness
-    )
+    public static async Task It_rejects_a_student_with_an_unknown_unique_id(ApiIntegrationHarness harness)
     {
         using HttpResponseMessage response = await PostStudentAsync(
             harness,
@@ -206,15 +190,9 @@ internal static class UniqueIdValidationPluginScenario
         students.Should().BeEmpty("a rejected write must persist nothing");
     }
 
-    public static async Task It_rejects_a_staff_with_an_unknown_unique_id(
-        ApiIntegrationHarness harness
-    )
+    public static async Task It_rejects_a_staff_with_an_unknown_unique_id(ApiIntegrationHarness harness)
     {
-        using HttpResponseMessage response = await PostStaffAsync(
-            harness,
-            UnknownStaffUniqueId,
-            "Uidv"
-        );
+        using HttpResponseMessage response = await PostStaffAsync(harness, UnknownStaffUniqueId, "Uidv");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
@@ -224,15 +202,9 @@ internal static class UniqueIdValidationPluginScenario
         AssertRejectedUniqueId(document.RootElement, StaffResourceName, "staffUniqueId");
     }
 
-    public static async Task It_rejects_a_contact_with_an_unknown_unique_id(
-        ApiIntegrationHarness harness
-    )
+    public static async Task It_rejects_a_contact_with_an_unknown_unique_id(ApiIntegrationHarness harness)
     {
-        using HttpResponseMessage response = await PostContactAsync(
-            harness,
-            UnknownContactUniqueId,
-            "Uidv"
-        );
+        using HttpResponseMessage response = await PostContactAsync(harness, UnknownContactUniqueId, "Uidv");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest, body);
@@ -329,8 +301,7 @@ internal static class UniqueIdValidationPluginScenario
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
-        stub.RequestPaths.Should()
-            .BeEmpty("a non-person write gives this validator nothing to look up");
+        stub.RequestPaths.Should().BeEmpty("a non-person write gives this validator nothing to look up");
     }
 
     // ---- B6: a key change to an identity the custom validator itself rejects ----
@@ -442,9 +413,7 @@ internal static class UniqueIdValidationPluginScenario
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
 
         JsonArray students = await GetStudentsByUniqueIdAsync(harness, UnreachableStudentUniqueId);
-        students
-            .Should()
-            .BeEmpty("a write whose dependency could not be reached must persist nothing");
+        students.Should().BeEmpty("a write whose dependency could not be reached must persist nothing");
     }
 
     // ---- F1: the stub redirects instead of answering; the validator's HttpClient never follows it ----
@@ -463,11 +432,7 @@ internal static class UniqueIdValidationPluginScenario
         stub.Know(StudentResourceName, RedirectStudentUniqueId);
         stub.RedirectMode = true;
 
-        using HttpResponseMessage response = await PostStudentAsync(
-            harness,
-            RedirectStudentUniqueId,
-            "Uidv"
-        );
+        using HttpResponseMessage response = await PostStudentAsync(harness, RedirectStudentUniqueId, "Uidv");
         string body = await response.Content.ReadAsStringAsync();
 
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
@@ -481,8 +446,7 @@ internal static class UniqueIdValidationPluginScenario
 
         stub.RequestPaths.Should()
             .NotContain(
-                path =>
-                    path.Contains(UniqueIdServiceStub.RedirectTargetPath, StringComparison.Ordinal),
+                path => path.Contains(UniqueIdServiceStub.RedirectTargetPath, StringComparison.Ordinal),
                 "the validator's HttpClient must not follow the redirect"
             );
     }
@@ -511,9 +475,7 @@ internal static class UniqueIdValidationPluginScenario
 
         response.StatusCode.Should().Be(HttpStatusCode.Created, body);
         stub.RequestPaths.Should()
-            .Equal(
-                $"/uid/{StudentResourceName}/{Uri.EscapeDataString(TrailingSlashStudentUniqueId)}"
-            );
+            .Equal($"/uid/{StudentResourceName}/{Uri.EscapeDataString(TrailingSlashStudentUniqueId)}");
     }
 
     // ---- F6: no BaseAddress is configured at all ----
@@ -546,13 +508,8 @@ internal static class UniqueIdValidationPluginScenario
 
         AssertBaseAddressSettingIsNamedInTheLogs(capture);
 
-        JsonArray students = await GetStudentsByUniqueIdAsync(
-            harness,
-            MissingBaseAddressStudentUniqueId
-        );
-        students
-            .Should()
-            .BeEmpty("a write with no configured upstream address must persist nothing");
+        JsonArray students = await GetStudentsByUniqueIdAsync(harness, MissingBaseAddressStudentUniqueId);
+        students.Should().BeEmpty("a write with no configured upstream address must persist nothing");
     }
 
     /// <summary>
@@ -616,9 +573,7 @@ internal static class UniqueIdValidationPluginScenario
         stub.RequestPaths.Should().Equal($"/{StudentResourceName}/{SlowUpstreamStudentUniqueId}");
 
         JsonArray students = await GetStudentsByUniqueIdAsync(harness, SlowUpstreamStudentUniqueId);
-        students
-            .Should()
-            .BeEmpty("a write the dependency never answered in time must persist nothing");
+        students.Should().BeEmpty("a write the dependency never answered in time must persist nothing");
     }
 
     // ---- B9: a UniqueId with characters that need escaping reaches the stub as one path segment ----
@@ -735,19 +690,12 @@ internal static class UniqueIdValidationPluginScenario
         response.StatusCode.Should().Be(HttpStatusCode.InternalServerError, body);
 
         stub.RequestPaths.Should()
-            .BeEmpty(
-                "the guard must refuse a query-bearing BaseAddress before any HTTP call is made"
-            );
+            .BeEmpty("the guard must refuse a query-bearing BaseAddress before any HTTP call is made");
 
         AssertBaseAddressSettingIsNamedInTheLogs(capture);
 
-        JsonArray students = await GetStudentsByUniqueIdAsync(
-            harness,
-            BaseAddressQueryStudentUniqueId
-        );
-        students
-            .Should()
-            .BeEmpty("a write with a misconfigured upstream address must persist nothing");
+        JsonArray students = await GetStudentsByUniqueIdAsync(harness, BaseAddressQueryStudentUniqueId);
+        students.Should().BeEmpty("a write with a misconfigured upstream address must persist nothing");
     }
 
     /// <summary>
@@ -777,9 +725,7 @@ internal static class UniqueIdValidationPluginScenario
         capture
             .FirstEventContaining("UniqueIdValidation:BaseAddress")
             .Should()
-            .NotBeNull(
-                "a captured error event's exception or message must name the misconfigured setting"
-            );
+            .NotBeNull("a captured error event's exception or message must name the misconfigured setting");
     }
 
     // ---- B10: the negative control - the plugin is not allowlisted, so B2's request succeeds ----
@@ -848,9 +794,7 @@ internal static class UniqueIdValidationPluginScenario
         stub.RequestPaths.Should().Equal($"/{StudentResourceName}/{LoggingProofStudentUniqueId}");
 
         IReadOnlyList<LogEvent> events = capture.Events;
-        events
-            .Should()
-            .NotBeEmpty("the host must have logged something else while handling this request");
+        events.Should().NotBeEmpty("the host must have logged something else while handling this request");
         events
             .Should()
             .NotContain(
@@ -867,9 +811,7 @@ internal static class UniqueIdValidationPluginScenario
     /// </remarks>
     private static bool LogEventMentions(LogEvent logEvent, string text) =>
         PluginLogCapture.TextOf(logEvent).Contains(text, StringComparison.Ordinal)
-        || logEvent.Properties.Values.Any(value =>
-            value.ToString().Contains(text, StringComparison.Ordinal)
-        );
+        || logEvent.Properties.Values.Any(value => value.ToString().Contains(text, StringComparison.Ordinal));
 
     private static void AssertRejectedUniqueId(JsonElement root, string resourceName, string member)
     {
@@ -895,11 +837,7 @@ internal static class UniqueIdValidationPluginScenario
             .Be($"The {resourceName} unique id was not found in the external unique id system.");
     }
 
-    private static JsonObject StudentBody(
-        string studentUniqueId,
-        string firstName,
-        string? id = null
-    )
+    private static JsonObject StudentBody(string studentUniqueId, string firstName, string? id = null)
     {
         var body = new JsonObject();
         if (id is not null)
@@ -970,9 +908,7 @@ internal static class UniqueIdValidationPluginScenario
         return await harness.HttpClient.PostAsync(ContactsEndpoint, content);
     }
 
-    private static async Task<HttpResponseMessage> PostNonPersonResourceAsync(
-        ApiIntegrationHarness harness
-    )
+    private static async Task<HttpResponseMessage> PostNonPersonResourceAsync(ApiIntegrationHarness harness)
     {
         using var content = JsonContentOf(NonPersonBody());
         return await harness.HttpClient.PostAsync(NonPersonEndpoint, content);
@@ -986,10 +922,7 @@ internal static class UniqueIdValidationPluginScenario
     )
     {
         using var content = JsonContentOf(payload);
-        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath)
-        {
-            Content = content,
-        };
+        using var request = new HttpRequestMessage(HttpMethod.Put, locationPath) { Content = content };
         // If-Match is a request header, not a content header; setting it on StringContent.Headers
         // would silently no-op and the update would be refused for a reason this case is not about.
         request.Headers.TryAddWithoutValidation("If-Match", etag);
@@ -1003,11 +936,7 @@ internal static class UniqueIdValidationPluginScenario
         string firstName
     )
     {
-        using HttpResponseMessage response = await PostStudentAsync(
-            harness,
-            studentUniqueId,
-            firstName
-        );
+        using HttpResponseMessage response = await PostStudentAsync(harness, studentUniqueId, firstName);
         string body = await response.Content.ReadAsStringAsync();
 
         response
@@ -1018,10 +947,7 @@ internal static class UniqueIdValidationPluginScenario
         return (PathOf(response), etag);
     }
 
-    private static async Task<string> ReadFirstNameAsync(
-        ApiIntegrationHarness harness,
-        string locationPath
-    )
+    private static async Task<string> ReadFirstNameAsync(ApiIntegrationHarness harness, string locationPath)
     {
         using HttpResponseMessage response = await harness.HttpClient.GetAsync(locationPath);
         string body = await response.Content.ReadAsStringAsync();

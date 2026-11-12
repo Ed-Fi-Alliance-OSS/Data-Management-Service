@@ -629,7 +629,7 @@ public class Given_MultiTenancy_Is_Enabled_And_A_Tenancy_Request_Whose_Tenant_Qu
     {
         ContentType.Should().Be("application/problem+json");
         var body = JsonNode.Parse(Body)!.AsObject();
-        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:internal-server-error");
+        body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:internal-server-error");
         body["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
     }
 

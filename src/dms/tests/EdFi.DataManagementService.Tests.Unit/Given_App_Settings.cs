@@ -123,6 +123,27 @@ public class Given_App_Settings
         settings.DataStoreConnectionString.Should().BeEmpty();
     }
 
+    [TestCase("DmsLogFilePath")]
+    [TestCase("AppSettings:DmsLogFilePath")]
+    public void It_reads_the_host_dms_log_file_override(string key)
+    {
+        var settings = AppSettings.Create(
+            new ConfigurationBuilder()
+                .AddInMemoryCollection([KeyValuePair.Create<string, string?>(key, "logs/dms.json")])
+                .Build()
+        );
+
+        settings.DmsLogFilePath.Should().Be("logs/dms.json");
+    }
+
+    [Test]
+    public void It_uses_container_logs_when_no_host_log_file_is_configured()
+    {
+        var settings = AppSettings.Create(new ConfigurationBuilder().Build());
+
+        settings.DmsLogFilePath.Should().BeEmpty();
+    }
+
     [Test]
     public void It_reads_the_opaque_connection_strings_verbatim()
     {

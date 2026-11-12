@@ -15,6 +15,9 @@ Describe 'Managed CDC deployment lifecycle ordering' {
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../*.psm1') $script:root
+        Copy-Item (Join-Path $PSScriptRoot '../cdc-worker-diagnostics.ps1') $script:root
+        New-Item -ItemType Directory -Force (Join-Path $TestDrive 'ci') | Out-Null
+        Copy-Item (Join-Path $PSScriptRoot '../../ci/cdc-runbook-diagnostics.ps1') (Join-Path $TestDrive 'ci')
         Copy-Item (Join-Path $PSScriptRoot '../*.yml') $script:root
         Copy-Item (Join-Path $PSScriptRoot '../../schema-package-utility.psm1') $TestDrive
         @'
@@ -35,7 +38,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
                 AppSettings = @{ Datastore = $provider }
                 DataManagement = @{ DocumentCache = @{ Targets = @(@{ DataStoreId = $id }) } }
                 Cdc = @{
-                    Compose = @{ Project = $project; EnvironmentFile = (Join-Path $script:root '.env.custom'); File = (Join-Path $script:root 'kafka-cdc.yml'); BrokerSizeOverrideFile = (Join-Path $script:root 'shared/broker-size.json') }
+                    Compose = @{ Project = $project; EnvironmentFile = (Join-Path $script:root '.env.custom'); File = (Join-Path $script:root 'kafka-cdc.compose.yml'); BrokerSizeOverrideFile = (Join-Path $script:root 'shared/broker-size.json') }
                     DeploymentKey = 'deployment'; DataStoreId = [string]$id; InstanceKey = "instance-$id"; Generation = 7
                     Worker = @{ Key = 'worker'; OffsetStorageTopic = 'shared-offsets' }
                     ConnectEndpoint = 'http://localhost:8083/'; WorkerMetricsEndpoint = 'http://localhost:9404/metrics'
@@ -74,7 +77,7 @@ Export-ModuleMember -Function Resolve-BootstrapSchemaWorkspace
             $databaseOnlyStartup = [bool]$parameters['DbOnly']
             $DmsOnly = $false
             $CdcDatabaseInfrastructure = [bool]$parameters['CdcDatabaseInfrastructure']
-            $files = @('-f', "$flavor-dms.yml")
+            $files = @('-f', "$flavor-dms.compose.yml")
             $EnvironmentFile = $parameters.EnvironmentFile
             $commands = [Collections.Generic.List[string]]::new()
             function docker { $commands.Add((@($args | ForEach-Object { $_ }) -join ' ')); $global:LASTEXITCODE = 0 }
@@ -255,7 +258,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             'services: { unrelated: { image: "${T74_UNRELATED}" } }' | Set-Content (Join-Path $script:root 'unrelated-t74.yml')
             $otherProvider = if ($provider -eq 'mssql') { 'postgresql' } else { 'mssql' }
             $otherFlavor = if ($project -eq 'dms-local') { 'published' } else { 'local' }
-            foreach ($file in @("$otherProvider.yml", "$otherFlavor-dms.yml")) {
+            foreach ($file in @("$otherProvider.compose.yml", "$otherFlavor-dms.compose.yml")) {
                 Add-Content (Join-Path $script:root $file) '# ${T74_UNRELATED}'
             }
             Set-TestChangedShell
@@ -283,7 +286,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             Mock -ModuleName cdc-lifecycle Invoke-CdcInfrastructure {
                 Assert-TestRetainedInput
                 $docker = (Get-Command docker -CommandType Application | Select-Object -First 1).Source
-                $model = & $docker compose -f (Join-Path $script:root 'kafka-cdc.yml') --env-file $Parameters.EnvironmentFile -p dms-local --profile cdc-managed-worker config --format json 2>$null |
+                $model = & $docker compose -f (Join-Path $script:root 'kafka-cdc.compose.yml') --env-file $Parameters.EnvironmentFile -p dms-local --profile cdc-managed-worker config --format json 2>$null |
                     ConvertFrom-Json -AsHashtable
                 $LASTEXITCODE | Should -Be 0
                 ($model.services.kafka.environment.KAFKA_ADVERTISED_LISTENERS -clike '*:19092') | Should -BeTrue
@@ -361,7 +364,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
                     $deployment.ComposeInputs.Project = 'dms-published'
                     $deployment.ComposeInputsHash = & (Get-Module cdc-lifecycle) { param($inputs) Get-CdcComposeInputHash $inputs } $deployment.ComposeInputs
                 }
-                'selected-file' { Add-Content (Join-Path $script:root 'kafka-cdc.yml') '# changed selected configuration' }
+                'selected-file' { Add-Content (Join-Path $script:root 'kafka-cdc.compose.yml') '# changed selected configuration' }
             }
             $deployment | ConvertTo-Json -Depth 64 -Compress | Set-Content $path
             Set-TestChangedShell
@@ -377,9 +380,9 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             Register-CdcDeploymentHandoff $handoff (Join-Path $script:root 'state')
             $deployment = Read-TestDeployment
             $paths = @($deployment.ComposeInputs.Files | ForEach-Object { [IO.Path]::GetFileName($_.Path) })
-            $paths | Should -Not -Contain 'kafka-ui.yml'
-            $paths | Should -Not -Contain 'swagger-ui.yml'
-            Add-Content (Join-Path $script:root 'kafka-ui.yml') '# unrelated optional service'
+            $paths | Should -Not -Contain 'kafka-ui.compose.yml'
+            $paths | Should -Not -Contain 'swagger-ui.compose.yml'
+            Add-Content (Join-Path $script:root 'kafka-ui.compose.yml') '# unrelated optional service'
             { Invoke-TestLifecycle @{ d = $true; EnableKafkaUI = $true } } | Should -Throw '*original optional service inputs*'
             $script:trace.Count | Should -Be 0
             $script:live = @('connector-42')
@@ -410,7 +413,7 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             if (-not $bridge.Live) {
                 # Retain the fixture's copied Compose inputs instead of the command fixture's unused paths.
                 $handoff.Settings.Cdc.Compose.EnvironmentFile = Join-Path $script:root '.env.custom'
-                $handoff.Settings.Cdc.Compose.File = Join-Path $script:root 'kafka-cdc.yml'
+                $handoff.Settings.Cdc.Compose.File = Join-Path $script:root 'kafka-cdc.compose.yml'
             }
             $handoff.Settings.Cdc.Worker.Key = $bridge.WorkerKey
             $handoff.Settings.Cdc.Worker.OffsetStorageTopic = $bridge.OffsetTopic
@@ -537,7 +540,7 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
                     $files = @()
                     $enableKafkaInfrastructure = $false
                     foreach ($block in $blocks) { . $block | Out-Null }
-                    $files | Should -Not -Contain 'kafka-cdc.yml'
+                    $files | Should -Not -Contain 'kafka-cdc.compose.yml'
                     ($files -contains 'mssql-cdc.yml') | Should -Be ($DatabaseEngine -eq 'mssql')
                 } $Parameters $blocks
                 $Parameters.CdcDatabaseInfrastructure | Should -BeTrue
@@ -664,6 +667,39 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         else { { Invoke-TestLifecycle $parameters } | Should -Throw '*IdentityProvider conflicts*' }
         $script:trace.Count | Should -Be 0
         (Read-TestDeployment).Phase | Should -Be 'Active'
+    }
+
+    It 'rejects restore input <restoreInput> in <phase> before lock, inventory, environment, lifecycle, or infrastructure effects' -ForEach @(
+        foreach ($phase in @('Active', 'Stopped')) {
+            @{ restoreInput = 'RestoreTemplate'; phase = $phase; parameters = @{ RestoreTemplate = 'Minimal' } }
+            @{ restoreInput = 'PackageDirectory'; phase = $phase; parameters = @{ PackageDirectory = '/packages' } }
+            @{ restoreInput = 'RestoreTemplate and PackageDirectory'; phase = $phase; parameters = @{ RestoreTemplate = 'Minimal'; PackageDirectory = '/packages' } }
+        }
+    ) {
+        if ($phase -eq 'Stopped') { Invoke-TestLifecycle @{ d = $true } }
+        (Read-TestDeployment).Phase | Should -Be $phase
+        # Registration (and the stop) left the lock file behind; remove it so lock acquisition is observable.
+        $deployments = Join-Path $script:root '.cdc-deployments'
+        $lockPath = Join-Path $deployments 'dms-local.lock'
+        Remove-Item -LiteralPath $lockPath -Force -ErrorAction SilentlyContinue
+        $script:trace.Clear()
+        $inventoryBefore = @(Get-ChildItem -LiteralPath $deployments -File | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" })
+        $environmentBefore = @(Get-ChildItem Env: | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" })
+        Mock -ModuleName cdc-lifecycle Read-CdcDeployment { throw 'Unexpected inventory read' }
+        Mock -ModuleName cdc-lifecycle Set-CdcRetainedEnvironment { throw 'Unexpected environment change' }
+        Mock -ModuleName cdc-lifecycle Get-CdcDmsComposeHandoff { throw 'Unexpected DMS handoff write' }
+        Mock -ModuleName cdc-lifecycle Write-CdcDeployment { throw 'Unexpected lifecycle write' }
+
+        { Invoke-TestLifecycle $parameters } | Should -Throw '*Restore mode (-RestoreTemplate/-PackageDirectory) is unsupported while a retained CDC deployment exists*'
+
+        $lockPath | Should -Not -Exist -Because 'the refusal must precede lock acquisition'
+        @(Get-ChildItem -LiteralPath $deployments -File | Sort-Object Name | ForEach-Object { "$($_.Name)=$((Get-FileHash -LiteralPath $_.FullName).Hash)" }) | Should -Be $inventoryBefore
+        @(Get-ChildItem Env: | Sort-Object Name | ForEach-Object { "$($_.Name)=$($_.Value)" }) | Should -Be $environmentBefore
+        $script:trace.Count | Should -Be 0 -Because 'no controller command or infrastructure phase may run'
+        foreach ($command in @('Read-CdcDeployment', 'Set-CdcRetainedEnvironment', 'Get-CdcDmsComposeHandoff', 'Write-CdcDeployment')) {
+            Should -Invoke -ModuleName cdc-lifecycle $command -Times 0 -Exactly
+        }
+        (Read-TestDeployment).Phase | Should -Be $phase
     }
 
     It 'CDC-DOC cdc-managed-stop' {
@@ -868,8 +904,12 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
     ) {
         $project = "dms-$flavor"
         Remove-Item (Join-Path $script:root '.cdc-deployments') -Recurse -Force
+        # The published Compose files refuse to render without the encryption keys and the admin connection string.
         @('DMS_HTTP_PORTS=8080', 'POSTGRES_PASSWORD=fixture-password', 'POSTGRES_DB_NAME=fixture',
-            'CONFIG_SERVICE_CLIENT_SECRET=fixture-secret', 'DMS_CONFIG_IDENTITY_CLIENT_SECRET=fixture-secret') |
+            'DMS_CONFIGURATION_SERVICE_CLIENT_SECRET=fixture-secret', 'CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET=fixture-secret',
+            'CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=fixture-database-encryption-key-0123456789',
+            'CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY=fixture-identity-encryption-key-0123456789',
+            'DATABASE_CONNECTION_STRING_ADMIN=host=fixture;port=5432;username=fixture-admin;password=fixture-password;database=fixture;') |
             Set-Content (Join-Path $script:root '.env.custom')
         Register-CdcDeploymentHandoff (New-TestHandoff -id 42 -project $project -provider $provider) (Join-Path $script:root 'custom-state-42')
         $script:live = @('connector-42')
@@ -1007,6 +1047,20 @@ Export-ModuleMember -Function Resolve-DmsSchemaTool
         { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
         $script:trace | Should -Not -Contain 'down-volumes'
         (Read-TestDeployment).Phase | Should -Be 'Retiring'
+    }
+    It 'journals the failing retirement boundary before any infrastructure deletion' {
+        $savedEvents = $env:CDC_API_CLEANUP_EVENTS
+        try {
+            $env:CDC_API_CLEANUP_EVENTS = Join-Path $TestDrive 'cleanup-events.jsonl'
+            '{"InvocationId":"test"}' | Set-Content $env:CDC_API_CLEANUP_EVENTS
+            $script:failure = 'retire:42'
+            { Invoke-TestLifecycle @{ d = $true; v = $true } } | Should -Throw
+            $events = @(Get-Content $env:CDC_API_CLEANUP_EVENTS | Select-Object -Skip 1 | ForEach-Object { $_ | ConvertFrom-Json })
+            @($events | Where-Object Status -eq Failed | ForEach-Object Step) | Should -Be @('ControllerRetirement')
+            @($events | Where-Object Step -eq ComposeTeardown).Count | Should -Be 0
+            $script:trace | Should -Not -Contain 'down-volumes'
+            (Read-TestDeployment).Phase | Should -Be Retiring
+        } finally { $env:CDC_API_CLEANUP_EVENTS = $savedEvents }
     }
     It 'CDC-DOC cdc-stack-teardown' {
         $invocation = Get-CdcRunbookInvocation 'cdc-stack-teardown' $script:root
@@ -1391,10 +1445,9 @@ Describe 'SchemaTools lifecycle result boundary' {
         $script:root = Join-Path $TestDrive 'native'
         New-Item -ItemType Directory $script:root | Out-Null
         Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') $script:root
-        @'
-function Resolve-DmsSchemaTool { return Join-Path $PSScriptRoot 'tool.ps1' }
-Export-ModuleMember -Function Resolve-DmsSchemaTool
-'@ | Set-Content (Join-Path $script:root 'bootstrap-schema-tool.psm1')
+        foreach ($name in @('bootstrap-schema-tool.psm1', 'bootstrap-manifest.psm1', 'cdc-cleanup-diagnostics.psm1')) {
+            Copy-Item (Join-Path $PSScriptRoot "../$name") $script:root
+        }
         @'
 param([Parameter(ValueFromRemainingArguments)][string[]]$Arguments)
 $Arguments | ConvertTo-Json | Set-Content (Join-Path $PSScriptRoot 'arguments.json')
@@ -1410,6 +1463,9 @@ exit ([int](Get-Content (Join-Path $PSScriptRoot 'exit-code')))
         }
     }
     BeforeEach {
+        $script:oldSchemaToolPath = $env:DMS_SCHEMA_TOOL_PATH
+        $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:root 'tool.ps1'
+        Remove-Item (Join-Path $script:root 'arguments.json') -ErrorAction SilentlyContinue
         $script:entry = @{ SettingsPath = '/original/settings'; StatePath = '/custom/state'; Generation = 7; InstanceKey = 'instance'; DeploymentKey = 'deployment'; DataStoreId = '42'; ConnectorName = '' }
         $script:result = @{
             operation = 'stop'; succeeded = $true; exitCode = 0
@@ -1419,7 +1475,22 @@ exit ([int](Get-Content (Join-Path $PSScriptRoot 'exit-code')))
         '0' | Set-Content (Join-Path $script:root 'exit-code')
         Save-TestResult
     }
-    AfterAll { Remove-Module cdc-lifecycle -Force }
+    AfterEach { $env:DMS_SCHEMA_TOOL_PATH = $script:oldSchemaToolPath }
+    AfterAll {
+        Get-Module -All | Where-Object { $_.Path -and $_.Path.StartsWith($script:root + [IO.Path]::DirectorySeparatorChar) } | Remove-Module -Force
+    }
+    It 'It_DMS1283_rejects_an_invalid_override_before_<operation>_despite_a_cached_tool' -ForEach @(
+        @{ operation = 'stop' }, @{ operation = 'start' }, @{ operation = 'start-worker' }, @{ operation = 'retire' }
+    ) {
+        $cache = Join-Path $script:root '.bootstrap/tools/api-schema-tools'
+        New-Item -ItemType Directory $cache -Force | Out-Null
+        $executableName = if ($IsWindows) { 'api-schema-tools.exe' } else { 'api-schema-tools' }
+        'cache sentinel' | Set-Content (Join-Path $cache $executableName)
+        $env:DMS_SCHEMA_TOOL_PATH = Join-Path $script:root 'missing-tool.ps1'
+
+        { Invoke-TestCommand $operation } | Should -Throw '*configured api-schema-tools executable was not found*'
+        Test-Path (Join-Path $script:root 'arguments.json') | Should -BeFalse
+    }
     It 'requires the structured verified target shutdown and retains original command inputs' {
         Invoke-TestCommand
         $script:entry.ConnectorName | Should -Be 'bound-connector'
@@ -1522,7 +1593,7 @@ Describe 'Managed primitive DMS startup selection' {
                     ($n.Extent.Text.StartsWith('if ($DmsOnly)') -and $n.Extent.Text.Contains('$dmsServices ='))
             }, $true)
             $nodes.Count | Should -Be 5
-            $files = @('-f', "$flavor-dms.yml")
+            $files = @('-f', "$flavor-dms.compose.yml")
             $EnvironmentFile = '/selected/.env'
             $databaseOnlyStartup = $false
             $CdcDatabaseInfrastructure = $false
@@ -1579,7 +1650,7 @@ Describe 'Managed primitive Docker shutdown selection' {
         & {
             param($block)
             $CdcKafkaInfrastructure = $true
-            $files = @('-f', 'kafka-cdc.yml', '-f', '/custom/broker-size.json')
+            $files = @('-f', 'kafka-cdc.compose.yml', '-f', '/custom/broker-size.json')
             $EnvironmentFile = '/selected/.env'
             $downArgs = @('--remove-orphans', '-v')
             $v = $false
@@ -1807,7 +1878,9 @@ if (-not (Test-CdcInfrastructureInvocation)) { throw 'Lost lifecycle ownership' 
 if ($Fail) { throw 'Child failure' }
 $global:LASTEXITCODE = 0
 '@ | Set-Content $script:child
-        Copy-Item (Join-Path $PSScriptRoot '../cdc-lifecycle.psm1') (Join-Path $TestDrive 'cdc-lifecycle.psm1')
+        foreach ($name in @('cdc-lifecycle.psm1', 'cdc-cleanup-diagnostics.psm1')) {
+            Copy-Item (Join-Path $PSScriptRoot "../$name") (Join-Path $TestDrive $name)
+        }
         # Use the same module path in the child as the owning invocation, just like real primitives.
         Import-Module (Join-Path $TestDrive 'cdc-lifecycle.psm1') -Force
     }

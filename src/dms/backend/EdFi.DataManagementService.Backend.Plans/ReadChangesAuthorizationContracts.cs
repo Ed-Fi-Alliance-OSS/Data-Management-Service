@@ -59,23 +59,27 @@ public sealed record ReadChangesCustomViewKeyPair(DbColumnName BasisColumn, DbCo
 /// <summary>
 /// One descriptor identity part of a ReadChanges custom-view live seek. The basis stores the descriptor as a
 /// <c>*_DescriptorId</c> FK while the tombstone stores its old <c>Namespace</c> and <c>CodeValue</c>, so the
-/// emitter matches a <c>dms.Descriptor</c> row on the tombstone pair (discriminated by
-/// <paramref name="DescriptorResource"/>) and compares its <c>DocumentId</c> to the basis FK column.
+/// emitter seeks a <c>dms.Descriptor</c> row by the tombstone's lowered <c>namespace#codeValue</c> URI and
+/// the compiled resource key (rendered as a literal), then compares its compact <c>DescriptorId</c> to the
+/// basis FK column.
 /// </summary>
 /// <param name="BasisFkColumn">The descriptor FK column on the basis root table.</param>
 /// <param name="TrackedOldNamespaceColumn">The subject tombstone's old descriptor <c>Namespace</c> column.</param>
 /// <param name="TrackedOldCodeValueColumn">The subject tombstone's old descriptor <c>CodeValue</c> column.</param>
 /// <param name="DescriptorResource">The descriptor resource the FK column references.</param>
+/// <param name="DescriptorResourceKeyId">The mapping-set key for the qualified descriptor resource.</param>
 public sealed record ReadChangesCustomViewDescriptorKeyPair(
     DbColumnName BasisFkColumn,
     DbColumnName TrackedOldNamespaceColumn,
     DbColumnName TrackedOldCodeValueColumn,
-    QualifiedResourceName DescriptorResource
+    QualifiedResourceName DescriptorResource,
+    short DescriptorResourceKeyId
 );
 
 /// <summary>
 /// One descriptor identity part of a tombstone probe arm. Both sides store the old <c>Namespace</c> and
-/// <c>CodeValue</c>, so the arm compares them directly with no <c>dms.Descriptor</c> join.
+/// <c>CodeValue</c>, so the arm compares the lowered <c>namespace#codeValue</c> of both sides under the
+/// descriptor URI fold, with no <c>dms.Descriptor</c> join.
 /// </summary>
 public sealed record ReadChangesCustomViewProbeDescriptorKeyPair(
     DbColumnName BasisOldNamespaceColumn,
@@ -92,7 +96,7 @@ public sealed record ReadChangesCustomViewProbeDescriptorKeyPair(
 /// <param name="BasisTrackedChangeTable">The basis (or member) <c>tracked_changes_*</c> table.</param>
 /// <param name="BasisDocumentIdColumn">That table's <c>DocumentId</c> system column.</param>
 /// <param name="KeyPairs">Scalar identity parts, basis <c>Old*</c> column paired with the subject's.</param>
-/// <param name="DescriptorKeyPairs">Descriptor identity parts, old Namespace/CodeValue on both sides.</param>
+/// <param name="DescriptorKeyPairs">Descriptor identity parts, compared as lowered old URIs on both sides.</param>
 public sealed record ReadChangesCustomViewProbeArm(
     DbTableName BasisTrackedChangeTable,
     DbColumnName BasisDocumentIdColumn,
@@ -101,19 +105,19 @@ public sealed record ReadChangesCustomViewProbeArm(
 );
 
 /// <summary>
-/// The shared descriptor tracked-change table as a descriptor-basis probe reads it: seek the old
-/// <c>Namespace</c>/<c>CodeValue</c> pair under the basis descriptor's discriminator and return the row's
-/// <c>DocumentId</c> system column.
+/// The shared descriptor tracked-change table as a descriptor-basis probe reads it: route by the basis
+/// descriptor's resource key, compare the lowered old <c>namespace#codeValue</c> URI to the subject
+/// tombstone's, and return the row's <c>DocumentId</c> system column.
 /// </summary>
 /// <param name="DescriptorTrackedChangeTable">The shared descriptor <c>tracked_changes_*</c> table.</param>
 /// <param name="DocumentIdColumn">That table's <c>DocumentId</c> system column.</param>
-/// <param name="DiscriminatorColumn">That table's <c>Discriminator</c> system column.</param>
+/// <param name="ResourceKeyIdColumn">That table's <c>ResourceKeyId</c> system column.</param>
 /// <param name="OldNamespaceColumn">The old <c>Namespace</c> column.</param>
 /// <param name="OldCodeValueColumn">The old <c>CodeValue</c> column.</param>
 public sealed record ReadChangesCustomViewDescriptorProbeArm(
     DbTableName DescriptorTrackedChangeTable,
     DbColumnName DocumentIdColumn,
-    DbColumnName DiscriminatorColumn,
+    DbColumnName ResourceKeyIdColumn,
     DbColumnName OldNamespaceColumn,
     DbColumnName OldCodeValueColumn
 );
@@ -158,18 +162,20 @@ public abstract record ReadChangesCustomViewBasis
     /// <summary>
     /// The basis is a descriptor. The tombstone stores the descriptor's old <c>Namespace</c> and
     /// <c>CodeValue</c> but not its <c>DocumentId</c>, and descriptors share one <c>dms.Descriptor</c> table,
-    /// so the emitter seeks that table on the pair, discriminated by <paramref name="DescriptorResource"/>
-    /// with the same two discriminator parameter values the change-query descriptor join binds, and compares
+    /// so the emitter seeks that table by the pair's lowered <c>namespace#codeValue</c> URI and the compiled
+    /// qualified resource key (rendered as a literal), and compares
     /// the found <c>DocumentId</c> to the view. When the strategy name carries the <c>IncludingDeletes</c>
     /// suffix, <paramref name="ProbeArm"/> adds one <c>UNION</c> arm over the shared descriptor
     /// tracked-change table so a deleted descriptor is still found; otherwise it is null.
     /// </summary>
     /// <param name="DescriptorResource">The descriptor resource the view is based on.</param>
+    /// <param name="DescriptorResourceKeyId">The mapping-set key for the qualified descriptor resource.</param>
     /// <param name="TrackedOldNamespaceColumn">The subject tombstone's old descriptor <c>Namespace</c> column.</param>
     /// <param name="TrackedOldCodeValueColumn">The subject tombstone's old descriptor <c>CodeValue</c> column.</param>
     /// <param name="ProbeArm">The shared descriptor tombstone probe; null unless the strategy opts in by suffix.</param>
     public sealed record DescriptorSeek(
         QualifiedResourceName DescriptorResource,
+        short DescriptorResourceKeyId,
         DbColumnName TrackedOldNamespaceColumn,
         DbColumnName TrackedOldCodeValueColumn,
         ReadChangesCustomViewDescriptorProbeArm? ProbeArm

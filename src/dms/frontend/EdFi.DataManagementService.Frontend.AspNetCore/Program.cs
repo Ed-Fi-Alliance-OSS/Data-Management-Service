@@ -142,12 +142,19 @@ RunBootstrapPhase(
                 {
                     policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
 
-                    // The identity surface's async 202 and incomplete results 200 carry a Location
-                    // the Swagger UI must read; with the surface off, nothing extra is exposed.
-                    if (builder.Configuration.GetValue<bool>("AppSettings:EnableIdentityManagement"))
+                    // Any query can be answered with the ignored-parameter warning, so it is always
+                    // readable. The identity surface's async 202 and incomplete results 200 carry a
+                    // Location the Swagger UI must read; with the surface off, Location is not exposed.
+                    List<string> exposedHeaders = ["X-EdFi-Warning", "X-Correlation-ID", "WWW-Authenticate"];
+                    if (
+                        builder.Configuration.GetValue<bool>(
+                            $"{IdentityManagementOptions.SectionName}:Enabled"
+                        )
+                    )
                     {
-                        policy.WithExposedHeaders("Location");
+                        exposedHeaders.Add("Location");
                     }
+                    policy.WithExposedHeaders([.. exposedHeaders]);
                 }
             );
         });
@@ -173,6 +180,12 @@ app.Logger.LogInformation(
 // it. The per-file loaded flags are read at this moment rather than carried from loading, because an
 // assembly first touched inside a contribution hook loaded after that phase returned.
 PluginInventoryLog.Emit(app.Logger, app.Services.GetRequiredService<PluginAuditInput>());
+
+// Before every configuration gate below, so a host that goes on to install the
+// invalid-configuration middleware (and skips the startup phases) still logs it. Reads the
+// flag from configuration without binding, so nothing here can throw on a configuration
+// value: this line sits in the unguarded window described in ReportInvalidConfiguration.
+RequireHttpsMetadataStartupWarning.Emit(app.Logger, app.Environment, app.Configuration);
 
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
@@ -246,6 +259,8 @@ if (invalidConfigurationException is null)
         app.UseRouting();
 
         app.UseMiddleware<IdentityResponseCachePolicyMiddleware>();
+        app.UseMiddleware<TokenResponseCachePolicyMiddleware>();
+        app.UseMiddleware<DataResponseCachePolicyMiddleware>();
 
         if (app.Configuration.GetSection(RateLimitOptions.RateLimit).Exists())
         {
@@ -262,7 +277,6 @@ if (invalidConfigurationException is null)
         app.MapFallback(context =>
         {
             context.Response.StatusCode = 404;
-            context.Response.ContentType = "application/problem+json";
 
             // Routed through the same ingestion point as every other path so the correlation ID
             // is normalized identically. This also drops a hardcoded "correlationid" fallback
@@ -274,7 +288,15 @@ if (invalidConfigurationException is null)
             );
 
             var response = FailureResponse.ForNotFound("The specified data could not be found.", traceId);
-            return context.Response.WriteAsJsonAsync(response);
+
+            // WriteAsJsonAsync sets the content type itself, and without one it writes
+            // application/json over any set before it. The charset matches every other problem
+            // response the frontend writes.
+            return context.Response.WriteAsJsonAsync(
+                response,
+                options: null,
+                contentType: "application/problem+json; charset=utf-8"
+            );
         });
     }
     catch (Exception ex)
@@ -325,6 +347,13 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
             .Services.GetRequiredService<IOptions<DocumentCacheOptions>>()
             .Value;
         DocumentCacheStartupDiagnostics.Log(app.Logger, documentCacheOptions);
+
+        // Resolved here so an invalid cap is reported through this guarded path, and the
+        // deprecation warning precedes the first Configuration Service load.
+        ConfigurationServiceTokenCacheOptions.LogDeprecationIfSet(
+            app.Services.GetRequiredService<IOptions<ConfigurationServiceTokenCacheOptions>>().Value,
+            app.Logger
+        );
     }
     catch (OptionsValidationException ex)
     {

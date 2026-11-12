@@ -213,7 +213,7 @@ public class PartitionRequestValidatorTests
         }
 
         [Test]
-        public void It_leaves_other_unknown_fields_to_the_unknown_query_field_rule()
+        public void It_leaves_other_unknown_fields_to_the_caller()
         {
             Validate(("notAKnownField", "value")).Errors.Should().BeEmpty();
         }

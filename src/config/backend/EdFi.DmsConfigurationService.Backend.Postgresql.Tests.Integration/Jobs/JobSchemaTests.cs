@@ -19,6 +19,10 @@ public abstract class JobSchemaTestBase : DatabaseTest
 {
     protected const string CheckViolation = "23514";
     protected const string UniqueViolation = "23505";
+
+    // ON DELETE RESTRICT violations: PostgreSQL 18 reports restrict_violation (23001), while the
+    // still-supported PostgreSQL 15-17 report foreign_key_violation (23503).
+    protected const string RestrictViolation = "23001";
     protected const string ForeignKeyViolation = "23503";
     protected const string InvalidTextRepresentation = "22P02";
 
@@ -126,6 +130,10 @@ public abstract class JobSchemaTestBase : DatabaseTest
         }
     }
 
+    /// <summary>The "SqlState:ConstraintName" outcomes a restricted delete produces on PostgreSQL 15-18.</summary>
+    protected static string[] RestrictedDeleteOutcomes(string constraintName) =>
+        [$"{RestrictViolation}:{constraintName}", $"{ForeignKeyViolation}:{constraintName}"];
+
     private static NpgsqlParameter Nullable(string name, NpgsqlDbType type, object? value) =>
         new(name, type) { Value = value ?? DBNull.Value };
 }
@@ -164,6 +172,7 @@ public class Given_the_Job_table : JobSchemaTestBase
                        constraint_info.confdeltype::text AS DeleteRule
                 FROM pg_constraint constraint_info
                 WHERE constraint_info.conrelid = '"dmscs"."Job"'::regclass
+                  AND constraint_info.contype <> 'n'
                 ORDER BY constraint_info.conname;
                 """
             )
@@ -668,13 +677,13 @@ public class Given_a_tenant_and_a_schedule_referenced_by_jobs : JobSchemaTestBas
     public void It_restricts_deleting_a_schedule_that_has_jobs()
     {
         _scheduledJobInsert.Should().BeNull();
-        _scheduleDelete.Should().Be($"{ForeignKeyViolation}:FK_Job_JobSchedule");
+        _scheduleDelete.Should().BeOneOf(RestrictedDeleteOutcomes("FK_Job_JobSchedule"));
     }
 
     [Test]
     public void It_restricts_deleting_a_tenant_that_has_jobs()
     {
         _manualJobInsert.Should().BeNull();
-        _tenantDelete.Should().Be($"{ForeignKeyViolation}:FK_Job_Tenant");
+        _tenantDelete.Should().BeOneOf(RestrictedDeleteOutcomes("FK_Job_Tenant"));
     }
 }

@@ -158,6 +158,13 @@ public sealed class RelationalChangeQueryRepository(
             return new TrackedChangeQueryResult([], null, failure);
         }
 
+        // limit=0 without totalCount selects nothing and counts nothing, so no SQL runs. This sits after the
+        // budget check so limit=0 is judged exactly like limit=1.
+        if (plan.SelectsNoRows && !plan.IncludesTotalCount)
+        {
+            return new TrackedChangeQueryResult([], null);
+        }
+
         return await _commandExecutor
             .ExecuteReaderAsync(
                 plan.Command!,
@@ -219,9 +226,8 @@ public sealed class RelationalChangeQueryRepository(
             authorizationPlan.ClaimParameterization
         );
         // Everything the command binds beyond the namespace and claim lists — paging, the change-version
-        // window, the deletes query's own descriptor discriminators, and the custom-view descriptor
-        // discriminators (two per descriptor identity part or descriptor basis; custom views bind no claim
-        // parameters) — spends the same ceiling and is counted here.
+        // window, and the deletes query's own descriptor resource keys — spends the same ceiling and is
+        // counted here. Custom views bind no parameters; their descriptor resource keys are literals.
         int nonAuthorizationParameterCount = command.Parameters.Count - authorizationParameterCount;
 
         if (

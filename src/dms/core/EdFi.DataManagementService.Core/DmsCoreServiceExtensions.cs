@@ -105,7 +105,6 @@ public static class DmsCoreServiceExtensions
             .AddSingleton<IDataModelInfoProvider, DataModelInfoProvider>()
             .AddSingleton<IDocumentLinkSlugResolver, DocumentLinkSlugResolver>()
             .AddTransient<IDocumentValidator, DocumentValidator>()
-            .AddTransient<IMatchingDocumentUuidsValidator, MatchingDocumentUuidsValidator>()
             .AddTransient<IEqualityConstraintValidator, EqualityConstraintValidator>()
             .AddTransient<IDecimalValidator, DecimalValidator>()
             .AddSingleton<
@@ -315,6 +314,7 @@ public static class DmsCoreServiceExtensions
         Uri configurationServiceBaseAddress = ValidateConfigurationServiceBaseAddress(
             configurationServiceSettings
         );
+        bool allowLegacyConnectionStrings = ReadAllowLegacyConnectionStrings(configurationServiceSettings);
 
         services.AddHybridCache();
         if (!services.Any(descriptor => descriptor.ServiceType == typeof(IConfigureOptions<CacheSettings>)))
@@ -359,16 +359,55 @@ public static class DmsCoreServiceExtensions
             return cacheSettings;
         });
 
+        // The deprecated token cache cap is read from its raw key, not bound through CacheSettings, so
+        // an invalid value fails validation with a message that never echoes it. Guarded like
+        // CacheSettings above so a second registration does not duplicate the validation failure.
+        if (
+            !services.Any(descriptor =>
+                descriptor.ServiceType == typeof(IConfigureOptions<ConfigurationServiceTokenCacheOptions>)
+            )
+        )
+        {
+            var tokenCacheOptionsSetup = new ConfigurationServiceTokenCacheOptionsSetup(configuration);
+            services.AddSingleton<IConfigureOptions<ConfigurationServiceTokenCacheOptions>>(
+                tokenCacheOptionsSetup
+            );
+            services.AddSingleton<IValidateOptions<ConfigurationServiceTokenCacheOptions>>(
+                tokenCacheOptionsSetup
+            );
+            services.AddOptions<ConfigurationServiceTokenCacheOptions>().ValidateOnStart();
+        }
+
+        services.TryAddSingleton(TimeProvider.System);
+
+        void ConfigureConfigurationServiceClient(HttpClient client)
+        {
+            client.BaseAddress = configurationServiceBaseAddress;
+            client.DefaultRequestHeaders.Add("Accept", "application/json");
+            client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
+        }
+
         services.AddTransient<ConfigurationServiceResponseHandler>();
         services
-            .AddHttpClient<ConfigurationServiceApiClient>(client =>
-            {
-                client.BaseAddress = configurationServiceBaseAddress;
-                client.DefaultRequestHeaders.Add("Accept", "application/json");
-                client.DefaultRequestHeaders.Add("Accept", "application/x-www-form-urlencoded");
-            })
+            .AddHttpClient<ConfigurationServiceApiClient>(ConfigureConfigurationServiceClient)
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler())
+            // Transport exceptions can echo credentials or bearers from malformed responses.
+            // Header redaction cannot protect exception text; this private path owns diagnostics.
+            .RemoveAllLoggers()
             .AddHttpMessageHandler<ConfigurationServiceResponseHandler>();
+
+        // The credential grant has its own transport. Redirects stay off so a 3xx surfaces as a
+        // failed grant and the credential form is never resent to the redirect target. It has no
+        // response handler: the token handler reads the grant status and owns its diagnostics,
+        // including the grant's whole-grant budget, so the client adds no timeout of its own.
+        services
+            .AddHttpClient<ConfigurationServiceGrantClient>(client =>
+            {
+                ConfigureConfigurationServiceClient(client);
+                client.Timeout = Timeout.InfiniteTimeSpan;
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AllowAutoRedirect = false })
+            .RemoveAllLoggers();
 
         services.TryAddSingleton(
             new ConfigurationServiceContext(
@@ -379,7 +418,8 @@ public static class DmsCoreServiceExtensions
         );
         services.TryAddSingleton<IConnectionStringDecryptionService>(
             new ConnectionStringDecryptionService(
-                configurationServiceSettings["EncryptionKey"] ?? string.Empty
+                configurationServiceSettings["EncryptionKey"] ?? string.Empty,
+                allowLegacyConnectionStrings
             )
         );
         services.TryAddSingleton<ConfigurationServiceDataStoreProvider>();
@@ -391,6 +431,31 @@ public static class DmsCoreServiceExtensions
         services.TryAddSingleton<IdentityTenantSnapshot>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Absent keeps legacy AES-CBC connection strings readable, the compatible default. A present value
+    /// must be a boolean, as the Configuration Service's options binding requires: a blank or malformed
+    /// one fails startup rather than silently re-enabling legacy reads, and the message names the
+    /// setting without echoing its value.
+    /// </summary>
+    private static bool ReadAllowLegacyConnectionStrings(IConfigurationSection configurationServiceSettings)
+    {
+        string? rawValue = configurationServiceSettings["AllowLegacyConnectionStrings"];
+
+        if (rawValue is null)
+        {
+            return true;
+        }
+
+        if (!bool.TryParse(rawValue, out bool allowLegacyConnectionStrings))
+        {
+            throw new InvalidOperationException(
+                "ConfigurationServiceSettings:AllowLegacyConnectionStrings must be true or false."
+            );
+        }
+
+        return allowLegacyConnectionStrings;
     }
 
     private static Uri ValidateConfigurationServiceBaseAddress(

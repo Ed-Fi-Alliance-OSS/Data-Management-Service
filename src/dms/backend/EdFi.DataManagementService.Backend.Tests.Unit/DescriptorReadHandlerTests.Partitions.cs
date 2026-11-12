@@ -106,7 +106,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_no_ranges_without_a_command_when_preprocessing_proves_the_id_filter_matches_nothing()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandlePartitionsAsync(
@@ -142,7 +142,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_restates_a_namespace_denial_as_a_partition_named_failure_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandlePartitionsAsync(
@@ -163,7 +163,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_fails_closed_for_descriptor_partition_authorization_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandlePartitionsAsync(
@@ -189,7 +189,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_returns_no_ranges_without_a_command_for_a_caller_with_no_ownership_token()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandlePartitionsAsync(
@@ -212,7 +212,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_fails_descriptor_partitions_at_the_ownership_token_cap_without_executing_sql()
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandlePartitionsAsync(
@@ -301,7 +301,7 @@ public partial class Given_DescriptorReadHandler
     {
         const string OmissionReason =
             "descriptor partition support was intentionally omitted for the test fixture.";
-        var commandExecutor = new InMemoryRelationalCommandExecutor([]);
+        var commandExecutor = new DescriptorReadCommandExecutor([]);
         var sut = CreateHandler(commandExecutor);
 
         var result = await sut.HandlePartitionsAsync(
@@ -412,7 +412,7 @@ public partial class Given_DescriptorReadHandler
         string expectedViewFragment
     )
     {
-        var commandExecutor = new InMemoryRelationalCommandExecutor(
+        var commandExecutor = new DescriptorReadCommandExecutor(
             [
                 new InMemoryRelationalCommandExecution([InMemoryRelationalResultSet.Create()]),
                 new InMemoryRelationalCommandExecution([
@@ -493,7 +493,7 @@ public partial class Given_DescriptorReadHandler
     [Test]
     public async Task It_rejects_a_null_descriptor_partition_request()
     {
-        var sut = CreateHandler(new InMemoryRelationalCommandExecutor([]));
+        var sut = CreateHandler(new DescriptorReadCommandExecutor([]));
 
         var action = () => sut.HandlePartitionsAsync(null!);
 
@@ -503,7 +503,7 @@ public partial class Given_DescriptorReadHandler
     private static object? BoundaryParameterValue(RelationalCommand command, string parameterName) =>
         command.Parameters.Single(parameter => parameter.Name == parameterName).Value;
 
-    private static InMemoryRelationalCommandExecutor CreateBoundaryCommandExecutor(
+    private static DescriptorReadCommandExecutor CreateBoundaryCommandExecutor(
         SqlDialect dialect,
         params long[] ascendingStarts
     ) =>

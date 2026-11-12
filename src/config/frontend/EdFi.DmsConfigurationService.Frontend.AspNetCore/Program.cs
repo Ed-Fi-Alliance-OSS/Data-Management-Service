@@ -7,10 +7,14 @@ using EdFi.Api.Plugins.Hosting;
 using EdFi.DmsConfigurationService.Backend;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Deploy;
+using EdFi.DmsConfigurationService.Backend.OpenIddict.Services;
+using EdFi.DmsConfigurationService.DataModel.Model.ApiClient;
+using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using Microsoft.Extensions.Options;
+using Microsoft.OpenApi;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -29,7 +33,54 @@ loadedPlugins.ContributeConfiguration(builder.Configuration);
 builder.AddServices(loadedPlugins);
 builder.Services.AddHttpClient();
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddOpenApi();
+builder.Services.AddOpenApi(options =>
+{
+    // An application's enabled flag is computed across its API clients; no application-level
+    // write sets it.
+    options.AddSchemaTransformer(
+        (schema, context, _) =>
+        {
+            if (
+                context.JsonPropertyInfo is { Name: "enabled" } property
+                && property.DeclaringType == typeof(ApplicationResponse)
+            )
+            {
+                schema.ReadOnly = true;
+            }
+
+            // An API client request's scope fields are optional, but never null when sent: the
+            // validator rejects an explicit null, which the nullable flag type only exists to detect.
+            if (
+                context.JsonPropertyInfo is { } scopeProperty
+                && (
+                    scopeProperty.DeclaringType == typeof(ApiClientInsertCommand)
+                    || scopeProperty.DeclaringType == typeof(ApiClientUpdateCommand)
+                )
+            )
+            {
+                switch (scopeProperty.Name)
+                {
+                    case "inheritsApplicationEducationOrganizations":
+                        schema.Type = JsonSchemaType.Boolean;
+                        break;
+                    case "educationOrganizationIds":
+                        schema.MinItems = 1;
+                        break;
+                }
+            }
+
+            // Every API client response field is always written, null only where its type allows.
+            if (context.JsonPropertyInfo is null && context.JsonTypeInfo.Type == typeof(ApiClientResponse))
+            {
+                schema.Required = new HashSet<string>(schema.Properties?.Keys ?? []);
+            }
+
+            return Task.CompletedTask;
+        }
+    );
+    options.AddDocumentTransformer(ConfigurationServiceOpenApiTransformers.TransformDocument);
+    options.AddOperationTransformer(ConfigurationServiceOpenApiTransformers.TransformOperation);
+});
 
 // Add CORS policy to allow Swagger UI to access the Configuration Service
 string swaggerUiOrigin =
@@ -69,6 +120,11 @@ var app = builder.Build();
 // registration problem stops startup before any schema deployment and before a request can be served.
 await AuditPluginRegistrations(app);
 
+// Before the DatabaseOptions gate, the token-revocation check and ReportInvalidConfiguration,
+// so a host that goes on to run in configuration-report mode still logs it. Reads the flag
+// from configuration without binding and resolves nothing from the container.
+RequireHttpsMetadataStartupWarning.Emit(app.Logger, app.Environment, app.Configuration);
+
 var pathBase = app.Configuration.GetValue<string>("AppSettings:PathBase");
 if (!string.IsNullOrEmpty(pathBase))
 {
@@ -103,13 +159,58 @@ app.UseMiddleware<TenantResolutionMiddleware>();
 // make the behavior untestable under WebApplicationFactory.
 _ = app.Services.GetRequiredService<IOptions<DatabaseOptions>>().Value;
 
+// After the plugin audit, so the placeholder comes from the final hasher registration, a plugin's
+// included, and before the manager checks, because a self-contained manager is constructed from it.
+await InitializeClientSecretPlaceholder(app);
+
+// After the plugin audit, so a plugin registration the host refuses is reported as one first, and after
+// DatabaseOptions, because the self-contained manager's repository reads those options when it is
+// constructed: a rejected key must stop startup with the validator's text, not as a manager that could
+// not be constructed. Before ReportInvalidConfiguration and the database work, so a host that cannot
+// revoke tokens, or cannot authenticate introspection callers, never starts serving (DMS-1327 D-12).
+EnsureTokenRevocationSupport(app);
+EnsureTokenIntrospectionSupport(app);
+
 if (!ReportInvalidConfiguration(app))
 {
+    ConnectRateLimitSettings limits = app
+        .Services.GetRequiredService<IOptions<ConnectRateLimitSettings>>()
+        .Value;
+    if (
+        limits.Enabled
+        && TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]) == "self-contained"
+        && string.IsNullOrEmpty(limits.RequiredProxyAddress)
+        && (
+            !useReverseProxyHeaders
+            || (
+                reverseProxySettings.GetKnownProxies().Length == 0
+                && reverseProxySettings.GetKnownNetworks().Length == 0
+            )
+        )
+    )
+    {
+        app.Logger.LogWarning(
+            "ConnectRateLimit is enabled without explicit forwarded-header trust. If DMS proxies token "
+                + "requests to this service, all proxied callers and DMS system-token refresh share one source budget; "
+                + "unauthenticated traffic can exhaust it and block token requests and refresh. Configure "
+                + "AppSettings:ReverseProxy:UseForwardedHeaders and KnownProxies/KnownNetworks for the DMS peer "
+                + "and set ConnectRateLimit:RequiredProxyAddress, or raise or disable the limits before upgrading."
+        );
+    }
     InitializeDatabase(app);
     await InitializeClaimsData(app);
 }
 
 app.UseRouting();
+
+// Immediately after routing, the first point the route is known, and inside UseExceptionHandler: a route
+// whose exception content is not under CMS control has that content withheld before the framework's
+// exception middleware can log it, endpoint parameter binding included (DMS-1327 D-15, D-17).
+app.UseMiddleware<ExceptionContentBoundaryMiddleware>();
+
+// Marks OAuth and authorization-required responses no-store. Placed right after routing, so the endpoint is
+// known and the authentication and authorization short-circuits further down are covered.
+app.UseMiddleware<ResponseCachePolicyMiddleware>();
 
 // Shape framework-generated bodiless error responses into the Ed-Fi contract. Placed after routing
 // but before CORS/authentication/authorization so it wraps the auth short-circuits and the endpoint
@@ -117,6 +218,12 @@ app.UseRouting();
 app.UseMiddleware<FrameworkErrorResponseMiddleware>();
 
 app.UseCors("AllowSwaggerUI");
+
+// The /connect/* source gate (DMS-1482). After forwarded headers, so the remote address is the trusted
+// one; inside both exception boundaries and after CORS, so Swagger UI can read a 429; before
+// authentication, so a refused request does no bearer work. The per-client budget is applied inside the
+// token, revoke and authenticated introspect handlers, immediately before secret verification.
+app.UseMiddleware<ConnectSourceRateLimitMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -209,6 +316,171 @@ async Task AbortOnPluginRegistrationProblems(IReadOnlyList<string> problems, Exc
 }
 
 /// <summary>
+/// When the self-contained stores are registered, generates their placeholder client secret hash through
+/// the registered IClientSecretHasher, and stops startup when it cannot. An unknown client's secret is
+/// verified against that placeholder, so it must exist before any request is served, and no request
+/// pays for generating it. The registration decides, not the configured provider name, because the
+/// self-contained managers need the placeholder wherever they are registered. A hasher failure is
+/// reported by exception type names alone, as for the manager checks; an options validation failure
+/// propagates unchanged and carries the validator's text.
+/// </summary>
+async Task InitializeClientSecretPlaceholder(WebApplication app)
+{
+    // Only the type names leave the catch; a chain always names at least the caught exception.
+    string exceptionTypes = string.Empty;
+    try
+    {
+        if (app.Services.GetService<ClientSecretPlaceholderHash>() is { } placeholderHash)
+        {
+            await placeholderHash.InitializeAsync();
+        }
+    }
+    catch (Exception exception) when (exception is not OptionsValidationException)
+    {
+        exceptionTypes = ExceptionTypeNames.Chain(exception);
+    }
+
+    if (exceptionTypes.Length == 0)
+    {
+        return;
+    }
+
+    app.Logger.LogCritical(
+        "The placeholder client secret hash could not be generated with the registered client secret "
+            + "hasher ({ExceptionTypes}). Correct the hasher registration or its settings, then restart.",
+        exceptionTypes
+    );
+    throw new InvalidOperationException(
+        "The placeholder client secret hash could not be generated with the registered client secret "
+            + $"hasher ({exceptionTypes}). Correct the hasher registration or its settings, then restart."
+    );
+}
+
+/// <summary>
+/// Stops startup unless an ITokenRevocationManager can be constructed for the configured identity
+/// provider, so POST /connect/revoke can never be served by a host that cannot revoke (DMS-1327 D-12).
+/// Construction only: neither manager performs I/O in its constructor, so this adds no database or
+/// identity provider availability requirement; a provider outage is answered 503 per request instead.
+/// </summary>
+/// <remarks>
+/// A construction failure is reported by exception type names alone, and the caught exception is
+/// neither logged nor wrapped: a registration factory can come from a plugin, and its message can carry
+/// anything, a connection string or a secret included (D-15).
+/// </remarks>
+void EnsureTokenRevocationSupport(WebApplication app)
+{
+    string provider = TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]);
+    Exception? constructionFailure = null;
+    ITokenRevocationManager? revocationManager = null;
+
+    try
+    {
+        // In a scope: the Keycloak manager depends on the scoped KeycloakContext, and the root provider
+        // rejects scoped services when scope validation is on. Releasing the scope is inside the try
+        // too, because it runs the disposal of whatever the registration constructed.
+        using IServiceScope scope = app.Services.CreateScope();
+        revocationManager = scope.ServiceProvider.GetService<ITokenRevocationManager>();
+    }
+    catch (Exception exception)
+    {
+        constructionFailure = exception;
+    }
+
+    if (constructionFailure is not null)
+    {
+        string exceptionTypes = ExceptionTypeNames.Chain(constructionFailure);
+        app.Logger.LogCritical(
+            "The token revocation manager for AppSettings:IdentityProvider '{Provider}' could not be "
+                + "constructed ({ExceptionTypes}). Correct the registration or its dependencies, then restart.",
+            provider,
+            exceptionTypes
+        );
+        throw new InvalidOperationException(
+            $"The token revocation manager for AppSettings:IdentityProvider '{provider}' could not be "
+                + $"constructed ({exceptionTypes}). Correct the registration or its dependencies, then restart."
+        );
+    }
+
+    if (revocationManager is null)
+    {
+        app.Logger.LogCritical(
+            "No token revocation manager is registered for AppSettings:IdentityProvider '{Provider}'. "
+                + "Register one for this provider or correct the setting, then restart.",
+            provider
+        );
+        throw new InvalidOperationException(
+            $"No token revocation manager is registered for AppSettings:IdentityProvider '{provider}'. "
+                + "Register one for this provider or correct the setting, then restart."
+        );
+    }
+}
+
+/// <summary>
+/// Stops startup unless an ITokenIntrospectionManager can be constructed for the configured identity
+/// provider, so POST /connect/introspect, which resolves the manager for every request, is never served
+/// by a host that cannot authenticate its callers. The same rules as revocation: construction only, so
+/// no database or identity provider availability requirement, and a construction failure reported by
+/// exception type names alone, neither logged nor wrapped (DMS-1327 D-12, D-15).
+/// </summary>
+void EnsureTokenIntrospectionSupport(WebApplication app)
+{
+    string provider = TokenRevocationProviderName(app.Configuration["AppSettings:IdentityProvider"]);
+    // Only the type names leave the catch, and the log is written after it.
+    string exceptionTypes = string.Empty;
+    bool registered = false;
+
+    try
+    {
+        // In a scope: the Keycloak manager depends on the scoped KeycloakContext.
+        using IServiceScope scope = app.Services.CreateScope();
+        registered = scope.ServiceProvider.GetService<ITokenIntrospectionManager>() is not null;
+    }
+    catch (Exception exception)
+    {
+        exceptionTypes = ExceptionTypeNames.Chain(exception);
+    }
+
+    if (exceptionTypes.Length > 0)
+    {
+        app.Logger.LogCritical(
+            "The token introspection manager for AppSettings:IdentityProvider '{Provider}' could not be "
+                + "constructed ({ExceptionTypes}). Correct the registration or its dependencies, then restart.",
+            provider,
+            exceptionTypes
+        );
+        throw new InvalidOperationException(
+            $"The token introspection manager for AppSettings:IdentityProvider '{provider}' could not be "
+                + $"constructed ({exceptionTypes}). Correct the registration or its dependencies, then restart."
+        );
+    }
+
+    if (!registered)
+    {
+        app.Logger.LogCritical(
+            "No token introspection manager is registered for AppSettings:IdentityProvider '{Provider}'. "
+                + "Register one for this provider or correct the setting, then restart.",
+            provider
+        );
+        throw new InvalidOperationException(
+            $"No token introspection manager is registered for AppSettings:IdentityProvider '{provider}'. "
+                + "Register one for this provider or correct the setting, then restart."
+        );
+    }
+}
+
+/// <summary>
+/// The configured identity provider as a fixed literal, so the startup check never logs configuration
+/// text. AddServices has already refused any other value by the time the check runs.
+/// </summary>
+static string TokenRevocationProviderName(string? configured) =>
+    configured?.ToLowerInvariant() switch
+    {
+        "keycloak" => "keycloak",
+        "self-contained" => "self-contained",
+        _ => "unrecognized",
+    };
+
+/// <summary>
 /// Triggers configuration validation. If configuration is invalid, injects a short-circuit middleware to report.
 /// Returns true if the middleware was injected.
 /// </summary>
@@ -220,6 +492,7 @@ bool ReportInvalidConfiguration(WebApplication app)
         _ = app.Services.GetRequiredService<IOptions<AppSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<IdentitySettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;
+        _ = app.Services.GetRequiredService<IOptions<ConnectRateLimitSettings>>().Value;
     }
     catch (OptionsValidationException ex)
     {

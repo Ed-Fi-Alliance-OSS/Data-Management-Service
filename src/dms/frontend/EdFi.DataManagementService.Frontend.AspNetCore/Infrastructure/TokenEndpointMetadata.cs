@@ -1,0 +1,17 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+namespace EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
+
+/// <summary>
+/// Endpoint metadata marking the DMS <c>/oauth/token</c> POST endpoints, so middleware can
+/// recognize a token request without matching on the path.
+/// </summary>
+internal sealed class TokenEndpointMetadata
+{
+    public static readonly TokenEndpointMetadata Instance = new();
+
+    private TokenEndpointMetadata() { }
+}

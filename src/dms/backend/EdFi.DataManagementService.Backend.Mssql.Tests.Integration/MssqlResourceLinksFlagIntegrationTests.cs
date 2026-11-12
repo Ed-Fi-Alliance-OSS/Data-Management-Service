@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -288,8 +287,6 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
         await SeedDescriptorAsync(
             Guid.Parse("c3100001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -297,8 +294,6 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
         await SeedDescriptorAsync(
             Guid.Parse("c3100002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -308,29 +303,13 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         short resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        long documentId = await InsertDescriptorAsync(
-            documentUuid,
-            resourceKeyId,
-            discriminator,
-            uri,
-            @namespace,
-            codeValue,
-            shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
+        await InsertDescriptorAsync(documentUuid, resourceKeyId, @namespace, codeValue, shortDescription);
     }
 
     private async Task<UpsertResult> UpsertSchoolAsync(ServiceProvider serviceProvider)
@@ -510,13 +489,12 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
         await _database.ExecuteNonQueryAsync(
@@ -527,9 +505,7 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
             VALUES (
                 @documentId,
@@ -537,9 +513,7 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
             """,
             new SqlParameter("@documentId", documentId),
@@ -547,49 +521,9 @@ public class Given_A_Mssql_AcademicWeek_When_The_ResourceLinks_Flag_Is_Flipped_A
             new SqlParameter("@namespace", @namespace),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", shortDescription),
-            new SqlParameter("@description", shortDescription),
-            new SqlParameter("@discriminator", discriminator),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", shortDescription)
         );
 
         return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            MERGE INTO [dms].[ReferentialIdentity] AS target
-            USING (SELECT @referentialId AS [ReferentialId]) AS source
-              ON target.[ReferentialId] = source.[ReferentialId]
-            WHEN NOT MATCHED THEN
-              INSERT ([ReferentialId], [DocumentId], [ResourceKeyId])
-              VALUES (@referentialId, @documentId, @resourceKeyId);
-            """,
-            new SqlParameter("@referentialId", referentialId.Value),
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 }

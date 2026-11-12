@@ -390,7 +390,7 @@ internal static class DocumentCacheAdminCommandSurface
     {
         var dataStoreIdOption = new Option<long?>(DataStoreIdOptionName)
         {
-            Description = "Positive CMS data store identifier",
+            Description = "Positive Configuration Service data store identifier",
         };
         dataStoreIdOption.Validators.Add(result =>
         {

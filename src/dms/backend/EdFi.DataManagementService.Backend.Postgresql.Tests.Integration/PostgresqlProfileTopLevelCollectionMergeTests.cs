@@ -17,7 +17,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using EdFi.DataManagementService.Core.Profile;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
@@ -148,7 +147,6 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
 
         return new DocumentInfo(
             DocumentIdentity: identity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, identity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -417,13 +415,14 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
     public static ImmutableArray<string> HiddenAddressTypeDescriptorPath() =>
         ImmutableArray.Create("addressTypeDescriptor");
 
-    public static async Task<long> SeedAddressTypeDescriptorAsync(
+    public static async Task<int> SeedAddressTypeDescriptorAsync(
         PostgresqlGeneratedDdlTestDatabase database,
         Guid documentUuid,
         string codeValue
     )
     {
         var resourceKeyId = await GetResourceKeyIdAsync(database, "Ed-Fi", "AddressTypeDescriptor");
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await database.ExecuteScalarAsync<long>(
             """
             INSERT INTO "dms"."Document" ("DocumentUuid", "ResourceKeyId")
@@ -434,8 +433,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             new NpgsqlParameter("resourceKeyId", resourceKeyId)
         );
 
-        var uri = $"uri://ed-fi.org/AddressTypeDescriptor#{codeValue}";
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -443,9 +441,7 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -453,35 +449,16 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
                 @namespace,
                 @codeValue,
                 @codeValue,
-                @codeValue,
-                @discriminator,
-                @uri
-            );
+                @codeValue
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
-            new NpgsqlParameter("codeValue", codeValue),
-            new NpgsqlParameter("discriminator", "Ed-Fi:AddressTypeDescriptor"),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("codeValue", codeValue)
         );
 
-        var descriptorReference = CreateAddressTypeDescriptorReference(
-            uri,
-            "$.addresses[0].addressTypeDescriptor"
-        );
-        await database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", descriptorReference.ReferentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-
-        return documentId;
+        return descriptorId;
     }
 
     private static CollectionRowAddress CreateCollectionRowAddress(string identityPath, string city) =>
@@ -529,16 +506,12 @@ internal static class PostgresqlProfileTopLevelCollectionMergeSupport
             true
         );
         var descriptorIdentity = new DocumentIdentity([
-            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri.ToLowerInvariant()),
+            new DocumentIdentityElement(DocumentIdentity.DescriptorIdentityJsonPath, uri),
         ]);
 
         return new DescriptorReference(
             ResourceInfo: descriptorResourceInfo,
             DocumentIdentity: descriptorIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(
-                descriptorResourceInfo,
-                descriptorIdentity
-            ),
             Path: new JsonPath(referenceJsonPath)
         );
     }

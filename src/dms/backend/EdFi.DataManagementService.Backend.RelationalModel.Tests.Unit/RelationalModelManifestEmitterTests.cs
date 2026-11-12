@@ -510,7 +510,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
             new DbColumnModel(
                 canonicalColumn,
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: true,
                 SourceJsonPath: null,
                 TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
@@ -518,7 +518,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
             new DbColumnModel(
                 primaryBindingColumn,
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: true,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.primarySchoolTypeDescriptor"),
                 TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
@@ -529,7 +529,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
             new DbColumnModel(
                 secondaryBindingColumn,
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: true,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.secondarySchoolTypeDescriptor"),
                 TargetResource: new QualifiedResourceName("Ed-Fi", "SchoolTypeDescriptor")
@@ -545,7 +545,7 @@ public class Given_A_Relational_Model_Manifest_Emitter
                 descriptorConstraintName,
                 [canonicalColumn],
                 new DbTableName(new DbSchemaName("dms"), "Descriptor"),
-                [RelationalNameConventions.DocumentIdColumnName],
+                [RelationalNameConventions.DescriptorKeyColumnName],
                 OnDelete: ReferentialAction.NoAction,
                 OnUpdate: ReferentialAction.NoAction
             ),

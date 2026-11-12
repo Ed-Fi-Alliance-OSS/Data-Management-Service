@@ -48,8 +48,8 @@ Capture major strengths and risks of the baseline redesign, with an emphasis on 
 
 ### Stored update tracking (stamps + tracked-change rows)
 
-- Serves `_lastModifiedDate/ChangeVersion` from stored `dms.Document` stamps and composes `_etag` from `ContentVersion` plus the request's representation `variantKey` (including `profileCode` and `linkFlag`), with no document hashing or read-time dependency derivation.
-- Uses per-resource `ContentVersion` / `ContentLastModifiedAt` mirror columns (single-table range filter for `?minChangeVersion=X&maxChangeVersion=Y` reads) and per-resource `tracked_changes_*` tables (for `/deletes` and `/keyChanges`) for scalable Change Query candidate selection. See [change-queries.md](change-queries.md).
+- Serves `_lastModifiedDate` from the authoritative root/descriptor timestamp and `ChangeVersion` from `dms.Document` and composes `_etag` from `ContentVersion` plus the request's representation `variantKey` (including `profileCode` and `linkFlag`), with no document hashing or read-time dependency derivation.
+- Uses per-resource `ContentVersion` mirrors and authoritative `ContentLastModifiedAt` columns (single-table range filter for `?minChangeVersion=X&maxChangeVersion=Y` reads) and per-resource `tracked_changes_*` tables (for `/deletes` and `/keyChanges`) for scalable Change Query candidate selection. See [change-queries.md](change-queries.md).
 
 ### Stable collection identities + merge semantics for collections
 
@@ -180,7 +180,7 @@ At very large scale (e.g., ~100M documents), several tables and behaviors become
 
 ### `dms.Document` (~100M rows)
 
-- Hot updates to `ContentVersion/ContentLastModifiedAt` can increase write amplification (every representation change writes `dms.Document`).
+- Hot updates to `dms.Document.ContentVersion` and root/descriptor stamps can increase write amplification (every representation change still writes the document version).
 - Random UUID index insertion (`DocumentUuid`) can increase fragmentation/bloat under sustained ingest.
 
 Mitigations:
@@ -191,4 +191,4 @@ Mitigations:
 
 - Per-resource `tracked_changes_*` tables and the shared `tracked_changes_edfi.Descriptor` accumulate deletes (tombstones) and key-changes; high-delete or long-running deployments can grow these tables significantly.
 - DMS does not automate truncation of these tables in v1; see [change-queries.md](change-queries.md) §"Operational considerations: tracked-change table volume" for the manual truncation guidance and the loss-of-visibility trade-off.
-- Each `*_Stamp` trigger does three things per affected document: bump `dms.Document.ContentVersion` / `ContentLastModifiedAt`, mirror those values onto the resource root (or `dms.Descriptor`), and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable. Benchmark the trigger path under representative write load.
+- Each `*_Stamp` trigger does three things per affected document: advance `dms.Document.ContentVersion`, mirror that version and generate authoritative `ContentLastModifiedAt` on the resource root (or `dms.Descriptor`), and append tombstone / key-change rows to the corresponding `tracked_changes_*` table when applicable. Benchmark the trigger path under representative write load.

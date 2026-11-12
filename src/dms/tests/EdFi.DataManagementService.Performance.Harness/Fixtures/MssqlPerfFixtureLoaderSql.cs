@@ -57,31 +57,22 @@ public static class MssqlPerfFixtureLoaderSql
         """;
 
     /// <summary>
-    /// Mirrors the production descriptor write: Uri is namespace#codeValue, Discriminator is
-    /// the resource name, and ShortDescription echoes the code value. ContentVersion is
-    /// stamped by the production trigger.
+    /// Inserts stored descriptor fields and captures the native compact key independently of
+    /// the owning document key. ContentVersion is stamped by the production trigger.
     /// </summary>
     public static string DescriptorInsertSql(string resourceName) =>
         $"""
-            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription], [Discriminator], [Uri])
+            DECLARE @descriptorIds TABLE ([DescriptorId] int);
+            INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue], [ShortDescription])
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptorIds
             VALUES (
                 @{PerfFixtureLoaderParameters.DescriptorDocumentId},
                 @{PerfFixtureLoaderParameters.ResourceKeyId},
                 '{PerfFixtureDefinition.DescriptorNamespaceFor(resourceName)}',
                 '{PerfFixtureDefinition.DescriptorCodeValue}',
-                '{PerfFixtureDefinition.DescriptorCodeValue}',
-                '{resourceName}',
-                '{PerfFixtureDefinition.DescriptorUriFor(resourceName)}');
+                '{PerfFixtureDefinition.DescriptorCodeValue}');
+            SELECT [DescriptorId] FROM @descriptorIds;
             """;
-
-    /// <summary>
-    /// The production descriptor write inserts one referential-identity row per descriptor;
-    /// reference validation resolves descriptor URIs against it.
-    /// </summary>
-    public const string DescriptorReferentialIdentityInsertSql = $"""
-        INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-        VALUES (@{PerfFixtureLoaderParameters.DescriptorReferentialId}, @{PerfFixtureLoaderParameters.DescriptorDocumentId}, @{PerfFixtureLoaderParameters.ResourceKeyId});
-        """;
 
     public const string DocumentInsertSql = $"""
         SET IDENTITY_INSERT [dms].[Document] ON;
@@ -289,5 +280,6 @@ public static class MssqlPerfFixtureLoaderSql
                 definition.RowCount
             ),
             new("student-visa-row-count", "SELECT COUNT(*) FROM [edfi].[StudentVisa];", definition.RowCount),
+            .. PerfDescriptorBindingVerificationQueries.Create(definition),
         ];
 }

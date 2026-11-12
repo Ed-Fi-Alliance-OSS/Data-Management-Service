@@ -682,9 +682,10 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
     {
         var rows = await _database.QueryRowsAsync(
             """
-            SELECT [ContentVersion], [ContentLastModifiedAt]
-            FROM [dms].[Document]
-            WHERE [DocumentId] = @documentId;
+            SELECT document.[ContentVersion], school.[ContentLastModifiedAt]
+            FROM [dms].[Document] document
+            JOIN [edfi].[School] school ON school.[DocumentId] = document.[DocumentId]
+            WHERE document.[DocumentId] = @documentId;
             """,
             new SqlParameter("@documentId", documentId)
         );
@@ -711,7 +712,7 @@ public class Given_A_Mssql_Generated_Ddl_Apply_Harness_With_A_Focused_Stable_Key
         var document = await GetDocumentStampStateAsync(documentId);
         var mirror = await GetSchoolMirrorStampStateAsync(documentId);
 
-        mirror.Should().Be(document);
+        mirror.ContentVersion.Should().Be(document.ContentVersion);
     }
 
     private static async Task AssertForeignKeyViolationAsync(Func<Task> act)

@@ -1,0 +1,89 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "Existing",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "policy",
+      "isSystemReserved": true
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "edfi/domain",
+      "claims": [
+        {
+          "name": "edfi/student",
+          "claimSets": [
+            {
+              "name": "Existing",
+              "actions": [
+                {
+                  "name": "Read",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Base"
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "name": "Policy",
+              "actions": [
+                {
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Student"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "edfi/students",
+          "claimSets": [
+            {
+              "name": "policy",
+              "actions": [
+                {
+                  "name": "Update",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "Second"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "name": "edfi/category",
+          "claimSets": [
+            {
+              "name": "policy",
+              "actions": [
+                {
+                  "name": "Delete",
+                  "authorizationStrategyOverrides": [
+                    {
+                      "name": "SecondCategory"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "edfi/leaf"
+    }
+  ]
+}

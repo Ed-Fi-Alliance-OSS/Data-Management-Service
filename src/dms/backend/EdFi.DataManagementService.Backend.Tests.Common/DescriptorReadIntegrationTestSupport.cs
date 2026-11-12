@@ -18,8 +18,7 @@ public sealed record DescriptorReadSeed(
     string ShortDescription,
     string? Description = null,
     DateOnly? EffectiveBeginDate = null,
-    DateOnly? EffectiveEndDate = null,
-    string? Discriminator = null
+    DateOnly? EffectiveEndDate = null
 )
 {
     public string Uri => $"{Namespace}#{CodeValue}";

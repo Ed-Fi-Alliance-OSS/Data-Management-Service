@@ -26,7 +26,7 @@ public static class TestConfiguration
     /// Base URL for the Configuration Service
     /// </summary>
     public static string ConfigServiceUrl =>
-        Environment.GetEnvironmentVariable("CONFIG_SERVICE_URL") ?? "http://localhost:8081";
+        Environment.GetEnvironmentVariable("DMS_CONFIGURATION_SERVICE_URL") ?? "http://localhost:8081";
 
     /// <summary>
     /// Default route qualifier segments from environment

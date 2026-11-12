@@ -129,7 +129,7 @@ public abstract class EducationOrganizationProjectionUpstreamRedactionTests
 
             if (failure is null)
             {
-                call.Returns("token");
+                call.Returns(new ConfigurationServiceTokenLease("token", 1));
             }
             else
             {

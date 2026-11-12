@@ -122,36 +122,26 @@ public class Given_Descriptor_Unique_Constraint_Derivation
         _descriptorTable = descriptorModel.Root;
     }
 
-    /// <summary>
-    /// It should add uri and discriminator columns.
-    /// </summary>
     [Test]
-    public void It_should_add_uri_and_discriminator_columns()
+    public void It_should_leave_reconstructed_uri_uniqueness_to_core_ddl()
     {
-        var uriColumn = _descriptorTable.Columns.Single(column => column.ColumnName.Value == "Uri");
-        var discriminatorColumn = _descriptorTable.Columns.Single(column =>
-            column.ColumnName.Value == "Discriminator"
-        );
-
-        uriColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String, 306));
-        uriColumn.IsNullable.Should().BeFalse();
-        uriColumn.SourceJsonPath.Should().BeNull();
-
-        discriminatorColumn.ScalarType.Should().Be(new RelationalScalarType(ScalarKind.String, 128));
-        discriminatorColumn.IsNullable.Should().BeFalse();
-        discriminatorColumn.SourceJsonPath.Should().BeNull();
+        _descriptorTable
+            .Columns.Select(column => column.ColumnName.Value)
+            .Should()
+            .NotContain("Uri", "Discriminator");
     }
 
-    /// <summary>
-    /// It should define unique on uri and discriminator.
-    /// </summary>
     [Test]
-    public void It_should_define_unique_on_uri_and_discriminator()
+    public void It_should_preserve_the_unique_document_association()
     {
-        var uniqueConstraint = _descriptorTable.Constraints.OfType<TableConstraint.Unique>().Single();
+        var uniqueConstraint = _descriptorTable
+            .Constraints.OfType<TableConstraint.Unique>()
+            .Should()
+            .ContainSingle()
+            .Subject;
 
-        uniqueConstraint.Columns.Select(column => column.Value).Should().Equal("Uri", "Discriminator");
-        uniqueConstraint.Name.Should().Be("UX_Descriptor_NK");
+        uniqueConstraint.Columns.Should().Equal(RelationalNameConventions.DocumentIdColumnName);
+        uniqueConstraint.Name.Should().Be("UX_Descriptor_DocumentId");
     }
 }
 

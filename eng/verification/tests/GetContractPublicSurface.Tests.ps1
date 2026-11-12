@@ -798,6 +798,69 @@ Describe "Get-ContractPublicSurface sees a change that the XML type list does no
             -After "    internal class Outer { public class Inner { } }" |
             Should -BeTrue
     }
+
+    It "sees when a property gains required" {
+        Test-SurfaceChange -Namespace "RequiredPropGain" `
+            -Before '    public class Contract { public string Name { get; init; } = ""; }' `
+            -After '    public class Contract { public required string Name { get; init; } }' |
+            Should -BeTrue
+    }
+
+    It "sees when a property loses required" {
+        Test-SurfaceChange -Namespace "RequiredPropLoss" `
+            -Before '    public class Contract { public required string Name { get; init; } }' `
+            -After '    public class Contract { public string Name { get; init; } = ""; }' |
+            Should -BeTrue
+    }
+
+    It "sees when a settable property gains required" {
+        Test-SurfaceChange -Namespace "RequiredSetterGain" `
+            -Before '    public class Contract { public string Name { get; set; } = ""; }' `
+            -After '    public class Contract { public required string Name { get; set; } }' |
+            Should -BeTrue
+    }
+
+    It "sees when a record property gains required" {
+        Test-SurfaceChange -Namespace "RequiredRecordGain" `
+            -Before '    public record Contract { public string Name { get; init; } = ""; }' `
+            -After '    public record Contract { public required string Name { get; init; } }' |
+            Should -BeTrue
+    }
+
+    It "sees when a struct property gains required" {
+        Test-SurfaceChange -Namespace "RequiredStructGain" `
+            -Before '    public struct Contract { public string Name { get; init; } }' `
+            -After '    public struct Contract { public required string Name { get; init; } }' |
+            Should -BeTrue
+    }
+
+    It "sees when a field gains required" {
+        Test-SurfaceChange -Namespace "RequiredFieldGain" `
+            -Before '    public class Contract { public string Name = ""; }' `
+            -After '    public class Contract { public required string Name; }' |
+            Should -BeTrue
+    }
+
+    It "sees when a field loses required" {
+        Test-SurfaceChange -Namespace "RequiredFieldLoss" `
+            -Before '    public class Contract { public required string Name; }' `
+            -After '    public class Contract { public string Name = ""; }' |
+            Should -BeTrue
+    }
+
+    It "sees when SetsRequiredMembers is added to a constructor" {
+        Test-SurfaceChange -Namespace "SetsRequiredAdded" `
+            -Before '    public class Contract { public required string Name { get; init; } public Contract() { } }' `
+            -After '    public class Contract { public required string Name { get; init; } [System.Diagnostics.CodeAnalysis.SetsRequiredMembers] public Contract() { Name = ""; } }' |
+            Should -BeTrue
+    }
+
+    It "sees when SetsRequiredMembers is removed from a constructor" {
+        Test-SurfaceChange -Namespace "SetsRequiredRemoved" `
+            -Before '    public class Contract { public required string Name { get; init; } [System.Diagnostics.CodeAnalysis.SetsRequiredMembers] public Contract() { Name = ""; } }' `
+            -After '    public class Contract { public required string Name { get; init; } public Contract() { } }' |
+            Should -BeTrue
+    }
 }
 
 Describe "Get-ContractPublicSurface ignores what an implementer cannot bind to" {

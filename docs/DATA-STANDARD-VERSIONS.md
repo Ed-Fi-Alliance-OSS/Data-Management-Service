@@ -17,7 +17,7 @@ artifacts, and the design goal is that **each artifact has one obvious place to 
 | Concern | Single obvious place | Selected by |
 |---------|----------------------|-------------|
 | **Schema** (ApiSchema + extensions) | `SCHEMA_PACKAGES` in the `.env.ds<NN>` overlay, with matching `PackageVersion` entries in `src/Directory.Packages.props` | `USE_API_SCHEMA_PATH=true` + `SCHEMA_PACKAGES` (downloaded at container start by `src/dms/run.sh`) |
-| **Security metadata** (CMS claims) | `src/config/backend/EdFi.DmsConfigurationService.Backend/Claims/Standards/ds<NN>/Claims.json` | `ClaimsOptions:DataStandardVersion` (env `DMS_CONFIG_DATA_STANDARD_VERSION`) |
+| **Security metadata** (Configuration Service claims) | `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json` | `ClaimsOptions:DataStandardVersion` (env `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) |
 | **Local dev** | the `.env.ds<NN>` overlay | the `-DataStandardVersion` script parameter |
 | **CI** (template/package builds) | the per-workflow `standard_version` matrix | the matrix `include` entry |
 
@@ -51,11 +51,11 @@ When `-DataStandardVersion` is supplied, the script composes the matching
 writing a derived file to `eng/docker-compose/.derived/<base>.<token>` (gitignored)
 and handing that single file to `docker compose --env-file`. The overlay carries only
 the data-standard-specific variables — `SCHEMA_PACKAGES`, `DATABASE_TEMPLATE_PACKAGE`,
-and `DMS_CONFIG_DATA_STANDARD_VERSION` — so it can be applied on top of any base
+and `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION` — so it can be applied on top of any base
 `.env.*` file. Everything else comes from the base file.
 
 Because the overlay sets both `SCHEMA_PACKAGES` (the DMS schema surface) and
-`DMS_CONFIG_DATA_STANDARD_VERSION` (the CMS claims selector), selecting a version
+`CONFIGURATION_SERVICE_DATA_STANDARD_VERSION` (the Configuration Service claims selector), selecting a version
 keeps schema and security metadata in lockstep.
 
 - **No parameter ⇒ Data Standard 5.2.** The base env file is used unchanged, so every
@@ -73,20 +73,28 @@ The mechanics live in `eng/docker-compose/env-utility.psm1`
 `Get-DataStandardOverlayToken`) and are covered by
 `eng/docker-compose/tests/DataStandardEnvironmentFile.Tests.ps1`.
 
-## Security metadata selection (CMS)
+## Security metadata selection (Configuration Service)
 
-The Configuration Service embeds each version's base `Claims.json` as an assembly
-resource under `Claims/Standards/ds<NN>/`. The csproj globs
+The shared `EdFi.DmsConfigurationService.Claims` project embeds each version's base
+`Claims.json` as an assembly resource under `Claims/Standards/ds<NN>/`. Its csproj globs
 `Claims/Standards/**/Claims.json`, so **adding a version's claims is dropping a folder**
-— no csproj edit. At startup `ClaimsProvider` resolves the embedded resource from
-`ClaimsOptions:DataStandardVersion` (default `5.2`), and fails fast with a clear message
-if the requested version's resource is absent. This covers the **Embedded** and
-**Hybrid** claims-loading modes (both load the embedded base); see
+— no csproj edit. CMS `ClaimsProvider` passes `ClaimsOptions:DataStandardVersion` to
+the shared `BundledClaimsProvider`; offline `merge` passes `--data-standard-version`
+instead. Both default to `5.2` and fail with a clear message if the requested version's
+resource is absent. In CMS, this covers the **Embedded** and **Hybrid** claims-loading
+modes (both load the embedded base); see
 [Claims Loading Deployment Guide](./CLAIMS-LOADING-GUIDE.md) for the full mode matrix.
+
+The shared claims schema is
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/JsonSchemaForClaims.json`.
+Use a corresponding CMS/tool release and the same Data Standard for
+[offline preparation and verification](./CLAIMS-LOADING-GUIDE.md#offline-preparation-and-verification-81):
+`merge --data-standard-version 6.1` selects 6.1; omission selects 5.2; unsupported
+versions exit `1` before output replacement.
 
 The version key flows from configuration: `appsettings.json`
 (`ClaimsOptions:DataStandardVersion`) and the compose files
-(`ClaimsOptions__DataStandardVersion: ${DMS_CONFIG_DATA_STANDARD_VERSION:-5.2}`).
+(`ClaimsOptions__DataStandardVersion: ${CONFIGURATION_SERVICE_DATA_STANDARD_VERSION:-5.2}`).
 
 > **ResourceClaim seeding:** the static `ResourceClaim` seed
 > (`0009_Insert_ResourceClaim.sql`, run by dbup) stays the Data Standard 5.2 baseline so
@@ -195,8 +203,13 @@ variants:
 
 ```
 build-dms.ps1 E2ETest … -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 \
-  -TestFilter 'Category=@StandardVersion-6_1'
+  -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 ```
+
+The SQL Server counterpart (`run-e2e-tests-mssql-ds61`) runs the same scenarios with
+`-DatabaseEngine mssql` and `-TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)'`.
+Every E2E lane excludes the other engine's `@MssqlOnly` / `@PostgresqlOnly` variants; see the
+[E2E README](../src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md).
 
 Those scenarios carry **no shard tag**, so the 5.2 shard lanes (which filter on a
 `@e2e-ci-shard-N` category) never pick them up, and the 6.1 lane never re-runs the
@@ -220,11 +233,17 @@ Adding a version is the same set of small edits regardless of which version:
    `src/Directory.Packages.props`, keeping the versions consistent with the
    `SCHEMA_PACKAGES` you put in the overlay.
 3. **Local overlay.** Add `eng/docker-compose/.env.ds<NN>` modeled on `.env.ds52`:
-   `DMS_CONFIG_DATA_STANDARD_VERSION=<N.N>`, the version's `DATABASE_TEMPLATE_PACKAGE`,
+   `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=<N.N>`, the version's `DATABASE_TEMPLATE_PACKAGE`,
    and a single-line `SCHEMA_PACKAGES` listing that version's packages.
-4. **Security metadata.** Add `Claims/Standards/ds<NN>/Claims.json` (authored from the
-   ODS API SecurityMetadata XML export via the `eng/CmsHierarchy` tool). No csproj
-   change is needed — the embedded-resource glob picks it up.
+4. **Security metadata.** Convert a supported ODS security metadata XML export with
+   the installed **Ed-Fi API Security Metadata Tools** command:
+   `security-metadata-tools convert-ods-xml --input export.xml --output Claims.json`.
+   Review the complete document, containing `claimSets` and `claimsHierarchy`, for
+   the target standard and add it at
+   `src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json`. No csproj
+   change is needed — the embedded-resource glob picks it up. See
+   [conversion and loading](#converting-ods-security-metadata) below for installation,
+   verified export scope, and the unchanged-file upload contract.
 5. **CI.** Add an `include` entry to the `standard_version` matrix in each per-version lane -
    `EdFi.Api.Populated.Template.PostgreSQL.yml`, `EdFi.Api.Minimal.Template.PostgreSQL.yml`, and
    the SDK callers `Pkg EdFi.Api.Sdk.yml` / `Pkg EdFi.Api.TestSdk.yml`.
@@ -242,12 +261,55 @@ Adding a version is the same set of small edits regardless of which version:
    version-coupled features (`XSDMetadata.feature`, `DiscoveryAPI.feature`) — captured from a running
    stack of that version, not hand-written — and add a per-PR lane that runs them with
    `-DataStandardVersion <N.N>` and
-   `-TestFilter 'Category=@StandardVersion-<NN>'` (see *Per-PR E2E scope*
-   above). Give the variants **no** shard category so the default-version shard lanes skip them.
+   `-TestFilter '(Category=@StandardVersion-<NN>)&(Category!=@MssqlOnly)'` on PostgreSQL, or
+   `-TestFilter '(Category=@StandardVersion-<NN>)&(Category!=@PostgresqlOnly)'` on SQL Server
+   (see *Per-PR E2E scope* above). Give the variants **no** shard category so the default-version shard lanes skip them.
 
 Because Data Standard 5.2 is the default, none of these edits change 5.2 behavior:
 new folders, overlays, package entries, and matrix legs sit alongside the existing
 ones.
+
+### Converting ODS security metadata
+
+[Ed-Fi API Security Metadata Tools](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
+requires .NET 10. Once the intended release is published, install the exact tool
+version corresponding to your CMS release/build from the Ed-Fi feed. Find that version
+in the `EdFi.Api.SecurityMetadataTools` package entry in `EdFi.Api.SecurityMetadataTools-SBOM.zip`,
+attached to the corresponding [GitHub release](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/releases).
+Replace `<tool-version>` with that package version:
+
+```sh
+dotnet tool install --global EdFi.Api.SecurityMetadataTools --version '<tool-version>' --add-source https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json
+security-metadata-tools --version
+security-metadata-tools convert-ods-xml --input export.xml --output Claims.json
+```
+
+The [acceptance fixture and reproduction instructions](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools.Tests.Unit/Fixtures/OdsSecurityMetadata/README.md)
+identify the verified ODS/API 7.3.2 / Data Standard 5.2.0 seed and pinned SQL export
+format. They do not establish conversion support for every ODS or Data Standard
+version. Review other sources against that format before adding a standard.
+
+Claim-set normalization removes only literal spaces and hyphens, then rejects
+remaining whitespace (including nonbreaking spaces), controls, empty names, and
+names over 256 UTF-16 code units. Valid non-ASCII spelling and case are preserved;
+distinct source names colliding case-insensitively fail. URI mapping recognizes
+only the exact, case-sensitive leading `http://ed-fi.org/ods/identity/claims/`
+prefix and replaces it with `http://ed-fi.org/identity/claims/`. A nonempty suffix
+without `/` also gains `ed-fi/`, so legacy `academicWeek` becomes
+`http://ed-fi.org/identity/claims/ed-fi/academicWeek`. Domain, service, and
+already-namespaced suffixes retain their paths; already-current and external
+URIs remain unchanged. URI collisions fail.
+
+The converter validates a complete CMS document with top-level `claimSets` and
+`claimsHierarchy`. Upload the generated file unchanged to
+`POST /management/upload-claims`, without wrapping it or extracting its hierarchy.
+This requires an authorized administrative token and
+`ClaimsOptions:DangerouslyEnableUnrestrictedClaimsLoading=true` (compose variable
+`CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true`); see the
+[Claims Loading Deployment Guide](./CLAIMS-LOADING-GUIDE.md) for configuration and
+authentication. Imported catalog entries have `isSystemReserved: false`; an existing
+reserved set with the same name retains its reserved status when uploaded. Conversion
+and loading do not establish runtime support for every imported authorization strategy.
 
 ## Dropping a Data Standard version
 

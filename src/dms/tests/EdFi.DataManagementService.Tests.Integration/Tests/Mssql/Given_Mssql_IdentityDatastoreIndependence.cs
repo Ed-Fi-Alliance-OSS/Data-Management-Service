@@ -38,7 +38,7 @@ public sealed class Given_Mssql_IdentityDatastoreIndependence : MssqlApiIntegrat
     protected override bool BypassAuthorization => false;
 
     protected override IReadOnlyDictionary<string, string> AdditionalHostSettings =>
-        new Dictionary<string, string> { ["AppSettings:EnableIdentityManagement"] = "true" };
+        new Dictionary<string, string> { ["DataManagement:IdentityManagement:Enabled"] = "true" };
 
     protected override IClaimSetProvider CreateClaimSetProvider(FixtureContext fixture) =>
         new IdentityGrantingClaimSetProvider(fixture);

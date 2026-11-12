@@ -47,6 +47,73 @@ public class KeycloakClientFacade(KeycloakContext keycloakContext) : IKeycloakCl
 
     public Task<IEnumerable<Client>> GetClientsAsync(string realm) => _keycloakClient.GetClientsAsync(realm);
 
+    public Task<IEnumerable<Client>> GetClientsByClientIdAsync(
+        string realm,
+        string clientId,
+        TimeSpan timeout,
+        CancellationToken cancellationToken
+    ) =>
+        RunBoundedAsync(
+            operationToken =>
+                _keycloakClient.GetClientsAsync(realm, clientId, cancellationToken: operationToken),
+            timeout,
+            TimeProvider.System,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// Bounds one admin call by <paramref name="timeout"/> and the caller's cancellation
+    /// (DMS-1327 D-11.4). The token alone cannot do it: Keycloak.Net fetches its admin access
+    /// token synchronously, without the cancellation token, before the call returns a task, so
+    /// the operation runs on the thread pool and the wait is bounded here. On timeout the token
+    /// handed to the operation is cancelled, which aborts the part of the call that observes it;
+    /// the same happens on caller cancellation. An admin token fetch already in progress cannot be
+    /// aborted and finishes on its own, its result discarded. A caller cancellation always surfaces as a fresh
+    /// <see cref="OperationCanceledException"/>, never as the package's wrapped exception, whose
+    /// message carries the request URL.
+    /// </summary>
+    internal static async Task<T> RunBoundedAsync<T>(
+        Func<CancellationToken, Task<T>> operation,
+        TimeSpan timeout,
+        TimeProvider timeProvider,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        using var operationCancellation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        CancellationToken operationToken = operationCancellation.Token;
+        Task<T> call = Task.Run(() => operation(operationToken), CancellationToken.None);
+
+        try
+        {
+            return await call.WaitAsync(timeout, timeProvider, cancellationToken);
+        }
+        catch (Exception) when (cancellationToken.IsCancellationRequested)
+        {
+            // Explicit, not left to the link: callbacks run in reverse registration order, so the
+            // wait can observe the caller's cancellation and dispose the linked source before the
+            // link has cancelled it.
+            await operationCancellation.CancelAsync();
+            ObserveAbandoned(call);
+            throw new OperationCanceledException(cancellationToken);
+        }
+        catch (TimeoutException) when (!call.IsCompleted)
+        {
+            await operationCancellation.CancelAsync();
+            ObserveAbandoned(call);
+            throw;
+        }
+    }
+
+    private static void ObserveAbandoned(Task call) =>
+        _ = call.ContinueWith(
+            static abandoned => _ = abandoned.Exception,
+            CancellationToken.None,
+            TaskContinuationOptions.OnlyOnFaulted | TaskContinuationOptions.ExecuteSynchronously,
+            TaskScheduler.Default
+        );
+
     public Task<IEnumerable<ClientScope>> GetClientScopesAsync(string realm) =>
         _keycloakClient.GetClientScopesAsync(realm);
 

@@ -1,0 +1,211 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Text.Json;
+using System.Text.Json.Nodes;
+using FluentAssertions;
+using Microsoft.Playwright;
+using Reqnroll;
+
+namespace EdFi.DmsConfigurationService.Tests.E2E.StepDefinitions;
+
+/// <summary>
+/// Steps for the authenticated <c>/connect/introspect</c> endpoint (RFC 7662). Each request is
+/// stored as the scenario's last response so the generic Then steps can assert on it.
+/// </summary>
+public partial class StepDefinitions
+{
+    private async Task PostIntrospection(Dictionary<string, string> form, string? authorization)
+    {
+        Dictionary<string, string> headers = new()
+        {
+            { "Content-Type", "application/x-www-form-urlencoded" },
+        };
+        if (authorization is not null)
+        {
+            headers["Authorization"] = authorization;
+        }
+
+        APIRequestContextOptions options = new()
+        {
+            Headers = headers,
+            Data = await new FormUrlEncodedContent(form).ReadAsStringAsync(),
+        };
+        _apiResponse = await playwrightContext.ApiRequestContext!.PostAsync("/connect/introspect", options);
+    }
+
+    [When("an introspection of the current token is attempted with no client credentials")]
+    public async Task WhenAnIntrospectionIsAttemptedWithNoClientCredentials() =>
+        await PostIntrospection(new() { { "token", _token } }, authorization: null);
+
+    [When("an introspection of the current token is attempted with a wrong Basic client secret")]
+    public async Task WhenAnIntrospectionIsAttemptedWithAWrongBasicClientSecret() =>
+        await PostIntrospection(
+            new() { { "token", _token } },
+            BasicAuthorization(_lastClientId, $"{_lastClientSecret}-wrong")
+        );
+
+    [When("an introspection of the current token is attempted with only a Bearer authorization header")]
+    public async Task WhenAnIntrospectionIsAttemptedWithOnlyABearerHeader() =>
+        await PostIntrospection(new() { { "token", _token } }, $"Bearer {_token}");
+
+    [When("an introspection of the current token is attempted with Basic and form client credentials")]
+    public async Task WhenAnIntrospectionIsAttemptedWithMixedCredentials() =>
+        await PostIntrospection(
+            new() { { "token", _token }, { "client_id", _lastClientId } },
+            BasicAuthorization(_lastClientId, _lastClientSecret)
+        );
+
+    [When("an introspection without a token is attempted with the current client's Basic credentials")]
+    public async Task WhenAnIntrospectionWithoutATokenIsAttempted() =>
+        await PostIntrospection([], BasicAuthorization(_lastClientId, _lastClientSecret));
+
+    [When("the current token is introspected by its owner using Basic credentials")]
+    public async Task WhenTheCurrentTokenIsIntrospectedUsingBasic() =>
+        await PostIntrospection(
+            new() { { "token", _token } },
+            BasicAuthorization(_lastClientId, _lastClientSecret)
+        );
+
+    [When("the current token is introspected by its owner using form credentials")]
+    public async Task WhenTheCurrentTokenIsIntrospectedUsingFormCredentials() =>
+        await PostIntrospection(
+            new()
+            {
+                { "token", _token },
+                { "client_id", _lastClientId },
+                { "client_secret", _lastClientSecret },
+            },
+            authorization: null
+        );
+
+    // Keycloak refuses a public client at introspection whatever secret it sends (403 "Client not
+    // allowed."), which the Configuration Service answers as invalid_client.
+    [When("the public client attempts to introspect its token with an arbitrary form client secret")]
+    public async Task WhenThePublicClientAttemptsToIntrospectItsTokenWithAnArbitraryFormClientSecret() =>
+        await PostIntrospection(
+            new()
+            {
+                { "token", PublicClient.AccessToken },
+                { "client_id", PublicClient.ClientId },
+                { "client_secret", ArbitraryPublicClientSecret },
+            },
+            authorization: null
+        );
+
+    [When("the public client attempts to introspect its token with an arbitrary Basic client secret")]
+    public async Task WhenThePublicClientAttemptsToIntrospectItsTokenWithAnArbitraryBasicClientSecret() =>
+        await PostIntrospection(
+            new() { { "token", PublicClient.AccessToken } },
+            BasicAuthorization(PublicClient.ClientId, ArbitraryPublicClientSecret)
+        );
+
+    [When(
+        "an introspection of a {int}-character token is attempted with the current client's Basic credentials"
+    )]
+    public async Task WhenAnIntrospectionOfATokenOfALengthIsAttempted(int length) =>
+        await PostIntrospection(
+            new() { { "token", TokenOfLength(length) } },
+            BasicAuthorization(_lastClientId, _lastClientSecret)
+        );
+
+    /// <summary>
+    /// A garbage token of exactly <paramref name="length"/> characters: one letter repeated, which form
+    /// encoding leaves unchanged, so the identity provider receives a form value of that length.
+    /// </summary>
+    private static string TokenOfLength(int length) => new('A', length);
+
+    /// <summary>
+    /// PUTs <paramref name="body"/> with <paramref name="count"/> distinct nine-digit education
+    /// organization ids added, authenticated as the system client without changing the current token or
+    /// client, so the owner can then introspect a token issued before the update.
+    /// </summary>
+    [When("the system client makes a PUT request to {string} with {int} education organization ids added to")]
+    public async Task WhenTheSystemClientMakesAPutRequestWithEducationOrganizationIds(
+        string url,
+        int count,
+        string body
+    )
+    {
+        APIRequestContextOptions tokenRequest = new()
+        {
+            Headers = new Dictionary<string, string>
+            {
+                { "Content-Type", "application/x-www-form-urlencoded" },
+            },
+            Data = await new FormUrlEncodedContent(
+                new Dictionary<string, string>
+                {
+                    { "client_id", SystemClientId },
+                    { "client_secret", SystemClientSecret },
+                    { "grant_type", "client_credentials" },
+                    { "scope", "edfi_admin_api/full_access" },
+                }
+            ).ReadAsStringAsync(),
+        };
+        IAPIResponse tokenResponse = await playwrightContext.ApiRequestContext!.PostAsync(
+            "/connect/token",
+            tokenRequest
+        );
+        string systemToken = JsonNode.Parse(await tokenResponse.TextAsync())![
+            "access_token"
+        ]!.GetValue<string>();
+
+        JsonObject update = JsonNode.Parse(await ReplaceIdsAsync(body))!.AsObject();
+        update["educationOrganizationIds"] = JsonSerializer.SerializeToNode(
+            Enumerable.Range(100_000_000, count).ToArray()
+        );
+        _apiResponse = await playwrightContext.ApiRequestContext!.PutAsync(
+            await ReplaceIdsAsync(url),
+            new()
+            {
+                Headers = new Dictionary<string, string>
+                {
+                    { "Content-Type", "application/json" },
+                    { "Authorization", $"Bearer {systemToken}" },
+                },
+                Data = update.ToJsonString(),
+            }
+        );
+    }
+
+    [When("the current token is introspected with the credentials captured as {string}")]
+    public async Task WhenTheCurrentTokenIsIntrospectedWithTheCredentialsCapturedAs(string slot)
+    {
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await PostIntrospection(new() { { "token", _token } }, BasicAuthorization(key, secret));
+    }
+
+    /// <summary>
+    /// Introspects a captured token, authenticating as the captured credential pair. The
+    /// administrator's token and credentials stay current for the steps that follow.
+    /// </summary>
+    [When(
+        "an introspection of the token captured as {string} is attempted with the credentials captured as {string}"
+    )]
+    public async Task WhenAnIntrospectionOfTheTokenCapturedAsIsAttemptedWithTheCredentialsCapturedAs(
+        string tokenName,
+        string slot
+    )
+    {
+        string capturedToken = CapturedToken(tokenName);
+        _credentialSlots.Should().ContainKey(slot, $"credentials should have been captured as '{slot}'");
+        (string key, string secret) = _credentialSlots[slot];
+        await PostIntrospection(new() { { "token", capturedToken } }, BasicAuthorization(key, secret));
+    }
+
+    [Then("the introspection response reports the current client as active with numeric exp and iat")]
+    public async Task ThenTheIntrospectionResponseReportsTheCurrentClientAsActive()
+    {
+        string content = await _apiResponse.TextAsync();
+        JsonObject body = JsonNode.Parse(content)!.AsObject();
+
+        body["active"]!.GetValue<bool>().Should().BeTrue(content);
+        body["client_id"]!.GetValue<string>().Should().Be(_lastClientId, content);
+        body["exp"]!.GetValueKind().Should().Be(JsonValueKind.Number, content);
+        body["iat"]!.GetValueKind().Should().Be(JsonValueKind.Number, content);
+    }
+}

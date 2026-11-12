@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DataManagementService.Backend.External;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -34,6 +35,67 @@ internal static class RelationalDocumentUuidLookupSupport
                 ),
             },
             $"document uuid '{documentUuid.Value}'",
+            cancellationToken
+        );
+    }
+
+    public static Task<ResolvedReadDocumentByUuid?> TryResolveReadByDocumentUuidAsync(
+        IRelationalCommandExecutor commandExecutor,
+        MappingSet mappingSet,
+        QualifiedResourceName resource,
+        DocumentUuid documentUuid,
+        CancellationToken cancellationToken = default
+    )
+    {
+        ArgumentNullException.ThrowIfNull(commandExecutor);
+        ArgumentNullException.ThrowIfNull(mappingSet);
+
+        var resourceKeyId = RelationalWriteSupport.GetResourceKeyIdOrThrow(mappingSet, resource);
+        var rootTable = mappingSet.GetConcreteResourceModelOrThrow(resource).RelationalModel.Root.Table;
+        var dialect = mappingSet.Key.Dialect;
+        var command = dialect switch
+        {
+            SqlDialect.Pgsql or SqlDialect.Mssql => BuildReadLookupCommand(
+                dialect,
+                rootTable,
+                documentUuid,
+                resourceKeyId
+            ),
+            _ => throw new NotSupportedException(
+                $"Relational document UUID lookup does not support SQL dialect '{dialect}'."
+            ),
+        };
+
+        return commandExecutor.ExecuteReaderAsync(
+            command,
+            async (reader, ct) =>
+            {
+                if (!await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var resolvedDocument = new ResolvedReadDocumentByUuid(
+                    reader.GetRequiredFieldValue<long>("DocumentId"),
+                    new DocumentUuid(reader.GetRequiredFieldValue<Guid>("DocumentUuid")),
+                    reader.GetRequiredFieldValue<short>("ResourceKeyId"),
+                    reader.IsDBNull(reader.GetOrdinal("ContentVersion"))
+                        ? null
+                        : reader.GetRequiredFieldValue<long>("ContentVersion"),
+                    reader.IsDBNull(reader.GetOrdinal("ContentLastModifiedAt"))
+                        ? null
+                        : ReadDateTimeOffsetField(reader, "ContentLastModifiedAt")
+                );
+
+                if (await reader.ReadAsync(ct).ConfigureAwait(false))
+                {
+                    throw new InvalidOperationException(
+                        $"Relational document UUID lookup returned multiple rows for document uuid '{documentUuid.Value}'."
+                    );
+                }
+
+                return resolvedDocument;
+            },
             cancellationToken
         );
     }
@@ -117,10 +179,7 @@ internal static class RelationalDocumentUuidLookupSupport
                     reader.GetRequiredFieldValue<short>("ResourceKeyId"),
                     reader.IsDBNull(reader.GetOrdinal("ContentVersion"))
                         ? null
-                        : reader.GetRequiredFieldValue<long>("ContentVersion"),
-                    reader.IsDBNull(reader.GetOrdinal("ContentLastModifiedAt"))
-                        ? null
-                        : ReadDateTimeOffsetField(reader, "ContentLastModifiedAt")
+                        : reader.GetRequiredFieldValue<long>("ContentVersion")
                 );
 
                 if (await reader.ReadAsync(ct).ConfigureAwait(false))
@@ -147,8 +206,7 @@ internal static class RelationalDocumentUuidLookupSupport
                     document."DocumentId" AS "DocumentId",
                     document."DocumentUuid" AS "DocumentUuid",
                     document."ResourceKeyId" AS "ResourceKeyId",
-                    document."ContentVersion" AS "ContentVersion",
-                    document."ContentLastModifiedAt" AS "ContentLastModifiedAt"
+                    document."ContentVersion" AS "ContentVersion"
                 FROM dms."Document" document
                 WHERE document."DocumentUuid" = @documentUuid
                 """
@@ -178,8 +236,7 @@ internal static class RelationalDocumentUuidLookupSupport
                     document.[DocumentId] AS [DocumentId],
                     document.[DocumentUuid] AS [DocumentUuid],
                     document.[ResourceKeyId] AS [ResourceKeyId],
-                    document.[ContentVersion] AS [ContentVersion],
-                    document.[ContentLastModifiedAt] AS [ContentLastModifiedAt]
+                    document.[ContentVersion] AS [ContentVersion]
                 FROM [dms].[Document] document
                 WHERE document.[DocumentUuid] = @documentUuid
                 """
@@ -197,6 +254,13 @@ internal static class RelationalDocumentUuidLookupSupport
     }
 
     internal sealed record ResolvedDocumentByUuid(
+        long DocumentId,
+        DocumentUuid DocumentUuid,
+        short ResourceKeyId,
+        long? ContentVersion
+    );
+
+    internal sealed record ResolvedReadDocumentByUuid(
         long DocumentId,
         DocumentUuid DocumentUuid,
         short ResourceKeyId,
@@ -220,9 +284,48 @@ internal static class RelationalDocumentUuidLookupSupport
             ),
             string text => DateTimeOffset.Parse(text, System.Globalization.CultureInfo.InvariantCulture),
             _ => throw new InvalidOperationException(
-                $"Relational document UUID lookup expected a DateTimeOffset-compatible value for dms.Document.{columnName}, "
+                $"Relational document UUID lookup expected a DateTimeOffset-compatible value for the owning root's {columnName}, "
                     + $"but received '{value.GetType().Name}'."
             ),
         };
+    }
+
+    private static RelationalCommand BuildReadLookupCommand(
+        SqlDialect dialect,
+        DbTableName rootTable,
+        DocumentUuid documentUuid,
+        short resourceKeyId
+    )
+    {
+        var quote = dialect == SqlDialect.Pgsql ? '"' : '[';
+        var endQuote = dialect == SqlDialect.Pgsql ? '"' : ']';
+        string Column(string name) => $"{quote}{name}{endQuote}";
+
+        var documentTable = SqlIdentifierQuoter.QuoteTableName(
+            dialect,
+            new DbTableName(new DbSchemaName("dms"), "Document")
+        );
+        var ownerTable = SqlIdentifierQuoter.QuoteTableName(dialect, rootTable);
+        var commandText = $"""
+            SELECT
+                document.{Column("DocumentId")} AS {Column("DocumentId")},
+                document.{Column("DocumentUuid")} AS {Column("DocumentUuid")},
+                document.{Column("ResourceKeyId")} AS {Column("ResourceKeyId")},
+                document.{Column("ContentVersion")} AS {Column("ContentVersion")},
+                owner.{Column("ContentLastModifiedAt")} AS {Column("ContentLastModifiedAt")}
+            FROM {documentTable} document
+            LEFT JOIN {ownerTable} owner
+                ON owner.{Column("DocumentId")} = document.{Column("DocumentId")}
+                AND document.{Column("ResourceKeyId")} = @resourceKeyId
+            WHERE document.{Column("DocumentUuid")} = @documentUuid
+            """;
+
+        return new RelationalCommand(
+            commandText,
+            [
+                new RelationalParameter(DocumentUuidParameterName, documentUuid.Value),
+                new RelationalParameter(ResourceKeyIdParameterName, resourceKeyId),
+            ]
+        );
     }
 }

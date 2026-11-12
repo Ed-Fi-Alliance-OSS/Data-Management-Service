@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.Postgresql;
+using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
@@ -30,7 +31,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
     private short _localEducationAgencyResourceKeyId;
     private short _schoolResourceKeyId;
     private short _localEducationAgencyCategoryDescriptorResourceKeyId;
-    private long _localEducationAgencyCategoryDescriptorDocumentId;
+    private int _localEducationAgencyCategoryDescriptorId;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -56,11 +57,9 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         await _database.ResetAsync();
         _commandExecutor = new RecordingPostgresqlRelationalCommandExecutor(_database.ConnectionString);
 
-        _localEducationAgencyCategoryDescriptorDocumentId = await InsertDescriptorAsync(
+        _localEducationAgencyCategoryDescriptorId = await InsertDescriptorAsync(
             documentUuid: Guid.Parse("aaaaaaaa-1111-1111-1111-aaaaaaaaaaaa"),
             resourceKeyId: _localEducationAgencyCategoryDescriptorResourceKeyId,
-            discriminator: "Ed-Fi:LocalEducationAgencyCategoryDescriptor",
-            uri: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent",
             @namespace: "uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor",
             codeValue: "Independent",
             shortDescription: "Independent"
@@ -299,19 +298,18 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<int> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -319,9 +317,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -329,22 +325,18 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
+        return descriptorId;
     }
 
     private async Task<long> InsertStateEducationAgencyAsync(
@@ -395,7 +387,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             VALUES (
                 @documentId,
                 @localEducationAgencyId,
-                @categoryDescriptorDocumentId,
+                @categoryDescriptorId,
                 @nameOfInstitution,
                 @parentSeaDocumentId,
                 @parentSeaId
@@ -403,10 +395,7 @@ public class Given_A_Postgresql_Relational_TokenInfo_EducationOrganization_Looku
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("localEducationAgencyId", localEducationAgencyId),
-            new NpgsqlParameter(
-                "categoryDescriptorDocumentId",
-                _localEducationAgencyCategoryDescriptorDocumentId
-            ),
+            new NpgsqlParameter("categoryDescriptorId", _localEducationAgencyCategoryDescriptorId),
             new NpgsqlParameter("nameOfInstitution", nameOfInstitution),
             new NpgsqlParameter(
                 "parentSeaDocumentId",

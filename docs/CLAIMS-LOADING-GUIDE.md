@@ -2,7 +2,7 @@
 
 ## Overview
 
-The Ed-Fi DMS Configuration Service supports three distinct modes for loading and managing claims authorization data based on the `DMS_CONFIG_CLAIMS_SOURCE` configuration. This guide covers the deployment, configuration, and management of all claims loading modes, from embedded defaults to dynamic fragment composition and direct API uploads.
+The Ed-Fi API Configuration Service supports three distinct modes for loading and managing claims authorization data based on the `CONFIGURATION_SERVICE_CLAIMS_SOURCE` configuration. This guide covers the deployment, configuration, and management of all claims loading modes, from embedded defaults to dynamic fragment composition and direct API uploads.
 
 ### Claims System Architecture
 
@@ -130,12 +130,13 @@ The Claims.json file contains two main sections and is used as:
 ### Per-Data-Standard Embedded Claims
 
 The embedded base `Claims.json` is stored per Data Standard version under
-`Claims/Standards/ds<NN>/Claims.json` (`ds52`, `ds61`, ...). `ClaimsProvider`
-selects the version's resource at startup from `ClaimsOptions:DataStandardVersion`
-(environment variable `DMS_CONFIG_DATA_STANDARD_VERSION`, default `5.2`), and fails
-fast if the requested version's resource is absent. This selection applies to the
-**Embedded** and **Hybrid** modes below (both load the embedded base); **Filesystem**
-mode reads its base from disk instead. See
+`src/config/backend/EdFi.DmsConfigurationService.Claims/Claims/Standards/ds<NN>/Claims.json`
+(`ds52`, `ds61`, ...). CMS passes `ClaimsOptions:DataStandardVersion`
+(Compose environment variable `CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`) to the
+shared CMS claims library; offline `merge` passes `--data-standard-version`
+instead. Both default to `5.2` and fail if the requested version's resource is absent.
+In CMS, this selection applies to the **Embedded** and **Hybrid** modes below
+(both load the embedded base); **Filesystem** mode reads its base from disk instead. See
 [Data Standard Versions](./DATA-STANDARD-VERSIONS.md) for the full version mechanism.
 
 ## Claims Loading Modes
@@ -147,7 +148,7 @@ The most secure mode for production deployments. Uses only the built-in Claims.j
 **Configuration:**
 ```bash
 # Set claims source to embedded mode
-DMS_CONFIG_CLAIMS_SOURCE=Embedded
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded
 ```
 
 **Characteristics:**
@@ -162,10 +163,10 @@ Starts with embedded Claims.json and applies fragment transformations to extend 
 **Configuration:**
 ```bash
 # Set claims source to hybrid mode
-DMS_CONFIG_CLAIMS_SOURCE=Hybrid
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Hybrid
 
 # Path to fragment files directory
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-fragments
 ```
 
 **Characteristics:**
@@ -179,10 +180,10 @@ Loads claims entirely from external filesystem sources without embedded base cla
 **Configuration:**
 ```bash
 # Set claims source to filesystem mode
-DMS_CONFIG_CLAIMS_SOURCE=Filesystem
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Filesystem
 
 # Path to claims files directory
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-files
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-files
 ```
 
 ### Mode 4: Direct Upload (Dynamic Management)
@@ -192,11 +193,11 @@ Complete replacement of claims via the management API. The uploaded structure mu
 **Configuration:**
 ```bash
 # Required for management endpoints
-DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
+CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true
 
 # Optional: Can be combined with any base mode
-DMS_CONFIG_CLAIMS_SOURCE=Embedded  # or Hybrid, or Filesystem
-DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesystem
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Embedded  # or Hybrid, or Filesystem
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesystem
 ```
 
 **Characteristics:**
@@ -209,9 +210,16 @@ DMS_CONFIG_CLAIMS_DIRECTORY=/app/claims-fragments  # if using Hybrid or Filesyst
 
 ### Fragment File Structure
 
-Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claimset.json` and contains only the resource claims to be added.
+Fragment files extend the claims hierarchy. Each fragment must follow the naming pattern `*-claims.json`. A fragment can add resource claims to the hierarchy and grant actions on resource claims that already exist.
 
 A fragment can define one claim set. Its non-parent resource claims (those without `"isParent": true`) grant actions under the fragment's top-level `name`, or under the file name when `name` is absent. When the base claims do not already declare that name, it is registered as a new system-reserved claim set. Because it is system-reserved, the Management API cannot change or delete it, and removing the fragment later does not remove the claim set. A name must follow the Management API claim set name rules (non-empty, at most 256 characters, no white space). A fragment whose name contains white space or is longer than 256 characters is still applied, but its claim set is not registered and an error is logged. A fragment with an empty `name` fails claims validation, and the whole claims load is rejected. Parent resource claims (`"isParent": true`) only add hierarchy nodes and attach actions to claim sets that already exist; a fragment containing only parent entries defines no claim set.
+
+A non-parent entry's `name` is resolved to a resource claim in two steps.
+First, the name is compared as written with the last two URI segments of each claim, ignoring case, for example `ed-fi/candidateDemographics` or `domains/systemDescriptors`.
+Only if that finds no claim is the singular form tried: a final `ies` becomes `y` and otherwise a final `s` is dropped, so `ed-fi/schools` resolves to `ed-fi/school` and `ed-fi/localEducationAgencies` resolves to `ed-fi/localEducationAgency`.
+Other plurals match nothing, because the singular form of `ed-fi/people` is `ed-fi/people` and that of `ed-fi/studentPathPhaseStatuses` is `ed-fi/studentPathPhaseStatuse`, so write the claim name itself.
+Because only the last two URI segments are compared, a full claim URI does not match.
+An entry that matches no claim is skipped and a warning is logged naming the fragment file, the claim set and the name, but the service still starts and the claim set is still registered.
 
 A fragment that defines a claim set looks like this:
 
@@ -254,23 +262,31 @@ A fragment that defines a claim set looks like this:
           ]
         }
       ],
-      "_defaultAuthorizationStrategiesForCRUD": []
+      "_defaultAuthorizationStrategiesForCrud": []
     }
   ]
 }
 ```
 
+This four-enabled-actions example requests **only Create**, through
+`authorizationStrategyOverridesForCRUD`, subject to name matching and existing
+precedence. Non-parent `actions` and `enabled` are informational: enabled actions
+without overrides grant nothing; overrides request grants even for disabled actions
+or when `actions` is absent; absent/empty overrides add nothing. Flags do not deny
+or revoke inherited/existing grants. Replace `ed-fi/resourceName` with an existing
+claim; an unmatched target makes the CLI merge fail.
+
 ### Fragment File Naming Convention
 
-Files must follow the pattern: `{number}-{description}-claimset.json`
+Files must follow the pattern: `{number}-{description}-claims.json`
 
 Examples:
-- `004-sample-extension-claimset.json`
-- `005-homograph-extension-claimset.json`
+- `004-sample-extension-claims.json`
+- `005-homograph-extension-claims.json`
 
 ### Fragment Composition Process
 
-1. **Discovery**: System scans the configured directory for `*-claimset.json` files
+1. **Discovery**: System scans the configured directory for `*-claims.json` files
 2. **Ordering**: Files are sorted alphabetically (use numeric prefixes for control)
 3. **Transformation**: Each fragment is applied sequentially to the base claims
 4. **Validation**: Final composition is validated against JSON Schema
@@ -392,6 +408,204 @@ curl -X POST -H "Content-Type: application/json" \
 No wrapping, re-indenting or property renaming is required in between. The upload responds with HTTP
 200 and a new reload ID.
 
+## Offline preparation and verification (8.1)
+
+Use the .NET 10 [Security Metadata Tools](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/README.md)
+from the corresponding CMS release/build. Run `security-metadata-tools --version`
+to record the installed build; see the authoritative
+[version allocation and release policy](../src/config/clis/EdFi.DmsConfigurationService.SecurityMetadataTools/VERSIONING.md).
+For a published release, find the matching tool version in the
+`EdFi.Api.SecurityMetadataTools` package entry in `EdFi.Api.SecurityMetadataTools-SBOM.zip`,
+attached to the corresponding [GitHub release](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/releases).
+Tool and app patch numbers need not match. There is no cross-release compatibility
+guarantee. `merge --data-standard-version` must match
+`ClaimsOptions:DataStandardVersion`, configured in Compose through
+`CONFIGURATION_SERVICE_DATA_STANDARD_VERSION`. Both use **5.2** by default
+(including unset/whitespace selection); **6.1** is explicit. Unsupported bundled
+versions fail with exit `1` and preserve the destination.
+
+### Prepare and inspect offline
+
+With the matching tool installed, start in an empty working directory. This Bash
+example creates an `Offline` claim set granting Read access to students:
+
+```sh
+mkdir -p fragments policy-output
+cat > fragments/offline-claims.json <<'JSON'
+{
+  "name": "Offline",
+  "resourceClaims": [
+    {
+      "name": "ed-fi/students",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [{ "name": "NoFurtherAuthorizationRequired" }]
+        }
+      ]
+    }
+  ]
+}
+JSON
+security-metadata-tools merge \
+  --fragments ./fragments \
+  --data-standard-version 5.2 --output policy-output/Claims.json
+security-metadata-tools resolve \
+  --input policy-output/Claims.json --output policy-output/authorization-metadata.json
+```
+
+Omit the version flag for the same 5.2 result; use `--data-standard-version 6.1`
+when CMS is configured for 6.1. A readable directory containing no fragments
+produces the selected base. Merge uses the shared CMS discovery, order, matching,
+and precedence, with no arbitrary base-file option. CLI composition uses invariant
+culture to match the default CMS container. CMS deployments with a custom culture
+must use invariant culture for the same fragment ordering.
+
+`Claims.json` is a **complete claims document** with `claimSets` and
+`claimsHierarchy`. Deploy that file. `authorization-metadata.json` is the resolved
+metadata array for inspection, with leaf permissions, inherited grants, defaults,
+and overrides. Defaults select strategies for granted actions, not new grants.
+Resolved metadata cannot be used as the input to resolve, verify, or upload.
+The existing `convert-ods-xml --input export.xml --output Claims.json` command also
+produces a complete document suitable for this workflow.
+
+All file-producing commands require an existing parent directory. Add `--force`
+only to permit replacement of an existing output. Validation and serialization
+complete before same-directory staging and atomic publication; failures preserve
+existing bytes and create no partial destination. JSON goes only to the output
+file; failures use safely rendered stderr. Help/version use stdout; parser usage
+help for conversion argument errors may also use stdout.
+
+### Deploy the complete document separately
+
+For **Filesystem startup**, mount the generated file unchanged as `Claims.json`
+in an otherwise empty claims directory, then start CMS against a fresh database:
+
+```sh
+CONFIGURATION_SERVICE_CLAIMS_SOURCE=Filesystem
+CONFIGURATION_SERVICE_CLAIMS_MOUNT_SOURCE=/absolute/path/to/claims
+CONFIGURATION_SERVICE_CLAIMS_DIRECTORY=/app/additional-claims
+CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5.2
+CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=false
+```
+
+These are Compose environment-file settings. Replace `/absolute/path/to/claims`
+with a host directory containing only a copy of the generated `policy-output/Claims.json`.
+The repository's local and published Compose configurations mount that directory
+at `/app/additional-claims`. Do not include the fragments already merged into the file.
+With direct application configuration, use
+`ClaimsOptions__ClaimsSource`, `ClaimsOptions__ClaimsDirectory`, and
+`ClaimsOptions__DataStandardVersion`. Filesystem loads the file rather than an
+embedded base. Keep the tool's selected Data Standard aligned with the deployment.
+Startup loads only an empty database, so a restart against existing storage does
+not apply changed files.
+
+For an authorized **upload** in an environment where unrestricted loading is
+permitted, enable the existing management gate and send the generated bytes:
+
+```sh
+curl --fail-with-body -X POST \
+  -H "Authorization: Bearer $CMS_ACCESS_TOKEN" \
+  -H 'Content-Type: application/json' \
+  --data-binary @policy-output/Claims.json \
+  http://localhost:8081/management/upload-claims
+```
+
+Supply an already-issued admin token through `CMS_ACCESS_TOKEN`; use the role,
+scope, and feature-gate requirements under [Endpoint Authentication](#endpoint-authentication).
+If the deployment uses tenant routing, also send `-H 'Tenant: tenant-name'`.
+Do not wrap, reserialize, or edit the merged catalog before upload. Existing
+system-reserved rows are retained, so a previously populated target may contain
+extra sets that verification reports. Upload is a separate operation from verify.
+
+### Compare with current stored policy
+
+With an already-issued CMS bearer token, this Bash example prompts without echoing
+it or placing its value in the verify arguments:
+
+```sh
+read -r -s -p 'CMS bearer token: ' CMS_ACCESS_TOKEN
+printf '\n'
+export CMS_ACCESS_TOKEN
+security-metadata-tools verify --input policy-output/Claims.json \
+  --cms-url http://localhost:8081 --access-token-env CMS_ACCESS_TOKEN
+# Add --tenant tenant-name when tenant routing is required.
+unset CMS_ACCESS_TOKEN
+```
+
+The three shown flags are required. `--tenant` is the only optional verification
+flag; it sends the `Tenant` routing header, which provides data partitioning, not
+authorization. The base HTTP(S) URL may include a deployment prefix but no userinfo,
+query, or fragment. `--access-token-env` names an environment variable containing
+the token; missing/empty credentials fail before HTTP. Token acquisition remains
+external to the tool for either supported CMS identity provider.
+
+Verification reads all sets from `GET /v3/authorizationMetadata` using its existing
+authentication requirements. It requires neither unrestricted claims loading nor
+a new endpoint. It does not upload, edit, reload, or invalidate caches.
+
+| Exit | Meaning | Stream |
+| --- | --- | --- |
+| `0` | Successful merge/resolve, or all CMS metadata matches | Verify match report on stdout; merge/resolve JSON only in file |
+| `1` | Invalid/incomplete input, HTTP/authentication/authorization failure, malformed response, or execution failure | Diagnostics on stderr |
+| `2` | Valid metadata differs | Stable expected/actual difference report on stdout |
+
+Comparison includes empty sets and every expected/actual set. Set names compare
+with `OrdinalIgnoreCase`; resource URIs, action names, and strategy names with
+`Ordinal`, without normalization. Authorization IDs are dereferenced. Generated
+IDs, `isSystemReserved`, and claim-set/claim/authorization/action collection order
+are ignored. Strategy sequences compare positionally, including multiplicity;
+order-only changes return `2`. Raw hierarchy differences resolving identically
+match. Shared resolution's order-insensitive deduplication keeps the first
+representative; ordering differences already erased there cannot be detected.
+
+The three new commands enforce the shared schema plus catalog names of 1–256
+UTF-16 code units satisfying the existing CMS naming rules, case-insensitive
+catalog uniqueness and reference lookup, and references only to declared sets.
+Claim names/URIs must be ordinally unique across the entire complete-document
+hierarchy, including parents
+and separate branches, even for identical policy. Received CMS metadata must have
+ordinally unique URIs within each set (reuse across different sets is valid).
+Duplicates or inconsistent metadata are exit `1`, not mismatches. These CLI
+restrictions do not alter CMS loading, validation, or response behavior.
+
+Startup files may differ from stored policy after administrative edits or uploads.
+A match describes only the CMS metadata returned by that request; it does not
+establish DMS cache freshness, live API enforcement, strategy support, or immunity
+from later policy edits.
+
+### Strict merge diagnostics
+
+CMS retains its existing continuation/fallback behavior. The offline merge rejects
+incomplete composition: missing/unreadable directories, unreadable or malformed
+fragments, fragments with missing or null `resourceClaims`, unmatched grants,
+invalid registration, and retired `*-claimset.json` files. An explicitly empty
+`resourceClaims` array is valid. Unrelated files and ordinary informational
+diagnostics are not errors; existing precedence superseding a grant is not an error.
+
+These nonempty fields are unapplied requested policy and fail merge even if their
+values repeat existing policy; absent/empty collections do not cause this error:
+
+| Entry | Unapplied fields |
+| --- | --- |
+| Existing matched parent | `claimSets`, `_defaultAuthorizationStrategiesForCrud` |
+| Any parent | `authorizationStrategyOverridesForCRUD` |
+| Non-parent | `children`, `claimSets`, `_defaultAuthorizationStrategiesForCrud` |
+| Child whose name alone is copied | `claimSets`, `_defaultAuthorizationStrategiesForCrud`, `authorizationStrategyOverridesForCRUD`, further `children` |
+
+New parents can apply defaults and claim-set grants. Name-only children that are
+actually appended succeed. Children discarded because an existing matched claim
+has no child collection or because the child name is missing/empty fail with an
+indexed location. Discarded null policy entries in non-parent overrides or
+new-parent defaults also fail. Diagnostics retain fragment, claim/claim-set and
+JSON location context and use `_defaultAuthorizationStrategiesForCrud`; binding
+remains case-insensitive. Export IDs/descriptive flags and non-parent
+`actions`/`enabled` are informational, with the Create-only behavior explained in
+[Fragment File Structure](#fragment-file-structure).
+
+For developer instructions to reproduce the deployment and drift checks, see the
+[isolated policy test README](../src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/TestData/Claims/SecurityMetadataTools/README.md).
+
 ## Deployment Steps
 
 ### 1. Choose Loading Mode
@@ -413,7 +627,7 @@ No additional configuration needed.
 4. Set required environment variables
 
 #### For Filesystem Mode:
-1. Create complete claims files or fragments
+1. Prepare a complete `Claims.json` (for example, with `merge` above), optionally accompanied by `*-claims.json` fragments that have not already been merged into it
 2. Validate JSON syntax of each file
 3. Place files in designated directory
 4. Set required environment variables
@@ -425,7 +639,7 @@ No additional configuration needed.
 
 ### Configuration Mode Summary
 
-| Mode | DMS_CONFIG_CLAIMS_SOURCE | DMS_CONFIG_CLAIMS_DIRECTORY | Use Case |
+| Mode | CONFIGURATION_SERVICE_CLAIMS_SOURCE | CONFIGURATION_SERVICE_CLAIMS_DIRECTORY | Use Case |
 |------|--------------------------|----------------------------|----------|
 | Embedded | `Embedded` | Not used | Production default, highest security |
 | Hybrid | `Hybrid` | Required | Development with fragment extensions |
@@ -532,11 +746,18 @@ lacks, so the export shows whether the grant took effect. The claim set and cred
 Configuration Service needs are described under
 [Provisioning the Configuration Service credential](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential).
 
+### Upgrading an Existing Deployment: Fragment Grant Names
+
+Earlier releases converted every non-parent fragment entry's name to its singular form before matching it, so an entry naming a claim that ends in `s`, such as `domains/educationOrganizations` or `ed-fi/candidateDemographics`, matched nothing and was skipped without a warning.
+Such an entry now matches its claim and grants the actions named in its `authorizationStrategyOverridesForCRUD` list; its `actions` list, including any `enabled` value, is not used.
+A database whose claims are already loaded keeps them after an upgrade, so the change applies the next time claims are composed from fragments: when the service starts on an empty database, or after a claims reload.
+Before that happens, review your fragments for entries that never took effect, and remove any whose access you do not want to grant.
+
 ## Security and Production Considerations
 
 ### Security Warnings
 
-⚠️ **CRITICAL**: The `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` flag should **NEVER** be enabled in production environments.
+⚠️ **CRITICAL**: The `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING` flag should **NEVER** be enabled in production environments.
 
 This flag enables:
 - Runtime modification of security policies
@@ -545,9 +766,9 @@ This flag enables:
 
 ### Endpoint Authentication
 
-Every `/management/*` claims endpoint requires a valid CMS bearer token that satisfies **both** of the following, in addition to the dangerous flag above:
+Every `/management/*` claims endpoint requires a valid Configuration Service bearer token that satisfies **both** of the following, in addition to the dangerous flag above:
 
-1. **The configuration-service role** — enforced by `SecurityConstants.ServicePolicy`. The token must carry the configured configuration-service role (the same role every other CMS management endpoint requires); a token for a different role is rejected even when its scope would otherwise be sufficient.
+1. **The configuration-service role** — enforced by `SecurityConstants.ServicePolicy`. The token must carry the configured configuration-service role (the same role every other Configuration Service management endpoint requires); a token for a different role is rejected even when its scope would otherwise be sufficient.
 2. **The endpoint-appropriate scope:**
    - `POST /management/upload-claims` and `POST /management/reload-claims` require the **admin** scope.
    - `GET /management/current-claims` requires the **read-only or admin** scope.
@@ -565,15 +786,26 @@ The `Authorization: Bearer $TOKEN` header shown in the examples above is enforce
 ### Common Configuration Issues
 
 1. **Claims not loading from filesystem**
-   - Verify `DMS_CONFIG_CLAIMS_SOURCE` is set to `Hybrid` or `Filesystem`
-   - Check that `DMS_CONFIG_CLAIMS_DIRECTORY` points to the correct directory
-   - Ensure fragment files follow the `*-claimset.json` naming pattern
+   - Verify `CONFIGURATION_SERVICE_CLAIMS_SOURCE` is set to `Hybrid` or `Filesystem`
+   - Check that `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY` points to the correct directory
+   - Ensure fragment files follow the `*-claims.json` naming pattern
 
 2. **Management endpoints returning 404**
-   - Verify `DMS_CONFIG_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true` is set
+   - Verify `CONFIGURATION_SERVICE_DANGEROUSLY_ENABLE_UNRESTRICTED_CLAIMS_LOADING=true` is set
    - Check that the service is running with the correct environment variables
 
 3. **Fragment files not being discovered**
-   - Confirm files are in the directory specified by `DMS_CONFIG_CLAIMS_DIRECTORY`
+   - Confirm files are in the directory specified by `CONFIGURATION_SERVICE_CLAIMS_DIRECTORY`
    - Verify file permissions allow the service to read the files
    - Check service logs for fragment discovery messages
+   - A warning that a fragment file "is not read" names a file still using the pre-8.1
+     `*-claimset.json` suffix; rename it to end in `-claims.json`. Fragments are read only when
+     an empty database is seeded, on a claims reload, and on the first
+     `GET /management/current-claims`, so the warning does not appear at every startup
+
+4. **A fragment grant has no effect**
+   - Check the service log for a warning containing "matches no resource claim"; it names the fragment file, the claim set and the entry that was skipped
+   - The warning is logged only when claims are composed from the fragments, which a restart against a database that already has claims does not do, so a missing warning after such a restart does not mean the entry matched
+   - Write the claim's own name, as described in [Fragment File Structure](#fragment-file-structure)
+   - The service loads claims at startup only into an empty database, so restarting after a fragment changes does not change claims that are already loaded
+   - Confirm the grant with `GET /v3/authorizationMetadata?claimSetName=<name>`; it lists leaf resource claims only, so a grant on a domain such as `domains/systemDescriptors` appears on the claims under that domain, not on the domain itself

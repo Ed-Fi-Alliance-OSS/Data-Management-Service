@@ -5,14 +5,16 @@
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000003101",
       "resourceKeyId": 244,
       "contentVersion": 555,
-      "contentLastModifiedAt": "2026-08-02T03:04:05.987654Z"
+      "contentLastModifiedAt": "2026-08-02T03:04:05.987654Z",
+      "contentCreatedAt": "2025-03-04T05:06:12.654332Z"
     },
     {
       "documentId": 973201,
       "documentUuid": "aaaaaaaa-bbbb-cccc-dddd-000000003201",
       "resourceKeyId": 57,
       "contentVersion": 210,
-      "contentLastModifiedAt": "2026-08-01T03:04:05Z"
+      "contentLastModifiedAt": "2026-08-01T03:04:05Z",
+      "contentCreatedAt": "2025-03-04T05:06:13.654333Z"
     }
   ],
   "descriptors": [
@@ -22,9 +24,10 @@
       "namespace": "uri://ed-fi.org/AddressTypeDescriptor",
       "codeValue": "Physical",
       "shortDescription": "Physical",
-      "values": {
-        "Discriminator": "AddressTypeDescriptor"
-      }
+      "values": {},
+      "descriptorId": 101,
+      "projectName": "Ed-Fi",
+      "resourceName": "AddressTypeDescriptor"
     }
   ],
   "concreteRootRows": [
@@ -48,7 +51,7 @@
         "School_DocumentId": 973101,
         "Ordinal": 0,
         "City": "Austin",
-        "AddressTypeDescriptor_DescriptorId": 973201
+        "AddressTypeDescriptor_DescriptorId": 101
       }
     },
     {
@@ -64,23 +67,5 @@
       }
     }
   ],
-  "extensionRows": [],
-  "referentialIdentityRows": [
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000013101",
-      "documentId": 973101,
-      "resourceKeyId": 244,
-      "values": {
-        "schoolId": 255904
-      }
-    },
-    {
-      "referentialId": "aaaaaaaa-bbbb-cccc-dddd-000000013201",
-      "documentId": 973201,
-      "resourceKeyId": 57,
-      "values": {
-        "uri": "uri://ed-fi.org/AddressTypeDescriptor#Physical"
-      }
-    }
-  ]
+  "extensionRows": []
 }

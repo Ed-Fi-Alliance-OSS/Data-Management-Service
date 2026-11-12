@@ -48,7 +48,7 @@ public static class PerfAuthorizationSeeder
                 )
         );
 
-        await SeedGradeLevelDescriptorAsync(connection, postgresql, seed);
+        int gradeLevelDescriptorId = await SeedGradeLevelDescriptorAsync(connection, postgresql, seed);
 
         await ExecuteWithResourceKeyAsync(
             connection,
@@ -80,7 +80,13 @@ public static class PerfAuthorizationSeeder
                 to,
                 [(PerfFixtureLoaderParameters.ResourceKeyId, ssaResourceKeyId)]
             );
-            await PerfSeederDatabase.ExecuteRangeAsync(connection, ssaInsertSql, from, to, []);
+            await PerfSeederDatabase.ExecuteRangeAsync(
+                connection,
+                ssaInsertSql,
+                from,
+                to,
+                [(PerfFixtureLoaderParameters.EntryGradeLevelDescriptorId, gradeLevelDescriptorId)]
+            );
         }
 
         await PerfSeederDatabase.ExecuteNonQueryAsync(
@@ -117,7 +123,7 @@ public static class PerfAuthorizationSeeder
     /// The grade-level descriptor reuses the primary loader's descriptor statements, which
     /// mirror the production descriptor write; only the bound identity values differ.
     /// </summary>
-    private static async Task SeedGradeLevelDescriptorAsync(
+    private static async Task<int> SeedGradeLevelDescriptorAsync(
         DbConnection connection,
         bool postgresql,
         PerfAuthorizationSeedDefinition seed
@@ -161,6 +167,7 @@ public static class PerfAuthorizationSeeder
             await documentInsert.ExecuteNonQueryAsync();
         }
 
+        int descriptorId;
         await using (
             DbCommand descriptorInsert = PerfSeederDatabase.CreateCommand(
                 connection,
@@ -184,34 +191,9 @@ public static class PerfAuthorizationSeeder
                 PerfFixtureLoaderParameters.ResourceKeyId,
                 descriptorResourceKeyId
             );
-            await descriptorInsert.ExecuteNonQueryAsync();
+            descriptorId = await PerfSeederDatabase.ExecuteDescriptorInsertAsync(descriptorInsert);
         }
-
-        await using DbCommand referentialInsert = PerfSeederDatabase.CreateCommand(
-            connection,
-            postgresql
-                ? PgsqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-                : MssqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-        );
-        PerfSeederDatabase.AddObjectParameter(
-            referentialInsert,
-            PerfFixtureLoaderParameters.DescriptorReferentialId,
-            ReferentialIdentityDerivation.DescriptorReferentialId(
-                PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource,
-                PerfAuthorizationSeedDefinition.GradeLevelDescriptorUri
-            )
-        );
-        PerfSeederDatabase.AddParameter(
-            referentialInsert,
-            PerfFixtureLoaderParameters.DescriptorDocumentId,
-            seed.GradeLevelDescriptorDocumentId
-        );
-        PerfSeederDatabase.AddParameter(
-            referentialInsert,
-            PerfFixtureLoaderParameters.ResourceKeyId,
-            descriptorResourceKeyId
-        );
-        await referentialInsert.ExecuteNonQueryAsync();
+        return descriptorId;
     }
 
     private static async Task ExecuteWithResourceKeyAsync(

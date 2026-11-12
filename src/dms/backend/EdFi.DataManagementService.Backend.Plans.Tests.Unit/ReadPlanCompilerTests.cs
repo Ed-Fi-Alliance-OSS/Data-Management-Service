@@ -70,7 +70,8 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             .Model.Root.Columns.Select(static column => column.Kind)
             .Should()
             .Contain(ColumnKind.MirroredContentVersion)
-            .And.Contain(ColumnKind.MirroredContentLastModifiedAt);
+            .And.Contain(ColumnKind.AuthoritativeContentLastModifiedAt)
+            .And.Contain(ColumnKind.AuthoritativeContentCreatedAt);
     }
 
     [Test]
@@ -83,7 +84,10 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
 
         rootPlan
             .TableModel.Columns.Where(static column =>
-                column.Kind is ColumnKind.MirroredContentVersion or ColumnKind.MirroredContentLastModifiedAt
+                column.Kind
+                    is ColumnKind.MirroredContentVersion
+                        or ColumnKind.AuthoritativeContentLastModifiedAt
+                        or ColumnKind.AuthoritativeContentCreatedAt
             )
             .Should()
             .BeEmpty();
@@ -91,7 +95,8 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
         rootPlan
             .SelectByKeysetSql.Should()
             .NotContain("ContentVersion")
-            .And.NotContain("ContentLastModifiedAt");
+            .And.NotContain("ContentLastModifiedAt")
+            .And.NotContain("ContentCreatedAt");
     }
 
     [Test]
@@ -126,7 +131,18 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             },
             new DbColumnModel(
                 ColumnName: new DbColumnName("ContentLastModifiedAt"),
-                Kind: ColumnKind.MirroredContentLastModifiedAt,
+                Kind: ColumnKind.AuthoritativeContentLastModifiedAt,
+                ScalarType: new RelationalScalarType(ScalarKind.DateTime),
+                IsNullable: false,
+                SourceJsonPath: null,
+                TargetResource: null
+            )
+            {
+                IsWritable = false,
+            },
+            new DbColumnModel(
+                ColumnName: new DbColumnName("ContentCreatedAt"),
+                Kind: ColumnKind.AuthoritativeContentCreatedAt,
                 ScalarType: new RelationalScalarType(ScalarKind.DateTime),
                 IsNullable: false,
                 SourceJsonPath: null,
@@ -1625,7 +1641,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             """
             SELECT
                 p."DescriptorId",
-                d."Uri"
+                d."Namespace" || '#' || d."CodeValue" AS "Uri"
             FROM
                 (
                     SELECT DISTINCT t0."AcademicSubjectDescriptorId" AS "DescriptorId"
@@ -1633,7 +1649,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                     WHERE t0."AcademicSubjectDescriptorId" IS NOT NULL
                 ) p
-            INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+            INNER JOIN "dms"."Descriptor" d ON d."DescriptorId" = p."DescriptorId"
             ORDER BY
                 p."DescriptorId" ASC
             ;
@@ -1653,7 +1669,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
                 SELECT
                     p."DescriptorId",
-                    d."Uri"
+                    d."Namespace" || '#' || d."CodeValue" AS "Uri"
                 FROM
                     (
                         SELECT DISTINCT t0."AcademicSubjectDescriptorId" AS "DescriptorId"
@@ -1661,7 +1677,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         WHERE t0."DocumentId" = @DocumentId
                         AND t0."AcademicSubjectDescriptorId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+                INNER JOIN "dms"."Descriptor" d ON d."DescriptorId" = p."DescriptorId"
                 ORDER BY
                     p."DescriptorId" ASC
                 ;
@@ -1678,7 +1694,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             """
             SELECT
                 p.[DescriptorId],
-                d.[Uri]
+                d.[Namespace] + N'#' + d.[CodeValue] AS [Uri]
             FROM
                 (
                     SELECT DISTINCT t0.[AcademicSubjectDescriptorId] AS [DescriptorId]
@@ -1686,7 +1702,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
                     WHERE t0.[AcademicSubjectDescriptorId] IS NOT NULL
                 ) p
-            INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+            INNER JOIN [dms].[Descriptor] d ON d.[DescriptorId] = p.[DescriptorId]
             ORDER BY
                 p.[DescriptorId] ASC
             ;
@@ -1706,7 +1722,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
                 SELECT
                     p.[DescriptorId],
-                    d.[Uri]
+                    d.[Namespace] + N'#' + d.[CodeValue] AS [Uri]
                 FROM
                     (
                         SELECT DISTINCT t0.[AcademicSubjectDescriptorId] AS [DescriptorId]
@@ -1714,7 +1730,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         WHERE t0.[DocumentId] = @DocumentId
                         AND t0.[AcademicSubjectDescriptorId] IS NOT NULL
                     ) p
-                INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+                INNER JOIN [dms].[Descriptor] d ON d.[DescriptorId] = p.[DescriptorId]
                 ORDER BY
                     p.[DescriptorId] ASC
                 ;
@@ -1735,7 +1751,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             """
             SELECT
                 p."DescriptorId",
-                d."Uri"
+                d."Namespace" || '#' || d."CodeValue" AS "Uri"
             FROM
                 (
                     SELECT DISTINCT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
@@ -1743,7 +1759,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                     WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
                 ) p
-            INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+            INNER JOIN "dms"."Descriptor" d ON d."DescriptorId" = p."DescriptorId"
             ORDER BY
                 p."DescriptorId" ASC
             ;
@@ -1764,7 +1780,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             """
             SELECT
                 p.[DescriptorId],
-                d.[Uri]
+                d.[Namespace] + N'#' + d.[CodeValue] AS [Uri]
             FROM
                 (
                     SELECT DISTINCT t0.[SchoolYearTypeDescriptorIdCanonical] AS [DescriptorId]
@@ -1772,7 +1788,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     INNER JOIN [#page] k ON t0.[DocumentId] = k.[DocumentId]
                     WHERE t0.[SchoolYearTypeDescriptorIdCanonical] IS NOT NULL
                 ) p
-            INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+            INNER JOIN [dms].[Descriptor] d ON d.[DescriptorId] = p.[DescriptorId]
             ORDER BY
                 p.[DescriptorId] ASC
             ;
@@ -1810,7 +1826,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
             """
             SELECT
                 p."DescriptorId",
-                d."Uri"
+                d."Namespace" || '#' || d."CodeValue" AS "Uri"
             FROM
                 (
                     SELECT DISTINCT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
@@ -1818,7 +1834,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                     INNER JOIN "page" k ON t0."DocumentId" = k."DocumentId"
                     WHERE t0."SchoolYearTypeDescriptorIdCanonical" IS NOT NULL
                 ) p
-            INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+            INNER JOIN "dms"."Descriptor" d ON d."DescriptorId" = p."DescriptorId"
             ORDER BY
                 p."DescriptorId" ASC
             ;
@@ -1847,7 +1863,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
                 SELECT
                     p."DescriptorId",
-                    d."Uri"
+                    d."Namespace" || '#' || d."CodeValue" AS "Uri"
                 FROM
                     (
                         SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
@@ -1860,7 +1876,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         INNER JOIN "page" k ON t1."DocumentId" = k."DocumentId"
                         WHERE t1."ProgramTypeDescriptorId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+                INNER JOIN "dms"."Descriptor" d ON d."DescriptorId" = p."DescriptorId"
                 ORDER BY
                     p."DescriptorId" ASC
                 ;
@@ -1900,7 +1916,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
                 SELECT
                     p."DescriptorId",
-                    d."Uri"
+                    d."Namespace" || '#' || d."CodeValue" AS "Uri"
                 FROM
                     (
                         SELECT t0."SchoolYearTypeDescriptorIdCanonical" AS "DescriptorId"
@@ -1913,7 +1929,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         WHERE t1."DocumentId" = @DocumentId
                         AND t1."ProgramTypeDescriptorId" IS NOT NULL
                     ) p
-                INNER JOIN "dms"."Descriptor" d ON d."DocumentId" = p."DescriptorId"
+                INNER JOIN "dms"."Descriptor" d ON d."DescriptorId" = p."DescriptorId"
                 ORDER BY
                     p."DescriptorId" ASC
                 ;
@@ -1942,7 +1958,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
                 SELECT
                     p.[DescriptorId],
-                    d.[Uri]
+                    d.[Namespace] + N'#' + d.[CodeValue] AS [Uri]
                 FROM
                     (
                         SELECT DISTINCT v0.[DescriptorId]
@@ -1951,7 +1967,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         CROSS APPLY (VALUES (t0.[SchoolYearTypeDescriptorIdCanonical]), (t0.[ProgramTypeDescriptorId])) AS v0([DescriptorId])
                         WHERE v0.[DescriptorId] IS NOT NULL
                     ) p
-                INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+                INNER JOIN [dms].[Descriptor] d ON d.[DescriptorId] = p.[DescriptorId]
                 ORDER BY
                     p.[DescriptorId] ASC
                 ;
@@ -1964,7 +1980,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 """
                 SELECT
                     p.[DescriptorId],
-                    d.[Uri]
+                    d.[Namespace] + N'#' + d.[CodeValue] AS [Uri]
                 FROM
                     (
                         SELECT DISTINCT v0.[DescriptorId]
@@ -1973,7 +1989,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                         WHERE t0.[DocumentId] = @DocumentId
                         AND v0.[DescriptorId] IS NOT NULL
                     ) p
-                INNER JOIN [dms].[Descriptor] d ON d.[DocumentId] = p.[DescriptorId]
+                INNER JOIN [dms].[Descriptor] d ON d.[DescriptorId] = p.[DescriptorId]
                 ORDER BY
                     p.[DescriptorId] ASC
                 ;
@@ -3679,7 +3695,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("AcademicSubjectDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: new JsonPathExpression(
                         "$.academicSubjectDescriptor",
@@ -3811,7 +3827,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: new DbColumnName("ProgramTypeDescriptorId"),
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: programTypeDescriptorPath,
                     TargetResource: descriptorResource
@@ -4086,7 +4102,7 @@ public class Given_ReadPlanCompiler : WritePlanCompilerTestBase
                 new DbColumnModel(
                     ColumnName: columnName,
                     Kind: ColumnKind.DescriptorFk,
-                    ScalarType: new RelationalScalarType(ScalarKind.Int64),
+                    ScalarType: new RelationalScalarType(ScalarKind.Int32),
                     IsNullable: true,
                     SourceJsonPath: sourceJsonPath,
                     TargetResource: descriptorResource

@@ -22,7 +22,8 @@ public abstract record NamespaceAuthorizationPlanOutcome
 
     /// <summary>
     /// The resource is configured with <c>NamespaceBased</c> but no securable element resolves to
-    /// the resource's concrete root-table column. Maps to a 500 Security Configuration Error.
+    /// a supported namespace column on the resource's concrete root table. Maps to a 500 Security
+    /// Configuration Error. Descriptor-reference namespace bases are unsupported.
     /// </summary>
     public sealed record NoUsableRootColumn(QualifiedResourceName Resource)
         : NamespaceAuthorizationPlanOutcome;
@@ -62,7 +63,12 @@ public static class NamespaceAuthorizationPlanner
 
         var rootColumn = ResolveSingleRootTableNamespaceColumn(resource);
 
-        if (rootColumn is not { } namespaceColumn)
+        if (
+            rootColumn is not { } namespaceColumn
+            || resource.RelationalModel.Root.Columns.Any(column =>
+                column.ColumnName == namespaceColumn && column.Kind is ColumnKind.DescriptorFk
+            )
+        )
         {
             return new NamespaceAuthorizationPlanOutcome.NoUsableRootColumn(
                 resource.RelationalModel.Resource
@@ -77,7 +83,13 @@ public static class NamespaceAuthorizationPlanner
         }
 
         var rootTable = resource.RelationalModel.Root.Table;
-        return new NamespaceAuthorizationPlanOutcome.Plan(BuildChecks(operation, rootTable, namespaceColumn));
+        var usesIdentityCollation = resource.RelationalModel.Root.Columns.Any(column =>
+            column.ColumnName == namespaceColumn && column.UsesSqlServerIdentityCollation
+        );
+
+        return new NamespaceAuthorizationPlanOutcome.Plan(
+            BuildChecks(operation, rootTable, namespaceColumn, usesIdentityCollation)
+        );
     }
 
     /// <summary>
@@ -126,7 +138,8 @@ public static class NamespaceAuthorizationPlanner
     private static IReadOnlyList<NamespaceAuthorizationCheckSpec> BuildChecks(
         NamespaceAuthorizationOperation operation,
         DbTableName rootTable,
-        DbColumnName namespaceColumn
+        DbColumnName namespaceColumn,
+        bool usesIdentityCollation
     ) =>
         operation switch
         {
@@ -138,7 +151,8 @@ public static class NamespaceAuthorizationPlanner
                     0,
                     NamespaceAuthorizationCheckValueSource.Stored,
                     rootTable,
-                    namespaceColumn
+                    namespaceColumn,
+                    NamespaceColumnUsesIdentityCollation: usesIdentityCollation
                 ),
             ],
             NamespaceAuthorizationOperation.Update =>
@@ -147,13 +161,15 @@ public static class NamespaceAuthorizationPlanner
                     0,
                     NamespaceAuthorizationCheckValueSource.Stored,
                     rootTable,
-                    namespaceColumn
+                    namespaceColumn,
+                    NamespaceColumnUsesIdentityCollation: usesIdentityCollation
                 ),
                 new NamespaceAuthorizationCheckSpec(
                     1,
                     NamespaceAuthorizationCheckValueSource.Proposed,
                     rootTable,
-                    namespaceColumn
+                    namespaceColumn,
+                    NamespaceColumnUsesIdentityCollation: usesIdentityCollation
                 ),
             ],
             _ => throw new ArgumentOutOfRangeException(

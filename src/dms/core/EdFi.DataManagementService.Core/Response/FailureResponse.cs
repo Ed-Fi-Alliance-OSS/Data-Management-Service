@@ -184,12 +184,27 @@ public static class FailureResponse
     public static JsonNode ForIdentityConflict(string[]? errors, TraceId traceId) =>
         CreateBaseJsonObject(
             detail: "The identifying value(s) of the item are the same as another item that already exists.",
-            type: $"{_typePrefix}:identity-conflict",
+            type: $"{_dataConflictTypePrefix}:non-unique-identity",
             title: "Identifying Values Are Not Unique",
             status: 409,
             correlationId: traceId.Value,
             validationErrors: [],
             errors
+        );
+
+    /// <summary>
+    /// The ODS-compatible response for a unique-constraint violation that the backend could not
+    /// attribute to a more specific failure.
+    /// </summary>
+    public static JsonNode ForNonUniqueValues(TraceId traceId) =>
+        CreateBaseJsonObject(
+            detail: "A value (or a specific set of values) in the item must be unique, but another item with these values already exists.",
+            type: $"{_dataConflictTypePrefix}:non-unique-values",
+            title: "Non-Unique Values",
+            status: 409,
+            correlationId: traceId.Value,
+            validationErrors: [],
+            errors: []
         );
 
     public static JsonNode ForDataConflict(string[] dependentItemNames, TraceId traceId)

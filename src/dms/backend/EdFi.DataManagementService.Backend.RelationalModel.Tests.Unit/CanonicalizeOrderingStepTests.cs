@@ -469,7 +469,7 @@ public class Given_Key_Unification_Alias_Dependencies
             new DbColumnModel(
                 descriptorColumn,
                 ColumnKind.DescriptorFk,
-                new RelationalScalarType(ScalarKind.Int64),
+                new RelationalScalarType(ScalarKind.Int32),
                 IsNullable: true,
                 SourceJsonPath: JsonPathExpressionCompiler.Compile("$.gradeLevelDescriptor"),
                 TargetResource: new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")

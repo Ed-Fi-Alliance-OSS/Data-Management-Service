@@ -12,9 +12,8 @@ namespace EdFi.DataManagementService.Performance.Harness.Fixtures;
 /// set-based over the candidate index k, enrolling student ordinal 2k, so the arithmetic
 /// must mirror <see cref="PerfAuthorizationSeedDefinition" /> exactly. Only durable source
 /// tables are written: the production triggers on edfi.School and
-/// edfi.StudentSchoolAssociation create the hierarchy self-edge, the abstract identity row,
-/// and every referential identity. Production triggers and constraints stay enabled
-/// throughout.
+/// edfi.StudentSchoolAssociation create the hierarchy self-edge and the abstract identity
+/// row. Production triggers and constraints stay enabled throughout.
 /// </summary>
 public static class PgsqlPerfAuthorizationSeedSql
 {
@@ -26,8 +25,8 @@ public static class PgsqlPerfAuthorizationSeedSql
             """;
 
     /// <summary>
-    /// Only the payload-backed columns are written; the AuthHierarchy, AbstractIdentity, and
-    /// ReferentialIdentity triggers do the rest, exactly as they do for a production POST.
+    /// Only the payload-backed columns are written; the AuthHierarchy and AbstractIdentity
+    /// triggers do the rest, exactly as they do for a production POST.
     /// </summary>
     public static string SchoolInsertSql(PerfAuthorizationSeedDefinition seed) =>
         $"""
@@ -55,7 +54,7 @@ public static class PgsqlPerfAuthorizationSeedSql
                 {seed.SchoolDocumentId},
                 ((k * 2 - 1) / 9) * 10 + ((k * 2 - 1) % 9) + 2,
                 'perf-' || lpad((k * 2)::text, 9, '0'),
-                {seed.GradeLevelDescriptorDocumentId},
+                @{PerfFixtureLoaderParameters.EntryGradeLevelDescriptorId},
                 DATE '{PerfAuthorizationSeedDefinition.EntryDateIso}'
             FROM generate_series(@{PerfFixtureLoaderParameters.FromOrdinal}, @{PerfFixtureLoaderParameters.ToOrdinal}) AS k;
             """;
@@ -72,7 +71,6 @@ public static class PgsqlPerfAuthorizationSeedSql
         """VACUUM (ANALYZE) "edfi"."StudentSchoolAssociation";""",
         """VACUUM (ANALYZE) "edfi"."School";""",
         """VACUUM (ANALYZE) "auth"."EducationOrganizationIdToEducationOrganizationId";""",
-        """VACUUM (ANALYZE) "dms"."ReferentialIdentity";""",
     ];
 
     private const string SsaResourceKeyFilter = $"""
@@ -133,11 +131,6 @@ public static class PgsqlPerfAuthorizationSeedSql
                 """,
                 0
             ),
-            new(
-                "ssa-referential-identity-count",
-                $"""SELECT COUNT(*) FROM "dms"."ReferentialIdentity" WHERE {SsaResourceKeyFilter};""",
-                seed.EnrolledStudentCount
-            ),
             new("school-row-count", """SELECT COUNT(*) FROM "edfi"."School";""", 1),
             new(
                 "school-self-auth-edge",
@@ -162,9 +155,25 @@ public static class PgsqlPerfAuthorizationSeedSql
                 "grade-level-descriptor-count",
                 $"""
                 SELECT COUNT(*) FROM "dms"."Descriptor"
-                WHERE "Discriminator" = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}';
+                WHERE "ResourceKeyId" = (
+                    SELECT "ResourceKeyId" FROM "dms"."ResourceKey"
+                    WHERE "ProjectName" = '{PerfFixtureDefinition.ProjectName}'
+                        AND "ResourceName" = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}');
                 """,
                 1
+            ),
+            new(
+                "ssa-compact-grade-level-binding",
+                $"""
+                SELECT COUNT(*) FROM "edfi"."StudentSchoolAssociation" ssa
+                INNER JOIN "dms"."Descriptor" descriptor
+                    ON descriptor."DescriptorId" = ssa."EntryGradeLevelDescriptor_DescriptorId"
+                INNER JOIN "dms"."ResourceKey" rk ON rk."ResourceKeyId" = descriptor."ResourceKeyId"
+                WHERE descriptor."DocumentId" = {seed.GradeLevelDescriptorDocumentId}
+                    AND rk."ProjectName" = '{PerfFixtureDefinition.ProjectName}'
+                    AND rk."ResourceName" = '{PerfAuthorizationSeedDefinition.GradeLevelDescriptorResource}';
+                """,
+                seed.EnrolledStudentCount
             ),
             new(
                 "max-document-id",

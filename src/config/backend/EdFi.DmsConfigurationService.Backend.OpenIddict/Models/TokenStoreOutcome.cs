@@ -28,6 +28,14 @@ public enum TokenStoreOutcome
     ClientNotFound,
 
     /// <summary>
+    /// Nothing was written because, under the application row lock, the stored client secret no
+    /// longer matched the one the grant authenticated against, or the client's API client approval
+    /// state was no longer the one it authenticated with. The change committed before this store
+    /// could run.
+    /// </summary>
+    ClientChanged,
+
+    /// <summary>
     /// Nothing was written because a database lock wait during the store ran out, or, on SQL
     /// Server, because the store was chosen as a deadlock victim. Usually the wait is behind
     /// another grant holding this client's application row, but on SQL Server the active-token

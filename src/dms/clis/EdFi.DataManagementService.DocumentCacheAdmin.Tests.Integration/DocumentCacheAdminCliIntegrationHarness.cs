@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Diagnostics;
 using System.Globalization;
 using System.Net;
@@ -17,6 +18,7 @@ using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
+using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Npgsql;
 using NpgsqlTypes;
@@ -479,7 +481,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
     )
     {
         PostgresqlGeneratedDdlTestDatabase database = RequirePostgresqlDatabase();
-        DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
@@ -492,20 +493,17 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             SELECT
                 @documentUuid,
                 resource_key."ResourceKeyId",
-                @contentVersion,
-                @observedAt
+                @contentVersion
             FROM resource_key
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = observedAt }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
@@ -517,7 +515,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
     )
     {
         MssqlGeneratedDdlTestDatabase database = RequireMssqlDatabase();
-        DateTime observedAt = DateTime.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
@@ -531,34 +528,33 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT inserted.[DocumentId]
             INTO @inserted
             SELECT
                 @documentUuid,
                 [resource_key].[ResourceKeyId],
-                @contentVersion,
-                @observedAt
+                @contentVersion
             FROM [resource_key];
 
             SELECT [DocumentId]
             FROM @inserted;
             """,
             new SqlParameter("documentUuid", documentUuid),
-            new SqlParameter("contentVersion", contentVersion),
-            new SqlParameter("observedAt", observedAt)
+            new SqlParameter("contentVersion", contentVersion)
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
         return new(documentId, documentUuid, contentVersion);
     }
 
+    // The cache copies the descriptor's ContentCreatedAt unless a stale override is given.
     public Task InsertPostgresqlDocumentCacheAsync(
         DocumentCacheAdminCliSeededDocument document,
         long? cacheContentVersion = null,
-        string documentJson = """{"seeded":true}"""
+        string documentJson = """{"seeded":true}""",
+        DateTimeOffset? contentCreatedAtOverride = null
     )
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -575,6 +571,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     "ContentVersion",
                     "StreamEtag",
                     "LastModifiedAt",
+                    "ContentCreatedAt",
                     "DocumentJson",
                     "ComputedAt"
                 )
@@ -586,10 +583,13 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     resource_key."ResourceVersion",
                     @contentVersion,
                     @streamEtag,
-                    document."ContentLastModifiedAt",
+                    descriptor."ContentLastModifiedAt",
+                    COALESCE(@contentCreatedAtOverride, descriptor."ContentCreatedAt"),
                     @documentJson::jsonb,
                     @computedAt
                 FROM "dms"."Document" AS document
+                INNER JOIN "dms"."Descriptor" AS descriptor
+                    ON descriptor."DocumentId" = document."DocumentId"
                 INNER JOIN "dms"."ResourceKey" AS resource_key
                     ON resource_key."ResourceKeyId" = document."ResourceKeyId"
                 WHERE document."DocumentId" = @documentId;
@@ -604,14 +604,20 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     Value = $"cli-etag-{document.DocumentId}",
                 },
                 new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb) { Value = documentJson },
-                new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
+                new NpgsqlParameter("computedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow },
+                new NpgsqlParameter("contentCreatedAtOverride", NpgsqlDbType.TimestampTz)
+                {
+                    Value = (object?)contentCreatedAtOverride ?? DBNull.Value,
+                }
             );
     }
 
+    // The cache copies the descriptor's ContentCreatedAt unless a stale override is given.
     public Task InsertMssqlDocumentCacheAsync(
         DocumentCacheAdminCliSeededDocument document,
         long? cacheContentVersion = null,
-        string documentJson = """{"seeded":true}"""
+        string documentJson = """{"seeded":true}""",
+        DateTimeOffset? contentCreatedAtOverride = null
     )
     {
         ArgumentNullException.ThrowIfNull(document);
@@ -628,6 +634,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     [ContentVersion],
                     [StreamEtag],
                     [LastModifiedAt],
+                    [ContentCreatedAt],
                     [DocumentJson],
                     [ComputedAt]
                 )
@@ -639,10 +646,13 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                     [resource_key].[ResourceVersion],
                     @contentVersion,
                     @streamEtag,
-                    [document].[ContentLastModifiedAt],
+                    [descriptor].[ContentLastModifiedAt],
+                    COALESCE(@contentCreatedAtOverride, [descriptor].[ContentCreatedAt]),
                     @documentJson,
                     @computedAt
                 FROM [dms].[Document] AS [document]
+                INNER JOIN [dms].[Descriptor] AS [descriptor]
+                    ON [descriptor].[DocumentId] = [document].[DocumentId]
                 INNER JOIN [dms].[ResourceKey] AS [resource_key]
                     ON [resource_key].[ResourceKeyId] = [document].[ResourceKeyId]
                 WHERE [document].[DocumentId] = @documentId;
@@ -651,9 +661,90 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 new SqlParameter("contentVersion", cacheContentVersion ?? document.ContentVersion),
                 new SqlParameter("streamEtag", $"cli-etag-{document.DocumentId}"),
                 new SqlParameter("documentJson", documentJson),
-                new SqlParameter("computedAt", DateTime.UtcNow)
+                new SqlParameter("computedAt", DateTime.UtcNow),
+                new SqlParameter("contentCreatedAtOverride", SqlDbType.DateTime2)
+                {
+                    Value = (object?)contentCreatedAtOverride?.UtcDateTime ?? DBNull.Value,
+                }
             );
     }
+
+    // A creation-only UPDATE: it allocates no content version and leaves ContentLastModifiedAt alone.
+    public Task SetPostgresqlDescriptorContentCreatedAtAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        DateTimeOffset contentCreatedAt
+    ) =>
+        RequirePostgresqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                UPDATE "dms"."Descriptor"
+                SET "ContentCreatedAt" = @contentCreatedAt
+                WHERE "DocumentId" = @documentId;
+                """,
+                new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = document.DocumentId },
+                new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz) { Value = contentCreatedAt }
+            );
+
+    // A creation-only UPDATE: it allocates no content version and leaves ContentLastModifiedAt alone.
+    public Task SetMssqlDescriptorContentCreatedAtAsync(
+        DocumentCacheAdminCliSeededDocument document,
+        DateTimeOffset contentCreatedAt
+    ) =>
+        RequireMssqlDatabase()
+            .ExecuteNonQueryAsync(
+                """
+                UPDATE [dms].[Descriptor]
+                SET [ContentCreatedAt] = @contentCreatedAt
+                WHERE [DocumentId] = @documentId;
+                """,
+                new SqlParameter("documentId", document.DocumentId),
+                new SqlParameter("contentCreatedAt", SqlDbType.DateTime2)
+                {
+                    Value = contentCreatedAt.UtcDateTime,
+                }
+            );
+
+    public async Task<
+        IReadOnlyDictionary<long, DateTimeOffset>
+    > ReadPostgresqlCachedContentCreatedAtByDocumentIdAsync() =>
+        ToContentCreatedAtByDocumentId(
+            await RequirePostgresqlDatabase()
+                .QueryRowsAsync(
+                    """
+                    SELECT "DocumentId", "ContentCreatedAt"
+                    FROM "dms"."DocumentCache";
+                    """
+                )
+        );
+
+    public async Task<
+        IReadOnlyDictionary<long, DateTimeOffset>
+    > ReadMssqlCachedContentCreatedAtByDocumentIdAsync() =>
+        ToContentCreatedAtByDocumentId(
+            await RequireMssqlDatabase()
+                .QueryRowsAsync(
+                    """
+                    SELECT [DocumentId], [ContentCreatedAt]
+                    FROM [dms].[DocumentCache];
+                    """
+                )
+        );
+
+    private static IReadOnlyDictionary<long, DateTimeOffset> ToContentCreatedAtByDocumentId(
+        IReadOnlyList<IReadOnlyDictionary<string, object?>> rows
+    ) =>
+        rows.ToDictionary(
+            row => RequireInt64(row, "DocumentId"),
+            row =>
+                row["ContentCreatedAt"] switch
+                {
+                    DateTimeOffset offset => offset.ToUniversalTime(),
+                    DateTime dateTime => new DateTimeOffset(DateTime.SpecifyKind(dateTime, DateTimeKind.Utc)),
+                    var other => throw new InvalidOperationException(
+                        $"Unexpected DocumentCache.ContentCreatedAt value type '{other?.GetType().Name}'."
+                    ),
+                }
+        );
 
     public Task InsertPostgresqlProjectionWorkAsync(
         DocumentCacheAdminCliSeededDocument document,
@@ -736,7 +827,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         DateTimeOffset observedAt = DateTimeOffset.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         const string descriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
-        string uri = $"{descriptorNamespace}#{codeValue}";
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
             WITH resource_key AS (
@@ -749,14 +840,12 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 INSERT INTO "dms"."Document" (
                     "DocumentUuid",
                     "ResourceKeyId",
-                    "ContentVersion",
-                    "ContentLastModifiedAt"
+                    "ContentVersion"
                 )
                 SELECT
                     @documentUuid,
                     resource_key."ResourceKeyId",
-                    @contentVersion,
-                    @observedAt
+                    @contentVersion
                 FROM resource_key
                 RETURNING "DocumentId", "ResourceKeyId", "ContentVersion"
             )
@@ -766,8 +855,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Discriminator",
-                "Uri",
                 "ContentVersion",
                 "ContentLastModifiedAt"
             )
@@ -777,24 +864,23 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                'SchoolTypeDescriptor',
-                @uri,
                 inserted_document."ContentVersion",
                 @observedAt
             FROM inserted_document
-            RETURNING "DocumentId";
+            RETURNING "DocumentId", "DescriptorId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
             new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = observedAt },
             new NpgsqlParameter("namespace", NpgsqlDbType.Varchar) { Value = descriptorNamespace },
             new NpgsqlParameter("codeValue", NpgsqlDbType.Varchar) { Value = codeValue },
-            new NpgsqlParameter("shortDescription", NpgsqlDbType.Varchar) { Value = codeValue },
-            new NpgsqlParameter("uri", NpgsqlDbType.Varchar) { Value = uri }
+            new NpgsqlParameter("shortDescription", NpgsqlDbType.Varchar) { Value = codeValue }
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
-        return new(documentId, documentUuid, contentVersion);
+        int descriptorId = Convert.ToInt32(rows.Single()["DescriptorId"]);
+        ((long)descriptorId).Should().NotBe(documentId);
+        return new(documentId, documentUuid, contentVersion, descriptorId);
     }
 
     public async Task<DocumentCacheAdminCliSeededDocument> InsertMssqlDescriptorDocumentAsync(
@@ -808,7 +894,7 @@ internal sealed class DocumentCacheAdminCliStateInspector(
         DateTime observedAt = DateTime.UtcNow;
         Guid documentUuid = Guid.NewGuid();
         const string descriptorNamespace = "uri://ed-fi.org/SchoolTypeDescriptor";
-        string uri = $"{descriptorNamespace}#{codeValue}";
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         IReadOnlyList<IReadOnlyDictionary<string, object?>> rows = await database.QueryRowsAsync(
             """
             DECLARE @inserted TABLE (
@@ -826,16 +912,14 @@ internal sealed class DocumentCacheAdminCliStateInspector(
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT inserted.[DocumentId], inserted.[ResourceKeyId], inserted.[ContentVersion]
             INTO @inserted
             SELECT
                 @documentUuid,
                 [resource_key].[ResourceKeyId],
-                @contentVersion,
-                @observedAt
+                @contentVersion
             FROM [resource_key];
 
             INSERT INTO [dms].[Descriptor] (
@@ -844,8 +928,6 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Discriminator],
-                [Uri],
                 [ContentVersion],
                 [ContentLastModifiedAt]
             )
@@ -855,26 +937,26 @@ internal sealed class DocumentCacheAdminCliStateInspector(
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                N'SchoolTypeDescriptor',
-                @uri,
                 [inserted_document].[ContentVersion],
                 @observedAt
             FROM @inserted AS [inserted_document];
 
-            SELECT [DocumentId]
-            FROM @inserted;
+            SELECT descriptor.[DocumentId], descriptor.[DescriptorId]
+            FROM [dms].[Descriptor] descriptor
+            JOIN @inserted document ON document.[DocumentId] = descriptor.[DocumentId];
             """,
             new SqlParameter("documentUuid", documentUuid),
             new SqlParameter("contentVersion", contentVersion),
             new SqlParameter("observedAt", observedAt),
             new SqlParameter("namespace", descriptorNamespace),
             new SqlParameter("codeValue", codeValue),
-            new SqlParameter("shortDescription", codeValue),
-            new SqlParameter("uri", uri)
+            new SqlParameter("shortDescription", codeValue)
         );
 
         long documentId = RequireInt64(rows.Single(), "DocumentId");
-        return new(documentId, documentUuid, contentVersion);
+        int descriptorId = Convert.ToInt32(rows.Single()["DescriptorId"]);
+        ((long)descriptorId).Should().NotBe(documentId);
+        return new(documentId, documentUuid, contentVersion, descriptorId);
     }
 
     public Task ClearPostgresqlProjectionWorkAsync() =>
@@ -1179,7 +1261,8 @@ internal sealed record DocumentCacheAdminCliMutableCounts(long DocumentCacheRows
 internal sealed record DocumentCacheAdminCliSeededDocument(
     long DocumentId,
     Guid DocumentUuid,
-    long ContentVersion
+    long ContentVersion,
+    int? DescriptorId = null
 );
 
 internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncDisposable
@@ -1224,14 +1307,12 @@ internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncD
                 INSERT INTO "dms"."Document" (
                     "DocumentUuid",
                     "ResourceKeyId",
-                    "ContentVersion",
-                    "ContentLastModifiedAt"
+                    "ContentVersion"
                 )
                 SELECT
                     @documentUuid,
                     resource_key."ResourceKeyId",
-                    @contentVersion,
-                    @observedAt
+                    @contentVersion
                 FROM resource_key
                 RETURNING "DocumentId";
                 """;
@@ -1240,9 +1321,6 @@ internal sealed class DocumentCacheAdminCliPostgresqlInsertTransaction : IAsyncD
             );
             command.Parameters.Add(
                 new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
-            );
-            command.Parameters.Add(
-                new NpgsqlParameter("observedAt", NpgsqlDbType.TimestampTz) { Value = DateTimeOffset.UtcNow }
             );
 
             object? result = await command.ExecuteScalarAsync();
@@ -1487,16 +1565,14 @@ internal sealed class DocumentCacheAdminCliMssqlInsertTransaction : IAsyncDispos
                 INSERT INTO [dms].[Document] (
                     [DocumentUuid],
                     [ResourceKeyId],
-                    [ContentVersion],
-                    [ContentLastModifiedAt]
+                    [ContentVersion]
                 )
                 OUTPUT inserted.[DocumentId]
                 INTO @inserted
                 SELECT
                     @documentUuid,
                     [resource_key].[ResourceKeyId],
-                    @contentVersion,
-                    @observedAt
+                    @contentVersion
                 FROM [resource_key];
 
                 SELECT [DocumentId]
@@ -1504,7 +1580,6 @@ internal sealed class DocumentCacheAdminCliMssqlInsertTransaction : IAsyncDispos
                 """;
             command.Parameters.Add(new SqlParameter("documentUuid", Guid.NewGuid()));
             command.Parameters.Add(new SqlParameter("contentVersion", contentVersion));
-            command.Parameters.Add(new SqlParameter("observedAt", DateTime.UtcNow));
 
             object? result = await command.ExecuteScalarAsync();
             long documentId = result is not null
@@ -1679,8 +1754,8 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
         process.StartInfo.Environment["DOTNET_ENVIRONMENT"] = "";
         process.StartInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "";
         process.StartInfo.Environment["AppSettings__Datastore"] = Target.AppSettingsDatastore;
-        process.StartInfo.Environment["AppSettings__UseApiSchemaPath"] = "true";
-        process.StartInfo.Environment["AppSettings__ApiSchemaPath"] = Target.ApiSchemaDirectory;
+        process.StartInfo.Environment["AppSettings__ApiSchema__UseCustomPath"] = "true";
+        process.StartInfo.Environment["AppSettings__ApiSchema__Path"] = Target.ApiSchemaDirectory;
         process.StartInfo.Environment["ConfigurationServiceSettings__BaseUrl"] =
             ConfigurationService.BaseUri.ToString();
         process.StartInfo.Environment["ConfigurationServiceSettings__ClientId"] =
@@ -1730,8 +1805,11 @@ internal sealed class DocumentCacheAdminCliProcessHarness : IAsyncDisposable
             ["AppSettings"] = new JsonObject
             {
                 ["Datastore"] = target.AppSettingsDatastore,
-                ["UseApiSchemaPath"] = true,
-                ["ApiSchemaPath"] = target.ApiSchemaDirectory,
+                ["ApiSchema"] = new JsonObject
+                {
+                    ["UseCustomPath"] = true,
+                    ["Path"] = target.ApiSchemaDirectory,
+                },
                 ["AllowIdentityUpdateOverrides"] = string.Empty,
                 ["MaximumPageSize"] = 500,
                 ["DefaultPartitionCount"] = 10,
@@ -2163,22 +2241,34 @@ internal sealed class DocumentCacheAdminTestConfigurationService : IAsyncDisposa
         response.Close();
     }
 
+    /// <summary>
+    /// The envelope a current Configuration Service returns: "EdFi.CS.Envelope" || version 1 ||
+    /// nonce (12) || tag (16) || AES-256-GCM cipher text of the PKCS7-padded UTF-8 text, with marker and
+    /// version as associated data, under an HKDF-SHA256 key derived from the key material.
+    /// </summary>
     private static string EncryptToBase64(string plainText, string encryptionKey)
     {
-        byte[] keyBytes = Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]);
-        using var aes = Aes.Create();
-        aes.Key = keyBytes;
-        aes.GenerateIV();
+        byte[] envelopeKey = HKDF.DeriveKey(
+            HashAlgorithmName.SHA256,
+            Encoding.UTF8.GetBytes(encryptionKey.PadRight(32, '0')[..32]),
+            outputLength: 32,
+            salt: [],
+            info: "EdFi.ConnectionString.AES-256-GCM.v1"u8.ToArray()
+        );
 
-        using var encryptor = aes.CreateEncryptor();
         byte[] plainBytes = Encoding.UTF8.GetBytes(plainText);
-        byte[] cipherBytes = encryptor.TransformFinalBlock(plainBytes, 0, plainBytes.Length);
+        int paddingLength = 16 - plainBytes.Length % 16;
+        byte[] padded = [.. plainBytes, .. Enumerable.Repeat((byte)paddingLength, paddingLength)];
 
-        byte[] result = new byte[aes.IV.Length + cipherBytes.Length];
-        Buffer.BlockCopy(aes.IV, 0, result, 0, aes.IV.Length);
-        Buffer.BlockCopy(cipherBytes, 0, result, aes.IV.Length, cipherBytes.Length);
+        byte[] header = [.. "EdFi.CS.Envelope"u8, 1];
+        byte[] nonce = RandomNumberGenerator.GetBytes(12);
+        byte[] tag = new byte[16];
+        byte[] cipherText = new byte[padded.Length];
 
-        return Convert.ToBase64String(result);
+        using var aesGcm = new AesGcm(envelopeKey, tag.Length);
+        aesGcm.Encrypt(nonce, padded, cipherText, tag, header);
+
+        return Convert.ToBase64String([.. header, .. nonce, .. tag, .. cipherText]);
     }
 
     private static int GetEphemeralPort()
@@ -2261,6 +2351,11 @@ internal sealed class DocumentCacheAdminCliFixture
     private DocumentCacheAdminCliFixture(string apiSchemaDirectory, string postgresqlDdl, string mssqlDdl)
     {
         ApiSchemaDirectory = apiSchemaDirectory;
+        ApiSchemaPaths = ReadFixtureManifest(apiSchemaDirectory)
+            .ApiSchemaFiles.Select(file =>
+                FixturePathResolver.ResolveFixtureInputPath(apiSchemaDirectory, file)
+            )
+            .ToArray();
         PostgresqlDdl = postgresqlDdl;
         MssqlDdl = mssqlDdl;
     }
@@ -2268,6 +2363,9 @@ internal sealed class DocumentCacheAdminCliFixture
     public static DocumentCacheAdminCliFixture Shared => _shared.Value;
 
     public string ApiSchemaDirectory { get; }
+
+    // Preserve the manifest's complete, ordered schema set for packaged CLI invocations.
+    public IReadOnlyList<string> ApiSchemaPaths { get; }
 
     public string PostgresqlDdl { get; }
 

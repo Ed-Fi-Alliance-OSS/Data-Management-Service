@@ -41,20 +41,6 @@ internal static class DmsCoreTableDefinitions
                     "DF_Document_ContentVersion",
                     SequenceDefault(dialect)
                 ),
-                new(
-                    Col("ContentLastModifiedAt"),
-                    DateTimeType(dialect),
-                    IsNullable: false,
-                    "DF_Document_ContentLastModifiedAt",
-                    dialect.CurrentTimestampDefaultExpression
-                ),
-                new(
-                    Col("CreatedAt"),
-                    DateTimeType(dialect),
-                    IsNullable: false,
-                    "DF_Document_CreatedAt",
-                    dialect.CurrentTimestampDefaultExpression
-                ),
             ],
             [Col("DocumentId")]
         );
@@ -75,6 +61,8 @@ internal static class DmsCoreTableDefinitions
                 new(Col("ContentVersion"), "bigint", IsNullable: false),
                 new(Col("StreamEtag"), StreamEtagType(dialect), IsNullable: false),
                 new(Col("LastModifiedAt"), DateTimeType(dialect), IsNullable: false),
+                // Copied from the resource owner by the cache materializer; never defaulted from a clock.
+                new(Col("ContentCreatedAt"), DateTimeType(dialect), IsNullable: false),
                 new(Col("DocumentJson"), dialect.JsonColumnType, IsNullable: false),
                 new(
                     Col("ComputedAt"),

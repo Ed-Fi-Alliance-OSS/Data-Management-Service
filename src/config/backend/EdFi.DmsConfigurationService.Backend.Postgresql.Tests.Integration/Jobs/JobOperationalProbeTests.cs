@@ -26,7 +26,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs
 /// <c>dotnet test … --filter "Category=OperationalProbe"</c>. The server comes from
 /// <c>ConnectionStrings__JobProbePostgresql</c> when set, otherwise from <c>DatabaseSettings:DatabaseConnection</c>;
 /// the probe database <c>edfi_cms_job_probe</c> is created on that server when absent. Set
-/// <c>CMS_JOB_PROBE_RESULTS</c> to a file path to append every measurement as a tab-separated line.
+/// <c>CONFIGURATION_SERVICE_JOB_PROBE_RESULTS</c> to a file path to append every measurement as a tab-separated line.
 /// </para>
 /// <para>
 /// Absolute latencies are hardware-dependent evidence. The assertions are the spec §6.2 acceptance thresholds and
@@ -308,7 +308,10 @@ public abstract class JobOperationalProbeBase
         string text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
         TestContext.Progress.WriteLine($"PROBE postgresql {probe} {metric} {text}");
 
-        if (Environment.GetEnvironmentVariable("CMS_JOB_PROBE_RESULTS") is { Length: > 0 } path)
+        if (
+            Environment.GetEnvironmentVariable("CONFIGURATION_SERVICE_JOB_PROBE_RESULTS") is
+            { Length: > 0 } path
+        )
         {
             lock (_resultsFileLock)
             {

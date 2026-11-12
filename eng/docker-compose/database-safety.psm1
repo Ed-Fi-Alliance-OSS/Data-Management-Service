@@ -3,6 +3,11 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
+# 7 for the module as a whole. ConvertFrom-CmsEncryptedConnectionString alone needs 7.4, for the
+# AesGcm(byte[], int) constructor, and checks for it itself, so only the scripts that decrypt carry
+# that floor.
+#Requires -Version 7
+
 <#
 .SYNOPSIS
     Shared database-name safety guards for E2E provisioning.
@@ -11,8 +16,11 @@
     provision-e2e-database.ps1 and the Instance Management E2E orchestration validate route-context
     database names with the same logic before any DROP/CREATE mutation. Assert-SafeDatabaseName rejects
     unsupported characters and reserved PostgreSQL/SQL Server system databases; Assert-E2EDatabaseIsDedicated
-    additionally rejects names that collide with the primary/CMS databases (by name or by the database
-    embedded in the admin/CMS connection strings).
+    additionally rejects names that collide with the primary/Configuration Service databases (by name or by the database
+    embedded in the admin/Configuration Service connection strings), and conservatively refuses, offline and on either
+    engine, an E2E or protected name it cannot compare reliably: one with characters outside ASCII
+    letters, digits and underscore, or longer than 63 characters, after explicit trailing characters
+    are removed.
 #>
 
 Set-StrictMode -Version Latest
@@ -586,11 +594,14 @@ function Get-ComposeResolvedEnvValue {
         Falls back to the documented default when the key is absent, blank, or resolves to empty. This
         is the single Compose-equivalent resolver shared by the connection-string factory, the
         destructive-safety guard, and the E2E startup/provision phases. Never logs the value.
+        With -KeepWhitespace, a whitespace-only value is returned as it is, as Compose's ${VAR:-default}
+        passes it through; only an absent or empty value falls back to the default.
     #>
     param(
         [hashtable]$EnvironmentValues,
         [Parameter(Mandatory)][string]$Name,
-        [string]$DefaultValue = ""
+        [string]$DefaultValue = "",
+        [switch]$KeepWhitespace
     )
 
     # Docker Compose interpolation gives a value set in the process/shell environment precedence over
@@ -610,7 +621,7 @@ function Get-ComposeResolvedEnvValue {
             Resolve-ComposeEnvRawValue -EnvironmentValues $EnvironmentValues -RawValue ([string]$EnvironmentValues[$Name])
         }
 
-    if ([string]::IsNullOrWhiteSpace($resolved)) {
+    if ($KeepWhitespace ? [string]::IsNullOrEmpty($resolved) : [string]::IsNullOrWhiteSpace($resolved)) {
         return $DefaultValue
     }
 
@@ -668,7 +679,7 @@ function Test-ProtectedKeyConfigured {
         value still counts as configured: Compose's ${VAR:-default} substitutes the default for a
         blank value, so the running container can be on the compose-file default database while the
         configured value resolves to nothing - the dedicated-E2E guard must then fail closed rather
-        than skip the collision check. Only a genuinely absent key is skippable.
+        than skip the collision check. Only a genuinely absent key skips the configured-value check.
     #>
     param(
         [hashtable]$EnvironmentValues,
@@ -688,14 +699,17 @@ function Get-DatabaseNameFromResolvedConnectionString {
         Parses every database / initial-catalog value out of an already-fully-resolved ADO.NET
         connection string, with no further ${VAR} resolution on the extracted values.
     .DESCRIPTION
-        Unlike Get-DatabaseNameFromConnectionString, this function performs no secondary reference
+        Like Get-DatabaseNameFromConnectionString, this function performs no secondary reference
         resolution: it assumes the caller already resolved the whole connection string with full
         Docker Compose precedence (e.g. via Get-ComposeResolvedEnvValue) before calling this, so an
         entirely-ambient connection string that happens to contain literal, un-interpolated
         "${...}"-shaped text - which Compose itself never reinterpolates for a value it already
         took verbatim from the shell - is returned as-is rather than incorrectly resolved a second
-        time. Every database-name candidate present is returned so a caller can require all of them
-        to agree rather than guessing which one wins (DbConnectionStringBuilder does not preserve
+        time. The two differ in keyword handling: this one recognizes only the selected engine's
+        synonyms and refuses the other engine's, while Get-DatabaseNameFromConnectionString takes no
+        engine and returns candidates from both families. Every database-name candidate present is
+        returned so a caller can require all of them to agree rather than guessing which one wins
+        (DbConnectionStringBuilder does not preserve
         which alias appeared later in the source text). Returns an empty array when the string is
         blank or carries no database keyword for the given engine.
 
@@ -784,7 +798,7 @@ function Test-PortNumberEquivalent {
 
     .DESCRIPTION
         The single interpretation both endpoint boundaries use - the provisioning phase's local-target
-        classification and the CMS pre-start endpoint agreement - so neither can drift into its own
+        classification and the Configuration Service pre-start endpoint agreement - so neither can drift into its own
         reading of a port. Invariant NumberStyles::Integer (a leading sign and surrounding whitespace,
         but no thousands separator and no decimal point, both of which Npgsql rejects outright) plus a
         1-65535 range check, so '05432', '+5432' and '5432' are the same port while anything that is not
@@ -823,7 +837,7 @@ function Get-PostgresHostCandidateEndpoint {
 
     .DESCRIPTION
         The ONE parser for this grammar, shared by every caller that has to reason about a PostgreSQL
-        Host value, so the provisioning classifier and the CMS endpoint validator cannot drift into
+        Host value, so the provisioning classifier and the Configuration Service endpoint validator cannot drift into
         different readings of the same string again.
 
         Npgsql's Host is not a scalar hostname: it supports an ordered comma-separated host list with
@@ -849,7 +863,7 @@ function Get-PostgresHostCandidateEndpoint {
 
         Note what this does NOT decide: whether a candidate is acceptable. The provisioning classifier
         asks whether ANY candidate is the local Compose endpoint (a local member anywhere means the
-        reserved-database guard must run); CMS validation requires EVERY candidate to be the composed
+        reserved-database guard must run); Configuration Service validation requires EVERY candidate to be the composed
         service (Npgsql may fail over to any member, so one external member is a real misconfiguration).
         Same grammar, deliberately opposite quantifiers.
     #>
@@ -907,7 +921,7 @@ function Get-SqlServerDataSourceEndpoint {
 
     .DESCRIPTION
         Every MSSQL endpoint decision in this repository goes through here - the provisioning phase's
-        local-target classification and host-side translation, and the CMS pre-start endpoint agreement.
+        local-target classification and host-side translation, and the Configuration Service pre-start endpoint agreement.
         There were previously two independent readings of this one grammar, and they were not merely
         duplicated but UNEQUAL, so each review round found a spelling one of them mishandled. A single
         provider-derived grammar is what stops that: a form is either in the grammar or it is not, and
@@ -935,7 +949,7 @@ function Get-SqlServerDataSourceEndpoint {
         dispatches through CreateTcpHandle, so it is ALSO the TCP transport - only its default port
         differs: a portless, non-instance admin endpoint resolves to DAC port 1434, reported in Port while
         HasExplicitPort stays false because the provider supplied it rather than the caller authoring it.
-        That matters here because mssql.yml permits MSSQL_PORT=1434, so an admin target can reach the
+        That matters here because mssql.compose.yml permits MSSQL_PORT=1434, so an admin target can reach the
         published Compose listener; reporting it as non-TCP classified it external and skipped the
         separate-topology authority. SqlClient accepts no comma parameters on admin, so an authored port
         there is refused rather than supported. np (named pipes) remains a genuinely different transport:
@@ -968,7 +982,7 @@ function Get-SqlServerDataSourceEndpoint {
         CONTEXT-NEUTRAL BY CONSTRUCTION. This function decides what SqlClient would parse, never whether
         the result is acceptable. Accepted-host policy differs by caller and stays with the caller: the
         provisioning phase may recognize host-side "localhost" as the published Compose listener, while
-        CMS validation must REJECT container-side "localhost" because that connection string has to name
+        Configuration Service validation must REJECT container-side "localhost" because that connection string has to name
         the composed database service. Baking either policy in here would recreate the divergence this
         function exists to remove.
 
@@ -1021,7 +1035,7 @@ function Get-SqlServerDataSourceEndpoint {
 
     # Admin (the DAC prefix) dispatches through CreateTcpHandle, so it IS the TCP transport for endpoint
     # purposes - only its default port differs. Treating it as non-TCP classified an admin target as
-    # external and skipped the separate-topology authority, even though mssql.yml permits MSSQL_PORT=1434
+    # external and skipped the separate-topology authority, even though mssql.compose.yml permits MSSQL_PORT=1434
     # and the host's published listener then answers exactly the port admin resolves to.
     $isTcp = [string]::IsNullOrEmpty($protocol) -or $protocol -eq "tcp" -or $protocol -eq "admin"
 
@@ -1161,7 +1175,7 @@ function Get-EndpointFromResolvedConnectionString {
 
         An earlier revision of this function treated a comma-bearing PostgreSQL Host as a single
         malformed hostname. That was wrong about the provider - the syntax is valid and documented - and
-        it made a correctly configured multi-host CMS connection string unvalidatable. The concern behind
+        it made a correctly configured multi-host Configuration Service connection string unvalidatable. The concern behind
         it was real, though, and is preserved by the expansion: a candidate without its own port takes
         the standalone Port, so an explicit Port= can never be hidden behind a coincidental comma.
 
@@ -1261,13 +1275,189 @@ function Get-EndpointFromResolvedConnectionString {
     }
 }
 
+function Test-LegacyConnectionStringAllowed {
+    <#
+    .SYNOPSIS
+        Reads CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS the way Docker Compose passes it to
+        the Configuration Service and the Ed-Fi API: absent or empty is true, the compatible default.
+        Any other value must be true or false (case-insensitive); a malformed one, including a
+        whitespace-only one, which Compose passes through and the services refuse, throws a fixed
+        message that names the setting without echoing its value, so it never silently re-enables
+        legacy reads. Parsed with [bool]::TryParse, not a [bool] cast, which would make "false" true.
+    #>
+    param(
+        [hashtable]
+        $EnvValues
+    )
+
+    $value = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS" -DefaultValue "true" -KeepWhitespace
+    $allowLegacyConnectionStrings = $false
+    if (-not [bool]::TryParse($value, [ref]$allowLegacyConnectionStrings)) {
+        throw "CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS must be true or false."
+    }
+    return $allowLegacyConnectionStrings
+}
+
+function ConvertFrom-CmsEncryptedConnectionString {
+    <#
+    .SYNOPSIS
+        Decrypts a data store connection string as a Configuration Service response carries it, in
+        either stored form (ConnectionStringCipherText in the Configuration Service describes both):
+        - envelope: "EdFi.CS.Envelope" (16 bytes), version 1 (1), nonce (12), tag (16), then AES-256-GCM
+          cipher text of the PKCS7-padded UTF-8 text, with marker and version as associated data, under a
+          key derived by HKDF-SHA256 from the key material;
+        - legacy: a 16-byte IV followed by AES-CBC/PKCS7 cipher text under the key material itself.
+        The key material is CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY (the same key the
+        Configuration Service encrypts with) padded with '0' and cut to 32 characters, as UTF-8.
+    .DESCRIPTION
+        Shared by the provisioning phase, which hands the decrypted target to SchemaTools, and by the
+        configure phase's restore reuse check, which compares it with the restored target. Every
+        failure is one of the fixed messages below; none carries the key, the cipher text, or the
+        decrypted text. An envelope is 13 bytes past a 16-byte block multiple and legacy cipher text is
+        a whole number of blocks, so a value with that length class or the marker is held to the
+        envelope rules and never retried as legacy. When CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS
+        is false, a legacy-length value is rejected before any CBC decryption, so a value altered
+        through its IV is never returned and padding validity cannot be probed. Requires PowerShell
+        7.4 or later (.NET 8 AesGcm).
+    #>
+    param(
+        [string]
+        $ProtectedConnectionString,
+
+        [hashtable]
+        $EnvValues
+    )
+
+    if ($PSVersionTable.PSVersion -lt [version]"7.4") {
+        throw "Decrypting a Configuration Service data store connection string requires PowerShell 7.4 or later."
+    }
+
+    $encryptionKey = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvValues -Name "CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY"
+    if ([string]::IsNullOrWhiteSpace($encryptionKey)) {
+        throw "Configuration Service data store connection string is encrypted, but CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY is not set in the environment file."
+    }
+    $allowLegacyConnectionStrings = Test-LegacyConnectionStringAllowed -EnvValues $EnvValues
+
+    try {
+        $encryptedBytes = [Convert]::FromBase64String($ProtectedConnectionString)
+    }
+    catch {
+        throw "Configuration Service data store connection string did not contain a database name and was not valid Configuration Service encrypted base64."
+    }
+
+    $keyText = $encryptionKey.PadRight(32, "0").Substring(0, 32)
+    $keyBytes = [System.Text.Encoding]::UTF8.GetBytes($keyText)
+    $length = $encryptedBytes.Length
+    $hasMarker = $length -ge 16 -and [Convert]::ToHexString($encryptedBytes, 0, 16) -eq "456446692E43532E456E76656C6F7065"
+
+    if (($length % 16) -eq 13 -or $hasMarker) {
+        if ($length -lt 61 -or ($length % 16) -ne 13) {
+            throw "Configuration Service data store encrypted connection string payload is invalid."
+        }
+        if (-not $hasMarker) {
+            throw "Configuration Service data store encrypted connection string envelope is not recognized."
+        }
+        if ($encryptedBytes[16] -ne 1) {
+            throw "Configuration Service data store encrypted connection string uses an unsupported envelope format version."
+        }
+
+        $header = [byte[]]::new(17)
+        $nonce = [byte[]]::new(12)
+        $tag = [byte[]]::new(16)
+        $cipherText = [byte[]]::new($length - 45)
+        [Array]::Copy($encryptedBytes, 0, $header, 0, 17)
+        [Array]::Copy($encryptedBytes, 17, $nonce, 0, 12)
+        [Array]::Copy($encryptedBytes, 29, $tag, 0, 16)
+        [Array]::Copy($encryptedBytes, 45, $cipherText, 0, $cipherText.Length)
+        $padded = [byte[]]::new($cipherText.Length)
+
+        # Key derivation and construction sit inside the try, so a runtime without them fails with a
+        # fixed message rather than raw overload or platform text. Only a tag mismatch is reported as
+        # an authentication failure.
+        $aesGcm = $null
+        try {
+            $envelopeKey = [System.Security.Cryptography.HKDF]::DeriveKey(
+                [System.Security.Cryptography.HashAlgorithmName]::SHA256,
+                $keyBytes,
+                32,
+                [byte[]]::new(0),
+                [System.Text.Encoding]::ASCII.GetBytes("EdFi.ConnectionString.AES-256-GCM.v1"))
+            $aesGcm = [System.Security.Cryptography.AesGcm]::new($envelopeKey, 16)
+            # Authentication comes first: nothing is read from the plain text unless it passes.
+            $aesGcm.Decrypt($nonce, $cipherText, $tag, $padded, $header)
+        }
+        catch [System.Security.Cryptography.AuthenticationTagMismatchException] {
+            throw "Configuration Service data store encrypted connection string failed authentication: the stored value was altered, or it was not encrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        finally {
+            if ($null -ne $aesGcm) {
+                $aesGcm.Dispose()
+            }
+        }
+
+        $paddingLength = [int]$padded[$padded.Length - 1]
+        $paddingValid = $paddingLength -ge 1 -and $paddingLength -le 16
+        for ($index = $padded.Length - $paddingLength; $paddingValid -and $index -lt $padded.Length; $index++) {
+            $paddingValid = $padded[$index] -eq $paddingLength
+        }
+        if (-not $paddingValid) {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+        try {
+            return [System.Text.UTF8Encoding]::new($false, $true).GetString($padded, 0, $padded.Length - $paddingLength)
+        }
+        catch {
+            throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+        }
+    }
+
+    if ($length -lt 32 -or ($length % 16) -ne 0) {
+        throw "Configuration Service data store encrypted connection string payload is invalid."
+    }
+    if (-not $allowLegacyConnectionStrings) {
+        throw "Configuration Service data store encrypted connection string is in the legacy AES-CBC format, which is rejected because CONFIGURATION_SERVICE_ALLOW_LEGACY_CONNECTION_STRINGS is false."
+    }
+
+    $iv = [byte[]]::new(16)
+    [Array]::Copy($encryptedBytes, 0, $iv, 0, 16)
+
+    $cipherText = [byte[]]::new($length - 16)
+    [Array]::Copy($encryptedBytes, 16, $cipherText, 0, $cipherText.Length)
+
+    $aes = [System.Security.Cryptography.Aes]::Create()
+    # Legacy Configuration Service values are AES-CBC / PKCS7; set explicitly rather than relying on .NET defaults.
+    $aes.Mode = [System.Security.Cryptography.CipherMode]::CBC
+    $aes.Padding = [System.Security.Cryptography.PaddingMode]::PKCS7
+    try {
+        $aes.Key = $keyBytes
+        $aes.IV = $iv
+        $decryptor = $aes.CreateDecryptor()
+        try {
+            $plainTextBytes = $decryptor.TransformFinalBlock($cipherText, 0, $cipherText.Length)
+            return [System.Text.Encoding]::UTF8.GetString($plainTextBytes)
+        }
+        finally {
+            $decryptor.Dispose()
+        }
+    }
+    catch {
+        throw "Configuration Service data store encrypted connection string could not be decrypted with CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY."
+    }
+    finally {
+        $aes.Dispose()
+    }
+}
+
 function Get-CmsDatabaseTopologyDefaultConnectionString {
     <#
     .SYNOPSIS
         Constructs the concrete PostgreSQL connection-string default
         Confirm-CmsDatabaseTopologyAgreement validates against when
-        DMS_CONFIG_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
-        local-config.yml / published-config.yml nested Compose fallback renders (confirmed against a
+        CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING is entirely absent, in exactly the shape the checked-in
+        local-config.compose.yml / published-config.compose.yml nested Compose fallback renders (confirmed against a
         real `docker compose config` invocation - see CmsDatabaseTopology.Tests.ps1's Compose-rendering
         oracle).
 
@@ -1369,8 +1559,8 @@ function Test-MssqlDuplicateDatabaseError {
 function Get-DatabaseNameFromConnectionString {
     <#
     .SYNOPSIS
-        Parses every database-name value out of an ADO.NET connection string, resolving any env-file
-        indirection, so the dedicated-E2E guard can compare each one. Returns every candidate from
+        Parses every database-name value out of an ADO.NET connection string so the dedicated-E2E
+        guard can compare each one. Returns every candidate from
         the UNION of both providers' synonym families - PostgreSQL's Database and DB, SQL Server's
         Database and Initial Catalog - because this guard stands in front of a destructive reset and
         takes no engine argument. Recognizing the union is fail-closed: it can only add a candidate
@@ -1387,13 +1577,24 @@ function Get-DatabaseNameFromConnectionString {
         on Get-DatabaseNameFromResolvedConnectionString: a whitespace-mutated spelling is a keyword no
         provider supports, so reading its value as a protected database name compares this guard
         against a database the connection would never target.
+
+    .DESCRIPTION
+        Each Database, DB or Initial Catalog value is returned exactly as the parser reads it. Like the
+        pinned Microsoft.Data.SqlClient 6.1.4 and Npgsql 8.0.4 builders, the parser trims an unquoted
+        value and keeps a quoted value verbatim. No env-file rule is applied to a value: Compose has
+        already resolved the whole string, so a '$', ' #', quote, leading whitespace or non-ASCII
+        character in a value is part of the name the provider receives. The guard then removes its
+        explicit trailing characters and refuses any name left outside its comparison domain.
+
+    .PARAMETER ConnectionString
+        The connection string as Compose has already resolved it: quotes, inline comments and
+        references are settled, and the string is parsed as given. Converting it again would read a
+        ' #' that Compose kept inside a quoted value as a comment and drop every keyword after it,
+        including a later Initial Catalog or DB the provider uses.
     #>
     param(
-        [string]$ConnectionString,
-        [hashtable]$EnvironmentValues
+        [string]$ConnectionString
     )
-
-    $ConnectionString = ConvertFrom-ComposeEnvironmentValue -Value $ConnectionString
 
     if ([string]::IsNullOrWhiteSpace($ConnectionString)) {
         return @()
@@ -1421,29 +1622,114 @@ function Get-DatabaseNameFromConnectionString {
         throw "Connection string configuration error: it carries a database-name keyword spelled like 'Initial Catalog' but separated by other whitespace, which no provider supports. Spell it 'Initial Catalog' with a single space. The value is withheld."
     }
 
-    try {
-        # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
-        return @(
-            foreach ($key in $presentKeys) {
-                if ($key -imatch '^(database|db|initial catalog)$') {
-                    Resolve-ComposeEnvRawValue `
-                        -EnvironmentValues $EnvironmentValues `
-                        -RawValue ([string]$connectionStringBuilder.PSBase.get_Item($key))
-                }
+    # Streamed (not comma-wrapped) so the caller's @(...) collects a flat string array.
+    return @(
+        foreach ($key in $presentKeys) {
+            if ($key -imatch '^(database|db|initial catalog)$') {
+                [string]$connectionStringBuilder.PSBase.get_Item($key)
             }
-        )
+        }
+    )
+}
+
+# Trailing characters the dedicated-E2E guard removes from both names before comparing them. The guard
+# applies the union of both engines' sets to every candidate, so a spelling that names the same
+# database on either engine is rejected on both. The union over-rejects on purpose: on SQL Server the
+# TAB, LF, CR and FF members name distinct databases, and on PostgreSQL createdb creates the literal
+# name, so 'edfi_dms ' is a distinct database wherever the name is not interpolated unquoted. A false
+# positive costs a rename; a false negative drops shared state. The sets are explicit because a
+# parameterless Trim/TrimEnd would also strip characters, such as U+00A0, that SQL Server keeps as
+# part of a distinct name.
+# SQL Server 2025 with SQL_Latin1_General_CP1_CI_AS measures trailing U+0020 and U+3000 as padding.
+$script:SqlServerTrailingPaddingCharacters = [char[]]@(0x0020, 0x3000)
+# PostgreSQL 16's lexer ends an unquoted identifier at U+0020, TAB, LF, CR and FF.
+$script:PostgresUnquotedTrailingWhitespaceCharacters = [char[]]@(0x0020, 0x0009, 0x000A, 0x000D, 0x000C)
+$script:E2EGuardTrailingCharacters = [char[]]($script:SqlServerTrailingPaddingCharacters + $script:PostgresUnquotedTrailingWhitespaceCharacters)
+# Named in the guard's diagnostics so an operator can tell them from whitespace the guard keeps, such
+# as U+00A0.
+$script:E2EGuardTrailingCharacterNames = "U+0020, U+3000, U+0009, U+000A, U+000D and U+000C"
+# PostgreSQL keeps only the first 63 bytes of a database name, quoted or not, in createdb, CREATE and
+# DROP DATABASE and the connection's database, so two longer names that share those bytes are one
+# database. The comparison domain is ASCII, so a character is a byte.
+$script:E2EGuardMaximumNameLength = 63
+
+function Test-E2EDatabaseNameCollidesWithProtectedName {
+    <#
+    .SYNOPSIS
+        Returns true when an E2E database name and a protected database name must be treated as the
+        same database: they compare equal under -ieq once trailing characters from the explicit SQL
+        Server and PostgreSQL sets are removed from both.
+
+    .DESCRIPTION
+        Only trailing characters from those sets are removed. Leading whitespace and any other
+        trailing character, such as U+00A0, stay part of the name.
+
+        -ieq is the guard's case rule. It is culture-aware, so it also treats some zero-width and
+        control characters as ignorable and reports names that differ only by them as equal. That
+        is a conservative rejection, not a claim about how either engine compares those names.
+
+        An empty protected name, including one made only of removable characters, returns false.
+        The guard fails closed on a blank protected value before it compares.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$E2EDatabaseName,
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$ProtectedDatabaseName
+    )
+
+    $normalizedProtectedName = $ProtectedDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
+    if ($normalizedProtectedName.Length -eq 0) {
+        return $false
     }
-    catch {
-        throw "Could not safely parse a protected database connection string: $($_.Exception.Message)"
+
+    # Assert-SafeDatabaseName lets an E2E name carry one trailing LF (its '$' anchor matches before a
+    # final newline), so the E2E side is trimmed with the same set.
+    return $E2EDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters) -ieq $normalizedProtectedName
+}
+
+function Test-E2EGuardComparisonDomain {
+    <#
+    .SYNOPSIS
+        Returns true when a name is non-empty and made only of ASCII letters, digits and underscore,
+        the character domain the dedicated-E2E guard's comparison is built for. Length is checked
+        separately by Assert-E2EDatabaseIsDedicated, so its diagnostic can name the cause.
+
+    .DESCRIPTION
+        Each character is tested by code point against explicit ranges, with no regex anchor, culture
+        or case folding, so a trailing LF, the Kelvin sign or a full-width letter is outside the
+        domain. Nothing is removed here: the guard passes a name whose trailing characters the
+        comparer's sets have already removed.
+    #>
+    param(
+        [Parameter(Mandatory)] [AllowEmptyString()] [string]$DatabaseName
+    )
+
+    if ($DatabaseName.Length -eq 0) {
+        return $false
     }
+
+    foreach ($character in $DatabaseName.ToCharArray()) {
+        $codePoint = [int]$character
+        $isInDomain = ($codePoint -ge 0x41 -and $codePoint -le 0x5A) -or
+            ($codePoint -ge 0x61 -and $codePoint -le 0x7A) -or
+            ($codePoint -ge 0x30 -and $codePoint -le 0x39) -or
+            $codePoint -eq 0x5F
+        if (-not $isInDomain) {
+            return $false
+        }
+    }
+
+    return $true
 }
 
 function Assert-E2EDatabaseIsDedicated {
     <#
     .SYNOPSIS
         Throws unless an E2E route-context database name is safe and dedicated: it must not
-        match the primary/CMS database names or the database embedded in the admin/CMS
-        connection strings, so E2E provisioning can never drop shared state.
+        match the primary/Configuration Service database names or the database embedded in the admin/Configuration Service
+        connection strings, so E2E provisioning can never drop shared state. It also refuses,
+        offline and on either engine, any E2E or protected name that is not 1 to 63 ASCII letters,
+        digits or underscores once explicit trailing characters are removed; that refusal is
+        conservative and can reject a name the server would treat as distinct.
     #>
     param(
         [hashtable]$EnvironmentValues,
@@ -1460,39 +1746,52 @@ function Assert-E2EDatabaseIsDedicated {
     # connection-string override make the live shared database equal the reset target while this guard
     # sees a different file value and permits a destructive reset/drop.
     #
-    # All comparisons are case-insensitive, and that is required on BOTH engines rather than merely
-    # conservative on one. SQL Server's default collation treats database identifiers case-insensitively,
-    # so a case-variant of a protected name IS the same database there. PostgreSQL folds an UNQUOTED
-    # identifier to lower case, and the reset path drops with an unquoted one
-    # (Template-Management.psm1's `DROP DATABASE IF EXISTS $DatabaseName;`), so a case-variant resolves to
-    # the same physical database there too. An ordinal comparison would let a case-variant of a protected
-    # name past a guard standing in front of DROP DATABASE, where a false positive costs a rename and a
-    # false negative drops shared state. The guard fails closed: a protected key that is
+    # Every comparison goes through Test-E2EDatabaseNameCollidesWithProtectedName: trailing characters
+    # from the explicit SQL Server and PostgreSQL sets are removed from both names, then -ieq compares
+    # them. Under SQL_Latin1_General_CP1_CI_AS SQL Server compares database identifiers case-insensitively
+    # and ignores trailing U+0020 and U+3000, so those variants of a protected name ARE the same database
+    # there. On PostgreSQL the E2E reset drops with `dropdb`, which takes the name literally, so the case
+    # and suffix rules over-reject there; the repository's one unquoted drop, the template restore in
+    # Template-Management.psm1 (`DROP DATABASE IF EXISTS $DatabaseName;`), folds case and checks the
+    # name with its own case-insensitive `^[A-Za-z0-9_]+$` match, which is not this guard's domain:
+    # that match also admits the Kelvin sign, U+0130 and one trailing LF. A false positive costs a
+    # rename; a false negative drops shared state. The guard fails closed: a protected key that is
     # configured (in the file or the ambient environment) but cannot be resolved throws rather than
     # silently skipping the collision check.
+    $comparisonDomainCandidates = [System.Collections.Generic.List[object]]::new()
+
     foreach ($databaseNameKey in @("POSTGRES_DB_NAME", "MSSQL_DB_NAME")) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $databaseNameKey)) {
+            # postgresql.compose.yml gives the container edfi_datamanagementservice when POSTGRES_DB_NAME is
+            # absent from both the file and the shell, so that default is protected. An absent
+            # MSSQL_DB_NAME is skipped.
+            if ($databaseNameKey -ceq "POSTGRES_DB_NAME" -and
+                (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName "edfi_datamanagementservice")) {
+                throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match edfi_datamanagementservice, the database postgresql.compose.yml uses when POSTGRES_DB_NAME is absent."
+            }
             continue
         }
 
-        # A protected database name that is empty (explicitly blank, or an undefined reference) or
-        # still contains a '$' (an unresolved or cyclic reference the resolver could not expand)
-        # cannot be proven distinct from the reset target, so fail closed. A blank value is not
-        # skippable because Compose's ${VAR:-default} would give the running container the compose
-        # default database. A real database name never contains '$'.
+        # A protected database name that is blank (explicitly, or through an undefined reference) or
+        # contains a '$' cannot be proven distinct from the reset target, so fail closed. The '$' is
+        # either a literal '$' or a reference the resolver could not expand because it is unresolved
+        # or cyclic. A blank value is not skippable because Compose's ${VAR:-default} would give the
+        # running container the compose default database.
         $protectedDatabaseName = Get-ComposeResolvedEnvValue -EnvironmentValues $EnvironmentValues -Name $databaseNameKey
         if ([string]::IsNullOrWhiteSpace($protectedDatabaseName) -or $protectedDatabaseName -match '\$') {
-            throw "E2E database safety check could not resolve $databaseNameKey in '$EnvironmentFilePath' (blank, or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+            throw "E2E database safety check could not resolve $databaseNameKey in '$EnvironmentFilePath' to a comparable database name (it is blank, or contains '`$': a literal '`$', or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
         }
 
-        if ($E2EDatabaseName -ieq $protectedDatabaseName) {
+        if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $protectedDatabaseName) {
             throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must be dedicated and cannot match $databaseNameKey."
         }
+
+        $comparisonDomainCandidates.Add([pscustomobject]@{ Source = "the protected setting $databaseNameKey"; DatabaseName = $protectedDatabaseName })
     }
 
     foreach ($connectionStringKey in @(
             "DATABASE_CONNECTION_STRING_ADMIN",
-            "DMS_CONFIG_DATABASE_CONNECTION_STRING"
+            "CONFIGURATION_SERVICE_DATABASE_CONNECTION_STRING"
         )) {
         if (-not (Test-ProtectedKeyConfigured -EnvironmentValues $EnvironmentValues -Name $connectionStringKey)) {
             continue
@@ -1503,9 +1802,7 @@ function Assert-E2EDatabaseIsDedicated {
             throw "E2E database safety check could not resolve $connectionStringKey in '$EnvironmentFilePath'; refusing a destructive reset that cannot be proven dedicated."
         }
 
-        $connectionStringDatabaseNames = @(Get-DatabaseNameFromConnectionString `
-            -ConnectionString $connectionString `
-            -EnvironmentValues $EnvironmentValues)
+        $connectionStringDatabaseNames = @(Get-DatabaseNameFromConnectionString -ConnectionString $connectionString)
 
         if ($connectionStringDatabaseNames.Count -eq 0) {
             throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
@@ -1520,15 +1817,54 @@ function Assert-E2EDatabaseIsDedicated {
                 throw "E2E database safety check could not determine a database name from $connectionStringKey in '$EnvironmentFilePath'."
             }
 
-            # A parsed database name that still contains a '$' came from an unresolved or cyclic reference
-            # the resolver could not expand; fail closed rather than compare an indeterminate value.
+            # A parsed database name that contains a '$' is either a literal '$' the provider receives or
+            # a reference the resolver could not expand; fail closed rather than compare it.
             if ($connectionStringDatabaseName -match '\$') {
-                throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
+                throw "E2E database safety check could not fully resolve the database name from $connectionStringKey in '$EnvironmentFilePath' (it contains '`$': a literal '`$', or an unresolved or cyclic reference); refusing a destructive reset that cannot be proven dedicated."
             }
 
-            if ($E2EDatabaseName -ieq $connectionStringDatabaseName) {
+            if (Test-E2EDatabaseNameCollidesWithProtectedName -E2EDatabaseName $E2EDatabaseName -ProtectedDatabaseName $connectionStringDatabaseName) {
                 throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' must stay separate from $connectionStringKey."
             }
+
+            $comparisonDomainCandidates.Add([pscustomobject]@{ Source = "the connection-string database name from $connectionStringKey"; DatabaseName = $connectionStringDatabaseName })
+        }
+    }
+
+    # A protected name the comparer cannot fully model is refused rather than compared. Once the
+    # comparer's trailing characters are removed, every candidate must be 1 to 63 ASCII letters,
+    # digits and underscores. On the pinned SQL_Latin1_General_CP1_CI_AS collation,
+    # MssqlCollationParity.Tests.ps1 measures that printable ASCII has no equal pair other than the 26
+    # case pairs and no zero-weight character, and that no digraph of underscore and lowercase a-z
+    # expands to or from one of those characters; other expansions are not scanned. Outside the
+    # domain, forms such as full-width letters and trailing emoji compare equal there although -ieq
+    # calls them distinct. Other collations and servers are unmeasured. The length bound stops
+    # PostgreSQL from truncating two distinct names to one database; it applies on both engines,
+    # which over-rejects on SQL Server. This runs after every key's collision check, so a
+    # configuration rejected as a collision keeps that diagnostic. Compatibility cost: a protected
+    # name with punctuation, leading or embedded whitespace, any non-ASCII character or more than 63
+    # characters blocks E2E provisioning. The refused value is withheld from the message.
+    #
+    # The E2E name is held to the same domain and length. Assert-SafeDatabaseName's case-insensitive
+    # match admits the Kelvin sign (U+212A) and, depending on the culture, U+0130 or U+0131, and
+    # whether -ieq folds those to ASCII letters depends on the process's globalization mode, so an E2E
+    # name carrying one could pass the collision checks beside the protected name it folds to. The
+    # trailing LF that Assert-SafeDatabaseName admits is removed first, as the comparer removes it.
+    $normalizedE2EDatabaseName = $E2EDatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
+    if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedE2EDatabaseName)) {
+        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it contains characters outside the guard's supported comparison domain (ASCII letters, digits, underscore); refusing a destructive reset."
+    }
+    if ($normalizedE2EDatabaseName.Length -gt $script:E2EGuardMaximumNameLength) {
+        throw "E2E database '$E2EDatabaseName' in '$EnvironmentFilePath' cannot be proven dedicated: after trailing $script:E2EGuardTrailingCharacterNames are removed it is longer than $script:E2EGuardMaximumNameLength characters, and PostgreSQL keeps only the first 63 bytes of a database name; refusing a destructive reset."
+    }
+
+    foreach ($candidate in $comparisonDomainCandidates) {
+        $normalizedCandidate = $candidate.DatabaseName.TrimEnd($script:E2EGuardTrailingCharacters)
+        if (-not (Test-E2EGuardComparisonDomain -DatabaseName $normalizedCandidate)) {
+            throw "E2E database safety check refuses $($candidate.Source) in '$EnvironmentFilePath' as an unsupported protected database name: after trailing $script:E2EGuardTrailingCharacterNames are removed, a protected name must be 1 to $script:E2EGuardMaximumNameLength ASCII letters, digits or underscores, and this one contains another character; refusing a destructive reset. The value is withheld."
+        }
+        if ($normalizedCandidate.Length -gt $script:E2EGuardMaximumNameLength) {
+            throw "E2E database safety check refuses $($candidate.Source) in '$EnvironmentFilePath' as an unsupported protected database name: after trailing $script:E2EGuardTrailingCharacterNames are removed, a protected name must be 1 to $script:E2EGuardMaximumNameLength ASCII letters, digits or underscores, and this one is longer than $script:E2EGuardMaximumNameLength characters (PostgreSQL keeps only the first 63 bytes of a database name); refusing a destructive reset. The value is withheld."
         }
     }
 }
@@ -1543,9 +1879,12 @@ Export-ModuleMember -Function `
     Get-ComposeResolvedEnvValue, `
     Get-RequiredComposeResolvedEnvValue, `
     Assert-SafeDatabaseName, `
+    Test-ProtectedKeyConfigured, `
     Get-DatabaseNameFromConnectionString, `
     Get-DatabaseNameFromResolvedConnectionString, `
     Get-EndpointFromResolvedConnectionString, `
+    Test-LegacyConnectionStringAllowed, `
+    ConvertFrom-CmsEncryptedConnectionString, `
     Get-SqlServerDataSourceEndpoint, `
     Get-PostgresHostCandidateEndpoint, `
     Test-PortNumberEquivalent, `

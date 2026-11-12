@@ -126,16 +126,7 @@ public class Given_RelationalAuthorizationPlanner
             ResourceStorageKind.SharedDescriptorTable,
             model,
             new DescriptorMetadata(
-                new DescriptorColumnContract(
-                    Col("Namespace"),
-                    Col("CodeValue"),
-                    null,
-                    null,
-                    null,
-                    null,
-                    null
-                ),
-                DiscriminatorStrategy.ResourceKeyId
+                new DescriptorColumnContract(Col("Namespace"), Col("CodeValue"), null, null, null, null)
             )
         );
     }

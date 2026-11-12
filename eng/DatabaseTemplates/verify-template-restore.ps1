@@ -15,7 +15,10 @@
     fresh verification database inside the running database container. The
     restored schema set must match the source database's user schemas, and
     core data (dms.EffectiveSchema, dms.Document, dms.Descriptor) must be
-    non-empty; extension schemas may be DDL-only. Serveability is then proven
+    non-empty; extension schemas may be DDL-only. Both the source database
+    (before the restore) and the restored database (before any data assertion
+    or API probe) must have a dms.Document table without the removed CreatedAt
+    column. Serveability is then proven
     end to end: a CMS data store and application bound only to the restored
     database are registered, DMS is restarted to clear its data store cache, and
     an authenticated descriptor read must return HTTP 200 with a non-empty
@@ -35,6 +38,12 @@
 .PARAMETER PackageDirectory
     Directory containing the generated .nupkg (default: current directory).
 
+.PARAMETER ExpectedTemplateKind
+    The templateKind the package's restore manifest must declare (Minimal or Populated).
+    Deliberately independent of -RequirePopulatedData, which only adds the populated
+    sample-data and serveability probes: a populated package can be structurally verified
+    without those probes, and the manifest kind must still be right.
+
 .PARAMETER DatabaseEngine
     "postgresql" or "mssql". Defaults to "postgresql". Selects the engine used
     to restore and inspect the verification database.
@@ -45,6 +54,12 @@
 .PARAMETER RequirePopulatedData
     Additionally require populated (non-descriptor) sample data to survive the
     restore and be serveable by DMS.
+
+.PARAMETER ExpectedModelManifestPath
+    Required reviewed implementation-generated relational-model manifest with complete
+    resource_details for this exact provider/core/extension schema set. Both source and
+    restored databases must pass authoritative timestamp and compact descriptor assertions
+    before API registration or probes, even when their v3 fingerprints match.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '', Justification = 'Verification entry script intentionally writes operator progress to the console.')]
@@ -56,6 +71,10 @@ param (
     [string]$SourceDatabaseName,
 
     [string]$PackageDirectory = ".",
+
+    [Parameter(Mandatory = $true)]
+    [ValidateSet("Minimal", "Populated")]
+    [string]$ExpectedTemplateKind,
 
     [string]$VerificationDatabaseName = "template_restore_verification",
 
@@ -74,7 +93,13 @@ param (
 
     [string]$MssqlPassword = $env:MSSQL_SA_PASSWORD ?? "abcdefgh1!",
 
-    [switch]$RequirePopulatedData
+    [switch]$RequirePopulatedData,
+
+    # The caller selects expectations from the reviewed implementation baseline.
+    # Never infer compact-descriptor support from the source/restored catalogs or v3 hash.
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$ExpectedModelManifestPath
 )
 
 Set-StrictMode -Version Latest
@@ -121,10 +146,22 @@ function Invoke-SqlcmdScalar {
 Assert-SafeDatabaseName -DatabaseName $SourceDatabaseName
 Assert-SafeDatabaseName -DatabaseName $VerificationDatabaseName
 
+$ExpectedModelManifestPath = (Resolve-Path -LiteralPath $ExpectedModelManifestPath).Path
+
 Push-Location $PSScriptRoot
 try {
     Import-Module ./Template-Management.psm1 -Force
+    Import-Module ./Template-RestoreCore.psm1 -Force
+    Import-Module ./Template-RestoreTrust.psm1 -Force
     Import-Module ../Dms-Management.psm1 -Force
+
+    & ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $ExpectedModelManifestPath `
+        -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName `
+        -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword
+    Write-Host "Source timestamp and compact-descriptor catalog assertions passed: $SourceDatabaseName" -ForegroundColor Green
+
+    # The v3 schema hash cannot tell the dms.Document shapes apart, so check the catalog.
+    Assert-DocumentTableShape -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword
 
     # --- Restore the package into a fresh verification database ---
     $expectedSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $SourceDatabaseName -MssqlPassword $MssqlPassword)
@@ -132,6 +169,11 @@ try {
 
     $packageName = Restore-TemplatePackage -PackageDirectory $PackageDirectory -DatabaseName $VerificationDatabaseName -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -MssqlPassword $MssqlPassword
     Write-Host "Verifying template package: $packageName" -ForegroundColor Cyan
+
+    & ./Assert-TemplateSchema.ps1 -ExpectedModelManifestPath $ExpectedModelManifestPath `
+        -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName `
+        -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
+    Write-Host "Restored timestamp and compact-descriptor catalog assertions passed: $VerificationDatabaseName" -ForegroundColor Green
 
     # --- Structural and data assertions ---
     $restoredSchemas = @(Get-UserSchemaNames -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword)
@@ -143,6 +185,82 @@ try {
     }
 
     Write-Host "Restored schemas match: $($restoredSchemas -join ', ')" -ForegroundColor Green
+
+    Assert-DocumentTableShape -DatabaseEngine $DatabaseEngine -ContainerName $ContainerName -DatabaseName $VerificationDatabaseName -MssqlPassword $MssqlPassword
+
+    # --- Restore-manifest assertions (version-1 restore contract) ---
+    # Prove the package carries a shape-valid restore manifest that matches the restored
+    # database exactly, using the same independent derivation a restore consumer performs:
+    # kind, engine, artifact identity and hash, effective-schema fields, physical baseline,
+    # canonical inventory, projects, and the DMS-only content gate.
+    $manifestExtractDirectory = Join-Path ([System.IO.Path]::GetTempPath()) "template-manifest-verify-$([Guid]::NewGuid().ToString('N'))"
+    try {
+        $manifestPackage = Get-ChildItem -Path $PackageDirectory -Filter *.nupkg |
+            Where-Object { $_.Name -notlike "*.Attestation.*" } |
+            Select-Object -First 1
+        if ($null -eq $manifestPackage) {
+            throw "No template .nupkg found in '$PackageDirectory' for manifest verification."
+        }
+
+        New-Item -ItemType Directory -Path $manifestExtractDirectory -Force | Out-Null
+        $manifestZipPath = Join-Path $manifestExtractDirectory "package.zip"
+        Copy-Item -LiteralPath $manifestPackage.FullName -Destination $manifestZipPath
+        Expand-Archive -Path $manifestZipPath -DestinationPath (Join-Path $manifestExtractDirectory "contents")
+
+        $manifestFile = Get-ChildItem -Path (Join-Path $manifestExtractDirectory "contents") -Filter (Get-RestoreManifestFileName) -Recurse | Select-Object -First 1
+        if ($null -eq $manifestFile) {
+            throw "Package '$($manifestPackage.Name)' does not contain a $(Get-RestoreManifestFileName); packages without a restore manifest are not eligible for restore."
+        }
+        $restoreManifest = Read-RestoreManifest -Path $manifestFile.FullName
+
+        if ([string]$restoreManifest.templateKind -cne $ExpectedTemplateKind) {
+            throw "Restore manifest declares templateKind '$($restoreManifest.templateKind)' but this verification expects '$ExpectedTemplateKind'."
+        }
+        if ([string]$restoreManifest.databaseEngine -cne $DatabaseEngine) {
+            throw "Restore manifest declares databaseEngine '$($restoreManifest.databaseEngine)' but this verification runs against '$DatabaseEngine'."
+        }
+
+        $manifestArtifact = Get-ChildItem -Path (Join-Path $manifestExtractDirectory "contents") -Filter ([string]$restoreManifest.artifactFileName) -Recurse | Select-Object -First 1
+        if ($null -eq $manifestArtifact) {
+            throw "Package '$($manifestPackage.Name)' does not contain the manifest-declared artifact '$($restoreManifest.artifactFileName)'."
+        }
+        $actualArtifactSha256 = Get-FileSha256Hex -Path $manifestArtifact.FullName
+        if ($actualArtifactSha256 -cne [string]$restoreManifest.artifactSha256) {
+            throw "The packaged artifact's SHA-256 '$actualArtifactSha256' does not match the manifest's artifactSha256 '$($restoreManifest.artifactSha256)'."
+        }
+
+        $restoredFacts = Get-TemplateSourceCatalogFacts `
+            -DatabaseEngine $DatabaseEngine `
+            -ContainerName $ContainerName `
+            -DatabaseName $VerificationDatabaseName `
+            -MssqlPassword $MssqlPassword `
+            -ArtifactSchemaName ([string[]]$restoredSchemas)
+
+        $restoredPartition = Assert-DmsOnlyInventory `
+            -DatabaseEngine $DatabaseEngine `
+            -Inventory $restoredFacts.FullInventory `
+            -DatabaseLevelObject $restoredFacts.DatabaseLevelObjects `
+            -SourceDescription "Restored verification database '$VerificationDatabaseName'"
+
+        Assert-RestoreManifestMatchesDatabase `
+            -Manifest $restoreManifest `
+            -Facts $restoredFacts `
+            -DatabaseEngine $DatabaseEngine `
+            -DatabaseDescription "Restored verification database '$VerificationDatabaseName'"
+
+        $manifestProjects = @($restoreManifest.projects)
+        $restoredProjects = @($restoredPartition.ProjectSchemaNames)
+        if (($manifestProjects -join "|") -cne ($restoredProjects -join "|")) {
+            throw "Restore manifest declares projects [$($manifestProjects -join ', ')] but the restored database contains [$($restoredProjects -join ', ')]."
+        }
+
+        Write-Host "Restore-manifest assertions passed: kind=$($restoreManifest.templateKind), engine=$($restoreManifest.databaseEngine), projects=[$($manifestProjects -join ', ')], inventory and effective-schema facts match." -ForegroundColor Green
+    }
+    finally {
+        if (Test-Path -LiteralPath $manifestExtractDirectory) {
+            Remove-Item -LiteralPath $manifestExtractDirectory -Recurse -Force
+        }
+    }
 
     if ($DatabaseEngine -eq "mssql") {
         $effectiveSchemaCount = Invoke-SqlcmdScalar -DatabaseName $VerificationDatabaseName -Query 'SELECT COUNT(*) FROM [dms].[EffectiveSchema];'
@@ -248,13 +366,18 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
     # --- Serveability probe ---
     $cmsToken = Get-CmsToken -CmsUrl $CmsUrl
 
-    # Add-DataStore requires a PostgresCredential regardless of target engine; for MSSQL it goes
-    # unused because -ConnectionString is supplied verbatim from New-DataStoreConnectionString.
-    $postgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
-
-    $dataStoreConnectionString = ""
+    # PostgreSQL: Add-DataStore builds the connection string from the credential.
+    # MSSQL: the connection string is supplied complete, so no PostgreSQL credential is passed.
+    $dataStoreParameters = @{
+        CmsUrl         = $CmsUrl
+        AccessToken    = $cmsToken
+        PostgresDbName = $VerificationDatabaseName
+        DatabaseEngine = $DatabaseEngine
+        Name           = "Template Restore Verification"
+        DataStoreType  = "Verification"
+    }
     if ($DatabaseEngine -eq "mssql") {
-        $dataStoreConnectionString = New-DataStoreConnectionString `
+        $dataStoreParameters.ConnectionString = New-DataStoreConnectionString `
             -DatabaseEngine "mssql" `
             -DbHost $ContainerName `
             -Port 1433 `
@@ -262,16 +385,11 @@ WHERE rk."ResourceName" NOT LIKE '%Descriptor'
             -Password $MssqlPassword `
             -DatabaseName $VerificationDatabaseName
     }
+    else {
+        $dataStoreParameters.PostgresCredential = ConvertTo-PostgresCredential -UserName "postgres" -Secret $PostgresPassword
+    }
 
-    $verificationDataStoreId = Add-DataStore `
-        -CmsUrl $CmsUrl `
-        -AccessToken $cmsToken `
-        -PostgresCredential $postgresCredential `
-        -PostgresDbName $VerificationDatabaseName `
-        -ConnectionString $dataStoreConnectionString `
-        -DatabaseEngine $DatabaseEngine `
-        -Name "Template Restore Verification" `
-        -DataStoreType "Verification"
+    $verificationDataStoreId = Add-DataStore @dataStoreParameters
 
     $vendorId = Add-Vendor -CmsUrl $CmsUrl -AccessToken $cmsToken -Company "Template Restore Verification Vendor"
 

@@ -69,7 +69,7 @@ public enum ColumnKind
     DocumentFk,
 
     /// <summary>
-    /// A foreign key to <c>dms.Descriptor</c> (stored as <c>DescriptorId</c> / <c>DocumentId</c>).
+    /// An Int32 foreign key to the independently allocated <c>dms.Descriptor.DescriptorId</c>.
     /// </summary>
     DescriptorFk,
 
@@ -97,11 +97,17 @@ public enum ColumnKind
     MirroredContentVersion,
 
     /// <summary>
-    /// A synthesized root-table column that mirrors <c>dms.Document.ContentLastModifiedAt</c> for the
-    /// row. Has no source JSONPath and no target resource; maintained only by document-stamping
-    /// triggers and excluded from client-writable projections.
+    /// The authoritative last-modified timestamp for the resource row. Has no source JSONPath or
+    /// target resource; maintained by stamping triggers and excluded from client-writable projections.
     /// </summary>
-    MirroredContentLastModifiedAt,
+    AuthoritativeContentLastModifiedAt,
+
+    /// <summary>
+    /// The authoritative creation timestamp for the current lifetime of the resource row. Has no source
+    /// JSONPath or target resource; set by the owner's stamping trigger on insert, never client-writable,
+    /// and excluded from JSON reconstitution and representation (no-op) comparisons.
+    /// </summary>
+    AuthoritativeContentCreatedAt,
 }
 
 /// <summary>
@@ -148,6 +154,12 @@ public enum ScalarKind
     /// A time-only value.
     /// </summary>
     Time,
+
+    /// <summary>
+    /// A 16-bit integer (<c>smallint</c>). Model-only: never produced from ApiSchema. Used for
+    /// payload columns such as the abstract identity table's <c>ResourceKeyId</c>.
+    /// </summary>
+    Int16,
 }
 
 /// <summary>
@@ -164,6 +176,17 @@ public enum ReferentialAction
     /// Cascading behavior on update/delete.
     /// </summary>
     Cascade,
+
+    /// <summary>
+    /// Reject the update/delete when referencing rows exist, checked immediately with a single probe per
+    /// foreign key. Used for safety-net foreign keys whose referencing rows the application removes first
+    /// (the resource root and <c>dms.Descriptor</c> rows that reference <c>dms.Document</c>). PostgreSQL
+    /// renders <c>RESTRICT</c>; <c>NO ACTION</c> there performs an extra parent re-check per foreign key
+    /// because its check is deferred to the end of the statement. SQL Server has no <c>RESTRICT</c> and
+    /// renders <c>NO ACTION</c>, which is already a single immediate probe compiled into the parent's
+    /// DELETE plan.
+    /// </summary>
+    Restrict,
 }
 
 /// <summary>
@@ -576,6 +599,14 @@ public abstract record ColumnStorage
 /// <see langword="true" /> for <see cref="ColumnStorage.Stored"/> columns and
 /// <see langword="false" /> for <see cref="ColumnStorage.UnifiedAlias"/> columns.
 /// </param>
+/// <param name="UsesSqlServerIdentityCollation">
+/// True only for generated SQL Server string columns that store or copy identity values. When true,
+/// DDL generation appends the <see cref="IdentityEqualityContract.IdentityTextCollation"/> to stored
+/// columns, and runtime comparer selection uses <see cref="IdentityEqualityContract.ComparerFor"/>.
+/// Unified aliases over a flagged canonical column carry the flag for comparer selection only; their
+/// effective collation is the canonical column's. Ordinary non-identity string payload columns leave
+/// this false and inherit the database default collation.
+/// </param>
 public sealed record DbColumnModel(
     DbColumnName ColumnName,
     ColumnKind Kind,
@@ -583,7 +614,8 @@ public sealed record DbColumnModel(
     bool IsNullable,
     JsonPathExpression? SourceJsonPath,
     QualifiedResourceName? TargetResource,
-    ColumnStorage Storage
+    ColumnStorage Storage,
+    bool UsesSqlServerIdentityCollation = false
 )
 {
     /// <summary>
@@ -771,8 +803,8 @@ public enum TrackedChangeTableKind
 
     /// <summary>
     /// The single shared descriptor tracked-change table (<c>tracked_changes_*.Descriptor</c>) covering
-    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, discriminated by
-    /// <see cref="TrackedChangeSystemColumnRole.Discriminator"/>.
+    /// every <see cref="ResourceStorageKind.SharedDescriptorTable"/> resource, routed by
+    /// <see cref="TrackedChangeSystemColumnRole.ResourceKeyId"/>.
     /// </summary>
     SharedDescriptor,
 }
@@ -860,8 +892,8 @@ public enum TrackedChangeSystemColumnRole
     CreatedAt,
 
     /// <summary>
-    /// <c>Discriminator</c> — present only on the shared descriptor tracked-change table; identifies the
-    /// concrete descriptor type.
+    /// <c>ResourceKeyId</c> — the owning document's qualified descriptor type key, copied from the
+    /// deleted descriptor row. Present only on the shared descriptor tracked-change table.
     /// </summary>
-    Discriminator,
+    ResourceKeyId,
 }

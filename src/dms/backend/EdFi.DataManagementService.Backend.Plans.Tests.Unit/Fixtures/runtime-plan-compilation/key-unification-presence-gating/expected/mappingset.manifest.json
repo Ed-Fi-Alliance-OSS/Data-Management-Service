@@ -137,8 +137,8 @@
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "20e0c2a2d66dc303a8bedbe47b05b1c32abe04b6f9d4299876e90bcb434bbfae",
-                "select_by_single_document_sql_sha256": "821b71855329f071aa7f590631acbdc0cbf4dc06aaa92839b6ac699a500aecce",
+                "select_by_keyset_sql_sha256": "43b1170882d4f3ea39b8b21f1d41ecfc80eb0e508004b1ee582210598be7f739",
+                "select_by_single_document_sql_sha256": "41a073d6eb14b24d1e46259550f81d74e96c14e5ef515710abf3fe044d680609",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1
@@ -347,8 +347,8 @@
             "reference_identity_projection_plans_in_dependency_order": [],
             "descriptor_projection_plans_in_order": [
               {
-                "select_by_keyset_sql_sha256": "24f7931c9c443dd6b33af1d3e3057c0cdc07b097ba2767cac360b00f0223900e",
-                "select_by_single_document_sql_sha256": "6b91898c9de740edfb9e1fe45e68af690d802c598cb0b9c9b042d7ca64e239de",
+                "select_by_keyset_sql_sha256": "f5b3e834efdf2b550d193ee7447de0269e01a8b532736b17ff29daf375650408",
+                "select_by_single_document_sql_sha256": "321abe4f4e84e2136d64b6601fea59da930da08c572ef649978c8744d4c36984",
                 "result_shape": {
                   "descriptor_id_ordinal": 0,
                   "uri_ordinal": 1

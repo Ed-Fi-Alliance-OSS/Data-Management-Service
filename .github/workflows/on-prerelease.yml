@@ -8,55 +8,91 @@ on:
   release:
     types:
       - prereleased
-  # A dispatch is a dry run of the three contract chains, and only ever that. It runs pack-plugins,
-  # pack-custom-validation and pack-secrets and, through their needs, the three SBOM jobs, the three
-  # SLSA provenance jobs and the three read-only check jobs, so a branch can prove it produces all
-  # three nupkgs, SPDX 2.2 manifests and provenance files with the real generator, and reaches a
-  # publish decision against the live feed, before a release ever fires this workflow.
+  # A dispatch is a dry run of the four contract chains, and only ever that. It runs pack-plugins,
+  # pack-custom-validation, pack-identity and pack-secrets and, through their needs, the four SBOM
+  # jobs, the four SLSA provenance jobs and the four read-only check jobs, so a branch can prove it
+  # produces all four nupkgs, SPDX 2.2 manifests and provenance files with the real generator, and
+  # reaches a publish decision against the live feed, before a release ever fires this workflow.
   #
-  # Nothing is published on a dispatch. The three contract publish jobs test event_name and skip,
+  # Nothing is published on a dispatch. The four contract publish jobs test event_name and skip,
   # which is where the package pushes live; the check jobs only read the feed. Every other job here
   # is either gated on github.event.release.tag_name, which a dispatch does not carry, or follows by
-  # needs from a job that is, so pack-dms, pack-schema-tools, pack-cs and everything downstream of
-  # them - the EdFi.Api, SchemaTools and Configuration Service pushes, both image publications,
-  # every release-asset upload and the host assembly manifest - are skipped rather than run against
+  # needs from a job that is, so pack-dms, pack-schema-tools, pack-document-cache-admin, pack-cs,
+  # pack-security-metadata-tools and everything downstream of them - the EdFi.Api, SchemaTools,
+  # DocumentCacheAdmin and Configuration Service pushes, both image publications, every
+  # release-asset upload and the host assembly manifest - are skipped rather than run against
   # a branch. The version steps still run: minver computes a height-based version from the nearest
   # v* tag, which is the deliberately wrong release version the contract assertions prove is ignored.
   workflow_dispatch:
 
+# No publishing credential lives here. The feed is public, so the contract checks and rechecks read
+# it anonymously; only the push steps and the Docker Hub logins of the publishing jobs, which run in
+# the 'publishing' environment, read the publishing tokens.
 env:
-  ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
   ARTIFACTS_FEED_URL: "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json"
   ARTIFACTS_PACKAGES_URL: ${{ vars.ARTIFACTS_PACKAGES_URL }}
-  ARTIFACTS_USERNAME: ${{ secrets.AZURE_ARTIFACTS_USER_NAME }}
-  VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
   MANIFEST_FILE: "_manifest/spdx_2.2/manifest.spdx.json"
   DMS_PACKAGE_NAME: "EdFi.Api"
   SCHEMA_TOOLS_PACKAGE_NAME: "EdFi.Api.SchemaTools"
+  DOCUMENT_CACHE_ADMIN_PACKAGE_NAME: "EdFi.Api.DocumentCacheAdmin"
   PLUGINS_PACKAGE_NAME: "EdFi.Api.Plugins"
   CUSTOM_VALIDATION_PACKAGE_NAME: "EdFi.Api.CustomValidation"
+  IDENTITY_PACKAGE_NAME: "EdFi.Api.Identity"
   SECRETS_PACKAGE_NAME: "EdFi.Api.Secrets"
+  SECURITY_METADATA_TOOLS_PACKAGE_NAME: "EdFi.Api.SecurityMetadataTools"
   CS_PACKAGE_NAME: "EdFi.Api.ConfigurationService"
   IMAGE_NAME: ${{ vars.IMAGE_NAME }}
   CONFIG_IMAGE_NAME: "edfialliance/ed-fi-api-configuration-service"
   DOCKER_USERNAME: ${{ vars.DOCKER_USERNAME }}
-  DOCKER_HUB_TOKEN: ${{ secrets.DOCKER_HUB_TOKEN }}
   REF: ${{ github.ref_name }}
 
 permissions: read-all
 
 jobs:
+  # A dms- or cs- prerelease is either an ordinary merge to main or the build for a v tag; the
+  # merge-or-tag workflows create both the same way. The release-asset jobs and the image tags
+  # differ between the two, so they read this job's answer (eng/ci/release-classification.psm1)
+  # rather than the spelling of the ref. "Does not contain alpha" used to stand in for "built for a
+  # v tag", which only held while the newest v tag was a final release: after a prerelease v tag
+  # such as v8.1.0-beta.0.1, main builds are 8.1.0-beta.0.1.N. A dispatch carries no tag name and
+  # skips this job, and with it everything that needs it.
+  classify-release:
+    name: Classify the Prerelease
+    runs-on: ubuntu-latest
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') || startsWith(github.event.release.tag_name, 'cs-') }}
+    outputs:
+      tagged-release: ${{ steps.classify.outputs.tagged-release }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      # The release-asset and image jobs read the tag name and need this job, so a tag that is not a
+      # dms-pre- or cs-pre- version stops here, before anything is classified, pushed or attached.
+      - name: Validate the release tag
+        shell: pwsh
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-, cs-pre-
+
+      - name: Classify the release
+        id: classify
+        shell: pwsh
+        run: ./eng/ci/Write-PrereleaseClassification.ps1 -ReleaseRef $env:REF
+
   # jobs for DMS
   pack-dms:
     name: Build and Pack DMS
-    # EdFi.Api ships both contract assemblies, so it is not built until both read-only contract
-    # checks have passed: a contract refused at its declared version must not reach a DMS package.
+    # EdFi.Api ships all three DMS contract assemblies, so it is not built until all three read-only
+    # contract checks have passed: a contract refused at its declared version must not reach a DMS
+    # package. The identity check is also the wire gate, so a served identity document that drifted
+    # from the published contract's baseline stops the build here even when the identity package
+    # itself is unchanged.
     # That is the refusal half only. A contract that passed its check and then failed to push is
     # caught one step later, by the needs on publish-package-dms. A dispatch runs the checks and
     # this job stays skipped by its own condition.
     needs:
       - check-plugins-contract
       - check-custom-validation-contract
+      - check-identity-contract
     if: startsWith(github.event.release.tag_name, 'dms-')
     runs-on: ubuntu-latest
     defaults:
@@ -121,11 +157,12 @@ jobs:
 
   pack-schema-tools:
     name: Build and Pack SchemaTools
-    # The SchemaTools tool package carries both contract assemblies through its Core reference, so
-    # it waits on the same two checks as pack-dms.
+    # The SchemaTools tool package carries all three DMS contract assemblies through its Core
+    # reference, so it waits on the same three checks as pack-dms.
     needs:
       - check-plugins-contract
       - check-custom-validation-contract
+      - check-identity-contract
     if: startsWith(github.event.release.tag_name, 'dms-')
     runs-on: ubuntu-latest
     defaults:
@@ -185,6 +222,86 @@ jobs:
         with:
           name: "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}-NuGet"
           path: ${{ github.workspace }}/${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  pack-document-cache-admin:
+    name: Build and Pack DocumentCacheAdmin
+    # The dms-document-cache tool bundles the CustomValidation and Identity contract assemblies through
+    # its Core reference, so it waits on the same three checks as pack-dms and pack-schema-tools.
+    needs:
+      - check-plugins-contract
+      - check-custom-validation-contract
+      - check-identity-contract
+    if: startsWith(github.event.release.tag_name, 'dms-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      dms-version: ${{ steps.versions.outputs.dms-v }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set DMS Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "dms"
+
+      - name: Build DMS .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $packageVersion `
+              -LockedMode
+
+      - name: Create DocumentCacheAdmin NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./build-dms.ps1 -Command Package `
+              -DMSVersion $packageVersion `
+              -Configuration Release `
+              -PackageTarget DocumentCacheAdmin `
+              -LockedMode
+
+      - name: Verify Installed DocumentCacheAdmin Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          ./eng/ci/Invoke-DocumentCacheAdminPackageSmoke.ps1 `
+              -DMSVersion $packageVersion `
+              -Configuration Release `
+              -SkipPackageBuild
+
+      - name: Generate DocumentCacheAdmin hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected DocumentCacheAdmin package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload DocumentCacheAdmin Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}.${{ steps.versions.outputs.dms-v }}.nupkg
           if-no-files-found: error
           retention-days: 30
 
@@ -248,7 +365,7 @@ jobs:
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   sbom-create-schema-tools:
     name: Create SchemaTools SBOM
@@ -308,7 +425,72 @@ jobs:
         shell: bash
         run: |
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  sbom-create-document-cache-admin:
+    name: Create DocumentCacheAdmin SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-document-cache-admin
+    # Only downloads and uploads workflow artifacts, so it needs no write access to the repository.
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get DocumentCacheAdmin Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-NuGet
+
+      - name: Generate DocumentCacheAdmin Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-document-cache-admin.outputs.dms-version }}"
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected DocumentCacheAdmin package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+          if ($LASTEXITCODE -ne 0) {
+            throw "Installing Microsoft.Sbom.DotNetTool failed with exit code $LASTEXITCODE."
+          }
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+          if ($LASTEXITCODE -ne 0) {
+            throw "sbom-tool generate failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Upload DocumentCacheAdmin SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate DocumentCacheAdmin hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   provenance-create-dms:
     name: Create DMS Provenance
@@ -339,6 +521,20 @@ jobs:
       upload-assets: false
       compile-generator: true
 
+  provenance-create-document-cache-admin:
+    name: Create DocumentCacheAdmin Provenance
+    needs: pack-document-cache-admin
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-document-cache-admin.outputs.hash-code }}
+      provenance-name: edfiApiDocumentCacheAdmin.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
   publish-package-dms:
     name: Publish DMS NuGet Package
     # The contract publish jobs, not only the checks pack-dms waited on. A check gates a contract
@@ -349,6 +545,9 @@ jobs:
       - pack-dms
       - publish-package-plugins
       - publish-package-custom-validation
+      - publish-package-identity
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -367,6 +566,9 @@ jobs:
             InstallCredentialHandler
 
       - name: Push DMS Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.DMS_PACKAGE_NAME }}.${{ needs.pack-dms.outputs.dms-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -375,7 +577,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -383,12 +585,15 @@ jobs:
 
   publish-package-schema-tools:
     name: Publish SchemaTools NuGet Package
-    # The tool package carries both contract assemblies, so it waits on the contract pushes for the
+    # The tool package carries all three DMS contract assemblies, so it waits on the contract pushes for the
     # reason publish-package-dms records.
     needs:
       - pack-schema-tools
       - publish-package-plugins
       - publish-package-custom-validation
+      - publish-package-identity
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -407,6 +612,9 @@ jobs:
           InstallCredentialHandler
 
       - name: Push SchemaTools Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.SCHEMA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-schema-tools.outputs.dms-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -415,13 +623,62 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
           ./build-dms.ps1 Push @arguments
 
-  # The two contract chains. Each is the shape EdFi.Api and EdFi.Api.SchemaTools already have -
+  publish-package-document-cache-admin:
+    name: Publish DocumentCacheAdmin NuGet Package
+    # The tool package bundles the contract assemblies through its Core reference, so it waits on the
+    # contract pushes for the reason publish-package-dms records. It also waits on the SBOM and
+    # provenance jobs, so a package is never pushed when either attestation failed.
+    needs:
+      - pack-document-cache-admin
+      - sbom-create-document-cache-admin
+      - provenance-create-document-cache-admin
+      - publish-package-plugins
+      - publish-package-custom-validation
+      - publish-package-identity
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get DocumentCacheAdmin Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-NuGet
+
+      - name: Install-credential-handler DocumentCacheAdmin
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push DocumentCacheAdmin Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
+        run: |
+          $packageFile = "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}.${{ needs.pack-document-cache-admin.outputs.dms-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected DocumentCacheAdmin package was not found: $packageFile"
+          }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
+            PackageFile = $packageFile
+          }
+
+          ./build-dms.ps1 Push @arguments
+
+  # The three DMS contract chains. Each is the shape EdFi.Api and EdFi.Api.SchemaTools already have -
   # pack exposing hash-code, an SPDX 2.2 SBOM exposing sbom-hash-code, SLSA provenance with a name
   # of its own, and a publish job - with one difference that runs through all of it: a contract is
   # packed and published at the version its own project declares, never at the release version.
@@ -446,6 +703,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -521,7 +786,7 @@ jobs:
 
   pack-custom-validation:
     name: Build and Pack Custom Validation Contract
-    # Same as pack-plugins: a dispatch is the dry run, and this is one of the three chains it runs.
+    # Same as pack-plugins: a dispatch is the dry run, and this is one of the four chains it runs.
     if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
     runs-on: ubuntu-latest
     defaults:
@@ -535,6 +800,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -610,18 +883,117 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # The four DMS contract SBOM and provenance jobs below, and the two for the secrets contract further
+  pack-identity:
+    name: Build and Pack Identity Contract
+    # Same as pack-plugins: a dispatch is the dry run, and this is one of the four chains it runs.
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      contract-version: ${{ steps.contract-version.outputs.contract-version }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix dms-pre-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set DMS Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "dms"
+
+      - name: Read Identity Contract Version
+        id: contract-version
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          Import-Module ./package-helpers.psm1
+          $contractVersion = Get-IdentityContractVersion
+
+          "contract-version=$contractVersion" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Build DMS .NET Assemblies
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # BuildAndPublish regenerates src/dms/Directory.Build.props with this release version, so
+          # the contract below is packed out of a release-stamped tree. Its csproj is what holds the
+          # contract's version against that, and the assertion two steps down is what proves it.
+          ./build-dms.ps1 -Command BuildAndPublish `
+              -Configuration Release `
+              -DMSVersion $packageVersion `
+              -LockedMode
+
+      - name: Create Identity NuGet Package
+        run: |
+          $packageVersion = "${{ steps.versions.outputs.dms-semver }}" -replace "dms-v", ""
+
+          # -DMSVersion is passed deliberately, and is deliberately the wrong version for this
+          # package: it is the release version, and the assertion below requires the artifact to
+          # carry the contract's own. Removing it would remove what is being disproved.
+          ./build-dms.ps1 -Command Package `
+              -DMSVersion $packageVersion `
+              -Configuration Release `
+              -PackageTarget Identity
+
+      - name: Assert Identity Package Contents
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Assert-IdentityPackage.ps1 `
+            -PackageFile "${{ env.IDENTITY_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg" `
+            -ExtractTo (Join-Path $env:RUNNER_TEMP "identity-nupkg-$([guid]::NewGuid().ToString('N'))") `
+            -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
+            -ExpectedPackageVersion "${{ steps.contract-version.outputs.contract-version }}"
+
+      - name: Generate Identity hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.IDENTITY_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected identity package was not found: $packageFile"
+          }
+
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Identity Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.IDENTITY_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.IDENTITY_PACKAGE_NAME }}.${{ steps.contract-version.outputs.contract-version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  # The six DMS contract SBOM and provenance jobs below, and the two for the secrets contract further
   # down, produce run artifacts that nothing attaches to a GitHub release, and the provenance jobs
   # run the real SLSA generator with id-token: write to produce a file only the run holds.
   # Deliberate, and not a step left unfinished.
   #
   # The three release-stamped siblings can attach because their version moves with every release,
-  # so the non-alpha prerelease run that populates the vX.Y.Z release is the run that pushed the
+  # so the tagged release build that populates the vX.Y.Z release is the run that pushed the
   # package. A contract's version does not move. The run that first pushes a contract version is an
-  # alpha prerelease, which attaches nothing and whose release is deleted at the next final release;
+  # ordinary main build, which attaches nothing and whose release is deleted at the next final release;
   # every later run finds the version already on the feed and packs a different archive, because a
   # nupkg is not byte-reproducible, so its evidence would describe bytes the feed does not serve.
-  # Retaining the alpha run's artifacts for a later backfill was considered and rejected: GitHub
+  # Retaining the first run's artifacts for a later backfill was considered and rejected: GitHub
   # keeps run artifacts for thirty days and this repository's final releases are 36 to 214 days
   # apart. See reference/design/plugins-DMS-1462/06-publish-plugin-contract-packages.md.
   sbom-create-plugins:
@@ -746,6 +1118,67 @@ jobs:
           sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
           echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
+  sbom-create-identity:
+    name: Create Identity Contract SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-identity
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get Identity Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.IDENTITY_PACKAGE_NAME }}-NuGet
+
+      - name: Generate Identity Software Bill of Materials (SBOM)
+        run: |
+          $packageName = "${{ env.IDENTITY_PACKAGE_NAME }}"
+          $version = "${{ needs.pack-identity.outputs.contract-version }}"
+
+          $packageFile = "$packageName.$version.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected identity package was not found: $packageFile"
+          }
+          (Resolve-Path $packageFile).Path > buildfilelist.txt
+
+          dotnet tool install --global Microsoft.Sbom.DotNetTool
+
+          sbom-tool generate `
+              -b ./ `
+              -bl ./buildfilelist.txt `
+              -bc "./" `
+              -pn "$packageName" `
+              -pv $version `
+              -nsb https://ed-fi.org `
+              -m ./ `
+              -ps "Ed-Fi Alliance"
+
+          cp _manifest/spdx_2.2/manifest.spdx.* .
+
+      - name: Upload Identity SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.IDENTITY_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate Identity hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum "./${{ env.MANIFEST_FILE }}" | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
   provenance-create-plugins:
     name: Create Plugins Contract Provenance
     needs: pack-plugins
@@ -774,10 +1207,24 @@ jobs:
       upload-assets: false
       compile-generator: true
 
-  # The two read-only publish decisions, separate from the mutation so they can gate what ships the
-  # contract DLLs. pack-dms and pack-schema-tools need both: EdFi.Api and the SchemaTools tool
-  # package carry both contract assemblies, and a contract refused at its declared version must not
-  # be built into a release artifact. A dispatch runs these against the live feed and mutates
+  provenance-create-identity:
+    name: Create Identity Contract Provenance
+    needs: pack-identity
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-identity.outputs.hash-code }}
+      provenance-name: edfiApiIdentity.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  # The three read-only publish decisions, separate from the mutation so they can gate what ships
+  # the contract DLLs. pack-dms and pack-schema-tools need all three: EdFi.Api and the SchemaTools
+  # tool package carry all three contract assemblies, and a contract refused at its declared version
+  # must not be built into a release artifact. A dispatch runs these against the live feed and mutates
   # nothing, which gives the dry run coverage of the decision path.
   check-plugins-contract:
     name: Check Plugins Contract Against the Feed
@@ -815,8 +1262,7 @@ jobs:
             -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -854,10 +1300,132 @@ jobs:
             -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
+
+  # The identity check does the feed decision the siblings do and one thing more, the wire gate.
+  # The gate compares the identity wire document host code serves at this commit with the baseline
+  # stored at the commit the last published identity package records in its nuspec. Because it
+  # reads the served document rather than the package, it gates the DMS build even when the
+  # identity package itself is unchanged: a change to what the host serves that no contract version
+  # increment and no reviewed compatibility record accounts for fails here, before pack-dms and
+  # pack-schema-tools can run. It needs full git history, because it reads the baseline with
+  # git show at the recorded commit, and it reads the feed only.
+  check-identity-contract:
+    name: Check Identity Contract Against the Feed
+    needs: pack-identity
+    if: ${{ github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'dms-') }}
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      should-push: ${{ steps.decide.outputs.should-push }}
+      reason: ${{ steps.decide.outputs.reason }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get Identity Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.IDENTITY_PACKAGE_NAME }}-NuGet
+
+      - name: Decide Whether the Identity Contract May Be Published
+        id: decide
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Invoke-ContractPublishCheck.ps1 `
+            -PackageFile "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg" `
+            -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
+            -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
+            -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-check-$([guid]::NewGuid().ToString('N'))") `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
+            ./eng/verification/Write-ContractPublishOutput.ps1 |
+            Out-Null
+
+      - name: Build Core Unit Tests
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          dotnet build ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj `
+            -c Release
+          if ($LASTEXITCODE -ne 0) {
+            throw "Building the Core unit tests failed with exit code $LASTEXITCODE"
+          }
+
+      - name: Produce the Served Identity Wire Document
+        id: served-document
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          # The fixture class writes the document the host serves to its test work directory. Run
+          # only that class, with the output captured to a file and the exit code read from the
+          # command itself. dotnet test exits 0 when the filter matches nothing, so the summary line
+          # is parsed as well: at least one test must have passed, none may have failed, and every
+          # test run must have passed, which also fails a rename that leaves the filter matching
+          # nothing. The counts are compared with each other rather than with a number, so adding a
+          # test to the class does not break this lane after the pull request lane passed it.
+          $project = "./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/EdFi.DataManagementService.Core.Tests.Unit.csproj"
+          $testOutput = Join-Path $env:RUNNER_TEMP "identity-wire-baseline-tests.txt"
+
+          dotnet test $project -c Release --no-build --filter "FullyQualifiedName~IdentityWireBaselineTests" > $testOutput 2>&1
+          $exitCode = $LASTEXITCODE
+          Get-Content $testOutput | Write-Host
+          if ($exitCode -ne 0) {
+            throw "The identity wire baseline tests failed with exit code $exitCode"
+          }
+
+          $summary = Get-Content $testOutput -Raw
+          $passed = [regex]::Match($summary, 'Passed:\s+(\d+)')
+          $failed = [regex]::Match($summary, 'Failed:\s+(\d+)')
+          $total = [regex]::Match($summary, 'Total:\s+(\d+)')
+          if (-not ($passed.Success -and $failed.Success -and $total.Success)) {
+            throw "No test summary was found in the identity wire baseline test output; the filter may have matched nothing."
+          }
+          if ([int]$failed.Groups[1].Value -ne 0 -or [int]$passed.Groups[1].Value -lt 1 -or [int]$total.Groups[1].Value -ne [int]$passed.Groups[1].Value) {
+            throw "Expected every identity wire baseline test to pass, at least one, found Passed: $($passed.Groups[1].Value), Failed: $($failed.Groups[1].Value), Total: $($total.Groups[1].Value)"
+          }
+
+          $served = @(Get-ChildItem -Path ./src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/bin/Release -Recurse -Filter "identity-v2-wire-baseline.json" |
+            Where-Object { $_.Directory.Name -eq "actual" })
+          if ($served.Count -ne 1) {
+            throw "Expected exactly one served identity wire document under an actual directory, found $($served.Count)"
+          }
+
+          "served-document-path=$($served[0].FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      # For publish-package-identity, which gates this same document again inside its serialized
+      # concurrency group; see the recheck there.
+      - name: Upload the Served Identity Wire Document
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.IDENTITY_PACKAGE_NAME }}-WireDocument"
+          path: ${{ steps.served-document.outputs.served-document-path }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Gate the Served Identity Wire Document
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $decision = ./eng/verification/Invoke-IdentityWireContractGate.ps1 `
+            -ServedDocumentPath "${{ steps.served-document.outputs.served-document-path }}" `
+            -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
+            -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}"
+
+          $line = "Identity wire gate: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
+          Write-Host $line
+          $line | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
 
   publish-package-plugins:
     name: Publish Plugins Contract NuGet Package
@@ -866,8 +1434,10 @@ jobs:
       - check-plugins-contract
     # Not on a dispatch. The pack and check jobs above do run on one, so without this the dry run
     # would push the package; the push lives in this job and nowhere else, so skipping it is what
-    # makes the dispatch a dry run.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    # makes the dispatch a dry run. Every publishing job here also requires the release's own
+    # dms-pre-* or cs-pre-* tag (ref_type, so a branch named like one cannot pass) and runs in the
+    # 'publishing' environment, which holds the publishing tokens behind its protection rules.
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
     # Serialized across workflow runs, because the decision is check-then-push and a contract's
     # version is the same in every run. Two prereleases created minutes apart would otherwise both
     # find 1.0.0 absent and both push it, and the loser fails on a version the feed will not let it
@@ -877,6 +1447,7 @@ jobs:
     concurrency:
       group: publish-package-plugins
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -906,8 +1477,7 @@ jobs:
             -PackageId "${{ env.PLUGINS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-plugins.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "plugins-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -919,6 +1489,9 @@ jobs:
 
       - name: Push Plugins Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.PLUGINS_PACKAGE_NAME }}.${{ needs.pack-plugins.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -927,7 +1500,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -940,11 +1513,12 @@ jobs:
       - check-custom-validation-contract
     # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
     # dry run must not push.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
     # Serialized across runs, for the reason publish-package-plugins records.
     concurrency:
       group: publish-package-custom-validation
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -972,8 +1546,7 @@ jobs:
             -PackageId "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-custom-validation.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "custom-validation-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -985,6 +1558,9 @@ jobs:
 
       - name: Push Custom Validation Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.CUSTOM_VALIDATION_PACKAGE_NAME }}.${{ needs.pack-custom-validation.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -993,36 +1569,139 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
           ./build-dms.ps1 Push @arguments
 
-  # dms-pre and dms-*-alpha releases, will not have artifacts attached.
-  # This step attach DMS artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
+  publish-package-identity:
+    name: Publish Identity Contract NuGet Package
+    needs:
+      - pack-identity
+      - check-identity-contract
+    # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
+    # dry run must not push.
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    # Serialized across runs, for the reason publish-package-plugins records.
+    concurrency:
+      group: publish-package-identity
+      cancel-in-progress: false
+    environment: publishing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get Identity Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.IDENTITY_PACKAGE_NAME }}-NuGet
+
+      - name: Get the Served Identity Wire Document
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.IDENTITY_PACKAGE_NAME }}-WireDocument
+          path: ${{ runner.temp }}/identity-wire-document
+
+      - name: Recheck Immediately Before Pushing
+        id: decide
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          ./eng/verification/Invoke-ContractPublishCheck.ps1 `
+            -PackageFile "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg" `
+            -PackageId "${{ env.IDENTITY_PACKAGE_NAME }}" `
+            -PackageVersion "${{ needs.pack-identity.outputs.contract-version }}" `
+            -WorkingDirectory (Join-Path $env:RUNNER_TEMP "identity-publish-decide-$([guid]::NewGuid().ToString('N'))") `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
+            ./eng/verification/Write-ContractPublishOutput.ps1 |
+            Out-Null
+
+      # The wire gate in check-identity-contract ran outside this concurrency group, against
+      # whatever the feed held then. Two runs that both found the contract version absent both
+      # passed it as the initial baseline, and once the first pushes, the second's package recheck
+      # above reads "unchanged" and lets its DMS packages through. So the gate runs again here, on
+      # this run's own served document against a fresh read of the feed, whether or not this run
+      # pushes: a version another run published first must have the baseline this run serves.
+      - name: Recheck the Served Identity Wire Document Immediately Before Pushing
+        run: |
+          $ErrorActionPreference = "Stop"
+
+          $served = @(Get-ChildItem -LiteralPath (Join-Path $env:RUNNER_TEMP "identity-wire-document") -File)
+          if ($served.Count -ne 1) {
+            throw "Expected exactly one served identity wire document from check-identity-contract, found $($served.Count)"
+          }
+
+          $decision = ./eng/verification/Invoke-IdentityWireContractGate.ps1 `
+            -ServedDocumentPath $served[0].FullName `
+            -ContractVersion "${{ needs.pack-identity.outputs.contract-version }}" `
+            -PackedPackageFile (Resolve-Path "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg").Path `
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}"
+
+          $line = "Identity wire gate before push: outcome=$($decision.Outcome) published=$($decision.PublishedVersion) anchor=$($decision.AnchorCommit) contract=${{ needs.pack-identity.outputs.contract-version }}"
+          Write-Host $line
+          $line | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append
+
+      - name: Install-credential-handler Identity
+        if: steps.decide.outputs.should-push == 'true'
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push Identity Package to Azure Artifacts
+        if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
+        run: |
+          $packageFile = "${{ env.IDENTITY_PACKAGE_NAME }}.${{ needs.pack-identity.outputs.contract-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected identity package was not found: $packageFile"
+          }
+
+          $arguments = @{
+            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
+            PackageFile = $packageFile
+          }
+
+          ./build-dms.ps1 Push @arguments
+
+  # Only a tagged release build attaches artifacts, to the vX.Y.Z release its v tag names. An ordinary
+  # main build has no such release; classify-release tells the two apart.
   attach-dms-artifacts-to-release:
     name: Attach DMS Artifacts to GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - pack-dms
       - sbom-create-dms
       - provenance-create-dms
       - sbom-create-schema-tools
       - provenance-create-schema-tools
-    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && needs.classify-release.outputs.tagged-release == 'true' }}
     permissions:
       contents: write
     steps:
       - name: Prepare release version
         id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'dms-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#dms-pre-}"
 
-          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
           echo "Release version: $SEMVER"
 
       - name: Download DMS SBOM
@@ -1055,10 +1734,13 @@ jobs:
 
       - name: Attach DMS SBOM and Provenance to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -1115,11 +1797,73 @@ jobs:
               -Headers $gh_headers `
               -InFile $schemaToolsProvenanceFile
 
+  attach-document-cache-admin-artifacts-to-release:
+    name: Attach DocumentCacheAdmin Artifacts to GitHub Release
+    runs-on: ubuntu-latest
+    # A separate job from attach-dms-artifacts-to-release so a tool failure cannot stop the EdFi.Api
+    # release assets, and the assets attach only after the package reached the feed.
+    needs:
+      - classify-release
+      - pack-document-cache-admin
+      - publish-package-document-cache-admin
+      - sbom-create-document-cache-admin
+      - provenance-create-document-cache-admin
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && needs.classify-release.outputs.tagged-release == 'true' }}
+    permissions:
+      contents: write
+    steps:
+      # Supplies eng/ci/release-assets.psm1. It runs first, because a checkout cleans the workspace.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+
+      - name: Prepare release version
+        id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          # Remove 'dms-pre-' prefix and add 'v' to match release format
+          SEMVER="v${TAG_NAME#dms-pre-}"
+
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "Release version: $SEMVER"
+
+      - name: Download DocumentCacheAdmin SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.DOCUMENT_CACHE_ADMIN_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-document-cache-admin.outputs.sbom-hash-code }}"
+
+      - name: Download DocumentCacheAdmin Provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: edfiApiDocumentCacheAdmin.intoto.jsonl
+
+      # An asset the release already has is left as it is when its content matches and refused when
+      # it differs, so re-running this failed job after a partial upload completes the attach.
+      - name: Attach DocumentCacheAdmin SBOM and Provenance to release
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          Import-Module ./eng/ci/release-assets.psm1
+          Publish-ReleaseAsset -Repository $env:GITHUB_REPOSITORY -ReleaseTag $env:RELEASE_VERSION -Token $env:GITHUB_TOKEN -Asset @(
+              @{ Name = 'EdFi.Api.DocumentCacheAdmin-SBOM.zip'; Path = $env:MANIFEST_FILE; Comparison = 'ZipEntry' }
+              @{ Name = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Path = 'edfiApiDocumentCacheAdmin.intoto.jsonl'; Comparison = 'Bytes' }
+          ) -InformationAction Continue
+
   docker-publish-dms:
     name: Publish DMS to Docker Hub
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/dms-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - publish-package-dms
+    env:
+      TAGGED_RELEASE: ${{ needs.classify-release.outputs.tagged-release }}
     steps:
       # Needed only by the tag step below, which runs a script out of this repository. The image is
       # built from the remote context "{{defaultContext}}:src/dms", so nothing else in this job
@@ -1138,7 +1882,7 @@ jobs:
       - name: Prepare DMS Tags
         id: prepare-tags
         shell: pwsh
-        run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -ImageName $env:IMAGE_NAME
+        run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -TaggedRelease $env:TAGGED_RELEASE -ImageName $env:IMAGE_NAME
 
       - name: Set up DMS Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -1147,7 +1891,7 @@ jobs:
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_HUB_TOKEN }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Data Management Service image
         id: metadatamanagementservice
@@ -1175,12 +1919,13 @@ jobs:
     # dependency on docker-publish-dms at all, so the two run concurrently and a generator step added
     # there could inspect an image that has not been pushed yet.
     needs:
+      - classify-release
       - docker-publish-dms
     # The same gate attach-dms-artifacts-to-release carries, and deliberately not the one
-    # docker-publish-dms carries, which is none at all. An alpha prerelease has no vX.Y.Z release to
-    # attach an asset to, so an alpha publishes an image and no manifest - which is already what
+    # docker-publish-dms carries, which is none at all. An ordinary main build has no vX.Y.Z release
+    # to attach an asset to, so it publishes an image and no manifest - which is already what
     # happens to the SBOM and the provenance.
-    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && !contains(github.event.release.tag_name, 'alpha') }}
+    if: ${{ startsWith(github.event.release.tag_name, 'dms-') && needs.classify-release.outputs.tagged-release == 'true' }}
     permissions:
       contents: write
     steps:
@@ -1189,9 +1934,9 @@ jobs:
       - name: Prepare release version
         id: prepare-version
         shell: bash
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'dms-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#dms-pre-}"
 
@@ -1210,7 +1955,7 @@ jobs:
           # digest before it inspects anything, so a tag republished mid-run cannot make one
           # manifest describe two images.
           ./eng/verification/New-HostAssemblyManifest.ps1 `
-            -Image "${{ env.IMAGE_NAME }}:${{ env.REF }}" `
+            -Image "$($env:IMAGE_NAME):$($env:REF)" `
             -OutputPath "host-assembly-manifest.md"
 
       - name: Assert Host Assembly Manifest
@@ -1233,12 +1978,15 @@ jobs:
 
       - name: Attach Host Assembly Manifest to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           $ErrorActionPreference = "Stop"
 
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $gh_headers = @{
               "Accept"        = "application/vnd.github+json"
@@ -1263,7 +2011,7 @@ jobs:
   # jobs for Config
 
   # The Configuration Service's contract chain: pack, an SBOM, provenance, a read-only publish
-  # decision, and a publish job, in the shape the two DMS contract chains above have and for the same
+  # decision, and a publish job, in the shape the three DMS contract chains above have and for the same
   # reason. EdFi.Api.Secrets is packed and published at the version its own csproj declares, never at
   # the release version, so this workflow offers the same version to the feed on every cs-
   # prerelease, and the publish job consults Invoke-ContractPublishCheck rather than pushing.
@@ -1283,6 +2031,14 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+
+      # This job does not need classify-release, so it checks the tag itself before anything is
+      # versioned or published for it. A dispatch has no tag and skips the check.
+      - name: Validate the release tag
+        if: ${{ github.event_name == 'release' }}
+        run: |
+          Import-Module ./eng/ci/release-classification.psm1
+          Assert-ReleaseRef -ReleaseRef $env:REF -Prefix cs-pre-
 
       - name: Setup dotnet
         uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
@@ -1375,8 +2131,8 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  # Run artifacts only, like the four DMS contract SBOM and provenance jobs, and for the reason
-  # recorded above them: a contract version is first pushed by an alpha prerelease, whose release
+  # Run artifacts only, like the six DMS contract SBOM and provenance jobs, and for the reason
+  # recorded above them: a contract version is first pushed by an ordinary main build, whose release
   # attaches nothing.
   sbom-create-secrets:
     name: Create Secrets Contract SBOM
@@ -1494,8 +2250,7 @@ jobs:
             -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-check-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1506,11 +2261,12 @@ jobs:
       - check-secrets-contract
     # Not on a dispatch, for the reason publish-package-plugins records: the push is here, and a
     # dry run must not push.
-    if: ${{ github.event_name != 'workflow_dispatch' }}
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
     # Serialized across runs, for the reason publish-package-plugins records.
     concurrency:
       group: publish-package-secrets
       cancel-in-progress: false
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1538,8 +2294,7 @@ jobs:
             -PackageId "${{ env.SECRETS_PACKAGE_NAME }}" `
             -PackageVersion "${{ needs.pack-secrets.outputs.contract-version }}" `
             -WorkingDirectory (Join-Path $env:RUNNER_TEMP "secrets-publish-decide-$([guid]::NewGuid().ToString('N'))") `
-            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
-            -FeedApiKey "${{ env.ARTIFACTS_API_KEY }}" |
+            -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" |
             ./eng/verification/Write-ContractPublishOutput.ps1 |
             Out-Null
 
@@ -1551,6 +2306,9 @@ jobs:
 
       - name: Push Secrets Package to Azure Artifacts
         if: steps.decide.outputs.should-push == 'true'
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
           $packageFile = "${{ env.SECRETS_PACKAGE_NAME }}.${{ needs.pack-secrets.outputs.contract-version }}.nupkg"
           if (-not (Test-Path $packageFile)) {
@@ -1559,7 +2317,7 @@ jobs:
 
           $arguments = @{
             EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-            NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+            NuGetApiKey = $env:ARTIFACTS_API_KEY
             PackageFile = $packageFile
           }
 
@@ -1568,7 +2326,7 @@ jobs:
   pack-cs:
     name: Build and Pack Config
     # The Configuration Service package ships the secrets contract assembly, so it is not built
-    # until the read-only contract check has passed, as pack-dms waits for its two. A contract that
+    # until the read-only contract check has passed, as pack-dms waits for its three. A contract that
     # passed its check and then failed to push is caught by the needs on publish-package-cs. A
     # dispatch runs the check and this job stays skipped by its own condition.
     needs:
@@ -1766,7 +2524,7 @@ jobs:
         run: |
           # sha256sum returns "<hashcode>  <name of file". Split that and return only the <hashcode>.
           sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
-          echo "sbom-hash-code=$sbom_hash" >> $GITHUB_OUTPUT
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
 
   provenance-create-cs:
     name: Create Config Provenance
@@ -1792,6 +2550,8 @@ jobs:
     needs:
       - pack-cs
       - publish-package-secrets
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -1810,11 +2570,14 @@ jobs:
             InstallCredentialHandler
 
       - name: Push Config Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
         run: |
          $artifact = (Get-ChildItem -Path $_ -Name -Include *.nupkg)
          $arguments = @{
            EdFiNuGetFeed = "${{ env.ARTIFACTS_FEED_URL }}"
-           NuGetApiKey = "${{ env.ARTIFACTS_API_KEY }}"
+           NuGetApiKey = $env:ARTIFACTS_API_KEY
          }
 
          $artifact | ForEach-Object {
@@ -1822,28 +2585,29 @@ jobs:
              ./build-config.ps1 Push @arguments
           }
 
-  # cs-pre and cs-*-alpha releases, will not have artifacts attached.
-  # This step attach Config artifacts to the release with tag vX.Y.Z without 'alpha' or 'pre' in the tag name.
+  # Only a tagged release build attaches artifacts, to the vX.Y.Z release its v tag names. An ordinary
+  # main build has no such release; classify-release tells the two apart.
   attach-cs-artifacts-to-release:
     name: Attach Config Artifacts to GitHub Release
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - pack-cs
       - sbom-create-cs
       - provenance-create-cs
-    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && !contains(github.event.release.tag_name, 'alpha') }}
+    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && needs.classify-release.outputs.tagged-release == 'true' }}
     permissions:
       contents: write
     steps:
       - name: Prepare release version
         id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
         run: |
-          TAG_NAME="${{ github.event.release.tag_name }}"
-
           # Remove 'cs-pre-' prefix and add 'v' to match release format
           SEMVER="v${TAG_NAME#cs-pre-}"
 
-          echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
           echo "Release version: $SEMVER"
 
       - name: Download CS SBOM
@@ -1860,10 +2624,13 @@ jobs:
 
       - name: Attach CS SBOM and Provenance to release
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $release = "${{ steps.prepare-version.outputs.semver }}"
+          $release = $env:RELEASE_VERSION
           $repo = "${{ github.repository }}"
-          $token = "${{ secrets.GITHUB_TOKEN }}"
+          $token = $env:GITHUB_TOKEN
 
           $url = "https://api.github.com/repos/$repo/releases/tags/$release"
           $gh_headers = @{
@@ -1900,10 +2667,15 @@ jobs:
 
   docker-publish-cs:
     name: Publish Config to Docker Hub
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
+    environment: publishing
     runs-on: ubuntu-latest
     needs:
+      - classify-release
       - pack-cs
       - publish-package-cs
+    env:
+      TAGGED_RELEASE: ${{ needs.classify-release.outputs.tagged-release }}
     steps:
       - name: Wait 20s
         # Give Azure Artifacts caching a moment to catch up
@@ -1912,25 +2684,29 @@ jobs:
       - name: Prepare Config Tags
         id: prepare-tags
         run: |
-          REF="${{ env.REF }}"
-          PACKAGEVERSION=${REF}
+          PACKAGEVERSION="$REF"
 
-          if [[ $PACKAGEVERSION =~ "alpha" ]]
+          case "$TAGGED_RELEASE" in
+            true|false) ;;
+            *) echo "::error::TAGGED_RELEASE is '$TAGGED_RELEASE'; expected true or false from classify-release."; exit 1 ;;
+          esac
+
+          if [ "$TAGGED_RELEASE" = "false" ]
           then
-            # Pre-releases get the tag "pre"
+            # An ordinary main build gets the tag "pre"
             DMSTAGS="${{ env.CONFIG_IMAGE_NAME }}:pre"
           else
             # Releases get the version, plus shortened form for minor release.
             # We are not using shortened form for major or using "latest"
             # because they are too imprecise.
-            MINOR=`echo ${PACKAGEVERSION} | awk -F"." '{print $1"."$2}'`
+            MINOR=$(echo "${PACKAGEVERSION}" | awk -F"." '{print $1"."$2}')
             DMSTAGS="${{ env.CONFIG_IMAGE_NAME }}:${PACKAGEVERSION},${{ env.CONFIG_IMAGE_NAME }}:${MINOR}"
           fi
 
           SEMVERSION=${PACKAGEVERSION:7}  # strip off the leading 'cs-pre-'
 
-          echo "DMSTAGS=$DMSTAGS" >> $GITHUB_OUTPUT
-          echo "VERSION=$SEMVERSION" >> $GITHUB_OUTPUT
+          echo "DMSTAGS=$DMSTAGS" >> "$GITHUB_OUTPUT"
+          echo "VERSION=$SEMVERSION" >> "$GITHUB_OUTPUT"
 
       - name: Set up Config Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
@@ -1939,7 +2715,7 @@ jobs:
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_HUB_TOKEN }}
+          password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       - name: Extract metadata (tags, labels) for Configuration Service image
         id: metadatamanagementservice
@@ -1960,3 +2736,250 @@ jobs:
           tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
           push: true
+
+  # Security Metadata Tools uses the cs- release source and its own committed patch.
+  pack-security-metadata-tools:
+    name: Build and Pack SecurityMetadataTools
+    # The CMS validator bundles Secrets; the same contract gate as pack-cs applies.
+    needs:
+      - check-secrets-contract
+    if: startsWith(github.event.release.tag_name, 'cs-')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    outputs:
+      hash-code: ${{ steps.hash-code.outputs.hash-code }}
+      tool-version: ${{ steps.tool-version.outputs.version }}
+      sha256: ${{ steps.hash-code.outputs.sha256 }}
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set Config Version Numbers
+        id: versions
+        run: |
+          Import-Module ./package-helpers.psm1
+          Get-VersionNumber -projectPrefix "cs"
+
+      - name: Calculate SecurityMetadataTools Version
+        id: tool-version
+        run: |
+          Import-Module ./package-helpers.psm1
+          $version = Get-SecurityMetadataToolsVersion -AppVersion "${{ steps.versions.outputs.dms-v }}"
+          # NuGet package identity and filenames exclude build metadata.
+          "version=$($version.Split('+')[0])" >> $env:GITHUB_OUTPUT
+
+      - name: Pack and verify installed SecurityMetadataTools
+        run: ./eng/verification/Test-SecurityMetadataToolsPackage.ps1 -AppVersion "${{ steps.versions.outputs.dms-v }}"
+
+      - name: Generate SecurityMetadataTools hash for NuGet package
+        id: hash-code
+        run: |
+          $packageFile = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ steps.tool-version.outputs.version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SecurityMetadataTools package was not found: $packageFile"
+          }
+
+          "sha256=$((Get-FileHash -LiteralPath $packageFile -Algorithm SHA256).Hash.ToLowerInvariant())" >> $env:GITHUB_OUTPUT
+          "hash-code=$(sha256sum $packageFile | base64 -w0)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload SecurityMetadataTools Package as Artifact
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet"
+          path: ${{ github.workspace }}/${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ steps.tool-version.outputs.version }}.nupkg
+          if-no-files-found: error
+          retention-days: 30
+
+  sbom-create-security-metadata-tools:
+    name: Create SecurityMetadataTools SBOM
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    needs: pack-security-metadata-tools
+    permissions:
+      actions: read
+      contents: write
+    outputs:
+      sbom-hash-code: ${{ steps.sbom-hash-code.outputs.sbom-hash-code }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Get SecurityMetadataTools Artifacts
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Generate SecurityMetadataTools Software Bill of Materials (SBOM)
+        run: |
+          ./eng/ci/New-SecurityMetadataToolsSbom.ps1 `
+            -PackageFile "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-security-metadata-tools.outputs.tool-version }}.nupkg" `
+            -Version "${{ needs.pack-security-metadata-tools.outputs.tool-version }}" `
+            -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}"
+
+      - name: Upload SecurityMetadataTools SBOM
+        if: success()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM
+          path: ${{ env.MANIFEST_FILE }}
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Generate SecurityMetadataTools hash code for SBOM
+        id: sbom-hash-code
+        shell: bash
+        run: |
+          sbom_hash=$(sha256sum ./${{ env.MANIFEST_FILE }} | awk '{split($0,a); print a[1]}')
+          echo "sbom-hash-code=$sbom_hash" >> "$GITHUB_OUTPUT"
+
+  provenance-create-security-metadata-tools:
+    name: Create SecurityMetadataTools Provenance
+    needs: pack-security-metadata-tools
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.0.0
+    with:
+      base64-subjects: ${{ needs.pack-security-metadata-tools.outputs.hash-code }}
+      provenance-name: edfiApiSecurityMetadataTools.intoto.jsonl
+      upload-assets: false
+      compile-generator: true
+
+  publish-package-security-metadata-tools:
+    name: Publish SecurityMetadataTools NuGet Package
+    # A checked but unpublished Secrets dependency must also block the tool push.
+    needs:
+      - pack-security-metadata-tools
+      - publish-package-secrets
+    if: ${{ github.event_name == 'release' && github.ref_type == 'tag' && startsWith(github.ref, 'refs/tags/cs-pre-') }}
+    environment: publishing
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Get SecurityMetadataTools Artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: ${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-NuGet
+
+      - name: Install-credential-handler SecurityMetadataTools
+        run: |
+          Import-Module ./package-helpers.psm1
+          InstallCredentialHandler
+
+      - name: Push SecurityMetadataTools Package to Azure Artifacts
+        env:
+          ARTIFACTS_API_KEY: ${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}
+          VSS_NUGET_EXTERNAL_FEED_ENDPOINTS: '{"endpointCredentials": [{"endpoint": "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi/nuget/v3/index.json","password": "${{ secrets.AZURE_ARTIFACTS_PERSONAL_ACCESS_TOKEN }}"}]}'
+        run: |
+          Import-Module ./package-helpers.psm1
+          $packageFile = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}.${{ needs.pack-security-metadata-tools.outputs.tool-version }}.nupkg"
+          if (-not (Test-Path $packageFile)) {
+            throw "Expected SecurityMetadataTools package was not found: $packageFile"
+          }
+
+          Publish-SecurityMetadataToolsPackage `
+              -Version "${{ needs.pack-security-metadata-tools.outputs.tool-version }}" `
+              -PackageFile $packageFile `
+              -Sha256 "${{ needs.pack-security-metadata-tools.outputs.sha256 }}" `
+              -ServiceIndexUrl "${{ env.ARTIFACTS_FEED_URL }}" `
+              -ApiKey $env:ARTIFACTS_API_KEY
+
+  attach-security-metadata-tools-artifacts-to-release:
+    name: Attach SecurityMetadataTools Artifacts to GitHub Release
+    runs-on: ubuntu-latest
+    needs:
+      - classify-release
+      - pack-security-metadata-tools
+      - publish-package-security-metadata-tools
+      - sbom-create-security-metadata-tools
+      - provenance-create-security-metadata-tools
+    if: ${{ startsWith(github.event.release.tag_name, 'cs-') && needs.classify-release.outputs.tagged-release == 'true' }}
+    permissions:
+      contents: write
+    steps:
+      - name: Prepare release version
+        id: prepare-version
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+        run: |
+          # Remove 'cs-pre-' prefix and add 'v' to match release format
+          SEMVER="v${TAG_NAME#cs-pre-}"
+
+          echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
+          echo "Release version: $SEMVER"
+
+      - name: Download SecurityMetadataTools SBOM
+        uses: Ed-Fi-Alliance-OSS/slsa-github-generator/.github/actions/secure-download-artifact@v2.0.0
+        with:
+          name: "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM"
+          path: ${{ env.MANIFEST_FILE }}
+          sha256: "${{ needs.sbom-create-security-metadata-tools.outputs.sbom-hash-code }}"
+
+      - name: Download SecurityMetadataTools Provenance
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: edfiApiSecurityMetadataTools.intoto.jsonl
+
+      - name: Attach SecurityMetadataTools SBOM and Provenance to release
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ steps.prepare-version.outputs.semver }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $release = $env:RELEASE_VERSION
+          $repo = "${{ github.repository }}"
+          $token = $env:GITHUB_TOKEN
+
+          $url = "https://api.github.com/repos/$repo/releases/tags/$release"
+          $gh_headers = @{
+              "Accept"        = "application/vnd.github+json"
+              "Authorization" = "Bearer $token"
+          }
+          $response = Invoke-RestMethod -Uri $url -Headers $gh_headers
+          $releaseId = $response.id
+
+          # Upload SBOM
+          $sbomFile = "${{ env.MANIFEST_FILE }}"
+          $sbomUploadName = "${{ env.SECURITY_METADATA_TOOLS_PACKAGE_NAME }}-SBOM.zip"
+
+          Compress-Archive $sbomFile -DestinationPath $sbomUploadName
+
+          $uploadUrl = "https://uploads.github.com/repos/$repo/releases/$releaseId/assets"
+          $gh_headers["Content-Type"] = "application/octet-stream"
+
+          Write-Host "Uploading SBOM as $sbomUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($sbomUploadName)" `
+              -Headers $gh_headers `
+              -InFile $sbomUploadName
+
+          # Upload Provenance
+          $provenanceFile = "edfiApiSecurityMetadataTools.intoto.jsonl"
+          $provenanceUploadName = "edfiApiSecurityMetadataTools.intoto.jsonl"
+
+          Write-Host "Uploading Provenance as $provenanceUploadName"
+          Invoke-RestMethod -Method POST `
+              -Uri "$($uploadUrl)?name=$($provenanceUploadName)" `
+              -Headers $gh_headers `
+              -InFile $provenanceFile

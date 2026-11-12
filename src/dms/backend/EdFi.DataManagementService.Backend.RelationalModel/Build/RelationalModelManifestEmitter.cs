@@ -74,6 +74,12 @@ public static class RelationalModelManifestEmitter
         writer.WriteString("physical_schema", resourceModel.PhysicalSchema.Value);
         writer.WriteString("storage_kind", resourceModel.StorageKind.ToString());
 
+        if (resourceModel.StorageKind is ResourceStorageKind.SharedDescriptorTable)
+        {
+            writer.WritePropertyName("shared_descriptor_table");
+            WriteTable(writer, resourceModel.Root);
+        }
+
         writer.WritePropertyName("tables");
         writer.WriteStartArray();
         if (resourceModel.StorageKind != ResourceStorageKind.SharedDescriptorTable)

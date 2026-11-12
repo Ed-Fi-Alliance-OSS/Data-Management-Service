@@ -50,7 +50,7 @@
         "publications, and neither may borrow the feed a schema package entry happens to name.",
         "",
         "schemaPackages is the whole of what selects schema content, and dataStandardVersion is only",
-        "a label. eng/docker-compose/.env.bootstrap.ds52 sets DMS_CONFIG_DATA_STANDARD_VERSION to",
+        "a label. eng/docker-compose/.env.bootstrap.ds52 sets CONFIGURATION_SERVICE_DATA_STANDARD_VERSION to",
         "'5.2' and, quite separately, SCHEMA_PACKAGES to exact package identities; a pin carrying",
         "only the label would take whichever versions this branch's overlay happened to name, which",
         "is the current-worktree schema content this proof must not be running against. Each entry",

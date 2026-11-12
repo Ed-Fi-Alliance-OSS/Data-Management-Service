@@ -20,8 +20,34 @@ public sealed class Given_DocumentCacheAdminPostgresqlRebuildOnline
     {
         await using DocumentCacheAdminCliTarget target =
             await DocumentCacheAdminCliTarget.CreatePostgresqlAsync();
+        DateTimeOffset staleContentCreatedAt = new(1999, 9, 9, 9, 9, 9, TimeSpan.Zero);
         IReadOnlyList<DocumentCacheAdminCliSeededDocument> documents =
-            await InsertProjectedDescriptorRowsAsync(target, "RebuildTracking", documentCount: 3);
+            await InsertProjectedDescriptorRowsAsync(
+                target,
+                "RebuildTracking",
+                documentCount: 3,
+                staleContentCreatedAt
+            );
+        // A distinct whole-microsecond creation sentinel per descriptor, unlike any clock value.
+        Dictionary<long, DateTimeOffset> sentinelByDocumentId = documents
+            .Select((document, index) => (document, index))
+            .ToDictionary(
+                pair => pair.document.DocumentId,
+                pair =>
+                    new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero)
+                        .AddTicks(1_234_560)
+                        .AddDays(pair.index)
+            );
+        foreach (DocumentCacheAdminCliSeededDocument document in documents)
+        {
+            await target.State.SetPostgresqlDescriptorContentCreatedAtAsync(
+                document,
+                sentinelByDocumentId[document.DocumentId]
+            );
+        }
+        (await target.State.ReadPostgresqlCachedContentCreatedAtByDocumentIdAsync())
+            .Values.Should()
+            .OnlyContain(value => value == staleContentCreatedAt);
         await target.State.SetLifecycleAsync("Tracking", cacheAheadRecoveryRequired: false);
 
         DocumentCacheAdminCliProcessResult result = await RunRebuildOnlineAsync(target);
@@ -47,6 +73,12 @@ public sealed class Given_DocumentCacheAdminPostgresqlRebuildOnline
             .BeEquivalentTo(documents.Select(document => document.DocumentId));
         cachedJsonByDocumentId.Values.Should().OnlyContain(json => !json.Contains("stale-cache"));
         cachedJsonByDocumentId.Values.Should().OnlyContain(json => json.Contains("RebuildTracking"));
+        (await target.State.ReadPostgresqlCachedContentCreatedAtByDocumentIdAsync())
+            .Should()
+            .BeEquivalentTo(
+                sentinelByDocumentId,
+                "the rebuild recovers each descriptor's creation time from the source, not the cleared rows"
+            );
     }
 
     [Test]
@@ -119,7 +151,8 @@ public sealed class Given_DocumentCacheAdminPostgresqlRebuildOnline
     > InsertProjectedDescriptorRowsAsync(
         DocumentCacheAdminCliTarget target,
         string codeValuePrefix,
-        int documentCount
+        int documentCount,
+        DateTimeOffset? staleContentCreatedAt = null
     )
     {
         List<DocumentCacheAdminCliSeededDocument> documents = [];
@@ -132,7 +165,8 @@ public sealed class Given_DocumentCacheAdminPostgresqlRebuildOnline
                 );
             await target.State.InsertPostgresqlDocumentCacheAsync(
                 document,
-                documentJson: $$"""{"value":"stale-cache-{{index}}"}"""
+                documentJson: $$"""{"value":"stale-cache-{{index}}"}""",
+                contentCreatedAtOverride: staleContentCreatedAt
             );
             await target.State.InsertPostgresqlProjectionWorkAsync(document);
             documents.Add(document);

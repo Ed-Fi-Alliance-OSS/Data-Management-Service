@@ -66,12 +66,15 @@ public sealed record RepresentationRestampSelection
     public long PreviewDocumentCount { get; }
 }
 
-public sealed record RepresentationRestampMirrorRoute
+/// <summary>
+/// Routes a document to its authoritative timestamp owner and content-version mirror.
+/// </summary>
+public sealed record RepresentationRestampStampRoute
 {
-    public RepresentationRestampMirrorRoute(
+    public RepresentationRestampStampRoute(
         short resourceKeyId,
-        string mirrorStampTargetSchema,
-        string mirrorStampTargetTable
+        string stampTargetSchema,
+        string stampTargetTable
     )
     {
         if (resourceKeyId <= 0)
@@ -83,26 +86,23 @@ public sealed record RepresentationRestampMirrorRoute
             );
         }
 
-        if (
-            string.IsNullOrWhiteSpace(mirrorStampTargetSchema)
-            || string.IsNullOrWhiteSpace(mirrorStampTargetTable)
-        )
+        if (string.IsNullOrWhiteSpace(stampTargetSchema) || string.IsNullOrWhiteSpace(stampTargetTable))
         {
             throw new ArgumentException(
-                "Representation restamp mirror routes require a compiled schema and table name."
+                "Representation restamp routes require a compiled schema and table name."
             );
         }
 
         ResourceKeyId = resourceKeyId;
-        MirrorStampTargetSchema = mirrorStampTargetSchema;
-        MirrorStampTargetTable = mirrorStampTargetTable;
+        StampTargetSchema = stampTargetSchema;
+        StampTargetTable = stampTargetTable;
     }
 
     public short ResourceKeyId { get; }
 
-    public string MirrorStampTargetSchema { get; }
+    public string StampTargetSchema { get; }
 
-    public string MirrorStampTargetTable { get; }
+    public string StampTargetTable { get; }
 }
 
 public sealed record RepresentationRestampDocument
@@ -110,7 +110,7 @@ public sealed record RepresentationRestampDocument
     public RepresentationRestampDocument(
         long documentId,
         Guid documentUuid,
-        RepresentationRestampMirrorRoute mirrorRoute
+        RepresentationRestampStampRoute stampRoute
     )
     {
         if (documentId <= 0)
@@ -131,17 +131,17 @@ public sealed record RepresentationRestampDocument
             );
         }
 
-        ArgumentNullException.ThrowIfNull(mirrorRoute);
+        ArgumentNullException.ThrowIfNull(stampRoute);
         DocumentId = documentId;
         DocumentUuid = documentUuid;
-        MirrorRoute = mirrorRoute;
+        StampRoute = stampRoute;
     }
 
     public long DocumentId { get; }
 
     public Guid DocumentUuid { get; }
 
-    public RepresentationRestampMirrorRoute MirrorRoute { get; }
+    public RepresentationRestampStampRoute StampRoute { get; }
 }
 
 public sealed record RepresentationRestampPage

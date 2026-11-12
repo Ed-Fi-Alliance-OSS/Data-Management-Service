@@ -86,3 +86,14 @@ Feature: ClaimsManagement endpoints
              When a GET request is made to "/management/current-claims"
              Then it should respond with 200
               And the response body matches the captured claims response
+
+        @SecurityMetadataTools
+        Scenario: 07 SecurityMetadataTools converted ODS export uploads unchanged and persists
+            Given SecurityMetadataTools converts the representative ODS export
+              And an isolated claims catalog baseline is captured
+             When the SecurityMetadataTools output file is uploaded verbatim
+             Then it should respond with 200
+             When a GET request is made to "/management/current-claims"
+             Then it should respond with 200
+              And the current claims match the SecurityMetadataTools output
+              And the converted hierarchy and catalog are independently persisted

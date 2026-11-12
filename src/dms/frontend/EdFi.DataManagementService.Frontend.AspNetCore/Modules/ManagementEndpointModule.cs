@@ -13,7 +13,6 @@ using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using Microsoft.Extensions.Options;
 using AspNetCoreFrontend = EdFi.DataManagementService.Frontend.AspNetCore.AspNetCoreFrontend;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -24,7 +23,6 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// </summary>
 public class ManagementEndpointModule(
     IOptions<FrontendAppSettings> frontendOptions,
-    IOptions<CoreAppSettings> coreOptions,
     IOptions<ManagementEndpointsOptions> managementEndpointsOptions,
     IOptions<JwtAuthenticationOptions> jwtAuthenticationOptions,
     ILogger<ManagementEndpointModule> logger
@@ -32,7 +30,7 @@ public class ManagementEndpointModule(
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        if (!coreOptions.Value.EnableManagementEndpoints)
+        if (!managementEndpointsOptions.Value.Enabled)
         {
             return;
         }
@@ -101,7 +99,7 @@ public class ManagementEndpointModule(
         }
 
         logger.LogWarning(
-            "Claimset management endpoints were not mapped because AppSettings:ManagementEndpoints:RequiredRole is missing or invalid, or JwtAuthentication:RoleClaimType is missing or blank. Configure a single role token such as dms-management-operator."
+            "Claimset management endpoints were not mapped because AppSettings:ManagementEndpoints:RequiredRole is missing or invalid, or JwtAuthentication:RoleClaimType is missing or blank. Configure a single role token such as cms-client."
         );
 
         return false;
@@ -158,14 +156,22 @@ public class ManagementEndpointModule(
         );
     }
 
-    private static IResult ToResult(IFrontendResponse response) =>
-        response.StatusCode switch
+    /// <summary>
+    /// Claimset management answers an authenticated administrator, and the view returns
+    /// authorization configuration, so even a success response is kept out of every cache.
+    /// Failures are already marked no-store by <see cref="Infrastructure.SecurityHeadersMiddleware"/>.
+    /// </summary>
+    private static IResult ToResult(HttpContext httpContext, IFrontendResponse response)
+    {
+        httpContext.Response.Headers.CacheControl = "no-store";
+        return response.StatusCode switch
         {
             200 => Results.Ok(response.Body),
             404 => Results.NotFound(),
             500 => Results.Json(response.Body, statusCode: 500),
             _ => Results.StatusCode(response.StatusCode),
         };
+    }
 
     private static IResult NotFoundProblem() =>
         Results.NotFound(
@@ -197,7 +203,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("Claimsets reload requested via management endpoint");
 
-        return ToResult(await apiService.ReloadClaimsetsAsync());
+        return ToResult(httpContext, await apiService.ReloadClaimsetsAsync());
     }
 
     /// <summary>
@@ -227,7 +233,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("Claimsets reload requested via management endpoint for tenant");
 
-        return ToResult(await apiService.ReloadClaimsetsAsync(tenant));
+        return ToResult(httpContext, await apiService.ReloadClaimsetsAsync(tenant));
     }
 
     /// <summary>
@@ -262,7 +268,7 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("View claimsets requested via management endpoint");
 
-        return ToResult(await apiService.ViewClaimsetsAsync());
+        return ToResult(httpContext, await apiService.ViewClaimsetsAsync());
     }
 
     /// <summary>
@@ -292,6 +298,6 @@ public class ManagementEndpointModule(
 
         logger.LogInformation("View claimsets requested via management endpoint for tenant");
 
-        return ToResult(await apiService.ViewClaimsetsAsync(tenant));
+        return ToResult(httpContext, await apiService.ViewClaimsetsAsync(tenant));
     }
 }

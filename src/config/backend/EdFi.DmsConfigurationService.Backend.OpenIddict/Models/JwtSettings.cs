@@ -20,11 +20,5 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Models
         /// Example: "account"
         /// </summary>
         public string Audience { get; set; } = string.Empty;
-
-        /// <summary>
-        /// The token expiration time in minutes. Determines how long the JWT is valid after issuance.
-        /// Example: 30 (token expires in 30 minutes)
-        /// </summary>
-        public int ExpirationMinutes { get; set; } = 30;
     }
 }

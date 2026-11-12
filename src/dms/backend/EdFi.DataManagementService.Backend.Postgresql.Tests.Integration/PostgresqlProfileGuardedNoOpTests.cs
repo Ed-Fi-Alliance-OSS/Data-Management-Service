@@ -65,8 +65,7 @@ internal static class ProfileGuardedNoOpIntegrationTestSupport
             .QueryRowsAsync(
                 """
                 SELECT "DocumentId", "DocumentUuid", "ResourceKeyId",
-                       "ContentVersion", "ContentLastModifiedAt",
-                       "CreatedAt"
+                       "ContentVersion"
                 FROM "dms"."Document"
                 WHERE "DocumentUuid" = @documentUuid;
                 """,
@@ -514,6 +513,8 @@ internal abstract class SeparateTableShapeProfileGuardedNoOpFixtureBase
             """
             SELECT
                 "DocumentId",
+                "ContentVersion",
+                "ContentLastModifiedAt",
                 "ProfileSeparateTableMergeItemId",
                 "DisplayName"
             FROM "edfi"."ProfileSeparateTableMergeItem"
@@ -635,6 +636,8 @@ internal abstract class CollectionShapeProfileGuardedNoOpFixtureBase
             """
             SELECT
                 "DocumentId",
+                "ContentVersion",
+                "ContentLastModifiedAt",
                 "SchoolId"
             FROM "edfi"."School"
             WHERE "DocumentId" = @documentId;
@@ -707,14 +710,9 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Root
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_created_at()
-    {
-        _stateAfterUpdate.Document.CreatedAt.Should().Be(_stateBeforeUpdate.Document.CreatedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforeUpdate.RootRow["ContentLastModifiedAt"]);
     }
 
     [Test]
@@ -811,14 +809,9 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Post_As_Updat
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterPostAsUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforePostAsUpdate.Document.ContentLastModifiedAt);
-    }
-
-    [Test]
-    public void It_does_not_change_created_at()
-    {
-        _stateAfterPostAsUpdate.Document.CreatedAt.Should().Be(_stateBeforePostAsUpdate.Document.CreatedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforePostAsUpdate.RootRow["ContentLastModifiedAt"]);
     }
 
     [Test]
@@ -924,8 +917,9 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Sepa
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforeUpdate.RootRow["ContentLastModifiedAt"]);
     }
 
     /// <summary>
@@ -1056,7 +1050,8 @@ internal class Given_A_Postgresql_Relational_Profile_Guarded_No_Op_Put_With_Top_
     public void It_does_not_change_content_last_modified_at()
     {
         _stateAfterUpdate
-            .Document.ContentLastModifiedAt.Should()
-            .Be(_stateBeforeUpdate.Document.ContentLastModifiedAt);
+            .RootRow["ContentLastModifiedAt"]
+            .Should()
+            .Be(_stateBeforeUpdate.RootRow["ContentLastModifiedAt"]);
     }
 }

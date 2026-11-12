@@ -23,9 +23,8 @@ public class ChangeQueriesEndpointModule(IOptions<AppSettings> appSettings) : IE
             appSettings.Value.MultiTenancy
         );
 
-        endpoints.MapGet(
-            $"{routePattern}/changeQueries/v1/availableChangeVersions",
-            GetAvailableChangeVersions
-        );
+        endpoints
+            .MapGet($"{routePattern}/changeQueries/v1/availableChangeVersions", GetAvailableChangeVersions)
+            .WithMetadata(DataEndpointMetadata.Instance);
     }
 }

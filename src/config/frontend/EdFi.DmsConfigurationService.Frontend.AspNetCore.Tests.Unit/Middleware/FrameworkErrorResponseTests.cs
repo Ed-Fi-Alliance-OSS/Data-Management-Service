@@ -136,7 +136,7 @@ public class FrameworkErrorResponseTests
                 _response,
                 _body,
                 HttpStatusCode.Unauthorized,
-                "urn:ed-fi:api:security:authentication",
+                "urn:ed-fi:management-api:security:authentication",
                 "Authentication Failed",
                 "Authentication is required to access this resource."
             );
@@ -177,7 +177,7 @@ public class FrameworkErrorResponseTests
                 _response,
                 _body,
                 HttpStatusCode.Unauthorized,
-                "urn:ed-fi:api:security:authentication",
+                "urn:ed-fi:management-api:security:authentication",
                 "Authentication Failed",
                 "Authentication is required to access this resource."
             );
@@ -218,7 +218,7 @@ public class FrameworkErrorResponseTests
                 _response,
                 _body,
                 HttpStatusCode.Forbidden,
-                "urn:ed-fi:api:security:authorization",
+                "urn:ed-fi:management-api:security:authorization",
                 "Authorization Failed",
                 "The authenticated client is not authorized to access this resource."
             );
@@ -255,7 +255,7 @@ public class FrameworkErrorResponseTests
                 _response,
                 _body,
                 HttpStatusCode.NotFound,
-                "urn:ed-fi:api:not-found",
+                "urn:ed-fi:management-api:not-found",
                 "Not Found",
                 "The requested resource could not be found."
             );
@@ -292,7 +292,7 @@ public class FrameworkErrorResponseTests
                 _response,
                 _body,
                 HttpStatusCode.MethodNotAllowed,
-                "urn:ed-fi:api:method-not-allowed",
+                "urn:ed-fi:management-api:method-not-allowed",
                 "Method Not Allowed",
                 "The request construction was invalid."
             );
@@ -337,7 +337,7 @@ public class FrameworkErrorResponseTests
                 _response,
                 _body,
                 HttpStatusCode.UnsupportedMediaType,
-                "urn:ed-fi:api:unsupported-media-type",
+                "urn:ed-fi:management-api:unsupported-media-type",
                 "Unsupported Media Type",
                 "The value specified in the 'Content-Type' header is not supported by this host."
             );
@@ -378,7 +378,7 @@ public class FrameworkErrorResponseTests
 
         [Test]
         public void It_keeps_the_not_found_type() =>
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:not-found");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
 
         [Test]
         public void It_preserves_the_module_specific_detail() =>
@@ -647,7 +647,7 @@ public class FrameworkErrorResponseTests
         [Test]
         public void It_returns_a_complete_bad_request_contract()
         {
-            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request");
+            _body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request");
             _body["title"]!.GetValue<string>().Should().Be("Bad Request");
             _body["detail"]!.GetValue<string>().Should().Be("The request could not be processed.");
             _body["status"]!.GetValue<int>().Should().Be(400);

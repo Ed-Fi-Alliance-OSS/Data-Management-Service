@@ -217,7 +217,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -243,7 +243,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -269,7 +269,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -305,7 +305,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -443,7 +443,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "DataStore 99999 not found. It may have been recently deleted.",
-                        "type": "urn:ed-fi:api:not-found",
+                        "type": "urn:ed-fi:management-api:not-found",
                         "title": "Not Found",
                         "status": 404,
                         "correlationId": "{*}",
@@ -537,7 +537,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -573,7 +573,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -599,7 +599,7 @@ Feature: DataStores endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -668,7 +668,7 @@ Feature: DataStores endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {
@@ -703,7 +703,7 @@ Feature: DataStores endpoints
                   """
                   {
                       "detail": "Data validation failed. See 'validationErrors' for details.",
-                      "type": "urn:ed-fi:api:bad-request:data",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
                       "title": "Data Validation Failed",
                       "status": 400,
                       "validationErrors": {

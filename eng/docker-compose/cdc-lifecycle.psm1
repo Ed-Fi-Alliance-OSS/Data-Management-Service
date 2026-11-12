@@ -4,6 +4,37 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 
 Set-StrictMode -Version Latest
+Import-Module (Join-Path $PSScriptRoot 'cdc-cleanup-diagnostics.psm1')
+
+function Write-CdcLifecycleQualificationFailure {
+    param($Record, [string] $ControllerOperation = '', [int] $ControllerExitCode = 0,
+        [string[]] $ControllerOutput = @())
+    if (-not $env:CDC_RUNBOOK_CHILD_FAILURE_PATH) { return }
+    try {
+        . (Join-Path $PSScriptRoot '../ci/cdc-runbook-diagnostics.ps1')
+        $phase = if ($env:CDC_RUNBOOK_CHILD_FAILURE_PHASE -in @('Setup', 'Test', 'Teardown')) {
+            $env:CDC_RUNBOOK_CHILD_FAILURE_PHASE
+        } else { 'Setup' }
+        $details = @{}
+        if ($ControllerOperation) {
+            $details.ControllerOperation = $ControllerOperation
+            $details.ControllerExitCode = $ControllerExitCode
+            try {
+                $envelope = ($ControllerOutput -join "`n") | ConvertFrom-Json -AsHashtable
+                $details.ControllerFailureCodes = @($envelope.diagnostics | ForEach-Object {
+                    if ($_ -is [Collections.IDictionary] -and $_.Contains('component') -and $_.Contains('failure')) {
+                        [string]$_.component + '/' + [string]$_.failure
+                    }
+                })
+            } catch { # Invalid or absent JSON still retains the controller exit code.
+                $details.ControllerFailureCodes = @()
+            }
+        }
+        Write-CdcRunbookChildFailure -Records @($Record) -Phase $phase -Details $details
+    } catch { # Best-effort metadata must not change the lifecycle result.
+        return
+    }
+}
 
 function Get-CdcDeploymentPath {
     param([string]$Project)
@@ -130,15 +161,15 @@ function Get-CdcComposeInput {
     # The shipped managed lifecycle's selected provider/host files, including Keycloak for
     # down -v (both start scripts include its volume then) and the worker's broker extension.
     # Never discover inputs by enumerating unrelated Compose files in the checkout.
-    $files = @($compose.File, (Join-Path (Split-Path $compose.File -Parent) 'kafka-broker.yml'))
-    $files += @("$provider.yml", "$flavor-dms.yml", "$flavor-config.yml", 'keycloak.yml', 'bootstrap-dms.yml' |
+    $files = @($compose.File, (Join-Path (Split-Path $compose.File -Parent) 'kafka-broker.compose.yml'))
+    $files += @("$provider.compose.yml", "$flavor-dms.compose.yml", "$flavor-config.compose.yml", 'keycloak.compose.yml', 'bootstrap-dms.yml' |
         ForEach-Object { Join-Path $PSScriptRoot $_ })
     if ($provider -ceq 'mssql') { $files += Join-Path $PSScriptRoot 'mssql-cdc.yml' }
     if ($provider -ceq 'postgresql' -and $env:POSTGRES_USE_TMPFS -ieq 'true') { $files += Join-Path $PSScriptRoot 'postgresql-tmpfs.yml' }
     if ($flavor -ceq 'local' -and (Get-EnvValue -EnvValues $environment -Name 'DMS_ENABLE_DOTNET_DIAGNOSTICS') -ieq 'true') {
         $files += Join-Path $PSScriptRoot 'local-dms-diagnostics.yml'
     }
-    foreach ($option in @(@('EnableKafkaUI', 'kafka-ui.yml'), @('EnableSwaggerUI', 'swagger-ui.yml'))) {
+    foreach ($option in @(@('EnableKafkaUI', 'kafka-ui.compose.yml'), @('EnableSwaggerUI', 'swagger-ui.compose.yml'))) {
         if ($Handoff[$option[0]]) { $files += Join-Path $PSScriptRoot $option[1] }
     }
     $names = [Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -263,7 +294,10 @@ function Read-CdcDeployment {
             if (@(Get-ChildItem Env:DMS_CDC__*).Count -gt 0) { throw 'Overrides' }
         }
     }
-    catch { throw 'CDC deployment inventory or original configuration is missing, changed, or unreadable. Retain infrastructure and reconcile the original deployment; configuration removal is not cleanup authority.' }
+    catch {
+        Write-CdcLifecycleQualificationFailure $_
+        throw 'CDC deployment inventory or original configuration is missing, changed, or unreadable. Retain infrastructure and reconcile the original deployment; configuration removal is not cleanup authority.'
+    }
     if ($value['IdentityProvider'] -cnotin @('keycloak', 'self-contained') -or
         @($value.Entries | Where-Object { $_['IdentityProvider'] -cne $value.IdentityProvider }).Count -gt 0) {
         throw 'CDC deployment IdentityProvider is missing, unsupported, or contradictory. Restore the original complete deployment inventory with its retained identity-provider selection; an environment default or new override cannot recover it.'
@@ -313,7 +347,10 @@ function Test-CdcBootstrapWorkspaceProtected {
             if ($deployment.Version -ne 1 -or $deployment.Project -cne $project -or @($deployment.Entries).Count -eq 0) { throw 'Inventory' }
             $nested = Test-CdcNestedStateRoot $deployment $BootstrapRoot
         }
-        catch { throw 'CDC workspace protection inventory is unreadable; retain the workspace and original deployment state.' }
+        catch {
+            Write-CdcLifecycleQualificationFailure $_
+            throw 'CDC workspace protection inventory is unreadable; retain the workspace and original deployment state.'
+        }
         if ($nested) { throw 'CDC bootstrap workspace removal is blocked by a surviving protected source-state root. Retain its journals and source history; governed retirement does not authorize their deletion.' }
     }
     return $retained -or (Test-Path -LiteralPath (Join-Path $BootstrapRoot 'cdc-runtime'))
@@ -350,6 +387,7 @@ function Complete-CdcRuntimeCleanup {
         if ($LASTEXITCODE -ne 0) { throw 'Cleanup flush' }
     }
     catch {
+        Write-CdcLifecycleQualificationFailure $_
         if ($_.Exception.Message -ceq 'Protected state') { throw 'CDC bootstrap workspace removal is blocked by a surviving protected source-state root. Retain its journals and source history; governed retirement does not authorize their deletion.' }
         throw 'CDC generated runtime cleanup is incomplete; retain the deployment inventory and retry destructive teardown. Protected state, peer configuration, and changed files cannot be removed.'
     }
@@ -470,7 +508,7 @@ function Get-CdcBootstrapRetryHandoff {
 function Invoke-CdcLifecycleCommand {
     param([hashtable]$Entry, [string]$Operation)
     Import-Module (Join-Path $PSScriptRoot 'bootstrap-schema-tool.psm1')
-    $tool = Resolve-DmsSchemaTool
+    $tool = Resolve-DmsSchemaTool -RequestedPath $env:DMS_SCHEMA_TOOL_PATH
     $arguments = @('cdc', $Operation, '--settings', $Entry.SettingsPath, '--state-path', $Entry.StatePath, '--json')
     if ($Operation -eq 'retire') { $arguments += @('--generation', [string]$Entry.Generation, '--destructive-cleanup') }
     if ($tool.EndsWith('.ps1', [StringComparison]::OrdinalIgnoreCase)) { $output = @(& pwsh -NoProfile -File $tool @arguments 2>$null) }
@@ -491,7 +529,10 @@ function Invoke-CdcLifecycleCommand {
         if ($Operation -eq 'retire' -and ($result.data.succeeded -isnot [bool] -or $result.data.succeeded -ne $true -or [guid]$result.data.operationId -eq [guid]::Empty)) { throw 'Unverified cleanup' }
         $Entry.ConnectorName = $result.binding.connectorName
     }
-    catch { throw "CDC $Operation failed or returned unverified evidence (exit $code). Infrastructure and original state must remain available for reconciliation." }
+    catch {
+        Write-CdcLifecycleQualificationFailure $_ -ControllerOperation $Operation -ControllerExitCode $code -ControllerOutput $output
+        throw "CDC $Operation failed or returned unverified evidence (exit $code). Infrastructure and original state must remain available for reconciliation."
+    }
 }
 
 function Invoke-CdcLifecycleRest {
@@ -686,10 +727,16 @@ function Invoke-CdcDeploymentLifecycle {
     Governs all retained connectors before worker stop, retained startup, or destructive teardown.
     #>
     param([string]$Project, [string]$StartScript, [hashtable]$Parameters)
+    # Both entry scripts route here whenever a retained deployment exists, so a restore request would
+    # otherwise be silently ignored while the retained stack restarts. Refuse it before the lock is
+    # created and before any inventory, environment, lifecycle, or infrastructure effect.
+    if (-not [string]::IsNullOrWhiteSpace([string]$Parameters['RestoreTemplate']) -or -not [string]::IsNullOrWhiteSpace([string]$Parameters['PackageDirectory'])) {
+        throw 'Restore mode (-RestoreTemplate/-PackageDirectory) is unsupported while a retained CDC deployment exists for this project; retire it with -d -v first, or restore on a host without a retained deployment.'
+    }
     $lock = Enter-CdcDeploymentLock $Project
     $environmentSnapshot = @{}
     try {
-        $deployment = Read-CdcDeployment $Project
+        $deployment = Invoke-CdcCleanupStep -Step DeploymentValidation -Action { Read-CdcDeployment $Project }
         # Explicit selection must agree; omitted values inherit the original selected environment.
         if ($Parameters.ContainsKey('IdentityProvider') -and $Parameters.IdentityProvider -ine $deployment.IdentityProvider) {
             throw 'CDC lifecycle IdentityProvider conflicts with the retained deployment.'
@@ -711,7 +758,7 @@ function Invoke-CdcDeploymentLifecycle {
             Complete-CdcRuntimeCleanup $deployment -RemoveBootstrap:($Parameters['RemoveBootstrap'] -eq $true)
             return
         }
-        foreach ($option in @(@('EnableKafkaUI', 'kafka-ui.yml'), @('EnableSwaggerUI', 'swagger-ui.yml'))) {
+        foreach ($option in @(@('EnableKafkaUI', 'kafka-ui.compose.yml'), @('EnableSwaggerUI', 'swagger-ui.compose.yml'))) {
             if ($Parameters[$option[0]] -and (Join-Path $PSScriptRoot $option[1]) -cnotin @($deployment.ComposeInputs.Files | ForEach-Object { $_.Path })) {
                 throw 'CDC lifecycle requires the original optional service inputs; new services are not part of this retained deployment.'
             }
@@ -735,8 +782,14 @@ function Invoke-CdcDeploymentLifecycle {
             $deployment.Phase = if ($destructive) { 'Retiring' } else { 'Transition' }
             Write-CdcDeployment $Project $deployment
             if ($destructive) {
-                foreach ($entry in $deployment.Entries) { Invoke-CdcLifecycleCommand $entry 'retire' }
-                Assert-CdcWorkerInventory $deployment -Empty
+                foreach ($entry in $deployment.Entries) {
+                    Invoke-CdcCleanupStep -Step ControllerRetirement -Command api-schema-tools -Action {
+                        Invoke-CdcLifecycleCommand $entry 'retire'
+                    }
+                }
+                Invoke-CdcCleanupStep -Step WorkerVerification -Command api-schema-tools -Action {
+                    Assert-CdcWorkerInventory $deployment -Empty
+                }
                 $deployment.Phase = 'Retired'
             }
             else {
@@ -769,8 +822,14 @@ function Invoke-CdcDeploymentLifecycle {
             if ($destructive) {
                 $deployment.Phase = 'Retiring'
                 Write-CdcDeployment $Project $deployment
-                foreach ($entry in $deployment.Entries) { Invoke-CdcLifecycleCommand $entry 'retire' }
-                Assert-CdcWorkerInventory $deployment -Empty
+                foreach ($entry in $deployment.Entries) {
+                    Invoke-CdcCleanupStep -Step ControllerRetirement -Command api-schema-tools -Action {
+                        Invoke-CdcLifecycleCommand $entry 'retire'
+                    }
+                }
+                Invoke-CdcCleanupStep -Step WorkerVerification -Command api-schema-tools -Action {
+                    Assert-CdcWorkerInventory $deployment -Empty
+                }
                 $deployment.Phase = 'Retired'
             }
             else {
@@ -781,9 +840,11 @@ function Invoke-CdcDeploymentLifecycle {
         }
         if ($down) {
             if ($destructive -and $deployment.Phase -ne 'Retired') { throw 'CDC destructive cleanup has not completed.' }
-            Invoke-CdcInfrastructure $StartScript ($infrastructure + @{
-                d = $true; v = $destructive; RemoveBootstrap = $false
-            })
+            Invoke-CdcCleanupStep -Step ComposeTeardown -Command docker -Action {
+                Invoke-CdcInfrastructure $StartScript ($infrastructure + @{
+                    d = $true; v = $destructive; RemoveBootstrap = $false
+                })
+            }
             if ($destructive) {
                 # Persist exact current hashes before deleting the first generated file. The
                 # separate checkpoint permits retries without re-reading partially deleted inputs.
@@ -792,7 +853,9 @@ function Invoke-CdcDeploymentLifecycle {
                 })
                 $deployment.Phase = 'RuntimeCleanup'
                 Write-CdcDeployment $Project $deployment
-                Complete-CdcRuntimeCleanup $deployment -RemoveBootstrap:($Parameters['RemoveBootstrap'] -eq $true)
+                Invoke-CdcCleanupStep -Step RuntimeCleanup -Action {
+                    Complete-CdcRuntimeCleanup $deployment -RemoveBootstrap:($Parameters['RemoveBootstrap'] -eq $true)
+                }
             }
         }
         elseif (-not $Parameters['InfraOnly']) {

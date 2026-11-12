@@ -54,6 +54,25 @@ public static class LoggerExtensions
                 .Select(call => $"{call.Arguments.Get<object>(2)} {call.Arguments.Get<Exception>(3)}"),
         ];
 
+    /// <summary>
+    /// Every recorded entry with its level, formatted message, and the exception logged alongside
+    /// it, for claims about which levels were used and whether any entry attached an exception.
+    /// </summary>
+    public static IReadOnlyList<(LogLevel Level, string Message, Exception? Exception)> LoggedEntries<T>(
+        this ILogger<T> logger
+    ) =>
+        [
+            .. Fake.GetCalls(logger)
+                .Where(call => call.Method.Name == "Log")
+                .Select(call =>
+                    (
+                        call.Arguments.Get<LogLevel>(0),
+                        call.Arguments.Get<object>(2)?.ToString() ?? string.Empty,
+                        call.Arguments.Get<Exception>(3)
+                    )
+                ),
+        ];
+
     private static bool IsLogEntry(
         FakeItEasy.Core.IFakeObjectCall call,
         LogLevel level,

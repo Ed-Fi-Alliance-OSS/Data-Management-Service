@@ -1,5 +1,24 @@
 # Design: DMS Batch / Bulk Operations Endpoint
 
+> **DMS-1623 supersession:** The body/target ID equality checks, missing-ID injection
+> rules, and `ValidateMatchingDocumentUuidsMiddleware` references below describe
+> superseded PUT behavior; that middleware and `MatchingDocumentUuidsValidator` were
+> removed. Future batch updates must detect duplicate properties, validate any supplied
+> non-null `id` as a string accepted by `Guid.TryParse`, then replace it with the
+> authoritative target ID before coercion and document validation. Omitted, null, or
+> different valid IDs are accepted. This applies both to operation UUIDs and targets
+> resolved from natural keys: injection must never overwrite malformed input before
+> validation. Batch composition must establish the target before normalization.
+> See [DMS-1623](https://edfi.atlassian.net/browse/DMS-1623) and
+> [the current strictness contract](../../../docs/DATA-STRICTNESS.md).
+
+> **DMS-1454 supersession:** Natural-key resolution below computes a UUIDv5 `ReferentialId`
+> (`ReferentialIdCalculator`, `DocumentInfo.ReferentialId`) and finds the document by it.
+> DMS-1454 removed Core's referential-ID surface, and no runtime path reads
+> `dms.ReferentialIdentity`. A batch natural-key lookup must use the natural-key lookups described
+> in [natural-key-resolution.md](../backend-redesign/design-docs/natural-key-resolution.md)
+> instead.
+
 > This document refines `BATCH-API-INITIAL-DESIGN.md` using the actual
 > Data Management Service (DMS) architecture under `src/dms`. It specifies
 > how to add a transactional batch endpoint that fits the existing

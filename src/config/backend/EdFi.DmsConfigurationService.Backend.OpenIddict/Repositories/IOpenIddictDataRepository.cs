@@ -37,7 +37,17 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
         );
 
         // Application operations
-        Task InsertApplicationAsync(
+
+        /// <summary>
+        /// Inserts the application row inside the caller's transaction.
+        /// </summary>
+        /// <returns>
+        /// <see cref="OpenIddictApplicationInsertOutcome.Inserted"/> when the row was written, or
+        /// <see cref="OpenIddictApplicationInsertOutcome.DuplicateClientId"/> when the engine
+        /// rejected it on <c>UX_OpenIddictApplication_ClientId</c> and nothing was written. Any
+        /// other failure, a role or scope uniqueness violation included, propagates as thrown.
+        /// </returns>
+        Task<OpenIddictApplicationInsertOutcome> InsertApplicationAsync(
             Guid id,
             string clientId,
             string clientSecret,
@@ -66,7 +76,30 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
             IDbTransaction? transaction = null
         );
 
-        Task<int> DeleteApplicationByIdAsync(Guid id);
+        /// <summary>
+        /// Deletes the application row inside the caller's transaction. Application scopes and
+        /// client roles cascade; token rows do not (there is no foreign key) and are revoked
+        /// separately by <see cref="RevokeTokensForApplicationAsync"/>.
+        /// </summary>
+        /// <returns>The number of application rows deleted: 1, or 0 when none existed.</returns>
+        Task<int> DeleteApplicationByIdAsync(
+            Guid id,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        );
+
+        /// <summary>
+        /// Locks the application row for the rest of the caller's transaction, with the same lock a
+        /// token grant takes while it stores a token, and reports whether the row exists. A caller
+        /// that then changes state a grant re-validates under that lock is serialized with every
+        /// grant for the application.
+        /// </summary>
+        /// <returns>True when the row exists and is now locked; false when there is no such row.</returns>
+        Task<bool> LockApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction transaction
+        );
 
         Task<int> UpdateClientSecretAsync(
             Guid id,
@@ -114,34 +147,96 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         Task<IEnumerable<string>> GetClientRolesAsync(Guid clientId);
 
+        /// <summary>
+        /// The names of the scopes registered to the application <paramref name="applicationId"/>,
+        /// each once, read on a connection of its own. Empty when the application has no scopes or
+        /// no application has that id.
+        /// </summary>
+        Task<IEnumerable<string>> GetApplicationScopesAsync(Guid applicationId);
+
+        /// <summary>
+        /// True when one role row matches both <paramref name="firstRoleName"/> and
+        /// <paramref name="secondRoleName"/> under the role-resolution comparison: the predicate
+        /// <see cref="FindRoleIdByNameAsync"/> evaluates, under the column's collation, read on a
+        /// connection of its own. False when the names match different rows or no row. The
+        /// argument order does not matter.
+        /// </summary>
+        Task<bool> RoleNamesShareARoleRowAsync(string firstRoleName, string secondRoleName);
+
         // Token operations
         Task<TokenInfo?> GetTokenByIdAsync(Guid tokenId);
 
         /// <summary>
         /// Stores a new token, unless the application already holds the maximum number of active
-        /// tokens. When <paramref name="maxActiveTokens"/> is below 1, enforcement is disabled and
-        /// the token is always stored.
+        /// tokens. Every store runs in one transaction that locks the application row, then reads
+        /// the stored client secret and the API client approval state in a separate statement (on
+        /// PostgreSQL a scalar read inside the locking statement would use the snapshot taken before
+        /// it blocked), and inserts only when the secret still equals
+        /// <paramref name="expectedClientSecret"/> ordinally and the state still equals
+        /// <paramref name="expectedApiClientApproval"/>. When <paramref name="maxActiveTokens"/> is
+        /// below 1 the active-token count is skipped; the lock and the re-validation are not.
         /// </summary>
+        /// <param name="expectedApiClientApproval">
+        /// The API client approval state the grant authenticated with:
+        /// <see cref="ApiClientApprovalState.Approved"/> or
+        /// <see cref="ApiClientApprovalState.NoApiClientRow"/>. Any other value is a programming
+        /// error, rejected before a connection is opened.
+        /// </param>
         /// <returns>
         /// <see cref="TokenStoreOutcome.Stored"/> when the token was written,
         /// <see cref="TokenStoreOutcome.LimitExceeded"/> when the application already holds at
         /// least <paramref name="maxActiveTokens"/> active tokens,
-        /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists, or
+        /// <see cref="TokenStoreOutcome.ClientNotFound"/> when the application no longer exists,
+        /// <see cref="TokenStoreOutcome.ClientChanged"/> when its stored secret no longer matches
+        /// <paramref name="expectedClientSecret"/> or its API client approval state is no longer
+        /// <paramref name="expectedApiClientApproval"/>, or
         /// <see cref="TokenStoreOutcome.LockTimeout"/> when a database lock wait during the store ran
         /// out, whether behind a competing grant for this application or another writer such as the
         /// expired-token sweep, or the store was chosen as a deadlock victim of such a writer.
         /// </returns>
+        /// <exception cref="ArgumentOutOfRangeException">
+        /// <paramref name="expectedApiClientApproval"/> is neither approved nor no API client row.
+        /// </exception>
         Task<TokenStoreOutcome> StoreTokenAsync(
             Guid tokenId,
             Guid applicationId,
             string subject,
             DateTimeOffset expiration,
-            int maxActiveTokens
+            int maxActiveTokens,
+            string expectedClientSecret,
+            ApiClientApprovalState expectedApiClientApproval
         );
 
         Task<string?> GetTokenStatusAsync(Guid tokenId);
 
-        Task<bool> RevokeTokenAsync(Guid tokenId);
+        /// <summary>
+        /// Gets the status of a token only when the token is stored for <paramref name="applicationId"/>.
+        /// </summary>
+        /// <param name="tokenId">The token ID.</param>
+        /// <param name="applicationId">The application the token must be stored for.</param>
+        /// <returns>The token status when it is stored for that application, null otherwise.</returns>
+        Task<string?> GetTokenStatusForApplicationAsync(Guid tokenId, Guid applicationId);
+
+        /// <summary>
+        /// Marks the token revoked only when it is still unrevoked and stored for
+        /// <paramref name="applicationId"/>; both conditions are enforced by the UPDATE itself, so a
+        /// repeated revocation keeps the original redemption timestamp.
+        /// </summary>
+        /// <returns>True if a row changed; false for an unknown, already revoked, or foreign token.</returns>
+        Task<bool> RevokeTokenAsync(Guid tokenId, Guid applicationId);
+
+        /// <summary>
+        /// Marks every unrevoked token stored for <paramref name="applicationId"/> as revoked,
+        /// inside the caller's transaction. Status and ownership are predicates of the single
+        /// UPDATE, as in <see cref="RevokeTokenAsync"/>: rows already revoked are not touched, so
+        /// their original RedemptionDate survives, and no other application's token can change.
+        /// </summary>
+        /// <returns>The number of rows that changed; 0 when the application holds no unrevoked token.</returns>
+        Task<int> RevokeTokensForApplicationAsync(
+            Guid applicationId,
+            IDbConnection connection,
+            IDbTransaction? transaction = null
+        );
 
         Task<int> DeleteExpiredTokensAsync(DateTimeOffset expiredBefore);
 
@@ -157,6 +252,16 @@ namespace EdFi.DmsConfigurationService.Backend.OpenIddict.Repositories
 
         // Application info operations
         Task<ApplicationInfo?> GetApplicationByClientIdAsync(string clientId);
+
+        /// <summary>
+        /// Reads only what client authentication needs, before the presented secret is verified:
+        /// the credential of the application registered under <paramref name="clientId"/>, or
+        /// <c>null</c> when none is. The statement makes the same index probes whether or not the
+        /// client id is registered; a registered id also reads its matched rows. A client with no
+        /// API client row reports <see cref="ApiClientApprovalState.NoApiClientRow"/>, never an
+        /// approval.
+        /// </summary>
+        Task<ClientCredential?> GetClientCredentialAsync(string clientId);
 
         Task<ApplicationInfo?> GetApplicationByIdAsync(
             Guid id,

@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
 using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using IdentityManagementOptions = EdFi.DataManagementService.Core.Configuration.IdentityManagementOptions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 
@@ -89,6 +90,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         IDataModelInfoProvider dataModelInfoProvider,
         IOptions<AppSettings> appSettings,
         ITenantValidator tenantValidator,
+        IOptions<IdentityManagementOptions> identityManagementOptions,
         IOptions<CoreAppSettings> coreOptions
     )
     {
@@ -152,9 +154,9 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             },
         };
 
-        // The identity URL is listed only when AppSettings:EnableIdentityManagement is true.
+        // The identity URL is listed only when DataManagement:IdentityManagement:Enabled is true.
         // The Discovery response has no identity URL when disabled.
-        if (coreOptions.Value.EnableIdentityManagement)
+        if (identityManagementOptions.Value.Enabled)
         {
             response["urls"]!["identity"] = $"{rootUrl}{routeQualifierPrefix}/identity/v2/";
         }

@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
+using EdFi.DataManagementService.Core.Extraction;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -270,6 +271,56 @@ public partial class Given_RelationalDocumentStoreRepositoryTests
         success.Ranges.Should().BeEmpty();
         success.SelectionSkipped.Should().BeTrue();
         _capturedPartitionCommands.Should().BeEmpty();
+    }
+
+    // A malformed descriptor filter is a client error. The partition path rejects it as GET-many does,
+    // before custom-view validation, resolution and any boundary command.
+    [Test]
+    public async Task It_rejects_a_malformed_descriptor_filter_without_a_command()
+    {
+        var partitionRequest = CreatePartitionRequest(
+            CreateQuerySupportedMappingSet(
+                _schoolResourceInfo,
+                CreateSupportedQueryField(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "string",
+                    new RelationalQueryFieldTarget.DescriptorIdColumn(
+                        new DbColumnName("SchoolCategoryDescriptorId"),
+                        new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                    )
+                )
+            ),
+            queryElements:
+            [
+                CreateQueryElement(
+                    "schoolCategoryDescriptor",
+                    "$.schoolCategoryDescriptor",
+                    "uri://ed-fi.org/SchoolCategoryDescriptor#\0",
+                    "string"
+                ),
+            ],
+            authorizationStrategyEvaluators: [CreateAuthorizationStrategyEvaluator(CustomViewStrategyName)]
+        );
+
+        StubPartitionBoundaryStarts();
+        StubPartitionCustomViewValidation();
+
+        var result = await _sut.QueryPartitions(partitionRequest);
+
+        result
+            .Should()
+            .BeOfType<PartitionResult.PartitionFailureValidation>()
+            .Which.ValidationFailures.Should()
+            .Equal(
+                new WriteValidationFailure(
+                    new JsonPath("$.schoolCategoryDescriptor"),
+                    DescriptorText.InvalidValueMessage
+                )
+            );
+        _capturedPartitionCommands.Should().BeEmpty();
+        A.CallTo(() => _referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._))
+            .MustNotHaveHappened();
     }
 
     // A caller with no usable claims can reach no candidate, which the shared authorization resolution

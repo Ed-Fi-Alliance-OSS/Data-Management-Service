@@ -15,7 +15,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -179,12 +178,12 @@ file static class AuthoritativeDs52WriteIntegrationTestSupport
 }
 
 internal sealed record AuthoritativeDs52SchoolSeedData(
-    long PhysicalAddressTypeDescriptorId,
-    long MailingAddressTypeDescriptorId,
-    long StateAbbreviationDescriptorId,
-    long EducationOrganizationCategoryDescriptorId,
-    long NinthGradeLevelDescriptorId,
-    long TenthGradeLevelDescriptorId
+    int PhysicalAddressTypeDescriptorId,
+    int MailingAddressTypeDescriptorId,
+    int StateAbbreviationDescriptorId,
+    int EducationOrganizationCategoryDescriptorId,
+    int NinthGradeLevelDescriptorId,
+    int TenthGradeLevelDescriptorId
 );
 
 internal sealed record AuthoritativeDs52SchoolDocumentRow(
@@ -200,22 +199,22 @@ internal sealed record AuthoritativeDs52SchoolEducationOrganizationCategoryRow(
     long CollectionItemId,
     int Ordinal,
     long SchoolDocumentId,
-    long EducationOrganizationCategoryDescriptorId
+    int EducationOrganizationCategoryDescriptorId
 );
 
 internal sealed record AuthoritativeDs52SchoolGradeLevelRow(
     long CollectionItemId,
     int Ordinal,
     long SchoolDocumentId,
-    long GradeLevelDescriptorId
+    int GradeLevelDescriptorId
 );
 
 internal sealed record AuthoritativeDs52SchoolAddressRow(
     long CollectionItemId,
     int Ordinal,
     long SchoolDocumentId,
-    long AddressTypeDescriptorId,
-    long StateAbbreviationDescriptorId,
+    int AddressTypeDescriptorId,
+    int StateAbbreviationDescriptorId,
     string City,
     string PostalCode,
     string StreetNumberName,
@@ -637,8 +636,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var physicalAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("10111111-1111-1111-1111-111111111111"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Physical",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Physical",
             "Physical"
@@ -646,8 +643,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var mailingAddressTypeDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("20222222-2222-2222-2222-222222222222"),
             "AddressTypeDescriptor",
-            "Ed-Fi:AddressTypeDescriptor",
-            "uri://ed-fi.org/AddressTypeDescriptor#Mailing",
             "uri://ed-fi.org/AddressTypeDescriptor",
             "Mailing",
             "Mailing"
@@ -655,8 +650,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var stateAbbreviationDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("30333333-3333-3333-3333-333333333333"),
             "StateAbbreviationDescriptor",
-            "Ed-Fi:StateAbbreviationDescriptor",
-            "uri://ed-fi.org/StateAbbreviationDescriptor#TX",
             "uri://ed-fi.org/StateAbbreviationDescriptor",
             "TX",
             "Texas"
@@ -664,8 +657,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var educationOrganizationCategoryDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("40444444-4444-4444-4444-444444444444"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -673,8 +664,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var ninthGradeLevelDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("50555555-5555-5555-5555-555555555555"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -682,8 +671,6 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var tenthGradeLevelDescriptorId = await SeedDescriptorAsync(
             Guid.Parse("60666666-6666-6666-6666-666666666666"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Tenth grade",
             "Tenth grade"
@@ -699,11 +686,9 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         );
     }
 
-    private async Task<long> SeedDescriptorAsync(
+    private async Task<int> SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
@@ -713,20 +698,12 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         var documentId = await InsertDescriptorAsync(
             documentUuid,
             resourceKeyId,
-            discriminator,
-            uri,
             @namespace,
             codeValue,
             shortDescription
         );
 
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
-
-        return documentId;
+        return documentId.DescriptorId;
     }
 
     private async Task<short> GetResourceKeyIdAsync(string projectName, string resourceName)
@@ -756,19 +733,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
         );
     }
 
-    private async Task<long> InsertDescriptorAsync(
+    private async Task<SeededDescriptor> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         var documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
-        await _database.ExecuteNonQueryAsync(
+        var descriptorId = await _database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" (
                 "DocumentId",
@@ -776,9 +752,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -786,72 +760,18 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
-            );
+                @description
+            ) RETURNING "DescriptorId";
             """,
             new NpgsqlParameter("documentId", documentId),
             new NpgsqlParameter("resourceKeyId", resourceKeyId),
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
-        return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateReferentialId(
-        (string ProjectName, string ResourceName, bool IsDescriptor) targetResource,
-        params (string IdentityJsonPath, string IdentityValue)[] identityElements
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(
-                new ProjectName(targetResource.ProjectName),
-                new ResourceName(targetResource.ResourceName),
-                targetResource.IsDescriptor
-            ),
-            new DocumentIdentity([
-                .. identityElements.Select(identityElement => new DocumentIdentityElement(
-                    new JsonPath(identityElement.IdentityJsonPath),
-                    identityElement.IdentityValue
-                )),
-            ])
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return CreateReferentialId(
-            (projectName, resourceName, true),
-            (DocumentIdentity.DescriptorIdentityJsonPath.Value, descriptorUri.ToLowerInvariant())
-        );
+        return new(descriptorId, documentId);
     }
 
     private async Task<AuthoritativeDs52SchoolPersistedState> ReadPersistedStateAsync(Guid documentUuid)
@@ -937,10 +857,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
-                AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(
-                    row,
-                    "EducationOrganizationCategoryDescriptor_DescriptorId"
-                )
+                (int)row["EducationOrganizationCategoryDescriptor_DescriptorId"]!
             ))
             .ToArray();
     }
@@ -967,10 +884,7 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
-                AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(
-                    row,
-                    "GradeLevelDescriptor_DescriptorId"
-                )
+                (int)row["GradeLevelDescriptor_DescriptorId"]!
             ))
             .ToArray();
     }
@@ -1000,14 +914,8 @@ public class Given_A_Postgresql_Relational_Write_Smoke_With_The_Authoritative_Ds
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(row, "CollectionItemId"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt32(row, "Ordinal"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(row, "School_DocumentId"),
-                AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(
-                    row,
-                    "AddressTypeDescriptor_DescriptorId"
-                ),
-                AuthoritativeDs52WriteIntegrationTestSupport.GetInt64(
-                    row,
-                    "StateAbbreviationDescriptor_DescriptorId"
-                ),
+                (int)row["AddressTypeDescriptor_DescriptorId"]!,
+                (int)row["StateAbbreviationDescriptor_DescriptorId"]!,
                 AuthoritativeDs52WriteIntegrationTestSupport.GetString(row, "City"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetString(row, "PostalCode"),
                 AuthoritativeDs52WriteIntegrationTestSupport.GetString(row, "StreetNumberName"),

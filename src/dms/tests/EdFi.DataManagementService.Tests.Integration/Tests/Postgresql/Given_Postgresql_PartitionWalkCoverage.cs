@@ -70,8 +70,8 @@ public sealed class Given_Postgresql_PartitionWalkCoverage : PostgresqlApiIntegr
         );
 
     [Test]
-    public Task It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it() =>
-        PartitionWalkCoverageScenario.It_rejects_a_number_query_key_on_a_collection_whose_schema_omits_it(
+    public Task It_ignores_a_number_query_key_on_a_collection_whose_schema_omits_it() =>
+        PartitionWalkCoverageScenario.It_ignores_a_number_query_key_on_a_collection_whose_schema_omits_it(
             Harness
         );
 }

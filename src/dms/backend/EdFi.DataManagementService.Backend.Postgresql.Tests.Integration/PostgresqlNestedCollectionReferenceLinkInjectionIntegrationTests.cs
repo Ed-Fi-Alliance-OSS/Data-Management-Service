@@ -14,7 +14,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
@@ -277,8 +276,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
         await SeedDescriptorAsync(
             Guid.Parse("c2c00001-0000-0000-0000-000000000001"),
             "EducationOrganizationCategoryDescriptor",
-            "Ed-Fi:EducationOrganizationCategoryDescriptor",
-            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
             "uri://ed-fi.org/EducationOrganizationCategoryDescriptor",
             "School",
             "School"
@@ -286,8 +283,6 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
         await SeedDescriptorAsync(
             Guid.Parse("c2c00002-0000-0000-0000-000000000002"),
             "GradeLevelDescriptor",
-            "Ed-Fi:GradeLevelDescriptor",
-            "uri://ed-fi.org/GradeLevelDescriptor#Ninth grade",
             "uri://ed-fi.org/GradeLevelDescriptor",
             "Ninth grade",
             "Ninth grade"
@@ -297,29 +292,13 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
     private async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
         short resourceKeyId = await GetResourceKeyIdAsync("Ed-Fi", resourceName);
-        long documentId = await InsertDescriptorAsync(
-            documentUuid,
-            resourceKeyId,
-            discriminator,
-            uri,
-            @namespace,
-            codeValue,
-            shortDescription
-        );
-
-        await InsertReferentialIdentityAsync(
-            CreateDescriptorReferentialId("Ed-Fi", resourceName, uri),
-            documentId,
-            resourceKeyId
-        );
+        await InsertDescriptorAsync(documentUuid, resourceKeyId, @namespace, codeValue, shortDescription);
     }
 
     private async Task<UpsertResult> UpsertSchoolAsync()
@@ -550,13 +529,12 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
     private async Task<long> InsertDescriptorAsync(
         Guid documentUuid,
         short resourceKeyId,
-        string discriminator,
-        string uri,
         string @namespace,
         string codeValue,
         string shortDescription
     )
     {
+        await _database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.PostgresqlSeparateDocumentIdsSql);
         long documentId = await InsertDocumentAsync(documentUuid, resourceKeyId);
 
         await _database.ExecuteNonQueryAsync(
@@ -567,9 +545,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                 "Namespace",
                 "CodeValue",
                 "ShortDescription",
-                "Description",
-                "Discriminator",
-                "Uri"
+                "Description"
             )
             VALUES (
                 @documentId,
@@ -577,9 +553,7 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
             """,
             new NpgsqlParameter("documentId", documentId),
@@ -587,46 +561,9 @@ public class Given_A_Postgresql_BellSchedule_With_Nested_Collection_ClassPeriod_
             new NpgsqlParameter("namespace", @namespace),
             new NpgsqlParameter("codeValue", codeValue),
             new NpgsqlParameter("shortDescription", shortDescription),
-            new NpgsqlParameter("description", shortDescription),
-            new NpgsqlParameter("discriminator", discriminator),
-            new NpgsqlParameter("uri", uri)
+            new NpgsqlParameter("description", shortDescription)
         );
 
         return documentId;
-    }
-
-    private async Task InsertReferentialIdentityAsync(
-        ReferentialId referentialId,
-        long documentId,
-        short resourceKeyId
-    )
-    {
-        await _database.ExecuteNonQueryAsync(
-            """
-            INSERT INTO "dms"."ReferentialIdentity" ("ReferentialId", "DocumentId", "ResourceKeyId")
-            VALUES (@referentialId, @documentId, @resourceKeyId)
-            ON CONFLICT ("ReferentialId") DO NOTHING;
-            """,
-            new NpgsqlParameter("referentialId", referentialId.Value),
-            new NpgsqlParameter("documentId", documentId),
-            new NpgsqlParameter("resourceKeyId", resourceKeyId)
-        );
-    }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string descriptorUri
-    )
-    {
-        return ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    DocumentIdentity.DescriptorIdentityJsonPath,
-                    descriptorUri.ToLowerInvariant()
-                ),
-            ])
-        );
     }
 }

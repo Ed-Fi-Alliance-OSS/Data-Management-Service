@@ -103,6 +103,8 @@ public class Given_CdcArtifactCleanupProviderDatabase(CdcProvider provider)
     private sealed class Provisioner(Given_CdcArtifactCleanupProviderDatabase fixture)
         : ICdcManagedDatabaseProvisioner
     {
+        public void CheckPlatformPreconditions() { }
+
         public bool CreateDatabase()
         {
             using var command = fixture._admin.CreateCommand();

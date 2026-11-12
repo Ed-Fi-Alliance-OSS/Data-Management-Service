@@ -1,0 +1,57 @@
+{
+  "name": "HybridPolicy",
+  "resourceClaims": [
+    {
+      "name": "http://ed-fi.org/identity/claims/domains/offlinePolicy",
+      "isParent": true,
+      "_defaultAuthorizationStrategiesForCrud": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "NamespaceBased"
+            }
+          ]
+        },
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "NoFurtherAuthorizationRequired"
+            }
+          ]
+        }
+      ],
+      "claimSets": [
+        {
+          "name": "HybridPolicy",
+          "actions": [
+            {
+              "name": "Read"
+            },
+            {
+              "name": "Create"
+            }
+          ]
+        }
+      ],
+      "children": [
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/inherited"
+        },
+        {
+          "name": "http://ed-fi.org/identity/claims/sample/overridden"
+        }
+      ]
+    },
+    {
+      "name": "ed-fi/students",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": []
+        }
+      ]
+    }
+  ]
+}

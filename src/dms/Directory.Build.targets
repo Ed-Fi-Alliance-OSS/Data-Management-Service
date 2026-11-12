@@ -1,4 +1,18 @@
 <Project>
+    <ItemGroup>
+        <!--
+            Adds the patched System.Security.Cryptography.Pkcs to every project that references
+            Microsoft.Data.SqlClient directly, including projects added later. See the
+            System.Security.Cryptography.Pkcs entry in src/Directory.Packages.props for why, and for when to
+            remove this rule. Projects that reach SqlClient only through a project reference resolve the
+            patched Pkcs from that reference.
+        -->
+        <PackageReference
+            Include="System.Security.Cryptography.Pkcs"
+            Condition="'@(PackageReference->WithMetadataValue('Identity', 'Microsoft.Data.SqlClient'))' != '' and '@(PackageReference->WithMetadataValue('Identity', 'System.Security.Cryptography.Pkcs'))' == ''"
+        />
+    </ItemGroup>
+
     <PropertyGroup>
         <_DmsInlineTaskSystemTextJsonVersion>10.0.1</_DmsInlineTaskSystemTextJsonVersion>
         <_DmsInlineTaskSystemMemoryVersion>4.6.3</_DmsInlineTaskSystemMemoryVersion>

@@ -1,0 +1,117 @@
+[
+  {
+    "name": "matched-leaf-missing-collection",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/leaf",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "../base.json",
+    "diagnostics": [
+      {
+        "code": "ChildCollectionMissing",
+        "claimName": "edfi/leaf",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0]"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-invalid-names",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {},
+            {
+              "name": ""
+            },
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": [
+      {
+        "code": "InvalidChildName",
+        "claimName": "edfi/domain",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].name"
+      },
+      {
+        "code": "InvalidChildName",
+        "claimName": "edfi/domain",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[1].name"
+      }
+    ]
+  },
+  {
+    "name": "matched-parent-valid-child",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "edfi/domain",
+          "isParent": true,
+          "children": [
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "appended.json",
+    "diagnostics": []
+  },
+  {
+    "name": "matched-leaf-original-claim-context",
+    "fragment": {
+      "name": "Isolated",
+      "resourceClaims": [
+        {
+          "name": "EDFI/LEAF",
+          "isParent": true,
+          "children": [
+            {},
+            {
+              "name": "edfi/copied"
+            }
+          ]
+        }
+      ]
+    },
+    "expected": "uri-leaf.json",
+    "diagnostics": [
+      {
+        "code": "InvalidChildName",
+        "claimName": "https://example.org/edfi/leaf",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[0].name"
+      },
+      {
+        "code": "ChildCollectionMissing",
+        "claimName": "https://example.org/edfi/leaf",
+        "claimSetName": "Isolated",
+        "jsonPath": "$.resourceClaims[0].children[1]"
+      }
+    ],
+    "base": "uri-leaf.json"
+  }
+]

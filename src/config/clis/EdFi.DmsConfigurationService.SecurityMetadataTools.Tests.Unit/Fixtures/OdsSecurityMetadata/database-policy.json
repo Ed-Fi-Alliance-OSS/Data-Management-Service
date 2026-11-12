@@ -1,0 +1,5297 @@
+{
+  "claims": [
+    {
+      "ResourceClaimId": 1,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/edFiTypes",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 2,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/systemDescriptors",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 3,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/managedDescriptors",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 4,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/educationOrganizations",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 5,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/people",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 6,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/relationshipBasedData",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 7,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/assessmentMetadata",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 8,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/services/identity",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 9,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/educationStandards",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 10,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/primaryRelationships",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 11,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/surveyDomain",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 12,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/schoolYearType",
+      "ParentResourceClaimId": 1
+    },
+    {
+      "ResourceClaimId": 13,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/absenceEventCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 14,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/academicHonorCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 15,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/academicSubjectDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 16,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/accountTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 17,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/achievementCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 18,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/additionalCreditTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 19,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/addressTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 20,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/administrationEnvironmentDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 21,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/administrativeFundingControlDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 22,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ancestryEthnicOriginDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 23,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 24,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentIdentificationSystemDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 25,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentItemCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 26,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentItemResultDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 27,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assignmentLateStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 28,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/attemptStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 29,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/attendanceEventCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 30,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/barrierToInternetAccessInResidenceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 31,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/behaviorDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 32,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/busRouteDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 33,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/calendarEventDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 34,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/calendarTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 35,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/careerPathwayDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 36,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/charterApprovalAgencyTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 37,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/charterStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 38,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/citizenshipStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 39,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/classroomPositionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 40,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/cohortScopeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 41,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/cohortTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 42,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/cohortYearTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 43,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/competencyLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 44,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/contactTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 45,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/contentClassDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 46,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/continuationOfServicesReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 47,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/costRateDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 48,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/countryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 49,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseAttemptResultDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 50,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseDefinedByDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 51,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseGPAApplicabilityDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 52,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseIdentificationSystemDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 53,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseLevelCharacteristicDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 54,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseRepeatCodeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 55,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/credentialFieldDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 56,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/credentialTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 57,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/creditCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 58,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/creditTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 59,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/crisisTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 60,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/cteProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 61,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/curriculumUsedDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 62,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/deliveryMethodDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 63,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/diagnosisDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 64,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/diplomaLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 65,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/diplomaTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 66,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disabilityDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 67,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disabilityDesignationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 68,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disabilityDeterminationSourceTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 69,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disciplineActionLengthDifferenceReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 70,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disciplineDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 71,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disciplineIncidentParticipationCodeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 72,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/displacedStudentStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 73,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationalEnvironmentDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 74,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationAssociationTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 75,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 76,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationIdentificationSystemDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 77,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationPlanDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 78,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/electronicMailTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 79,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/eligibilityDelayReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 80,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/eligibilityEvaluationTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 81,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/employmentStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 82,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/enrollmentTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 83,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/entryGradeLevelReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 84,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/entryTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 85,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/evaluationDelayReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 86,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/eventCircumstanceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 87,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/exitWithdrawTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 88,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/financialCollectionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 89,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradebookEntryTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 90,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradeLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 91,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradePointAverageTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 92,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradeTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 93,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradingPeriodDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 94,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/graduationPlanTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 95,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gunFreeSchoolsActReportingStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 96,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/homelessPrimaryNighttimeResidenceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 97,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/homelessProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 98,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ideaPartDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 99,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/identificationDocumentUseDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 100,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/immunizationTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 101,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/incidentLocationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 102,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/indicatorDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 103,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/indicatorGroupDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 104,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/indicatorLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 105,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/institutionTelephoneNumberTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 106,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/interactivityStyleDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 107,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/internetAccessDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 108,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/internetAccessTypeInResidenceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 109,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/internetPerformanceInResidenceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 110,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/interventionClassDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 111,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/interventionEffectivenessRatingDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 112,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/languageDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 113,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/languageInstructionProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 114,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/languageUseDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 115,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/learningStandardCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 116,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/learningStandardEquivalenceStrengthDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 117,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/learningStandardScopeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 118,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/levelOfEducationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 119,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/licenseStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 120,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/licenseTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 121,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/limitedEnglishProficiencyDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 122,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/localeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 123,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/localEducationAgencyCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 124,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/magnetSpecialProgramEmphasisSchoolDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 125,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/mediumOfInstructionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 126,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/methodCreditEarnedDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 127,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/migrantEducationProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 128,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/modelEntityDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 129,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/monitoredDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 130,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/neglectedOrDelinquentProgramDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 131,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/neglectedOrDelinquentProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 132,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/networkPurposeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 133,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/nonMedicalImmunizationExemptionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 134,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/operationalStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 135,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/otherNameTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 136,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/participationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 137,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/participationStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 138,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/performanceBaseConversionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 139,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/personalInformationVerificationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 140,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/platformTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 141,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/populationServedDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 142,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/postingResultDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 143,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/postSecondaryEventCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 144,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/postSecondaryInstitutionLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 145,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/primaryLearningDeviceAccessDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 146,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/primaryLearningDeviceAwayFromSchoolDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 147,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/primaryLearningDeviceProviderDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 148,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/proficiencyDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 149,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programAssignmentDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 150,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programCharacteristicDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 151,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programEvaluationPeriodDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 152,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programEvaluationTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 153,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programSponsorDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 154,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 155,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/progressDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 156,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/progressLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 157,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/providerCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 158,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/providerProfitabilityDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 159,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/providerStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 160,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/publicationStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 161,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/questionFormDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 162,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/raceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 163,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ratingLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 164,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/reasonExitedDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 165,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/reasonNotTestedDescriptor",
+      "ParentResourceClaimId": 3
+    },
+    {
+      "ResourceClaimId": 166,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/recognitionTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 167,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/relationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 168,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/repeatIdentifierDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 169,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/reporterDescriptionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 170,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/reportingTagDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 171,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/residencyStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 172,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/responseIndicatorDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 173,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/responsibilityDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 174,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/restraintEventReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 175,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/resultDatatypeTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 176,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/retestIndicatorDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 177,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/schoolCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 178,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/schoolChoiceBasisDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 179,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/schoolChoiceImplementStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 180,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/schoolFoodServiceProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 181,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/schoolTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 182,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/sectionCharacteristicDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 183,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/sectionTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 184,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/separationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 185,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/separationReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 186,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/serviceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 187,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/sexDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 188,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/sourceSystemDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 189,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/specialEducationExitReasonDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 190,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/specialEducationProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 191,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/specialEducationSettingDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 192,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffClassificationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 193,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffIdentificationSystemDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 194,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffLeaveEventCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 195,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/stateAbbreviationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 196,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentCharacteristicDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 197,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentIdentificationSystemDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 198,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentParticipationCodeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 199,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/submissionStatusDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 200,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/supporterMilitaryConnectionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 201,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyCategoryDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 202,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyLevelDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 203,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/teachingCredentialBasisDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 204,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/teachingCredentialDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 205,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/technicalSkillsAssessmentDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 206,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/telephoneNumberTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 207,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/termDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 208,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/titleIPartAParticipantDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 209,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/titleIPartAProgramServiceDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 210,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/titleIPartASchoolDesignationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 211,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/transportationPublicExpenseEligibilityTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 212,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/transportationTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 213,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/travelDayofWeekDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 214,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/travelDirectionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 215,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/tribalAffiliationDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 216,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/visaDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 217,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/weaponDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 218,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/accommodationDescriptor",
+      "ParentResourceClaimId": 3
+    },
+    {
+      "ResourceClaimId": 219,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentPeriodDescriptor",
+      "ParentResourceClaimId": 3
+    },
+    {
+      "ResourceClaimId": 220,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentReportingMethodDescriptor",
+      "ParentResourceClaimId": 3
+    },
+    {
+      "ResourceClaimId": 221,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/performanceLevelDescriptor",
+      "ParentResourceClaimId": 3
+    },
+    {
+      "ResourceClaimId": 222,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/communityOrganization",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 223,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/communityProvider",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 224,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationNetwork",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 225,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationServiceCenter",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 226,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/localEducationAgency",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 227,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/organizationDepartment",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 228,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/postSecondaryInstitution",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 229,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/school",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 230,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/stateEducationAgency",
+      "ParentResourceClaimId": 4
+    },
+    {
+      "ResourceClaimId": 231,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/contact",
+      "ParentResourceClaimId": 5
+    },
+    {
+      "ResourceClaimId": 232,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staff",
+      "ParentResourceClaimId": 5
+    },
+    {
+      "ResourceClaimId": 233,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/student",
+      "ParentResourceClaimId": 5
+    },
+    {
+      "ResourceClaimId": 234,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/academicWeek",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 235,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/accountabilityRating",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 237,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/bellSchedule",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 238,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/calendar",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 239,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/calendarDate",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 240,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/classPeriod",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 241,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/cohort",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 242,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/communityProviderLicense",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 243,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/competencyObjective",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 244,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/course",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 245,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseOffering",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 246,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/courseTranscript",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 247,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/descriptorMapping",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 248,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disciplineAction",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 249,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/disciplineIncident",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 250,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationInterventionPrescriptionAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 251,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationNetworkAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 252,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationOrganizationPeerAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 253,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/evaluationRubricDimension",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 254,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/feederSchoolAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 257,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/grade",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 258,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradebookEntry",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 259,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/gradingPeriod",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 260,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/graduationPlan",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 261,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/intervention",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 262,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/interventionPrescription",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 263,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/interventionStudy",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 264,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/location",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 266,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/openStaffPosition",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 268,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/person",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 269,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/postSecondaryEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 270,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/program",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 272,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programEvaluation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 273,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programEvaluationElement",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 274,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/programEvaluationObjective",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 276,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/reportCard",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 277,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/restraintEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 278,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/section",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 279,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/sectionAttendanceTakenEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 280,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/session",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 282,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffAbsenceEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 283,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffCohortAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 284,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffDisciplineIncidentAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 285,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffEducationOrganizationContactAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 286,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffLeave",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 287,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 288,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffSchoolAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 289,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffSectionAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 290,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAcademicRecord",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 291,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessmentEducationOrganizationAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 292,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentCohortAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 293,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentCompetencyObjective",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 294,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentContactAssociation",
+      "ParentResourceClaimId": 10
+    },
+    {
+      "ResourceClaimId": 295,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentCTEProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 296,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentDisciplineIncidentBehaviorAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 297,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentDisciplineIncidentNonOffenderAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 298,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentEducationOrganizationAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 299,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentEducationOrganizationResponsibilityAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 300,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentGradebookEntry",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 301,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentHomelessProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 302,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentInterventionAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 303,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentInterventionAttendanceEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 304,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentLanguageInstructionProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 305,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentMigrantEducationProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 306,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentNeglectedOrDelinquentProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 307,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 308,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentProgramAttendanceEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 309,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentProgramEvaluation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 310,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSchoolAttendanceEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 311,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSchoolFoodServiceProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 312,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSectionAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 313,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSectionAttendanceEvent",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 314,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSpecialEducationProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 315,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSpecialEducationProgramEligibilityAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 316,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentTitleIPartAProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 317,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentTransportation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 318,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyCourseAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 319,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 320,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyResponseEducationOrganizationTargetAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 321,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyResponseStaffTargetAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 322,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveySectionAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 323,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveySectionResponseEducationOrganizationTargetAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 324,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveySectionResponseStaffTargetAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 325,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessment",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 326,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentItem",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 327,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentScoreRangeLearningStandard",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 328,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/objectiveAssessment",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 329,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessment",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 330,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/credential",
+      "ParentResourceClaimId": 9
+    },
+    {
+      "ResourceClaimId": 331,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/learningStandard",
+      "ParentResourceClaimId": 9
+    },
+    {
+      "ResourceClaimId": 332,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/learningStandardEquivalenceAssociation",
+      "ParentResourceClaimId": 9
+    },
+    {
+      "ResourceClaimId": 333,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffEducationOrganizationAssignmentAssociation",
+      "ParentResourceClaimId": 10
+    },
+    {
+      "ResourceClaimId": 334,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/staffEducationOrganizationEmploymentAssociation",
+      "ParentResourceClaimId": 10
+    },
+    {
+      "ResourceClaimId": 335,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSchoolAssociation",
+      "ParentResourceClaimId": 10
+    },
+    {
+      "ResourceClaimId": 336,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/survey",
+      "ParentResourceClaimId": 11
+    },
+    {
+      "ResourceClaimId": 337,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyQuestion",
+      "ParentResourceClaimId": 11
+    },
+    {
+      "ResourceClaimId": 338,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyQuestionResponse",
+      "ParentResourceClaimId": 11
+    },
+    {
+      "ResourceClaimId": 339,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveyResponse",
+      "ParentResourceClaimId": 11
+    },
+    {
+      "ResourceClaimId": 340,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveySection",
+      "ParentResourceClaimId": 11
+    },
+    {
+      "ResourceClaimId": 341,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/surveySectionResponse",
+      "ParentResourceClaimId": 11
+    },
+    {
+      "ResourceClaimId": 342,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/educationContent",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 343,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/finance",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 344,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/finance/dimensions",
+      "ParentResourceClaimId": 343
+    },
+    {
+      "ResourceClaimId": 345,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/fundDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 346,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/programDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 347,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/functionDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 348,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/objectDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 349,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/projectDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 350,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/operationalUnitDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 351,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/sourceDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 352,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/balanceSheetDimension",
+      "ParentResourceClaimId": 344
+    },
+    {
+      "ResourceClaimId": 353,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/domains/finance/locals",
+      "ParentResourceClaimId": 343
+    },
+    {
+      "ResourceClaimId": 354,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/chartOfAccount",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 355,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/localAccount",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 356,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/localBudget",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 357,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/localActual",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 358,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/localEncumbrance",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 359,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/localContractedStaff",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 360,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/localPayroll",
+      "ParentResourceClaimId": 353
+    },
+    {
+      "ResourceClaimId": 361,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/crisisEvent",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 362,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/imunizationTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 363,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/ed-fi/studentHealth",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 364,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentAdministration",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 365,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentAdministrationAssessmentAdminstrationPeriod",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 366,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentAdministrationAssessmentBatteryPart",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 367,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentBatteryPart",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 368,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentBatteryPartObjectiveAssessment",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 369,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentAdministrationParticipation",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 370,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/assessmentAdministrationParticipationAdministrationPointOfContact",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 371,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessmentRegistration",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 372,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessmentRegistrationAssessmentAccommodation",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 373,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessmentRegistrationAssessmentCustomization",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 374,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessmentRegistrationBatteryPartAssociation",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 375,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentAssessmentRegistrationBatteryPartAssociationAccommodation",
+      "ParentResourceClaimId": 7
+    },
+    {
+      "ResourceClaimId": 376,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/Section504DisabilityDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 377,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/DualCreditTypeDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 378,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/DualCreditInstitutionDescriptor",
+      "ParentResourceClaimId": 2
+    },
+    {
+      "ResourceClaimId": 379,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentSection504ProgramAssociation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 380,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentEducationOrganizationAssessmentAccommodation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 381,
+      "ClaimName": "http://ed-fi.org/ods/identity/claims/studentEducationOrganizationAssessmentAccommodationGeneralAccommodation",
+      "ParentResourceClaimId": 6
+    },
+    {
+      "ResourceClaimId": 382,
+      "ClaimName": "https://purl.imsglobal.org/spec/or/v1p2/scope",
+      "ParentResourceClaimId": null
+    },
+    {
+      "ResourceClaimId": 383,
+      "ClaimName": "https://purl.imsglobal.org/spec/or/v1p2/scope/roster-core",
+      "ParentResourceClaimId": 382
+    },
+    {
+      "ResourceClaimId": 384,
+      "ClaimName": "https://purl.imsglobal.org/spec/or/v1p2/scope/roster",
+      "ParentResourceClaimId": 382
+    },
+    {
+      "ResourceClaimId": 385,
+      "ClaimName": "https://purl.imsglobal.org/spec/or/v1p2/scope/roster-demographics",
+      "ParentResourceClaimId": 382
+    },
+    {
+      "ResourceClaimId": 386,
+      "ClaimName": "https://purl.imsglobal.org/spec/or/v1p2/scope/resource",
+      "ParentResourceClaimId": 382
+    },
+    {
+      "ResourceClaimId": 387,
+      "ClaimName": "https://purl.imsglobal.org/spec/or/v1p2/scope/gradebook",
+      "ParentResourceClaimId": 382
+    }
+  ],
+  "claimSets": [
+    {
+      "ClaimSetId": 1,
+      "ClaimSetName": "SIS Vendor"
+    },
+    {
+      "ClaimSetId": 2,
+      "ClaimSetName": "Ed-Fi Sandbox"
+    },
+    {
+      "ClaimSetId": 3,
+      "ClaimSetName": "Roster Vendor"
+    },
+    {
+      "ClaimSetId": 4,
+      "ClaimSetName": "Assessment Vendor"
+    },
+    {
+      "ClaimSetId": 5,
+      "ClaimSetName": "Assessment Read"
+    },
+    {
+      "ClaimSetId": 6,
+      "ClaimSetName": "Bootstrap Descriptors and EdOrgs"
+    },
+    {
+      "ClaimSetId": 8,
+      "ClaimSetName": "District Hosted SIS Vendor"
+    },
+    {
+      "ClaimSetId": 10,
+      "ClaimSetName": "AB Connect"
+    },
+    {
+      "ClaimSetId": 11,
+      "ClaimSetName": "Ed-Fi API Publisher - Reader"
+    },
+    {
+      "ClaimSetId": 12,
+      "ClaimSetName": "Ed-Fi API Publisher - Writer"
+    },
+    {
+      "ClaimSetId": 13,
+      "ClaimSetName": "Finance Vendor"
+    },
+    {
+      "ClaimSetId": 14,
+      "ClaimSetName": "Education Preparation Program"
+    }
+  ],
+  "actions": [
+    {
+      "ActionId": 1,
+      "ActionName": "Create"
+    },
+    {
+      "ActionId": 2,
+      "ActionName": "Read"
+    },
+    {
+      "ActionId": 3,
+      "ActionName": "Update"
+    },
+    {
+      "ActionId": 4,
+      "ActionName": "Delete"
+    },
+    {
+      "ActionId": 5,
+      "ActionName": "ReadChanges"
+    }
+  ],
+  "strategies": [
+    {
+      "AuthorizationStrategyId": 1,
+      "AuthorizationStrategyName": "NoFurtherAuthorizationRequired"
+    },
+    {
+      "AuthorizationStrategyId": 2,
+      "AuthorizationStrategyName": "RelationshipsWithEdOrgsAndPeople"
+    },
+    {
+      "AuthorizationStrategyId": 3,
+      "AuthorizationStrategyName": "RelationshipsWithEdOrgsOnly"
+    },
+    {
+      "AuthorizationStrategyId": 4,
+      "AuthorizationStrategyName": "NamespaceBased"
+    },
+    {
+      "AuthorizationStrategyId": 5,
+      "AuthorizationStrategyName": "RelationshipsWithPeopleOnly"
+    },
+    {
+      "AuthorizationStrategyId": 6,
+      "AuthorizationStrategyName": "RelationshipsWithStudentsOnly"
+    },
+    {
+      "AuthorizationStrategyId": 7,
+      "AuthorizationStrategyName": "RelationshipsWithStudentsOnlyThroughResponsibility"
+    },
+    {
+      "AuthorizationStrategyId": 8,
+      "AuthorizationStrategyName": "OwnershipBased"
+    },
+    {
+      "AuthorizationStrategyId": 9,
+      "AuthorizationStrategyName": "RelationshipsWithEdOrgsAndPeopleIncludingDeletes"
+    },
+    {
+      "AuthorizationStrategyId": 10,
+      "AuthorizationStrategyName": "RelationshipsWithStudentsOnlyIncludingDeletes"
+    },
+    {
+      "AuthorizationStrategyId": 11,
+      "AuthorizationStrategyName": "RelationshipsWithEdOrgsOnlyInverted"
+    },
+    {
+      "AuthorizationStrategyId": 12,
+      "AuthorizationStrategyName": "RelationshipsWithEdOrgsAndPeopleInverted"
+    },
+    {
+      "AuthorizationStrategyId": 13,
+      "AuthorizationStrategyName": "RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes"
+    }
+  ],
+  "defaults": [
+    {
+      "ResourceClaimActionId": 1,
+      "ResourceClaimId": 1,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 6,
+      "ResourceClaimId": 3,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 7,
+      "ResourceClaimId": 3,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 8,
+      "ResourceClaimId": 3,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 9,
+      "ResourceClaimId": 3,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 10,
+      "ResourceClaimId": 4,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 11,
+      "ResourceClaimId": 4,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 12,
+      "ResourceClaimId": 4,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 13,
+      "ResourceClaimId": 4,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 14,
+      "ResourceClaimId": 227,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 15,
+      "ResourceClaimId": 227,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 16,
+      "ResourceClaimId": 227,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 17,
+      "ResourceClaimId": 227,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 18,
+      "ResourceClaimId": 5,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 19,
+      "ResourceClaimId": 5,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 20,
+      "ResourceClaimId": 5,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 21,
+      "ResourceClaimId": 5,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 27,
+      "ResourceClaimId": 268,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 28,
+      "ResourceClaimId": 268,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 29,
+      "ResourceClaimId": 268,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 30,
+      "ResourceClaimId": 268,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 35,
+      "ResourceClaimId": 8,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 36,
+      "ResourceClaimId": 8,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 37,
+      "ResourceClaimId": 8,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 38,
+      "ResourceClaimId": 9,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 39,
+      "ResourceClaimId": 9,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 40,
+      "ResourceClaimId": 9,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 41,
+      "ResourceClaimId": 9,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 42,
+      "ResourceClaimId": 330,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 43,
+      "ResourceClaimId": 330,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 44,
+      "ResourceClaimId": 330,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 45,
+      "ResourceClaimId": 330,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 46,
+      "ResourceClaimId": 10,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 47,
+      "ResourceClaimId": 10,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 48,
+      "ResourceClaimId": 10,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 49,
+      "ResourceClaimId": 10,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 54,
+      "ResourceClaimId": 342,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 55,
+      "ResourceClaimId": 342,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 56,
+      "ResourceClaimId": 342,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 57,
+      "ResourceClaimId": 342,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 98,
+      "ResourceClaimId": 247,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 99,
+      "ResourceClaimId": 247,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 100,
+      "ResourceClaimId": 247,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 101,
+      "ResourceClaimId": 247,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 102,
+      "ResourceClaimId": 247,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 103,
+      "ResourceClaimId": 258,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 104,
+      "ResourceClaimId": 258,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 105,
+      "ResourceClaimId": 258,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 106,
+      "ResourceClaimId": 258,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 107,
+      "ResourceClaimId": 258,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 108,
+      "ResourceClaimId": 344,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 109,
+      "ResourceClaimId": 344,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 110,
+      "ResourceClaimId": 344,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 111,
+      "ResourceClaimId": 344,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 112,
+      "ResourceClaimId": 344,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 113,
+      "ResourceClaimId": 353,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 114,
+      "ResourceClaimId": 353,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 115,
+      "ResourceClaimId": 353,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 116,
+      "ResourceClaimId": 353,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 117,
+      "ResourceClaimId": 353,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 118,
+      "ResourceClaimId": 244,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 119,
+      "ResourceClaimId": 270,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 120,
+      "ResourceClaimId": 354,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 121,
+      "ResourceClaimId": 315,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 122,
+      "ResourceClaimId": 315,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 123,
+      "ResourceClaimId": 315,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 124,
+      "ResourceClaimId": 315,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 125,
+      "ResourceClaimId": 315,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 126,
+      "ResourceClaimId": 294,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 127,
+      "ResourceClaimId": 294,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 128,
+      "ResourceClaimId": 294,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 129,
+      "ResourceClaimId": 294,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 130,
+      "ResourceClaimId": 294,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 131,
+      "ResourceClaimId": 59,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 132,
+      "ResourceClaimId": 59,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 133,
+      "ResourceClaimId": 59,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 134,
+      "ResourceClaimId": 59,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 135,
+      "ResourceClaimId": 59,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 136,
+      "ResourceClaimId": 361,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 137,
+      "ResourceClaimId": 361,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 138,
+      "ResourceClaimId": 361,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 139,
+      "ResourceClaimId": 361,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 140,
+      "ResourceClaimId": 361,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 141,
+      "ResourceClaimId": 362,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 142,
+      "ResourceClaimId": 362,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 143,
+      "ResourceClaimId": 362,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 144,
+      "ResourceClaimId": 362,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 145,
+      "ResourceClaimId": 362,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 146,
+      "ResourceClaimId": 133,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 147,
+      "ResourceClaimId": 133,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 148,
+      "ResourceClaimId": 133,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 149,
+      "ResourceClaimId": 133,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 150,
+      "ResourceClaimId": 133,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 151,
+      "ResourceClaimId": 363,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 152,
+      "ResourceClaimId": 363,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 153,
+      "ResourceClaimId": 363,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 154,
+      "ResourceClaimId": 363,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 155,
+      "ResourceClaimId": 363,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 156,
+      "ResourceClaimId": 7,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 157,
+      "ResourceClaimId": 7,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 158,
+      "ResourceClaimId": 7,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 159,
+      "ResourceClaimId": 7,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 160,
+      "ResourceClaimId": 2,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 161,
+      "ResourceClaimId": 2,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 162,
+      "ResourceClaimId": 2,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 163,
+      "ResourceClaimId": 2,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 168,
+      "ResourceClaimId": 6,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 169,
+      "ResourceClaimId": 6,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 170,
+      "ResourceClaimId": 6,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 171,
+      "ResourceClaimId": 6,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 172,
+      "ResourceClaimId": 11,
+      "ActionId": 1,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 173,
+      "ResourceClaimId": 11,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 174,
+      "ResourceClaimId": 11,
+      "ActionId": 3,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 175,
+      "ResourceClaimId": 11,
+      "ActionId": 4,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 176,
+      "ResourceClaimId": 11,
+      "ActionId": 5,
+      "ValidationRuleSetName": null
+    },
+    {
+      "ResourceClaimActionId": 177,
+      "ResourceClaimId": 382,
+      "ActionId": 2,
+      "ValidationRuleSetName": null
+    }
+  ],
+  "defaultStrategies": [
+    {
+      "ResourceClaimActionId": 1,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 6,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 7,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 8,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 9,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 10,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 11,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 12,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 13,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 14,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 15,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 16,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 17,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 18,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 19,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 20,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 21,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 27,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 28,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 29,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 30,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 35,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 36,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 37,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 38,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 40,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 41,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 42,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 43,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 44,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 45,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 46,
+      "AuthorizationStrategyId": 3
+    },
+    {
+      "ResourceClaimActionId": 47,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 48,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 49,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 54,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 55,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 56,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 57,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 98,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 99,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 100,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 101,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 102,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 103,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 104,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 105,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 106,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 107,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 108,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 109,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 110,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 111,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 112,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 113,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 114,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 115,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 116,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 117,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 118,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 118,
+      "AuthorizationStrategyId": 12
+    },
+    {
+      "ResourceClaimActionId": 119,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 119,
+      "AuthorizationStrategyId": 12
+    },
+    {
+      "ResourceClaimActionId": 120,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 120,
+      "AuthorizationStrategyId": 12
+    },
+    {
+      "ResourceClaimActionId": 121,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 121,
+      "AuthorizationStrategyId": 7
+    },
+    {
+      "ResourceClaimActionId": 122,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 122,
+      "AuthorizationStrategyId": 7
+    },
+    {
+      "ResourceClaimActionId": 123,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 123,
+      "AuthorizationStrategyId": 7
+    },
+    {
+      "ResourceClaimActionId": 124,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 124,
+      "AuthorizationStrategyId": 7
+    },
+    {
+      "ResourceClaimActionId": 125,
+      "AuthorizationStrategyId": 9
+    },
+    {
+      "ResourceClaimActionId": 125,
+      "AuthorizationStrategyId": 13
+    },
+    {
+      "ResourceClaimActionId": 126,
+      "AuthorizationStrategyId": 6
+    },
+    {
+      "ResourceClaimActionId": 127,
+      "AuthorizationStrategyId": 6
+    },
+    {
+      "ResourceClaimActionId": 128,
+      "AuthorizationStrategyId": 6
+    },
+    {
+      "ResourceClaimActionId": 129,
+      "AuthorizationStrategyId": 6
+    },
+    {
+      "ResourceClaimActionId": 130,
+      "AuthorizationStrategyId": 10
+    },
+    {
+      "ResourceClaimActionId": 131,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 132,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 133,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 134,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 135,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 136,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 137,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 138,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 139,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 140,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 141,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 142,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 143,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 144,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 145,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 146,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 147,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 148,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 149,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 150,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 151,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 152,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 153,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 154,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 155,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 156,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 157,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 158,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 159,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 160,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 161,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ResourceClaimActionId": 162,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 163,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 168,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 169,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 170,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 171,
+      "AuthorizationStrategyId": 2
+    },
+    {
+      "ResourceClaimActionId": 172,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 173,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 174,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 175,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 176,
+      "AuthorizationStrategyId": 4
+    },
+    {
+      "ResourceClaimActionId": 177,
+      "AuthorizationStrategyId": 2
+    }
+  ],
+  "grants": [
+    {
+      "ClaimSetResourceClaimActionId": 1,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 1,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 2,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 1,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 3,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 1,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 4,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 1,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 13,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 15,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 14,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 15,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 15,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 15,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 16,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 15,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 17,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 3,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 18,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 3,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 19,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 3,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 20,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 3,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 21,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 3,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 22,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 3,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 23,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 3,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 24,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 3,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 25,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 3,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 26,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 3,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 27,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 3,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 28,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 3,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 29,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 3,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 30,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 3,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 31,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 3,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 32,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 3,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 33,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 3,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 34,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 4,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 35,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 4,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 36,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 4,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 37,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 4,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 38,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 4,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 39,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 4,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 40,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 4,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 41,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 4,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 42,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 222,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 43,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 223,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 44,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 224,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 45,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 225,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 46,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 226,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 47,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 226,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 48,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 226,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 49,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 227,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 50,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 227,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 51,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 227,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 52,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 227,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 53,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 228,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 54,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 229,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 55,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 229,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 56,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 229,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 57,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 229,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 58,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 229,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 59,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 230,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 60,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 5,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 61,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 5,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 62,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 5,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 63,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 5,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 64,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 5,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 65,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 5,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 66,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 5,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 67,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 5,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 68,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 5,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 69,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 5,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 70,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 5,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 71,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 5,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 72,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 232,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 73,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 233,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 74,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 233,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 75,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 233,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 88,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 235,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 89,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 240,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 90,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 240,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 91,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 242,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 92,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 242,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 93,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 242,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 94,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 242,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 95,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 242,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 96,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 244,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 97,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 244,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 98,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 245,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 99,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 251,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 100,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 252,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 101,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 254,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 102,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 264,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 103,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 264,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 104,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 270,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 105,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 278,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 106,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 280,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 107,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 289,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 108,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 312,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 121,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 7,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 126,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 8,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 127,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 8,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 128,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 8,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 129,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 9,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 130,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 9,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 131,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 9,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 132,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 9,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 133,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 9,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 134,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 9,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 135,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 9,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 136,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 9,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 137,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 9,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 138,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 9,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 139,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 9,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 140,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 9,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 141,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 331,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 142,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 331,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 143,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 331,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 144,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 331,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 145,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 331,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 146,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 331,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 147,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 332,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 148,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 10,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 149,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 10,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 150,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 10,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 151,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 10,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 152,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 10,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 153,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 10,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 154,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 10,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 155,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 10,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 156,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 10,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 157,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 10,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 158,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 10,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 159,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 10,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 160,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 333,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 161,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 335,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 166,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 342,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 167,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 342,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 168,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 342,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 169,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 342,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 170,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 342,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 171,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 342,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 172,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 342,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 173,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 342,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 174,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 342,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 175,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 342,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 176,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 342,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 177,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 342,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 225,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 9,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 226,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 9,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 227,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 9,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 228,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 9,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 229,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 15,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 230,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 15,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 231,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 15,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 232,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 15,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 233,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 90,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 234,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 90,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 235,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 90,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 236,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 90,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 237,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 160,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 238,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 160,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 239,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 160,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 240,
+      "ClaimSetId": 10,
+      "ResourceClaimId": 160,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 241,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 221,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 242,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 221,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 247,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 343,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 248,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 343,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 249,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 343,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 250,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 343,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 251,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 343,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 252,
+      "ClaimSetId": 11,
+      "ResourceClaimId": 343,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 253,
+      "ClaimSetId": 11,
+      "ResourceClaimId": 343,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 254,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 343,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 255,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 343,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 256,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 343,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 257,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 343,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 258,
+      "ClaimSetId": 13,
+      "ResourceClaimId": 344,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 259,
+      "ClaimSetId": 13,
+      "ResourceClaimId": 353,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 260,
+      "ClaimSetId": 13,
+      "ResourceClaimId": 353,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 261,
+      "ClaimSetId": 13,
+      "ResourceClaimId": 353,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 262,
+      "ClaimSetId": 13,
+      "ResourceClaimId": 353,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 263,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 361,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 264,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 361,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 265,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 361,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 266,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 361,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 267,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 361,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 268,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 361,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 269,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 361,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 270,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 361,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 271,
+      "ClaimSetId": 11,
+      "ResourceClaimId": 361,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 272,
+      "ClaimSetId": 11,
+      "ResourceClaimId": 361,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 273,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 361,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 274,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 361,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 275,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 361,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 276,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 361,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 277,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 363,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 278,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 363,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 279,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 363,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 280,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 363,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 281,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 363,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 282,
+      "ClaimSetId": 11,
+      "ResourceClaimId": 363,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 283,
+      "ClaimSetId": 11,
+      "ResourceClaimId": 363,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 284,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 363,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 285,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 363,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 286,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 363,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 287,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 363,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 288,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 7,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 289,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 7,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 290,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 7,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 291,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 7,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 292,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 7,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 293,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 7,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 294,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 7,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 295,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 7,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 296,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 7,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 297,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 7,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 298,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 7,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 299,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 7,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 300,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 7,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 301,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 7,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 302,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 7,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 303,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 7,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 304,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 2,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 305,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 2,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 306,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 2,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 307,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 2,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 308,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 2,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 309,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 2,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 310,
+      "ClaimSetId": 6,
+      "ResourceClaimId": 2,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 311,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 2,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 324,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 6,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 325,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 6,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 326,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 6,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 327,
+      "ClaimSetId": 1,
+      "ResourceClaimId": 6,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 328,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 6,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 329,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 6,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 330,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 6,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 331,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 6,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 332,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 6,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 333,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 6,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 334,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 6,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 335,
+      "ClaimSetId": 8,
+      "ResourceClaimId": 6,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 336,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 6,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 337,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 11,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 338,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 11,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 339,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 11,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 340,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 11,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 341,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 11,
+      "ActionId": 5,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 342,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 11,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 343,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 11,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 344,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 11,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 345,
+      "ClaimSetId": 12,
+      "ResourceClaimId": 11,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 346,
+      "ClaimSetId": 14,
+      "ResourceClaimId": 11,
+      "ActionId": 1,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 347,
+      "ClaimSetId": 14,
+      "ResourceClaimId": 11,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 348,
+      "ClaimSetId": 14,
+      "ResourceClaimId": 11,
+      "ActionId": 3,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 349,
+      "ClaimSetId": 14,
+      "ResourceClaimId": 11,
+      "ActionId": 4,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 350,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 383,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 351,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 383,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 352,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 383,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 353,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 383,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 354,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 384,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 355,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 384,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 356,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 384,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 357,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 384,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 358,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 385,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 359,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 385,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 360,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 385,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 361,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 385,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 362,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 386,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 363,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 386,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 364,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 386,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 365,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 386,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 366,
+      "ClaimSetId": 2,
+      "ResourceClaimId": 387,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 367,
+      "ClaimSetId": 3,
+      "ResourceClaimId": 387,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 368,
+      "ClaimSetId": 4,
+      "ResourceClaimId": 387,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    },
+    {
+      "ClaimSetResourceClaimActionId": 369,
+      "ClaimSetId": 5,
+      "ResourceClaimId": 387,
+      "ActionId": 2,
+      "ValidationRuleSetNameOverride": null
+    }
+  ],
+  "overrides": [
+    {
+      "ClaimSetResourceClaimActionId": 29,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 40,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 42,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 43,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 44,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 45,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 46,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 53,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 54,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 59,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 88,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 90,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 95,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 97,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 99,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 100,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 101,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 103,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 104,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 146,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 147,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 310,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 342,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 343,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 344,
+      "AuthorizationStrategyId": 1
+    },
+    {
+      "ClaimSetResourceClaimActionId": 345,
+      "AuthorizationStrategyId": 1
+    }
+  ],
+  "journal": [
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0010-Tables.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0020-ForeignKeys.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0030-Indexes.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0040-Tables-MultipleAuthStrats.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0050-AddUniqueConstraintResourceClaimsClaimName.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0060-AlterClaimsetTable.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0070-RemoveUnusedApplicationTableAndRemoveDisplayNameResourceName.sql"
+    },
+    {
+      "ScriptName": "Artifacts.MsSql.Structure.Security.0080-Alter-Claimsets-Add-Unique-Constraint-ClaimsetName.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.0001-ResourceClaimMetadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.0002-ResourceClaimMetadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.1090-ManagedReasonNotTestedDescriptor.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2000-AdminApp-ClaimSets.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2000-AdminApp-ClaimSets_UpgradePath.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2020-MigrateDataForMultipleAuthStrategies.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2030-Clean-up-ReadChanges-from-AB-Connect-Claim-Set.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2030-DropSingleAuthStrategyTables.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2050-UpdateClaimSetReadOnlyAndInternalUseOnlyColum.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2060-OwnershipBased-claims-for-People.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2070-DataStandard4.0a-ResourceClaimMetadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2070-Namespace-auth-for-GradebookEntry.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2080-Finance-domain-security-metadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2090-RemoveOwnershipBasedTestClaimSet.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2100-UpdateClaimSetInternalUseOnlyColum.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2120-Add-Auth-Stratgies-Inverted-EdOrg-Hierarchy.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2130-Reference-data-also-use-inverted-EdOrgHierarchy-for-Read.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2140-Update-identities-claim-name.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2145-Add-RelationshipsWithStudentsOnlyThroughResponsibilityIncludingDeletes-strategy.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2150-StudentSpecialEducationProgramEligibilityAssociation-multiple-auth-strat.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2160-StudentContactAssociation-authorized-on-StudentOnly.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2170-CrisisEvent-security-metadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2180-Immunization-Security-Metadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2190-StudentContactAssociation-ClaimName-Update.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2200-AssessmentRegistration-security-metadata.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2300-Remove-AdminApp-ClaimSets.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2600-Set-ParentResourceClaimId-Null-SurveyDomain.sql"
+    },
+    {
+      "ScriptName": "EdFi.Ods.Standard.Standard.5.2.0.Artifacts.MsSql.Data.Security.2700-Add-OneRoster-security-metadata.sql"
+    }
+  ]
+}

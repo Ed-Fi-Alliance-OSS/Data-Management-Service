@@ -340,7 +340,7 @@ function Resolve-SeedDataStandardRefTag {
     effective Data Standard version recorded in the resolved environment file.
 
     .DESCRIPTION
-    DMS_CONFIG_DATA_STANDARD_VERSION is written by the .env.bootstrap.ds52 / .env.bootstrap.ds61
+    CONFIGURATION_SERVICE_DATA_STANDARD_VERSION is written by the .env.bootstrap.ds52 / .env.bootstrap.ds61
     local-bootstrap overlays that bootstrap-wrapper.psm1 composes onto the effective environment
     file for -DataStandardVersion 5.2 / 6.1 (see New-DataStandardDerivedEnvFile in
     env-utility.psm1). Falls back to the historical v5.2.0 default when the key is absent or
@@ -357,14 +357,14 @@ function Resolve-SeedDataStandardRefTag {
         [hashtable]$EnvValues
     )
 
-    $dataStandardVersion = (Get-EnvValue -EnvValues $EnvValues -Name "DMS_CONFIG_DATA_STANDARD_VERSION" -DefaultValue "").Trim()
+    $dataStandardVersion = (Get-EnvValue -EnvValues $EnvValues -Name "CONFIGURATION_SERVICE_DATA_STANDARD_VERSION" -DefaultValue "").Trim()
 
     switch ($dataStandardVersion) {
         "" { return "v5.2.0" }
         "5.2" { return "v5.2.0" }
         "6.1" { return "v6.1.0" }
         default {
-            throw "Unsupported DMS_CONFIG_DATA_STANDARD_VERSION '$(Format-LogSafeText $dataStandardVersion)'. Supported values: 5.2, 6.1; leave blank for the v5.2.0 default."
+            throw "Unsupported CONFIGURATION_SERVICE_DATA_STANDARD_VERSION '$(Format-LogSafeText $dataStandardVersion)'. Supported values: 5.2, 6.1; leave blank for the v5.2.0 default."
         }
     }
 }
@@ -1255,7 +1255,7 @@ function Resolve-SeedTargetDataStores {
         foreach ($explicitId in $DataStoreId) {
             $matchedInstance = $instances | Where-Object { [long]$_.id -eq [long]$explicitId } | Select-Object -First 1
             if ($null -eq $matchedInstance) {
-                throw "Data store $(Format-LogSafeText $explicitId) was not found in CMS for tenant '$(Format-LogSafeText $Tenant)'. Verify the data store id and tenant scope before re-running."
+                throw "Data store $(Format-LogSafeText $explicitId) was not found in the Configuration Service for tenant '$(Format-LogSafeText $Tenant)'. Verify the data store id and tenant scope before re-running."
             }
 
             $routeContexts = @()
@@ -1294,7 +1294,7 @@ function Resolve-SeedTargetDataStores {
             }
             if ($matchedInstances.Count -gt 1) {
                 $ids = ($matchedInstances | ForEach-Object { $_.id }) -join ", "
-                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Use -DataStoreId to disambiguate, or clean up duplicate CMS state before re-running."
+                throw "Multiple data stores found with route context schoolYear=$(Format-LogSafeText $year) (data store ids: $(Format-LogSafeText $ids)). Use -DataStoreId to disambiguate, or clean up duplicate Configuration Service state before re-running."
             }
             $matchedIds.Add([long]$matchedInstances[0].id)
         }
@@ -1307,7 +1307,7 @@ function Resolve-SeedTargetDataStores {
 
     # No selector; auto-select if exactly one instance.
     if ($instances.Count -eq 0) {
-        throw "No DMS data stores found in CMS. Run configure-local-data-store.ps1 to create data stores, then re-run seed delivery."
+        throw "No DMS data stores found in the Configuration Service. Run configure-local-data-store.ps1 to create data stores, then re-run seed delivery."
     }
 
     if ($instances.Count -gt 1) {
@@ -1626,9 +1626,15 @@ function Invoke-BulkLoadClient {
 # Skip orchestration when dot-sourced (tests load helpers without running the pipeline).
 if ($MyInvocation.InvocationName -eq '.') { return }
 
+# Refuse to run under a leaked restore-candidate override before resolving anything (the
+# resolver below can seed .env from .env.example): seed loading talks to the live API and must
+# only ever see the ACTIVE bootstrap workspace.
+Assert-NoBootstrapRootOverride -PhaseName "load-dms-seed-data.ps1"
+
 # Resolve environment file through the shared resolver (explicit path, else .env - seeded
 # once from .env.example when absent, so the example itself is never consumed at runtime).
 $EnvironmentFile = Resolve-LocalSettingsEnvironmentFile -Path $EnvironmentFile
+Write-LegacyEnvironmentVariableWarning -EnvironmentFile $EnvironmentFile
 
 # Derive the pinned Ed-Fi-Data-Standard ref tag from the resolved environment file now, before
 # any BuiltIn seed-source materialization reads $script:DataStandardRefTag (see
@@ -1795,7 +1801,7 @@ foreach ($tier in $tiers) {
 $envValues = ReadValuesFromEnvFile -EnvironmentFile $EnvironmentFile
 $cmsUrl = Resolve-CmsBaseUrl -EnvValues $envValues
 $identityProvider = Resolve-IdentityProvider -EnvValues $envValues -OverrideProvider $IdentityProvider
-$tenant = if ($envValues.ContainsKey("CONFIG_SERVICE_TENANT")) { [string]$envValues.CONFIG_SERVICE_TENANT } else { "" }
+$tenant = if ($envValues.ContainsKey("DMS_CONFIGURATION_SERVICE_TENANT")) { [string]$envValues.DMS_CONFIGURATION_SERVICE_TENANT } else { "" }
 $resolvedDmsBaseUrl = if (-not [string]::IsNullOrWhiteSpace($DmsBaseUrl)) {
     $DmsBaseUrl
 }
@@ -1818,7 +1824,7 @@ $nsPrefixes = Get-SeedLoaderNamespacePrefixes `
     -AdditionalPrefixes $AdditionalNamespacePrefix
 
 # --- Step 4: CMS admin token ---
-Write-Host "Obtaining CMS admin token..."
+Write-Host "Obtaining a Configuration Service admin token..."
 Add-CmsClient -CmsUrl $cmsUrl
 $cmsToken = Get-CmsToken -CmsUrl $cmsUrl
 
@@ -1826,7 +1832,7 @@ $cmsToken = Get-CmsToken -CmsUrl $cmsUrl
 # Add-Application stores ClaimSetName as a string. A stale Config image without the embedded
 # SeedLoader claim set would accept credential creation, then BulkLoadClient would surface
 # confusing 401/403 noise. Fail fast against the live CMS instead.
-Write-Host "Verifying CMS has the SeedLoader claim set loaded..."
+Write-Host "Verifying the Configuration Service has the SeedLoader claim set loaded..."
 Assert-CmsSeedLoaderClaimSetLoaded -CmsUrl $cmsUrl -AccessToken $cmsToken -Tenant $tenant
 
 # --- Step 5: Instance selector resolution ---

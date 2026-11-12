@@ -8,6 +8,7 @@ using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.Hosting;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
@@ -20,7 +21,10 @@ public class SecurityHeadersMiddlewareTests
     // and the response start is simulated by invoking it after the middleware runs.
     private static async Task<IHeaderDictionary> RunAndStartResponseAsync(
         Action<IHeaderDictionary>? seedUpstreamHeaders = null,
-        int statusCode = StatusCodes.Status200OK
+        int statusCode = StatusCodes.Status200OK,
+        string scheme = "http",
+        string host = "dms.example",
+        string environmentName = "Production"
     )
     {
         var headers = new HeaderDictionary();
@@ -44,13 +48,18 @@ public class SecurityHeadersMiddlewareTests
             );
 
         var features = new FeatureCollection();
-        features.Set<IHttpRequestFeature>(new HttpRequestFeature());
+        var requestFeature = new HttpRequestFeature { Scheme = scheme };
+        requestFeature.Headers["Host"] = host;
+        features.Set<IHttpRequestFeature>(requestFeature);
         features.Set<IHttpResponseFeature>(responseFeature);
         var context = new DefaultHttpContext(features);
 
         seedUpstreamHeaders?.Invoke(context.Response.Headers);
 
-        var middleware = new SecurityHeadersMiddleware(_ => Task.CompletedTask);
+        IHostEnvironment environment = A.Fake<IHostEnvironment>();
+        A.CallTo(() => environment.EnvironmentName).Returns(environmentName);
+
+        var middleware = new SecurityHeadersMiddleware(_ => Task.CompletedTask, environment);
         await middleware.Invoke(context);
 
         if (onStarting is not null)
@@ -129,12 +138,77 @@ public class SecurityHeadersMiddlewareTests
     public async Task It_does_not_overwrite_a_cache_control_already_present()
     {
         // TryAdd semantics for Cache-Control specifically: a handler that has chosen its own
-        // directive - GetTokenInfoHandler sets no-cache - keeps it. Run on a failing status so the
-        // middleware would otherwise have written no-store here.
+        // directive keeps it. Run on a failing status so the middleware would otherwise have
+        // written no-store here.
         IHeaderDictionary headers = await RunAndStartResponseAsync(
             h => h["Cache-Control"] = "no-cache",
             StatusCodes.Status404NotFound
         );
         headers["Cache-Control"].ToString().Should().Be("no-cache");
+    }
+
+    [Test]
+    public async Task It_adds_x_frame_options_deny()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync();
+        headers["X-Frame-Options"].ToString().Should().Be("DENY");
+    }
+
+    [Test]
+    public async Task It_adds_a_content_security_policy_that_denies_everything()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync();
+        headers["Content-Security-Policy"]
+            .ToString()
+            .Should()
+            .Be("default-src 'none'; frame-ancestors 'none'");
+    }
+
+    [Test]
+    public async Task It_adds_hsts_over_https_for_a_non_loopback_host()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(scheme: "https", host: "dms.example");
+        headers["Strict-Transport-Security"].ToString().Should().Be("max-age=31536000");
+    }
+
+    [Test]
+    public async Task It_does_not_add_hsts_over_http()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(scheme: "http", host: "dms.example");
+        headers.ContainsKey("Strict-Transport-Security").Should().BeFalse();
+    }
+
+    [Test]
+    public async Task It_does_not_add_hsts_over_https_for_a_non_loopback_host_in_development()
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(
+            scheme: "https",
+            host: "dms.example",
+            environmentName: Environments.Development
+        );
+        headers.ContainsKey("Strict-Transport-Security").Should().BeFalse();
+    }
+
+    [TestCase("localhost")]
+    [TestCase("LOCALHOST")]
+    [TestCase("127.0.0.1")]
+    [TestCase("[::1]")]
+    public async Task It_does_not_add_hsts_over_https_for_a_loopback_host(string host)
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(scheme: "https", host: host);
+        headers.ContainsKey("Strict-Transport-Security").Should().BeFalse();
+    }
+
+    [TestCase("X-Frame-Options", "SAMEORIGIN")]
+    [TestCase("Content-Security-Policy", "default-src 'self'")]
+    [TestCase("Strict-Transport-Security", "max-age=60")]
+    public async Task It_does_not_overwrite_a_security_header_already_present(string name, string value)
+    {
+        IHeaderDictionary headers = await RunAndStartResponseAsync(
+            h => h[name] = value,
+            scheme: "https",
+            host: "dms.example"
+        );
+        headers[name].ToString().Should().Be(value);
     }
 }

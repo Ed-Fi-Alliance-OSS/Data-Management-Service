@@ -1,0 +1,31 @@
+{
+  "name": "Policy\nName",
+  "resourceClaims": [
+    {
+      "name": "edfi/domain",
+      "isParent": true
+    },
+    {
+      "name": "edfi/student",
+      "authorizationStrategyOverridesForCRUD": [
+        {
+          "actionName": "Read",
+          "authorizationStrategies": [
+            {
+              "name": "Base"
+            }
+          ]
+        },
+        {
+          "actionName": "Create",
+          "authorizationStrategies": [
+            {
+              "name": "Base"
+            },
+            null
+          ]
+        }
+      ]
+    }
+  ]
+}

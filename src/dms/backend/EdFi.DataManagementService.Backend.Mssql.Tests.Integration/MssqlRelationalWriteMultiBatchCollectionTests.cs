@@ -18,7 +18,6 @@ using EdFi.DataManagementService.Core.Backend;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
-using EdFi.DataManagementService.Core.Extraction;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
@@ -224,7 +223,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -257,7 +255,6 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             ResourceInfo: SchoolResourceInfo,
             DocumentInfo: new DocumentInfo(
                 DocumentIdentity: schoolIdentity,
-                ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
                 DocumentReferences: [],
                 DocumentReferenceArrays: [],
                 DescriptorReferences: [],
@@ -441,13 +438,9 @@ file static class MultiBatchCollectionsIntegrationTestSupport
         var descriptorIdentity = new DocumentIdentity([
             new DocumentIdentityElement(
                 DocumentIdentity.DescriptorIdentityJsonPath,
-                addressTypeDescriptorUri.ToLowerInvariant()
+                addressTypeDescriptorUri
             ),
         ]);
-        var descriptorReferentialId = ReferentialIdCalculator.ReferentialIdFrom(
-            descriptorResourceInfo,
-            descriptorIdentity
-        );
 
         DescriptorReference[] descriptorReferences =
         [
@@ -456,14 +449,12 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 .Select(index => new DescriptorReference(
                     ResourceInfo: descriptorResourceInfo,
                     DocumentIdentity: descriptorIdentity,
-                    ReferentialId: descriptorReferentialId,
                     Path: new JsonPath($"$.addresses[{index}].addressTypeDescriptor")
                 )),
         ];
 
         return new DocumentInfo(
             DocumentIdentity: schoolIdentity,
-            ReferentialId: ReferentialIdCalculator.ReferentialIdFrom(SchoolResourceInfo, schoolIdentity),
             DocumentReferences: [],
             DocumentReferenceArrays: [],
             DescriptorReferences: descriptorReferences,
@@ -517,16 +508,16 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             DocumentUuid: documentUuid
         );
 
-    public static async Task<long> SeedAddressTypeDescriptorAsync(
+    public static async Task<int> SeedAddressTypeDescriptorAsync(
         MssqlGeneratedDdlTestDatabase database,
         MappingSet mappingSet,
         Guid documentUuid,
-        string uri,
         string codeValue
     )
     {
         short resourceKeyId = mappingSet.ResourceKeyIdByResource[AddressTypeDescriptorResource];
 
+        await database.ExecuteNonQueryAsync(CompactDescriptorSeedSupport.MssqlSeparateDocumentIdsSql);
         long documentId = await database.ExecuteScalarAsync<long>(
             """
             DECLARE @Inserted TABLE ([DocumentId] bigint);
@@ -539,81 +530,38 @@ file static class MultiBatchCollectionsIntegrationTestSupport
             new SqlParameter("@resourceKeyId", resourceKeyId)
         );
 
-        await database.ExecuteNonQueryAsync(
+        var descriptorId = await database.ExecuteScalarAsync<int>(
             """
+            DECLARE @descriptor TABLE ([DescriptorId] int);
             INSERT INTO [dms].[Descriptor] (
                 [DocumentId],
                 [ResourceKeyId],
                 [Namespace],
                 [CodeValue],
                 [ShortDescription],
-                [Description],
-                [Discriminator],
-                [Uri]
+                [Description]
             )
+            OUTPUT INSERTED.[DescriptorId] INTO @descriptor ([DescriptorId])
             VALUES (
                 @documentId,
                 @resourceKeyId,
                 @namespace,
                 @codeValue,
                 @shortDescription,
-                @description,
-                @discriminator,
-                @uri
+                @description
             );
+            SELECT [DescriptorId] FROM @descriptor;
             """,
             new SqlParameter("@documentId", documentId),
             new SqlParameter("@resourceKeyId", resourceKeyId),
             new SqlParameter("@namespace", "uri://ed-fi.org/AddressTypeDescriptor"),
             new SqlParameter("@codeValue", codeValue),
             new SqlParameter("@shortDescription", codeValue),
-            new SqlParameter("@description", codeValue),
-            new SqlParameter("@discriminator", "Ed-Fi:AddressTypeDescriptor"),
-            new SqlParameter("@uri", uri)
+            new SqlParameter("@description", codeValue)
         );
 
-        var referentialId = CreateDescriptorReferentialId("Ed-Fi", "AddressTypeDescriptor", uri);
-        var existing = await database.QueryRowsAsync(
-            """
-            SELECT [ReferentialId]
-            FROM [dms].[ReferentialIdentity]
-            WHERE [DocumentId] = @documentId
-              AND [ResourceKeyId] = @resourceKeyId;
-            """,
-            new SqlParameter("@documentId", documentId),
-            new SqlParameter("@resourceKeyId", resourceKeyId)
-        );
-
-        if (existing.Count == 0)
-        {
-            await database.ExecuteNonQueryAsync(
-                """
-                INSERT INTO [dms].[ReferentialIdentity] ([ReferentialId], [DocumentId], [ResourceKeyId])
-                VALUES (@referentialId, @documentId, @resourceKeyId);
-                """,
-                new SqlParameter("@referentialId", referentialId.Value),
-                new SqlParameter("@documentId", documentId),
-                new SqlParameter("@resourceKeyId", resourceKeyId)
-            );
-        }
-
-        return documentId;
+        return descriptorId;
     }
-
-    private static ReferentialId CreateDescriptorReferentialId(
-        string projectName,
-        string resourceName,
-        string uri
-    ) =>
-        ReferentialIdCalculator.ReferentialIdFrom(
-            new BaseResourceInfo(new ProjectName(projectName), new ResourceName(resourceName), true),
-            new DocumentIdentity([
-                new DocumentIdentityElement(
-                    new JsonPath(DocumentIdentity.DescriptorIdentityJsonPath.Value),
-                    uri.ToLowerInvariant()
-                ),
-            ])
-        );
 
     public static async Task<
         IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow>
@@ -634,7 +582,7 @@ file static class MultiBatchCollectionsIntegrationTestSupport
                 GetInt64(row, "School_DocumentId"),
                 GetInt32(row, "Ordinal"),
                 GetString(row, "City"),
-                GetInt64(row, "AddressTypeDescriptor_DescriptorId")
+                (int)row["AddressTypeDescriptor_DescriptorId"]!
             ))
             .ToArray();
     }
@@ -1214,8 +1162,8 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descr
         "0f0f0f0f-0000-0000-0000-0000000000d2"
     );
 
-    private long _originalDescriptorId;
-    private long _replacementDescriptorId;
+    private int _originalDescriptorId;
+    private int _replacementDescriptorId;
     private long _documentId;
     private UpdateResult _result = null!;
     private IReadOnlyList<NoProfileMultiBatchCollectionScenarios.SchoolAddressWithDescriptorRow> _addressesBefore =
@@ -1244,7 +1192,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descr
                 _database,
                 _mappingSet,
                 OriginalDescriptorDocumentUuid,
-                MultiBatchCollectionsIntegrationTestSupport.OriginalAddressTypeDescriptorUri,
                 "Physical"
             );
         _replacementDescriptorId =
@@ -1252,7 +1199,6 @@ public class Given_A_Mssql_Relational_Write_Multi_Batch_Collection_Changed_Descr
                 _database,
                 _mappingSet,
                 ReplacementDescriptorDocumentUuid,
-                MultiBatchCollectionsIntegrationTestSupport.ReplacementAddressTypeDescriptorUri,
                 "Mailing"
             );
 

@@ -48,10 +48,8 @@ public sealed class Given_Postgresql_PartitionPublicContract : PostgresqlApiInte
         PartitionPublicContractScenario.It_reports_every_reserved_parameter_in_canonical_order(Harness);
 
     [Test]
-    public Task It_answers_a_malformed_count_and_an_unknown_field_with_the_unknown_field_alone() =>
-        PartitionPublicContractScenario.It_answers_a_malformed_count_and_an_unknown_field_with_the_unknown_field_alone(
-            Harness
-        );
+    public Task It_answers_a_malformed_count_and_warns_of_an_unknown_field() =>
+        PartitionPublicContractScenario.It_answers_a_malformed_count_and_warns_of_an_unknown_field(Harness);
 
     [Test]
     public Task It_answers_a_malformed_count_and_a_malformed_window_with_the_window_alone() =>
@@ -60,8 +58,8 @@ public sealed class Given_Postgresql_PartitionPublicContract : PostgresqlApiInte
         );
 
     [Test]
-    public Task It_answers_an_unknown_field_and_a_reserved_parameter_with_the_unknown_field_alone() =>
-        PartitionPublicContractScenario.It_answers_an_unknown_field_and_a_reserved_parameter_with_the_unknown_field_alone(
+    public Task It_answers_an_unknown_field_and_a_reserved_parameter_for_the_reserved_parameter() =>
+        PartitionPublicContractScenario.It_answers_an_unknown_field_and_a_reserved_parameter_for_the_reserved_parameter(
             Harness
         );
 

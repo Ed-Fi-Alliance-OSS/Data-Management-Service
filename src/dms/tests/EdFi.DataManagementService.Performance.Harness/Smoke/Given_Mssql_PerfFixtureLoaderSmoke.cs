@@ -19,6 +19,6 @@ public class Given_Mssql_PerfFixtureLoaderSmoke : MssqlApiIntegrationTestBase
     [Test]
     public async Task It_loads_verifies_and_serves_the_smoke_fixture()
     {
-        await PerfFixtureSmokeScenario.RunAsync(Harness, PerfProvider.Mssql);
+        await PerfFixtureSmokeScenario.RunAsync(Harness, PerfProvider.Mssql, PrimaryConnectionString);
     }
 }

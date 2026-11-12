@@ -5,6 +5,7 @@
 
 using System.Data.Common;
 using System.Text.Json;
+using Dapper;
 using EdFi.DmsConfigurationService.Backend.Claims;
 using EdFi.DmsConfigurationService.Backend.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
@@ -12,11 +13,13 @@ using EdFi.DmsConfigurationService.Backend.Mssql.ClaimsDataLoader;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.ClaimSets;
 using EdFi.DmsConfigurationService.DataModel.Model.Tenant;
 using EdFi.DmsConfigurationService.DataModel.Model.Vendor;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -385,6 +388,131 @@ public class ClaimSetTests : DatabaseTest
     }
 
     [TestFixture]
+    public class Given_a_rename_of_a_claim_set_in_use : ClaimSetTests
+    {
+        private static readonly DateTime _earlierPendingSince = new(2026, 1, 2, 3, 4, 5, DateTimeKind.Utc);
+
+        // Deliberately not representable by SQL datetime's 1/300-second precision.
+        private static readonly DateTime _renameTimestamp = new DateTime(
+            2026,
+            11,
+            9,
+            2,
+            5,
+            2,
+            DateTimeKind.Utc
+        ).AddTicks(1972605);
+        private Dictionary<string, DateTime?> _pendingSince = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            await EnsureClaimsDataLoaded();
+
+            var vendorResult = await new VendorRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<VendorRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            ).InsertVendor(
+                new()
+                {
+                    Company = "Test Company",
+                    ContactEmailAddress = "test@test.com",
+                    ContactName = "Fake Name",
+                    NamespacePrefixes = "FakePrefix1",
+                }
+            );
+            int vendorId = vendorResult.Should().BeOfType<VendorInsertResult.Success>().Subject.Id;
+
+            IApplicationRepository applicationRepository = new ApplicationRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ApplicationRepository>.Instance,
+                new TestAuditContext(),
+                new TenantContextProvider()
+            );
+            foreach (
+                (string applicationName, string claimSetName) in new[]
+                {
+                    ("Renamed", "Renamed-ClaimSet"),
+                    ("Renamed-Already-Pending", "Renamed-ClaimSet"),
+                    ("Other", "Other-ClaimSet"),
+                }
+            )
+            {
+                (
+                    await applicationRepository.InsertApplication(
+                        new()
+                        {
+                            ApplicationName = applicationName,
+                            VendorId = vendorId,
+                            ClaimSetName = claimSetName,
+                            EducationOrganizationIds = [1],
+                        },
+                        new() { ClientId = Guid.NewGuid().ToString(), ClientUuid = Guid.NewGuid() }
+                    )
+                ).Should().BeOfType<ApplicationInsertResult.Success>();
+            }
+
+            await Connection!.ExecuteAsync(
+                """
+                UPDATE ac
+                SET IdentityProviderSyncPendingSince =
+                    CASE WHEN a.ApplicationName = 'Renamed-Already-Pending' THEN @PendingSince END
+                FROM dmscs.ApiClient ac
+                INNER JOIN dmscs.Application a ON ac.ApplicationId = a.Id;
+                """,
+                new { PendingSince = _earlierPendingSince }
+            );
+
+            var insertResult = await _repository.InsertClaimSet(new() { Name = "Renamed-ClaimSet" });
+            int claimSetId = insertResult.Should().BeOfType<ClaimSetInsertResult.Success>().Subject.Id;
+
+            var auditContext = A.Fake<IAuditContext>();
+            A.CallTo(() => auditContext.GetCurrentTimestamp()).Returns(_renameTimestamp);
+            A.CallTo(() => auditContext.GetCurrentUser()).Returns("test-user");
+            var renameRepository = new ClaimSetRepository(
+                MssqlTestConfiguration.DatabaseOptions,
+                NullLogger<ClaimSetRepository>.Instance,
+                new ClaimsHierarchyRepository(
+                    MssqlTestConfiguration.DatabaseOptions,
+                    NullLogger<ClaimsHierarchyRepository>.Instance,
+                    auditContext
+                ),
+                new ClaimsHierarchyManager(),
+                auditContext,
+                new TenantContextProvider()
+            );
+
+            (await renameRepository.UpdateClaimSet(new() { Id = claimSetId, Name = "Renamed-ClaimSet-New" }))
+                .Should()
+                .BeOfType<ClaimSetUpdateResult.Success>();
+
+            _pendingSince = (
+                await Connection!.QueryAsync<(string ApplicationName, DateTime? PendingSince)>(
+                    """
+                    SELECT a.ApplicationName, ac.IdentityProviderSyncPendingSince
+                    FROM dmscs.ApiClient ac
+                    INNER JOIN dmscs.Application a ON ac.ApplicationId = a.Id;
+                    """
+                )
+            ).ToDictionary(row => row.ApplicationName, row => row.PendingSince);
+        }
+
+        [Test]
+        public void It_marks_the_client_of_an_Application_using_the_claim_set() =>
+            _pendingSince["Renamed"].Should().Be(_renameTimestamp);
+
+        [Test]
+        public void It_keeps_the_original_time_of_an_already_pending_client() =>
+            _pendingSince["Renamed-Already-Pending"].Should().Be(_earlierPendingSince);
+
+        [Test]
+        public void It_leaves_the_client_of_an_Application_using_another_claim_set_unmarked() =>
+            _pendingSince["Other"].Should().BeNull();
+    }
+
+    [TestFixture]
     public class UpdateRetryPolicyTests : ClaimSetTests
     {
         private ClaimSetInsertCommand _insertClaimSet = null!;
@@ -466,21 +594,17 @@ public class ClaimSetTests : DatabaseTest
 
             // Assert
 
-            // Ensure the correct number of attempts were made to apply the claim name change to the hierarchy
-            claimsHierarchyRepository
-                .SaveClaimsHierarchyInvocationCount.Should()
-                .Be(Math.Min(4, multiUserConflictCount + 1));
+            int saveAttempts = claimsHierarchyRepository.SaveClaimsHierarchyInvocationCount;
+            ClaimSetUpdateResult expectedResult = expectSuccess
+                ? new ClaimSetUpdateResult.Success()
+                : new ClaimSetUpdateResult.FailureMultiUserConflict();
 
-            if (expectSuccess)
-            {
-                // Verify that the update succeeded after retries were attempted
-                updateResult.Should().BeOfType<ClaimSetUpdateResult.Success>();
-            }
-            else
-            {
-                // Verify that the update failed after 3 retries
-                updateResult.Should().BeOfType<ClaimSetUpdateResult.FailureMultiUserConflict>();
-            }
+            // Each assertion reports both the attempt count and the actual update result, so an unrelated
+            // failure (such as FailureUnknown) cannot surface only as a retry-count mismatch
+            saveAttempts
+                .Should()
+                .Be(Math.Min(4, multiUserConflictCount + 1), "the update returned {0}", updateResult);
+            updateResult.Should().Be(expectedResult, "the save was attempted {0} times", saveAttempts);
         }
 
         private static ClaimsHierarchyRepository CreateClaimsHierarchyRepository()
@@ -500,13 +624,6 @@ public class ClaimSetTests : DatabaseTest
             int _conflictingUpdateCount = int.MaxValue
         ) : IClaimsHierarchyRepository
         {
-            private readonly IClaimsHierarchyRepository _multiUserClaimsHierarchyRepository =
-                new ClaimsHierarchyRepository(
-                    MssqlTestConfiguration.DatabaseOptions,
-                    NullLogger<ClaimsHierarchyRepository>.Instance,
-                    new TestAuditContext()
-                );
-
             private int _remainingConflictingUpdateCount = _conflictingUpdateCount;
 
             public Task<ClaimsHierarchyGetResult> GetClaimsHierarchy(DbTransaction? transaction = null)
@@ -526,23 +643,20 @@ public class ClaimSetTests : DatabaseTest
                 // Increment invocation counter for inspection by tests
                 SaveClaimsHierarchyInvocationCount++;
 
-                // If the call is part of an existing transaction, force a multi-user conflict on a separate connection
-                if (transaction != null && _remainingConflictingUpdateCount > 0)
+                // If the call is part of an existing transaction, force a multi-user conflict by committing
+                // another user's version change on a separate connection. The version is advanced explicitly
+                // rather than by saving through the repository, because the repository stamps SYSUTCDATETIME(),
+                // which can return the same value for successive writes and leave the supplied version current.
+                if (transaction is not null && _remainingConflictingUpdateCount > 0)
                 {
                     _remainingConflictingUpdateCount--;
 
-                    var hierarchyResult = GetCurrentClaimsHierarchy();
-
-                    hierarchyResult.claims.Add(
-                        new Claim() { Name = $"Test-MultiUser-Claim-{Random.Shared.Next(100000)}" }
+                    await using var connection = await OpenConnectionAsync();
+                    int affectedRows = await connection.ExecuteAsync(
+                        "UPDATE dmscs.ClaimsHierarchy SET LastModifiedDate = DATEADD(SECOND, 1, LastModifiedDate);"
                     );
 
-                    var result = await _multiUserClaimsHierarchyRepository.SaveClaimsHierarchy(
-                        hierarchyResult.claims,
-                        hierarchyResult.lastModifiedDate
-                    );
-
-                    result.Should().BeOfType<ClaimsHierarchySaveResult.Success>();
+                    affectedRows.Should().Be(1);
                 }
 
                 // Pass the call through
@@ -551,21 +665,6 @@ public class ClaimSetTests : DatabaseTest
                     existingLastModifiedDate,
                     transaction
                 );
-
-                (List<Claim> claims, DateTime lastModifiedDate) GetCurrentClaimsHierarchy()
-                {
-                    var claimsResult = _multiUserClaimsHierarchyRepository
-                        .GetClaimsHierarchy()
-                        .ConfigureAwait(false)
-                        .GetAwaiter()
-                        .GetResult();
-
-                    claimsResult.Should().BeOfType<ClaimsHierarchyGetResult.Success>();
-
-                    var success = (claimsResult as ClaimsHierarchyGetResult.Success)!;
-
-                    return (success.Claims, success.LastModifiedDate);
-                }
             }
         }
     }

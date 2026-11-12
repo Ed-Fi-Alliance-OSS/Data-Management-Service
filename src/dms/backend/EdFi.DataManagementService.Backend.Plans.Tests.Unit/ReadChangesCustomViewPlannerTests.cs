@@ -47,6 +47,9 @@ public abstract class ReadChangesCustomViewPlannerTestBase(SqlDialect dialect, b
             table.SourceTable == new DbTableName(new DbSchemaName("edfi"), resourceName)
         );
 
+    protected short DescriptorResourceKeyId(string name) =>
+        _mapping.ResourceKeyIdByResource[new("Ed-Fi", name)];
+
     protected DbColumnName OldDescriptorColumn(
         string resourceName,
         string sourcePath,
@@ -131,6 +134,7 @@ public class Given_ReadChanges_Custom_View_With_Unified_Descriptor_Basis(
             .BeEquivalentTo(
                 new ReadChangesCustomViewBasis.DescriptorSeek(
                     new QualifiedResourceName("Ed-Fi", "ProgramEvaluationPeriodDescriptor"),
+                    DescriptorResourceKeyId("ProgramEvaluationPeriodDescriptor"),
                     OldDescriptorColumn(
                         "ProgramEvaluationElement",
                         sourcePath,
@@ -196,7 +200,8 @@ public class Given_ReadChanges_Custom_View_With_Unified_Descriptor_Identity(
                         sourcePath,
                         TrackedChangeColumnRole.DescriptorCodeValue
                     ),
-                    new QualifiedResourceName("Ed-Fi", "ProgramEvaluationPeriodDescriptor")
+                    new QualifiedResourceName("Ed-Fi", "ProgramEvaluationPeriodDescriptor"),
+                    DescriptorResourceKeyId("ProgramEvaluationPeriodDescriptor")
                 )
             );
     }

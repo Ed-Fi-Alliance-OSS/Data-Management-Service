@@ -16,6 +16,7 @@ using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Postgresql.Tests.Integration;
@@ -153,6 +154,42 @@ public class Given_PostgresqlDescriptorWriteHandler
         var result = await handler.HandlePutAsync(putRequest);
 
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
+    }
+
+    [Test]
+    public async Task It_treats_a_sql_server_collation_alias_as_a_different_descriptor_on_postgresql()
+    {
+        var handler = ResolveHandler();
+        var create = CreatePostRequest(
+            _database.Fixture.SchoolTypeDescriptorResource,
+            """{ "namespace": "uri://ed-fi.org/SchoolTypeDescriptor", "codeValue": "Strasse", "shortDescription": "Strasse" }"""
+        );
+        (await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(create))
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
+        const string AliasBody =
+            """{ "namespace": "uri://ed-fi.org/SchoolTypeDescriptor", "codeValue": "Stra\u00DFe", "shortDescription": "Strasse" }""";
+
+        // pg_c_utf8 folds case only, so the alias names a different descriptor: POST creates it and PUT is an
+        // identity change.
+        (
+            await handler.HandlePutAsync(
+                CreatePutRequest(
+                    _database.Fixture.SchoolTypeDescriptorResource,
+                    create.DocumentUuid,
+                    AliasBody
+                )
+            )
+        )
+            .Should()
+            .BeOfType<UpdateResult.UpdateFailureImmutableIdentity>();
+        (
+            await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(
+                CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, AliasBody)
+            )
+        )
+            .Should()
+            .BeOfType<UpsertResult.InsertSuccess>();
     }
 
     [Test]
@@ -545,6 +582,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
+        await BackdateDescriptorAsync(documentUuid);
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
 
         // PUT with changed description
@@ -565,7 +603,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var stampsAfterUpdate = await ReadTrackingStampsAsync(documentUuid);
 
         stampsAfterUpdate.ContentVersion.Should().BeGreaterThan(stampsAfterInsert.ContentVersion);
-        stampsAfterUpdate.ContentLastModifiedAt.Should().BeOnOrAfter(stampsAfterInsert.ContentLastModifiedAt);
+        stampsAfterUpdate.ContentLastModifiedAt.Should().BeAfter(stampsAfterInsert.ContentLastModifiedAt);
     }
 
     [Test]
@@ -587,6 +625,7 @@ public class Given_PostgresqlDescriptorWriteHandler
         var insertResult = await handler.HandlePostWithSamePolicyForCreateAndUpdateAsync(createRequest);
         var documentUuid = ((UpsertResult.InsertSuccess)insertResult).NewDocumentUuid;
 
+        await BackdateDescriptorAsync(documentUuid);
         var stampsAfterInsert = await ReadTrackingStampsAsync(documentUuid);
 
         // PUT with identical values
@@ -779,20 +818,36 @@ public class Given_PostgresqlDescriptorWriteHandler
 
     // ── Helper methods ──────────────────────────────────────────────────
 
+    private async Task BackdateDescriptorAsync(DocumentUuid documentUuid)
+    {
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            UPDATE dms."Descriptor" descriptor SET "ContentLastModifiedAt" = '2000-01-01T00:00:00Z'
+            FROM dms."Document" doc
+            WHERE descriptor."DocumentId" = doc."DocumentId" AND doc."DocumentUuid" = @uuid;
+            """;
+        command.Parameters.AddWithValue("uuid", documentUuid.Value);
+        await command.ExecuteNonQueryAsync();
+    }
+
     private async Task<DocumentTrackingStamps> ReadTrackingStampsAsync(DocumentUuid documentUuid)
     {
         await using var dataSource = Npgsql.NpgsqlDataSource.Create(_database.ConnectionString);
         await using var connection = await dataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT "ContentVersion", "ContentLastModifiedAt"
-            FROM dms."Document"
-            WHERE "DocumentUuid" = @documentUuid;
+            SELECT doc."ContentVersion", descriptor."ContentLastModifiedAt", descriptor."ContentVersion"
+            FROM dms."Document" doc
+            JOIN dms."Descriptor" descriptor ON descriptor."DocumentId" = doc."DocumentId"
+            WHERE doc."DocumentUuid" = @documentUuid;
             """;
         command.Parameters.AddWithValue("@documentUuid", documentUuid.Value);
         await using var reader = await command.ExecuteReaderAsync();
         (await reader.ReadAsync()).Should().BeTrue("document should exist");
 
+        reader.GetInt64(2).Should().Be(reader.GetInt64(0));
         return new DocumentTrackingStamps(reader.GetInt64(0), reader.GetDateTime(1));
     }
 
@@ -864,22 +919,11 @@ public class Given_PostgresqlDescriptorWriteHandler
         string? profileName = null
     )
     {
-        var body = JsonNode.Parse(bodyJson)!;
-        var descriptorDoc = new Core.Model.DescriptorDocument(body);
-        var resourceInfo = new BaseResourceInfo(
-            new ProjectName(resource.ProjectName),
-            new ResourceName(resource.ResourceName),
-            true
-        );
-        var identity = descriptorDoc.ToDocumentIdentity();
-        var referentialId = Core.Extraction.ReferentialIdCalculator.ReferentialIdFrom(resourceInfo, identity);
-
         return new DescriptorWriteRequest(
             _database.MappingSet,
             resource,
-            body,
+            JsonNode.Parse(bodyJson)!,
             new DocumentUuid(Guid.NewGuid()),
-            referentialId,
             new TraceId("test-trace")
         )
         {
@@ -899,7 +943,6 @@ public class Given_PostgresqlDescriptorWriteHandler
             resource,
             JsonNode.Parse(bodyJson)!,
             documentUuid,
-            referentialId: null,
             new TraceId("test-trace")
         )
         {
@@ -922,6 +965,72 @@ public class Given_PostgresqlDescriptorWriteHandler
         {
             WritePrecondition = writePrecondition ?? new WritePrecondition.None(),
         };
+    }
+
+    [Test]
+    public async Task It_keeps_DocumentCacheMaterializer_Descriptor_updates_and_work_on_the_owning_document()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_stored_compact_descriptor_identity_across_its_lifecycle()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_DocumentCacheMaterializer_Descriptor_stored_casing_after_a_case_variant_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new Npgsql.NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorCacheScenario.ExecuteCasingUpdateAsync(
+            connection,
+            _database.MappingSet,
+            _database.ConnectionString,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheMaterializer>(),
+            scope.ServiceProvider.GetRequiredService<IDocumentCacheWriter>(),
+            body => CreatePostRequest(_database.Fixture.SchoolTypeDescriptorResource, body)
+        );
+    }
+
+    [Test]
+    public async Task It_keeps_the_stored_casing_for_a_case_variant_compact_descriptor_post()
+    {
+        using var scope = CreateConfiguredScope();
+        await using var connection = new NpgsqlConnection(_database.ConnectionString);
+        await connection.OpenAsync();
+        await CompactDescriptorWriteScenario.ExecuteCasingUpdateAsync(
+            connection,
+            scope.ServiceProvider.GetRequiredService<IDescriptorWriteHandler>(),
+            scope.ServiceProvider.GetRequiredService<IDescriptorReadHandler>(),
+            (resource, body) => CreatePostRequest(resource, body),
+            _database.Fixture.SchoolTypeDescriptorResource,
+            _database.Fixture.AcademicSubjectDescriptorResource
+        );
     }
 
     private static ServiceProvider CreateServiceProvider()

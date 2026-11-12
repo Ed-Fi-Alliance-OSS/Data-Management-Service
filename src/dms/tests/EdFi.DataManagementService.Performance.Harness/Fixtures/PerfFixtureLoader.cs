@@ -55,8 +55,14 @@ public static class PerfFixtureLoader
                 : MssqlPerfFixtureLoaderSql.ResourceKeyLookupSql
         );
 
-        await LoadDescriptorsAsync(connection, provider, definition);
-        IReadOnlyList<(string Name, long Value)> descriptorParameters = DescriptorParameters(definition);
+        IReadOnlyDictionary<string, int> descriptorIds = await LoadDescriptorsAsync(
+            connection,
+            provider,
+            definition
+        );
+        IReadOnlyList<(string Name, object Value)> descriptorParameters = DescriptorParameters(descriptorIds)
+            .Select(parameter => (parameter.Name, (object)parameter.Value))
+            .ToArray();
 
         string documentInsertSql =
             provider == PerfProvider.Postgresql
@@ -143,44 +149,41 @@ public static class PerfFixtureLoader
 
     /// <summary>
     /// The descriptor-id parameter values student and child inserts bind, keyed by the
-    /// loader parameter names. Ids are analytic: the catalog position above MaxDocumentId.
+    /// loader parameter names. Values are native compact keys returned by the descriptor inserts.
     /// </summary>
-    public static IReadOnlyList<(string Name, long Value)> DescriptorParameters(
-        PerfFixtureDefinition definition
+    public static IReadOnlyList<(string Name, int Value)> DescriptorParameters(
+        IReadOnlyDictionary<string, int> descriptorIds
     ) =>
         [
             (
                 PerfFixtureLoaderParameters.BirthSexDescriptorId,
-                definition.DescriptorDocumentIdFor(PerfFixtureDefinition.SexDescriptorResource)
+                descriptorIds[PerfFixtureDefinition.SexDescriptorResource]
             ),
             (
                 PerfFixtureLoaderParameters.OtherNameTypeDescriptorId,
-                definition.DescriptorDocumentIdFor(PerfFixtureDefinition.OtherNameTypeDescriptorResource)
+                descriptorIds[PerfFixtureDefinition.OtherNameTypeDescriptorResource]
             ),
             (
                 PerfFixtureLoaderParameters.IdentificationDocumentUseDescriptorId,
-                definition.DescriptorDocumentIdFor(
-                    PerfFixtureDefinition.IdentificationDocumentUseDescriptorResource
-                )
+                descriptorIds[PerfFixtureDefinition.IdentificationDocumentUseDescriptorResource]
             ),
             (
                 PerfFixtureLoaderParameters.PersonalInformationVerificationDescriptorId,
-                definition.DescriptorDocumentIdFor(
-                    PerfFixtureDefinition.PersonalInformationVerificationDescriptorResource
-                )
+                descriptorIds[PerfFixtureDefinition.PersonalInformationVerificationDescriptorResource]
             ),
             (
                 PerfFixtureLoaderParameters.VisaDescriptorId,
-                definition.DescriptorDocumentIdFor(PerfFixtureDefinition.VisaDescriptorResource)
+                descriptorIds[PerfFixtureDefinition.VisaDescriptorResource]
             ),
         ];
 
-    private static async Task LoadDescriptorsAsync(
+    private static async Task<IReadOnlyDictionary<string, int>> LoadDescriptorsAsync(
         DbConnection connection,
         PerfProvider provider,
         PerfFixtureDefinition definition
     )
     {
+        Dictionary<string, int> descriptorIds = new(StringComparer.Ordinal);
         foreach (string resourceName in PerfFixtureDefinition.DescriptorResourceNames)
         {
             long descriptorResourceKeyId = await ExecuteScalarAsync(
@@ -229,31 +232,14 @@ public static class PerfFixtureLoader
                     PerfFixtureLoaderParameters.ResourceKeyId,
                     descriptorResourceKeyId
                 );
-                await descriptorInsert.ExecuteNonQueryAsync();
-            }
-
-            await using DbCommand referentialInsert = CreateCommand(
-                connection,
-                provider == PerfProvider.Postgresql
-                    ? PgsqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-                    : MssqlPerfFixtureLoaderSql.DescriptorReferentialIdentityInsertSql
-            );
-            AddObjectParameter(
-                referentialInsert,
-                PerfFixtureLoaderParameters.DescriptorReferentialId,
-                ReferentialIdentityDerivation.DescriptorReferentialId(
+                descriptorIds.Add(
                     resourceName,
-                    PerfFixtureDefinition.DescriptorUriFor(resourceName)
-                )
-            );
-            AddParameter(referentialInsert, PerfFixtureLoaderParameters.DescriptorDocumentId, documentId);
-            AddParameter(
-                referentialInsert,
-                PerfFixtureLoaderParameters.ResourceKeyId,
-                descriptorResourceKeyId
-            );
-            await referentialInsert.ExecuteNonQueryAsync();
+                    await PerfSeederDatabase.ExecuteDescriptorInsertAsync(descriptorInsert)
+                );
+            }
         }
+
+        return descriptorIds;
     }
 
     private static async Task ExecuteRangeInsertAsync(
@@ -261,19 +247,19 @@ public static class PerfFixtureLoader
         string sql,
         long fromOrdinal,
         long toOrdinal,
-        IReadOnlyList<(string Name, long Value)> extraParameters
+        IReadOnlyList<(string Name, object Value)> extraParameters
     )
     {
         await using DbCommand command = CreateCommand(connection, sql);
         AddParameter(command, PerfFixtureLoaderParameters.FromOrdinal, fromOrdinal);
         AddParameter(command, PerfFixtureLoaderParameters.ToOrdinal, toOrdinal);
-        foreach ((string name, long value) in extraParameters)
+        foreach ((string name, object value) in extraParameters)
         {
             // Bind only the parameters the statement references; an unreferenced named
             // parameter is a driver error on PostgreSQL.
             if (sql.Contains("@" + name, StringComparison.Ordinal))
             {
-                AddParameter(command, name, value);
+                AddObjectParameter(command, name, value);
             }
         }
 

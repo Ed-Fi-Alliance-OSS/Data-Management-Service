@@ -263,7 +263,7 @@ public class DocumentCacheTargetContractTests
                 {
                     StatusObservationTimeout = TimeSpan.FromSeconds(9),
                     EndpointTimeout = TimeSpan.FromSeconds(40),
-                    RequiredRole = "dms-document-cache-operator",
+                    RequiredRole = "dms-client",
                 },
             };
 

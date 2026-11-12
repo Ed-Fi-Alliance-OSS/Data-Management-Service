@@ -1,0 +1,21 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Compose overlay for the Publisher snapshot interoperability harness. It is layered onto
+# eng/docker-compose/local-dms.compose.yml through DMS_PLUGINS_COMPOSE_FILES in the harness-owned
+# environment file (Invoke-PublisherSnapshotInteropCheck.ps1 generates it per run). It never edits
+# the tracked compose files or env files.
+services:
+  dms:
+    environment:
+      # Makes every request log "Selected {TargetKind} target for data store {DataStoreId}", which is
+      # how the harness proves which data store (Primary or Snapshot) served a request. Only this one
+      # logger is raised; the default level stays Information.
+      Serilog__MinimumLevel__Override__EdFi.DataManagementService.Core.Middleware.SelectEffectiveDataStoreTargetMiddleware: Debug
+      # A newly registered data store (or snapshot derivative) is picked up within about ten seconds
+      # instead of the ten-minute default.
+      CacheSettings__DataStoreCacheExpirationSeconds: "10"
+      # The Publisher reads and writes far faster than the default 20000 requests per window allows.
+      RateLimit__PermitLimit: "100000"

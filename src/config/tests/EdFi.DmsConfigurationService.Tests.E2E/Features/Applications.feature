@@ -349,7 +349,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Reference 'VendorId' does not exist.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -374,7 +374,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -403,7 +403,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -432,13 +432,13 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HN8RI9E3O45G:00000004",
                     "validationErrors": {
                     "ClaimSetName": [
-                      "Claim set name must not contain white spaces."
+                      "Claim set name must not contain white spaces or commas."
                     ]
                   },
                   "errors": []
@@ -461,7 +461,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -609,7 +609,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "correlationId": "0HNEJBSQ1BUK4:00000004",
@@ -711,7 +711,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Profile does not exist.",
-                    "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                    "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                     "title": "Unresolved Reference",
                     "status": 409,
                     "correlationId": "0HN8RI9E3O45G:00000004",
@@ -737,7 +737,7 @@ Feature: Applications endpoints
                   """
                   {
                     "detail": "Data validation failed. See 'validationErrors' for details.",
-                    "type": "urn:ed-fi:api:bad-request:data",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
                     "title": "Data Validation Failed",
                     "status": 400,
                     "validationErrors": {
@@ -876,20 +876,9 @@ Feature: Applications endpoints
                   }
                   """
              When a token request is attempted with the captured application credentials
-             Then it should respond with 401
-              And the response body is
-                  """
-                  {
-                    "detail": "The request could not be processed. See 'errors' for details.",
-                    "type":"urn:ed-fi:api:security:authentication",
-                    "title":"Authentication Failed",
-                    "status":401,
-                    "validationErrors":{},
-                     "errors": [
-                        "invalid_client. Invalid client or Invalid client credentials"
-                        ]
-                  }
-                  """
+             Then it should respond with 400
+              And the response is the OAuth error "invalid_client" with description "Invalid client or Invalid client credentials"
+              And the response header "WWW-Authenticate" is not present
 
         Scenario: 28 Verify PUT request with mismatched IDs
              When a POST request is made to "/v3/applications" with
@@ -917,7 +906,7 @@ Feature: Applications endpoints
                   """
                     {
                         "detail": "Data validation failed. See 'validationErrors' for details.",
-                        "type": "urn:ed-fi:api:bad-request:data",
+                        "type": "urn:ed-fi:management-api:bad-request:data",
                         "title": "Data Validation Failed",
                         "status": 400,
                         "validationErrors": {
@@ -970,6 +959,215 @@ Feature: Applications endpoints
                     "isApproved": true,
                     "creatorOwnershipTokenId": null,
                     "ownershipTokenIds": [],
-                    "dataStoreIds": []
+                    "dataStoreIds": [],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
+                  }
+                  """
+
+        # Scenarios 30 and 31 cover applications with more than one API client. They are appended
+        # rather than inserted because test data is only cleaned between features, not between
+        # scenarios.
+        @DMS-1344
+        Scenario: 30 Application PUT leaves every API client's data store assignment unchanged
+            # Captured before the second data store is posted, because each POST to /v3/dataStores
+            # replaces the automatically captured {dataStoreId}.
+             When a GET request is made to "/v3/dataStores/{dataStoreId}"
+             Then it should respond with 200
+              And the response body id is captured as "firstDataStoreId"
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                    {
+                        "dataStoreType": "Test",
+                        "name": "Second Data Store {scenarioRunId}",
+                        "connectionString": "Server=test;Database=SecondTestDb;"
+                    }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "secondDataStoreId"
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Multi Client Application 30",
+                   "claimSetName": "ClaimScenario30",
+                   "dataStoreIds": [{firstDataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "initial"
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Additional Client 30",
+                   "isApproved": true,
+                   "dataStoreIds": [{secondDataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "additional"
+             When a PUT request is made to "/v3/applications/{applicationId}" with
+                  """
+                  {
+                   "id": {applicationId},
+                   "vendorId": {vendorId},
+                   "applicationName": "Multi Client Application 30 Updated",
+                   "claimSetName": "ClaimScenario30",
+                   "dataStoreIds": [{secondDataStoreId}]
+                  }
+                  """
+             Then it should respond with 204
+             When a GET request is made to "/v3/apiClients/{initialKey}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {id},
+                    "applicationId": {applicationId},
+                    "clientId": "{initialKey}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Multi Client Application 30",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{firstDataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
+                  }
+                  """
+             When a GET request is made to "/v3/apiClients/{additionalKey}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  {
+                    "id": {apiClientId},
+                    "applicationId": {applicationId},
+                    "clientId": "{additionalKey}",
+                    "clientUuid": "{clientUuid}",
+                    "name": "Additional Client 30",
+                    "isApproved": true,
+                    "creatorOwnershipTokenId": null,
+                    "ownershipTokenIds": [],
+                    "dataStoreIds": [{secondDataStoreId}],
+                    "inheritsApplicationEducationOrganizations": true,
+                    "educationOrganizationIds": []
+                  }
+                  """
+
+        @DMS-1344
+        Scenario: 31 Application credential reset is rejected for a multi-client application
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "Multi Client Application 31",
+                   "claimSetName": "ClaimScenario31",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "initial"
+             When a POST request is made to "/v3/apiClients" with
+                  """
+                  {
+                   "applicationId": {applicationId},
+                   "name": "Additional Client 31",
+                   "isApproved": true,
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+              And the response body has key and secret
+              And the response body credentials are captured as "additional"
+             When a PUT request is made to "/v3/applications/{applicationId}/reset-credential" with
+                  """
+                  {}
+                  """
+             Then it should respond with 409
+              And the response body is
+                  """
+                  {
+                    "detail": "The application has more than one API client. Reset a specific client's credentials with PUT /v3/apiClients/{id}/reset-credential.",
+                    "type": "urn:ed-fi:management-api:conflict",
+                    "title": "Conflict",
+                    "status": 409,
+                    "validationErrors": {},
+                    "errors": []
+                  }
+                  """
+            # Both original secrets still work, which proves the reset rotated nothing.
+             When a token is requested with the credentials captured as "initial" and scope "ClaimScenario31"
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+             When a token is requested with the credentials captured as "additional" and scope "ClaimScenario31"
+             Then it should respond with 200
+              And the response body has a non-empty access_token
+
+        # An application's first API client takes the application's name, and an API client name holds
+        # 50 characters, so the application name is held to 50 as well, as the Ed-Fi Admin API does.
+        Scenario: 32 Verify an application name longer than 50 characters is rejected on POST and PUT
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "{scenarioRunId}-fifty-one-char",
+                   "claimSetName": "ClaimScenario32",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "ApplicationName": [
+                        "The length of 'Application Name' must be 50 characters or fewer. You entered 51 characters."
+                      ]
+                    },
+                    "errors": []
+                  }
+                  """
+             When a POST request is made to "/v3/applications" with
+                  """
+                  {
+                   "vendorId": {vendorId},
+                   "applicationName": "{scenarioRunId}-fifty-chars-x",
+                   "claimSetName": "ClaimScenario32",
+                   "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 201
+             When a PUT request is made to "/v3/applications/{applicationId}" with
+                  """
+                  {
+                      "id": {applicationId},
+                      "vendorId": {vendorId},
+                      "applicationName": "{scenarioRunId}-fifty-one-char",
+                      "claimSetName": "ClaimScenario32",
+                      "dataStoreIds": [{dataStoreId}]
+                  }
+                  """
+             Then it should respond with 400
+              And the response body is
+                  """
+                  {
+                    "detail": "Data validation failed. See 'validationErrors' for details.",
+                    "type": "urn:ed-fi:management-api:bad-request:data",
+                    "title": "Data Validation Failed",
+                    "status": 400,
+                    "validationErrors": {
+                      "ApplicationName": [
+                        "The length of 'Application Name' must be 50 characters or fewer. You entered 51 characters."
+                      ]
+                    },
+                    "errors": []
                   }
                   """

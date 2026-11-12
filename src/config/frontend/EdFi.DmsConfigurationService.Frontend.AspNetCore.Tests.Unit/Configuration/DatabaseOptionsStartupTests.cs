@@ -6,10 +6,12 @@
 using System.Collections.Generic;
 using System.Net;
 using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Services;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using NUnit.Framework;
 
@@ -39,15 +41,27 @@ public class DatabaseOptionsStartupTests
     /// </summary>
     private const string ShippedDefaultEncryptionKeySignificantPrefix = "YourSecureEncryptionKey32Charact";
 
-    private static WebApplicationFactory<Program> CreateFactory(string encryptionKey) =>
+    private static WebApplicationFactory<Program> CreateFactory(
+        string encryptionKey,
+        string? allowLegacyConnectionStrings = null
+    ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
             builder.ConfigureAppConfiguration(
                 (_, configuration) =>
-                    configuration.AddInMemoryCollection(
-                        new Dictionary<string, string?> { ["DatabaseSettings:EncryptionKey"] = encryptionKey }
-                    )
+                {
+                    Dictionary<string, string?> settings = new()
+                    {
+                        ["DatabaseSettings:EncryptionKey"] = encryptionKey,
+                    };
+                    if (allowLegacyConnectionStrings is not null)
+                    {
+                        settings["DatabaseSettings:AllowLegacyConnectionStrings"] =
+                            allowLegacyConnectionStrings;
+                    }
+                    configuration.AddInMemoryCollection(settings);
+                }
             );
         });
 
@@ -206,6 +220,81 @@ public class DatabaseOptionsStartupTests
         [Test]
         public void It_starts_and_serves_the_endpoint() =>
             _response.StatusCode.Should().Be(HttpStatusCode.OK);
+    }
+
+    /// <summary>
+    /// The setting reaches the connection string encryption service the running host resolves.
+    /// </summary>
+    [TestFixture]
+    public class Given_legacy_connection_strings_disallowed_at_startup
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public void Act()
+        {
+            _factory = CreateFactory(ValidEncryptionKey, allowLegacyConnectionStrings: "false");
+            using var client = _factory.CreateClient();
+
+            // Any legacy-length value: it is rejected before decryption, whatever its key or padding.
+            _exception = Record(() =>
+                _factory
+                    .Services.GetRequiredService<IConnectionStringEncryptionService>()
+                    .Decrypt(new byte[32])
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        private static Exception? Record(Action action)
+        {
+            try
+            {
+                action();
+                return null;
+            }
+            catch (Exception exception)
+            {
+                return exception;
+            }
+        }
+
+        [Test]
+        public void It_rejects_a_legacy_value() =>
+            _exception
+                .Should()
+                .BeOfType<LegacyConnectionStringRejectedException>()
+                .Which.Message.Should()
+                .Contain("DatabaseSettings:AllowLegacyConnectionStrings is false");
+    }
+
+    [TestFixture]
+    public class Given_a_malformed_AllowLegacyConnectionStrings_at_startup
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public void Act()
+        {
+            _factory = CreateFactory(ValidEncryptionKey, allowLegacyConnectionStrings: "flase");
+            _exception = StartupExceptionFor(_factory);
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_fails_to_start_naming_the_setting() =>
+            _exception
+                .Should()
+                .NotBeNull()
+                .And.Subject.As<Exception>()
+                .ToString()
+                .Should()
+                .Contain("DatabaseSettings:AllowLegacyConnectionStrings");
     }
 
     /// <summary>

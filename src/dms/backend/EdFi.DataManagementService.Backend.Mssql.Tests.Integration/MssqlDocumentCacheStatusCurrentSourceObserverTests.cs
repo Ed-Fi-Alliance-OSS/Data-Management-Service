@@ -36,6 +36,17 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
     private static readonly QualifiedResourceName PersonResource = new("Ed-Fi", "Person");
     private static readonly DateTimeOffset FirstEnqueuedAt = DateTimeOffset.UtcNow.AddMinutes(-10);
     private static readonly DateTimeOffset LaterEnqueuedAt = FirstEnqueuedAt.AddMinutes(1);
+    private static readonly DateTimeOffset CacheContentCreatedAt = new(
+        2001,
+        2,
+        3,
+        4,
+        5,
+        6,
+        123,
+        456,
+        TimeSpan.Zero
+    );
     private static readonly DocumentCachePhysicalSourceFingerprint Fingerprint = new(
         "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
     );
@@ -359,23 +370,20 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             OUTPUT INSERTED.[DocumentId] INTO @inserted ([DocumentId])
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             );
 
             SELECT [DocumentId] FROM @inserted;
             """,
             new SqlParameter("@documentUuid", SqlDbType.UniqueIdentifier) { Value = Guid.NewGuid() },
             new SqlParameter("@resourceKeyId", SqlDbType.SmallInt) { Value = resourceKeyId },
-            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion },
-            new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = FirstEnqueuedAt.UtcDateTime }
+            new SqlParameter("@contentVersion", SqlDbType.BigInt) { Value = contentVersion }
         );
 
         return Convert.ToInt64(rows.Single()["DocumentId"]);
@@ -449,14 +457,12 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
             INSERT INTO [dms].[Document] (
                 [DocumentUuid],
                 [ResourceKeyId],
-                [ContentVersion],
-                [ContentLastModifiedAt]
+                [ContentVersion]
             )
             SELECT
                 NEWID(),
                 @resourceKeyId,
-                [Number],
-                @lastModifiedAt
+                [Number]
             FROM numbers
             ORDER BY [Number];
 
@@ -469,6 +475,7 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
                 [ContentVersion],
                 [StreamEtag],
                 [LastModifiedAt],
+                [ContentCreatedAt],
                 [DocumentJson],
                 [ComputedAt]
             )
@@ -481,6 +488,7 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
                 source.[ContentVersion],
                 CONCAT('status-etag-', CONVERT(varchar(20), source.[ContentVersion])),
                 @lastModifiedAt,
+                @contentCreatedAt,
                 CONCAT(N'{"value":"cache-', CONVERT(nvarchar(20), source.[ContentVersion]), N'"}'),
                 @computedAt
             FROM [dms].[Document] AS source
@@ -523,6 +531,10 @@ public class Given_A_Mssql_DocumentCacheStatusCurrentSourceObserver
                 Value = resourceKey.ResourceVersion,
             },
             new SqlParameter("@lastModifiedAt", SqlDbType.DateTime2) { Value = LaterEnqueuedAt.UtcDateTime },
+            new SqlParameter("@contentCreatedAt", SqlDbType.DateTime2)
+            {
+                Value = CacheContentCreatedAt.UtcDateTime,
+            },
             new SqlParameter("@computedAt", SqlDbType.DateTime2)
             {
                 Value = LaterEnqueuedAt.AddMinutes(1).UtcDateTime,

@@ -83,7 +83,7 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
             )
         );
         services.AddReferenceResolver<
-            MssqlReferenceResolverAdapterFactory,
+            MssqlNaturalKeyLookupCommandBuilder,
             MssqlRelationalCommandExecutor,
             MssqlRelationalWriteSessionFactory,
             MssqlDocumentHydrator,
@@ -147,36 +147,6 @@ public static class MssqlReferenceResolverServiceCollectionExtensions
     }
 }
 
-internal sealed class MssqlReferenceResolverAdapterFactory(IRelationalCommandExecutor commandExecutor)
-    : IReferenceResolverAdapterFactory
-{
-    private readonly IRelationalCommandExecutor _commandExecutor =
-        commandExecutor ?? throw new ArgumentNullException(nameof(commandExecutor));
-
-    public IReferenceResolverAdapter CreateAdapter()
-    {
-        return new MssqlReferenceResolverAdapter(_commandExecutor);
-    }
-
-    public IReferenceResolverAdapter CreateSessionAdapter(IRelationalCommandExecutor commandExecutor)
-    {
-        ArgumentNullException.ThrowIfNull(commandExecutor);
-
-        return new MssqlReferenceResolverAdapter(commandExecutor);
-    }
-
-    public RelationalCommand? TryBuildSessionLookupCommand(ReferenceLookupRequest request)
-    {
-        ArgumentNullException.ThrowIfNull(request);
-
-        // The bulk strategy binds a table-valued parameter, which cannot be renamed into a composite
-        // command's allocator-owned parameter set; those requests fall back to the standalone adapter.
-        return MssqlReferenceLookupSmallListStrategy.CanResolve(request.ReferentialIds)
-            ? MssqlReferenceLookupSmallListStrategy.BuildCommand(request)
-            : null;
-    }
-}
-
 internal sealed class MssqlDocumentHydrator : IDocumentHydrator
 {
     private readonly Func<CancellationToken, Task<MssqlLeasedConnection>> _openConnectionAsync;
@@ -207,12 +177,11 @@ internal sealed class MssqlDocumentHydrator : IDocumentHydrator
         await using var leased = await _openConnectionAsync(ct).ConfigureAwait(false);
         DbConnection connection = leased.Connection;
 
-        return await HydrationExecutor.ExecuteAsync(
+        return await ConsistentHydrationExecutor.ExecuteAsync(
             connection,
             plan,
             keyset,
             SqlDialect.Mssql,
-            transaction: null,
             executionOptions,
             ct
         );

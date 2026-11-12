@@ -11,8 +11,8 @@ using FluentAssertions;
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
 /// <summary>
-/// The general bad-request ProblemDetails shell, which is what the unknown-query-field rule answers
-/// with. Separate from the parameter-validation shell on purpose: several of the recorded partition
+/// The general bad-request ProblemDetails shell. Separate from the parameter-validation shell on
+/// purpose: several of the recorded partition
 /// ordering consequences turn on <em>which</em> of the two shells answers a query string that is faulty
 /// in more than one way, so a test that could not tell them apart would pass either way.
 /// </summary>
@@ -23,9 +23,6 @@ internal static class BadRequestProblemDetails
     internal const string ProblemDetail = "The request could not be processed. See 'errors' for details.";
 
     private const string StandardJsonContentType = "application/json";
-
-    internal static string UnknownQueryField(string queryFieldName) =>
-        $"The query field '{queryFieldName}' is not valid for this resource.";
 
     /// <summary>
     /// Asserts that <paramref name="response"/> is the bad-request shell carrying exactly

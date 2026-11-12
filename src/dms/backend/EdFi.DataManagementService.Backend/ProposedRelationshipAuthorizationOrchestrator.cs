@@ -49,11 +49,14 @@ internal sealed class ProposedRelationshipAuthorizationOrchestrator(IRelationalW
                 var finalizedRootRow = RelationalWriteFinalizedRootRow.Build(request, mergeResult);
                 var extractionResult = RelationshipAuthorizationProposedValueExtractor.Extract(
                     authorized,
+                    request.WritePlan,
                     finalizedRootRow,
                     RelationalWriteExecutorResults.GetRelationshipAuthorizationAuth1Index(
                         request.OperationKind
                     ),
-                    request.TargetContext
+                    request.TargetContext,
+                    mergeResult.DeferredMissingDocumentReferencePaths,
+                    request.SelectedBody
                 );
 
                 switch (extractionResult)

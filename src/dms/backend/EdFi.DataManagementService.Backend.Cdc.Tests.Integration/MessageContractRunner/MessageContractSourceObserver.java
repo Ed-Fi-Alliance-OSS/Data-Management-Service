@@ -95,6 +95,7 @@ public final class MessageContractSourceObserver implements Transformation<Sourc
             Struct row = field(envelope, "after") instanceof Struct value ? value : null;
             observation.put("jsonSchema", schema(row, "DocumentJson"));
             observation.put("timeSchema", schema(row, "LastModifiedAt"));
+            observation.put("createdTimeSchema", schema(row, "ContentCreatedAt"));
             observation.put("versionSchema", schema(row, "ContentVersion"));
             Struct before = field(envelope, "before") instanceof Struct value ? value : null;
             observation.put("beforeUuidMatches", !canonicalUuid(uuid).isEmpty()

@@ -1,0 +1,44 @@
+{
+  "claimSets": [
+    {
+      "claimSetName": "ReviewSet",
+      "isSystemReserved": false
+    },
+    {
+      "claimSetName": "ReviewSet",
+      "isSystemReserved": true
+    }
+  ],
+  "claimsHierarchy": [
+    {
+      "name": "urn:root",
+      "defaultAuthorization": {
+        "actions": [
+          {
+            "name": "Read",
+            "authorizationStrategies": [
+              {
+                "name": "NamespaceBased"
+              }
+            ]
+          }
+        ]
+      },
+      "claimSets": [
+        {
+          "name": "reviewset",
+          "actions": [
+            {
+              "name": "Read"
+            }
+          ]
+        }
+      ],
+      "claims": [
+        {
+          "name": "urn:leaf"
+        }
+      ]
+    }
+  ]
+}

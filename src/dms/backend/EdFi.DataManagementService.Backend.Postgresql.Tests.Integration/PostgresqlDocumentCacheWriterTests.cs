@@ -131,6 +131,40 @@ public class Given_A_Postgresql_DocumentCacheWriter
         cacheRow.ContentVersion.Should().Be(10);
         cacheRow.StreamEtag.Should().Be("etag-10");
         JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("candidate-current");
+
+        string contentCreatedAt = await ReadCacheTimestampTextAsync(source.DocumentId, "ContentCreatedAt");
+        contentCreatedAt.Should().Be(CandidateContentCreatedAtText);
+        contentCreatedAt
+            .Should()
+            .NotBe(await ReadCacheTimestampTextAsync(source.DocumentId, "LastModifiedAt"))
+            .And.NotBe(await ReadCacheTimestampTextAsync(source.DocumentId, "ComputedAt"));
+    }
+
+    [Test]
+    public async Task It_replaces_the_cached_creation_timestamp_with_the_candidate_value_for_a_newer_version()
+    {
+        await SetLifecycleAsync(DocumentCacheLifecycleState.Tracking);
+        SourceDocument source = await InsertSourceDocumentAsync(contentVersion: 10);
+        await InsertCacheRowAsync(source, contentVersion: 9);
+        (await ReadCacheTimestampTextAsync(source.DocumentId, "ContentCreatedAt"))
+            .Should()
+            .Be(CachedContentCreatedAtText);
+
+        DocumentCacheWriterResult result = await WriteAsync(
+            source,
+            CreateCandidate(source, "candidate-newer")
+        );
+
+        result
+            .Should()
+            .BeOfType<DocumentCacheWriterResult.CandidateWrittenAcknowledged>()
+            .Which.AcknowledgedContentVersion.Should()
+            .Be(10);
+        (await ReadCacheRowAsync(source.DocumentId)).ContentVersion.Should().Be(10);
+        // Replacement takes the candidate's source value; it never keeps cache-local history.
+        (await ReadCacheTimestampTextAsync(source.DocumentId, "ContentCreatedAt"))
+            .Should()
+            .Be(CandidateContentCreatedAtText);
     }
 
     [Test]
@@ -321,6 +355,9 @@ public class Given_A_Postgresql_DocumentCacheWriter
             .Be(10);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadCacheComputedAtTextAsync(source.DocumentId)).Should().Be(beforeComputedAt);
+        (await ReadCacheTimestampTextAsync(source.DocumentId, "ContentCreatedAt"))
+            .Should()
+            .Be(CachedContentCreatedAtText);
     }
 
     [Test]
@@ -351,6 +388,9 @@ public class Given_A_Postgresql_DocumentCacheWriter
         cacheRow.StreamEtag.Should().Be("etag-10");
         JsonNode.Parse(cacheRow.DocumentJson)!["value"]!.GetValue<string>().Should().Be("cache-10");
         (await ReadCacheComputedAtTextAsync(source.DocumentId)).Should().Be(beforeComputedAt);
+        (await ReadCacheTimestampTextAsync(source.DocumentId, "ContentCreatedAt"))
+            .Should()
+            .Be(CachedContentCreatedAtText);
         (await ReadWorkCountAsync(source.DocumentId)).Should().Be(0);
         (await ReadCacheAheadLatchAsync()).Should().BeFalse();
         telemetry
@@ -1815,8 +1855,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
         command.Transaction = transaction;
         command.CommandText = """
             UPDATE "dms"."Document"
-            SET "ContentVersion" = @contentVersion,
-                "ContentLastModifiedAt" = @lastModifiedAt
+            SET "ContentVersion" = @contentVersion
             WHERE "DocumentId" = @documentId;
 
             UPDATE "dms"."DocumentProjectionWork"
@@ -1826,12 +1865,6 @@ public class Given_A_Postgresql_DocumentCacheWriter
         command.Parameters.Add(new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId });
         command.Parameters.Add(
             new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
-        );
-        command.Parameters.Add(
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-            {
-                Value = new DateTimeOffset(2026, 7, 31, 12, 5, 0, TimeSpan.Zero),
-            }
         );
 
         await command.ExecuteNonQueryAsync();
@@ -1854,18 +1887,11 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 SET LOCAL lock_timeout = '100ms';
 
                 UPDATE "dms"."Document"
-                SET "ContentVersion" = @contentVersion,
-                    "ContentLastModifiedAt" = @lastModifiedAt
+                SET "ContentVersion" = @contentVersion
                 WHERE "DocumentId" = @documentId;
                 """;
             command.Parameters.Add(
                 new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
-            );
-            command.Parameters.Add(
-                new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-                {
-                    Value = new DateTimeOffset(2026, 7, 31, 12, 10, 0, TimeSpan.Zero),
-                }
             );
             command.Parameters.Add(
                 new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
@@ -1890,24 +1916,18 @@ public class Given_A_Postgresql_DocumentCacheWriter
             INSERT INTO "dms"."Document" (
                 "DocumentUuid",
                 "ResourceKeyId",
-                "ContentVersion",
-                "ContentLastModifiedAt"
+                "ContentVersion"
             )
             VALUES (
                 @documentUuid,
                 @resourceKeyId,
-                @contentVersion,
-                @lastModifiedAt
+                @contentVersion
             )
             RETURNING "DocumentId";
             """,
             new NpgsqlParameter("documentUuid", NpgsqlDbType.Uuid) { Value = documentUuid },
             new NpgsqlParameter("resourceKeyId", NpgsqlDbType.Smallint) { Value = resourceKeyId },
-            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion },
-            new NpgsqlParameter("lastModifiedAt", NpgsqlDbType.TimestampTz)
-            {
-                Value = new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
-            }
+            new NpgsqlParameter("contentVersion", NpgsqlDbType.Bigint) { Value = contentVersion }
         );
 
         return new SourceDocument(Convert.ToInt64(rows.Single()["DocumentId"]), documentUuid, contentVersion);
@@ -1934,6 +1954,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 "ContentVersion",
                 "StreamEtag",
                 "LastModifiedAt",
+                "ContentCreatedAt",
                 "DocumentJson",
                 "ComputedAt"
             )
@@ -1946,6 +1967,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
                 @contentVersion,
                 @streamEtag,
                 @lastModifiedAt,
+                @contentCreatedAt,
                 @documentJson,
                 @computedAt
             );
@@ -1970,6 +1992,10 @@ public class Given_A_Postgresql_DocumentCacheWriter
             {
                 Value = new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
             },
+            new NpgsqlParameter("contentCreatedAt", NpgsqlDbType.TimestampTz)
+            {
+                Value = CachedContentCreatedAt,
+            },
             new NpgsqlParameter("documentJson", NpgsqlDbType.Jsonb)
             {
                 Value = new JsonObject { ["value"] = $"cache-{contentVersion}" }.ToJsonString(),
@@ -1980,6 +2006,18 @@ public class Given_A_Postgresql_DocumentCacheWriter
             }
         );
     }
+
+    // timestamptz keeps whole microseconds.
+    private const string CandidateContentCreatedAtText = "2001-02-03T04:05:06.123456Z";
+    private const string CachedContentCreatedAtText = "1999-12-31T23:59:58.654321Z";
+    private static readonly DateTimeOffset CandidateContentCreatedAt = DateTimeOffset.Parse(
+        CandidateContentCreatedAtText,
+        CultureInfo.InvariantCulture
+    );
+    private static readonly DateTimeOffset CachedContentCreatedAt = DateTimeOffset.Parse(
+        CachedContentCreatedAtText,
+        CultureInfo.InvariantCulture
+    );
 
     private static DocumentCacheMaterializationCandidate CreateCandidate(
         SourceDocument source,
@@ -1998,6 +2036,7 @@ public class Given_A_Postgresql_DocumentCacheWriter
             resourceVersion,
             contentVersion ?? source.ContentVersion,
             new DateTimeOffset(2026, 7, 31, 12, 0, 0, TimeSpan.Zero),
+            CandidateContentCreatedAt,
             $"etag-{contentVersion ?? source.ContentVersion}",
             new JsonObject { ["value"] = value }
         );
@@ -2063,6 +2102,19 @@ public class Given_A_Postgresql_DocumentCacheWriter
             (string)row["DocumentJson"]!
         );
     }
+
+    private async Task<string> ReadCacheTimestampTextAsync(long documentId, string column) =>
+        await _database.ExecuteScalarAsync<string>(
+            $"""
+            SELECT to_char(
+                "{column}" AT TIME ZONE 'UTC',
+                'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'
+            )
+            FROM "dms"."DocumentCache"
+            WHERE "DocumentId" = @documentId;
+            """,
+            new NpgsqlParameter("documentId", NpgsqlDbType.Bigint) { Value = documentId }
+        );
 
     private async Task<string> ReadCacheComputedAtTextAsync(long documentId) =>
         await _database.ExecuteScalarAsync<string>(

@@ -605,6 +605,7 @@ public class Given_DocumentCacheWriterClassification
             resourceVersion: "5.3.0",
             contentVersion,
             DateTimeOffset.Parse("2024-01-02T03:04:05Z", CultureInfo.InvariantCulture),
+            new DateTimeOffset(2001, 2, 3, 4, 5, 6, TimeSpan.Zero),
             streamEtag: "etag-11",
             new JsonObject { ["id"] = "11111111-1111-1111-1111-111111111111" }
         );

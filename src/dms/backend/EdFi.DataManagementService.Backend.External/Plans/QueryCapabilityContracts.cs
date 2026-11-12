@@ -157,7 +157,7 @@ public abstract record RelationalQueryFieldTarget
     public sealed record DocumentUuid : RelationalQueryFieldTarget;
 
     /// <summary>
-    /// A descriptor-valued query field that resolves a URI to a descriptor <c>DocumentId</c> and then filters on one root-table FK column.
+    /// A descriptor-valued query field that resolves a URI to a compact <c>dms.Descriptor.DescriptorId</c> and then filters on one root-table FK column.
     /// </summary>
     /// <param name="Column">The root-table descriptor FK column.</param>
     /// <param name="DescriptorResource">The descriptor resource type expected at the query path.</param>

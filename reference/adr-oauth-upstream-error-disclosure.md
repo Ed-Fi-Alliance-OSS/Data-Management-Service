@@ -213,6 +213,14 @@ follow directly:
 - **Client-facing documentation** belongs in the separate Ed-Fi documentation repository, not
   this one.
 
+## Update 2026-10-26 (DMS-1491)
+
+The Configuration Service `/connect/token` endpoint now answers every failure in the RFC 6749 §5.2 format, with `error` and `error_description` at the root of the body, and sends the `WWW-Authenticate: Basic` challenge on a `401` when HTTP Basic was attempted.
+The `401` pass-through row above therefore applies to the Configuration Service as well as to Keycloak: the proxy no longer falls back to `UnauthorizedFallbackDetail` for a Configuration Service rejection.
+The `429` arm also accepts the Configuration Service's OAuth token-limit body, an `error` of `temporarily_unavailable` with the canonical limit sentence as `error_description`, in addition to the two problem-details types.
+It is still rebuilt from the parsed integer limit alone, and any deviation from the canonical shape still falls back to the generic rate-limit contract.
+The decisions above are unchanged.
+
 ## Known deviations and open items
 
 Both are pre-existing on `main` and were deliberately left outside the scope of the branch that
@@ -226,10 +234,12 @@ implemented this ADR.
   with no record at all. Whoever fixes the status code must confirm the event still lands.
 - **[DMS-1550](https://edfi.atlassian.net/browse/DMS-1550)** — *Token proxy logs the entire
   upstream body on the 502 path, and the logging policy does not say whether that is allowed.*
-  The `502` branch logs the whole sanitized, bounded body at **Warning**. The `docs/LOGGING.md`
-  prohibition is scoped to Information, so this is not literally a policy violation — the policy
-  is silent. That silence is the substance of the ticket. The `502` branch was left untouched
-  rather than aligned by assumption.
+  The `502` upstream-error branch logs the whole sanitized, bounded body at **Warning**. Since
+  DMS-1495, that event also carries the original integer `UpstreamStatusCode` alongside `TraceId`
+  (`traceId.Value`) and `Content`; the client still receives the fixed generic `502`.
+  The `docs/LOGGING.md` prohibition is scoped to Information, so this is not literally a policy
+  violation — the policy is silent. That silence is the substance of the ticket. The `502`
+  body-logging policy remains unchanged rather than aligned by assumption.
 
 ## Defects found and their lessons
 
@@ -269,3 +279,13 @@ first three was introduced by the fix for the one before it.
 - RFC 6749 §5.2 — OAuth 2.0 error response (`error`, `error_description`, `error_uri`)
 - `src/dms/core/EdFi.DataManagementService.Core/OAuth/OAuthManager.cs` — implementation
 - `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/OAuth/OAuthManagerTests.cs` — coverage
+
+## DMS-1606 token error contract supersession
+
+**Added 2026-10-20:** [ADR DMS-1606](./adr-oauth-token-errors-DMS-1606.md) supersedes the old
+problem-details response fields and JSON `correlationId` channel for DMS token failures. DMS now
+returns the OAuth `error` / `error_description` object and the once-decodable
+`X-Correlation-ID` response header. The selected-summary Information policy for unusable provider
+401 details remains authoritative; DMS-1606 closes DMS-1549 by applying it to malformed and
+non-object 401 bodies. Existing bounded/sanitized 502 warning and transport error behavior remain
+unchanged and continue to be governed by DMS-1550.

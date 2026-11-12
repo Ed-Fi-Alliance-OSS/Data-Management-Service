@@ -28,33 +28,35 @@ rebuild those images first.
 
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
 same public entry point against SQL Server. The `-DatabaseEngine mssql` value composes the
-`eng/docker-compose/.env.mssql` overlay onto `-EnvironmentFile` and swaps `mssql.yml` for
-`postgresql.yml`; the SQL Server stack is relational-only (no Kafka / OpenSearch).
+`eng/docker-compose/.env.mssql` overlay onto `-EnvironmentFile` and swaps `mssql.compose.yml` for
+`postgresql.compose.yml`; the SQL Server stack is relational-only (no Kafka / OpenSearch).
 
 ### PostgreSQL (default engine)
 
 ```pwsh
 # Default engine (PostgreSQL), self-contained identity, standard DS 5.2 suite. The exclusion filter
 # drops the unsharded @StandardVersion-6_1 scenarios and the separately configured DocumentCache
-# fixture (run those with the focused commands below):
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
+# fixture (run those with the focused commands below), plus the SQL Server-only @MssqlOnly variants:
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@MssqlOnly)'
 
 # Explicit engine is equivalent to the default:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine postgresql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@MssqlOnly)'
 ```
 
 ### SQL Server (MSSQL)
 
 ```pwsh
 # SQL Server, self-contained identity, standard DS 5.2 suite. As above, exclude the DS 6.1-only
-# scenarios and the separately configured DocumentCache fixture:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)'
+# scenarios, the separately configured DocumentCache fixture and the PostgreSQL-only
+# @PostgresqlOnly variants:
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category!=@StandardVersion-6_1)&(Category!=@DocumentCacheHostedHappyPath)&(Category!=@PostgresqlOnly)'
 
-# SQL Server, self-contained identity, bounded representative cross-section (the PR-gated signal):
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative'
+# SQL Server, self-contained identity, bounded representative cross-section plus the @MssqlOnly
+# engine variants (the PR-gated signal):
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'
 
 # SQL Server, Keycloak identity, same representative set:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile './.env.e2e' -TestFilter 'Category=@MssqlRepresentative'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'
 ```
 
 ### Filtered and version-coupled runs
@@ -66,8 +68,44 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 | `Category!=@StandardVersion-6_1`    | The full DS 5.2 suite. A bare no-filter run also selects the unsharded DS 6.1 scenarios, which require a DS 6.1 stack and fail on the default DS 5.2 provisioning, so exclude them as shown. |
 | `Category=@e2e-ci-shard-1` … `-4`   | One of the four DS 5.2 CI shards.                                        |
 | `Category=@MssqlRepresentative`     | The bounded SQL Server representative cross-section (a subset of DS 5.2).|
+| `Category!=@MssqlOnly`              | Excludes the SQL Server-only variant of an engine-paired scenario. Every PostgreSQL run adds it. |
+| `Category!=@PostgresqlOnly`         | Excludes the PostgreSQL-only variant of an engine-paired scenario. Every SQL Server run adds it. |
 | `Category=@StandardVersion-6_1`     | The DS 6.1 version-coupled scenarios (XSD metadata, Discovery, and a datastore round-trip smoke that proves a public data-plane request reaches the DS 6.1 datastore); run only against a DS 6.1 stack (`-DataStandardVersion 6.1`). |
 | `Category=@DocumentCacheHostedHappyPath` | The hosted DocumentCache fixture; run only with `-EnvironmentOverlayFile './.env.document-cache.e2e'`. |
+| `Category=@TokenContractProxy` | DMS-1606 provider-response fixtures; run only through the dedicated proxy launcher below. |
+| `Category=@TokenContractQualified` | DMS-1606 root and qualified token-route controls; run only through the dedicated proxy launcher below. |
+
+Ordinary `E2ETest` runs, including runs with explicit filters, exclude `@TokenContractProxy` and
+`@TokenContractQualified`. These scenarios intentionally fail with launcher guidance if selected
+without their test-only proxy, and they are excluded from the ordinary CI shards.
+
+### DMS-1606 OAuth token error contract
+
+The provider-failure fixtures use a closed test-only proxy. It forwards ordinary client IDs to the
+selected real identity provider and returns fixed responses only for the reserved `dms1606-*`
+fixture IDs. The launcher builds and starts that proxy on the existing `dms` Docker network, derives
+an endpoint-only overlay, runs the token contract scenarios, retains a separate TRX file for the
+root and qualified route passes, then removes only its Compose project resources and restarts DMS
+with the original environment. It never removes the shared `dms` network.
+
+The launcher holds an exclusive file handle for the run, including cleanup. Its `active.lock`
+file remains on disk; file existence does not indicate an active run. Normal exit or forced
+termination releases ownership, so the next launcher can reuse the file. Do not delete it while
+a launcher is running.
+
+```pwsh
+pwsh ./eng/docker-compose/tests/oauth-token-contract/Invoke-TokenContractE2E.ps1 `
+  -IdentityProvider self-contained `
+  -DatabaseEngine postgresql `
+  -EnvironmentFile './.env.e2e' `
+  -Configuration Release
+```
+
+Use `-IdentityProvider keycloak` to exercise the Keycloak endpoint, or `-DatabaseEngine mssql` for
+the SQL Server lane. The launcher accepts `-SkipDockerBuild` and `-UsePrebuiltOutput` when the local
+DMS and configuration service artifacts/images are already prepared. Docker, Compose, PowerShell 7,
+and the .NET 10 SDK are required. Results are retained as
+`TestResults/token-contract-root.trx` and `TestResults/token-contract-qualified.trx`.
 
 ```pwsh
 # Data Standard 6.1 focused run (add -DataStandardVersion 6.1). The DS 6.1 PostgreSQL lane
@@ -75,10 +113,10 @@ Any run can be narrowed with `-TestFilter 'Category=@<tag>'`. Common tags:
 # and needs none.
 
 # PostgreSQL, DS 6.1:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@MssqlOnly)'
 
 # SQL Server, DS 6.1:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter 'Category=@StandardVersion-6_1'
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -DataStandardVersion 6.1 -TestFilter '(Category=@StandardVersion-6_1)&(Category!=@PostgresqlOnly)'
 ```
 
 The hosted DocumentCache fixture has an explicit environment overlay so ordinary E2E runs retain
@@ -104,6 +142,12 @@ The DocumentCache filter writes
 To debug the API while running the tests, change `ApiUrl` in `SearchContainerSetup.cs` to
 `http://localhost:5198/` and run `EdFi.DataManagementService.Frontend.AspNetCore` in debug mode.
 
+Set `AppSettings__DmsLogFilePath` for the test process to the absolute path of the running
+API's current JSON log file (the default file sink writes `logs/.log` with a daily date suffix).
+Token error assertions use this file instead of Docker logs to verify response-to-log
+correlation. The file must exist and remain the active log file during the run; update the path
+after daily rollover. Leave the setting unset for the normal container workflow.
+
 > [!WARNING]
 > Your database tables are truncated after each feature file runs. Double-check your
 > `DatabaseConnection` in `appsettings.json` and be aware of this before you run the tests.
@@ -120,13 +164,14 @@ suite rows are documented in its own
 
 | Suite    | Engine     | Identity        | Data Standard / filter                 | Required PR lane                             |
 | -------- | ---------- | --------------- | -------------------------------------- | -------------------------------------------- |
-| Standard | PostgreSQL | self-contained  | DS 5.2 full (shards `@e2e-ci-shard-1..4`) | `run-e2e-tests`                              |
-| Standard | PostgreSQL | self-contained  | DS 6.1 `@StandardVersion-6_1`          | `run-e2e-tests-ds61`                         |
-| Standard | SQL Server | self-contained  | `@MssqlRepresentative`                 | `run-e2e-tests-mssql`                        |
-| Standard | SQL Server | keycloak        | `@MssqlRepresentative`                 | `run-e2e-tests-mssql`                        |
-| Standard | SQL Server | self-contained  | DS 6.1 `@StandardVersion-6_1`          | `run-e2e-tests-mssql-ds61`                   |
-| Standard | PostgreSQL | keycloak        | any                                    | _(locally runnable; not a required PR lane)_ |
-| Standard | SQL Server | self-contained  | DS 5.2 full                            | _(locally runnable; not a required PR lane)_ |
+| Standard | PostgreSQL | self-contained  | DS 5.2 full (shards `@e2e-ci-shard-1..4`), excluding `@MssqlOnly` | `run-e2e-tests`                              |
+| Standard | PostgreSQL | self-contained  | DS 6.1 `@StandardVersion-6_1`, excluding `@MssqlOnly` | `run-e2e-tests-ds61`                         |
+| Standard | PostgreSQL | self-contained  | `@CursorPartitionSizing`, excluding `@MssqlOnly` | `run-e2e-tests-partition-sizing`             |
+| Standard | SQL Server | self-contained  | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql`                        |
+| Standard | SQL Server | keycloak        | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql`                        |
+| Standard | SQL Server | self-contained  | DS 6.1 `@StandardVersion-6_1`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql-ds61`                   |
+| Standard | PostgreSQL | keycloak        | any, excluding `@MssqlOnly`            | _(locally runnable; not a required PR lane)_ |
+| Standard | SQL Server | self-contained  | DS 5.2 full, excluding `@PostgresqlOnly` | _(locally runnable; not a required PR lane)_ |
 | Instance | PostgreSQL / SQL Server | self-contained | `@instance-management-ci-shard-1/2` | `run-instance-management-e2e-tests` / `run-instance-management-e2e-tests-mssql`; the PostgreSQL-only identity plugin slice (`@instance-management-identity-plugin`) runs in `run-instance-management-identity-plugin-e2e-tests` |
 
 `e2e-summary` aggregates the four standard DMS E2E lanes and, with the other required jobs,
@@ -139,6 +184,10 @@ coverage is owned by separate DMS-1289 workflows and is not part of these lanes.
 `build-dms.ps1 E2ETest` is the supported path. For interactive debugging you can prepare only
 the stack and then run `dotnet test` yourself, but the test process configuration must align
 with the running, provisioned stack.
+
+For ordinary direct runs, include `(Category!=@TokenContractProxy)&(Category!=@TokenContractQualified)`
+in `--filter`, combined with the engine exclusions above. Direct `dotnet test` does not apply the
+build script's fixture exclusions. Use the dedicated launcher for provider-fixture scenarios.
 
 The setup wrapper starts infra + Configuration Service, configures the E2E data store,
 provisions the E2E database, and starts DMS:
@@ -289,7 +338,7 @@ Playwright setup/teardown.
 - **Container names/ports.** DMS `ed-fi-api` (`8080`), Configuration Service
   `ed-fi-api-config-service` (`8081`), PostgreSQL `dms-postgresql` (`5435`), SQL Server
   `dms-mssql` (`1435`), Swagger UI `ed-fi-api-swagger-ui` (`8082`), Keycloak `dms-keycloak`.
-  Those are the local-image names. Only `local-dms.yml` sets `container_name`, so under
+  Those are the local-image names. Only `local-dms.compose.yml` sets `container_name`, so under
   `-UsePublishedImage` Compose names the DMS container after the project and service instead:
   `dms-published-dms-1`.
 - **Custom database names.** If you override `E2E_DATABASE_NAME` (or the connection strings),

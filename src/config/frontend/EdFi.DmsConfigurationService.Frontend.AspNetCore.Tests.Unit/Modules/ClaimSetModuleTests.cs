@@ -642,7 +642,7 @@ public class ClaimSetModuleTests
                 .AsArray()
                 .Select(error => error!.GetValue<string>())
                 .Should()
-                .Equal("Claim set name must not contain white spaces.");
+                .Equal("Claim set name must not contain white spaces or commas.");
         }
 
         [Test]
@@ -658,6 +658,132 @@ public class ClaimSetModuleTests
         public void It_does_not_copy_the_claim_set()
         {
             A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored)).MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture("Alpha,Beta", false)]
+    [TestFixture(",Alpha", false)]
+    [TestFixture("Alpha,", false)]
+    [TestFixture(",", false)]
+    [TestFixture("Alpha", true)]
+    [TestFixture("Alpha-Beta", true)]
+    public class Given_claim_set_requests_with_a_name_that_may_contain_a_comma(
+        string claimSetName,
+        bool isAccepted
+    ) : ClaimSetModuleTests
+    {
+        private Dictionary<string, HttpResponseMessage> _responses = [];
+
+        [SetUp]
+        public async Task Act()
+        {
+            // NUnit reuses one fixture instance, so drop calls recorded by earlier test cases.
+            Fake.ClearRecordedCalls(_claimSetRepository);
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .Returns(new ClaimSetInsertResult.Success(1));
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .Returns(new ClaimSetUpdateResult.Success());
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .Returns(new ClaimSetCopyResult.Success(1));
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .Returns(new ClaimSetImportResult.Success(2, []));
+            A.CallTo(() => _dataProvider.GetActions()).Returns(["Create", "Read", "Update", "Delete"]);
+            A.CallTo(() => _dataProvider.GetAuthorizationStrategies())
+                .Returns(["NoFurtherAuthorizationRequired"]);
+            A.CallTo(() => _claimsHierarchyRepository.GetClaimsHierarchy(A<DbTransaction>.Ignored))
+                .Returns(
+                    new ClaimsHierarchyGetResult.Success(
+                        [new() { Name = "http://ed-fi.org/identity/claims/ed-fi/school" }],
+                        DateTime.Now,
+                        1
+                    )
+                );
+
+            using var client = SetUpClient();
+            _responses = new()
+            {
+                ["insert"] = await client.PostAsync(
+                    "/v3/claimSets",
+                    Json($$"""{"claimSetName":"{{claimSetName}}"}""")
+                ),
+                ["update"] = await client.PutAsync(
+                    "/v3/claimSets/1",
+                    Json($$"""{"id":1,"claimSetName":"{{claimSetName}}"}""")
+                ),
+                ["copy"] = await client.PostAsync(
+                    "/v3/claimSets/copy",
+                    Json($$"""{"originalId":1,"claimSetName":"{{claimSetName}}"}""")
+                ),
+                ["import"] = await client.PostAsync(
+                    "/v3/claimSets/import",
+                    Json(
+                        $$"""
+                        {
+                            "claimSetName": "{{claimSetName}}",
+                            "resourceClaims": [
+                                {
+                                    "name": "school",
+                                    "claimName": "http://ed-fi.org/identity/claims/ed-fi/school",
+                                    "actions": [{ "name": "Read", "enabled": true }]
+                                }
+                            ]
+                        }
+                        """
+                    )
+                ),
+            };
+        }
+
+        [TearDown]
+        public void TearDownResponses()
+        {
+            foreach (var response in _responses.Values)
+            {
+                response.Dispose();
+            }
+        }
+
+        private static StringContent Json(string body) => new(body, Encoding.UTF8, "application/json");
+
+        [TestCase("insert")]
+        [TestCase("update")]
+        [TestCase("copy")]
+        [TestCase("import")]
+        public async Task It_applies_the_shared_name_rule(string route)
+        {
+            var response = _responses[route];
+
+            if (isAccepted)
+            {
+                response
+                    .StatusCode.Should()
+                    .BeOneOf(HttpStatusCode.Created, HttpStatusCode.NoContent, HttpStatusCode.OK);
+                return;
+            }
+
+            response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            body["validationErrors"]!.AsObject().Select(error => error.Key).Should().Equal("Name");
+            body["validationErrors"]!["Name"]!
+                .AsArray()
+                .Select(error => error!.GetValue<string>())
+                .Should()
+                .Equal("Claim set name must not contain white spaces or commas.");
+        }
+
+        [Test]
+        public void It_writes_nothing_only_when_the_name_is_rejected()
+        {
+            int expectedWrites = isAccepted ? 1 : 0;
+
+            A.CallTo(() => _claimSetRepository.InsertClaimSet(A<ClaimSetInsertCommand>.Ignored))
+                .MustHaveHappened(expectedWrites, Times.Exactly);
+            A.CallTo(() => _claimSetRepository.UpdateClaimSet(A<ClaimSetUpdateCommand>.Ignored))
+                .MustHaveHappened(expectedWrites, Times.Exactly);
+            A.CallTo(() => _claimSetRepository.Copy(A<ClaimSetCopyCommand>.Ignored))
+                .MustHaveHappened(expectedWrites, Times.Exactly);
+            A.CallTo(() => _claimSetRepository.Import(A<ClaimSetImportCommand>.Ignored))
+                .MustHaveHappened(expectedWrites, Times.Exactly);
         }
     }
 
@@ -747,7 +873,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -768,13 +894,13 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
                   "validationErrors": {
                     "Name": [
-                      "Claim set name must not contain white spaces."
+                      "Claim set name must not contain white spaces or commas."
                     ]
                   },
                   "errors": []
@@ -790,7 +916,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -809,7 +935,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -828,7 +954,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1031,7 +1157,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "OriginalId 1 not found. It may have been recently deleted.",
-                  "type": "urn:ed-fi:api:conflict:unresolved-reference",
+                  "type": "urn:ed-fi:management-api:conflict:unresolved-reference",
                   "title": "Unresolved Reference",
                   "status": 409,
                   "correlationId": "{correlationId}",
@@ -1238,7 +1364,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1285,7 +1411,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1329,7 +1455,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1373,7 +1499,7 @@ public class ClaimSetModuleTests
                 """
                 {
                   "detail": "Data validation failed. See 'validationErrors' for details.",
-                  "type": "urn:ed-fi:api:bad-request:data",
+                  "type": "urn:ed-fi:management-api:bad-request:data",
                   "title": "Data Validation Failed",
                   "status": 400,
                   "correlationId": "{correlationId}",
@@ -1437,7 +1563,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "",
-                    "type": "urn:ed-fi:api:internal-server-error",
+                    "type": "urn:ed-fi:management-api:internal-server-error",
                     "title": "Internal Server Error",
                     "status": 500,
                     "correlationId": "{correlationId}",
@@ -1496,7 +1622,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to update claim set due to multi-user conflicts. Retry the request.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "correlationId": "{correlationId}",
@@ -1536,7 +1662,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to copy claim set due to multi-user conflicts. Retry the request.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "correlationId": "{correlationId}",
@@ -1566,7 +1692,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "Unable to delete claim set due to multi-user conflicts. Retry the request.",
-                    "type": "urn:ed-fi:api:conflict",
+                    "type": "urn:ed-fi:management-api:conflict",
                     "title": "Conflict",
                     "status": 409,
                     "correlationId": "{correlationId}",
@@ -1625,7 +1751,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "The specified claim set is system-reserved and cannot be updated.",
-                    "type": "urn:ed-fi:api:bad-request",
+                    "type": "urn:ed-fi:management-api:bad-request",
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": "{correlationId}",
@@ -1669,7 +1795,7 @@ public class ClaimSetModuleTests
                 """
                 {
                     "detail": "The specified claim set is system-reserved and cannot be imported.",
-                    "type": "urn:ed-fi:api:bad-request",
+                    "type": "urn:ed-fi:management-api:bad-request",
                     "title": "Bad Request",
                     "status": 400,
                     "correlationId": "{correlationId}",

@@ -179,6 +179,89 @@ public class Given_NamespaceAuthorizationSqlCompiler
         plan.AuthorizationSql.Should().Contain("ELSE CAST('AUTH1 - ns1|0|m' AS INT)");
     }
 
+    /// <summary>
+    /// A stored-row check compares under the identity-collated column, so the proposed value must take the
+    /// same collation or the two checks disagree on a case-sensitive database default.
+    /// </summary>
+    [Test]
+    public void It_collates_a_mssql_proposed_value_checked_against_an_identity_collated_namespace_column()
+    {
+        var compiler = new NamespaceAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(
+            new NamespaceAuthorizationSqlSpec(
+                [
+                    StoredCheck(0) with
+                    {
+                        NamespaceColumnUsesIdentityCollation = true,
+                    },
+                    ProposedCheck(1) with
+                    {
+                        NamespaceColumnUsesIdentityCollation = true,
+                    },
+                ],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Mssql,
+                    ["uri://ed-fi.org/", "uri://gbisd.edu/"],
+                    "namespacePrefixes"
+                ),
+                DocumentIdParameterName: "documentId",
+                ProposedNamespaceParameterName: "proposedNamespace"
+            )
+        );
+
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "WHEN (@proposedNamespace COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @namespacePrefixes_0 ESCAPE '\\' OR @proposedNamespace COLLATE SQL_Latin1_General_CP1_CI_AS LIKE @namespacePrefixes_1 ESCAPE '\\') THEN 1"
+            );
+        plan.AuthorizationSql.Should()
+            .Contain(
+                "r.[Namespace] IS NOT NULL AND (r.[Namespace] LIKE @namespacePrefixes_0 ESCAPE '\\' OR r.[Namespace] LIKE @namespacePrefixes_1 ESCAPE '\\')"
+            );
+    }
+
+    [Test]
+    public void It_leaves_a_mssql_proposed_value_uncollated_for_a_payload_namespace_column()
+    {
+        var compiler = new NamespaceAuthorizationSqlCompiler(SqlDialect.Mssql);
+
+        var plan = compiler.Compile(
+            new NamespaceAuthorizationSqlSpec(
+                [ProposedCheck(0)],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Mssql,
+                    ["uri://ed-fi.org/"],
+                    "namespacePrefixes"
+                ),
+                DocumentIdParameterName: "documentId",
+                ProposedNamespaceParameterName: "proposedNamespace"
+            )
+        );
+
+        plan.AuthorizationSql.Should().NotContain("COLLATE");
+    }
+
+    [Test]
+    public void It_leaves_a_pgsql_proposed_value_uncollated_for_an_identity_namespace_column()
+    {
+        var compiler = new NamespaceAuthorizationSqlCompiler(SqlDialect.Pgsql);
+
+        var plan = compiler.Compile(
+            new NamespaceAuthorizationSqlSpec(
+                [ProposedCheck(0) with { NamespaceColumnUsesIdentityCollation = true }],
+                NamespacePrefixParameterizationFactory.Create(
+                    SqlDialect.Pgsql,
+                    ["uri://ed-fi.org/"],
+                    "namespacePrefixes"
+                ),
+                DocumentIdParameterName: "documentId",
+                ProposedNamespaceParameterName: "proposedNamespace"
+            )
+        );
+
+        plan.AuthorizationSql.Should().Contain("WHEN @proposedNamespace LIKE ANY(@namespacePrefixes) THEN 1");
+    }
+
     [Test]
     public void It_classifies_empty_namespace_values_identically_to_null_on_both_stored_and_proposed_checks()
     {

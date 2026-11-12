@@ -30,7 +30,8 @@ internal sealed record RelationalWriteProfileMergeRequest
         RelationalWriteCurrentState? currentState,
         ProfileAppliedWriteRequest profileRequest,
         ProfileAppliedWriteContext? profileAppliedContext,
-        ResolvedReferenceSet resolvedReferences
+        ResolvedReferenceSet resolvedReferences,
+        bool allowMissingDocumentReferencesForPrecedence = false
     )
     {
         WritePlan = writePlan ?? throw new ArgumentNullException(nameof(writePlan));
@@ -42,6 +43,7 @@ internal sealed record RelationalWriteProfileMergeRequest
         ProfileAppliedContext = profileAppliedContext;
         ResolvedReferences =
             resolvedReferences ?? throw new ArgumentNullException(nameof(resolvedReferences));
+        AllowMissingDocumentReferencesForPrecedence = allowMissingDocumentReferencesForPrecedence;
 
         if (
             !ReferenceEquals(
@@ -104,6 +106,14 @@ internal sealed record RelationalWriteProfileMergeRequest
     public ProfileAppliedWriteContext? ProfileAppliedContext { get; init; }
 
     public ResolvedReferenceSet ResolvedReferences { get; init; }
+
+    /// <summary>
+    /// Whether a submitted document reference whose target is missing was deferred so proposed
+    /// authorization can run first. The merge lookups then treat it as an unresolved value rather than
+    /// a lookup failure. Only the root table is finalized for authorization; the write never reaches DML
+    /// or guarded no-op success, and collection matching need not resolve missing reference identities.
+    /// </summary>
+    public bool AllowMissingDocumentReferencesForPrecedence { get; init; }
 }
 
 internal interface IRelationalWriteProfileMergeSynthesizer
@@ -121,10 +131,10 @@ internal interface IRelationalWriteProfileMergeSynthesizer
 /// <see cref="RelationalWriteGuardedNoOp.IsNoOpCandidate"/>; comparable rowsets are produced
 /// from the same post-merge values that execution would persist (per-row
 /// <see cref="RelationalWriteMergeSupport.ProjectComparableValues"/>). Returns a
-/// <see cref="ProfileMergeOutcome"/> discriminated union so the executor can short-circuit
-/// to a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/> /
+/// <see cref="ProfileMergeOutcome"/> discriminated union so the executor can return
+/// a typed <see cref="UpsertResult.UpsertFailureProfileDataPolicy"/> /
 /// <see cref="UpdateResult.UpdateFailureProfileDataPolicy"/> on a separate-table
-/// create-denied outcome without throwing.
+/// create-denied outcome after proposed authorization, without throwing or executing DML.
 /// </summary>
 internal sealed class RelationalWriteProfileMergeSynthesizer(
     IProfileRootTableBindingClassifier classifier,
@@ -148,6 +158,31 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     public ProfileMergeOutcome Synthesize(RelationalWriteProfileMergeRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // Build the resolved-reference lookups once and share them with the ancestor alignment, the
+        // root-table synthesis and each separate-table synthesis so we avoid redundant construction.
+        // The stored descriptor projection seeds the URI cache with the stored spelling of every
+        // request-resolved descriptor, so a client that changes a descriptor's casing still matches its
+        // stored rows without C# folding case.
+        var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
+            request.WritePlan,
+            request.ResolvedReferences,
+            request.AllowMissingDocumentReferencesForPrecedence,
+            storedDescriptorRows: request.CurrentState?.DescriptorRowsInPlanOrder
+        );
+
+        // Request-side ancestor chains are rewritten to the stored spelling of a parent the request
+        // names in another case (SQL Server only), so every lookup the walker and the aligned and
+        // inlined scope synthesis key by the stored parent finds the request-side entries.
+        request = request with
+        {
+            ProfileRequest = AlignRequestAncestorsToStoredIdentities(
+                request.ProfileRequest,
+                request.ProfileAppliedContext,
+                request.WritePlan,
+                resolvedReferenceLookups
+            ),
+        };
 
         // Honor Core's deferred C4 creatability for flattened root-table-owned
         // embedded-object non-collection scopes. Per-scope creatability is otherwise enforced
@@ -181,75 +216,67 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             tableStateBuilders[plan.TableModel.Table] = new ProfileTableStateBuilder(plan);
         }
 
-        // Build the resolved-reference lookups once and share them with both the root-table
-        // synthesis and each separate-table synthesis so we avoid redundant construction.
-        var resolvedReferenceLookups = FlatteningResolvedReferenceLookupSet.Create(
-            request.WritePlan,
-            request.ResolvedReferences
-        );
-
         // 1. Root-table merge — append merged + current rows into the root builder.
         var rootTable = request.WritePlan.TablePlansInDependencyOrder[0];
         var rootBuilder = tableStateBuilders[rootTable.TableModel.Table];
         var rootTableState = SynthesizeRootTable(request, resolvedReferenceLookups);
-        foreach (var currentRow in rootTableState.CurrentRows)
+        if (request.AllowMissingDocumentReferencesForPrecedence)
         {
-            rootBuilder.AddCurrentRow(currentRow);
+            // Every proposed authorization subject binds to the finalized root, including namespace,
+            // custom-view bases and People first-hop anchors. Preserve the normal root overlay and
+            // key unification, but do not match collections whose reference identities may be unresolved.
+            // The executor runs authorization-only and returns the deferred reference conflict if allowed.
+            return new ProfileMergeOutcome { AuthorizationRootTableState = rootTableState };
         }
-        foreach (var mergedRow in rootTableState.MergedRows)
+
+        try
         {
-            rootBuilder.AddMergedRow(mergedRow);
-        }
+            foreach (var currentRow in rootTableState.CurrentRows)
+            {
+                rootBuilder.AddCurrentRow(currentRow);
+            }
+            foreach (var mergedRow in rootTableState.MergedRows)
+            {
+                rootBuilder.AddMergedRow(mergedRow);
+            }
 
-        // Project the merged root row down to physical-row-identity slot order. The walker
-        // forwards these to nested-collection synthesis, where ParentKeyPart.Index is a
-        // physical-identity slot ordinal — not a binding ordinal — so binding-indexed
-        // values would only happen to align when the root identity column is binding 0.
-        // The projection requires every PhysicalRowIdentityColumn to be present in
-        // ColumnBindings; the root will satisfy that whenever any top-level collection
-        // table actually binds a ParentKeyPart, so skip the projection when it cannot run
-        // (synthetic non-collection root plans omit some bindings) and pass an empty
-        // identity slice the walker will not consume.
-        IReadOnlyList<FlattenedWriteValue> rootRowValues =
-            rootTableState.MergedRows.Length > 0
-                ? rootTableState.MergedRows[0].Values
-                : request.FlattenedWriteSet.RootRow.Values;
-        IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues = CanProjectPhysicalRowIdentity(
-            rootTable
-        )
-            ? RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(rootTable, rootRowValues)
-            : [];
+            // Project the merged root row down to physical-row-identity slot order. The walker
+            // forwards these to nested-collection synthesis, where ParentKeyPart.Index is a
+            // physical-identity slot ordinal — not a binding ordinal — so binding-indexed
+            // values would only happen to align when the root identity column is binding 0.
+            // The projection requires every PhysicalRowIdentityColumn to be present in
+            // ColumnBindings; the root will satisfy that whenever any top-level collection
+            // table actually binds a ParentKeyPart, so skip the projection when it cannot run
+            // (synthetic non-collection root plans omit some bindings) and pass an empty
+            // identity slice the walker will not consume.
+            IReadOnlyList<FlattenedWriteValue> rootRowValues =
+                rootTableState.MergedRows.Length > 0
+                    ? rootTableState.MergedRows[0].Values
+                    : request.FlattenedWriteSet.RootRow.Values;
+            IReadOnlyList<FlattenedWriteValue> parentPhysicalRowIdentityValues =
+                CanProjectPhysicalRowIdentity(rootTable)
+                    ? RelationalWriteMergeSupport.ExtractPhysicalRowIdentityValues(rootTable, rootRowValues)
+                    : [];
 
-        // 1a. Top-level collection merge — runs unconditionally so that stored-only
-        //     "delete-all-visible" scenarios (spec Section 7.7) are driven from the union
-        //     of request-side, stored-side, and DB-side sources rather than only when
-        //     request-side candidates are present.
-        // Build the root walker context. The walker owns top-level collection synthesis
-        // directly: WalkChildren reads the per-merge indexes and dispatches through the
-        // planner per scope.
-        var rootContext = new ProfileCollectionWalkerContext(
-            ContainingScopeAddress: new ScopeInstanceAddress("$", []),
-            ParentPhysicalIdentityValues: [.. parentPhysicalRowIdentityValues],
-            RequestSubstructure: request.FlattenedWriteSet.RootRow,
-            ParentRequestNode: request.WritableRequestBody
-        );
+            // 1a. Top-level collection merge — runs unconditionally so that stored-only
+            //     "delete-all-visible" scenarios (spec Section 7.7) are driven from the union
+            //     of request-side, stored-side, and DB-side sources rather than only when
+            //     request-side candidates are present.
+            // Build the root walker context. The walker owns top-level collection synthesis
+            // directly: WalkChildren reads the per-merge indexes and dispatches through the
+            // planner per scope.
+            var rootContext = new ProfileCollectionWalkerContext(
+                ContainingScopeAddress: new ScopeInstanceAddress("$", []),
+                ParentPhysicalIdentityValues: [.. parentPhysicalRowIdentityValues],
+                RequestSubstructure: request.FlattenedWriteSet.RootRow,
+                ParentRequestNode: request.WritableRequestBody
+            );
 
-        var walker = new ProfileCollectionWalker(
-            request,
-            resolvedReferenceLookups,
-            tableStateBuilders,
-            (
-                tablePlan,
-                scopeAddress,
-                separateScopeParentPhysicalIdentityValues,
-                buffer,
-                scopedRequestNode,
-                requestScope,
-                storedScope,
-                currentRowProjection
-            ) =>
-                SynthesizeSeparateScopeInstance(
-                    request,
+            var walker = new ProfileCollectionWalker(
+                request,
+                resolvedReferenceLookups,
+                tableStateBuilders,
+                (
                     tablePlan,
                     scopeAddress,
                     separateScopeParentPhysicalIdentityValues,
@@ -257,92 +284,120 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                     scopedRequestNode,
                     requestScope,
                     storedScope,
-                    currentRowProjection,
+                    currentRowProjection
+                ) =>
+                    SynthesizeSeparateScopeInstance(
+                        request,
+                        tablePlan,
+                        scopeAddress,
+                        separateScopeParentPhysicalIdentityValues,
+                        buffer,
+                        scopedRequestNode,
+                        requestScope,
+                        storedScope,
+                        currentRowProjection,
+                        resolvedReferenceLookups
+                    )
+            );
+
+            var collectionOutcome = walker.WalkChildren(rootContext, WalkMode.Normal);
+            if (collectionOutcome is not null)
+            {
+                return collectionOutcome.Value with { AuthorizationRootTableState = rootTableState };
+            }
+
+            // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
+            //    legitimately carry non-RootExtension tables that the current request did not
+            //    exercise; those are silently skipped here so the no-profile persister can handle
+            //    their rows unchanged.
+
+            for (
+                var tableIndex = 1;
+                tableIndex < request.WritePlan.TablePlansInDependencyOrder.Length;
+                tableIndex++
+            )
+            {
+                var tablePlan = request.WritePlan.TablePlansInDependencyOrder[tableIndex];
+                if (tablePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.RootExtension)
+                {
+                    // This loop handles only root-attached RootExtension tables. Plans may carry
+                    // unused Collection / ExtensionCollection / CollectionExtensionScope tables
+                    // (e.g., a multi-table School plan where the profiled request touches only
+                    // root scopes). The synthesizer silently leaves them untouched so their rows
+                    // flow through the no-profile persister path unchanged.
+                    continue;
+                }
+
+                var separateTableResult = SynthesizeSeparateTable(
+                    request,
+                    tablePlan,
+                    [.. parentPhysicalRowIdentityValues],
                     resolvedReferenceLookups
-                )
-        );
+                );
 
-        var collectionOutcome = walker.WalkChildren(rootContext, WalkMode.Normal);
-        if (collectionOutcome is not null)
-        {
-            return collectionOutcome.Value;
-        }
-
-        // 2. Per-separate-table merge for every non-root table in dependency order. Plans may
-        //    legitimately carry non-RootExtension tables that the current request did not
-        //    exercise; those are silently skipped here so the no-profile persister can handle
-        //    their rows unchanged.
-
-        for (
-            var tableIndex = 1;
-            tableIndex < request.WritePlan.TablePlansInDependencyOrder.Length;
-            tableIndex++
-        )
-        {
-            var tablePlan = request.WritePlan.TablePlansInDependencyOrder[tableIndex];
-            if (tablePlan.TableModel.IdentityMetadata.TableKind is not DbTableKind.RootExtension)
-            {
-                // This loop handles only root-attached RootExtension tables. Plans may carry
-                // unused Collection / ExtensionCollection / CollectionExtensionScope tables
-                // (e.g., a multi-table School plan where the profiled request touches only
-                // root scopes). The synthesizer silently leaves them untouched so their rows
-                // flow through the no-profile persister path unchanged.
-                continue;
-            }
-
-            var separateTableResult = SynthesizeSeparateTable(
-                request,
-                tablePlan,
-                [.. parentPhysicalRowIdentityValues],
-                resolvedReferenceLookups
-            );
-
-            if (separateTableResult.Rejection is not null)
-            {
-                return ProfileMergeOutcome.Reject(separateTableResult.Rejection);
-            }
-
-            if (separateTableResult.TableState is not null)
-            {
-                var separateBuilder = tableStateBuilders[tablePlan.TableModel.Table];
-                foreach (var currentRow in separateTableResult.TableState.CurrentRows)
+                if (separateTableResult.Rejection is not null)
                 {
-                    separateBuilder.AddCurrentRow(currentRow);
+                    return ProfileMergeOutcome.Reject(separateTableResult.Rejection) with
+                    {
+                        AuthorizationRootTableState = rootTableState,
+                    };
                 }
-                foreach (var mergedRow in separateTableResult.TableState.MergedRows)
+
+                if (separateTableResult.TableState is not null)
                 {
-                    separateBuilder.AddMergedRow(mergedRow);
+                    var separateBuilder = tableStateBuilders[tablePlan.TableModel.Table];
+                    foreach (var currentRow in separateTableResult.TableState.CurrentRows)
+                    {
+                        separateBuilder.AddCurrentRow(currentRow);
+                    }
+                    foreach (var mergedRow in separateTableResult.TableState.MergedRows)
+                    {
+                        separateBuilder.AddMergedRow(mergedRow);
+                    }
+                }
+
+                var rootExtensionCollectionOutcome = WalkRootExtensionCollectionChildren(
+                    request,
+                    tablePlan,
+                    separateTableResult,
+                    walker
+                );
+                if (rootExtensionCollectionOutcome is not null)
+                {
+                    return rootExtensionCollectionOutcome.Value with
+                    {
+                        AuthorizationRootTableState = rootTableState,
+                    };
                 }
             }
 
-            var rootExtensionCollectionOutcome = WalkRootExtensionCollectionChildren(
-                request,
-                tablePlan,
-                separateTableResult,
-                walker
+            // 3. Finalize: iterate TablePlansInDependencyOrder and emit one TableState per
+            //    touched table. Untouched tables (HasContent == false) are dropped so the output
+            //    matches the existing top-level behavior of skipping no-op scopes.
+            var tableStates = new List<RelationalWriteMergedTableState>();
+            foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
+            {
+                var builder = tableStateBuilders[plan.TableModel.Table];
+                if (builder.HasContent)
+                {
+                    tableStates.Add(builder.Build());
+                }
+            }
+
+            return ProfileMergeOutcome.Success(
+                new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: true)
             );
-            if (rootExtensionCollectionOutcome is not null)
-            {
-                return rootExtensionCollectionOutcome.Value;
-            }
         }
-
-        // 3. Finalize: iterate TablePlansInDependencyOrder and emit one TableState per
-        //    touched table. Untouched tables (HasContent == false) are dropped so the output
-        //    matches the existing top-level behavior of skipping no-op scopes.
-        var tableStates = new List<RelationalWriteMergedTableState>();
-        foreach (var plan in request.WritePlan.TablePlansInDependencyOrder)
+        catch (RelationalWriteRequestValidationException exception)
         {
-            var builder = tableStateBuilders[plan.TableModel.Table];
-            if (builder.HasContent)
+            // Only request validation after root finalization is deferred. Planner/invariant failures
+            // still propagate, and no partial child rowset can reach persistence.
+            return new ProfileMergeOutcome
             {
-                tableStates.Add(builder.Build());
-            }
+                AuthorizationRootTableState = rootTableState,
+                ValidationFailure = exception,
+            };
         }
-
-        return ProfileMergeOutcome.Success(
-            new RelationalWriteMergeResult([.. tableStates], supportsGuardedNoOp: true)
-        );
     }
 
     /// <summary>
@@ -1710,7 +1765,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             return true;
         }
 
-        if (storedPart.Value is JsonValue jsonValue && jsonValue.TryGetValue<long>(out var descriptorId))
+        if (storedPart.Value is JsonValue jsonValue && jsonValue.TryGetValue<int>(out var descriptorId))
         {
             storedJson = JsonValue.Create(descriptorId)?.ToJsonString() ?? "null";
             return true;
@@ -1770,9 +1825,284 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     // ── Descriptor-URI canonicalization helpers ────────────────────────────
 
     /// <summary>
+    /// Rewrites each request-side ancestor collection instance whose semantic identity equals exactly
+    /// one visible stored row of the same scope and (already aligned) ancestor chain under the table's
+    /// <see cref="CollectionSemanticIdentityEquality.PresenceAware"/> equality, but not byte for byte,
+    /// to that stored row's identity. Applies to the parent addresses of
+    /// <see cref="ProfileAppliedWriteRequest.VisibleRequestCollectionItems"/> and to the addresses of
+    /// <see cref="ProfileAppliedWriteRequest.RequestScopeStates"/>.
+    /// </summary>
+    /// <remarks>
+    /// The planner matches a request item to a stored row under the identity comparer, and the walker
+    /// then recurses into the matched row with the stored identity. Without this alignment every
+    /// request-side entry under a parent recased by the request would be keyed by the request spelling
+    /// and fail closed as an orphan or a missing scope state. Both sides are Core-emitted raw forms, so
+    /// the comparison mirrors what the planner sees after canonicalization: a descriptor URI compares
+    /// by the descriptor id <paramref name="resolvedReferenceLookups"/> resolves it to (falling back to
+    /// its text), and a reference natural-key member compares as the reference identity column it is
+    /// stored in. Only tables with a member flagged for the SQL Server identity collation are aligned,
+    /// which leaves every PostgreSQL request untouched. A request item's own identity is not
+    /// rewritten: the planner matches it and the overlay keeps the stored values.
+    /// </remarks>
+    internal static ProfileAppliedWriteRequest AlignRequestAncestorsToStoredIdentities(
+        ProfileAppliedWriteRequest profileRequest,
+        ProfileAppliedWriteContext? profileAppliedContext,
+        ResourceWritePlan writePlan,
+        FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+    )
+    {
+        if (
+            profileAppliedContext is null
+            || profileAppliedContext.VisibleStoredCollectionRows.IsDefaultOrEmpty
+        )
+        {
+            return profileRequest;
+        }
+
+        var alignmentByJsonScope = new Dictionary<string, AncestorAlignmentScope>(StringComparer.Ordinal);
+
+        foreach (var tablePlan in writePlan.TablePlansInDependencyOrder)
+        {
+            if (
+                tablePlan.CollectionMergePlan is null
+                || !CollectionSemanticIdentityEquality.For(tablePlan).HasCaseInsensitiveMembers
+            )
+            {
+                continue;
+            }
+
+            alignmentByJsonScope[tablePlan.TableModel.JsonScope.Canonical] = AncestorAlignmentScope.For(
+                tablePlan,
+                writePlan
+            );
+        }
+
+        if (alignmentByJsonScope.Count == 0)
+        {
+            return profileRequest;
+        }
+
+        var storedRows = profileAppliedContext.VisibleStoredCollectionRows;
+
+        ScopeInstanceAddress Align(ScopeInstanceAddress address)
+        {
+            var ancestors = address.AncestorCollectionInstances;
+
+            if (ancestors.IsDefaultOrEmpty)
+            {
+                return address;
+            }
+
+            ImmutableArray<AncestorCollectionInstance>.Builder? builder = null;
+
+            for (var i = 0; i < ancestors.Length; i++)
+            {
+                var ancestor = ancestors[i];
+
+                if (!alignmentByJsonScope.TryGetValue(ancestor.JsonScope, out var alignment))
+                {
+                    continue;
+                }
+
+                var alignedPrefix = builder is null ? ancestors[..i] : builder.ToImmutable()[..i];
+                var requestIdentity = alignment.ResolveDescriptorMembers(
+                    ancestor.SemanticIdentityInOrder,
+                    resolvedReferenceLookups
+                );
+                var matches = storedRows
+                    .Select(storedRow => storedRow.Address)
+                    .Where(storedAddress =>
+                        string.Equals(storedAddress.JsonScope, ancestor.JsonScope, StringComparison.Ordinal)
+                        && AncestorChainsEqual(
+                            storedAddress.ParentAddress.AncestorCollectionInstances,
+                            alignedPrefix
+                        )
+                        && alignment.Equality.PresenceAware.Equals(
+                            alignment.ResolveDescriptorMembers(
+                                storedAddress.SemanticIdentityInOrder,
+                                resolvedReferenceLookups
+                            ),
+                            requestIdentity
+                        )
+                    )
+                    .Take(2)
+                    .ToArray();
+
+                if (
+                    matches.Length != 1
+                    || ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                        matches[0].SemanticIdentityInOrder,
+                        ancestor.SemanticIdentityInOrder
+                    )
+                )
+                {
+                    continue;
+                }
+
+                builder ??= ancestors.ToBuilder();
+                builder[i] = new AncestorCollectionInstance(
+                    ancestor.JsonScope,
+                    matches[0].SemanticIdentityInOrder
+                );
+            }
+
+            return builder is null
+                ? address
+                : new ScopeInstanceAddress(address.JsonScope, builder.MoveToImmutable());
+        }
+
+        var alignedItems = profileRequest.VisibleRequestCollectionItems.Select(item =>
+        {
+            var alignedParent = Align(item.Address.ParentAddress);
+
+            return ReferenceEquals(alignedParent, item.Address.ParentAddress)
+                ? item
+                : item with
+                {
+                    Address = item.Address with { ParentAddress = alignedParent },
+                };
+        });
+        var alignedScopeStates = profileRequest.RequestScopeStates.Select(state =>
+        {
+            var alignedAddress = Align(state.Address);
+
+            return ReferenceEquals(alignedAddress, state.Address)
+                ? state
+                : state with
+                {
+                    Address = alignedAddress,
+                };
+        });
+
+        return profileRequest with
+        {
+            VisibleRequestCollectionItems = [.. alignedItems],
+            RequestScopeStates = [.. alignedScopeStates],
+        };
+    }
+
+    /// <summary>
+    /// How <see cref="AlignRequestAncestorsToStoredIdentities"/> compares the raw semantic identities of
+    /// one collection scope: each member compares as the column its value is stored in (the reference
+    /// identity column for a document-reference natural-key member), and descriptor members compare by
+    /// resolved descriptor id.
+    /// </summary>
+    private sealed record AncestorAlignmentScope(
+        CollectionSemanticIdentityEquality Equality,
+        IReadOnlyList<(int IdentityIndex, QualifiedResourceName DescriptorResource)> DescriptorMembers
+    )
+    {
+        public static AncestorAlignmentScope For(TableWritePlan tablePlan, ResourceWritePlan writePlan)
+        {
+            DbColumnModel[] memberColumns =
+            [
+                .. tablePlan.CollectionMergePlan!.SemanticIdentityBindings.Select(binding =>
+                    tablePlan.ColumnBindings[binding.BindingIndex].Column
+                ),
+            ];
+
+            foreach (var part in ResolveDocumentReferenceIdentityParts(writePlan, tablePlan))
+            {
+                var identityColumn = tablePlan.TableModel.Columns.FirstOrDefault(column =>
+                    column.ColumnName.Equals(part.IdentityBinding.Column)
+                );
+
+                if (identityColumn is not null && part.IdentityIndex < memberColumns.Length)
+                {
+                    memberColumns[part.IdentityIndex] = identityColumn;
+                }
+            }
+
+            List<(int, QualifiedResourceName)> descriptorMembers = [];
+
+            for (var index = 0; index < memberColumns.Length; index++)
+            {
+                if (memberColumns[index] is { Kind: ColumnKind.DescriptorFk, TargetResource: { } resource })
+                {
+                    descriptorMembers.Add((index, resource));
+                }
+            }
+
+            return new AncestorAlignmentScope(
+                CollectionSemanticIdentityEquality.ForMemberColumns(memberColumns),
+                descriptorMembers
+            );
+        }
+
+        /// <summary>
+        /// Replaces each descriptor URI member that <paramref name="resolvedReferenceLookups"/> resolves
+        /// with its descriptor id, so two spellings of one descriptor compare equal.
+        /// </summary>
+        public ImmutableArray<SemanticIdentityPart> ResolveDescriptorMembers(
+            ImmutableArray<SemanticIdentityPart> identity,
+            FlatteningResolvedReferenceLookupSet resolvedReferenceLookups
+        )
+        {
+            ImmutableArray<SemanticIdentityPart>.Builder? builder = null;
+
+            foreach (var (identityIndex, descriptorResource) in DescriptorMembers)
+            {
+                if (identityIndex >= identity.Length)
+                {
+                    continue;
+                }
+
+                var part = identity[identityIndex];
+
+                if (
+                    part.Value is JsonValue value
+                    && value.TryGetValue<string>(out var uri)
+                    && !string.IsNullOrWhiteSpace(uri)
+                    && resolvedReferenceLookups.TryGetDescriptorIdByUri(
+                        descriptorResource,
+                        uri,
+                        out var descriptorId
+                    )
+                )
+                {
+                    builder ??= identity.ToBuilder();
+                    builder[identityIndex] = part with { Value = JsonValue.Create(descriptorId) };
+                }
+            }
+
+            return builder is null ? identity : builder.MoveToImmutable();
+        }
+    }
+
+    private static bool AncestorChainsEqual(
+        ImmutableArray<AncestorCollectionInstance> left,
+        ImmutableArray<AncestorCollectionInstance> right
+    )
+    {
+        var leftLength = left.IsDefault ? 0 : left.Length;
+        var rightLength = right.IsDefault ? 0 : right.Length;
+
+        if (leftLength != rightLength)
+        {
+            return false;
+        }
+
+        for (var i = 0; i < leftLength; i++)
+        {
+            if (
+                !string.Equals(left[i].JsonScope, right[i].JsonScope, StringComparison.Ordinal)
+                || !ScopeInstanceAddressComparer.SemanticIdentityEquals(
+                    left[i].SemanticIdentityInOrder,
+                    right[i].SemanticIdentityInOrder
+                )
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
     /// Rewrites each ancestor's <see cref="AncestorCollectionInstance.SemanticIdentityInOrder"/>
     /// in <paramref name="address"/> so descriptor-URI parts are replaced by their resolved
-    /// Int64 ids and document-reference natural-key parts are replaced by their resolved
+    /// Int32 ids and document-reference natural-key parts are replaced by their resolved
     /// document ids. This makes ancestor-keyed index lookups (built at walker construction
     /// from raw Core-emitted addresses) symmetric with recursion-side lookup keys (which the
     /// walker constructs from already-canonicalized current row identities).
@@ -1949,7 +2279,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             // Build the target parent address pair so per-partition positional fallback can
             // intersect ancestor stored rows (raw URI form) with the right
-            // partition's current rows (canonical Int64 form). Raw form is built from the
+            // partition's current rows (canonical ID form). Raw form is built from the
             // input chain; canonical form uses the in-progress builder so far, mirroring how
             // BuildContainingScopeAddress walks ancestors during the walker's recursion.
             var rawParentAddress = BuildAncestorTargetParentAddress(
@@ -2071,7 +2401,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// count-equal positional pairing cannot resolve the URI, the helper fails closed via
     /// <see cref="InvalidOperationException"/> rather than leaving the URI form in place,
     /// because a URI-form ancestor identity silently mis-buckets the row in the walker's
-    /// address-keyed visible-stored index — recursion looks up by canonical Int64 and a
+    /// address-keyed visible-stored index — recursion looks up by canonical Int32 and a
     /// URI-form bucket and the lookup key would carry different forms.
     /// </summary>
     private static ImmutableArray<SemanticIdentityPart> CanonicalizeAncestorDescriptorParts(
@@ -2106,9 +2436,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            // Already canonicalized (Int64). The ancestor came from a path that already
+            // Already canonicalized (Int32). The ancestor came from a path that already
             // applied canonicalization (e.g., walker-recursion-built address). Skip.
-            if (part.Value is JsonValue jvAlready && jvAlready.TryGetValue<long>(out _))
+            if (part.Value is JsonValue jvAlready && jvAlready.TryGetValue<int>(out _))
             {
                 continue;
             }
@@ -2130,7 +2460,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            long descriptorId;
+            int descriptorId;
             if (
                 resolvedReferenceLookups.TryGetDescriptorIdByUri(
                     column.TargetResource.Value,
@@ -2167,7 +2497,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 // Fail closed when the ancestor descriptor URI cannot be canonicalized.
                 // Leaving the URI form in place silently mis-buckets the row in the walker's
                 // address-keyed visible-stored index because recursion looks up by canonical
-                // Int64 — the bucket and the lookup carry different forms and the planner
+                // Int32 — the bucket and the lookup carry different forms and the planner
                 // mistakes unmatched current rows for hidden preserves. The throw fires only
                 // when the cache misses, scalar matching is absent or ambiguous, and
                 // count-equal positional pairing cannot resolve (counts diverge or the URI
@@ -2223,7 +2553,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Natural-key matching is descriptor-aware. When the natural key contains a
     /// <see cref="ColumnKind.DescriptorFk"/> part (e.g.,
     /// <c>programReference.programTypeDescriptor</c>), the stored ancestor identity carries
-    /// the URI string while the current row carries the canonical Int64 descriptor id;
+    /// the URI string while the current row carries the canonical Int32 descriptor id;
     /// matching uses the request-cycle URI cache
     /// (<paramref name="resolvedReferenceLookups"/>) to canonicalize the stored URI before
     /// comparing it to the current row's column value. This mirrors what
@@ -2368,12 +2698,12 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// Natural-key matching is descriptor-aware — when the natural key contains a
     /// <see cref="ColumnKind.DescriptorFk"/> part, the stored URI is canonicalized via
     /// <paramref name="resolvedReferenceLookups"/> before comparing against the current
-    /// row's Int64 descriptor id. The shared comparison helper
+    /// row's Int32 descriptor id. The shared comparison helper
     /// <see cref="DocumentReferenceIdentityPartsMatch"/> performs this canonicalization for
     /// both this ancestor path and the per-row <see cref="TryResolveByReferenceFullMatch"/>
     /// path. Without descriptor-aware comparison, a composite natural key with a descriptor
     /// part (e.g., <c>programId + programTypeDescriptor</c>) would never match: stored
-    /// identity carries the URI string and the current row carries the descriptor Int64.
+    /// identity carries the URI string and the current row carries the descriptor Int32.
     /// </para>
     /// </summary>
     private static long? TryResolveAncestorDocumentReferenceIdFromCurrentRows(
@@ -2436,7 +2766,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         string.Join(",", identity.Select(p => $"{p.RelativePath}={p.Value?.ToJsonString() ?? "null"}"));
 
     /// <summary>
-    /// Resolves the canonical Int64 descriptor id for an ancestor's URI-form identity within
+    /// Resolves the canonical Int32 descriptor id for an ancestor's URI-form identity within
     /// the target parent partition. Mirrors the per-row descriptor resolution chain
     /// (cache → scalar → positional → fail-closed throw at the caller) adapted to ancestor canonicalization
     /// using the per-(scope, parent address) partition map so both strategies operate on
@@ -2467,7 +2797,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// the per-parent partitioning rule at <c>05-nested-and-extension-collection-merge.md:47</c>.
     /// </para>
     /// </summary>
-    internal static long? TryResolveAncestorDescriptorIdFromCurrentRows(
+    internal static int? TryResolveAncestorDescriptorIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> descriptorIndices,
         int descriptorIdx,
@@ -2554,7 +2884,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             if (
                 positionalPart.IsPresent
                 && positionalPart.Value is JsonValue jv
-                && jv.TryGetValue<long>(out var positionalId)
+                && jv.TryGetValue<int>(out var positionalId)
             )
             {
                 return positionalId;
@@ -2581,7 +2911,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// and the partition map's canonical keys.
     /// <para>
     /// <paramref name="useCanonicalChain"/> controls whether already-processed ancestors
-    /// come from <paramref name="canonicalBuilder"/> (canonical Int64 form for descriptors)
+    /// come from <paramref name="canonicalBuilder"/> (canonical Int32 form for descriptors)
     /// or from <paramref name="chain"/> directly (raw URI form). The raw form aligns with
     /// <c>VisibleStoredCollectionRow.Address.ParentAddress</c> for filtering ancestor
     /// stored rows; the canonical form aligns with the parent addresses keyed by current
@@ -2657,7 +2987,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// Returns the zero-based positions within the table's
     /// <see cref="DbTableIdentityMetadata.SemanticIdentityBindings"/> that require
-    /// URI-to-Int64 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
+    /// URI-to-Int32 canonicalization (i.e. those backed by a <see cref="ColumnKind.DescriptorFk"/>
     /// column). Returns an empty list when no descriptor-backed parts exist.
     /// </summary>
     internal static IReadOnlyList<int> ResolveDescriptorIdentityIndices(TableWritePlan tablePlan)
@@ -2694,7 +3024,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// For each <see cref="VisibleRequestCollectionItem"/> in
     /// <paramref name="requestItems"/>, replaces the <see cref="SemanticIdentityPart"/>
-    /// values at every descriptor-identity index with the resolved Int64 descriptor id.
+    /// values at every descriptor-identity index with the resolved Int32 descriptor id.
     /// Items whose descriptor lookup returns null are left unchanged (the planner's
     /// invariant check will surface the mismatch as a fail-closed error).
     /// </summary>
@@ -2742,9 +3072,9 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <summary>
     /// For each <see cref="VisibleStoredCollectionRow"/> in <paramref name="storedRows"/>,
     /// replaces the <see cref="SemanticIdentityPart"/> values at every descriptor-identity
-    /// index with the resolved Int64 descriptor id, looked up by URI from the request-cycle
+    /// index with the resolved Int32 descriptor id, looked up by URI from the request-cycle
     /// cache. When a stored URI is not in the cache (e.g. delete-by-absence: the row was
-    /// omitted from the request body), falls back to extracting the Int64 from the matching
+    /// omitted from the request body), falls back to extracting the Int32 from the matching
     /// <see cref="CurrentCollectionRowSnapshot"/> — see <see cref="CanonicalizeStoredIdentityParts"/>
     /// for the fallback strategy and its failure conditions.
     /// </summary>
@@ -2850,7 +3180,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
     /// <summary>
     /// Rewrites the descriptor-backed parts of <paramref name="identity"/> for stored-side
-    /// rows by looking up URI → Int64 from the request-cycle cache.
+    /// rows by looking up URI → Int32 from the request-cycle cache.
     ///
     /// <para><b>Fail-closed boundary:</b>
     /// Descriptor-backed top-level collection identity is supported for the common cases
@@ -2864,7 +3194,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// When a stored URI is not in the request-cycle cache — which happens during a PUT that
     /// omits a previously-stored collection item, because the omitted item's descriptor URI
     /// was never resolved as part of the current request body — the method falls back to
-    /// extracting the Int64 descriptor id directly from the matching
+    /// extracting the Int32 descriptor id directly from the matching
     /// <see cref="CurrentCollectionRowSnapshot"/>.</para>
     ///
     /// <para><b>Matching strategy:</b>
@@ -2913,8 +3243,8 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 continue;
             }
 
-            // Check if the value is already an Int64 (already canonicalized or numeric).
-            if (part.Value is JsonValue jv && jv.TryGetValue<long>(out _))
+            // Check if the value is already an Int32 (already canonicalized or numeric).
+            if (part.Value is JsonValue jv && jv.TryGetValue<int>(out _))
             {
                 continue;
             }
@@ -2958,7 +3288,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
 
             // Cache miss: the stored row references a descriptor URI that was not resolved
             // as part of the current request (typical in delete-by-absence). Fall back to
-            // extracting the Int64 id from the matching CurrentCollectionRowSnapshot.
+            // extracting the Int32 id from the matching CurrentCollectionRowSnapshot.
             var fallbackId = TryResolveDescriptorIdFromCurrentRows(
                 identity,
                 descriptorIdentityIndices,
@@ -2997,7 +3327,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     }
 
     /// <summary>
-    /// Attempts to resolve a descriptor Int64 id for <paramref name="descriptorIdx"/> in
+    /// Attempts to resolve a descriptor Int32 id for <paramref name="descriptorIdx"/> in
     /// <paramref name="identity"/> by matching against <paramref name="currentRows"/>.
     ///
     /// <para>Two strategies are tried in order, regardless of identity shape:</para>
@@ -3019,7 +3349,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// <para>Returns <c>null</c> when neither strategy produces a result and the caller
     /// should throw.</para>
     /// </summary>
-    private static long? TryResolveDescriptorIdFromCurrentRows(
+    private static int? TryResolveDescriptorIdFromCurrentRows(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> descriptorIndices,
         int descriptorIdx,
@@ -3069,7 +3399,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
         // VisibleStoredRows[storedRowIndex] corresponds to currentRows[storedRowIndex] when
         // currentRows is sorted by StoredOrdinal (see the walker's projection index). This
         // method does NOT independently verify the correspondence — a structural check
-        // would require resolving each current row's Int64 descriptor id back to its URI
+        // would require resolving each current row's Int32 descriptor id back to its URI
         // (a DB roundtrip against the descriptor projection). If the upstream contract is
         // broken (body out of ordinal order, or VisibleStoredRows mis-ordered), positional
         // rewrite would silently swap descriptor ids before the planner runs and downstream
@@ -3102,7 +3432,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
                 if (
                     positionalPart.IsPresent
                     && positionalPart.Value is JsonValue positionalJv
-                    && positionalJv.TryGetValue<long>(out var positionalId)
+                    && positionalJv.TryGetValue<int>(out var positionalId)
                 )
                 {
                     return positionalId;
@@ -3124,7 +3454,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
     /// on the descriptor part). Caller falls through to positional matching in both
     /// cases.</para>
     /// </summary>
-    private static long? TryResolveByScalarMatch(
+    private static int? TryResolveByScalarMatch(
         ImmutableArray<SemanticIdentityPart> identity,
         IReadOnlyList<int> scalarIndices,
         int descriptorIdx,
@@ -3197,7 +3527,7 @@ internal sealed class RelationalWriteProfileMergeSynthesizer(
             return null;
         }
 
-        if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<long>(out var matchedId))
+        if (matchedPart.Value is JsonValue matchedJv && matchedJv.TryGetValue<int>(out var matchedId))
         {
             return matchedId;
         }

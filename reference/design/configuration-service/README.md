@@ -7,8 +7,13 @@ API client credentials for the Data Management Service.
 Detailed design notes:
 
 * [API Client GET Identifier Semantics (DMS-1343)](./DMS-1343-apiclient-get-identifier-semantics.md)
+* [API Client Identifier Uniqueness (DMS-1529)](./DMS-1529-apiclient-identifier-uniqueness.md)
+* [API Client Education Organization Scope (DMS-1625)](./DMS-1625-apiclient-education-organization-scope.md)
+* [Application Update Fan-Out Measurement (DMS-1642)](./DMS-1642-application-update-fanout-measurement.md):
+  timings of a claim set change applied to 200 clients on Keycloak and OpenIddict
 * [Authorization in the Configuration Service](./CS-AUTH.md)
 * [Claimset Management](./CLAIMSET-MGMT.md)
+* [CMS Token Revocation: Keycloak Support and OAuth Failure Handling (DMS-1327)](./DMS-1327-cms-token-revocation.md)
 * [Expired Access Token Cleanup](./TOKEN-CLEANUP.md)
 * [Keycloak Client Provisioning Compensation (DMS-1365)](./DMS-1365-keycloak-client-provisioning-compensation.md)
 * [Secret Management](./SECRET-MANAGEMENT.md)

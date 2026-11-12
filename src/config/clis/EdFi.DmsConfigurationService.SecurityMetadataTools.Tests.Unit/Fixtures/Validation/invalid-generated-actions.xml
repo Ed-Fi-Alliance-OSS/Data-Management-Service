@@ -1,0 +1,16 @@
+<SecurityMetadata>
+    <Claims>
+        <Claim name="resource">
+            <ClaimSets>
+                <ClaimSet name="Reader">
+                    <Actions>
+                        <Action name="Read" />
+                    </Actions>
+                </ClaimSet>
+                <ClaimSet name="Empty">
+                    <Actions />
+                </ClaimSet>
+            </ClaimSets>
+        </Claim>
+    </Claims>
+</SecurityMetadata>
