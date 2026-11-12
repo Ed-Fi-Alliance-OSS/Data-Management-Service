@@ -23,7 +23,7 @@ Use the same digest-pinned Apache Kafka 4.3.2 broker in the DMS deployment and p
 2. Align CdcComposeBrokerSizeDeployment.BrokerImage and all applicable native Kafka fixture pins with the shipped Compose broker. Add a meaningful consistency check that fails when the Compose image and application/fixture authority disagree.
 3. Migrate the primary connector-template smoke lane from Redpanda to Apache Kafka, reusing existing native Kafka fixture support where appropriate. Replace Redpanda-specific startup and rpk operations; preserve connector validation/registration, classloading, partitioner, heartbeat, offset progress, and restart assertions.
 4. Audit shared fixture callers, workflow variables, configuration, and documentation. Remove obsolete Redpanda requirements from migrated paths. Retain a separate Redpanda compatibility lane only if an explicit supported-deployment requirement is established; do not break other callers by removing shared behavior blindly.
-5. Run connector-template smoke tests and live PostgreSQL and MSSQL RecordSize qualification suites against the new PR head. Verify Compose-backed broker-size changes and restart persistence use the intended Kafka image. Run relevant unit/contract tests and other affected live Kafka suites. Record actual results and failures; a skipped test or offline contract result is not live qualification.
+5. Run connector-template smoke tests and live PostgreSQL and MSSQL RecordSize qualification suites against a recorded revision containing the completed Kafka implementation and intended image pins. For subsequent changes, rerun affected selections when those changes can alter behavior exercised by the selections, image inputs, test selection, or qualification outcomes. Otherwise, document why the existing live evidence remains applicable and record focused validation. Verify Compose-backed broker-size changes and restart persistence use the intended Kafka image. Run relevant unit/contract tests and other affected live Kafka suites. Record actual results and failures; a skipped test or offline contract result is not live qualification.
 6. Validate fresh startup and retained-volume persistence with the shipped broker, including the startup script, KRaft configuration, volume ownership, cluster/topic identity and offsets.
 7. Refresh the pinned-image vulnerability assessment and record remaining findings and their disposition. The prior 2026-11-03 Linux/amd64 Trivy scan found 9 package findings: 1 critical, 3 high, 2 medium, and 3 unknown. Critical: CVE-2026-111497 (brotli-libs); high: CVE-2026-117610, CVE-2026-118370, CVE-2026-77214 (libexpat). These package findings do not establish exploitability. Do not describe 4.3.2 as security-cleared without resolving or assessing them.
 
@@ -55,8 +55,32 @@ fixture cleanup, rebased inputs, and Linux process-tree cleanup fix. This new ru
 supersedes the earlier qualification at `1b0b718`; those earlier results are not
 used to qualify this head. Tracked files and HEAD were unchanged throughout the
 run, from 22:11 to 23:36 UTC on November 11. Each selection ran once; no failures,
-fixes, or reruns were needed. The subsequent qualification-record update changes
-documentation only.
+fixes, or reruns were needed. Commit `7974be064` subsequently updated only this
+qualification record. Commit `715624dbe` then added support for quoted Kafka image
+pins and corresponding tests; it was not part of this live run.
+
+### Subsequent changes — 2026-11-12
+
+The quote-parsing change preserves the resolved image for the shipped, unquoted
+Compose pin. The five focused `CDC qualification Kafka image` Pester cases pass,
+including unquoted/single-quoted/double-quoted pins, invalid-pin rejection, smoke
+workflow configuration, and the RecordSize persistence evidence guard. Application
+code, fixtures and image inputs were unchanged by `715624dbe`, so the recorded live
+results remain applicable to those scenarios.
+
+The process-cleanup follow-up keeps root exit observation active when descendant
+inventory fails, bounded by the existing cleanup deadline. Focused process tests
+cover inventory failure before root exit and explicit cleanup cancellation while
+preserving the original failure. These tests cover the exceptional inventory path;
+no Kafka image inputs or live scenario assertions changed. No live selections were
+rerun for these follow-ups, and the November 11 results remain attributed to
+`5b700f7`, not to a later revision.
+
+Validation of this follow-up, based on `715624dbe`: all 4,777 CDC unit tests passed
+in Release with zero failures or skips, including both new inventory-failure cases.
+Both new cases failed at the root-exit ordering assertion with the pre-fix behavior.
+
+### Recorded live results
 
 | Selection | Passed | Failed | Skipped |
 | --- | ---: | ---: | ---: |

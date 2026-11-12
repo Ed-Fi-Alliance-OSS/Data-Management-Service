@@ -70,6 +70,13 @@ Both workflows call [Invoke-CdcQualification.ps1](../eng/ci/Invoke-CdcQualificat
 Qualification requires PowerShell 7.5 or newer, including direct Pester runs of the CDC lifecycle and qualification tests. Retained Compose input checks distinguish empty environment variables from absent ones; PowerShell 7.4 removes variables assigned an empty string. Check `$PSVersionTable.PSVersion` before running locally.
 
 Live lanes require Docker, .NET 10, `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` equal to the [shipped qualification record](../src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json), and the selected `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE` / `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE`. The repository-pinned Apache Kafka image is also required. The runner sets `CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE` to that pin for all selected suites and restores the caller's value afterward. Direct `dotnet test` fixture runs default to the same pin; an optional `CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE` override is for candidate Apache Kafka experiments and does not qualify the shipped broker. Images must exist locally unless `-PullImages` is supplied to the qualification runner; direct smoke fixtures allow Docker to pull missing configured images during setup. Packaged-history tests require `ConnectionStrings__DatabaseConnection` / `ConnectionStrings__MssqlAdmin` pointing to isolated PostgreSQL / SQL Server 2025 admin servers. The contract lane, provider Admission and Lifecycle lanes require Pester 5.7.1.
+
+For candidate-image experiments, use direct `Category=CdcConnectorTemplateSmoke`
+runs. Controller/admission paths using `CdcComposeKafkaAuthorizationInspection`
+require the exact shipped Kafka image; overriding it can start the candidate broker
+but then return authorization `Unavailable`. The qualification runner always selects
+the shipped pin.
+
 Admission and Lifecycle also require `CDC_RUNBOOK_OWNED_STACK=1` and a disposable, exclusively owned
 local/published Compose environment with no retained containers, volumes or bootstrap
 workspace. The shared live runbook fixture requires two PostgreSQL setup cases and

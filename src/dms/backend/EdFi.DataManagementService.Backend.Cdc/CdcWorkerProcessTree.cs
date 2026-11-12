@@ -10,18 +10,32 @@ namespace EdFi.DataManagementService.Backend.Cdc;
 
 internal static class CdcWorkerProcessTree
 {
-    internal static async Task TerminateAsync(Process process, CancellationToken cancellationToken)
+    internal static Task TerminateAsync(Process process, CancellationToken cancellationToken) =>
+        TerminateAsync(
+            process,
+            cancellationToken,
+            CaptureDescendants,
+            root => root.Kill(entireProcessTree: true)
+        );
+
+    internal static async Task TerminateAsync(
+        Process process,
+        CancellationToken cancellationToken,
+        Action<int, List<Process>, CancellationToken> captureDescendants,
+        Action<Process> terminate
+    )
     {
         using var observation = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         List<Process> descendants = [];
-        List<Task> exits = [];
+        Task rootExit = process.WaitForExitAsync(observation.Token);
+        List<Task> exits = [rootExit];
         try
         {
             try
             {
                 if (OperatingSystem.IsLinux() && !process.HasExited)
                 {
-                    CaptureDescendants(process.Id, descendants, cancellationToken);
+                    captureDescendants(process.Id, descendants, cancellationToken);
                 }
                 // Register exit observation before terminating the tree. Waiting for the
                 // root alone does not establish that its Linux descendants have exited.
@@ -29,7 +43,6 @@ internal static class CdcWorkerProcessTree
                 {
                     exits.Add(descendant.WaitForExitAsync(observation.Token));
                 }
-                exits.Add(process.WaitForExitAsync(observation.Token));
             }
             finally
             {
@@ -37,13 +50,26 @@ internal static class CdcWorkerProcessTree
                 // hosts retain the existing .NET tree-kill and root-exit behavior.
                 try
                 {
-                    process.Kill(entireProcessTree: true);
+                    terminate(process);
                 }
                 catch (InvalidOperationException)
                 { /* Root already exited. */
                 }
             }
             await Task.WhenAll(exits);
+        }
+        catch
+        {
+            // Inventory or termination failure must not cancel the root observer early.
+            // Its wait still uses the caller's bounded cleanup deadline.
+            try
+            {
+                await rootExit;
+            }
+            catch (Exception)
+            { /* Preserve the original cleanup failure if root exit cannot be confirmed. */
+            }
+            throw;
         }
         finally
         {
