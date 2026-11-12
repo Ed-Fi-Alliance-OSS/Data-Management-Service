@@ -2589,7 +2589,11 @@ Describe 'CDC qualification Kafka image' {
         (Get-CdcRunbookRecordSizeReport $path).Status | Should -Be Failed
     }
 
-    It 'reads the shipped image and rejects missing, mutable or mismatched pins' {
+    It 'reads <Format> images and rejects missing, mutable or mismatched pins' -ForEach @(
+        @{ Format = 'unquoted'; Quote = '' },
+        @{ Format = 'single-quoted'; Quote = "'" },
+        @{ Format = 'double-quoted'; Quote = '"' }
+    ) {
         $script = Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'
         $image = & $script
         $image | Should -Match '^apache/kafka:[^@]+@sha256:[a-f0-9]{64}$'
@@ -2597,10 +2601,10 @@ Describe 'CDC qualification Kafka image' {
         $source = Join-Path $TestDrive 'broker.cs'
         Set-Content $source "internal const string BrokerImage = `"$image`";"
         foreach ($candidate in @('', 'apache/kafka:latest', ('apache/kafka:other@sha256:' + ('a' * 64)))) {
-            Set-Content $compose "services:`n  kafka:`n    image: $candidate"
+            Set-Content $compose "services:`n  kafka:`n    image: ${Quote}${candidate}${Quote}"
             { & $script -ComposeFile $compose -BrokerSourceFile $source } | Should -Throw 'EnvironmentUnavailable:*matching digest-pinned Apache Kafka*'
         }
-        Set-Content $compose "services:`n  kafka:`n    image: $image"
+        Set-Content $compose "services:`n  kafka:`n    image: ${Quote}${image}${Quote}"
         (& $script -ComposeFile $compose -BrokerSourceFile $source) | Should -Be $image
     }
 

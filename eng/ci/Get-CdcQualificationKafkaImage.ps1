@@ -15,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 # Qualification uses the branch's shipped broker, independently of environment overrides.
 $compose = Get-Content -LiteralPath $ComposeFile -Raw
 $source = Get-Content -LiteralPath $BrokerSourceFile -Raw
-$image = [regex]::Match($compose, '(?m)^\s+image:\s+(apache/kafka:[^\s]+@sha256:[a-f0-9]{64})\s*$').Groups[1].Value
+$image = [regex]::Match($compose, '(?m)^\s+image:\s+(?<quote>[''"]?)(?<image>apache/kafka:[^\s]+@sha256:[a-f0-9]{64})\k<quote>\s*$').Groups['image'].Value
 $authority = [regex]::Match($source, 'internal const string BrokerImage\s*=\s*"([^"]+)";').Groups[1].Value
 if (-not $image -or $image -cne $authority) {
     throw 'EnvironmentUnavailable: CDC qualification requires matching digest-pinned Apache Kafka images in Compose and CdcComposeBrokerSizeDeployment.BrokerImage.'
