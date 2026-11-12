@@ -32,13 +32,13 @@ internal static class NamespaceAuthorizationProblemDetailsScenario
     public static IReadOnlyList<string> ConfiguredPrefixes { get; } =
     [AuthorizedPrefix, SecondAuthorizedPrefix];
 
-    private const string NamespaceResourcesEndpoint = "/data/authz/authorizationNamespaceResources";
+    internal const string NamespaceResourcesEndpoint = "/data/authz/authorizationNamespaceResources";
     private const string SchoolsEndpoint = "/data/ed-fi/schools";
     private const string EducationOrganizationCategoryDescriptorsEndpoint =
         "/data/ed-fi/educationOrganizationCategoryDescriptors";
     private const string GradeLevelDescriptorsEndpoint = "/data/ed-fi/gradeLevelDescriptors";
 
-    private const int SchoolId = 100;
+    internal const int SchoolId = 100;
 
     private const string MismatchType =
         "urn:ed-fi:api:security:authorization:namespace:access-denied:namespace-mismatch";
@@ -365,7 +365,7 @@ internal static class NamespaceAuthorizationProblemDetailsScenario
                     }
         );
 
-    private static async Task SeedReferenceDataAsync(ApiIntegrationHarness harness)
+    internal static async Task SeedReferenceDataAsync(ApiIntegrationHarness harness)
     {
         await CreateDescriptorAsync(
             harness,
@@ -473,7 +473,7 @@ internal static class NamespaceAuthorizationProblemDetailsScenario
         return body;
     }
 
-    private static async Task<HttpResponseMessage> PostJsonAsync(
+    internal static async Task<HttpResponseMessage> PostJsonAsync(
         ApiIntegrationHarness harness,
         string endpoint,
         JsonObject body
