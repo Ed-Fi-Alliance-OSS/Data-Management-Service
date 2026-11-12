@@ -226,7 +226,11 @@ public sealed class Given_CdcWorkerDockerCommand
                             int.Parse(await File.ReadAllTextAsync(file), CultureInfo.InvariantCulture)
                         );
                         process.Kill(entireProcessTree: true);
-                        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        while (!HasTerminated(process))
+                        {
+                            await Task.Delay(10, cleanup.Token);
+                        }
                     }
                     catch (ArgumentException)
                     { /* Already reaped. */
@@ -260,13 +264,37 @@ public sealed class Given_CdcWorkerDockerCommand
             try
             {
                 using var process = Process.GetProcessById(pid);
-                process
-                    .HasExited.Should()
+                HasTerminated(process)
+                    .Should()
                     .BeTrue($"owned process {pid} must terminate before RunAsync returns");
             }
             catch (ArgumentException)
             { /* Already reaped. */
             }
+        }
+    }
+
+    private static bool HasTerminated(Process process)
+    {
+        if (process.HasExited)
+        {
+            return true;
+        }
+        try
+        {
+            // An exited zombie is terminated even while its parent has yet to reap it.
+            return File.ReadLines($"/proc/{process.Id}/status")
+                .Any(line =>
+                    line.StartsWith("State:\t", StringComparison.Ordinal) && line[7] is 'Z' or 'X' or 'x'
+                );
+        }
+        catch (FileNotFoundException)
+        {
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
         }
     }
 

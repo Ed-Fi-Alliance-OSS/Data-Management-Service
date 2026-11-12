@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Diagnostics;
+using System.Globalization;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -13,6 +14,95 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform("Linux")]
 public sealed class Given_CdcWorkerProcessTree
 {
+    [Test]
+    public async Task It_completes_cleanup_when_a_killed_descendant_remains_an_unreaped_zombie()
+    {
+        using var holder = Process.Start(
+            new ProcessStartInfo("/bin/bash")
+            {
+                UseShellExecute = false,
+                RedirectStandardInput = true,
+                RedirectStandardOutput = true,
+                ArgumentList =
+                {
+                    "-c",
+                    """
+                    sleep 300 &
+                    child=$!
+                    trap 'kill "$child" 2>/dev/null; wait "$child" 2>/dev/null' EXIT
+                    printf '%s\n' "$child"
+                    kill -STOP $$
+                    read -r
+                    """,
+                },
+            }
+        )!;
+        using var root = Process.Start(
+            new ProcessStartInfo("/bin/sleep", "300") { UseShellExecute = false }
+        )!;
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        Task termination = Task.CompletedTask;
+        try
+        {
+            int childId = int.Parse(
+                (await holder.StandardOutput.ReadLineAsync(cleanup.Token))!,
+                CultureInfo.InvariantCulture
+            );
+            // A stopped parent cannot reap its child. Observe the kernel state before killing it.
+            while (
+                !(await File.ReadAllTextAsync($"/proc/{holder.Id}/status", cleanup.Token)).Contains(
+                    "State:\tT"
+                )
+            )
+            {
+                await Task.Delay(10, cleanup.Token);
+            }
+            using var child = Process.GetProcessById(childId);
+            termination = CdcWorkerProcessTree.TerminateAsync(
+                root,
+                cleanup.Token,
+                (_, descendants, _) => descendants.Add(Process.GetProcessById(childId)),
+                process =>
+                {
+                    process.Kill();
+                    child.Kill();
+                }
+            );
+
+            await termination;
+
+            root.HasExited.Should().BeTrue();
+            (await File.ReadAllTextAsync($"/proc/{childId}/status", cleanup.Token))
+                .Should()
+                .Contain("State:\tZ");
+            cleanup.IsCancellationRequested.Should().BeFalse();
+        }
+        finally
+        {
+            await cleanup.CancelAsync();
+            root.Kill();
+            await root.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            // Release the holder only after the assertion, then let its EXIT trap reap the child.
+            holder.StandardInput.Close();
+            using var resume = Process.Start(
+                new ProcessStartInfo("/bin/kill")
+                {
+                    UseShellExecute = false,
+                    ArgumentList = { "-CONT", holder.Id.ToString(CultureInfo.InvariantCulture) },
+                }
+            )!;
+            await resume.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            await holder.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+            try
+            {
+                await termination;
+            }
+            catch (OperationCanceledException)
+            { /* Observe the cleanup deadline if the regression fails. */
+            }
+        }
+    }
+
     [TestCase(false)]
     [TestCase(true)]
     public async Task It_waits_for_root_exit_or_cleanup_cancellation_after_inventory_failure(

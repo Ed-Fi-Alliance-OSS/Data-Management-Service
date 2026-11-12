@@ -41,7 +41,7 @@ internal static class CdcWorkerProcessTree
                 // root alone does not establish that its Linux descendants have exited.
                 foreach (var descendant in descendants)
                 {
-                    exits.Add(descendant.WaitForExitAsync(observation.Token));
+                    exits.Add(WaitForDescendantExitAsync(descendant, observation.Token));
                 }
             }
             finally
@@ -85,6 +85,33 @@ internal static class CdcWorkerProcessTree
             {
                 descendant.Dispose();
             }
+        }
+    }
+
+    private static async Task WaitForDescendantExitAsync(Process process, CancellationToken cancellationToken)
+    {
+        while (!process.HasExited)
+        {
+            try
+            {
+                // .NET's non-child exit check treats an unreaped Linux zombie as running.
+                // Cleanup needs termination, not reaping by a parent outside our control.
+                string stat = await File.ReadAllTextAsync($"/proc/{process.Id}/stat", cancellationToken);
+                // The parenthesized process name can itself contain spaces and parentheses.
+                if (stat[stat.LastIndexOf(')') + 2] is 'Z' or 'X' or 'x')
+                {
+                    return;
+                }
+            }
+            catch (FileNotFoundException)
+            {
+                return; // Process was reaped between observations.
+            }
+            catch (DirectoryNotFoundException)
+            {
+                return;
+            }
+            await Task.Delay(10, cancellationToken);
         }
     }
 
