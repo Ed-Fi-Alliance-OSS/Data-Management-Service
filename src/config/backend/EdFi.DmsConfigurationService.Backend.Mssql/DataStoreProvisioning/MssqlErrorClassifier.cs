@@ -58,8 +58,6 @@ internal static class MssqlErrorClassifier
     public const int DatabaseInUseForRestore = 3101;
     public const int RestoreTerminatedAbnormally = 3013;
     public const int RestoreNoPermission = 3110;
-    public const int RestoreOverExistingFile = 3142;
-    public const int RestoreTailLogNotBackedUp = 3159;
     public const int BackupDeviceCannotOpen = 3201;
     public const int BackupMediaFamilyMalformed = 3241;
     public const int BackupNotAValidBackupSet = 3242;
@@ -282,4 +280,20 @@ internal static class MssqlErrorClassifier
             operation,
             ErrorNumberOf(exception)?.ToString(CultureInfo.InvariantCulture)
         );
+
+    /// <summary>
+    /// The definite failure a statement's exception proves, or null when the statement's outcome is in doubt. Only an
+    /// exception that is itself a <see cref="SqlException"/> can prove one, and only when
+    /// <see cref="FailureClassOf(Exception)"/> names a class; a SQL Server error wrapped in another exception, a
+    /// cancellation, and every error that class leaves in doubt are null. The failure carries
+    /// <see cref="Diagnostic(Exception, string)"/> under <paramref name="operation"/> and is retryable exactly when
+    /// <see cref="IsRetryableRejection(Exception)"/> says so.
+    /// </summary>
+    public static DmsCommandFailure? DefiniteFailureOf(Exception exception, string operation) =>
+        exception is SqlException && FailureClassOf(exception) is { } failureClass
+            ? new DmsCommandFailure(failureClass, Diagnostic(exception, operation))
+            {
+                Retryable = IsRetryableRejection(exception),
+            }
+            : null;
 }

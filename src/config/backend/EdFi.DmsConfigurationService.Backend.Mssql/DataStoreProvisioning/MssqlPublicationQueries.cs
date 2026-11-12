@@ -345,13 +345,8 @@ internal static class MssqlPublicationQueries
 
     /// <summary>An error the server reported for the statement is definite; anything else leaves it in doubt on <paramref name="session"/>.</summary>
     private static DmsCommandOutcome Classify(Exception exception, DmsServerSessionId session, string step) =>
-        exception is SqlException && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
-            ? new DmsCommandOutcome.Failed(
-                new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, step))
-                {
-                    Retryable = MssqlErrorClassifier.IsRetryableRejection(exception),
-                }
-            )
+        MssqlErrorClassifier.DefiniteFailureOf(exception, step) is { } failure
+            ? new DmsCommandOutcome.Failed(failure)
             : new DmsCommandOutcome.Unknown(session);
 
     internal static DmsCommandOutcome<T> Classify<T>(
@@ -359,12 +354,7 @@ internal static class MssqlPublicationQueries
         DmsServerSessionId session,
         string step
     ) =>
-        exception is SqlException && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
-            ? new DmsCommandOutcome<T>.Failed(
-                new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, step))
-                {
-                    Retryable = MssqlErrorClassifier.IsRetryableRejection(exception),
-                }
-            )
+        MssqlErrorClassifier.DefiniteFailureOf(exception, step) is { } failure
+            ? new DmsCommandOutcome<T>.Failed(failure)
             : new DmsCommandOutcome<T>.Unknown(session);
 }

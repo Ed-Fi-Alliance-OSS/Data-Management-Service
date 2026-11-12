@@ -8,8 +8,11 @@ using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Catalog;
 using FluentAssertions;
+using FluentAssertions.Execution;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 
@@ -229,6 +232,342 @@ public class PrivateOperationDirectoryTests
             }
 
             _competitorRan = true;
+        }
+    }
+
+    /// <summary>
+    /// CAR-001: the claim succeeded, so the directory is this operation's own when securing it fails. A file-system
+    /// failure deletes it and carries the owner out in <see cref="OperationDirectorySetupException"/>; any other
+    /// failure deletes it and propagates unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_securing_the_claimed_directory_fails
+    {
+        private StagerWorkspace _workspace = null!;
+        private IOException _injected = null!;
+        private Exception? _failure;
+        private bool _directoryExistedAtTheSeam;
+        private Exception? _otherFailure;
+        private string _otherPath = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _workspace = new StagerWorkspace();
+            _injected = new IOException("injected");
+            _failure = Record.Exception(() =>
+                PrivateOperationDirectory
+                    .Create(
+                        _workspace.OperationsRoot,
+                        _workspace.OperationId,
+                        beforeClaim: null,
+                        afterClaim: path =>
+                        {
+                            _directoryExistedAtTheSeam = Directory.Exists(path);
+                            throw _injected;
+                        }
+                    )
+                    .Dispose()
+            );
+
+            DmsOperationId other = DmsOperationId.New();
+            _otherPath = Path.Combine(
+                _workspace.OperationsRoot,
+                PrivateOperationDirectory.NamePrefix + other.Value
+            );
+            _otherFailure = Record.Exception(() =>
+                PrivateOperationDirectory
+                    .Create(
+                        _workspace.OperationsRoot,
+                        other,
+                        beforeClaim: null,
+                        afterClaim: _ => throw new InvalidOperationException("injected")
+                    )
+                    .Dispose()
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _workspace.Dispose();
+
+        [Test]
+        public void It_ran_the_seam_after_the_claim() => _directoryExistedAtTheSeam.Should().BeTrue();
+
+        [Test]
+        public void It_carries_the_owner_and_the_original_failure()
+        {
+            OperationDirectorySetupException setup = _failure
+                .Should()
+                .BeOfType<OperationDirectorySetupException>()
+                .Subject;
+            using AssertionScope scope = new();
+            setup.InnerException.Should().BeSameAs(_injected);
+            setup.Directory.Path.Should().Be(_workspace.OperationDirectoryPath);
+            setup.Directory.OperationId.Should().Be(_workspace.OperationId);
+        }
+
+        [Test]
+        public void It_deletes_the_directory_it_created() =>
+            Directory.Exists(_workspace.OperationDirectoryPath).Should().BeFalse();
+
+        [Test]
+        public void It_propagates_any_other_failure_unchanged() =>
+            _otherFailure.Should().BeOfType<InvalidOperationException>();
+
+        [Test]
+        public void It_deletes_the_directory_after_any_other_failure() =>
+            Directory.Exists(_otherPath).Should().BeFalse();
+    }
+
+    /// <summary>
+    /// CAR-001: securing the claimed directory fails and its deletion is blocked. The owner still leaves in the
+    /// exception, its path is the directory that remains, and the catalog's residue accounting reports it.
+    /// A sentinel is written before the trap so the recursive deletion must unlink an entry: removing an empty
+    /// directory needs write permission on its parent only, which the Unix trap leaves in place.
+    /// </summary>
+    [TestFixture]
+    public class Given_securing_the_claimed_directory_fails_and_its_deletion_is_blocked
+    {
+        private StagerWorkspace _workspace = null!;
+        private DeletionTrap? _trap;
+        private OperationDirectorySetupException? _failure;
+        private bool _deletedWhileBlocked;
+        private IReadOnlyList<DmsCleanupResidue> _residue = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess)
+            {
+                Assert.Ignore("A privileged process may unlink in a read-only directory.");
+            }
+
+            _workspace = new StagerWorkspace();
+            _failure =
+                Record.Exception(() =>
+                    PrivateOperationDirectory.Create(
+                        _workspace.OperationsRoot,
+                        _workspace.OperationId,
+                        beforeClaim: null,
+                        afterClaim: path =>
+                        {
+                            File.WriteAllText(Path.Combine(path, "sentinel"), "");
+                            _trap = new DeletionTrap(path);
+                            throw new IOException("injected");
+                        }
+                    )
+                ) as OperationDirectorySetupException;
+            if (_failure is not null)
+            {
+                _deletedWhileBlocked = _failure.Directory.TryDelete();
+                _residue = TemplateArtifactCatalog.ResidueUnder(_failure.Directory.Path);
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _trap?.Dispose();
+            _failure?.Directory.Dispose();
+            _workspace?.Dispose();
+        }
+
+        [Test]
+        public void It_carries_the_owner_out() => _failure.Should().NotBeNull();
+
+        [Test]
+        public void It_leaves_the_directory_while_blocked()
+        {
+            _deletedWhileBlocked.Should().BeFalse();
+            Directory.Exists(_workspace.OperationDirectoryPath).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_accounts_for_the_remaining_directory_as_residue() =>
+            _residue
+                .Should()
+                .Equal(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.OperationDirectory,
+                        PrivateOperationDirectory.NamePrefix + _workspace.OperationId.Value
+                    )
+                );
+    }
+
+    /// <summary>
+    /// CAR-001: <c>CreateNew</c> succeeded, so the file is this directory's own when securing it fails. Its handle is
+    /// disposed before the exception leaves, without relying on finalization; the file is deleted, and the name can
+    /// be created again.
+    /// </summary>
+    [TestFixture]
+    public class Given_securing_a_created_file_fails
+    {
+        private StagerWorkspace _workspace = null!;
+        private PrivateOperationDirectory _directory = null!;
+        private IOException _injected = null!;
+        private FileStream? _seen;
+        private Exception? _failure;
+        private Exception? _recreateFailure;
+        private bool _existedAfterFailure;
+
+        [SetUp]
+        public void Setup()
+        {
+            _workspace = new StagerWorkspace();
+            _directory = PrivateOperationDirectory.Create(_workspace.OperationsRoot, _workspace.OperationId);
+            _injected = new IOException("injected");
+            _failure = Record.Exception(() =>
+                _directory
+                    .CreateFile(
+                        PrivateOperationDirectory.CredentialFileName,
+                        afterCreate: stream =>
+                        {
+                            _seen = stream;
+                            throw _injected;
+                        }
+                    )
+                    .Dispose()
+            );
+            _existedAfterFailure = File.Exists(
+                _directory.PathOf(PrivateOperationDirectory.CredentialFileName)
+            );
+            _recreateFailure = Record.Exception(() =>
+                _directory.CreateFile(PrivateOperationDirectory.CredentialFileName).Dispose()
+            );
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _directory.Dispose();
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_propagates_the_original_failure() => _failure.Should().BeSameAs(_injected);
+
+        [Test]
+        public void It_closed_the_handle_before_the_exception_left()
+        {
+            _seen.Should().NotBeNull();
+            _seen!.SafeFileHandle.IsClosed.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_deletes_the_file_it_created() => _existedAfterFailure.Should().BeFalse();
+
+        [Test]
+        public void It_can_create_the_name_again() => _recreateFailure.Should().BeNull();
+    }
+
+    /// <summary>
+    /// CAR-001: securing a created credential file fails and its deletion is blocked (read-only on Windows, the
+    /// directory's write permission removed on Unix). The handle is still disposed, nothing was written, and the
+    /// file that remains is accounted for by the directory's owner as credential residue.
+    /// </summary>
+    [TestFixture]
+    public class Given_securing_a_created_file_fails_and_its_deletion_is_blocked
+    {
+        private StagerWorkspace _workspace = null!;
+        private PrivateOperationDirectory _directory = null!;
+        private DeletionTrap? _trap;
+        private string _filePath = null!;
+        private FileStream? _seen;
+        private Exception? _failure;
+        private long _remainingLength = -1;
+        private bool _directoryReleased;
+        private IReadOnlyList<DmsCleanupResidue> _residue = [];
+
+        [SetUp]
+        public void Setup()
+        {
+            if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess)
+            {
+                Assert.Ignore("A privileged process may unlink in a read-only directory.");
+            }
+
+            _workspace = new StagerWorkspace();
+            _directory = PrivateOperationDirectory.Create(_workspace.OperationsRoot, _workspace.OperationId);
+            _filePath = _directory.PathOf(PrivateOperationDirectory.CredentialFileName);
+            _failure = Record.Exception(() =>
+                _directory
+                    .CreateFile(
+                        PrivateOperationDirectory.CredentialFileName,
+                        afterCreate: stream =>
+                        {
+                            _seen = stream;
+                            BlockDeletion();
+                            throw new IOException("injected");
+                        }
+                    )
+                    .Dispose()
+            );
+            if (File.Exists(_filePath))
+            {
+                _remainingLength = new FileInfo(_filePath).Length;
+            }
+
+            _directoryReleased = _directory.TryDelete();
+            _residue = TemplateArtifactCatalog.ResidueUnder(_directory.Path);
+        }
+
+        private void BlockDeletion()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                File.SetAttributes(_filePath, FileAttributes.ReadOnly);
+            }
+            else
+            {
+                _trap = new DeletionTrap(_directory.Path);
+            }
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _trap?.Dispose();
+            if (OperatingSystem.IsWindows() && File.Exists(_filePath))
+            {
+                File.SetAttributes(_filePath, FileAttributes.Normal);
+            }
+
+            _directory?.Dispose();
+            _workspace?.Dispose();
+        }
+
+        [Test]
+        public void It_propagates_the_failure() => _failure.Should().BeOfType<IOException>();
+
+        [Test]
+        public void It_closed_the_handle_before_the_exception_left()
+        {
+            _seen.Should().NotBeNull();
+            _seen!.SafeFileHandle.IsClosed.Should().BeTrue();
+        }
+
+        [Test]
+        public void It_leaves_the_file_empty() => _remainingLength.Should().Be(0);
+
+        [Test]
+        public void It_reports_the_remaining_credential_file_through_the_directory_owner()
+        {
+            _directoryReleased.Should().BeFalse();
+            _residue
+                .Should()
+                .Equal(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.CredentialFile,
+                        PrivateOperationDirectory.NamePrefix
+                            + _workspace.OperationId.Value
+                            + "/"
+                            + PrivateOperationDirectory.CredentialFileName
+                    ),
+                    new DmsCleanupResidue(
+                        DmsResidueKind.OperationDirectory,
+                        PrivateOperationDirectory.NamePrefix + _workspace.OperationId.Value
+                    )
+                );
         }
     }
 

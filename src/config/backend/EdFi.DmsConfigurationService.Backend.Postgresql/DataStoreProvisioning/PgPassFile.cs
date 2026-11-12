@@ -57,7 +57,9 @@ internal static class PgPassFile
 
         string content = Content(connection, database);
 
-        // CreateFile refuses an existing entry before anything is created, so a failure there deletes nothing.
+        // CreateFile refuses an existing entry before anything is created, and when securing a file it created
+        // fails it disposes and deletes that file itself. A failure there leaves nothing for this method to delete,
+        // and anything left stays in the directory, whose owner reports it.
         FileStream stream = directory.CreateFile(FileName);
         string path = directory.PathOf(FileName);
         try

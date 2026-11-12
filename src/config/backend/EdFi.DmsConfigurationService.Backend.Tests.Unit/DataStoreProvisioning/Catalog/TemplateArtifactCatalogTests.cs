@@ -1073,6 +1073,121 @@ public class TemplateArtifactCatalogTests
     }
 
     /// <summary>
+    /// CAR-001: the claim succeeds but securing the directory fails. The directory was this operation's own, so
+    /// the refusal releases it: a released directory leaves a clean report, and one whose deletion is blocked is
+    /// reported and logged as residue rather than lost. The blocked directory gets a sentinel before the trap so its
+    /// recursive deletion must unlink an entry; an empty directory needs only its parent's write permission.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_claimed_directory_cannot_be_secured
+    {
+        private CatalogWorkspace _workspace = null!;
+        private DeletionTrap? _trap;
+        private DmsOperationId _releasedId;
+        private DmsOperationId _blockedId;
+        private TemplateArtifactStaging _released = null!;
+        private TemplateArtifactStaging _blocked = null!;
+        private LogEntry[] _residueLogs = [];
+
+        [SetUp]
+        public async Task Setup()
+        {
+            if (!OperatingSystem.IsWindows() && Environment.IsPrivilegedProcess)
+            {
+                Assert.Ignore("A privileged process may unlink in a read-only directory.");
+            }
+
+            _workspace = new CatalogWorkspace();
+            _workspace.BuildBoth();
+
+            _releasedId = DmsOperationId.New();
+            TemplateArtifactCatalog releasing = _workspace.Catalog();
+            releasing.AfterClaim = _ => throw new IOException("injected");
+            _released = await releasing.StageAsync(
+                DmsDatabaseTemplate.Minimal,
+                _releasedId,
+                CancellationToken.None
+            );
+
+            _blockedId = DmsOperationId.New();
+            TemplateArtifactCatalog blocking = _workspace.Catalog();
+            blocking.AfterClaim = path =>
+            {
+                File.WriteAllText(Path.Combine(path, "sentinel"), "");
+                _trap = new DeletionTrap(path);
+                throw new IOException("injected");
+            };
+            _blocked = await blocking.StageAsync(
+                DmsDatabaseTemplate.Minimal,
+                _blockedId,
+                CancellationToken.None
+            );
+
+            _residueLogs =
+            [
+                .. _workspace.Logger.Entries.Where(entry =>
+                    entry.EventId == TemplateArtifactCatalog.ResidueLeft
+                ),
+            ];
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _trap?.Dispose();
+            _workspace?.Dispose();
+        }
+
+        private static TemplateArtifactStaging.Failure ShouldBeTransientStagingFailure(
+            TemplateArtifactStaging staging
+        )
+        {
+            TemplateArtifactStaging.Failure failure = staging
+                .Should()
+                .BeOfType<TemplateArtifactStaging.Failure>()
+                .Subject;
+            using AssertionScope scope = new();
+            (failure.Detail.Code, failure.Detail.Category, failure.Detail.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.StagingFailed,
+                        DmsProvisioningFailureCategory.Transient,
+                        TemplateArtifactCatalog.StagePackageStep
+                    )
+                );
+            failure.Detail.Diagnostic.ExceptionTypeChain.Should().Be(typeof(IOException).FullName);
+            return failure;
+        }
+
+        [Test]
+        public void It_refuses_and_reports_a_released_directory_as_clean() =>
+            ShouldBeTransientStagingFailure(_released).Cleanup.HasResidue.Should().BeFalse();
+
+        [Test]
+        public void It_deletes_the_released_directory() =>
+            Directory.Exists(_workspace.OperationDirectoryPathOf(_releasedId)).Should().BeFalse();
+
+        [Test]
+        public void It_reports_the_directory_it_could_not_delete_as_residue() =>
+            ShouldBeTransientStagingFailure(_blocked)
+                .Cleanup.Residue.Should()
+                .Equal(
+                    new DmsCleanupResidue(
+                        DmsResidueKind.OperationDirectory,
+                        PrivateOperationDirectory.NamePrefix + _blockedId.Value
+                    )
+                );
+
+        [Test]
+        public void It_leaves_the_blocked_directory_in_place() =>
+            Directory.Exists(_workspace.OperationDirectoryPathOf(_blockedId)).Should().BeTrue();
+
+        [Test]
+        public void It_logs_the_residue_once() => _residueLogs.Should().HaveCount(1);
+    }
+
+    /// <summary>
     /// H-03: an operations root another identity could replace entries in is a configuration defect. An operation is
     /// refused before anything is staged (so before any replay) as <c>StagingFailed</c> for inspection, naming the check
     /// and reason only; startup validation reports the same refusal for every template; with the sticky bit added the

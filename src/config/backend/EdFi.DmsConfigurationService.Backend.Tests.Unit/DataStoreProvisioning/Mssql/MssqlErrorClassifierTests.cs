@@ -8,6 +8,7 @@ using System.Reflection;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using FluentAssertions;
+using FluentAssertions.Execution;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Mssql;
@@ -306,7 +307,7 @@ public class MssqlErrorClassifierTests
     {
         private static readonly DmsServerSessionId _session = new(51, DateTimeOffset.UnixEpoch);
 
-        internal static SqlException Rejected(int number)
+        internal static SqlException Rejected(int number, byte severity = UserSeverity)
         {
             ConstructorInfo errorConstructor = typeof(SqlError)
                 .GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)
@@ -320,7 +321,7 @@ public class MssqlErrorClassifierTests
                         parameter.Name switch
                         {
                             "infoNumber" => number,
-                            "errorClass" => UserSeverity,
+                            "errorClass" => severity,
                             _ when parameter.ParameterType == typeof(string) => string.Empty,
                             _ when parameter.ParameterType.IsValueType => Activator.CreateInstance(
                                 parameter.ParameterType
@@ -345,12 +346,14 @@ public class MssqlErrorClassifierTests
                         .SequenceEqual([typeof(SqlErrorCollection), typeof(string)])
                 );
             SqlException exception = (SqlException)create.Invoke(null, [errors, "17.0.0"])!;
-            (exception.Number, exception.Class).Should().Be((number, UserSeverity));
+            (exception.Number, exception.Class).Should().Be((number, severity));
             return exception;
         }
 
-        private static (DmsCommandFailureClass?, bool?, string?) Fence(int number) =>
-            MssqlDeletionQueries.Classify(Rejected(number), _session, MssqlDeletionQueries.FenceStep) switch
+        private static (DmsCommandFailureClass?, bool?, string?) Fence(int number) => Fence(Rejected(number));
+
+        private static (DmsCommandFailureClass?, bool?, string?) Fence(Exception exception) =>
+            MssqlDeletionQueries.Classify(exception, _session, MssqlDeletionQueries.FenceStep) switch
             {
                 DmsCommandOutcome.Failed failed => (
                     failed.Failure.Class,
@@ -361,8 +364,11 @@ public class MssqlErrorClassifierTests
             };
 
         private static (DmsCommandFailureClass?, bool?, string?) Rename(int number) =>
+            Rename(Rejected(number));
+
+        private static (DmsCommandFailureClass?, bool?, string?) Rename(Exception exception) =>
             MssqlPublicationQueries.Classify<DmsInstanceIdentity>(
-                Rejected(number),
+                exception,
                 _session,
                 MssqlPublicationQueries.RenameStep
             ) switch
@@ -395,5 +401,58 @@ public class MssqlErrorClassifierTests
                     (DmsCommandFailureClass.PrivilegeMissing, false, "5011"),
                     (DmsCommandFailureClass.Rejected, false, "3701")
                 );
+
+        [Test]
+        public void It_names_the_step_in_a_definite_failure()
+        {
+            DmsCommandOutcome.Failed fence = MssqlDeletionQueries
+                .Classify(Rejected(5011), _session, MssqlDeletionQueries.FenceStep)
+                .Should()
+                .BeOfType<DmsCommandOutcome.Failed>()
+                .Subject;
+            DmsCommandOutcome<DmsInstanceIdentity>.Failed rename = MssqlPublicationQueries
+                .Classify<DmsInstanceIdentity>(Rejected(5011), _session, MssqlPublicationQueries.RenameStep)
+                .Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Subject;
+            (fence.Failure.Diagnostic.Operation, rename.Failure.Diagnostic.Operation)
+                .Should()
+                .Be((MssqlDeletionQueries.FenceStep, MssqlPublicationQueries.RenameStep));
+        }
+
+        /// <summary>
+        /// CAR-002: what leaves the statement in doubt on the original session: a client timeout, a cancellation after
+        /// send, a transport failure, a fatal severity, a cancellation exception, and a definite-looking SQL Server error
+        /// that is not itself the exception raised (wrapped in another), which keeps the top-level type requirement.
+        /// </summary>
+        [Test]
+        public void It_leaves_timeouts_cancellations_lost_connections_fatal_errors_and_wrapped_errors_in_doubt()
+        {
+            Exception[] inDoubt =
+            [
+                Rejected(MssqlErrorClassifier.ClientTimeout),
+                Rejected(MssqlErrorClassifier.ClientCancelled),
+                Rejected(10054),
+                Rejected(5011, MssqlErrorClassifier.FatalSeverity),
+                new OperationCanceledException(),
+                new InvalidOperationException("wrapper", Rejected(5011)),
+            ];
+            using AssertionScope scope = new();
+            foreach (Exception exception in inDoubt)
+            {
+                MssqlDeletionQueries
+                    .Classify(exception, _session, MssqlDeletionQueries.FenceStep)
+                    .Should()
+                    .Be(new DmsCommandOutcome.Unknown(_session));
+                MssqlPublicationQueries
+                    .Classify<DmsInstanceIdentity>(exception, _session, MssqlPublicationQueries.RenameStep)
+                    .Should()
+                    .Be(new DmsCommandOutcome<DmsInstanceIdentity>.Unknown(_session));
+                MssqlErrorClassifier
+                    .DefiniteFailureOf(exception, MssqlDeletionQueries.FenceStep)
+                    .Should()
+                    .BeNull();
+            }
+        }
     }
 }

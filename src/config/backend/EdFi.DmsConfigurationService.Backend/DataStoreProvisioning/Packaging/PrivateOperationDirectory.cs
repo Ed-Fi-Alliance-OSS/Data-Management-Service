@@ -70,18 +70,23 @@ public sealed class PrivateOperationDirectory : IDisposable
     /// with <see cref="IOException"/> and left untouched. On Unix a root that would let another identity replace the
     /// directory after the claim is refused first with <see cref="UnsafeOperationRootException"/>
     /// (<see cref="OperationRootSafety"/>), and nothing is created.
+    /// Once the native claim succeeds the directory is this call's own: when securing it then fails, the directory
+    /// is deleted on a best-effort basis and <see cref="OperationDirectorySetupException"/> carries the owner, so
+    /// the caller can report whatever remains.
     /// </summary>
     public static PrivateOperationDirectory Create(string rootDirectory, DmsOperationId operationId) =>
-        Create(rootDirectory, operationId, beforeClaim: null);
+        Create(rootDirectory, operationId, beforeClaim: null, afterClaim: null);
 
     /// <summary>
     /// Test seam: <paramref name="beforeClaim"/> runs after the root checks and immediately before the claim,
-    /// the point where a competing creator may insert the entry.
+    /// the point where a competing creator may insert the entry; <paramref name="afterClaim"/> runs after a
+    /// successful claim and before the directory is secured, where a test can make securing it fail.
     /// </summary>
     internal static PrivateOperationDirectory Create(
         string rootDirectory,
         DmsOperationId operationId,
-        Action? beforeClaim
+        Action? beforeClaim,
+        Action<string>? afterClaim = null
     )
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(rootDirectory);
@@ -114,13 +119,34 @@ public sealed class PrivateOperationDirectory : IDisposable
         }
         else
         {
-            // The create mode is subject to the process umask, which can only remove bits; the explicit set
-            // afterwards makes the mode exact regardless of umask. The directory is this call's own by then.
             ClaimOnUnix(path);
-            File.SetUnixFileMode(path, PrivateDirectoryMode);
         }
 
-        return new PrivateOperationDirectory(path, operationId);
+        // The claim succeeded, so the directory is this operation's own from here on: a later failure deletes it
+        // and never loses it.
+        PrivateOperationDirectory owned = new(path, operationId);
+        try
+        {
+            afterClaim?.Invoke(path);
+            if (!OperatingSystem.IsWindows())
+            {
+                // The create mode is subject to the process umask, which can only remove bits; the explicit set
+                // makes the mode exact regardless of umask.
+                File.SetUnixFileMode(path, PrivateDirectoryMode);
+            }
+        }
+        catch (Exception exception)
+        {
+            owned.TryDelete();
+            if (exception is IOException or UnauthorizedAccessException)
+            {
+                throw new OperationDirectorySetupException(owned, exception);
+            }
+
+            throw;
+        }
+
+        return owned;
     }
 
     /// <summary>
@@ -167,8 +193,16 @@ public sealed class PrivateOperationDirectory : IDisposable
     /// <summary>
     /// Creates a new file for writing with mode <c>0600</c>, refusing an existing entry of that name
     /// (<see cref="System.IO.FileMode.CreateNew"/>) and sharing with no other handle.
+    /// When securing a file this call created fails, its handle is disposed before the exception leaves and the
+    /// file is deleted on a best-effort basis; what remains stays inside this directory, whose owner reports it.
     /// </summary>
-    public FileStream CreateFile(string fileName)
+    public FileStream CreateFile(string fileName) => CreateFile(fileName, afterCreate: null);
+
+    /// <summary>
+    /// Test seam: <paramref name="afterCreate"/> runs after the file is created and before it is secured, where a
+    /// test can make securing it fail.
+    /// </summary>
+    internal FileStream CreateFile(string fileName, Action<FileStream>? afterCreate)
     {
         ThrowIfDeleted();
         string path = PathOf(fileName);
@@ -185,12 +219,36 @@ public sealed class PrivateOperationDirectory : IDisposable
         }
 
         FileStream stream = new(path, options);
-        if (!OperatingSystem.IsWindows())
+
+        // CreateNew succeeded, so the file is this call's own: a refused name never reaches here.
+        try
         {
-            File.SetUnixFileMode(stream.SafeFileHandle, PrivateFileMode);
+            afterCreate?.Invoke(stream);
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(stream.SafeFileHandle, PrivateFileMode);
+            }
+        }
+        catch
+        {
+            stream.Dispose();
+            TryDeleteFile(path);
+            throw;
         }
 
         return stream;
+    }
+
+    private static void TryDeleteFile(string path)
+    {
+        try
+        {
+            File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // Left for the directory's owner, whose release deletes or reports it.
+        }
     }
 
     /// <summary>Deletes the directory and its contents; true when it is gone afterwards (including when it was already absent).</summary>
@@ -342,4 +400,17 @@ public sealed class PrivateOperationDirectory : IDisposable
     [DllImport("libc", EntryPoint = "mkdir", SetLastError = true)]
     private static extern int MakeDirectory([MarshalAs(UnmanagedType.LPUTF8Str)] string path, uint mode);
 #pragma warning restore SYSLIB1054
+}
+
+/// <summary>
+/// The claim of <see cref="PrivateOperationDirectory.Create(string, DmsOperationId)"/> succeeded but securing the
+/// directory failed. Deletion was already attempted; <see cref="Directory"/> is the owner of what may remain, for the
+/// caller's cleanup reporting. The inner exception is the original failure.
+/// </summary>
+public sealed class OperationDirectorySetupException(
+    PrivateOperationDirectory directory,
+    Exception innerException
+) : IOException("Securing the claimed operation directory failed.", innerException)
+{
+    public PrivateOperationDirectory Directory { get; } = directory;
 }

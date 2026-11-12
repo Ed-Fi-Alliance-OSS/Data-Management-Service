@@ -154,6 +154,9 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     /// <summary>Test seam: runs immediately before the operation directory is claimed, where a competing creator can take the name.</summary>
     internal Action? BeforeClaim { get; set; }
 
+    /// <summary>Test seam: runs after a successful claim and before the directory is secured, where a test can make securing it fail.</summary>
+    internal Action<string>? AfterClaim { get; set; }
+
     /// <summary>Test seam: runs immediately before an operation directory is released, where a test can make its deletion fail.</summary>
     internal Action<PrivateOperationDirectory>? BeforeRelease { get; set; }
 
@@ -267,11 +270,30 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
 
         // D-5: the claim is this operation's ownership of the directory. A refused claim, whether an
         // entry already holds the generated name or the root is unusable, created nothing, so nothing is released
-        // or reported, and the entry that won the name is never touched.
+        // or reported, and the entry that won the name is never touched. A claim that succeeded but could not be
+        // secured created the directory, so it is released and what remains is reported.
         PrivateOperationDirectory directory;
         try
         {
-            directory = PrivateOperationDirectory.Create(OperationRootDirectory, operationId, BeforeClaim);
+            directory = PrivateOperationDirectory.Create(
+                OperationRootDirectory,
+                operationId,
+                BeforeClaim,
+                AfterClaim
+            );
+        }
+        catch (OperationDirectorySetupException exception)
+        {
+            IReadOnlyList<DmsCleanupResidue> setupResidue = ReleaseClaimed(exception.Directory);
+            return Refused(
+                template,
+                Failure(
+                    DmsProvisioningFailureCode.StagingFailed,
+                    StagePackageStep,
+                    exception.InnerException ?? exception
+                ),
+                new DmsCleanupReport(setupResidue)
+            );
         }
         catch (UnsafeOperationRootException exception)
         {

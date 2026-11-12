@@ -382,13 +382,8 @@ internal static class MssqlDeletionQueries
         DmsServerSessionId session,
         string step
     ) =>
-        exception is SqlException && MssqlErrorClassifier.FailureClassOf(exception) is { } failureClass
-            ? new DmsCommandOutcome.Failed(
-                new DmsCommandFailure(failureClass, MssqlErrorClassifier.Diagnostic(exception, step))
-                {
-                    Retryable = MssqlErrorClassifier.IsRetryableRejection(exception),
-                }
-            )
+        MssqlErrorClassifier.DefiniteFailureOf(exception, step) is { } failure
+            ? new DmsCommandOutcome.Failed(failure)
             : new DmsCommandOutcome.Unknown(session);
 
     private static DmsCommandOutcome Failed(DmsCommandFailureClass failureClass, string step) =>
