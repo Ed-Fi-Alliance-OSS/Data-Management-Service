@@ -1818,8 +1818,9 @@ function Get-InteropContainerImage {
     Makes sure a published image is present locally, pulling it for linux/amd64 when it is not.
 
 .DESCRIPTION
-    The published images are amd64-only, so on an arm64 host the platform is named explicitly; the stack then
-    runs them under emulation.
+    Ed-Fi API and Configuration Service images published before 8.2 are amd64-only, so the pull names the platform
+    explicitly; on an arm64 host the stack then runs them under emulation. Newer images are multi-platform, and an
+    image already present locally is used as it is, whatever its platform.
 #>
 function Assert-InteropPublishedImage {
     [CmdletBinding()]
