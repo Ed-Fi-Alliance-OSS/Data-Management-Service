@@ -42,7 +42,13 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
         _failure = Assert.CatchAsync(async () =>
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(
                 CdcProvider.Postgresql,
-                new("connect@sha256:qualified", "redpanda:qualified", "postgres:qualified", true, false),
+                new(
+                    "connect@sha256:qualified",
+                    CdcComposeBrokerSizeDeployment.BrokerImage,
+                    "postgres:qualified",
+                    true,
+                    false
+                ),
                 docker,
                 ResourcePrefix,
                 cancellation.Token,
@@ -96,9 +102,14 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
             ports.Add(port);
             using var _ = new AssertionScope();
             mapping.Should().Be($"127.0.0.1:{port}:29092");
-            arguments[Array.IndexOf(arguments, "--advertise-kafka-addr") + 1]
+            arguments
                 .Should()
-                .Be($"internal://{ResourcePrefix}-broker:9092,external://127.0.0.1:{port}");
+                .Contain(
+                    $"KAFKA_ADVERTISED_LISTENERS=INTERNAL://{ResourcePrefix}-broker:9092,EXTERNAL://127.0.0.1:{port}"
+                );
+            arguments[^1].Should().Be(CdcComposeBrokerSizeDeployment.BrokerImage);
+            arguments.Should().Contain("KAFKA_PROCESS_ROLES=broker,controller");
+            arguments.Should().Contain($"KAFKA_CONTROLLER_QUORUM_VOTERS=1@{ResourcePrefix}-broker:9093");
         }
         ports.Should().OnlyHaveUniqueItems();
     }

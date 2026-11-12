@@ -134,7 +134,35 @@ public sealed class Given_Cdc_Compose_Persistence(CdcProvider provider)
         string originalContainer = await Resources.ComposeBrokerContainerIdAsync(Token);
         string originalWorker = await Resources.ComposeWorkerContainerIdAsync(Token);
         originalWorker.Should().HaveLength(64);
+        string originalStorage = await Resources.ComposeKafkaStorageIdentityAsync(
+            CdcComposeBrokerSizeDeployment.BrokerImage,
+            Token
+        );
+        string originalFeatures = await Resources.ComposeKafkaFeaturesAsync(Token);
+        const string metadataVersion = "4.3-IV0";
+        originalFeatures
+            .Should()
+            .MatchRegex(@"Feature: metadata\.version\s+.*FinalizedVersionLevel: " + metadataVersion);
         await Resources.RecreateControllerComposeAsync(_request, _fixture.KafkaProvisioning(), Token);
+        (await Resources.ComposeKafkaStorageIdentityAsync(CdcComposeBrokerSizeDeployment.BrokerImage, Token))
+            .Should()
+            .Be(originalStorage, "recreating the broker must not reformat existing storage");
+        string retainedFeatures = await Resources.ComposeKafkaFeaturesAsync(Token);
+        retainedFeatures
+            .Should()
+            .MatchRegex(@"Feature: metadata\.version\s+.*FinalizedVersionLevel: " + metadataVersion);
+        _evidence.Add(
+            new
+            {
+                Phase = "fresh-shipped-startup",
+                Image = CdcComposeBrokerSizeDeployment.BrokerImage,
+                StorageIdentity = originalStorage,
+                OriginalFeatures = originalFeatures,
+                RetainedFeatures = retainedFeatures,
+                StorageOwner = "1000:1000",
+                StaticQuorumRetained = true,
+            }
+        );
         (await Resources.ComposeWorkerContainerIdAsync(Token)).Should().NotBe(originalWorker);
         (await Resources.ComposeBrokerContainerIdAsync(Token)).Should().NotBe(originalContainer);
         await Resources.AssertComposeDataMountAsync(Token);

@@ -69,9 +69,105 @@ public sealed class Given_CdcWorkerDockerCommand
         );
     }
 
-    [Test]
-    public async Task It_preserves_caller_cancellation_and_terminates_the_child()
+    [TestCase("cancel", "child.pid")]
+    [TestCase("nested", "grandchild.pid")]
+    public async Task It_preserves_caller_cancellation_and_terminates_the_child(string mode, string readyFile)
     {
+        await WithDockerAsync(
+            mode,
+            async (run, guard, directory) =>
+            {
+                while (!File.Exists(Path.Combine(directory, readyFile)))
+                {
+                    await Task.Delay(10, guard.Token);
+                }
+                await guard.CancelAsync();
+                Func<Task> act = async () => await run;
+                var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
+                thrown.Which.CancellationToken.Should().Be(guard.Token);
+                thrown.Which.Data.Contains("CdcWorkerProcessCleanup").Should().BeFalse();
+                AssertTerminated(directory);
+            }
+        );
+    }
+
+    [TestCase("cancel")]
+    [TestCase("stdout")]
+    public async Task It_waits_for_cleanup_before_propagating_the_original_failure(string mode)
+    {
+        TaskCompletionSource cleanupStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource cleanupFinished = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        int calls = 0;
+        CancellationToken cleanupToken = default;
+        _command = new(
+            async (process, token) =>
+            {
+                Interlocked.Increment(ref calls);
+                cleanupToken = token;
+                await CdcWorkerProcessTree.TerminateAsync(process, token);
+                process.HasExited.Should().BeTrue();
+                cleanupStarted.SetResult();
+                // Model a descendant whose exit observation completes after the parent.
+                await cleanupFinished.Task.WaitAsync(token);
+            }
+        );
+        await WithDockerAsync(
+            mode,
+            async (run, guard, directory) =>
+            {
+                try
+                {
+                    if (mode == "cancel")
+                    {
+                        while (!File.Exists(Path.Combine(directory, "child.pid")))
+                        {
+                            await Task.Delay(10, guard.Token);
+                        }
+                        await guard.CancelAsync();
+                    }
+                    await Task.WhenAny(cleanupStarted.Task, run).WaitAsync(TimeSpan.FromSeconds(5));
+                    run.IsCompleted.Should().BeFalse("parent exit alone must not complete the command");
+                    cleanupToken.CanBeCanceled.Should().BeTrue();
+                    cleanupToken.IsCancellationRequested.Should().BeFalse();
+                    cleanupToken.Should().NotBe(guard.Token);
+                }
+                finally
+                {
+                    cleanupFinished.TrySetResult();
+                }
+                Func<Task> act = async () => await run;
+                if (mode == "cancel")
+                {
+                    var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
+                    thrown.Which.CancellationToken.Should().Be(guard.Token);
+                }
+                else
+                {
+                    await act.Should()
+                        .ThrowAsync<IOException>()
+                        .WithMessage("Docker inspection output exceeded its bound.");
+                }
+                calls.Should().Be(1);
+                AssertTerminated(directory);
+            }
+        );
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_reports_incomplete_cleanup_without_masking_caller_cancellation(bool timeout)
+    {
+        _command = new(
+            async (process, token) =>
+            {
+                await CdcWorkerProcessTree.TerminateAsync(process, token);
+                if (timeout)
+                {
+                    throw new OperationCanceledException(token);
+                }
+                throw new IOException("private cleanup details");
+            }
+        );
         await WithDockerAsync(
             "cancel",
             async (run, guard, directory) =>
@@ -82,7 +178,10 @@ public sealed class Given_CdcWorkerDockerCommand
                 }
                 await guard.CancelAsync();
                 Func<Task> act = async () => await run;
-                await act.Should().ThrowAsync<OperationCanceledException>();
+                var thrown = await act.Should().ThrowAsync<OperationCanceledException>();
+                thrown.Which.CancellationToken.Should().Be(guard.Token);
+                thrown.Which.Data["CdcWorkerProcessCleanup"].Should().Be(timeout ? "TimedOut" : "Failed");
+                thrown.Which.ToString().Should().NotContain("private cleanup details");
                 AssertTerminated(directory);
             }
         );
@@ -127,7 +226,11 @@ public sealed class Given_CdcWorkerDockerCommand
                             int.Parse(await File.ReadAllTextAsync(file), CultureInfo.InvariantCulture)
                         );
                         process.Kill(entireProcessTree: true);
-                        await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+                        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                        while (!HasTerminated(process))
+                        {
+                            await Task.Delay(10, cleanup.Token);
+                        }
                     }
                     catch (ArgumentException)
                     { /* Already reaped. */
@@ -161,13 +264,41 @@ public sealed class Given_CdcWorkerDockerCommand
             try
             {
                 using var process = Process.GetProcessById(pid);
-                process
-                    .HasExited.Should()
+                HasTerminated(process)
+                    .Should()
                     .BeTrue($"owned process {pid} must terminate before RunAsync returns");
             }
             catch (ArgumentException)
             { /* Already reaped. */
             }
+        }
+    }
+
+    private static bool HasTerminated(Process process)
+    {
+        if (process.HasExited)
+        {
+            return true;
+        }
+        try
+        {
+            // An exited zombie is terminated even while its parent has yet to reap it.
+            return File.ReadLines($"/proc/{process.Id}/status")
+                .Any(line =>
+                    line.StartsWith("State:\t", StringComparison.Ordinal) && line[7] is 'Z' or 'X' or 'x'
+                );
+        }
+        catch (FileNotFoundException)
+        {
+            return true;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return true;
+        }
+        catch (IOException exception) when (exception.HResult == 3)
+        {
+            return true; // Linux ESRCH: the process exited after its proc file was opened.
         }
     }
 
@@ -178,6 +309,12 @@ public sealed class Given_CdcWorkerDockerCommand
         if [[ "$1" == writer ]]; then
             if [[ "$3" == cancel ]]; then
                 exec /bin/sleep 300
+            fi
+            if [[ "$3" == nested ]]; then
+                /bin/sleep 300 &
+                printf '%s' "$!" > "$2/grandchild.pid"
+                wait
+                exit
             fi
             if [[ "$3" == stderr ]]; then
                 exec 1>&2

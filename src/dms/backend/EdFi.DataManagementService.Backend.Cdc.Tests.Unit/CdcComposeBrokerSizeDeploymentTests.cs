@@ -10,6 +10,34 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 
 [TestFixture]
+public class Given_the_shipped_compose_broker_image
+{
+    private string _image = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        // Read the shipped file copied by the project, not a test-owned copy of the image pin.
+        _image = File.ReadLines(
+                Path.Combine(TestContext.CurrentContext.TestDirectory, "kafka-broker.compose.yml")
+            )
+            .SkipWhile(line => line.TrimEnd() != "  kafka:")
+            .Skip(1)
+            .TakeWhile(line =>
+                string.IsNullOrWhiteSpace(line) || line.StartsWith("    ", StringComparison.Ordinal)
+            )
+            .Select(line => line.Trim())
+            .Single(line => line.StartsWith("image:", StringComparison.Ordinal))["image:".Length..]
+            .Trim()
+            .Trim('\'', '"');
+    }
+
+    [Test]
+    public void It_matches_the_image_required_by_the_broker_size_adapter_and_native_kafka_fixtures() =>
+        CdcComposeBrokerSizeDeployment.BrokerImage.Should().Be(_image);
+}
+
+[TestFixture]
 [Platform(Exclude = "Win", Reason = "Durable local deployment uses Unix directory fsync.")]
 public class Given_CdcRecordSizeIncrease_compose_broker
 {

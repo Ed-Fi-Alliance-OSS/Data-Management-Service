@@ -211,7 +211,6 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                         );
                     }
                 },
-                nativeKafka: true,
                 composeKafka: composeKafka,
                 offlineKafka: offlineKafka
             );
@@ -402,11 +401,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         Kafka = Observed(
             CdcKafkaAdminAdapter.Create(
                 kafkaConfig,
-                new CdcComposeKafkaAuthorizationInspection(
-                    Infrastructure.Resources.ControllerProject,
-                    kafkaConfig.BootstrapServers,
-                    Request.ConnectorPolicy.KafkaBootstrapServers
-                )
+                Infrastructure.Resources.CreateControllerKafkaAuthorizationInspection()
             )
         );
         Controllers = CreateControllers();

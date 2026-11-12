@@ -17,14 +17,19 @@ rebuilt to stay in sync with the codebase, or against a locally-debugged API ins
 - PowerShell Core (`pwsh`) 7.0 or higher
 - .NET 10.0 SDK
 
+On Linux with Docker Engine, check `systemctl status docker --no-pager`; if stopped, start
+it with `sudo systemctl start docker`. Docker Desktop is not required. Verify `docker ps`
+succeeds in the test session after starting the engine.
+
 ## Running the tests
 
 All commands below are run **from the repository root** through the public `build-dms.ps1`
 `E2ETest` target. That target starts the `dms-local` Docker stack, resets and provisions the
 relational E2E database for the selected engine, restarts DMS, runs the tests, and writes a
 `.trx` result to `./TestResults`. `-SkipDockerBuild` reuses the already-built local images
-(`ed-fi-api-local`, `ed-fi-api-config-local`); omit it only when you want the target to
-rebuild those images first.
+(`ed-fi-api-local`, `ed-fi-api-config-local`). Use it only when those images already contain
+the changes being tested; omit it to rebuild after changing containerized code. The examples
+below assume current images are available.
 
 The suite is engine-aware. `-DatabaseEngine` defaults to `postgresql`; pass `mssql` to run the
 same public entry point against SQL Server. The `-DatabaseEngine mssql` value composes the
@@ -252,6 +257,10 @@ ApiSchema packages baked into the provisioned database), and `DATABASE_CONNECTIO
 
 ## Diagnostics and logging
 
+- For local images, verify the running DMS engine with
+  `docker inspect ed-fi-api --format '{{range .Config.Env}}{{println .}}{{end}}' | rg '^AppSettings__Datastore='`.
+  Expect `AppSettings__Datastore=postgresql` or `AppSettings__Datastore=mssql` for the selected
+  engine. For published images, substitute the DMS container name listed below.
 - Test logs are written to the console and to the file system per `appsettings.json`. The API
   container logs are appended to the same file-system log at the end of the run before the
   container is destroyed; search for `API stdout logs`.
@@ -294,8 +303,9 @@ touches unrelated containers, volumes, or databases.
 
 > [!TIP]
 > Switching branches or changing DMS debugging code invalidates the running stack. Tear down
-> and let the next `E2ETest` run reprovision a fresh database and image, or you will silently
-> test a stale build.
+> and run `E2ETest` without `-SkipDockerBuild` to rebuild the images and reprovision a fresh
+> database, or you will silently test a stale build. Direct test runs can leave data behind;
+> tear down and set up again if repeated runs behave inconsistently.
 
 ## Test authoring (Reqnroll)
 
@@ -311,6 +321,8 @@ Playwright setup/teardown.
 
 ## Troubleshooting
 
+- **Failures before API requests.** Check container logs and health checks for environment
+  failures, including missing shell tools used by health checks, before diagnosing API behavior.
 - **A filtered run reports "No test matches the given testcase filter".** The Release test
   assembly predates the feature-file tags. Run `build-dms.ps1 Build` (or drop `-SkipDockerBuild`)
   first so the current `@MssqlRepresentative` / other tags are compiled in.
@@ -333,8 +345,9 @@ Playwright setup/teardown.
 - **SQL Server stack fails to start or is unhealthy.** Treat an unavailable or unhealthy
   `dms-mssql` container as an infrastructure failure, not a test result — inspect
   `docker logs dms-mssql` and the container's health, and confirm the `1435` host port is free.
-- **`NODE_OPTIONS` errors.** Setting `NODE_OPTIONS` is not supported for these runs; clear it
-  before invoking the build target.
+- **`NODE_OPTIONS` errors.** The `E2ETest` target clears `NODE_OPTIONS` for the test process.
+  For direct runs, clear it if Playwright reports an unsupported Node option, for example
+  `env -u NODE_OPTIONS dotnet test ...` on Linux.
 - **Container names/ports.** DMS `ed-fi-api` (`8080`), Configuration Service
   `ed-fi-api-config-service` (`8081`), PostgreSQL `dms-postgresql` (`5435`), SQL Server
   `dms-mssql` (`1435`), Swagger UI `ed-fi-api-swagger-ui` (`8082`), Keycloak `dms-keycloak`.

@@ -190,6 +190,21 @@ fixture setup. These tests use `ConnectionStrings__MssqlAdmin` as described
 above; they are separate from the API-level integration project and from the
 Docker-stack E2E suite.
 
+Verify that the SQL Server endpoint in the test configuration is reachable before running.
+Use the SQL Server 2025 setup above, or start a temporary container on an available host
+port (for example, `1434`) and override `ConnectionStrings__MssqlAdmin` for the test command.
+In Bash, from the repository root:
+
+```bash
+docker run --rm --name dms-codex-mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<StrongPassword>' -p 1434:1433 -d mcr.microsoft.com/mssql/server:2025-latest
+# Wait until SQL Server is ready before running tests.
+ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=<StrongPassword>;TrustServerCertificate=True;Encrypt=True' dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/EdFi.DataManagementService.Backend.Mssql.Tests.Integration.csproj
+docker stop dms-codex-mssql
+```
+
+Replace `<StrongPassword>` with the same strong password in both commands. Stop the
+temporary container after the run; `--rm` removes it when stopped.
+
 On slow or emulated hosts, such as Apple Silicon running the amd64 SQL Server
 image, concurrent baseline provisioning can exceed the command timeout even
 when individual fixtures pass. Use the concurrency setting or shard filters

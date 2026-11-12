@@ -164,23 +164,31 @@ Describe 'CDC qualification image pulls' {
 }
 
 Describe 'CDC qualification image-pull runner boundary' {
-    It 'retains pull evidence and reports unavailable prerequisites without starting tests after retries are exhausted' {
+    It 'retains <Lane> pull evidence and refuses tests after required <Failure> image pull retries are exhausted' -ForEach @(
+        @{ Lane = 'Kafka'; Suite = 'All'; Failure = 'Connect' },
+        @{ Lane = 'Postgresql'; Suite = 'RecordSize'; Failure = 'Postgresql' }
+    ) {
         # Run the real entry point in a child process because it deliberately exits nonzero.
         # Docker and sleep shims keep this deterministic and independent of a live registry.
         $harness = Join-Path $TestDrive 'runner-harness.ps1'
-        $destination = Join-Path $TestDrive 'runner-evidence'
+        $destination = Join-Path $TestDrive "runner-evidence-$Lane"
         $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
         Set-Content -LiteralPath $harness -Value @'
-param([string] $Runner, [string] $Destination)
+param([string] $Runner, [string] $Destination, [string] $Lane, [string] $Suite, [string] $Failure)
 $ErrorActionPreference = 'Stop'
 $repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Runner) '../..'))
 $qualified = Get-Content (Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
 $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
-$env:CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE = 'fixture-redpanda:latest'
+Remove-Item Env:CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE -ErrorAction SilentlyContinue
+$env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE = 'unqualified-local-override:latest'
 $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'fixture-postgres:latest'
+$global:failedImage = if ($Failure -eq 'Postgresql') {
+    $env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE
+} else { $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE }
 function global:docker {
+    if ($env:CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE -eq 'unqualified-local-override:latest') { throw 'Qualification must select the shipped broker.' }
     $global:LASTEXITCODE = 0
-    if ($args[0] -eq 'pull' -and $args[-1] -eq $env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE) {
+    if ($args[0] -eq 'pull' -and $args[-1] -eq $global:failedImage) {
         $global:LASTEXITCODE = 17
         'Error response from daemon: toomanyrequests: private-token'
     }
@@ -188,10 +196,10 @@ function global:docker {
 }
 function global:Start-Sleep { }
 function global:dotnet { throw 'The test suite must not start after a failed pull.' }
-& $Runner -Lane Kafka -ResultsDirectory $Destination -PullImages
+& $Runner -Lane $Lane -Suite $Suite -ResultsDirectory $Destination -PullImages
 exit $LASTEXITCODE
 '@
-        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination 2>&1 | Out-String
+        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination -Lane $Lane -Suite $Suite -Failure $Failure 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 1
         $output | Should -Not -Match 'private-token|The test suite must not start'
         $report = Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json -NoEnumerate
@@ -200,11 +208,62 @@ exit $LASTEXITCODE
         $report[0].Total | Should -Be 0
         $report[0].Reason | Should -Match 'after 3 attempts \(exit=17, category=RateLimited\)'
         $records = @(Get-Content (Join-Path $destination 'image-pulls.jsonl') | ConvertFrom-Json)
-        $records.ExitCode | Should -Be @(0, 17, 17, 17)
-        $records.Attempt | Should -Be @(1, 1, 2, 3)
-        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be 4
+        $records[0].Image | Should -Be (& (Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'))
+        if ($Failure -eq 'Postgresql') {
+            $records[2].Image | Should -Be 'fixture-postgres:latest'
+            $records.ExitCode | Should -Be @(0, 0, 17, 17, 17)
+            $records.Attempt | Should -Be @(1, 1, 1, 2, 3)
+        } else {
+            $records.ExitCode | Should -Be @(0, 17, 17, 17)
+            $records.Attempt | Should -Be @(1, 1, 2, 3)
+        }
+        @($records.PrivateLog | Select-Object -Unique).Count | Should -Be $records.Count
         @(Get-ChildItem $destination -Name | Sort-Object) | Should -Be @('image-pulls.jsonl', 'qualification.json', 'runtime-inputs.json')
         (Get-ChildItem $destination -File | Get-Content -Raw) -join '' | Should -Not -Match 'private-token'
+    }
+}
+
+Describe 'CDC qualification Kafka pin runner boundary' {
+    It 'reports mismatched pins as an actionable prerequisite failure before starting tools or suites' {
+        $harness = Join-Path $TestDrive 'pin-runner-harness.ps1'
+        $destination = Join-Path $TestDrive 'pin-runner-evidence'
+        $compose = Join-Path $TestDrive 'mismatched-broker.yml'
+        $invocations = Join-Path $TestDrive 'tool-invocations.txt'
+        $runner = Join-Path $PSScriptRoot '../Invoke-CdcQualification.ps1'
+        Set-Content $compose ("services:`n  kafka:`n    image: apache/kafka:other@sha256:" + ('a' * 64))
+        # Run the real entry point and image helper in a child process because the runner exits.
+        # Override only the helper's Compose input; leave the checkout and image authority intact.
+        Set-Content -LiteralPath $harness -Value @'
+param([string] $Runner, [string] $Destination, [string] $ComposeFile, [string] $Invocations)
+$ErrorActionPreference = 'Stop'
+$repo = [IO.Path]::GetFullPath((Join-Path (Split-Path $Runner) '../..'))
+$qualified = Get-Content (Join-Path $repo 'src/dms/backend/EdFi.DataManagementService.Backend.Cdc/CdcQualifiedWorkerImage.json') -Raw | ConvertFrom-Json
+$env:CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE = $qualified.image
+$env:CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE = 'fixture-postgres:latest'
+$PSDefaultParameterValues['Get-CdcQualificationKafkaImage.ps1:ComposeFile'] = $ComposeFile
+$global:invocations = $Invocations
+function global:docker {
+    Add-Content $global:invocations 'docker'
+    throw 'Docker must not start after a pin mismatch.'
+}
+function global:dotnet {
+    Add-Content $global:invocations 'dotnet'
+    throw 'The test suite must not start after a pin mismatch.'
+}
+& $Runner -Lane Postgresql -Suite RecordSize -ResultsDirectory $Destination -PullImages
+exit $LASTEXITCODE
+'@
+        $output = & pwsh -NoProfile -File $harness -Runner $runner -Destination $destination -ComposeFile $compose -Invocations $invocations 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 1
+        $reason = 'EnvironmentUnavailable: CDC qualification requires matching digest-pinned Apache Kafka images in Compose and CdcComposeBrokerSizeDeployment.BrokerImage.'
+        $report = Get-Content (Join-Path $destination 'qualification.json') -Raw | ConvertFrom-Json -NoEnumerate
+        $report.Count | Should -Be 1
+        $report[0].Name | Should -Be 'prerequisites-or-runner'
+        $report[0].Status | Should -Be 'EnvironmentUnavailable'
+        $report[0].Reason | Should -Be $reason
+        $report[0].Total | Should -Be 0
+        $output | Should -Match ([regex]::Escape($reason))
+        Test-Path $invocations | Should -BeFalse
     }
 }
 
@@ -623,9 +682,7 @@ Describe 'CDC qualification CI scheduling' {
         $script:scheduledJob | Should -Match 'timeout-minutes: 130'
         $script:scheduledJob | Should -Match 'fail-fast: false'
         $script:scheduledJob | Should -Not -Match 'continue-on-error:'
-        foreach ($image in @('REDPANDA', 'SQLSERVER_2025')) {
-            $script:scheduledJob | Should -Match "CDC_CONNECTOR_TEMPLATE_$($image)_IMAGE:"
-        }
+        $script:scheduledJob | Should -Match 'CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE:'
         $script:scheduledJob | Should -Match 'CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE=\$image'
         $script:scheduledJob | Should -Match 'Invoke-CdcQualification.ps1 -Lane.*-Suite.*-PullImages'
         $script:scheduledJob | Should -Match "Status = 'EnvironmentUnavailable'"
@@ -2514,5 +2571,61 @@ Describe 'CDC API cleanup remaining resource probes' {
             $json | Should -Not -Match 'private'
             Should -Invoke Invoke-NativeCommandWithInput -Times 3 -Exactly
         }
+    }
+}
+
+Describe 'CDC qualification Kafka image' {
+    It 'rejects RecordSize evidence missing Compose persistence' {
+        $path = Join-Path $TestDrive 'missing-persistence.trx'
+        $required = (Get-CdcRunbookRecordSizeReport (Join-Path $TestDrive 'missing.trx')).Cases
+        $nodes = @($required | ForEach-Object {
+            $case = $_
+            $count = if ($case.TestId -eq 'It_retains_broker_history_through_managed_down_up_and_acknowledged_size_recreation') { 0 } else { $case.Required }
+            for ($i = 0; $i -lt $count; $i++) {
+                "<UnitTestResult testName='$($case.TestId)($i)' outcome='Passed'/>"
+            }
+        })
+        "<TestRun><Results>$($nodes -join '')</Results></TestRun>" | Set-Content $path
+        (Get-CdcRunbookRecordSizeReport $path).Status | Should -Be Failed
+    }
+
+    It 'reads <Format> images and rejects missing, mutable or mismatched pins' -ForEach @(
+        @{ Format = 'unquoted'; Quote = '' },
+        @{ Format = 'single-quoted'; Quote = "'" },
+        @{ Format = 'double-quoted'; Quote = '"' }
+    ) {
+        $script = Join-Path $PSScriptRoot '../Get-CdcQualificationKafkaImage.ps1'
+        $image = & $script
+        $image | Should -Match '^apache/kafka:[^@]+@sha256:[a-f0-9]{64}$'
+        $compose = Join-Path $TestDrive 'broker.yml'
+        $source = Join-Path $TestDrive 'broker.cs'
+        Set-Content $source "internal const string BrokerImage = `"$image`";"
+        foreach ($candidate in @('', 'apache/kafka:latest', ('apache/kafka:other@sha256:' + ('a' * 64)))) {
+            Set-Content $compose "services:`n  kafka:`n    image: ${Quote}${candidate}${Quote}"
+            { & $script -ComposeFile $compose -BrokerSourceFile $source } | Should -Throw 'EnvironmentUnavailable:*matching digest-pinned Apache Kafka*'
+        }
+        Set-Content $compose "services:`n  kafka:`n    image: ${Quote}${image}${Quote}"
+        (& $script -ComposeFile $compose -BrokerSourceFile $source) | Should -Be $image
+    }
+
+    It 'configures smoke Kafka from the branch pin without Redpanda repository prerequisites' {
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-dms-pullrequest.yml') -Raw
+        $job = [regex]::Match($workflow, '(?ms)^  run-backend-cdc-connector-template-smoke-tests:.*?(?=^  [a-z][a-z0-9-]+:|\z)').Value
+        $job | Should -Not -Match 'REDPANDA|vars.CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE'
+        $configure = [regex]::Match($job, '(?ms)^      - name: Configure Kafka qualification image\r?\n        run: \|\r?\n(?<run>(?:          [^\r\n]*\r?\n)+)').Groups['run'].Value
+        $configure | Should -Not -BeNullOrEmpty
+        $job.IndexOf('Configure Kafka qualification image') | Should -BeLessThan $job.IndexOf('Validate CDC Connector Template Smoke Settings')
+        $saved = $env:GITHUB_ENV
+        Push-Location (Join-Path $PSScriptRoot '../../..')
+        try {
+            $env:GITHUB_ENV = Join-Path $TestDrive 'kafka-env'
+            & ([scriptblock]::Create($configure))
+            (Get-Content $env:GITHUB_ENV) | Should -Be "CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE=$(./eng/ci/Get-CdcQualificationKafkaImage.ps1)"
+        } finally {
+            Pop-Location
+            $env:GITHUB_ENV = $saved
+        }
+        $nightly = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/nightly-cdc-qualification.yml') -Raw
+        $nightly | Should -Not -Match 'REDPANDA|vars.CDC_CONNECTOR_TEMPLATE_KAFKA_IMAGE'
     }
 }

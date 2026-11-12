@@ -174,13 +174,30 @@ Fresh and reused ordinary `SqlClient` pools satisfy the effective options for de
 without a runtime initializer. Provisioning settings belong to that session and do not carry
 over to pooled runtime connections; direct SQL clients must supply the effective options too.
 
+### RelationalMappingVersion release cadence
+
+`SchemaHashConstants.RelationalMappingVersion` tracks releases: bump at most once per release when mapping
+changes, never lower it, and do not add another bump before 8.1 ships. The next eligible
+bump is `v4` for the first qualifying mapping change after 8.1 ships.
+
+DMS 8.0 released with `v1`. The 8.1 cycle bumped twice (`v1` -> `v2` -> `v3`), exceeding
+the once-per-release convention. Keep `v3` throughout 8.1; do not revert it or bump again.
+Do not infer the release line from `src/dms/Directory.Build.props`, which is not kept in
+step with releases. Inspect the constant's change history from the repository root:
+
+```shell
+git log --oneline --date=short --format="%h %cd %s" -G "public const string RelationalMappingVersion" -- src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs
+```
+
+`EffectiveSchemaHashProvider` includes the constant in the hashed manifest. Each bump changes
+`EffectiveSchemaHash` for every dialect, causing databases provisioned against the previous
+hash to fail startup validation in `ValidateStartupInstancesTask` and receive HTTP 503 at
+request time until reprovisioned. Each additional bump forces another reprovisioning cycle.
+
 ### Reprovisioning and legacy data carry-forward
 
 Existing databases require deliberate reprovisioning before using the runtime with compact
-descriptors, authoritative root/descriptor timestamps and no referential-identity objects. Keep `SchemaHashConstants.RelationalMappingVersion` at `v3` for the current 8.1
-release line. The constant tracks releases: bump at most once per release when mapping
-changes, never lower it, and do not add another bump before 8.1 ships. The next eligible
-bump is `v4` for the first qualifying mapping change after 8.1 ships.
+descriptors, authoritative root/descriptor timestamps and no referential-identity objects.
 
 `EffectiveSchemaHash` includes that constant and normalized ApiSchema inputs, but excludes
 generated DDL and mapping-set output. Consequently, this mapping-only physical change can

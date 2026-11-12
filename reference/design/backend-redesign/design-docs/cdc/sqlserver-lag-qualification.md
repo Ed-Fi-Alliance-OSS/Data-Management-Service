@@ -91,6 +91,9 @@ docker build -t ed-fi-kafka-connect:dms-1323-candidate \
   --build-context parentdir=. -f kafka/Dockerfile kafka
 ```
 
+The following invocation records the historical Redpanda qualification environment.
+The current shared fixture uses Apache Kafka; use the current [qualification guide](../../../../../docs/CDC-QUALIFICATION.md) for new runs.
+
 From this DMS checkout, set `CDC_CONNECTOR_TEMPLATE_FAIL_FAST=true`, `CDC_CONNECTOR_TEMPLATE_CONNECT_IMAGE` to the candidate's actual immutable local RepoDigest, and `CDC_CONNECTOR_TEMPLATE_REDPANDA_IMAGE`, `CDC_CONNECTOR_TEMPLATE_POSTGRES_IMAGE`, `CDC_CONNECTOR_TEMPLATE_SQLSERVER_2025_IMAGE` to the provider/broker references above. Then run:
 
 ```bash
