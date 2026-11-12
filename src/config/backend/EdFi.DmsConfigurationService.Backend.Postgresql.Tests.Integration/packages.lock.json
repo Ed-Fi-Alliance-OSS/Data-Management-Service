@@ -839,6 +839,7 @@
       "edfi.dmsconfigurationservice.backend.tests.unit": {
         "type": "Project",
         "dependencies": {
+          "CsCheck": "[5.0.1, )",
           "EdFi.DmsConfigurationService.Backend": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.Keycloak": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.Mssql": "[1.0.0, )",
@@ -920,6 +921,12 @@
         "requested": "[6.0.2, )",
         "resolved": "6.0.2",
         "contentHash": "bJShQ6uWRTQ100ZeyiMqcFlhP7WJ+bCuabUs885dJiBEzMsJMSFr7BOyeCw4rgvQokteGi5rKQTlkhfQPUXg2A=="
+      },
+      "CsCheck": {
+        "type": "CentralTransitive",
+        "requested": "[5.0.1, )",
+        "resolved": "5.0.1",
+        "contentHash": "dsWFbaTkF7SdDlKTbnZWeQbNRLVKubJmIRJ/xDPR/ydMTLL1iSHMna9JfJqyC22siT7Tq9tKiQZyfxUOl9RRzA=="
       },
       "Dapper": {
         "type": "CentralTransitive",
