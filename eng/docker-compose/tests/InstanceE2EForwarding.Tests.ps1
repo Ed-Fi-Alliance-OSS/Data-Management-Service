@@ -378,7 +378,7 @@ Describe "Register-InstanceE2EFixture registers the canonical suite-owned fixtur
     }
 
     It "returns the env-file endpoints and the DmsConfigurationService admin credential (DMS-1440)" {
-        Mock Get-EnvValue -ModuleName env-utility { "env-identity-secret" } -ParameterFilter { $Name -eq "DMS_CONFIG_IDENTITY_CLIENT_SECRET" }
+        Mock Get-EnvValue -ModuleName env-utility { "env-identity-secret" } -ParameterFilter { $Name -eq "CONFIGURATION_SERVICE_IDENTITY_CLIENT_SECRET" }
         $script:settings.EnvironmentValues = @{ DMS_HTTP_PORTS = "9080" }
 
         $fixture = Register-InstanceE2EFixture -InstanceE2ESettings $script:settings

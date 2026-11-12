@@ -798,7 +798,7 @@ A grant beyond the limit is `429`, which the reader treats as transient
 
 The reader is a library in the Configuration Service backend
 (`AddDmsEducationOrganizationProjectionReader`) for the background jobs that use
-it; see [Configuration Service Background Jobs](./CMS-BACKGROUND-JOBS.md). It
+it; see [Configuration Service Background Jobs](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md). It
 talks to DMS over HTTP only: it opens no DMS database connection, and the
 backend references no DMS assembly and no database provider. Its settings are
 in
@@ -913,7 +913,7 @@ handler throws `JobPermanentException` with the job error code for a permanent
 failure, and any other exception for a transient one, so the job layer retries a
 transient failure and ends in `AttemptsExhausted` if no attempt succeeds. The
 job error codes' public messages are fixed; see
-[failure classification](./CMS-BACKGROUND-JOBS.md#failure-classification-and-public-error-text).
+[failure classification](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md#failure-classification-and-public-error-text).
 
 | Code | Category | Job error code |
 | --- | --- | --- |
