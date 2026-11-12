@@ -119,6 +119,7 @@ rows read one selection per attempt. The descriptor story reconciles this text, 
 on an Aurora PostgreSQL reader instance. DMS 8.1 routes the GET to the reader, which enforces
 `default_transaction_read_only`. The keyset prelude's `DROP TABLE IF EXISTS` then fails with
 `25006: cannot execute DROP TABLE in a read-only transaction`, and the API returns 500.
+EDFI-2956 was cloned on 2026-11-11 to [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687), which tracks the fix in DMS.
 
 Every PostgreSQL keyset path (P1-P4) issues this DDL, so a read-only-safe keyset is a requirement
 for the recommendation, not just a side effect:
@@ -1509,12 +1510,11 @@ recovery, but story 1 must test the read-only case itself (see [Thresholds](#thr
 
 **Provisioning: none.** `inline` adds no DDL, extension, or server setting; a custom setting with a
 dotted name needs no registration. Plan SQL is not an input to `EffectiveSchemaHash`, so no
-`RelationalMappingVersion` bump and no re-provisioning are needed (the DMS-1399 precedent). One
-caveat for the design docs: the mapping-set key does not change, so a mapping pack compiled before
-the change would still carry `page` joins under a matching key. Production registers only
-`NoOpMappingPackStore` today, so nothing loads such a pack now. `mpack-format-v1.md` must say how a
-pack consumer rejects a pack built with the old keyset contract (see
-[Design-document impact](#design-document-impact)).
+`RelationalMappingVersion` bump and no re-provisioning are needed (the DMS-1399 precedent).
+`mpack-format-v1.md` describes the keyset contract and is updated with it (see
+[Design-document impact](#design-document-impact)). No pack needs rejecting: pack emission is not
+implemented yet (`buildMappingPack=true` throws `NotSupportedException`), so no pack was built with
+the old contract.
 
 **Parameter binding:**
 
@@ -1802,7 +1802,10 @@ evidence, not as a threshold.
 **Reproduce.** The runner and run script are in `experiments/` (see
 [Appendix: reproduction](#appendix-reproduction)). On a story branch the `prototype.patch` variants
 do not apply, so each session runs the runner's `B0` label twice: once on `main`, once on the
-story branch.
+story branch. The runner recognizes a selected page's `bigint[]` by its type, whatever the story
+names it. It captures PostgreSQL bindings through the public
+`HydrationBatchBuilder.AddParameters(DbCommand, PageKeysetSpec)` (`SpikeCommandCapture.cs`). A story
+that changes that signature updates this one call site before running R1.
 
 | Id | Command (repeat three times, alternating `main` and the story branch, from a clean tree) | Analysis |
 |---|---|---|
@@ -1821,11 +1824,11 @@ of `3621b1eb6`.
 | `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (849–904) | Make the keyset per dialect. On PostgreSQL, the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server, `#page` for resource hydration and selected pages. Keep one round trip and the first-result-set contract | 1 |
 | `flattening-reconstitution.md` | § 7 sketches (1818–1828 `SelectByKeysetSql` "expects a keyset table"; 2576–2582 reconstituter step 1) | "joins the page keyset relation" instead of a materialized table; step 1 "select the page keyset" | 1 |
 | `compiled-mapping-set.md` | step 3 (733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset of § 6.1 | 1 |
-| `mpack-format-v1.md` | `KeysetTableContract` (89, 276, 295), `select_by_keyset_sql` (695) | The PostgreSQL contract is a relation, not a `page` table. State how a consumer rejects a pack compiled with the old contract, since the mapping-set key does not change | 1 |
+| `mpack-format-v1.md` | `KeysetTableContract` (89, 276, 295), `select_by_keyset_sql` (695) | Describe the per-dialect keyset: on PostgreSQL, a relation over the carrier, not a `page` table; on SQL Server, `#page` for P1 and P3. Pack emission is not implemented, so no pack was built with the old contract | 1 |
 | `change-queries.md` | keyset DDL example (2239–2262) | Replace the PostgreSQL `CREATE TEMP TABLE "page"` example with the carrier form, keeping the anchor and `Ordinal` semantics | 1 |
 | `link-injection.md` | keyset join sketch (164–217) | "materialized page keyset" becomes "page keyset relation" | 1 |
 | `summary.md` | Query reconstitution (282) | "materialize a page keyset" becomes "select a page keyset" | 1 |
-| `transactions-and-concurrency.md` | standalone hydration (644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, GET-many issues no DDL, so it runs in read-only transactions (EDFI-2956) | 1 |
+| `transactions-and-concurrency.md` | standalone hydration (644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, resource GET-many and the read-acceleration batches issue no DDL, so they run in read-only transactions (DMS-1687, from EDFI-2956) | 1 |
 | `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (687) | The anchor travels in the carrier: PostgreSQL's setting or SQL Server's JSON, or in `#page` where it stays. Invariant 3 (89) is preserved and needs no change | 1 |
 | `partitioned-cursor-paging.md` | descriptor paragraph (711) | Reconcile the [drift](#design-drift-descriptor_page): descriptor selection is carried in the carrier on both engines, with no keyset temp table | 2 |
 | `transactions-and-concurrency.md` | descriptor acquisition (660) | "materializes its authorized DocumentId keyset once" becomes "selects … once and carries it in the batch" | 2 |

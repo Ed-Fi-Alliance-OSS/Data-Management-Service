@@ -881,10 +881,11 @@ public static class KeysetSpikeRunner
             return limit;
         }
 
-        // The inline variant's PostgreSQL selected page binds its ids as one bigint[].
+        // A PostgreSQL selected page that binds its ids as one bigint[] (the inline prototype's
+        // page_document_ids, or a story's own name for it). A query keyset's NULL is not a long[].
         if (
-            batch.Parameters.FirstOrDefault(parameter => parameter.BareName == "page_document_ids")?.Value
-            is long[] documentIds
+            batch.Parameters.Select(parameter => parameter.Value).OfType<long[]>().FirstOrDefault() is
+            { } documentIds
         )
         {
             return documentIds.Length;

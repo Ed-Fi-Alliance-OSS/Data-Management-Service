@@ -13,7 +13,8 @@ ids inside the batch instead.
 - **SQL Server:** candidate metadata (P2) only. Resource GET-many (P1) and the selected-page
   fallback (P3) keep `#page`, byte-identical to `main`.
 - **Owns** the shared keyset-contract work that story 2 consumes.
-- **Fixes** [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956) for the resource paths.
+- **Fixes** [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) (cloned from [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for the
+  resource paths.
 - **Evidence:** [DMS-1521 findings](keyset-temp-table-findings.md), with the prototype in
   [`experiments/prototype.patch`](experiments/prototype.patch).
 
@@ -29,7 +30,7 @@ statement to it. DMS-1521 measured what that costs.
   175 ms of a 25-row request. The create and drop also write 44 catalog tuples and about 10 KB of
   WAL per request, and they invalidate the prepared statements, so almost every statement is
   re-planned. Because the batch starts with `DROP TABLE IF EXISTS`, GET-many fails in a read-only
-  transaction (EDFI-2956).
+  transaction (DMS-1687).
 - **SQL Server's** `#page` has correct statistics and caused no recompiles. Its cost is tempdb
   metadata latch contention: 13–17 `PAGELATCH` waits per request at 32 sessions.
 
@@ -94,11 +95,11 @@ Each edit is **mandated by DMS-1521's decision**
 | `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (≈849–904) | The keyset is per dialect. On PostgreSQL: the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server: `#page` for resource hydration and selected pages (the retained fallback and its selection conditions), and a JSON carrier for candidate metadata. Keep one round trip and the first-result-set contract |
 | `flattening-reconstitution.md` | § 7 sketches (≈1818–1828, ≈2576–2582) | `SelectByKeysetSql` "joins the page keyset relation" instead of "expects a keyset table". Reconstituter step 1 becomes "select the page keyset" |
 | `compiled-mapping-set.md` | step 3 (≈733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset |
-| `mpack-format-v1.md` | `KeysetTableContract` (≈89, 276, 295), `select_by_keyset_sql` (≈695) | The PostgreSQL contract is a relation, not a `page` table. State how a pack consumer rejects a pack compiled with the old contract: the mapping-set key does not change, so a pack built before this story would match it |
+| `mpack-format-v1.md` | `KeysetTableContract` (≈89, 276, 295), `select_by_keyset_sql` (≈695) | Describe the per-dialect keyset: on PostgreSQL, a relation over the carrier, not a `page` table; on SQL Server, `#page` for P1 and P3. Pack emission is not implemented, so no pack was built with the old contract |
 | `change-queries.md` | keyset DDL example (≈2239–2262) | Replace the PostgreSQL `CREATE TEMP TABLE "page"` example with the carrier form, keeping the anchor and `Ordinal` semantics |
 | `link-injection.md` | keyset join sketch (≈164–217) | "materialized page keyset" becomes "page keyset relation" |
 | `summary.md` | Query reconstitution (≈282) | "materialize a page keyset" becomes "select a page keyset" |
-| `transactions-and-concurrency.md` | standalone hydration (≈644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, multi-document reads issue no DDL and run in read-only transactions |
+| `transactions-and-concurrency.md` | standalone hydration (≈644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, resource GET-many and the read-acceleration batches issue no DDL and run in read-only transactions |
 | `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (≈687) | The anchor travels with the selected keys, in the carrier on PostgreSQL and in `#page` or the JSON carrier on SQL Server. Invariant 3, "No extra roundtrip" (≈89), holds unchanged |
 
 ## Acceptance criteria
@@ -221,7 +222,11 @@ types (`Index Scan` expected) as supporting evidence; they are not a threshold.
   Each test must fail if the change is reverted.
 - **Carrier.** On one pooled physical connection: non-empty pages of 1, 25, and 500 ids in
   sequence, an empty page between them, and a failed batch (`SELECT 1 / 0` after the carrier is
-  set). Each returns exactly its own ids, and nothing leaks.
+  set). Each returns exactly its own ids, and nothing leaks. Then, in one transaction, run a
+  query keyset of 25 ids followed by an empty selected page
+  (`Given_A_Query_Keyset_Then_An_Empty_Selected_Page_In_One_Transaction`). The second hydration
+  returns no documents. A `NULL` parameter makes the relation read the carrier, so an empty
+  selected page bound as `NULL` would return the first page's documents.
 - **Read-only** (E4). Resource GET-many, candidate selection, and a selected page in a transaction
   with `default_transaction_read_only = on`. `main`'s DDL prelude, run as a positive control,
   fails with SQLSTATE 25006.
@@ -274,8 +279,9 @@ It is a starting point:
   value, and returns no result set. A selected page has no result set that could carry
   `set_config`, so the relation reads the parameter when it is bound and the carrier when it is
   NULL. The NULL is bound untyped, and the SQL's `CAST` types it, so `Backend.Plans` needs no
-  Npgsql reference. A production design may use a different shape, for example a separate
-  relation per keyset kind, if it meets the criteria.
+  Npgsql reference. An empty selected page binds an empty array, never `NULL`; the prototype binds
+  `selected.DocumentIds.ToArray()`. A production design may use a different shape, for example a
+  separate relation per keyset kind, if it meets the criteria.
 - **The query keyset statement** (PostgreSQL):
 
   ```sql
@@ -309,8 +315,8 @@ It is a starting point:
 
 - **Blocks** story 2, which reuses the carrier name, the set-before-read rule, and the SQL Server
   JSON carrier.
-- **Relates to** DMS-1521 (the spike) and DMS-848.
-- **Fixes** EDFI-2956 for the resource paths. The descriptor path follows in story 2.
+- **Relates to** DMS-1521 (the spike), DMS-848, and DMS-1687.
+- **Fixes** DMS-1687 for the resource paths. The descriptor path follows in story 2.
 - **Starts** after the DMS-1521 approval gate accepts the PostgreSQL transaction-local carrier for
   production.
 

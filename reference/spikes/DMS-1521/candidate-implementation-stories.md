@@ -18,7 +18,7 @@ Paths, as numbered in the findings: P1 resource GET-many (query keyset), P2 read
 candidate metadata, P3 read-acceleration selected-page fallback, P4 descriptor GET-many.
 
 Each story is filed with type Story, no parent, fix version `Ed-Fi API v8.2`, label `no-blockers`,
-priority Medium, and no sprint. It is linked `relates to` DMS-1521 and DMS-848. Each file in this
+priority Medium, and no sprint. It is linked `relates to` DMS-1521, DMS-848, and DMS-1687, which stories 1 and 2 resolve together. Each file in this
 folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.md` once filed.
 
 ### Conditional stories (not drafted)
@@ -36,9 +36,9 @@ folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.m
 - Story 2 is blocked by story 1. It reuses the carrier name and rules on PostgreSQL, and the JSON
   carrier on SQL Server. The descriptor batch does not go through `AppendRelation`, so story 2
   changes `DescriptorReadHandler` itself.
-- Jira links: story 1 **blocks** story 2. Both **relate to** DMS-1521 and DMS-848.
-- Story 1 fixes [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956) (GET-many fails on a
-  PostgreSQL read replica) for the resource paths. The fix is complete only when story 2 also
+- Jira links: story 1 **blocks** story 2. Both **relate to** DMS-1521, DMS-848, and DMS-1687.
+- Story 1 fixes [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) (GET-many fails on a PostgreSQL read replica; cloned from
+  [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for the resource paths. The fix is complete only when story 2 also
   lands, because the descriptor batch issues the same DDL.
 
 ### Dependency graph
@@ -48,13 +48,13 @@ graph TD
   DMS1521["DMS-1521<br/>Spike: keyset temp tables"]
   S1["Story 1<br/>Resource hydration without<br/>a keyset temp table<br/>PG P1-P3, MSSQL P2"]
   S2["Story 2<br/>Descriptor GET-many without<br/>descriptor_page<br/>PG + MSSQL P4"]
-  EDFI2956["EDFI-2956<br/>GET-many on a read replica"]
+  DMS1687["DMS-1687 (from EDFI-2956)<br/>GET-many on a read replica"]
 
   DMS1521 -. relates .- S1
   DMS1521 -. relates .- S2
   S1 --> S2
-  S1 -. fixes resource paths .-> EDFI2956
-  S2 -. fixes descriptor path .-> EDFI2956
+  S1 -. fixes resource paths .-> DMS1687
+  S2 -. fixes descriptor path .-> DMS1687
 ```
 
 ### Expected implementation locations
@@ -129,9 +129,9 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 | AC5, priorities and the SQL Server explanation | [Recommendation](keyset-temp-table-findings.md#sql-server-inline-on-descriptor-and-candidate-metadata-page-stays-on-p1-and-p3); no story for SQL Server P1 and P3 |
 | AC6, retained `#page` (SQL Server P1, P3) | Documented in [Retained fallback](keyset-temp-table-findings.md#retained-fallback). Story 1 keeps those batches byte-identical (E5) and records the condition in `flattening-reconstitution.md` |
 | AC7, thresholds | Each story's acceptance criteria |
-| EDFI-2956, read-only replica | Story 1 (P1–P3) and story 2 (P4), threshold E4 |
+| DMS-1687 (from EDFI-2956), read-only replica | Story 1 (P1–P3) and story 2 (P4), threshold E4 |
 | Design drift, `descriptor_page` in `partitioned-cursor-paging.md` | Story 2 |
-| Mapping-pack key unchanged by the keyset change | Story 1, `mpack-format-v1.md` |
+| Keyset contract in `mpack-format-v1.md` | Story 1 updates the contract description. No pack exists to reject: pack emission is not implemented |
 | Test doubles that split or rewrite keyset batches | Story 1: the PostgreSQL `HydrationExecutorTests` splice. Story 2: the SQL Server descriptor split site in `AuthoritativeTimestampReadConsistencyScenario`. `DescriptorReadCommandExecutor` needs no change while the markers stay |
 | C5, single-document fast path | Unchanged; asserted in both stories |
 | Guarded single-document keyset without the fast path (non-production) | Story 1: implement or remove (the prototype throws) |

@@ -12,7 +12,8 @@ carrier that story 1 defines.
 - **Path:** P4, descriptor GET-many (`DescriptorReadHandler.BuildQueryCommand`).
 - **Reconciles** the design drift in `partitioned-cursor-paging.md`, and adapts the split-command
   consistency test double on SQL Server.
-- **Completes** the [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956) fix on PostgreSQL.
+- **Completes** the [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) fix on PostgreSQL (cloned from
+  [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)).
 - **Evidence:** [DMS-1521 findings](keyset-temp-table-findings.md), with the prototype in
   [`experiments/prototype.patch`](experiments/prototype.patch).
 
@@ -25,7 +26,7 @@ brought back the per-request temp-table lifecycle on a path that had none. DMS-1
 cost:
 
 - **PostgreSQL:** 42 catalog tuples and about 10 KB of WAL per request. A fixed 2,260-row
-  estimate. Failure in a read-only transaction (EDFI-2956).
+  estimate. Failure in a read-only transaction (DMS-1687).
 - **SQL Server:** one temp table per request, and 12.7–14.3 contended `PAGELATCH` waits per request
   at 32 sessions.
 
@@ -39,9 +40,9 @@ against `main`:
 - **SQL Server:** API within ±2%, replay latency 0.45–0.93× at concurrency 1, throughput ×2.2 at
   32 sessions, fewer logical reads, and no temp table.
 
-Correctness validation found no behavior change on either engine. The descriptor path is the one
-path where SQL Server's `inline` passed every criterion at both page sizes, because the batch
-selects its page itself and each reader parses the carrier only once.
+Correctness validation found no behavior change on either engine. The descriptor and
+candidate-metadata paths are the two where SQL Server's `inline` passed every criterion at both page
+sizes, because each batch selects its own page and each reader parses the carrier only once.
 
 ## Scope
 
@@ -222,8 +223,9 @@ test-adaptation section, passed every check on both engines:
 
 - **Blocked by** story 1: the carrier name, the set-before-read rule, and the SQL Server JSON
   carrier.
-- **Relates to** DMS-1521 (the spike), DMS-848, and DMS-1401, which introduced `descriptor_page`.
-- **Completes** EDFI-2956 for the descriptor path.
+- **Relates to** DMS-1521 (the spike), DMS-848, DMS-1687, and DMS-1401, which introduced
+  `descriptor_page`.
+- **Completes** DMS-1687 for the descriptor path.
 
 ## Estimate
 
