@@ -1492,6 +1492,63 @@ public class TemplateArtifactCatalogTests
     }
 
     /// <summary>
+    /// R001: both templates authenticate, but the release of each probe's private directory fails. Startup
+    /// reports each template's catalog probe as <c>StagingFailed</c> at the fixed release step, with nothing taken
+    /// from the residue, and keeps the engine requirement of each authenticated manifest.
+    /// </summary>
+    [TestFixture]
+    public class Given_startup_validation_whose_probe_directories_cannot_be_released
+    {
+        private CatalogWorkspace _workspace = null!;
+        private readonly List<DeletionTrap> _traps = [];
+        private TemplateCatalogValidation _validation = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new CatalogWorkspace();
+            _workspace.BuildBoth();
+            TemplateArtifactCatalog catalog = _workspace.Catalog();
+            catalog.BeforeRelease = directory => _traps.Add(new DeletionTrap(directory.Path));
+            _validation = await catalog.ValidateAsync(CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _traps.ForEach(trap => trap.Dispose());
+            _workspace.Dispose();
+        }
+
+        [Test]
+        public void It_reports_the_release_failure_under_each_templates_catalog_probe() =>
+            _validation
+                .Reasons.Should()
+                .Equal(
+                    DmsDatabaseTemplate.All.Select(template => new DmsReadinessReason(
+                        DmsProvisioningFailureCode.StagingFailed,
+                        TemplateArtifactCatalog.CatalogProbeFor(template),
+                        DmsProvisioningDiagnostic.ForOperation(
+                            TemplateArtifactCatalog.ReleaseOperationDirectoryStep
+                        )
+                    ))
+                );
+
+        [Test]
+        public void It_keeps_the_engine_requirement_of_each_authenticated_manifest() =>
+            _validation
+                .EngineRequirements.Should()
+                .Equal(
+                    new TemplateEngineRequirement(DmsDatabaseTemplate.Minimal, "16.8"),
+                    new TemplateEngineRequirement(DmsDatabaseTemplate.Sample, "16.8")
+                );
+
+        [Test]
+        public void It_left_both_probe_directories_for_the_operator() =>
+            _workspace.OperationEntries.Should().HaveCount(2);
+    }
+
+    /// <summary>
     /// F-06 (D-6b): temporary file contention is recognised only by the <c>HResult</c> values pinned on .NET 10 for a
     /// policy another handle holds; every other I/O failure, including a missing file, is not.
     /// </summary>

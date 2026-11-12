@@ -50,6 +50,12 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
     public const string MatchConfigurationStep = "MatchConfiguration";
     public const string ExtractArtifactStep = "ExtractArtifact";
 
+    /// <summary>
+    /// The startup step reported when a template authenticated but the release of its probe's private
+    /// directory left residue; what remains is logged by generated name, never reported here.
+    /// </summary>
+    public const string ReleaseOperationDirectoryStep = "ReleaseOperationDirectory";
+
     /// <summary>The check name reported when the trust policy names no detached-attestation producer.</summary>
     public const string NoProducersCheck = "NoProducers";
 
@@ -501,7 +507,18 @@ public sealed class TemplateArtifactCatalog : ITemplateArtifactCatalog
             }
             else if (engineVersion is not null)
             {
+                // The manifest authenticated, so its engine requirement stands even if the release left residue.
                 requirements.Add(new TemplateEngineRequirement(template, engineVersion));
+                if (resolution is DmsArtifactResolution.Resolved { Cleanup.HasResidue: true })
+                {
+                    reasons.Add(
+                        new DmsReadinessReason(
+                            DmsProvisioningFailureCode.StagingFailed,
+                            CatalogProbeFor(template),
+                            DmsProvisioningDiagnostic.ForOperation(ReleaseOperationDirectoryStep)
+                        )
+                    );
+                }
             }
         }
 

@@ -748,6 +748,67 @@ public class DmsDataStoreProvisioningStartupTests
                 .Be("edfi_identity, unreachable");
     }
 
+    /// <summary>
+    /// R001: a ready engine and a catalog whose templates authenticated but whose probe directory could not be
+    /// released. The catalog's cleanup reason alone makes readiness <c>NotReady</c>.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_ready_engine_and_a_catalog_probe_that_left_residue
+    {
+        private static readonly DmsReadinessReason _residue = new(
+            DmsProvisioningFailureCode.StagingFailed,
+            TemplateArtifactCatalog.CatalogProbeFor(DmsDatabaseTemplate.Minimal),
+            DmsProvisioningDiagnostic.ForOperation(TemplateArtifactCatalog.ReleaseOperationDirectoryStep)
+        );
+
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+        private DmsProvisionerReadiness _readiness = null!;
+
+        [SetUp]
+        public void Act()
+        {
+            IDmsTargetEngine engine = ReadyEngine(18);
+            ITemplateArtifactCatalog catalog = A.Fake<ITemplateArtifactCatalog>();
+            A.CallTo(() => catalog.ValidateAsync(A<CancellationToken>._))
+                .Returns(
+                    new TemplateCatalogValidation(
+                        [_residue],
+                        [
+                            new TemplateEngineRequirement(DmsDatabaseTemplate.Minimal, "18.1"),
+                            new TemplateEngineRequirement(DmsDatabaseTemplate.Sample, "18.1"),
+                        ]
+                    )
+                );
+            _factory = CreateFactory(
+                EnabledSettings("postgresql", "postgresql"),
+                configureServices: services =>
+                {
+                    services.RemoveAll<IDmsTargetEngine>();
+                    services.AddSingleton(engine);
+                    services.RemoveAll<ITemplateArtifactCatalog>();
+                    services.AddSingleton(catalog);
+                }
+            );
+            _exception = StartupExceptionFor(_factory);
+            _readiness = _factory.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>().Current;
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_starts() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_records_not_ready_for_the_catalog_cleanup_reason_alone() =>
+            _readiness
+                .Should()
+                .BeOfType<DmsProvisionerReadiness.NotReady>()
+                .Which.Reasons.Should()
+                .Equal(_residue);
+    }
+
     [TestFixture]
     public class Given_the_admin_connection_secret_cannot_be_resolved_at_startup
     {
