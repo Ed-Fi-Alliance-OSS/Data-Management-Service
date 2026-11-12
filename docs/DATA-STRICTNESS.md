@@ -219,6 +219,29 @@ casing.
 > Case-insensitive matching of query **values** (the data being filtered on) is
 > not part of this contract and should not be assumed.
 
+## Query filter values longer than the field's maxLength
+
+A string query filter whose value is longer than the `maxLength` that the
+resource schema declares for that field is rejected with `400 Bad Request`,
+reported in `validationErrors` under the field's document path in the same way
+as a filter value of the wrong type, and the query is not run. The length is
+measured on the value as supplied, with no trimming, and counted in Unicode
+text elements, the same unit request-body `maxLength` validation uses. A value
+at the bound is accepted, and trailing spaces count toward the length. Fields
+that declare no `maxLength` are not bounded.
+
+> [!NOTE]
+> This differs from the Ed-Fi ODS/API, which does not reject filter values by
+> length: an over-long value is passed to the query, and the result depends on
+> the database's comparison rules. This is derived from the ODS/API source at
+> commit `ef17fff8a214b2fb52ad201fc333c74e513619f2`, not observed from a running ODS/API:
+> [`DataManagementControllerBase.GetAll`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/ef17fff8a214b2fb52ad201fc333c74e513619f2/Application/EdFi.Ods.Api/Controllers/DataManagementControllerBase.cs#L157-L200)
+> validates only the paging parameters, the generated
+> [`GetByExample` request types](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/ef17fff8a214b2fb52ad201fc333c74e513619f2/Utilities/CodeGeneration/EdFi.Ods.CodeGen/Mustache/Requests.mustache#L16-L21)
+> declare no length constraints, and
+> [`SpecificationAggregateQueryCriteriaApplicator`](https://github.com/Ed-Fi-Alliance-OSS/Ed-Fi-ODS/blob/ef17fff8a214b2fb52ad201fc333c74e513619f2/Application/EdFi.Ods.Common/Providers/Queries/Criteria/SpecificationAggregateQueryCriteriaApplicator.cs#L62-L107)
+> adds each filter to the query.
+
 ## References
 
 - Ed-Fi API guideline:
