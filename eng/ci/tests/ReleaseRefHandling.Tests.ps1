@@ -198,6 +198,7 @@ Describe 'on-prerelease.yml' {
         @{ Job = 'attach-dms-host-assembly-manifest'; Tag = 'dms-pre-8.0.0'; Semver = 'v8.0.0' }
         @{ Job = 'attach-cs-artifacts-to-release'; Tag = 'cs-pre-8.1.0-beta.0.1'; Semver = 'v8.1.0-beta.0.1' }
         @{ Job = 'attach-security-metadata-tools-artifacts-to-release'; Tag = 'cs-pre-8.0.0'; Semver = 'v8.0.0' }
+        @{ Job = 'attach-document-cache-admin-artifacts-to-release'; Tag = 'dms-pre-8.1.0-beta.0.1'; Semver = 'v8.1.0-beta.0.1' }
     ) {
         # Expanding the expression as well lets this run against the old, interpolating text too,
         # which is how the derived values were shown to be unchanged.
@@ -214,6 +215,7 @@ Describe 'on-prerelease.yml' {
         @{ Job = 'attach-dms-host-assembly-manifest' }
         @{ Job = 'attach-cs-artifacts-to-release' }
         @{ Job = 'attach-security-metadata-tools-artifacts-to-release' }
+        @{ Job = 'attach-document-cache-admin-artifacts-to-release' }
     ) {
         $jobText = script:Get-Job $script:prerelease $Job
         foreach ($tag in $script:hostileRef) {

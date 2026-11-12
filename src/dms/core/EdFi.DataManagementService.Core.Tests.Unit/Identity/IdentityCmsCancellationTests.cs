@@ -172,10 +172,16 @@ public class IdentityCmsCancellationTests
             HybridCache hybridCache = cacheServiceProvider.GetRequiredService<HybridCache>();
             IMemoryCache memoryCache = cacheServiceProvider.GetRequiredService<IMemoryCache>();
 
+            // The grant has its own client over the same gated transport, without the response
+            // handler, as the production registration has.
+            var grantClient = new ConfigurationServiceGrantClient(
+                new HttpClient(handler, disposeHandler: false) { BaseAddress = new Uri(CmsBaseAddress) }
+            );
+
             var tokenHandler = new ConfigurationServiceTokenHandler(
-                hybridCache,
-                cacheSettings,
-                apiClient,
+                grantClient,
+                Options.Create(new ConfigurationServiceTokenCacheOptions()),
+                TimeProvider.System,
                 NullLogger<ConfigurationServiceTokenHandler>.Instance
             );
 

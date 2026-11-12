@@ -347,6 +347,13 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
             .Services.GetRequiredService<IOptions<DocumentCacheOptions>>()
             .Value;
         DocumentCacheStartupDiagnostics.Log(app.Logger, documentCacheOptions);
+
+        // Resolved here so an invalid cap is reported through this guarded path, and the
+        // deprecation warning precedes the first Configuration Service load.
+        ConfigurationServiceTokenCacheOptions.LogDeprecationIfSet(
+            app.Services.GetRequiredService<IOptions<ConfigurationServiceTokenCacheOptions>>().Value,
+            app.Logger
+        );
     }
     catch (OptionsValidationException ex)
     {

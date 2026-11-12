@@ -5,7 +5,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
@@ -58,22 +57,22 @@ public class ConfigurationServiceProfileProvider(
     {
         try
         {
-            string? token = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
-            );
-
             logger.LogDebug(
                 "Fetching application profile info for applicationId: {ApplicationId}",
                 applicationId
             );
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/applications/{applicationId}");
-            SetRequestHeaders(request, token, tenantId);
-            request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
-
-            HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+            using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+                configurationServiceTokenHandler,
+                configurationServiceContext,
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"v3/applications/{applicationId}");
+                    SetTenantHeader(request, tenantId);
+                    request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
+                    return request;
+                }
+            );
 
             // The application id came from this client's resolved application context, so CMS
             // not knowing it means the two disagree (for example, the application was deleted
@@ -90,13 +89,13 @@ public class ConfigurationServiceProfileProvider(
 
             response.EnsureSuccessStatusCode();
 
-            string responseBody = await response.Content.ReadAsStringAsync();
-            CmsApplicationResponse? applicationResponse = JsonSerializer.Deserialize<CmsApplicationResponse>(
-                responseBody,
-                _jsonOptions
-            );
+            CmsApplicationResponse? applicationResponse =
+                await ConfigurationServiceApiClient.ReadResponseAsync(
+                    response,
+                    body => JsonSerializer.Deserialize<CmsApplicationResponse>(body, _jsonOptions)
+                );
 
-            if (applicationResponse == null)
+            if (applicationResponse is null)
             {
                 logger.LogError(
                     "Failed to deserialize application response for applicationId: {ApplicationId}",
@@ -147,23 +146,23 @@ public class ConfigurationServiceProfileProvider(
     {
         try
         {
-            string? token = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
-            );
-
             logger.LogDebug("Fetching profile for profileId: {ProfileId}", profileId);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/profiles/{profileId}");
-            SetRequestHeaders(request, token, tenantId);
-            // A profile listed by GET /v3/profiles can still be deleted before its detail is fetched.
-            // That 404 means the profile is gone, so the catalog skips it rather than failing the
-            // whole attempt. (CMS leaves XSD-invalid profiles out of the list, so they never reach
-            // this fetch.)
-            request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
-
-            HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+            using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+                configurationServiceTokenHandler,
+                configurationServiceContext,
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"v3/profiles/{profileId}");
+                    SetTenantHeader(request, tenantId);
+                    // A profile listed by GET /v3/profiles can still be deleted before its detail is
+                    // fetched. That 404 means the profile is gone, so the catalog skips it rather than
+                    // failing the whole attempt. (CMS leaves XSD-invalid profiles out of the list, so
+                    // they never reach this fetch.)
+                    request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
+                    return request;
+                }
+            );
 
             if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
             {
@@ -173,11 +172,13 @@ public class ConfigurationServiceProfileProvider(
 
             response.EnsureSuccessStatusCode();
 
-            string responseBody = await response.Content.ReadAsStringAsync();
             CmsProfileResponseInternal? profileResponse =
-                JsonSerializer.Deserialize<CmsProfileResponseInternal>(responseBody, _jsonOptions);
+                await ConfigurationServiceApiClient.ReadResponseAsync(
+                    response,
+                    body => JsonSerializer.Deserialize<CmsProfileResponseInternal>(body, _jsonOptions)
+                );
 
-            if (profileResponse == null)
+            if (profileResponse is null)
             {
                 logger.LogError(
                     "Failed to deserialize profile response for profileId: {ProfileId}",
@@ -228,28 +229,30 @@ public class ConfigurationServiceProfileProvider(
     {
         try
         {
-            string? token = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope
-            );
-
             logger.LogDebug("Fetching profile catalog from the Configuration Service");
 
             // No AllowNotFoundResponse: the list endpoint always exists, so a 404 here is a failure,
             // never an empty catalog.
-            using var request = new HttpRequestMessage(HttpMethod.Get, "v3/profiles");
-            SetRequestHeaders(request, token, tenantId);
-
-            HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(request);
+            using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+                configurationServiceTokenHandler,
+                configurationServiceContext,
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, "v3/profiles");
+                    SetTenantHeader(request, tenantId);
+                    return request;
+                }
+            );
 
             response.EnsureSuccessStatusCode();
 
-            string responseBody = await response.Content.ReadAsStringAsync();
             CmsProfileResponseInternal[]? profileResponses =
-                JsonSerializer.Deserialize<CmsProfileResponseInternal[]>(responseBody, _jsonOptions);
+                await ConfigurationServiceApiClient.ReadResponseAsync(
+                    response,
+                    body => JsonSerializer.Deserialize<CmsProfileResponseInternal[]>(body, _jsonOptions)
+                );
 
-            if (profileResponses == null)
+            if (profileResponses is null)
             {
                 logger.LogError("Profile catalog response was empty or could not be parsed");
                 throw CatalogUnavailable();
@@ -298,16 +301,11 @@ public class ConfigurationServiceProfileProvider(
         new("The profile catalog is unavailable from the Configuration Service", innerException);
 
     /// <summary>
-    /// Sets authorization and tenant headers on the request message.
+    /// Sets the tenant header on the request message. The shared authenticated send sets the bearer.
     /// Uses per-request headers for thread safety instead of modifying DefaultRequestHeaders.
     /// </summary>
-    private static void SetRequestHeaders(HttpRequestMessage request, string? token, string? tenantId)
+    private static void SetTenantHeader(HttpRequestMessage request, string? tenantId)
     {
-        if (!string.IsNullOrEmpty(token))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        }
-
         if (!string.IsNullOrEmpty(tenantId))
         {
             request.Headers.Add(TenantHeaderName, tenantId);

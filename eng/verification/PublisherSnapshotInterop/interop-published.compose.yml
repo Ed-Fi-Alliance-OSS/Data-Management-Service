@@ -1,0 +1,13 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+# Compose overlay for a harness run against published images (Invoke-PublisherSnapshotInteropCheck.ps1
+# -DmsImageTag). It is layered after interop.compose.yml through DMS_PLUGINS_COMPOSE_FILES in the
+# harness-owned environment file. The locally built DMS service is named ed-fi-api, and the harness addresses
+# that name (docker logs, the Publisher's source and target URL on the dms network). The published service has
+# no container name of its own, so this overlay gives it the same one.
+services:
+  dms:
+    container_name: ed-fi-api

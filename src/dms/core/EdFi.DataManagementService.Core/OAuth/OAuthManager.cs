@@ -8,6 +8,7 @@ using System.Net;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Utilities;
 using Microsoft.Extensions.Logging;
@@ -154,20 +155,6 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
     /// cut off well before it can dominate a log line.
     /// </remarks>
     private const int MaxLoggedUpstreamContentLength = 2048;
-
-    /// <summary>
-    /// The <c>type</c> a problem-details token-limit rejection from the Configuration Service
-    /// carries. The Configuration Service has answered in three shapes: the Management API's
-    /// <c>urn:ed-fi:management-api</c> problem-details type, an earlier <c>urn:ed-fi:api</c>
-    /// problem-details type, and an OAuth envelope (see
-    /// <see cref="TemporarilyUnavailableOAuthError"/>). Each type is matched exactly, so a DMS
-    /// deployed beside any version still recognizes the rejection. DMS returns an OAuth error
-    /// rather than forwarding any of them.
-    /// </summary>
-    private const string LegacyTooManyTokensType = "urn:ed-fi:api:security:authentication:too-many-tokens";
-
-    private const string ManagementApiTooManyTokensType =
-        "urn:ed-fi:management-api:security:authentication:too-many-tokens";
 
     /// <summary>
     /// The <c>error</c> value of both OAuth-envelope 429 answers, the token limit and the rate limit.
@@ -730,8 +717,16 @@ public class OAuthManager(ILogger<OAuthManager> logger) : IOAuthManager
             }
 
             if (
-                !string.Equals(type, LegacyTooManyTokensType, StringComparison.Ordinal)
-                && !string.Equals(type, ManagementApiTooManyTokensType, StringComparison.Ordinal)
+                !string.Equals(
+                    type,
+                    ConfigurationServiceProblemTypes.LegacyTooManyTokens,
+                    StringComparison.Ordinal
+                )
+                && !string.Equals(
+                    type,
+                    ConfigurationServiceProblemTypes.ManagementApiTooManyTokens,
+                    StringComparison.Ordinal
+                )
             )
             {
                 return null;

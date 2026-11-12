@@ -84,6 +84,10 @@ Describe "EdFi.Api.Identity publication wiring" {
         )) {
             $script:jobs[$name] = Get-WorkflowJob -Workflow $prerelease -Name $name
         }
+        # Looked up leniently so a workflow without these jobs fails only the cases that name them.
+        foreach ($name in @("pack-document-cache-admin", "publish-package-document-cache-admin")) {
+            $script:jobs[$name] = try { Get-WorkflowJob -Workflow $prerelease -Name $name } catch { $null }
+        }
         $script:Needs = ${function:Get-JobNeed}
         $script:If = ${function:Get-JobIf}
 
@@ -220,14 +224,18 @@ Describe "EdFi.Api.Identity publication wiring" {
         It "<job> needs check-identity-contract" -ForEach @(
             @{ Job = "pack-dms" }
             @{ Job = "pack-schema-tools" }
+            @{ Job = "pack-document-cache-admin" }
         ) {
+            $script:jobs[$Job] | Should -Not -BeNullOrEmpty -Because "$Job must exist"
             @(& $script:Needs -Job $script:jobs[$Job]) | Should -Contain "check-identity-contract"
         }
 
         It "<job> needs publish-package-identity" -ForEach @(
             @{ Job = "publish-package-dms" }
             @{ Job = "publish-package-schema-tools" }
+            @{ Job = "publish-package-document-cache-admin" }
         ) {
+            $script:jobs[$Job] | Should -Not -BeNullOrEmpty -Because "$Job must exist"
             @(& $script:Needs -Job $script:jobs[$Job]) | Should -Contain "publish-package-identity"
         }
     }

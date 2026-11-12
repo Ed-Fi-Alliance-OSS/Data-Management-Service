@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Security.Model;
 
@@ -33,16 +32,7 @@ public class ConfigurationServiceClaimSetProvider(
         CancellationToken cancellationToken = default
     )
     {
-        /// Get token for the Configuration Service API
-        string? configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-            configurationServiceContext.clientId,
-            configurationServiceContext.clientSecret,
-            configurationServiceContext.scope,
-            cancellationToken
-        );
-        return (await FetchAuthorizationMetadata(configurationServiceToken, tenant, cancellationToken))
-            .Select(CreateClaimSet)
-            .ToList();
+        return (await FetchAuthorizationMetadata(tenant, cancellationToken)).Select(CreateClaimSet).ToList();
     }
 
     /// <summary>
@@ -50,7 +40,6 @@ public class ConfigurationServiceClaimSetProvider(
     /// travel on the individual request because this singleton serves every tenant over one HttpClient.
     /// </summary>
     private async Task<IList<ClaimSetMetadata>> FetchAuthorizationMetadata(
-        string? configurationServiceToken,
         string? tenant,
         CancellationToken cancellationToken
     )
@@ -58,31 +47,28 @@ public class ConfigurationServiceClaimSetProvider(
         // Retrieve all claim sets with their authorization metadata in one call by omitting claimSetName
         string authorizationMetadataEndpoint = "v3/authorizationMetadata";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, authorizationMetadataEndpoint);
+        using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+            configurationServiceTokenHandler,
+            configurationServiceContext,
+            () =>
+            {
+                var request = new HttpRequestMessage(HttpMethod.Get, authorizationMetadataEndpoint);
 
-        if (!string.IsNullOrEmpty(configurationServiceToken))
-        {
-            request.Headers.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
-                configurationServiceToken
-            );
-        }
+                // Send the Tenant header for multi-tenant scenarios, omitting it entirely otherwise
+                if (!string.IsNullOrEmpty(tenant))
+                {
+                    request.Headers.Add(TenantHeaderName, tenant);
+                }
 
-        // Send the Tenant header for multi-tenant scenarios, omitting it entirely otherwise
-        if (!string.IsNullOrEmpty(tenant))
-        {
-            request.Headers.Add(TenantHeaderName, tenant);
-        }
-
-        using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
-            request,
+                return request;
+            },
             cancellationToken
         );
 
-        string claimSetMetadataJson = await response.Content.ReadAsStringAsync(cancellationToken);
-        IList<ClaimSetMetadata>? claimSetMetadataList = JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(
-            claimSetMetadataJson,
-            _jsonOptions
+        IList<ClaimSetMetadata>? claimSetMetadataList = await ConfigurationServiceApiClient.ReadResponseAsync(
+            response,
+            body => JsonSerializer.Deserialize<IList<ClaimSetMetadata>>(body, _jsonOptions),
+            cancellationToken
         );
 
         if (claimSetMetadataList is null)

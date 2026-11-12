@@ -50,7 +50,7 @@ public class ConfigurationServiceClaimSetProviderTests
         A.CallTo(() =>
                 tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
             )
-            .Returns("cms-token");
+            .Returns(new ConfigurationServiceTokenLease("cms-token", 1));
 
         return new ConfigurationServiceClaimSetProvider(
             new ConfigurationServiceApiClient(client),

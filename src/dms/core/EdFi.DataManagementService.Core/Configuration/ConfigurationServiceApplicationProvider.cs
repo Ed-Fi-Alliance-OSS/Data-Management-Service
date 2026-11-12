@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net.Http.Headers;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Utilities;
@@ -60,29 +59,23 @@ public class ConfigurationServiceApplicationProvider(
 
         try
         {
-            string configurationServiceToken = await configurationServiceTokenHandler.GetTokenAsync(
-                configurationServiceContext.clientId,
-                configurationServiceContext.clientSecret,
-                configurationServiceContext.scope,
-                cancellationToken
-            );
-
             logger.LogDebug("Fetching application context for clientId: {ClientId}", sanitizedClientId);
 
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"v3/apiClients/{clientId}");
-            request.Headers.Authorization = new AuthenticationHeaderValue(
-                "Bearer",
-                configurationServiceToken
-            );
+            using HttpResponseMessage response = await configurationServiceApiClient.SendAuthenticatedAsync(
+                configurationServiceTokenHandler,
+                configurationServiceContext,
+                () =>
+                {
+                    var request = new HttpRequestMessage(HttpMethod.Get, $"v3/apiClients/{clientId}");
 
-            if (tenant is not null)
-            {
-                request.Headers.Add("Tenant", tenant);
-            }
+                    if (tenant is not null)
+                    {
+                        request.Headers.Add("Tenant", tenant);
+                    }
 
-            request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
-            using HttpResponseMessage response = await configurationServiceApiClient.Client.SendAsync(
-                request,
+                    request.Options.Set(ConfigurationServiceResponseHandler.AllowNotFoundResponse, true);
+                    return request;
+                },
                 cancellationToken
             );
 
@@ -102,8 +95,11 @@ public class ConfigurationServiceApplicationProvider(
                 return new ApplicationContextResult.Unavailable();
             }
 
-            string responseBody = await response.Content.ReadAsStringAsync(cancellationToken);
-            ApplicationContext? applicationContext = DeserializeApplicationContext(responseBody);
+            ApplicationContext? applicationContext = await ConfigurationServiceApiClient.ReadResponseAsync(
+                response,
+                DeserializeApplicationContext,
+                cancellationToken
+            );
 
             if (applicationContext is null)
             {

@@ -180,7 +180,7 @@ be corrected.
 | `IdentitySettings:TokenCleanupEnabled` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:Enabled` | `IdentitySettings__TokenCleanup__Enabled` | Token cleanup stays on |
 | `IdentitySettings:TokenCleanupIntervalMinutes` (Configuration Service, 8.1 pre-release builds only) | `IdentitySettings:TokenCleanup:IntervalMinutes` | `IdentitySettings__TokenCleanup__IntervalMinutes` | The sweep runs every 30 minutes |
 | `IdentitySettings:KeyFormatCacheSize` (Configuration Service) | Removed. The signing-key format cache it sized no longer exists. | None | Ignored |
-| `IdentitySettings:OpenIddictTokenExpirationTimeMinutes` (Configuration Service; shipped in `appsettings.json` in 8.0 and the 8.1 pre-release builds, never read) | `IdentitySettings:TokenExpirationMinutes`. The value takes effect for the first time when renamed: keep it at or above DMS `CacheSettings:TokenCacheExpirationSeconds` (25 minutes by default), as the `IdentitySettings.TokenExpirationMinutes` row explains. | `IdentitySettings__TokenExpirationMinutes` | Tokens last 30 minutes |
+| `IdentitySettings:OpenIddictTokenExpirationTimeMinutes` (Configuration Service; shipped in `appsettings.json` in 8.0 and the 8.1 pre-release builds, never read) | `IdentitySettings:TokenExpirationMinutes`. The value takes effect for the first time when renamed. DMS follows the lifetime it sets, as the `IdentitySettings.TokenExpirationMinutes` row explains. | `IdentitySettings__TokenExpirationMinutes` | Tokens last 30 minutes |
 | `IdentitySettings:MaxKeyCacheSize` (Configuration Service; shipped in `appsettings.json` in 8.0 and the 8.1 pre-release builds, never read) | Removed. | None | Ignored |
 
 With one switch for both claimset operations, a deployment that kept
@@ -791,11 +791,41 @@ These settings configure DMS in-memory cache behavior. Expiration values are in 
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | ClaimSetsCacheExpirationSeconds          | The duration before cached claim sets expire and are refreshed from the Configuration Service. Default: `600`              |
 | ApplicationContextCacheExpirationSeconds | The duration before cached application context metadata expires and is refreshed from the Configuration Service. Default: `600` |
-| TokenCacheExpirationSeconds              | The duration before cached Configuration Service OAuth tokens expire. DMS does not read the token's `expires_in`, so keep this no longer than the Configuration Service token lifetime: `IdentitySettings:TokenExpirationMinutes` in self-contained mode, or the Keycloak access-token lifespan in Keycloak mode. Default: `1500` |
+| TokenCacheExpirationSeconds              | **Deprecated in 8.x; removed in the next major release.** An optional upper bound on how long DMS reuses its Configuration Service token. The issuer's lifetime governs reuse. See [TokenCacheExpirationSeconds (deprecated)](#tokencacheexpirationseconds-deprecated). Default: none |
 | ProfileCacheExpirationSeconds            | The duration before cached profile metadata expires and is refreshed from the Configuration Service. Default: `1800`       |
 | DataStoreCacheRefreshEnabled             | When `true`, enables TTL-based refresh of cached data store configuration from the Configuration Service. Default: `true`  |
 | DataStoreCacheExpirationSeconds          | The duration between automatic refreshes of cached data store configuration. Default: `600`                                |
 | DerivativeValidationCacheExpirationSeconds | The duration a validation verdict for a read replica or snapshot database stays cached. Default: `600`, accepted range `1`–`3600` |
+
+### TokenCacheExpirationSeconds (deprecated)
+
+DMS gets its own bearer from the Configuration Service with a client-credentials grant. It reuses that
+bearer for the lifetime the grant returns in `expires_in`, less a margin, and then obtains a
+replacement before its next Configuration Service read.
+
+- **Positive lifetime `L`.** The bearer is reused for `L − min(60 s, 0.1 × L)`, measured from the start
+  of the grant.
+  - A 30-minute token is reused for 29 minutes.
+  - A 600-second token is reused for 540 seconds.
+  - A 300-second token is reused for 270 seconds.
+- **Missing, null, zero or negative lifetime.** The bearer is reused for 300 seconds from acquisition,
+  and each such grant logs a warning.
+- **Where the lifetime is set.** In self-contained mode, `IdentitySettings:TokenExpirationMinutes` on
+  the Configuration Service sets it. In Keycloak mode, the realm's **Access Token Lifespan** sets it,
+  unless the DMS client overrides that lifespan.
+
+`CacheSettings:TokenCacheExpirationSeconds` no longer sets a fixed lifetime, and DMS ships no value for
+it. When an operator sets it, it only lowers the reuse window above, measured from acquisition; a higher
+value has no effect. DMS and the DocumentCache admin CLI each log one deprecation warning at startup,
+before their first Configuration Service call, when the setting is present. A present value must be a positive whole number of seconds. Any other value, blank
+included, fails startup with an error that names the setting without repeating the value.
+
+**Migrating in 8.x.** The DMS Docker Compose files no longer map `DMS_TOKEN_CACHE_EXPIRATION_SECONDS`.
+To keep a cap during 8.x, pass `CacheSettings__TokenCacheExpirationSeconds` directly to the DMS container
+in configuration you own. Compose manifests from earlier releases map that variable with a default of
+`1500`. A deployment that upgrades only the DMS image therefore still presents an explicit 1,500-second
+cap and logs the deprecation warning. To follow the issuer's lifetime, remove that mapping. The setting
+is removed in the next major release.
 
 ### DerivativeValidationCacheExpirationSeconds
 
@@ -1489,7 +1519,7 @@ relevant environment variables or appsettings to set `IdentityProvider` to
 | `IdentitySettings.ConfigServiceRole` | Role of Configuration Service administrative clients: required by the Management API service policy and assigned by `/connect/register`. Required: while it is empty, the Configuration Service reports invalid configuration instead of serving requests. Self-contained token issuance also reads it: a client without a `dmscs.ApiClient` row obtains a token, and can use `/connect/revoke` and `/connect/introspect`, only when it holds this role and only Management API scopes, and only while this name does not collide with `ClientRole` (see [ROLES-SCOPES.md](ROLES-SCOPES.md#client-registration)). Audit role memberships before changing or reusing it ([OPERATIONS.md](OPERATIONS.md#auditing-role-memberships-before-a-role-name-change)). Compose variable: `CONFIGURATION_SERVICE_IDENTITY_SERVICE_ROLE` | `cms-client` | `cms-client` |
 | `IdentitySettings.ClientRole` | Role assigned to the DMS vendor clients the Configuration Service creates. Required, as `ConfigServiceRole` is. Self-contained token issuance also reads it: when the database resolves it and `ConfigServiceRole` to one role row, or the two are equal after trailing white space is removed and case, width, kana type and non-spacing marks are ignored, every client without a `dmscs.ApiClient` row is refused. Audit role memberships before changing or reusing it. Compose variable: `CONFIGURATION_SERVICE_IDENTITY_CLIENT_ROLE` | `dms-client` | `dms-client` |
 | `IdentitySettings.EncryptionKey`    | Key used for token encryption (self-contained only)              | _(not used)_                                         | `QWJjZGVmZ2hpamtsbW5vcHFyc3R1dnd4eXo0NTY3ODkwMTIz` |
-| `IdentitySettings.TokenExpirationMinutes` | Lifetime, in minutes, of the access tokens the Configuration Service issues (self-contained only; in Keycloak mode, Keycloak sets the lifetime). Sets both the token response's `expires_in` and the token's `exp`. Must be between 1 and 35,791,394, the longest lifetime whose `expires_in` fits a 32-bit integer; startup fails otherwise. Default: `30`. Keep it at or above DMS `CacheSettings:TokenCacheExpirationSeconds` (1500 seconds, 25 minutes, by default): DMS reuses its Configuration Service token for that long whatever `expires_in` says, so a shorter lifetime makes DMS keep sending its token after it expires, and the Configuration Service rejects it once it is more than 5 minutes past expiry. Environment override: `IdentitySettings__TokenExpirationMinutes`; the provided Docker Compose files do not map it. Earlier releases shipped this setting as `OpenIddictTokenExpirationTimeMinutes`, which was never read; see [Renamed configuration keys](#renamed-configuration-keys). | _(not used)_ | `30` |
+| `IdentitySettings.TokenExpirationMinutes` | Lifetime, in minutes, of the access tokens the Configuration Service issues (self-contained only; in Keycloak mode, Keycloak sets the lifetime). Sets both the token response's `expires_in` and the token's `exp`. Must be between 1 and 35,791,394, the longest lifetime whose `expires_in` fits a 32-bit integer; startup fails otherwise. Default: `30`. DMS reuses its own Configuration Service token for this lifetime less `min(60 s, 10%)` (29 minutes at the default) and then obtains a replacement, so this setting needs no matching DMS value; see [TokenCacheExpirationSeconds (deprecated)](#tokencacheexpirationseconds-deprecated). Environment override: `IdentitySettings__TokenExpirationMinutes`; the provided Docker Compose files do not map it. Earlier releases shipped this setting as `OpenIddictTokenExpirationTimeMinutes`, which was never read; see [Renamed configuration keys](#renamed-configuration-keys). | _(not used)_ | `30` |
 | `IdentitySettings.TokenCleanup.Enabled` | Enables the background sweep that deletes expired OpenIddict access tokens (self-contained only) | _(not used)_                                         | `true`              |
 | `IdentitySettings.TokenCleanup.IntervalMinutes` | Interval, in minutes, between expired-token cleanup sweeps (self-contained only)           | _(not used)_                                         | `30`              |
 | `IdentitySettings.BearerTokenPerClientLimit` | Maximum number of active (unexpired, unrevoked) access tokens a limited client may hold (self-contained only; default `15`). Exemption requires no live `dmscs.ApiClient` row and a nonempty set of registered scopes consisting only of recognized Configuration Service admin scopes. Ed-Fi API clients remain limited. A grant beyond the limit is rejected with HTTP 429 and the OAuth error `temporarily_unavailable` (see below); the client should reuse its existing token until it expires. Any value below 1, conventionally `-1`, disables enforcement globally. | _(not used)_ | `15` |

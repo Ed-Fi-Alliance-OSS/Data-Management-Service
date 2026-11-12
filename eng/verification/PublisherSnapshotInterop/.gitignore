@@ -1,0 +1,2 @@
+# Per-invocation output: manifest, generated stack environment file, and (in later stages) logs.
+runs/

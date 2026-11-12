@@ -15,7 +15,7 @@ public class CacheSettings
 {
     public int ClaimSetsCacheExpirationSeconds { get; set; } = 600; // 10 minutes
     public int ApplicationContextCacheExpirationSeconds { get; set; } = 600; // 10 minutes
-    public int TokenCacheExpirationSeconds { get; set; } = 1500; // 25 minutes
+
     public int ProfileCacheExpirationSeconds { get; set; } = 1800; // 30 minutes
 
     /// <summary>
