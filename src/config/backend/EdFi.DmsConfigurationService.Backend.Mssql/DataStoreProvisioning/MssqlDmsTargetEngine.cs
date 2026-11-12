@@ -350,6 +350,27 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         }
     }
 
+    /// <summary>
+    /// The effective-schema row alone, with the same typed reads and the same access-refusal translation as
+    /// <see cref="ReadTargetFactsAsync"/>.
+    /// </summary>
+    public async Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await ReadEffectiveSchemaAsync(RequireSession(session).Connection, cancellationToken);
+        }
+        catch (SqlException exception) when (MssqlErrorClassifier.IsAccessRefusal(exception.Number))
+        {
+            throw new DmsAccessDeniedException(
+                MssqlErrorClassifier.Diagnostic(exception, ReadTargetFactsOperation)
+            );
+        }
+    }
+
     private async Task<DmsTargetFacts> ReadTargetFactsCoreAsync(
         DmsSession session,
         CancellationToken cancellationToken

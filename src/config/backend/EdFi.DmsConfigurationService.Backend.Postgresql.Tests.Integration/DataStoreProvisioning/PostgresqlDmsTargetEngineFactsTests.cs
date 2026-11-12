@@ -359,6 +359,169 @@ public class PostgresqlDmsTargetEngineFactsTests
     }
 
     /// <summary>
+    /// F2: the post-rename read of <c>dms.EffectiveSchema</c> alone (<see cref="PostgresqlDmsTargetEngine.ReadEffectiveSchemaAsync(DmsSession, CancellationToken)"/>)
+    /// reports every row shape exactly as the full facts read does, and keeps the relation guard in front of the row: a
+    /// table a role other than a trusted one owns, or one with a column of a type created after the server's built-in
+    /// objects, is a <c>SecurityStateViolation</c> at <see cref="PostgresqlDmsTargetEngine.RelationTrustStep"/>, as for
+    /// the full read.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_effective_schema_alone_is_read
+    {
+        private const string Table = "\"dms\".\"EffectiveSchema\"";
+
+        private readonly List<TestDatabase> _databases = [];
+        private readonly List<(DmsEffectiveSchemaRead Narrow, DmsEffectiveSchemaRead Full)> _shapes = [];
+        private string? _role;
+        private Exception? _foreignOwnerNarrow;
+        private Exception? _foreignOwnerFull;
+        private Exception? _createdTypeNarrow;
+
+        private async Task<TestDatabase> DatabaseAfterAsync(string purpose, string? alteration)
+        {
+            TestDatabase database = await CreateDmsShapedDatabaseAsync(purpose);
+            _databases.Add(database);
+            if (alteration is not null)
+            {
+                await database.ExecuteAsync(alteration);
+            }
+
+            return database;
+        }
+
+        private static async Task<T> OnSessionAsync<T>(
+            TestDatabase database,
+            Func<PostgresqlDmsTargetEngine, DmsSession, Task<T>> read
+        )
+        {
+            PostgresqlDmsTargetEngine engine = Engine();
+            DmsSessionOpenResult opened = await engine.OpenSessionAsync(
+                database.DatabaseName,
+                await database.CatalogInstanceAsync(),
+                default
+            );
+            await using DmsSession session = ((DmsSessionOpenResult.Opened)opened).Session;
+            return await read(engine, session);
+        }
+
+        private static Task<DmsEffectiveSchemaRead> NarrowAsync(TestDatabase database) =>
+            OnSessionAsync(database, (engine, session) => engine.ReadEffectiveSchemaAsync(session, default));
+
+        private static Task<Exception?> NarrowFailureAsync(TestDatabase database) =>
+            Record.ExceptionAsync(() => NarrowAsync(database));
+
+        private static Task<Exception?> FullFailureAsync(TestDatabase database) =>
+            Record.ExceptionAsync(() =>
+                OnSessionAsync(database, (engine, session) => engine.ReadTargetFactsAsync(session, default))
+            );
+
+        private async Task AddShapeAsync(string purpose, string? alteration)
+        {
+            TestDatabase database = await DatabaseAfterAsync(purpose, alteration);
+            _shapes.Add((await NarrowAsync(database), (await ReadAsync(database)).Facts.EffectiveSchema));
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            await AddShapeAsync("esnform", null);
+            await AddShapeAsync(
+                "esnnull",
+                $"ALTER TABLE {Table} ALTER COLUMN \"EffectiveSchemaHash\" DROP NOT NULL; UPDATE {Table} SET \"EffectiveSchemaHash\" = NULL;"
+            );
+            await AddShapeAsync("esndrop", $"ALTER TABLE {Table} DROP COLUMN \"ResourceKeySeedHash\";");
+            await AddShapeAsync(
+                "esntwo",
+                $"ALTER TABLE {Table} DROP CONSTRAINT \"PK_EffectiveSchema\", DROP CONSTRAINT \"CK_EffectiveSchema_Singleton\", DROP CONSTRAINT \"UX_EffectiveSchema_EffectiveSchemaHash\";"
+                    + $" INSERT INTO {Table} SELECT 2, \"ApiSchemaFormatVersion\", \"EffectiveSchemaHash\", \"ResourceKeyCount\", \"ResourceKeySeedHash\", \"AppliedAt\" FROM {Table};"
+            );
+            await AddShapeAsync("esnnone", $"DELETE FROM {Table};");
+            await AddShapeAsync("esngone", $"DROP TABLE {Table};");
+
+            _role = await CreateRoleAsync("esowner");
+            TestDatabase foreignOwner = await DatabaseAfterAsync(
+                "esnowner",
+                $"ALTER TABLE {Table} OWNER TO {PostgresqlIdentifiers.Quote(_role)};"
+            );
+            _foreignOwnerNarrow = await NarrowFailureAsync(foreignOwner);
+            _foreignOwnerFull = await FullFailureAsync(foreignOwner);
+
+            TestDatabase createdType = await DatabaseAfterAsync(
+                "esntype",
+                "CREATE DOMAIN \"dms\".\"VersionText\" AS varchar(64);"
+                    + $" ALTER TABLE {Table} ALTER COLUMN \"ApiSchemaFormatVersion\" TYPE \"dms\".\"VersionText\";"
+            );
+            _createdTypeNarrow = await NarrowFailureAsync(createdType);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            foreach (TestDatabase database in _databases)
+            {
+                await database.DisposeAsync();
+            }
+
+            if (_role is not null)
+            {
+                await DropRoleAsync(_role);
+            }
+        }
+
+        [Test]
+        public void It_reports_every_row_shape_as_the_full_facts_read_does() =>
+            _shapes
+                .Select(shape => shape.Narrow)
+                .Should()
+                .Equal(_shapes.Select(shape => shape.Full))
+                .And.Equal(
+                    _shapes[0].Full,
+                    new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid),
+                    new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ColumnMissing),
+                    new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.MultipleRows),
+                    new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.NoRows),
+                    new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.TableMissing)
+                );
+
+        [Test]
+        public void It_finds_the_well_formed_row() =>
+            _shapes[0].Narrow.Should().BeOfType<DmsEffectiveSchemaRead.Found>();
+
+        [Test]
+        public void It_refuses_a_table_another_role_owns_as_the_full_read_does() =>
+            new[] { _foreignOwnerNarrow, _foreignOwnerFull }
+                .Select(RelationTrustVerdict)
+                .Should()
+                .Equal(
+                    (
+                        DmsProvisioningFailureCode.SecurityStateViolation,
+                        PostgresqlDmsTargetEngine.RelationTrustStep
+                    ),
+                    (
+                        DmsProvisioningFailureCode.SecurityStateViolation,
+                        PostgresqlDmsTargetEngine.RelationTrustStep
+                    )
+                );
+
+        [Test]
+        public void It_refuses_a_column_of_a_created_type() =>
+            RelationTrustVerdict(_createdTypeNarrow)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.SecurityStateViolation,
+                        PostgresqlDmsTargetEngine.RelationTrustStep
+                    )
+                );
+
+        private static (DmsProvisioningFailureCode?, string?) RelationTrustVerdict(Exception? exception) =>
+            exception is DmsProvisioningFailedException failed
+                ? (failed.Failure.Code, failed.Failure.Diagnostic.Operation)
+                : (null, exception?.GetType().FullName);
+    }
+
+    /// <summary>
     /// F-01 (R2-1): the Populated predicate over <c>dms.Document</c> and <c>dms.ResourceKey</c> whose shape the server
     /// refuses (<c>42703</c>, <c>42883</c>) is reported as malformed predicate tables instead of a driver exception,
     /// and the validator refuses those facts under both template kinds, with an invalid effective schema still

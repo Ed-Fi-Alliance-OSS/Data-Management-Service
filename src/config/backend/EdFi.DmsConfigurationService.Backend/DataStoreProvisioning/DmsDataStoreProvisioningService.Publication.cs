@@ -319,8 +319,8 @@ public sealed partial class DmsDataStoreProvisioningService
 
     /// <summary>
     /// The rename changes no content, so only identity (still the package value) and the effective
-    /// schema are re-read on the instance-bound session; any difference means the instance changed, which is
-    /// for inspection and never compensated.
+    /// schema are re-read on the instance-bound session, and nothing else the full facts read enumerates;
+    /// any difference means the instance changed, which is for inspection and never compensated.
     /// </summary>
     private async Task VerifyRenamedTargetAsync(
         LockScope scope,
@@ -338,17 +338,16 @@ public sealed partial class DmsDataStoreProvisioningService
             DmsProvisioningFailureCode.AdminPrivilegeMissing,
             VerifyRenamedTargetStep
         );
-        DmsTargetFacts facts = await ReadFactsAsync(
+        DmsEffectiveSchemaRead effectiveSchema = await ReadOrDeniedAsync(
             scope,
             VerifyRenamedTargetStep,
-            session,
+            token => engine.ReadEffectiveSchemaAsync(session, token),
             DmsProvisioningFailureCode.AdminPrivilegeMissing
         );
         DmsTargetValidation verdict = DmsTargetValidator.Validate(
-            facts,
+            effectiveSchema,
             identity,
             manifest,
-            options.Value.Compatibility?.Projects ?? [],
             new DmsTargetValidationRule.AfterRename(packageIdentity)
         );
         if (verdict is DmsTargetValidation.Invalid invalid)

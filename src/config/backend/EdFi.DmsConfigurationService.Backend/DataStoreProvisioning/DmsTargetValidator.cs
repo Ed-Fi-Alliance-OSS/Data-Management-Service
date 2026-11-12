@@ -94,6 +94,12 @@ public static class DmsTargetValidator
         ArgumentNullException.ThrowIfNull(expectedProjects);
         ArgumentNullException.ThrowIfNull(rule);
 
+        if (rule is DmsTargetValidationRule.AfterRename afterRename)
+        {
+            // The rename changes no content; only items 1 and 2 are re-checked before the marker.
+            return Validate(facts.EffectiveSchema, identity, manifest, afterRename);
+        }
+
         if (!EffectiveSchemaMatches(facts.EffectiveSchema, manifest))
         {
             return Invalid(DmsProvisioningFailureCode.TargetIncompatible, EffectiveSchemaCheck);
@@ -104,17 +110,36 @@ public static class DmsTargetValidator
             return identityFailure;
         }
 
-        if (rule is DmsTargetValidationRule.AfterRename)
-        {
-            // The rename changes no content; only items 1 and 2 are re-checked before the marker.
-            return new DmsTargetValidation.Valid();
-        }
-
         return EngineVerdict(facts, manifest)
             ?? InventoryVerdict(facts, manifest, expectedProjects)
             ?? SecurityVerdict(facts.Security, rule)
             ?? PopulatedVerdict(facts, manifest)
             ?? new DmsTargetValidation.Valid();
+    }
+
+    /// <summary>
+    /// The post-rename verdict: the rename changes no content, so only item 1 (the effective-schema row against
+    /// <paramref name="manifest"/>) and item 2 (the identity row by the <paramref name="rule"/>) are judged, in that
+    /// order, over the effective-schema row alone.
+    /// </summary>
+    public static DmsTargetValidation Validate(
+        DmsEffectiveSchemaRead effectiveSchema,
+        DmsIdentityRead identity,
+        RestoreManifest manifest,
+        DmsTargetValidationRule.AfterRename rule
+    )
+    {
+        ArgumentNullException.ThrowIfNull(effectiveSchema);
+        ArgumentNullException.ThrowIfNull(identity);
+        ArgumentNullException.ThrowIfNull(manifest);
+        ArgumentNullException.ThrowIfNull(rule);
+
+        if (!EffectiveSchemaMatches(effectiveSchema, manifest))
+        {
+            return Invalid(DmsProvisioningFailureCode.TargetIncompatible, EffectiveSchemaCheck);
+        }
+
+        return IdentityVerdict(identity, rule) ?? new DmsTargetValidation.Valid();
     }
 
     /// <summary>

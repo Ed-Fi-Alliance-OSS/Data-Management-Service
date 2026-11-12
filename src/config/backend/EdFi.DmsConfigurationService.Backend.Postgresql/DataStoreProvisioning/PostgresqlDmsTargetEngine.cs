@@ -78,6 +78,11 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         "ResourceKey"
     );
 
+    /// <summary>The one relation the post-rename effective-schema read selects from.</summary>
+    private static readonly string _effectiveSchemaRelationsQuery = UntrustedRelationsQuery(
+        "EffectiveSchema"
+    );
+
     /// <summary>
     /// The names among <paramref name="relationNames"/> in schema <c>dms</c> that a read could not select from without
     /// possibly running code a role other than a trusted one (<see cref="TrustedRole"/>) chose: anything but an
@@ -374,15 +379,7 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
     )
     {
         NpgsqlConnection connection = RequireSession(session).Connection;
-        if (await HasUntrustedRelationAsync(connection, _factsRelationsQuery, cancellationToken))
-        {
-            throw new DmsProvisioningFailedException(
-                DmsProvisioningFailure.Create(
-                    DmsProvisioningFailureCode.SecurityStateViolation,
-                    DmsProvisioningDiagnostic.ForOperation(RelationTrustStep)
-                )
-            );
-        }
+        await ThrowIfUntrustedRelationAsync(connection, _factsRelationsQuery, cancellationToken);
 
         DmsEffectiveSchemaRead effectiveSchema = await ReadEffectiveSchemaAsync(
             connection,
@@ -457,6 +454,52 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
             HasPopulatedDocument = hasPopulatedDocument,
             PopulatedPredicateTablesMalformed = predicateTablesMalformed,
         };
+    }
+
+    /// <summary>
+    /// The effective-schema row alone, behind the same relation guard (<see cref="UntrustedRelationsQuery"/>, limited to
+    /// <c>EffectiveSchema</c>) and the same access-refusal translation as <see cref="ReadTargetFactsAsync"/>.
+    /// </summary>
+    public async Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        NpgsqlConnection connection = RequireSession(session).Connection;
+        try
+        {
+            await ThrowIfUntrustedRelationAsync(
+                connection,
+                _effectiveSchemaRelationsQuery,
+                cancellationToken
+            );
+            return await ReadEffectiveSchemaAsync(connection, cancellationToken);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            throw new DmsAccessDeniedException(
+                PostgresqlErrorClassifier.Diagnostic(exception, ReadTargetFactsOperation)
+            );
+        }
+    }
+
+    /// <summary>A read selecting from a relation <paramref name="guardQuery"/> lists is a <c>SecurityStateViolation</c> at <see cref="RelationTrustStep"/>.</summary>
+    private static async Task ThrowIfUntrustedRelationAsync(
+        NpgsqlConnection connection,
+        string guardQuery,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await HasUntrustedRelationAsync(connection, guardQuery, cancellationToken))
+        {
+            throw new DmsProvisioningFailedException(
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.SecurityStateViolation,
+                    DmsProvisioningDiagnostic.ForOperation(RelationTrustStep)
+                )
+            );
+        }
     }
 
     public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(

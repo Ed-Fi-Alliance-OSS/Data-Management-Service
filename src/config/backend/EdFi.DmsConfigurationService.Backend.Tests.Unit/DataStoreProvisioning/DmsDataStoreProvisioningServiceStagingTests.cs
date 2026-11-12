@@ -181,7 +181,7 @@ public class DmsDataStoreProvisioningServiceStagingTests
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.RenameIntoTarget, target),
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.OpenSession, target),
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.ReadIdentity, null),
-                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.ReadTargetFacts, null),
+                    new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.ReadEffectiveSchema, null),
                     new SpyDmsTargetEngine.Call(SpyDmsTargetEngine.AssignMarker, null)
                 );
         }

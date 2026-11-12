@@ -26,6 +26,7 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     public const string OpenSession = "OpenSession";
     public const string ReadIdentity = "ReadIdentity";
     public const string ReadTargetFacts = "ReadTargetFacts";
+    public const string ReadEffectiveSchema = "ReadEffectiveSchema";
     public const string TerminateSession = "TerminateSession";
     public const string RenameIntoTarget = "RenameIntoTarget";
     public const string AssignMarker = "AssignMarker";
@@ -108,6 +109,11 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
         CancellationToken cancellationToken
     );
 
+    public delegate Task<DmsEffectiveSchemaRead> EffectiveSchemaScript(
+        DmsSession session,
+        CancellationToken cancellationToken
+    );
+
     public delegate Task<DmsSessionTermination> TerminateScript(
         DmsServerSessionId session,
         TimeSpan deadline,
@@ -172,6 +178,13 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 
     public Func<DmsSession, CancellationToken, Task<DmsTargetFacts>> OnReadTargetFacts { get; set; } =
         (_, _) => throw NotExpected(ReadTargetFacts);
+
+    /// <summary>
+    /// The post-rename effective-schema read. Unless a test scripts it, it answers with the effective schema of the
+    /// facts <see cref="OnReadTargetFacts"/> scripts, so a fixture scripts one row for every stage; only
+    /// <see cref="ReadEffectiveSchema"/> is recorded, never <see cref="ReadTargetFacts"/>.
+    /// </summary>
+    public EffectiveSchemaScript? OnReadEffectiveSchema { get; set; }
 
     public TerminateScript OnTerminateSession { get; set; } =
         (_, _, _) => throw NotExpected(TerminateSession);
@@ -254,6 +267,17 @@ internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
     {
         Record(ReadTargetFacts, null);
         return OnReadTargetFacts(session, cancellationToken);
+    }
+
+    public async Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        Record(ReadEffectiveSchema, null);
+        return OnReadEffectiveSchema is { } script
+            ? await script(session, cancellationToken)
+            : (await OnReadTargetFacts(session, cancellationToken)).EffectiveSchema;
     }
 
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(

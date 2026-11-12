@@ -1333,7 +1333,7 @@ public class DmsDataStoreProvisioningServicePublicationTests
                 .Equal(
                     SpyDmsTargetEngine.OpenSession,
                     SpyDmsTargetEngine.ReadIdentity,
-                    SpyDmsTargetEngine.ReadTargetFacts,
+                    SpyDmsTargetEngine.ReadEffectiveSchema,
                     SpyDmsTargetEngine.AssignMarker,
                     SpyDmsTargetEngine.DropInstance
                 );

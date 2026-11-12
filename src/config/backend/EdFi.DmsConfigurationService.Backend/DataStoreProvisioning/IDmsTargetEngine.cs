@@ -59,6 +59,17 @@ public interface IDmsTargetEngine
     Task<DmsTargetFacts> ReadTargetFactsAsync(DmsSession session, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Only the <c>dms.EffectiveSchema</c> row, read on the instance-bound session as <see cref="ReadTargetFactsAsync"/>
+    /// reads it, with the same row-shape and singleton rules, relation guard, and access-refusal translation
+    /// (<see cref="DmsAccessDeniedException"/>). The post-rename verification reads nothing else: the rename changes
+    /// no content.
+    /// </summary>
+    Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// On the holder session: PostgreSQL creates the staging database and writes <paramref name="claim"/> as
     /// its comment and returns the staging instance identity; SQL Server only reserves the name, because the
     /// restore creates the database, and returns a <see cref="DmsInstanceIdentity.MssqlReservation"/> naming the

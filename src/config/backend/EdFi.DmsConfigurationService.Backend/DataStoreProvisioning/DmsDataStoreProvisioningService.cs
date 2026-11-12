@@ -718,16 +718,27 @@ public sealed partial class DmsDataStoreProvisioningService(
     /// check runs first, so a refusal raised alongside loss is still loss; the caller's cancellation, a
     /// deadline and every other exception keep the scope's classification.
     /// </summary>
-    private async Task<DmsTargetFacts> ReadFactsAsync(
+    private Task<DmsTargetFacts> ReadFactsAsync(
         LockScope scope,
         string step,
         DmsSession session,
+        DmsProvisioningFailureCode accessDenied
+    ) => ReadOrDeniedAsync(scope, step, token => engine.ReadTargetFactsAsync(session, token), accessDenied);
+
+    /// <summary>
+    /// <paramref name="read"/> under <paramref name="step"/>, with a definite privilege refusal translated as
+    /// <see cref="ReadFactsAsync"/> describes.
+    /// </summary>
+    private static async Task<T> ReadOrDeniedAsync<T>(
+        LockScope scope,
+        string step,
+        Func<CancellationToken, Task<T>> read,
         DmsProvisioningFailureCode accessDenied
     )
     {
         try
         {
-            return await scope.ReadAsync(step, token => engine.ReadTargetFactsAsync(session, token));
+            return await scope.ReadAsync(step, read);
         }
         catch (DmsProvisioningFailedException failure)
             when (failure.InnerException is DmsAccessDeniedException denied)

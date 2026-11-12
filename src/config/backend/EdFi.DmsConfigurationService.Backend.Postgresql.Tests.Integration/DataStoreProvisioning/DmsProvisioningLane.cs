@@ -163,6 +163,15 @@ internal sealed class RecordingEngine(IDmsTargetEngine inner) : IDmsTargetEngine
         return inner.ReadTargetFactsAsync(session, cancellationToken);
     }
 
+    public Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        Calls.Add((nameof(ReadEffectiveSchemaAsync), null));
+        return inner.ReadEffectiveSchemaAsync(session, cancellationToken);
+    }
+
     public Task<DmsCommandOutcome<DmsInstanceIdentity>> CreateStagingAsync(
         IDmsTargetLockHolder holder,
         DmsDatabaseName staging,
