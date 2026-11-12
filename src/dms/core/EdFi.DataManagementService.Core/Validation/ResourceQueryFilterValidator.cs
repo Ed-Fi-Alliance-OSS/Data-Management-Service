@@ -159,7 +159,12 @@ internal static class ResourceQueryFilterValidator
                     break;
 
                 case "string":
-                    if (queryFieldValue is not string)
+                    if (
+                        ExceedsDeclaredMaxLength(
+                            queryFieldValue,
+                            queryElementAndType.DocumentPathsAndTypes[0].MaxLength
+                        )
+                    )
                     {
                         AddValidationError(validationErrors, jsonPathString, queryFieldValue, queryFieldName);
                     }
@@ -262,6 +267,19 @@ internal static class ResourceQueryFilterValidator
             Value: clientQueryTerm.Value
         );
     }
+
+    /// <summary>
+    /// Whether a string filter is longer than the <c>maxLength</c> its query field declares. The bound is
+    /// taken from the first document path, as the field's type and error path are. A field without a
+    /// declared <c>maxLength</c> is not bounded.
+    /// </summary>
+    /// <remarks>
+    /// The value is measured as supplied, with no trimming, and counted in text elements, the unit
+    /// JsonSchema.Net's <c>maxLength</c> uses for request bodies. It is not the storage width: a text
+    /// element can span many UTF-16 code units.
+    /// </remarks>
+    private static bool ExceedsDeclaredMaxLength(string value, int? maxLength) =>
+        maxLength is { } declaredMaxLength && new StringInfo(value).LengthInTextElements > declaredMaxLength;
 
     private static void AddValidationError(
         Dictionary<string, string[]> errors,

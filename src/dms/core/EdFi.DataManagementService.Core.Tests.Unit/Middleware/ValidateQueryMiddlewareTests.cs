@@ -15,6 +15,7 @@ using EdFi.DataManagementService.Core.Paging;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Telemetry;
 using FluentAssertions;
+using Json.Schema;
 using Microsoft.Extensions.Logging.Abstractions;
 using NUnit.Framework;
 using static EdFi.DataManagementService.Core.Tests.Unit.TestHelper;
@@ -383,6 +384,130 @@ public class ValidateQueryMiddlewareTests
                 .FrontendResponse.Body?.ToJsonString()
                 .Should()
                 .Contain("is not valid for classStartTime.");
+        }
+    }
+
+    /// <summary>
+    /// A string filter longer than the maxLength its field declares in the insert schema is answered as
+    /// an invalid filter value, through the same data-validation 400 a mistyped filter receives, and the
+    /// query never runs.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Pipeline_Context_With_A_String_Filter_Over_Its_Declared_MaxLength
+        : ValidateQueryMiddlewareTests
+    {
+        private RequestInfo _requestInfo = No.RequestInfo();
+        private bool _nextCalled;
+
+        private static RequestInfo NewRequestInfo(string studentUniqueId)
+        {
+            var jsonSchemaForInsert = new JsonSchemaBuilder()
+                .Type(SchemaValueType.Object)
+                .Properties(
+                    ("studentUniqueId", new JsonSchemaBuilder().Type(SchemaValueType.String).MaxLength(5))
+                )
+                .Build();
+
+            ApiSchemaDocuments apiSchemaDocuments = new ApiSchemaBuilder()
+                .WithStartProject()
+                .WithStartResource("Student")
+                .WithJsonSchemaForInsert(jsonSchemaForInsert)
+                .WithStartQueryFieldMapping()
+                .WithQueryField("studentUniqueId", [new("$.studentUniqueId", "string")])
+                .WithEndQueryFieldMapping()
+                .WithEndResource()
+                .WithEndProject()
+                .ToApiSchemaDocuments();
+
+            FrontendRequest frontendRequest = new(
+                Path: "/ed-fi/students",
+                Body: null,
+                Form: null,
+                Headers: [],
+                QueryParameters: new Dictionary<string, string> { ["studentUniqueId"] = studentUniqueId },
+                TraceId: new TraceId(""),
+                RouteQualifiers: []
+            );
+
+            RequestInfo requestInfo = new(
+                frontendRequest,
+                RequestMethod.GET,
+                ServiceProviderWithEffectiveTarget()
+            )
+            {
+                ApiSchemaDocuments = apiSchemaDocuments,
+                PathComponents = new(
+                    ProjectEndpointName: new("ed-fi"),
+                    EndpointName: new("students"),
+                    Operation: ResourcePathOperation.Collection.Instance
+                ),
+            };
+            requestInfo.ProjectSchema = apiSchemaDocuments.FindProjectSchemaForProjectNamespace(
+                new("ed-fi")
+            )!;
+            requestInfo.ResourceSchema = new ResourceSchema(
+                requestInfo.ProjectSchema.FindResourceSchemaNodeByEndpointName(new("students"))!
+            );
+
+            return requestInfo;
+        }
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _requestInfo = NewRequestInfo("abcdef");
+
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+        }
+
+        [Test]
+        public void It_should_send_bad_request()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_should_report_the_filter_as_an_invalid_value_under_its_path()
+        {
+            _requestInfo.FrontendResponse.Body!["validationErrors"]!["$.studentUniqueId"]!
+                .AsArray()
+                .Select(message => message!.GetValue<string>())
+                .Should()
+                .Equal("The value 'abcdef' is not valid for studentUniqueId.");
+        }
+
+        [Test]
+        public void It_should_not_run_the_query()
+        {
+            _nextCalled.Should().BeFalse();
+        }
+
+        [Test]
+        public async Task It_should_pass_a_value_at_the_bound_to_the_query()
+        {
+            RequestInfo requestInfo = NewRequestInfo("abcde");
+            bool nextCalled = false;
+
+            await Middleware()
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            nextCalled.Should().BeTrue();
         }
     }
 
