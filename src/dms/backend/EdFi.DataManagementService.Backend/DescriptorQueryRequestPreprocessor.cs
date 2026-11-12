@@ -6,6 +6,7 @@
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Backend.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 
 namespace EdFi.DataManagementService.Backend;
@@ -22,6 +23,20 @@ internal static class DescriptorQueryRequestPreprocessor
         ArgumentNullException.ThrowIfNull(queryElements);
 
         var queryCapability = mappingSet.GetDescriptorQueryCapabilityOrThrow(requestResource);
+        var storageWidthFailures = ValidateSqlServerStorageWidth(
+            mappingSet.Key.Dialect,
+            queryElements,
+            queryCapability
+        );
+
+        if (storageWidthFailures is not null)
+        {
+            return new DescriptorQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.ValidationFailure(storageWidthFailures),
+                []
+            );
+        }
+
         var preprocessedElements = new PreprocessedDescriptorQueryElement[queryElements.Count];
 
         for (var index = 0; index < queryElements.Count; index++)
@@ -72,6 +87,42 @@ internal static class DescriptorQueryRequestPreprocessor
             new RelationalQueryPreprocessingOutcome.Continue(),
             preprocessedElements
         );
+    }
+
+    /// <summary>
+    /// Returns a failure for every SQL Server string filter wider than the <c>dms.Descriptor</c> column it
+    /// targets, or null when there is none. Checked before the main pass so a rejection does not depend on
+    /// an earlier element proving the query has no matches.
+    /// </summary>
+    private static List<WriteValidationFailure>? ValidateSqlServerStorageWidth(
+        SqlDialect dialect,
+        IReadOnlyList<QueryElement> queryElements,
+        DescriptorQueryCapability queryCapability
+    )
+    {
+        List<WriteValidationFailure>? failures = null;
+
+        foreach (var queryElement in queryElements)
+        {
+            if (
+                queryElement is not null
+                && queryCapability.SupportedFieldsByQueryField.TryGetValue(
+                    queryElement.QueryFieldName,
+                    out var supportedField
+                )
+                && QueryFilterStorageWidth.ExceedsSqlServerColumn(
+                    dialect,
+                    queryElement.Value,
+                    supportedField.StringMaxLength
+                )
+            )
+            {
+                failures ??= [];
+                failures.Add(QueryFilterStorageWidth.InvalidValueFailure(queryElement));
+            }
+        }
+
+        return failures;
     }
 
     private static bool TryPreprocessValue(

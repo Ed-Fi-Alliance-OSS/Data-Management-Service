@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Extraction;
@@ -36,6 +37,13 @@ internal static class RelationalQueryRequestPreprocessor
         }
 
         var validationFailures = ValidateDescriptorQueryValues(queryElements, queryCapability);
+        validationFailures = AddSqlServerStorageWidthFailures(
+            mappingSet,
+            requestResource,
+            queryElements,
+            queryCapability,
+            validationFailures
+        );
 
         if (validationFailures is not null)
         {
@@ -225,6 +233,77 @@ internal static class RelationalQueryRequestPreprocessor
                         DescriptorText.InvalidValueMessage
                     )
                 );
+            }
+        }
+
+        return failures;
+    }
+
+    /// <summary>
+    /// Appends a failure for every SQL Server string filter wider than the column it is compared against:
+    /// a root column's mapped length, or for a descriptor reference the longest stored descriptor URI.
+    /// Runs before the main pass for the same reason descriptor values are checked first, so a rejection
+    /// does not depend on an earlier element proving the query has no matches.
+    /// </summary>
+    private static List<WriteValidationFailure>? AddSqlServerStorageWidthFailures(
+        MappingSet mappingSet,
+        QualifiedResourceName requestResource,
+        IReadOnlyList<QueryElement> queryElements,
+        RelationalQueryCapability queryCapability,
+        List<WriteValidationFailure>? failures
+    )
+    {
+        SqlDialect dialect = mappingSet.Key.Dialect;
+
+        if (dialect != SqlDialect.Mssql)
+        {
+            return failures;
+        }
+
+        Dictionary<DbColumnName, DbColumnModel>? rootColumnsByName = null;
+
+        foreach (var queryElement in queryElements)
+        {
+            if (
+                queryElement is null
+                || !queryCapability.SupportedFieldsByQueryField.TryGetValue(
+                    queryElement.QueryFieldName,
+                    out var supportedField
+                )
+            )
+            {
+                continue;
+            }
+
+            int? columnLength;
+
+            switch (supportedField.Target)
+            {
+                case RelationalQueryFieldTarget.RootColumn(var column):
+                    rootColumnsByName ??= mappingSet
+                        .GetConcreteResourceModelOrThrow(requestResource)
+                        .RelationalModel.Root.Columns.ToDictionary(static rootColumn =>
+                            rootColumn.ColumnName
+                        );
+
+                    columnLength =
+                        rootColumnsByName.TryGetValue(column, out var rootColumn)
+                        && rootColumn.ScalarType is { Kind: ScalarKind.String } scalarType
+                            ? scalarType.MaxLength
+                            : null;
+                    break;
+                case RelationalQueryFieldTarget.DescriptorIdColumn
+                    when DescriptorText.IsWellFormedWithoutNul(queryElement.Value):
+                    columnLength = NaturalKeyLookupLimits.MaxDescriptorUriLength;
+                    break;
+                default:
+                    continue;
+            }
+
+            if (QueryFilterStorageWidth.ExceedsSqlServerColumn(dialect, queryElement.Value, columnLength))
+            {
+                failures ??= [];
+                failures.Add(QueryFilterStorageWidth.InvalidValueFailure(queryElement));
             }
         }
 

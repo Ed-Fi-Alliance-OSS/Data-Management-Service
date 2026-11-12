@@ -230,6 +230,18 @@ text elements, the same unit request-body `maxLength` validation uses. A value
 at the bound is accepted, and trailing spaces count toward the length. Fields
 that declare no `maxLength` are not bounded.
 
+On SQL Server, a string filter is also rejected with the same `400 Bad Request`
+when it is wider than the column it is compared against, measured in UTF-16
+code units, even if it is within the field's `maxLength`. SQL Server string
+columns count UTF-16 code units, so a character outside the Basic Multilingual
+Plane, such as an emoji, takes two. For example, three emoji pass a `maxLength`
+of 3 but do not fit a three-character SQL Server column. The width is the
+column's mapped length for a resource property, the descriptor table's column
+length for a descriptor endpoint's `namespace`, `codeValue`, `shortDescription`
+or `description`, and 306 (the longest stored `namespace#codeValue`) for a
+descriptor reference. This check applies only to SQL Server; PostgreSQL
+validation and binding are unchanged.
+
 > [!NOTE]
 > This differs from the Ed-Fi ODS/API, which does not reject filter values by
 > length: an over-long value is passed to the query, and the result depends on

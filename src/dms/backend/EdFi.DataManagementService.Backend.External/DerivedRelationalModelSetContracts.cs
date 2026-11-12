@@ -66,6 +66,33 @@ public static class DescriptorIdentityTextColumns
 }
 
 /// <summary>
+/// The declared lengths of the <c>dms.Descriptor</c> string columns. Core DDL emission declares the columns
+/// with these lengths and descriptor query validation bounds filters by them, so the two cannot drift.
+/// </summary>
+public static class DescriptorStringColumnLengths
+{
+    /// <summary>
+    /// The length of the descriptor namespace column.
+    /// </summary>
+    public const int Namespace = 255;
+
+    /// <summary>
+    /// The length of the descriptor code value column.
+    /// </summary>
+    public const int CodeValue = 50;
+
+    /// <summary>
+    /// The length of the descriptor short description column.
+    /// </summary>
+    public const int ShortDescription = 75;
+
+    /// <summary>
+    /// The length of the descriptor description column.
+    /// </summary>
+    public const int Description = 1024;
+}
+
+/// <summary>
 /// Metadata for descriptor resources stored in the shared <c>dms.Descriptor</c> table.
 /// </summary>
 /// <param name="ColumnContract">The descriptor column contract.</param>
