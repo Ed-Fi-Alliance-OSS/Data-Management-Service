@@ -33,9 +33,13 @@ public abstract class EducationOrganizationProjectionClaimTests
         "http://ed-fi.org/identity/claims/services/educationOrganizationProjection";
     protected const string StudentClaimName = "http://ed-fi.org/identity/claims/ed-fi/student";
 
-    private const int PreviousScript = 35;
-    protected const int ProjectionClaimScript = 36;
+    private const int PreviousScript = JobUpgradeTestDatabase.ApiClientEducationOrganizationScript;
+    protected const int ProjectionClaimScript = 39;
     protected const string ProjectionClaimScriptName =
+        "EdFi.DmsConfigurationService.Backend.Postgresql.Deploy.Scripts.0039_Add_EducationOrganizationProjection_Claim.sql";
+
+    // The name databases deployed before the migration was renumbered journaled it under.
+    protected const string FormerProjectionClaimScriptName =
         "EdFi.DmsConfigurationService.Backend.Postgresql.Deploy.Scripts.0036_Add_EducationOrganizationProjection_Claim.sql";
 
     // The claim the migration appends, in the form the hierarchy repository stores.
@@ -189,6 +193,40 @@ public abstract class EducationOrganizationProjectionClaimTests
         }
 
         Database.DeployThrough(ProjectionClaimScript);
+    }
+
+    /// <summary>
+    /// Runs the migration as a database deployed before its renumbering did: its own text, with the
+    /// former name in the values it records, executed and journaled under the former name.
+    /// </summary>
+    protected async Task RunClaimScriptUnderItsFormerNameAsync()
+    {
+        string script;
+        await using (
+            Stream stream =
+                typeof(ClaimSetRepository).Assembly.GetManifestResourceStream(ProjectionClaimScriptName)
+                ?? throw new InvalidOperationException(
+                    $"Embedded script {ProjectionClaimScriptName} not found."
+                )
+        )
+        using (StreamReader reader = new(stream))
+        {
+            script = await reader.ReadToEndAsync();
+        }
+
+        string formerScript = script.Replace(
+            "0039_Add_EducationOrganizationProjection_Claim",
+            "0036_Add_EducationOrganizationProjection_Claim",
+            StringComparison.Ordinal
+        );
+        formerScript.Should().NotBe(script, "the migration records its own name");
+
+        await using NpgsqlConnection connection = await OpenConnectionAsync();
+        await connection.ExecuteAsync(formerScript);
+        await connection.ExecuteAsync(
+            """INSERT INTO public."dmscs_SchemaVersions" (scriptname, applied) VALUES (@ScriptName, now());""",
+            new { ScriptName = FormerProjectionClaimScriptName }
+        );
     }
 
     protected async Task<List<ResourceClaimRow>> ResourceClaimsAsync()
@@ -650,4 +688,131 @@ public class Given_a_catalog_with_a_nested_case_variant_of_the_projection_claim
 {
     protected override string ExistingClaimName =>
         "http://ed-fi.org/identity/claims/services/educationorganizationprojection";
+}
+
+/// <summary>
+/// Upgrades a catalog whose journal records the migration under its former number, 0036, which the
+/// migration had before the ApiClient identifier uniqueness migration took that number. The
+/// ApiClient migrations 0036 to 0038 then run, and the renumbered migration finds the claim it added
+/// earlier and changes nothing.
+/// </summary>
+[TestFixture]
+public class Given_a_catalog_that_ran_the_migration_under_its_former_number
+    : EducationOrganizationProjectionClaimTests
+{
+    private const string GrantingClaimSetName = "Former Number Projection Reader";
+
+    private string[] _journalBefore = [];
+    private string[] _journalAfter = [];
+    private List<ResourceClaimRow> _resourceClaimsBefore = [];
+    private List<ResourceClaimRow> _resourceClaimsAfter = [];
+    private HierarchyRow _hierarchyBefore = null!;
+    private HierarchyRow _hierarchyAfter = null!;
+    private int _grantingClaimSetId;
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        Database.DeployThrough(JobUpgradeTestDatabase.NameUniquenessScript);
+        await LoadEmbeddedClaimsAsync();
+        await RemoveProjectionClaimAsync();
+        await RunClaimScriptUnderItsFormerNameAsync();
+
+        _grantingClaimSetId = await InsertClaimSetAsync(GrantingClaimSetName);
+        (await GrantReadAsync(_grantingClaimSetId, ProjectionClaimName))
+            .Should()
+            .BeOfType<ClaimSetResourceActionMutationResult.Success>();
+        (await GrantReadAsync(_grantingClaimSetId, StudentClaimName))
+            .Should()
+            .BeOfType<ClaimSetResourceActionMutationResult.Success>();
+
+        _journalBefore = await Database.JournalAsync();
+        _resourceClaimsBefore = await ResourceClaimsAsync();
+        _hierarchyBefore = await HierarchyAsync();
+
+        Database.DeployThrough(ProjectionClaimScript);
+
+        _journalAfter = await Database.JournalAsync();
+        _resourceClaimsAfter = await ResourceClaimsAsync();
+        _hierarchyAfter = await HierarchyAsync();
+    }
+
+    [Test]
+    public void It_starts_from_the_claim_the_former_migration_added()
+    {
+        _journalBefore.Should().EndWith(FormerProjectionClaimScriptName);
+        _journalBefore
+            .Should()
+            .NotContain([JobUpgradeTestDatabase.IdentifierUniquenessScriptName, ProjectionClaimScriptName]);
+        _resourceClaimsBefore.Where(row => IsProjectionClaimName(row.ClaimName)).Should().ContainSingle();
+        AllClaims(Roots(_hierarchyBefore.Hierarchy))
+            .Select(ClaimNameOf)
+            .Where(IsProjectionClaimName)
+            .Should()
+            .Equal(ProjectionClaimName);
+    }
+
+    [Test]
+    public void It_journals_the_ApiClient_migrations_and_the_renumbered_migration_after_the_former_one()
+    {
+        string[] expected =
+        [
+            .. _journalBefore,
+            JobUpgradeTestDatabase.IdentifierUniquenessScriptName,
+            JobUpgradeTestDatabase.NamespacePrefixWideningScriptName,
+            JobUpgradeTestDatabase.ApiClientEducationOrganizationScriptName,
+            ProjectionClaimScriptName,
+        ];
+
+        _journalAfter.Should().Equal(expected);
+    }
+
+    [Test]
+    public void It_adds_no_resource_claim_row()
+    {
+        _resourceClaimsAfter.Should().Equal(_resourceClaimsBefore);
+    }
+
+    [Test]
+    public void It_keeps_the_claim_once_in_the_hierarchy()
+    {
+        AllClaims(Roots(_hierarchyAfter.Hierarchy))
+            .Select(ClaimNameOf)
+            .Where(IsProjectionClaimName)
+            .Should()
+            .Equal(ProjectionClaimName);
+    }
+
+    [Test]
+    public void It_leaves_the_stored_hierarchy_and_its_audit_values_unchanged()
+    {
+        _hierarchyAfter.Should().Be(_hierarchyBefore);
+    }
+
+    [Test]
+    public async Task It_keeps_the_existing_grants()
+    {
+        (await ExportedResourceClaimsAsync(_grantingClaimSetId))
+            .Where(resourceClaim => resourceClaim.ClaimName is ProjectionClaimName or StudentClaimName)
+            .Select(resourceClaim =>
+                (
+                    resourceClaim.ClaimName,
+                    string.Join(
+                        ",",
+                        resourceClaim.Actions!.Where(action => action.Enabled).Select(action => action.Name)
+                    )
+                )
+            )
+            .Should()
+            .BeEquivalentTo([(ProjectionClaimName, "Read"), (StudentClaimName, "Read")]);
+    }
+
+    [Test]
+    public async Task It_applies_the_ApiClient_migrations()
+    {
+        (await Database.ConstraintAndIndexNamesAsync("ApiClient"))
+            .Should()
+            .Contain(["UX_ApiClient_ClientId", "UX_ApiClient_ClientUuid"]);
+        (await Database.TableExistsAsync("ApiClientEducationOrganization")).Should().BeTrue();
+    }
 }
