@@ -1,0 +1,319 @@
+# Story 1: Resource multi-document hydration without a keyset temp table
+
+[Back to DMS-1521 story index](candidate-implementation-stories.md)
+
+## Summary
+
+Stop creating and dropping a keyset temp table on every resource GET-many request on PostgreSQL,
+and on the read-acceleration candidate-metadata batch on SQL Server. Carry the selected document
+ids inside the batch instead.
+
+- **PostgreSQL:** resource GET-many (P1), read-acceleration candidate metadata (P2), and the
+  read-acceleration selected-page fallback (P3).
+- **SQL Server:** candidate metadata (P2) only. Resource GET-many (P1) and the selected-page
+  fallback (P3) keep `#page`, byte-identical to `main`.
+- **Owns** the shared keyset-contract work that story 2 consumes.
+- **Fixes** [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956) for the resource paths.
+- **Evidence:** [DMS-1521 findings](keyset-temp-table-findings.md), with the prototype in
+  [`experiments/prototype.patch`](experiments/prototype.patch).
+
+## Description
+
+Every multi-document hydration batch starts by creating a keyset temp table (`page` on PostgreSQL,
+`#page` on SQL Server), filling it with the page's `DocumentId`s, and joining every hydration
+statement to it. DMS-1521 measured what that costs.
+
+- **PostgreSQL** never analyzes the temp table, so the planner estimates every page at 2,040 rows,
+  whatever it holds. At that estimate, each child-collection statement hash-joins a full scan of
+  its child table. On the 500,000-student fixture, the four Student child statements took about
+  175 ms of a 25-row request. The create and drop also write 44 catalog tuples and about 10 KB of
+  WAL per request, and they invalidate the prepared statements, so almost every statement is
+  re-planned. Because the batch starts with `DROP TABLE IF EXISTS`, GET-many fails in a read-only
+  transaction (EDFI-2956).
+- **SQL Server's** `#page` has correct statistics and caused no recompiles. Its cost is tempdb
+  metadata latch contention: 13–17 `PAGELATCH` waits per request at 32 sessions.
+
+The spike's `inline` prototype carries the ids in the batch and creates no catalog object. On
+PostgreSQL it cut resource GET-many API p50 and p95 to 0.29–0.48× of `main` and child-collection
+time to 0.002–0.021×. It wrote no catalog rows or WAL and regressed no path. On SQL Server it
+helped the candidate batch (×1.9–×2.7 throughput at 32 sessions). It regressed the 500-row
+resource and fallback batches by 14–34%, because every statement re-parses the JSON carrier. So
+SQL Server keeps `#page` there. Correctness validation found no behavior change on either engine.
+
+## Scope
+
+**In scope:**
+
+- **A keyset contract that does not require a table.** The keyset joined by every compiled
+  `SelectByKeysetSql`, descriptor projection, document-reference lookup, metadata select, and
+  version fence becomes a relation:
+  - On PostgreSQL, it reads the selected ids from the transaction-local carrier, or from the bound
+    `bigint[]` for a selected page.
+  - On SQL Server, P1 and P3 keep the `#page` table. The candidate batch (P2) reads its own JSON
+    carrier.
+- **PostgreSQL query keyset (P1, P2).** The statement that selects the page also sets the carrier
+  and returns the selected keys, plus the anchor when the keyset is anchored. It is the batch's
+  first result set, in the same position and shape as today. An empty or zero-size page clears
+  the carrier to `''`. No extra result set and no extra round trip.
+- **PostgreSQL selected page (P3).** One `bigint[]` parameter replaces the two parameters per id,
+  in the caller's order.
+- **SQL Server candidate metadata (P2).** The batch selects its page once into an `nvarchar(max)`
+  variable with `FOR JSON PATH`, and reads it with `OPENJSON`. It keeps its three result sets:
+  selected keys, count, and metadata.
+- **Binding.** Bind the PostgreSQL array only when the batch text reads it, so the
+  single-document fast path gains no parameter. SQL Server binding does not change.
+- **The guarded single-document keyset without the fast path** (`BuildGuardedSingleDocumentBatch`
+  with `UseSingleDocumentFastPath: false`). No production caller uses it (C5), and the prototype
+  throws `NotSupportedException`. Implement it under the new contract, or remove the option with
+  its tests.
+- **Test churn and new tests** (see Test requirements).
+- **Manifest goldens.** Regenerate with `UPDATE_GOLDENS=1` and commit them in the same PR. CI never
+  regenerates goldens.
+- **The design-document edits** listed below.
+
+**Out of scope:**
+
+- Descriptor GET-many (P4), `descriptor_page`, and `DescriptorReadHandler` (story 2).
+- SQL Server P1 and P3. They keep `#page` (findings,
+  [Retained fallback](keyset-temp-table-findings.md#retained-fallback)), and the memory-optimized
+  table-variable lead is not adopted.
+- The single-document fast path (C5), version fences, the retry policy, and the readers'
+  result-set contract. None of these change.
+- DDL, provisioning, and `RelationalMappingVersion`. Plan SQL is not an input to
+  `EffectiveSchemaHash`.
+- `ANALYZE` on the temp table.
+
+## Design documents to update
+
+Each edit is **mandated by DMS-1521's decision**
+([Recommendation](keyset-temp-table-findings.md#recommendation)). Line numbers are as of
+`3621b1eb6`; the paths are under `reference/design/backend-redesign/design-docs/`.
+
+| Document | Section | Edit |
+| --- | --- | --- |
+| `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (≈849–904) | The keyset is per dialect. On PostgreSQL: the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server: `#page` for resource hydration and selected pages (the retained fallback and its selection conditions), and a JSON carrier for candidate metadata. Keep one round trip and the first-result-set contract |
+| `flattening-reconstitution.md` | § 7 sketches (≈1818–1828, ≈2576–2582) | `SelectByKeysetSql` "joins the page keyset relation" instead of "expects a keyset table". Reconstituter step 1 becomes "select the page keyset" |
+| `compiled-mapping-set.md` | step 3 (≈733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset |
+| `mpack-format-v1.md` | `KeysetTableContract` (≈89, 276, 295), `select_by_keyset_sql` (≈695) | The PostgreSQL contract is a relation, not a `page` table. State how a pack consumer rejects a pack compiled with the old contract: the mapping-set key does not change, so a pack built before this story would match it |
+| `change-queries.md` | keyset DDL example (≈2239–2262) | Replace the PostgreSQL `CREATE TEMP TABLE "page"` example with the carrier form, keeping the anchor and `Ordinal` semantics |
+| `link-injection.md` | keyset join sketch (≈164–217) | "materialized page keyset" becomes "page keyset relation" |
+| `summary.md` | Query reconstitution (≈282) | "materialize a page keyset" becomes "select a page keyset" |
+| `transactions-and-concurrency.md` | standalone hydration (≈644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, multi-document reads issue no DDL and run in read-only transactions |
+| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (≈687) | The anchor travels with the selected keys, in the carrier on PostgreSQL and in `#page` or the JSON carrier on SQL Server. Invariant 3, "No extra roundtrip" (≈89), holds unchanged |
+
+## Acceptance criteria
+
+### Behavior
+
+1. No PostgreSQL resource GET-many, candidate-metadata, or selected-page batch creates, drops, or
+   analyzes a table.
+2. No SQL Server candidate-metadata batch creates a temp table or declares a table variable.
+3. The SQL Server resource GET-many and selected-page batch texts are byte-identical to `main` at
+   every page size.
+4. The selected keys, and the `ContentVersion` anchor where the keyset is anchored, remain the
+   batch's first result set, in the same shape. This includes empty and zero-size pages.
+   Continuation reflects the selected keys even when every selected document is deleted before
+   hydration.
+5. Query keysets carry a NULL ordinal, so metadata orders by `DocumentId`. Selected pages return
+   documents in the caller's order, including an order that is not ascending.
+6. On PostgreSQL, the carrier is set or cleared in the same statement that selects the page,
+   before any later statement reads it. A batch never reads a previous batch's ids. That holds on
+   a reused pooled connection (`NoResetOnClose`), after a failed batch, after an empty page, and
+   across two hydrations in one transaction.
+7. On PostgreSQL, resource GET-many, candidate selection, and the selected-page fallback succeed
+   in a transaction with `default_transaction_read_only = on`.
+8. Every multi-document request uses the same number of database commands as on `main`: resource
+   GET-many 1, cache hit 2.
+9. Binding is unchanged on SQL Server. On PostgreSQL:
+   - a selected page binds one `bigint[]` at every page size up to `MaximumPageSize` (500);
+   - a query keyset binds at most one parameter more than `main`;
+   - the single-document fast-path command binds exactly the parameters it binds on `main`.
+
+### Correctness (C1–C6)
+
+- **C1.** Every hydration result set keeps the fixed authorized document set and the selected-page
+  order. Nothing runs per document.
+- **C2.** Root and child ordering, descriptor projections, reference lookups, and the
+  reconstructed responses are unchanged.
+- **C3.** Total counts, empty and zero-limit pages, offsets, cursor ordering modes, and
+  continuation anchors are unchanged.
+- **C4.** Concurrent inserts, updates, and deletes neither weaken authorization nor change the
+  isolation contract. The version fences and the three-attempt retry behave as on `main`.
+- **C5.** The single-document fast path (GET by id, writes, cache materialization) produces the
+  same SQL and binding as on `main`.
+- **C6.** Plan contracts, SQL generation, binding, readers, manifests, goldens, tests, and the
+  design documents above change in the same PR.
+
+### Performance thresholds
+
+Measured with R1 (PostgreSQL) and R2 (SQL Server, read-acceleration fixture plus the resource
+fixture for N11). Three interleaved sessions: `main`, then the story branch, three times, on one
+machine. Ratios are story branch ÷ `main`, and `m = max(2 × CV, 5%)` from `main`'s three runs.
+PostgreSQL cells are on `primary-500k` at 25 and 500 rows; resource cells at offset 0, shallow,
+and deep.
+
+| Id | Metric | Bound | Spike result |
+| --- | --- | --- | --- |
+| E1 | PostgreSQL catalog `n_tup_ins` + `n_tup_del` per request on the resource, candidate, and fallback batches (calibrated observer) | = 0 | 0 (`main` 44) |
+| E2 | SQL Server temp tables per candidate batch: XE `object_created` **and** `Temp Tables Creation Rate` | = 0 on both | 0 (`main` 1) |
+| E3 | SQL Server `sql_statement_recompile` events and `plan_generation_num` change after warmup | = 0 | 0 |
+| E4 | PostgreSQL P1–P3 under `default_transaction_read_only = on` | succeed, exact rows | probe passed |
+| E5 | SHA-256 of the SQL Server P1 and P3 batch texts | equal to `main` | – |
+| E6 | Database commands per request | equal to `main` | equal |
+| P1 | PostgreSQL resource GET-many API p50 | ratio ≤ 0.74 − m | 0.29–0.47 |
+| P2 | PostgreSQL resource GET-many API p95 | ratio ≤ 0.74 − m | 0.30–0.48 |
+| P3 | Child-collection execution time per request (resource and fallback; driver-path `auto_explain`) | ratio ≤ 0.52 − m | 0.002–0.021 |
+| P4 | Child-collection buffers per request (resource and fallback) | ratio ≤ 0.74 − m | 0.023–0.466 |
+| P5 | Fallback batch replay p50 and p95 at concurrency 1, and p95 at 32 | ratio ≤ 0.59 − m | 0.02–0.17 |
+| N2 | PostgreSQL cache-hit API p50 / p95 | ratio ≤ 1 + m | 0.84–0.88 |
+| N3 | PostgreSQL forced-miss complete API p50 / p95 | ratio ≤ 1 + m | 0.69–0.90 |
+| N4 | PostgreSQL candidate replay p50 at c = 1, p95 at c = 32; throughput at c = 8 and 32 | latency ≤ 1 + m; throughput ≥ 1 − m | 0.19–0.43; ×2.1–×5.9 |
+| N5 | PostgreSQL plan time per request (resource, candidate, fallback) | ratio ≤ 1 + m | 0.06–0.95 (resource and fallback) |
+| N6 | PostgreSQL WAL bytes per request, clean windows | ratio ≤ 1 + m | 0 |
+| N7 | SQL Server cache-hit and forced-miss complete API p50 / p95 | ratio ≤ 1 + m | 0.37–1.00 |
+| N8 | SQL Server candidate replay p50 / p95 at c = 1, p95 at c = 32 | ratio ≤ 1 + m | 0.06–0.78 |
+| N9 | SQL Server candidate replay throughput at c = 8 and 32 | ratio ≥ 1 − m | ×1.89–×2.68 at 32 |
+| N10 | SQL Server candidate logical reads per request | ratio ≤ 1 + m | 0.81 |
+| N11 | SQL Server resource GET-many API p50 / p95 (P1 unchanged) | ratio ≤ 1 + m | 0.94–1.02 |
+
+The PR reports child-collection cost under both PostgreSQL plan types: custom (the API window) and
+generic (the one-connection fallback window after five executions). It also reports the plan node
+types (`Index Scan` expected) as supporting evidence; they are not a threshold.
+
+## Test requirements
+
+**Unit** (`Backend.Plans.Tests.Unit`, `Backend.Tests.Unit`):
+
+- Each batch kind in scope keeps its result-set sequence: query keyset, selected page, and
+  candidate metadata. Cover non-empty, empty, zero-size, zero-limit, and `ContentVersion`-anchored
+  pages on each engine in scope. These are behavior tests of positions and shapes, not tests that
+  a name is absent.
+- Pin the order of operations (AGENTS.md):
+  - the PostgreSQL carrier is set in the selecting statement, before any statement that reads it;
+  - the selected keys come from selection, not from hydration.
+- Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and `MaximumPageSize`; the
+  fast-path command's parameters are unchanged; SQL Server binding is unchanged.
+- SQL Server P1 and P3: the existing pins stay green unchanged. They are the byte-identity guard.
+- Update the pins of the old PostgreSQL text and parameter lists, and the candidate pins on both
+  engines. Task 7 counted 112 failing unit tests for the whole prototype. About 60–70 of them are
+  in this story, in `Given_HydrationBatchBuilder_*`, `Given_ReadPlanCompiler`,
+  `Given_PgsqlPlanDialect`, `Given_PlanSqlWriterExtensions`, `Given_A_Keyset_That_Carries_No_Anchor`,
+  and `Given_RelationalQueryRequestPreprocessor+Given_CompactDescriptorFilters`. Regenerate the
+  8 manifest goldens; about half of the 2,494 changed lines the prototype produced are
+  PostgreSQL's.
+
+**Integration** (`Backend.Postgresql.Tests.Integration`, `Backend.Mssql.Tests.Integration`):
+
+- **No temp tables** (E1, E2). A GET-many request through the production executor creates and drops
+  no temp table, measured with the calibrated counter protocol:
+  - PostgreSQL: `pg_stat_sys_tables` `n_tup_ins` and `n_tup_del` after `pg_stat_clear_snapshot()`;
+  - SQL Server, candidate batch: the temp-table counter.
+
+  A positive control proves that the observer registers a temp-table cycle. The test must fail if
+  the change is reverted.
+- **Carrier.** On one pooled physical connection: non-empty pages of 1, 25, and 500 ids in
+  sequence, an empty page between them, and a failed batch (`SELECT 1 / 0` after the carrier is
+  set). Each returns exactly its own ids, and nothing leaks.
+- **Read-only** (E4). Resource GET-many, candidate selection, and a selected page in a transaction
+  with `default_transaction_read_only = on`. `main`'s DDL prelude, run as a positive control,
+  fails with SQLSTATE 25006.
+- **Selected-page order.** Keep `Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentIds`
+  green.
+- **Type (d) adaptation.** `Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids`, both
+  deleted-before-hydration tests. The test splices `DELETE`s after the temp-table
+  `INSERT … RETURNING`. Move the splice to after the statement that selects the page and sets the
+  carrier, which is still between selection and hydration. Its SQL Server twin stays unchanged.
+- **Type (a) pin.** Replace
+  `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls`
+  with a behavior assertion: two hydrations in one transaction each return their own documents.
+  Its sibling test already does this.
+- **C5.** `RelationalWriteSmokeTests`, the `DocumentCacheMaterializer*Tests` classes, the
+  `*Single_Document_Fast_Path*` classes, and `MssqlWriteSessionCommandStreamTests` pass unchanged.
+
+**API integration** (`Tests.Integration`, both engines, full suites). These scenarios must pass:
+`CursorPagingExecutionScenario`, `CursorPartitionAuthorizationMatrixScenario`,
+`CursorPartitionConcurrencyScenario`, `CursorEmptyHydrationScenario`,
+`WindowedCursorAnchoringScenario`, `CursorPublicContractScenario`, `LimitZeroCountReadScenario`
+(including `Given_*_LimitZeroCountReads_DocumentCache`),
+`AuthoritativeTimestampReadConsistencyScenario`, and `Given_*_DocumentCacheReadAcceleration`. The
+PostgreSQL resource split site in `AuthoritativeTimestampReadConsistencyScenario` needs no change:
+its two commands share one transaction, so the carrier survives. The SQL Server resource site
+needs no change either, because P1 keeps `#page`.
+
+**Performance evidence.** Attach R1 and R2 artifacts (see
+[Thresholds](keyset-temp-table-findings.md#thresholds)), from three interleaved sessions on one
+machine, run from a clean tree. That is about 2.5 h of machine time for PostgreSQL. On SQL Server,
+the read-acceleration and resource fixtures take about 1.5 h per session pair.
+
+## Implementation guidance (non-binding)
+
+`experiments/prototype.patch` (`DMS1521_KEYSET_VARIANT=inline`) passed every check for these paths.
+It is a starting point:
+
+- **The seam.** Every P1–P3 keyset join renders through `PlanSqlWriterExtensions.AppendRelation`.
+  The prototype's PostgreSQL relation is:
+
+  ```sql
+  (SELECT u."DocumentId",
+          CASE WHEN CAST(@page_document_ids AS bigint[]) IS NULL THEN NULL
+               ELSE CAST(u."Ordinal" - 1 AS int) END AS "Ordinal"
+   FROM unnest(COALESCE(CAST(@page_document_ids AS bigint[]),
+                        CAST(string_to_array(current_setting('dms.page_keyset', true), ',') AS bigint[])))
+        WITH ORDINALITY AS u("DocumentId", "Ordinal"))
+  ```
+
+  The `COALESCE` exists because PostgreSQL has no statement that takes bind parameters, sets a
+  value, and returns no result set. A selected page has no result set that could carry
+  `set_config`, so the relation reads the parameter when it is bound and the carrier when it is
+  NULL. The NULL is bound untyped, and the SQL's `CAST` types it, so `Backend.Plans` needs no
+  Npgsql reference. A production design may use a different shape, for example a separate
+  relation per keyset kind, if it meets the criteria.
+- **The query keyset statement** (PostgreSQL):
+
+  ```sql
+  WITH page_ids AS (/* existing page selection */)
+  SELECT u."DocumentId"
+  FROM (SELECT set_config('dms.page_keyset',
+               COALESCE(string_agg(CAST(p."DocumentId" AS text), ',' ORDER BY p."DocumentId"), ''),
+               true) AS keyset
+        FROM page_ids p) c
+  CROSS JOIN LATERAL unnest(CAST(string_to_array(c.keyset, ',') AS bigint[])) AS u("DocumentId");
+  ```
+
+  The aggregate always yields one row, so `set_config` runs and clears the carrier even for an
+  empty page. An anchored keyset also carries the anchor.
+- **SQL Server P2.** The prototype rendered the candidate batch through the same `AppendRelation`
+  as every hydration batch. That would change P1 and P3 too, which this story must not do. Give
+  the candidate batch its own relation, for example by passing the keyset relation to
+  `DocumentMetadataColumns.AppendDocumentMetadataSelectBody`. Keep the dialect-wide compiled
+  `SelectByKeysetSql` on `[#page]`. The prototype's candidate SQL is
+  `DECLARE @page_keyset nvarchar(max); WITH page_ids AS (…) SELECT @page_keyset = (SELECT [DocumentId] FROM page_ids FOR JSON PATH);`,
+  and its readers use
+  `OPENJSON(@page_keyset) WITH ([DocumentId] bigint '$.DocumentId', [Ordinal] int '$.Ordinal')`.
+- **Prepared plans.** Under `plan_cache_mode = auto`, the parameterized readers take five custom
+  plans with an exact estimate, then a generic plan that estimates 10 rows. Both were measured as
+  cheap on `primary-500k`. Do not force a plan mode.
+- **Byte-identity check.** Before the PR, compare the SHA-256 of each captured batch (`cells.json`
+  in R1 and R2) between `main` and the branch. SQL Server P1 and P3 must match exactly (E5).
+- **Do not keep** `Dms1521KeysetVariant`, the environment switch, or the `pg-analyze` variant.
+
+## Dependencies
+
+- **Blocks** story 2, which reuses the carrier name, the set-before-read rule, and the SQL Server
+  JSON carrier.
+- **Relates to** DMS-1521 (the spike) and DMS-848.
+- **Fixes** EDFI-2956 for the resource paths. The descriptor path follows in story 2.
+- **Starts** after the DMS-1521 approval gate accepts the PostgreSQL transaction-local carrier for
+  production.
+
+## Estimate
+
+**8 story points.** The prototype exists, but production work remains:
+
+- a keyset contract that separates PostgreSQL from SQL Server P1 and P3, while SQL Server P2 gets
+  its own relation;
+- the guarded single-document decision;
+- about 60–70 updated unit pins and the golden regeneration;
+- four new integration tests (no temp tables, carrier reuse, read-only, binding);
+- nine design-document edits;
+- one interleaved performance session set on each engine.
