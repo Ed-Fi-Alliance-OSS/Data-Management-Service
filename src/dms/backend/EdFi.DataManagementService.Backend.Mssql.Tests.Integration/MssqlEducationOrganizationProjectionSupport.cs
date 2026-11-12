@@ -29,7 +29,7 @@ internal sealed class MssqlProjectionSeed
     private short _localEducationAgencyKey;
     private short _schoolKey;
     private short _postSecondaryInstitutionKey;
-    private long _localEducationAgencyCategoryDescriptorId;
+    private int _localEducationAgencyCategoryDescriptorId;
 
     private MssqlProjectionSeed(MssqlGeneratedDdlTestDatabase database)
     {
@@ -45,17 +45,20 @@ internal sealed class MssqlProjectionSeed
         seed._schoolKey = await seed.ResourceKeyAsync("School");
         seed._postSecondaryInstitutionKey = await seed.ResourceKeyAsync("PostSecondaryInstitution");
 
+        // A descriptor reference column holds the descriptor's generated DescriptorId, not its DocumentId.
+        // The table has an AFTER trigger, which rules out OUTPUT without INTO, so the row is read back by
+        // its unique DocumentId.
         short categoryKey = await seed.ResourceKeyAsync("LocalEducationAgencyCategoryDescriptor");
-        seed._localEducationAgencyCategoryDescriptorId = await seed.DocumentAsync(categoryKey);
-        await database.ExecuteNonQueryAsync(
+        long categoryDocumentId = await seed.DocumentAsync(categoryKey);
+        seed._localEducationAgencyCategoryDescriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO [dms].[Descriptor] ([DocumentId], [ResourceKeyId], [Namespace], [CodeValue],
-                [ShortDescription], [Description], [Discriminator], [Uri])
+                [ShortDescription], [Description])
             VALUES (@documentId, @resourceKeyId, N'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor',
-                N'Independent', N'Independent', N'Independent', N'Ed-Fi:LocalEducationAgencyCategoryDescriptor',
-                N'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent');
+                N'Independent', N'Independent', N'Independent');
+            SELECT [DescriptorId] FROM [dms].[Descriptor] WHERE [DocumentId] = @documentId;
             """,
-            new SqlParameter("@documentId", seed._localEducationAgencyCategoryDescriptorId),
+            new SqlParameter("@documentId", categoryDocumentId),
             new SqlParameter("@resourceKeyId", categoryKey)
         );
 

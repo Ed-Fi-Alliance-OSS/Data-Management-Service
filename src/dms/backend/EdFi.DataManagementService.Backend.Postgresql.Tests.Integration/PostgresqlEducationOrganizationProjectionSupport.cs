@@ -29,7 +29,7 @@ internal sealed class PostgresqlProjectionSeed
     private short _localEducationAgencyKey;
     private short _schoolKey;
     private short _postSecondaryInstitutionKey;
-    private long _localEducationAgencyCategoryDescriptorId;
+    private int _localEducationAgencyCategoryDescriptorId;
 
     private PostgresqlProjectionSeed(PostgresqlGeneratedDdlTestDatabase database)
     {
@@ -47,17 +47,18 @@ internal sealed class PostgresqlProjectionSeed
         seed._schoolKey = await seed.ResourceKeyAsync("School");
         seed._postSecondaryInstitutionKey = await seed.ResourceKeyAsync("PostSecondaryInstitution");
 
+        // A descriptor reference column holds the descriptor's generated DescriptorId, not its DocumentId.
         short categoryKey = await seed.ResourceKeyAsync("LocalEducationAgencyCategoryDescriptor");
-        seed._localEducationAgencyCategoryDescriptorId = await seed.DocumentAsync(categoryKey);
-        await database.ExecuteNonQueryAsync(
+        long categoryDocumentId = await seed.DocumentAsync(categoryKey);
+        seed._localEducationAgencyCategoryDescriptorId = await database.ExecuteScalarAsync<int>(
             """
             INSERT INTO "dms"."Descriptor" ("DocumentId", "ResourceKeyId", "Namespace", "CodeValue",
-                "ShortDescription", "Description", "Discriminator", "Uri")
+                "ShortDescription", "Description")
             VALUES (@documentId, @resourceKeyId, 'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor',
-                'Independent', 'Independent', 'Independent', 'Ed-Fi:LocalEducationAgencyCategoryDescriptor',
-                'uri://ed-fi.org/LocalEducationAgencyCategoryDescriptor#Independent');
+                'Independent', 'Independent', 'Independent')
+            RETURNING "DescriptorId";
             """,
-            new NpgsqlParameter("documentId", seed._localEducationAgencyCategoryDescriptorId),
+            new NpgsqlParameter("documentId", categoryDocumentId),
             new NpgsqlParameter("resourceKeyId", categoryKey)
         );
 
