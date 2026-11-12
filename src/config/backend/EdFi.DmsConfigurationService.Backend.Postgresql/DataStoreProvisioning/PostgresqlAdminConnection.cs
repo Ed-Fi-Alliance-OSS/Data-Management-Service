@@ -18,7 +18,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 /// is noticed; the command timeout is <c>CommandTimeout</c>. The connection string is never exposed or
 /// logged. Built over a source, it reads the source at every open, so each operation connects with the
 /// resolution it bound and a secret rotated between operations reaches the next one; the parsed
-/// form is reused while the value is unchanged.
+/// form is reused while the value is unchanged. Every session starts with <see cref="TrustedSearchPath"/>.
 /// </summary>
 public sealed class PostgresqlAdminConnection
 {
@@ -27,6 +27,16 @@ public sealed class PostgresqlAdminConnection
 
     /// <summary>The <c>application_name</c> of read and work sessions; holder and <c>psql</c> sessions carry their operation id instead.</summary>
     public const string SessionApplicationName = "dmsprov-session";
+
+    /// <summary>
+    /// The <c>search_path</c> every session starts with. Npgsql sends it in the startup packet, where it takes
+    /// precedence over a <c>search_path</c> set on the database or the role, so no statement of the session, the
+    /// first one included, resolves an unqualified operator, function or type in a schema another role may create
+    /// objects in. An unqualified <c>nspname !~ '^pg_'</c> would otherwise run a <c>!~(name, name)</c> such a role
+    /// planted as this superuser login, before inspection could refuse it. Application objects are always
+    /// schema-qualified, so nothing the provisioner reads or writes needs another schema on the path.
+    /// </summary>
+    internal const string TrustedSearchPath = "pg_catalog";
 
     private const int TcpKeepAliveTimeSeconds = 15;
     private const int TcpKeepAliveIntervalSeconds = 5;
@@ -236,6 +246,7 @@ public sealed class PostgresqlAdminConnection
     /// A verifying mode reaches Npgsql as <c>Require</c> without the <c>Root Certificate</c>, because Npgsql 8 takes
     /// a validation callback only in that form; it sends the same SSL request and refuses a server without TLS the
     /// same way in all three modes, so only the certificate check, <see cref="ServerCertificateValidation"/>, changes.
+    /// The <c>search_path</c> is always <see cref="TrustedSearchPath"/>, whatever the value carried.
     /// </summary>
     private static string DriverConnectionString(
         NpgsqlConnectionStringBuilder template,
@@ -247,6 +258,7 @@ public sealed class PostgresqlAdminConnection
         {
             Database = database,
             ApplicationName = applicationName,
+            SearchPath = TrustedSearchPath,
         };
         if (IsVerifying(template.SslMode))
         {

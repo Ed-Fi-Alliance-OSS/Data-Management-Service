@@ -37,7 +37,9 @@ public class PostgresqlAdminConnectionTests
             string current = "Host=db.example;Username=dms_admin;Password=before;Pooling=true";
             PostgresqlAdminConnection connection = new(() => current, TimeSpan.FromSeconds(30));
             _before = new(connection.ConnectionStringFor("postgres", "dmsprov-session"));
-            current = "Host=db.example;Username=dms_admin;Password=after;Pooling=true";
+
+            // A rotated value naming its own search path still starts on the trusted one (V5-01).
+            current = "Host=db.example;Username=dms_admin;Password=after;Pooling=true;Search Path=public";
             _after = new(connection.ConnectionStringFor("postgres", "dmsprov-session"));
             _libpqAfter = connection.ToLibpqSettings();
         }
@@ -51,6 +53,10 @@ public class PostgresqlAdminConnectionTests
         [Test]
         public void It_applies_the_provisioning_overrides_to_the_rotated_value() =>
             (_after.Pooling, _after.TcpKeepAlive, _after.CommandTimeout).Should().Be((false, true, 30));
+
+        [Test]
+        public void It_starts_every_session_on_the_trusted_search_path_for_the_initial_and_rotated_values() =>
+            (_before.SearchPath, _after.SearchPath).Should().Be(("pg_catalog", "pg_catalog"));
     }
 
     /// <summary>

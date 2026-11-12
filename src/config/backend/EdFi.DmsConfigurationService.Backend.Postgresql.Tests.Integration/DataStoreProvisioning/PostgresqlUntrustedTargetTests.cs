@@ -284,4 +284,201 @@ public class PostgresqlUntrustedTargetTests
             (await InvokedAsync(Lane.Target.Value)).Should().BeFalse();
         }
     }
+
+    /// <summary>
+    /// V5-01: a target a superuser owns, with the expected identity, where an ordinary role owns a schema the inherited
+    /// <c>search_path</c> names and has planted there a <c>!~(name, name)</c> that counts its calls. The inventory reads
+    /// write <c>nspname !~ '^pg_'</c> unqualified, and the literal's unknown type makes the planted operator an exact
+    /// match ahead of <c>pg_catalog.!~(name, text)</c>. The control shows an ordinary connection as the disposable
+    /// superuser administrator, with the inherited path, running the inventory query runs the operator. The provisioner's
+    /// own sessions start on <c>pg_catalog</c> instead, so its reconcile reads the full facts without running it, and the
+    /// contaminated inventory is still refused for inspection. The path is inherited from the database, or from the
+    /// administrator role; both are disposable, so no shared default changes.
+    /// </summary>
+    public abstract class PlantedOperatorFixture
+    {
+        private const string Schema = "dms1438_ops";
+
+        private static readonly string _inheritedPath = $"{Schema}, public";
+
+        private Lane? _lane;
+        private string? _hostile;
+        private string? _admin;
+
+        protected string InheritedSearchPath { get; private set; } = string.Empty;
+
+        protected bool RanOnTheUnhardenedConnection { get; private set; }
+
+        protected bool ResetBeforeTheProvisioner { get; private set; }
+
+        protected string ProvisionerSearchPath { get; private set; } = string.Empty;
+
+        protected DmsDataStoreCreateResult Reconciled { get; private set; } = null!;
+
+        protected string[] Members { get; private set; } = [];
+
+        protected bool RanDuringTheReconcile { get; private set; }
+
+        /// <summary>Makes <c>search_path</c> name the planted schema for <paramref name="admin"/>'s sessions on <paramref name="target"/>.</summary>
+        protected abstract Task InheritSearchPathAsync(string target, string admin, string path);
+
+        private static Task<bool> RanAsync(string target) =>
+            new TestDatabase(target).ScalarAsync<bool>($"SELECT is_called FROM \"{Schema}\".\"Calls\";");
+
+        /// <summary>The ordinary role's objects: the call counter, the counting function, and the operator over it.</summary>
+        private static Task PlantAsync(string target, string hostile)
+        {
+            string role = PostgresqlIdentifiers.Quote(hostile);
+            return new TestDatabase(target).ExecuteAsync(
+                $"CREATE SCHEMA \"{Schema}\" AUTHORIZATION {role};"
+                    + $"SET ROLE {role};"
+                    + $"CREATE SEQUENCE \"{Schema}\".\"Calls\";"
+                    + $"CREATE FUNCTION \"{Schema}\".\"NameNotMatches\"(name, name) RETURNS boolean LANGUAGE plpgsql AS $body$ BEGIN"
+                    + $" PERFORM pg_catalog.nextval('\"{Schema}\".\"Calls\"');"
+                    + " RETURN pg_catalog.textregexne($1::pg_catalog.text, $2::pg_catalog.text); END $body$;"
+                    + $"CREATE OPERATOR \"{Schema}\".!~ (LEFTARG = name, RIGHTARG = name, FUNCTION = \"{Schema}\".\"NameNotMatches\");"
+                    + "RESET ROLE;"
+            );
+        }
+
+        /// <summary>A connection as <paramref name="admin"/> built without the provisioner's factory, so the inherited path applies.</summary>
+        private static async Task<(string SearchPath, bool Ran)> RunOnUnhardenedConnectionAsync(
+            string target,
+            string admin
+        )
+        {
+            NpgsqlConnectionStringBuilder builder = new(AdminConnectionString!)
+            {
+                Username = admin,
+                Password = LoginRolePassword,
+                Database = target,
+                Pooling = false,
+                ApplicationName = "dms1438-test-unhardened",
+            };
+            await using NpgsqlConnection connection = new(builder.ConnectionString);
+            await connection.OpenAsync();
+            await using NpgsqlCommand show = new("SHOW search_path;", connection);
+            string path = (string)(await show.ExecuteScalarAsync())!;
+
+            // The production inventory statement; executing it evaluates the filter on every row.
+            await using NpgsqlCommand inventory = new(PostgresqlInventoryQueries.SchemaNames, connection);
+            await inventory.ExecuteNonQueryAsync();
+            return (path, await RanAsync(target));
+        }
+
+        private static async Task<string> ProvisionerSearchPathAsync(string target, string admin)
+        {
+            await using NpgsqlConnection connection = await AdminConnectionAs(admin)
+                .OpenAsync(target, PostgresqlAdminConnection.SessionApplicationName, default);
+            await using NpgsqlCommand show = new("SHOW search_path;", connection);
+            return (string)(await show.ExecuteScalarAsync())!;
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RequireConfiguredOrSkip();
+            await RequireSuperuserOrSkipAsync();
+            _hostile = await CreateRoleAsync("operator");
+            _admin = await CreateLoginRoleAsync("operator_admin");
+            await ExecuteOnServerAsync($"ALTER ROLE {PostgresqlIdentifiers.Quote(_admin)} SUPERUSER;");
+            _lane = await Lane.BuildAsync(Lane.ShapedSql(), new LaneHooks());
+            await _lane.SeedTargetAsync();
+            string target = _lane.Target.Value;
+            await PlantAsync(target, _hostile);
+            await InheritSearchPathAsync(target, _admin, _inheritedPath);
+
+            (InheritedSearchPath, RanOnTheUnhardenedConnection) = await RunOnUnhardenedConnectionAsync(
+                target,
+                _admin
+            );
+            await new TestDatabase(target).ExecuteAsync(
+                $"SELECT pg_catalog.setval('\"{Schema}\".\"Calls\"', 1, false);"
+            );
+            ResetBeforeTheProvisioner = !await RanAsync(target);
+            ProvisionerSearchPath = await ProvisionerSearchPathAsync(target, _admin);
+
+            Lane.Deployment underAdmin = _lane.WithEngine(EngineAs(_admin));
+            Reconciled = await underAdmin.Service.CreateAsync(_lane.Request, default);
+            Members = [.. underAdmin.Engine.Calls.Select(call => call.Member)];
+            RanDuringTheReconcile = await RanAsync(target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+
+            foreach (string? role in new[] { _admin, _hostile })
+            {
+                if (role is not null)
+                {
+                    await DropRoleAsync(role);
+                }
+            }
+        }
+
+        [Test]
+        public void It_runs_the_planted_operator_on_a_connection_with_the_inherited_path() =>
+            (InheritedSearchPath, RanOnTheUnhardenedConnection, ResetBeforeTheProvisioner)
+                .Should()
+                .Be((_inheritedPath, true, true));
+
+        [Test]
+        public void It_starts_the_provisioners_sessions_on_the_trusted_path() =>
+            ProvisionerSearchPath.Should().Be("pg_catalog");
+
+        [Test]
+        public void It_reads_the_full_facts_and_changes_nothing() =>
+            Members
+                .Should()
+                .Equal(
+                    nameof(IDmsTargetEngine.AcquireTargetLockAsync),
+                    nameof(IDmsTargetEngine.ReadServerFactsAsync),
+                    nameof(IDmsTargetEngine.InspectAsync),
+                    nameof(IDmsTargetEngine.OpenSessionAsync),
+                    nameof(IDmsTargetEngine.ReadIdentityAsync),
+                    nameof(IDmsTargetEngine.ReadTargetFactsAsync)
+                );
+
+        [Test]
+        public void It_never_runs_the_planted_operator() => RanDuringTheReconcile.Should().BeFalse();
+
+        [Test]
+        public void It_refuses_the_contaminated_inventory_for_inspection() =>
+            Verdict(Reconciled.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TargetIncompatible,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        DmsDataStoreProvisioningService.ReconcileValidateStep
+                            + "."
+                            + DmsTargetValidator.InventoryHashCheck
+                    )
+                );
+    }
+
+    /// <summary>V5-01 with the planted schema on the target database's own <c>search_path</c>.</summary>
+    [TestFixture]
+    public class Given_an_operator_planted_on_the_databases_search_path : PlantedOperatorFixture
+    {
+        protected override Task InheritSearchPathAsync(string target, string admin, string path) =>
+            ExecuteOnServerAsync(
+                $"ALTER DATABASE {PostgresqlIdentifiers.Quote(target)} SET search_path = {path};"
+            );
+    }
+
+    /// <summary>V5-01 with the planted schema on the disposable administrator role's <c>search_path</c>.</summary>
+    [TestFixture]
+    public class Given_an_operator_planted_on_the_administrators_search_path : PlantedOperatorFixture
+    {
+        protected override Task InheritSearchPathAsync(string target, string admin, string path) =>
+            ExecuteOnServerAsync(
+                $"ALTER ROLE {PostgresqlIdentifiers.Quote(admin)} SET search_path = {path};"
+            );
+    }
 }
