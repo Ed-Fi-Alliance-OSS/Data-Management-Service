@@ -341,6 +341,78 @@ reclaim keeps the earlier `NextAttemptAt`, so `reclaimed=true` samples also incl
 attempt and its lease, which inflates apparent queue latency. Filter on `reclaimed=false` to
 measure normal queue delay.
 
+## DMS data store provisioning
+
+The managed data-store lifecycle (DMS-1439) creates and deletes DMS databases through
+`IDmsDataStoreProvisioner` (Backend, `DataStoreProvisioning`). The provisioner is registered whether the
+feature is on or off; its settings and operation are described in
+[DmsDataStoreProvisioning](./CONFIGURATION.md#dmsdatastoreprovisioning) and
+[DMS data store provisioning](./OPERATIONS.md#configuration-service-dms-data-store-provisioning).
+Job handlers that call it must follow this contract.
+
+### Readiness gate
+
+`IDmsDataStoreProvisionerReadiness.Current` is one of:
+
+- `Disabled`: `DmsDataStoreProvisioning:Enabled` is `false`;
+- `Ready(Provider, ValidatedAtUtc)`: startup validation passed for that provider;
+- `NotReady(Reasons)`: at least one startup check failed.
+
+The state is set once at startup and never returns from `NotReady` to `Ready` without a restart. Every
+provisioner call checks it first: while it is not `Ready`, the call returns a failure with category
+`NotReady` (`FeatureDisabled` or `StartupValidationFailed`) and touches nothing. A handler should not
+enqueue or keep retrying provisioning work while the gate is closed: `NotReady` is terminal until a
+restart, so treat it as a permanent job failure and let the record converge, as described in
+[What consumers must provide](#what-consumers-must-provide).
+
+### Pin, then create
+
+A data store is created from one exact package, and every retry must use the same one:
+
+1. `ResolveArtifactAsync(template)` authenticates the allowlisted package without contacting the target
+   server and returns `Resolved(Pin)`. Persist every field of the pin (`ContractVersion`, `Provider`,
+   `PackageId`, `PackageVersion`, `PackageSha256`, `ArtifactSha256`, `TemplateKind`, `DataStandardVersion`,
+   `EffectiveSchemaHash`, `InventorySha256`, `ApiSchemaFormatVersion`, `RelationalMappingVersion`) with the
+   managed record **before** the first create.
+2. Generate the record's expected identity (a non-empty GUID) once and persist it too. It becomes
+   `dms.DataStoreIdentity.SourceIdentity` in the created database, and is the only proof that the
+   database belongs to this record.
+3. `CreateAsync(new DmsDataStoreCreateRequest(template, targetName, expectedIdentity, pin))`. On every
+   retry, pass the same template, name, identity, and pin. Create resolves the package again and fails with
+   `ArtifactChangedSinceCreate` unless the result equals the pin field by field.
+
+Create is idempotent for its own record: a database that already holds the name, carries the expected
+identity, and passes validation against the pin is returned as `Reconciled`, with nothing changed. A
+database under the name that carries another identity is never touched (`TargetUnowned` or
+`TargetUnverifiable`). `DeleteAsync(new DmsDataStoreDeleteRequest(targetName, expectedIdentity))` drops
+the database only when it carries that identity, and returns `AlreadyAbsent` when nothing holds the name.
+
+The pin's `Provider` is `postgresql` or `mssql`. Where the ordinary data store row uses `sqlserver`, the
+lifecycle maps the value itself.
+
+### Retries, cancellation, and leftovers
+
+- **Retry by category.** Retry a `Transient` failure through the job's own backoff. Every other category
+  (`InvalidRequest`, `NotReady`, `Permanent`, `OperatorInspectionRequired`) is terminal: fail the job
+  permanently and record the code. The codes and their categories are listed in
+  [Failure codes](./OPERATIONS.md#failure-codes). A failure carries no connection string, secret, or
+  server message, so its code and diagnostic may be recorded as they are. `TrustPolicyUnavailable` follows
+  the same rule: `Transient` while the trust policy file is temporarily held, `OperatorInspectionRequired`
+  otherwise. `NotReady` comes only from the startup gate; a trust-policy problem an operation meets never
+  produces it and never changes readiness.
+- **Cancellation.** Pass the handler's cancellation token to every call. When it is cancelled, the call
+  settles the outcome and makes its bounded cleanup attempts, then throws `OperationCanceledException`. If
+  the identity marker is found committed, the call reports success instead. A cancelled call returns no
+  cleanup report: anything its cleanup could not remove is reported only in the log.
+- **Duration.** A restore may take up to `DmsDataStoreProvisioning:RestoreTimeout` (default 30 minutes),
+  so a create holds its job for much longer than a typical handler. Lease renewal keeps the job owned
+  meanwhile.
+- **Cleanup report.** Every result except `AlreadyAbsent` carries a cleanup report, whatever its outcome
+  or failure category, `Transient` and `Permanent` included. Cleanup is a bounded number of attempts
+  (`DmsDataStoreProvisioning:CleanupAttempts`), not guaranteed removal. A leftover it could not remove is
+  listed in the report and logged by generated name, and never changes the outcome. Record it; operators
+  remove it as described under [Leftovers after a crash](./OPERATIONS.md#leftovers-after-a-crash).
+
 ## Deployment
 
 - **Database:** the `dmscs.JobSchedule` and `dmscs.Job` tables are added by the Configuration Service deploy scripts

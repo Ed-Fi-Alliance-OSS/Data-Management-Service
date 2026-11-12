@@ -11,6 +11,7 @@
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" />
         <PackageReference Include="Microsoft.Extensions.Configuration.Json" />
+        <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="NUnit" />
         <PackageReference Include="NUnit.Analyzers">
@@ -23,6 +24,7 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Installer\EdFi.DmsConfigurationService.Backend.Installer.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Postgresql\EdFi.DmsConfigurationService.Backend.Postgresql.csproj" />
+        <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Tests.Unit\EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj" />
         <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />
         <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit\EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.csproj" />
     </ItemGroup>
@@ -36,6 +38,7 @@
         <None Update="appsettings.test.json">
             <CopyToOutputDirectory>Always</CopyToOutputDirectory>
         </None>
+        <None Update="Fixtures/DataStoreProvisioning/**/*" CopyToOutputDirectory="PreserveNewest" />
     </ItemGroup>
     <ItemGroup>
         <None Remove="ClaimsHierarchyMetadata.json" />

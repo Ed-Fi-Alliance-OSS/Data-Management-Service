@@ -1,0 +1,957 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Diagnostics.CodeAnalysis;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using Microsoft.Extensions.Logging;
+using Npgsql;
+
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+
+/// <summary>
+/// The PostgreSQL adapter of the engine port: server facts,
+/// inspection by name with the instance identity <c>oid</c> plus claim comment (D-13), and the owner judged
+/// before anything connects to a candidate database, instance-bound sessions that verify the instance at open and capture the backend's <c>pid</c> and
+/// <c>backend_start</c> (D-7b), the delivered identity read, and the catalog facts the validator judges,
+/// each preceded by a check that the relations read are trusted; and the target lock (D-12): <see cref="AcquireTargetLockAsync"/> opens the holder session
+/// (<see cref="PostgresqlTargetLockSession"/>) that every later selected-target mutation runs on; and session
+/// termination (D-22): <see cref="TerminateSessionAsync"/> proves a session gone, or reports why it could not,
+/// through <see cref="PostgresqlSessionQueries"/>; and the staging stage: the
+/// staging database created and claimed on the holder session, the <c>psql</c> replay with its outcome
+/// protocol, and the staging drop, in the second part of this class; and publication: the rename into the target and the compensation drop on the holder session, and the marker on an
+/// instance-bound session, through <see cref="PostgresqlPublicationQueries"/>; and the owned delete:
+/// the fence, its reversal, and the guarded drop on the holder session, through
+/// <see cref="PostgresqlDeletionQueries"/>; and the environmental validation in a
+/// third part. Every read is on a dedicated connection. Connection and driver failures of a read propagate for the orchestrator to classify; a catalog
+/// row the inventory contract cannot describe is reported as a content-profile violation, because the
+/// authoritative DDL never produces one.
+/// </summary>
+public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
+{
+    /// <summary>The <c>Diagnostic.Operation</c> of a facts read whose inventory or security rows do not split as the delivered contract requires.</summary>
+    public const string CatalogRowShapeStep = "CatalogRowShape";
+
+    /// <summary>The fixed operation names an access refusal's diagnostic carries.</summary>
+    public const string OpenSessionOperation = "OpenSession";
+
+    public const string ReadIdentityOperation = "ReadIdentity";
+
+    public const string ReadTargetFactsOperation = "ReadTargetFacts";
+
+    /// <summary>The <c>Diagnostic.Operation</c> of a facts read refused because a relation it reads is not trusted (<see cref="UntrustedRelationsQuery"/>).</summary>
+    public const string RelationTrustStep = "RelationTrust";
+
+    private const string ServerFactsQuery = "SELECT current_setting('server_version_num')::int;";
+
+    /// <summary>
+    /// Whether the role whose oid is <paramref name="roleOid"/> is trusted: a superuser, or the administrative login
+    /// itself. Only a trusted role can have put code where the provisioner's reads run it, so a database or relation
+    /// another role owns is never read. A superuser is trusted whatever its name, so a target created under a login
+    /// that was later replaced by another superuser login (the documented rotation) stays readable. Only catalog
+    /// objects and schema-qualified operators are used, so the check itself resolves nothing a database owner chose.
+    /// </summary>
+    private static string TrustedRole(string roleOid) =>
+        $"EXISTS (SELECT 1 FROM pg_catalog.pg_roles r WHERE r.oid OPERATOR(pg_catalog.=) {roleOid} AND (r.rolsuper OR r.rolname OPERATOR(pg_catalog.=) CURRENT_USER))";
+
+    /// <summary>Read on the maintenance database, before anything connects to the candidate: its owner is judged here.</summary>
+    private static readonly string _inspectQuery =
+        "SELECT d.oid, d.datistemplate, d.datallowconn, pg_catalog.shobj_description(d.oid, 'pg_database'), "
+        + TrustedRole("d.datdba")
+        + " FROM pg_catalog.pg_database d WHERE d.datname = @name;";
+
+    /// <summary>Read first on a session to the candidate, from the shared catalog: the instance, the owner judged again, and the backend.</summary>
+    private static readonly string _sessionIdentityQuery =
+        "SELECT d.oid, pg_catalog.shobj_description(d.oid, 'pg_database'), a.pid, a.backend_start, "
+        + TrustedRole("d.datdba")
+        + " FROM pg_catalog.pg_database d CROSS JOIN pg_catalog.pg_stat_activity a WHERE d.datname OPERATOR(pg_catalog.=) pg_catalog.current_database() AND a.pid OPERATOR(pg_catalog.=) pg_catalog.pg_backend_pid();";
+
+    /// <summary>The relation the identity read selects from.</summary>
+    private static readonly string _identityRelationsQuery = UntrustedRelationsQuery("DataStoreIdentity");
+
+    /// <summary>The relations the facts read selects from; every other facts query reads only the system catalogs.</summary>
+    private static readonly string _factsRelationsQuery = UntrustedRelationsQuery(
+        "EffectiveSchema",
+        "Document",
+        "ResourceKey"
+    );
+
+    /// <summary>The one relation the post-rename effective-schema read selects from.</summary>
+    private static readonly string _effectiveSchemaRelationsQuery = UntrustedRelationsQuery(
+        "EffectiveSchema"
+    );
+
+    /// <summary>
+    /// The names among <paramref name="relationNames"/> in schema <c>dms</c> that a read could not select from without
+    /// possibly running code a role other than a trusted one (<see cref="TrustedRole"/>) chose: anything but an
+    /// ordinary or partitioned table, a table such a role does not own, or a table with a column of a type created after
+    /// the server's built-in objects (a type's input and output functions run on every read) or a virtual generated
+    /// column (its expression runs on every read). A name that does not exist is not listed; the read then reports it
+    /// missing as before. The names are fixed constants of this class, never input.
+    /// </summary>
+    private static string UntrustedRelationsQuery(params string[] relationNames) =>
+        "SELECT c.relname::text FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid OPERATOR(pg_catalog.=) c.relnamespace"
+        + " WHERE n.nspname OPERATOR(pg_catalog.=) 'dms'::pg_catalog.name AND c.relname OPERATOR(pg_catalog.=) ANY (ARRAY["
+        + string.Join(", ", relationNames.Select(name => $"'{name}'"))
+        + "]::pg_catalog.name[]) AND NOT (c.relkind OPERATOR(pg_catalog.=) ANY ('{r,p}'::pg_catalog.\"char\"[]) AND "
+        + TrustedRole("c.relowner")
+        + " AND NOT EXISTS (SELECT 1 FROM pg_catalog.pg_attribute a WHERE a.attrelid OPERATOR(pg_catalog.=) c.oid AND a.attnum OPERATOR(pg_catalog.>) 0 AND NOT a.attisdropped"
+        + " AND (a.atttypid OPERATOR(pg_catalog.>=) 16384::pg_catalog.oid OR a.attgenerated OPERATOR(pg_catalog.=) 'v'::pg_catalog.\"char\")));";
+
+    /// <summary>The field types of <see cref="PostgresqlInventoryQueries.EffectiveSchemaRows"/> the contract allows: two texts, a <c>smallint</c>, a <c>bytea</c>.</summary>
+    private static readonly Type[] _effectiveSchemaColumnTypes =
+    [
+        typeof(string),
+        typeof(string),
+        typeof(short),
+        typeof(byte[]),
+    ];
+
+    private readonly PostgresqlAdminConnection _adminConnection;
+    private readonly PostgresqlDmsEngineSettings _settings;
+    private readonly PsqlRestoreRunner _runner;
+    private readonly TimeProvider _timeProvider;
+    private readonly ILogger _logger;
+
+    /// <param name="adminConnection">The resolved administrative connection (the configured <c>AdminConnectionString</c> and <c>CommandTimeout</c>).</param>
+    /// <param name="settings">The range-checked configured settings the engine reads.</param>
+    /// <param name="timeProvider">Drives the holder heartbeat, every deadline, and the replay bounds.</param>
+    /// <param name="logger">Receives the holder's ignored errors and the replay's progress as type chains and fixed values; never a value from a request, a file, or output.</param>
+    public PostgresqlDmsTargetEngine(
+        PostgresqlAdminConnection adminConnection,
+        PostgresqlDmsEngineSettings settings,
+        TimeProvider timeProvider,
+        ILogger logger
+    )
+        : this(adminConnection, settings, timeProvider, logger, RunnerFor(settings, timeProvider, logger)) { }
+
+    /// <summary>The engine with its replay runner supplied, so a test can drive the outcome protocol with a fake process.</summary>
+    internal PostgresqlDmsTargetEngine(
+        PostgresqlAdminConnection adminConnection,
+        PostgresqlDmsEngineSettings settings,
+        TimeProvider timeProvider,
+        ILogger logger,
+        PsqlRestoreRunner runner
+    )
+    {
+        ArgumentNullException.ThrowIfNull(adminConnection);
+        ArgumentNullException.ThrowIfNull(settings);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(logger);
+        ArgumentNullException.ThrowIfNull(runner);
+        _adminConnection = adminConnection;
+        _settings = settings;
+        _runner = runner;
+        _timeProvider = timeProvider;
+        _logger = logger;
+    }
+
+    private static PsqlRestoreRunner RunnerFor(
+        PostgresqlDmsEngineSettings settings,
+        TimeProvider timeProvider,
+        ILogger logger
+    )
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        return new PsqlRestoreRunner(settings.PsqlPath, settings.RestoreTimeout, timeProvider, logger);
+    }
+
+    public string Provider => DmsDataStoreProvisioningOptions.PostgresqlProvider;
+
+    public async Task<DmsServerFacts> ReadServerFactsAsync(CancellationToken cancellationToken)
+    {
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
+            cancellationToken
+        );
+        await using NpgsqlCommand command = new(ServerFactsQuery, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The server facts query returned no row.");
+        }
+
+        int serverVersionNum = reader.GetInt32(0);
+        return new DmsServerFacts(serverVersionNum / 10000, null, null);
+    }
+
+    public Task<DmsTargetLockResult> AcquireTargetLockAsync(
+        DmsTargetDatabaseName name,
+        DmsOperationId operation,
+        CancellationToken cancellationToken
+    ) =>
+        PostgresqlTargetLockSession.AcquireAsync(
+            _adminConnection,
+            name,
+            operation,
+            _settings.LockAcquireTimeout,
+            _settings.LockHeartbeatInterval,
+            _timeProvider,
+            _logger,
+            cancellationToken
+        );
+
+    public async Task<DmsLiveTargetState> InspectAsync(
+        DmsDatabaseName name,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
+            cancellationToken
+        );
+        await using NpgsqlCommand command = new(_inspectQuery, connection);
+        command.Parameters.AddWithValue("name", name.Value);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            return new DmsLiveTargetState.Absent();
+        }
+
+        uint oid = await reader.GetFieldValueAsync<uint>(0, cancellationToken);
+        bool isTemplate = reader.GetBoolean(1);
+        bool allowsConnections = reader.GetBoolean(2);
+        string claim = await ClaimOfAsync(reader, 3, cancellationToken);
+        bool trustedOwner = reader.GetBoolean(4);
+        if (isTemplate)
+        {
+            return new DmsLiveTargetState.Protected();
+        }
+
+        DmsInstanceIdentity.Postgresql instance = new(oid, claim);
+        if (!allowsConnections)
+        {
+            return new DmsLiveTargetState.Fenced(instance);
+        }
+
+        // A database another role owns is reported, never opened; nothing in it is read as the administrator.
+        return new DmsLiveTargetState.Present(
+            instance,
+            trustedOwner ? DmsDatabaseState.Online : DmsDatabaseState.UntrustedOwner
+        );
+    }
+
+    public async Task<DmsSessionOpenResult> OpenSessionAsync(
+        DmsDatabaseName name,
+        DmsInstanceIdentity expectedInstance,
+        CancellationToken cancellationToken
+    )
+    {
+        if (expectedInstance is not DmsInstanceIdentity.Postgresql expected)
+        {
+            throw new ArgumentException(
+                "The PostgreSQL engine verifies PostgreSQL instance identities only.",
+                nameof(expectedInstance)
+            );
+        }
+
+        NpgsqlConnection connection;
+        try
+        {
+            connection = await _adminConnection.OpenAsync(
+                name.Value,
+                PostgresqlAdminConnection.SessionApplicationName,
+                cancellationToken
+            );
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.InvalidCatalogName)
+        {
+            return new DmsSessionOpenResult.Absent();
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            return new DmsSessionOpenResult.AccessDenied(
+                PostgresqlErrorClassifier.Diagnostic(exception, OpenSessionOperation)
+            );
+        }
+
+        try
+        {
+            (DmsInstanceIdentity.Postgresql actual, DmsServerSessionId serverSession, bool trustedOwner) =
+                await ReadSessionIdentityAsync(connection, cancellationToken);
+
+            // An owner that is no longer trusted means the database is not the one inspection judged.
+            if (!trustedOwner || !actual.IsSameStableInstance(expected))
+            {
+                await connection.DisposeAsync();
+                return new DmsSessionOpenResult.InstanceChanged();
+            }
+
+            return new DmsSessionOpenResult.Opened(
+                new PostgresqlDmsSession(connection, actual, serverSession)
+            );
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    public async Task<DmsIdentityRead> ReadIdentityAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        NpgsqlConnection connection = RequireSession(session).Connection;
+        List<(string? Text, bool Overlength)> values;
+        try
+        {
+            if (await HasUntrustedRelationAsync(connection, _identityRelationsQuery, cancellationToken))
+            {
+                return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.RelationUntrusted);
+            }
+
+            values = await ReadRowsAsync(
+                connection,
+                PostgresqlInventoryQueries.SourceIdentityRows,
+                PostgresqlInventoryQueries.ReadSourceIdentityRow,
+                cancellationToken
+            );
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsMissingRelation(exception.SqlState))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.TableMissing);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsMissingColumn(exception.SqlState))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.ColumnMissing);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            return new DmsIdentityRead.Invalid(DmsIdentityReadProblem.AccessDenied)
+            {
+                Diagnostic = PostgresqlErrorClassifier.Diagnostic(exception, ReadIdentityOperation),
+            };
+        }
+
+        return values.Count switch
+        {
+            0 => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.NoRows),
+            1 => DmsIdentityRead.FromBoundedText(values[0].Text, values[0].Overlength),
+            _ => new DmsIdentityRead.Invalid(DmsIdentityReadProblem.MultipleRows),
+        };
+    }
+
+    /// <summary>
+    /// The facts every validation check needs, read on the instance-bound session. A query the server definitely
+    /// refuses for lack of a privilege raises <see cref="DmsAccessDeniedException"/> with the SQLSTATE only;
+    /// a missing singleton table is a typed read, and every other error, including cancellation and a lost
+    /// connection, propagates unchanged.
+    /// </summary>
+    public async Task<DmsTargetFacts> ReadTargetFactsAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        try
+        {
+            return await ReadTargetFactsCoreAsync(session, cancellationToken);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            throw new DmsAccessDeniedException(
+                PostgresqlErrorClassifier.Diagnostic(exception, ReadTargetFactsOperation)
+            );
+        }
+    }
+
+    private async Task<DmsTargetFacts> ReadTargetFactsCoreAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        NpgsqlConnection connection = RequireSession(session).Connection;
+        await ThrowIfUntrustedRelationAsync(connection, _factsRelationsQuery, cancellationToken);
+
+        DmsEffectiveSchemaRead effectiveSchema = await ReadEffectiveSchemaAsync(
+            connection,
+            cancellationToken
+        );
+        int serverVersionNum = await ReadScalarAsync<int>(
+            connection,
+            PostgresqlInventoryQueries.ServerVersionNum,
+            cancellationToken
+        );
+        List<DmsDocumentJsonColumn> documentJsonColumns = await ReadRowsAsync(
+            connection,
+            PostgresqlInventoryQueries.DocumentJsonColumns,
+            reader => new DmsDocumentJsonColumn("dms", reader.GetString(0), reader.GetString(1)),
+            cancellationToken
+        );
+        List<string> schemaNames = await ReadRowsAsync(
+            connection,
+            PostgresqlInventoryQueries.SchemaNames,
+            reader => reader.GetString(0),
+            cancellationToken
+        );
+        List<DmsInventoryObject> inventoryObjects = await ReadPipeRowsAsync<DmsInventoryObject>(
+            connection,
+            PostgresqlInventoryQueries.Objects,
+            PostgresqlInventoryQueries.TryParseObjectRow,
+            cancellationToken
+        );
+        List<DmsDatabaseLevelObject> databaseLevelObjects = await ReadPipeRowsAsync<DmsDatabaseLevelObject>(
+            connection,
+            PostgresqlInventoryQueries.DatabaseLevelObjects,
+            PostgresqlInventoryQueries.TryParseDatabaseLevelObjectRow,
+            cancellationToken
+        );
+        List<DmsPostgresqlOwnershipRow> ownership = await ReadPipeRowsAsync<DmsPostgresqlOwnershipRow>(
+            connection,
+            PostgresqlSecurityQueries.Ownership,
+            PostgresqlSecurityQueries.TryParseOwnershipRow,
+            cancellationToken
+        );
+        List<DmsPostgresqlPrivilegeRow> privileges = await ReadPipeRowsAsync<DmsPostgresqlPrivilegeRow>(
+            connection,
+            PostgresqlSecurityQueries.Privileges,
+            PostgresqlSecurityQueries.TryParsePrivilegeRow,
+            cancellationToken
+        );
+        List<string> superuserRoles = await ReadRowsAsync(
+            connection,
+            PostgresqlSecurityQueries.SuperuserRoles,
+            reader => reader.GetString(0),
+            cancellationToken
+        );
+        (bool? hasPopulatedDocument, bool predicateTablesMalformed) = await ReadPopulatedPredicateAsync(
+            connection,
+            cancellationToken
+        );
+
+        return new DmsTargetFacts
+        {
+            EffectiveSchema = effectiveSchema,
+            EngineMajorVersion = serverVersionNum / 10000,
+            CompatibilityLevel = null,
+            DocumentJsonColumns = documentJsonColumns,
+            SchemaNames = schemaNames,
+            InventoryObjects = inventoryObjects,
+            Principals = [],
+            DatabaseLevelObjects = databaseLevelObjects,
+            Security = new DmsSecurityFacts.Postgresql(ownership, privileges)
+            {
+                SuperuserRoles = superuserRoles,
+            },
+            HasPopulatedDocument = hasPopulatedDocument,
+            PopulatedPredicateTablesMalformed = predicateTablesMalformed,
+        };
+    }
+
+    /// <summary>
+    /// The effective-schema row alone, behind the same relation guard (<see cref="UntrustedRelationsQuery"/>, limited to
+    /// <c>EffectiveSchema</c>) and the same access-refusal translation as <see cref="ReadTargetFactsAsync"/>.
+    /// </summary>
+    public async Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        DmsSession session,
+        CancellationToken cancellationToken
+    )
+    {
+        NpgsqlConnection connection = RequireSession(session).Connection;
+        try
+        {
+            await ThrowIfUntrustedRelationAsync(
+                connection,
+                _effectiveSchemaRelationsQuery,
+                cancellationToken
+            );
+            return await ReadEffectiveSchemaAsync(connection, cancellationToken);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsAccessRefusal(exception.SqlState))
+        {
+            throw new DmsAccessDeniedException(
+                PostgresqlErrorClassifier.Diagnostic(exception, ReadTargetFactsOperation)
+            );
+        }
+    }
+
+    /// <summary>A read selecting from a relation <paramref name="guardQuery"/> lists is a <c>SecurityStateViolation</c> at <see cref="RelationTrustStep"/>.</summary>
+    private static async Task ThrowIfUntrustedRelationAsync(
+        NpgsqlConnection connection,
+        string guardQuery,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await HasUntrustedRelationAsync(connection, guardQuery, cancellationToken))
+        {
+            throw new DmsProvisioningFailedException(
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.SecurityStateViolation,
+                    DmsProvisioningDiagnostic.ForOperation(RelationTrustStep)
+                )
+            );
+        }
+    }
+
+    public async Task<DmsCommandOutcome<DmsInstanceIdentity>> RenameIntoTargetAsync(
+        IDmsTargetLockHolder holder,
+        DmsDatabaseName staging,
+        DmsInstanceIdentity stagingInstance,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(stagingInstance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlPublicationQueries.RenameAsync(
+                    session.Connection,
+                    staging,
+                    stagingInstance,
+                    target,
+                    session.Session,
+                    token
+                ),
+            RenameDeadline(_adminConnection.CommandTimeout),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The rename's bound on the holder, started once the gate is held: the staging instance check and the
+    /// <c>ALTER DATABASE … RENAME TO</c> one command each, so a slow check cannot take the rename's own allowance.
+    /// The read-back after the rename has returned runs on no token, under its driver's command timeout, and is
+    /// not counted. The orchestrator's allowance, counted from its request, is this bound plus one
+    /// <c>CommandTimeout</c> for the gate wait.
+    /// </summary>
+    internal static TimeSpan RenameDeadline(TimeSpan commandTimeout) => commandTimeout * 2;
+
+    public async Task<DmsCommandOutcome> AssignMarkerAsync(
+        DmsSession session,
+        Guid expectedSourceIdentity,
+        CancellationToken cancellationToken
+    )
+    {
+        PostgresqlDmsSession bound = RequireSession(session);
+        if (bound.Instance is not DmsInstanceIdentity.Postgresql instance)
+        {
+            throw new ArgumentException(
+                "The session is not bound to a PostgreSQL instance.",
+                nameof(session)
+            );
+        }
+
+        return await PostgresqlPublicationQueries.AssignMarkerAsync(
+            bound.Connection,
+            instance.Oid,
+            expectedSourceIdentity,
+            bound.ServerSession,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// On the holder session, bounded by <see cref="FenceDeadline"/>: the termination loop has the
+    /// whole termination bound, and the statements before and after it one command each.
+    /// </summary>
+    public async Task<DmsCommandOutcome> FenceAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance,
+        DmsServerSessionId? keep,
+        CancellationToken cancellationToken
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(instance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlDeletionQueries.FenceAsync(
+                    session.Connection,
+                    target,
+                    instance,
+                    keep,
+                    session.Session,
+                    _settings.SessionTerminationTimeout,
+                    _adminConnection.CommandTimeout,
+                    _timeProvider,
+                    token
+                ),
+            FenceDeadline(_settings.SessionTerminationTimeout, _adminConnection.CommandTimeout),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The fence's bound on the holder, started once the gate is held. The instance check and the
+    /// <c>ALTER DATABASE</c> take one command each before the termination loop starts, so neither can shorten
+    /// the loop's termination bound. Once the bound has passed, the loop may still need one command each for a
+    /// termination started inside it (its driver allows it one command past the bound), that termination's
+    /// verification read, and the read that decides: the session listing read after the bound (D-22), or the
+    /// privilege read of a refused termination. The orchestrator's allowance, counted from its request, is this
+    /// bound plus one <c>CommandTimeout</c> for the gate wait; a wait longer than that ends the allowance first,
+    /// with the same outcome.
+    /// </summary>
+    internal static TimeSpan FenceDeadline(TimeSpan sessionTerminationTimeout, TimeSpan commandTimeout) =>
+        sessionTerminationTimeout + (commandTimeout * 5);
+
+    public async Task<DmsCommandOutcome> UnfenceAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance,
+        CancellationToken cancellationToken
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(instance);
+        return await session.RunAsync(
+            token =>
+                PostgresqlDeletionQueries.UnfenceAsync(
+                    session.Connection,
+                    target,
+                    instance,
+                    session.Session,
+                    token
+                ),
+            UnfenceDeadline(_adminConnection.CommandTimeout),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The unfence's bound on the holder, started once the gate is held: the instance check and the
+    /// <c>ALTER DATABASE … ALLOW_CONNECTIONS true</c> one command each, so a slow check cannot take the reversal's
+    /// own allowance. The orchestrator's allowance is this bound plus one <c>CommandTimeout</c> for the gate wait.
+    /// </summary>
+    internal static TimeSpan UnfenceDeadline(TimeSpan commandTimeout) => commandTimeout * 2;
+
+    /// <summary>Not used on PostgreSQL: the fence keeps the delete's own session, which reads the identity.</summary>
+    public Task<DmsIdentityRead> ReadIdentityOnHolderAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        CancellationToken cancellationToken
+    ) =>
+        throw new NotSupportedException(
+            "The PostgreSQL fence keeps the delete's own session; the identity is read there, not on the holder."
+        );
+
+    /// <summary>
+    /// On the holder session: the compensation drop, or the owned delete, which drops only a
+    /// target that is still fenced with no client session on it.
+    /// </summary>
+    public async Task<DmsCommandOutcome> DropInstanceAsync(
+        IDmsTargetLockHolder holder,
+        DmsTargetDatabaseName target,
+        DmsInstanceIdentity instance,
+        DmsDropReason reason,
+        CancellationToken cancellationToken
+    )
+    {
+        PostgresqlTargetLockSession session = RequireHolder(holder);
+        ArgumentNullException.ThrowIfNull(instance);
+        if (reason is not (DmsDropReason.Compensation or DmsDropReason.Delete))
+        {
+            throw new ArgumentOutOfRangeException(nameof(reason));
+        }
+
+        return await session.RunAsync(
+            token =>
+                reason == DmsDropReason.Delete
+                    ? PostgresqlDeletionQueries.DropTargetAsync(
+                        session.Connection,
+                        target,
+                        instance,
+                        session.Session,
+                        token
+                    )
+                    : PostgresqlPublicationQueries.DropInstanceAsync(
+                        session.Connection,
+                        target,
+                        instance,
+                        session.Session,
+                        token
+                    ),
+            DropDeadline(reason, _adminConnection.CommandTimeout),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The drop's bound on the holder, started once the gate is held, one command for each statement it sends, so
+    /// slow checks cannot take the <c>DROP DATABASE</c>'s own allowance: the owned delete reads the instance, counts
+    /// the client sessions, and drops (three); the compensation drop reads the instance and drops (two). The
+    /// orchestrator's allowance is this bound plus one <c>CommandTimeout</c> for the gate wait.
+    /// </summary>
+    internal static TimeSpan DropDeadline(DmsDropReason reason, TimeSpan commandTimeout) =>
+        reason == DmsDropReason.Delete ? commandTimeout * 3 : commandTimeout * 2;
+
+    public async Task<DmsSessionTermination> TerminateSessionAsync(
+        DmsServerSessionId session,
+        TimeSpan deadline,
+        CancellationToken cancellationToken
+    )
+    {
+        PostgresqlSessionQueries.ValidateRequest(session, deadline);
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
+            cancellationToken
+        );
+        return await PostgresqlSessionQueries.TerminateAsync(
+            connection,
+            session,
+            deadline,
+            _adminConnection.CommandTimeout,
+            _timeProvider,
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// The sessions on <paramref name="database"/> whose <c>application_name</c> is
+    /// <paramref name="applicationName"/>, oldest first: how the <c>psql</c> replay session
+    /// (<c>PGAPPNAME = dms-provision:&lt;op&gt;</c>) is addressed for the outcome protocol (D-7b), which then
+    /// hands each id to <see cref="TerminateSessionAsync"/>.
+    /// </summary>
+    internal async Task<IReadOnlyList<DmsServerSessionId>> FindSessionsAsync(
+        DmsDatabaseName database,
+        string applicationName,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(applicationName);
+        await using NpgsqlConnection connection = await _adminConnection.OpenMaintenanceAsync(
+            cancellationToken
+        );
+        return await PostgresqlSessionQueries.FindByApplicationNameAsync(
+            connection,
+            database,
+            applicationName,
+            cancellationToken
+        );
+    }
+
+    /// <summary>The instance behind the session's own database and the backend serving it.</summary>
+    private static async Task<(
+        DmsInstanceIdentity.Postgresql Instance,
+        DmsServerSessionId Session,
+        bool TrustedOwner
+    )> ReadSessionIdentityAsync(NpgsqlConnection connection, CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = new(_sessionIdentityQuery, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The session identity query returned no row.");
+        }
+
+        uint oid = await reader.GetFieldValueAsync<uint>(0, cancellationToken);
+        string claim = await ClaimOfAsync(reader, 1, cancellationToken);
+        long pid = reader.GetInt32(2);
+        DateTimeOffset backendStart = ToUtc(await reader.GetFieldValueAsync<DateTime>(3, cancellationToken));
+        return (
+            new DmsInstanceIdentity.Postgresql(oid, claim),
+            new DmsServerSessionId(pid, backendStart),
+            reader.GetBoolean(4)
+        );
+    }
+
+    /// <summary>Whether <paramref name="guardQuery"/> (<see cref="UntrustedRelationsQuery"/>) lists any relation.</summary>
+    private static async Task<bool> HasUntrustedRelationAsync(
+        NpgsqlConnection connection,
+        string guardQuery,
+        CancellationToken cancellationToken
+    ) =>
+        (await ReadRowsAsync(connection, guardQuery, reader => reader.GetString(0), cancellationToken)).Count
+        > 0;
+
+    private static async Task<DmsEffectiveSchemaRead> ReadEffectiveSchemaAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        List<DmsEffectiveSchemaRead.Found?> rows;
+        try
+        {
+            rows = await ReadRowsAsync(
+                connection,
+                PostgresqlInventoryQueries.EffectiveSchemaRows,
+                EffectiveSchemaRowOf,
+                cancellationToken
+            );
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsMissingRelation(exception.SqlState))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.TableMissing);
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsMissingColumn(exception.SqlState))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ColumnMissing);
+        }
+
+        if (rows.Exists(row => row is null))
+        {
+            return new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.ValueInvalid);
+        }
+
+        return rows.Count switch
+        {
+            0 => new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.NoRows),
+            1 => rows[0]!,
+            _ => new DmsEffectiveSchemaRead.Invalid(DmsEffectiveSchemaReadProblem.MultipleRows),
+        };
+    }
+
+    /// <summary>
+    /// One <c>dms.EffectiveSchema</c> row in the contract's types, or null when a value is NULL or a column's type
+    /// is not the contract's. The row is already read, and the shape is checked before any typed getter runs, so a
+    /// malformed row raises nothing and a failure of the connection still surfaces from the read itself.
+    /// </summary>
+    private static DmsEffectiveSchemaRead.Found? EffectiveSchemaRowOf(NpgsqlDataReader reader)
+    {
+        for (int ordinal = 0; ordinal < _effectiveSchemaColumnTypes.Length; ordinal++)
+        {
+            if (
+                reader.GetFieldType(ordinal) != _effectiveSchemaColumnTypes[ordinal]
+                || reader.IsDBNull(ordinal)
+            )
+            {
+                return null;
+            }
+        }
+
+        return new DmsEffectiveSchemaRead.Found(
+            reader.GetString(0),
+            reader.GetString(1),
+            reader.GetInt16(2),
+            Convert.ToBase64String(reader.GetFieldValue<byte[]>(3))
+        );
+    }
+
+    /// <summary>
+    /// The Populated predicate, or null when either table it reads is missing. When both exist but the server refuses
+    /// the predicate for their shape (<see cref="PostgresqlErrorClassifier.IsPredicateShapeRefusal"/>), the predicate is
+    /// null and the tables are reported malformed; every other error, cancellation and a lost connection included,
+    /// propagates unchanged.
+    /// </summary>
+    private static async Task<(bool? HasPopulatedDocument, bool TablesMalformed)> ReadPopulatedPredicateAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        bool tablesExist = await ReadScalarAsync<bool>(
+            connection,
+            PostgresqlInventoryQueries.PopulatedPredicateTablesExist,
+            cancellationToken
+        );
+        if (!tablesExist)
+        {
+            return (null, false);
+        }
+
+        try
+        {
+            return (
+                await ReadScalarAsync<bool>(
+                    connection,
+                    PostgresqlInventoryQueries.HasPopulatedDocument,
+                    cancellationToken
+                ),
+                false
+            );
+        }
+        catch (PostgresException exception)
+            when (PostgresqlErrorClassifier.IsPredicateShapeRefusal(exception.SqlState))
+        {
+            return (null, true);
+        }
+    }
+
+    private static async Task<T> ReadScalarAsync<T>(
+        NpgsqlConnection connection,
+        string sql,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlCommand command = new(sql, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("A scalar catalog query returned no row.");
+        }
+
+        return await reader.GetFieldValueAsync<T>(0, cancellationToken);
+    }
+
+    private static async Task<List<T>> ReadRowsAsync<T>(
+        NpgsqlConnection connection,
+        string sql,
+        Func<NpgsqlDataReader, T> project,
+        CancellationToken cancellationToken
+    )
+    {
+        List<T> rows = [];
+        await using NpgsqlCommand command = new(sql, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            rows.Add(project(reader));
+        }
+
+        return rows;
+    }
+
+    private delegate bool TryParseRow<T>(string? row, [NotNullWhen(true)] out T? entry)
+        where T : class;
+
+    /// <summary>Reads a pipe-separated single-column result; a row that does not split as the contract requires is a content-profile violation.</summary>
+    private static async Task<List<T>> ReadPipeRowsAsync<T>(
+        NpgsqlConnection connection,
+        string sql,
+        TryParseRow<T> tryParse,
+        CancellationToken cancellationToken
+    )
+        where T : class
+    {
+        List<string?> rows = await ReadRowsAsync(
+            connection,
+            sql,
+            reader => reader.IsDBNull(0) ? null : reader.GetString(0),
+            cancellationToken
+        );
+        List<T> entries = [];
+        foreach (string? row in rows)
+        {
+            if (!tryParse(row, out T? entry))
+            {
+                throw new DmsProvisioningFailedException(
+                    DmsProvisioningFailure.Create(
+                        DmsProvisioningFailureCode.ContentProfileViolation,
+                        DmsProvisioningDiagnostic.ForOperation(CatalogRowShapeStep)
+                    )
+                );
+            }
+
+            entries.Add(entry);
+        }
+
+        return entries;
+    }
+
+    private static PostgresqlDmsSession RequireSession(DmsSession session)
+    {
+        ArgumentNullException.ThrowIfNull(session);
+        return session as PostgresqlDmsSession
+            ?? throw new ArgumentException(
+                "The PostgreSQL engine reads only sessions it opened.",
+                nameof(session)
+            );
+    }
+
+    /// <summary>The database comment as read; empty when none is set. Foreign databases may carry any text, so it is kept verbatim as stable evidence.</summary>
+    private static async Task<string> ClaimOfAsync(
+        NpgsqlDataReader reader,
+        int ordinal,
+        CancellationToken cancellationToken
+    ) => await reader.IsDBNullAsync(ordinal, cancellationToken) ? string.Empty : reader.GetString(ordinal);
+
+    private static DateTimeOffset ToUtc(DateTime value) =>
+        new(DateTime.SpecifyKind(value, DateTimeKind.Utc), TimeSpan.Zero);
+}

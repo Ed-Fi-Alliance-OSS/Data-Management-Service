@@ -143,6 +143,7 @@ it is not slated for renaming.
 | OTLP log export | DMS and Configuration Service | `OtlpLogging:Enabled` | Switch | `false` | `OtlpLogging__Enabled` |
 | Plugins | DMS and Configuration Service | `Plugins:Allowed` | Configured opt-in | empty | `Plugins__Allowed` |
 | Expired-token cleanup (self-contained identity only) | Configuration Service | `IdentitySettings:TokenCleanup:Enabled` | Switch | `true` | `IdentitySettings__TokenCleanup__Enabled` |
+| DMS data store provisioning from template packages | Configuration Service | `DmsDataStoreProvisioning:Enabled` | Switch; also needs the settings in [DmsDataStoreProvisioning](#dmsdatastoreprovisioning) | `false` | `DmsDataStoreProvisioning__Enabled` |
 | Data store configuration cache refresh | DMS | `CacheSettings:DataStoreCacheRefreshEnabled` | Retained exception switch | `true` | `CacheSettings__DataStoreCacheRefreshEnabled` |
 | Background job worker | Configuration Service | `JobSettings:WorkerEnabled` | Retained exception switch | `true` | `JobSettings__WorkerEnabled` |
 | Recurring job scheduler | Configuration Service | `JobSettings:SchedulerEnabled` | Retained exception switch | `true` | `JobSettings__SchedulerEnabled` |
@@ -151,8 +152,9 @@ it is not slated for renaming.
 The shipped Docker Compose files set some of these from their own variables:
 `DMS_ENABLE_MANAGEMENT_ENDPOINTS`, `DMS_ENABLE_IDENTITY_MANAGEMENT`,
 `CONFIGURATION_SERVICE_IDENTITY_TOKEN_CLEANUP_ENABLED`,
-`CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED`, `CONFIGURATION_SERVICE_JOBS_SCHEDULER_ENABLED`, and
-`CONFIGURATION_SERVICE_JOBS_RETENTION_ENABLED`.
+`CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED`, `CONFIGURATION_SERVICE_JOBS_SCHEDULER_ENABLED`,
+`CONFIGURATION_SERVICE_JOBS_RETENTION_ENABLED`, and
+`CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ENABLED`.
 
 ### Renamed configuration keys
 
@@ -369,6 +371,69 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 | RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
+
+## DmsDataStoreProvisioning
+
+The Configuration Service can create and delete DMS data store databases from signed template packages
+(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The feature is off by default. While
+`Enabled` is `false`, nothing in this section is read or validated, and every provisioning call is refused as
+`FeatureDisabled`. For topologies, server privileges, trust setup, readiness, and recovery, see
+[DMS data store provisioning](./OPERATIONS.md#configuration-service-dms-data-store-provisioning) in the
+operations guide.
+
+When `Enabled` is `true`, the service validates the settings below at startup and refuses to start when one
+is invalid. The message names `DmsDataStoreProvisioning:<Key>` and never shows the value. Problems that depend on the
+environment (an unreachable server, a missing privilege, an unreadable package, a staging directory the
+server cannot see) do not stop the service. They make provisioning `NotReady`, are logged at Critical as
+`DMSPROV-<Code>`, and every provisioning call is refused until the service restarts.
+
+These checks run during startup, before the Configuration Service starts listening for HTTP, so no
+endpoint answers while they run, `/health` included. They resolve the administrative secret, copy and
+hash each allowlisted package (so their duration grows with package size), and probe the target server,
+each bounded by the settings below (`CommandTimeout`, `LockAcquireTimeout`, `SessionTerminationTimeout`).
+Give the container a startup allowance (for example a Kubernetes `startupProbe`, or a longer initial
+delay) that covers those bounds and the time to copy and hash your packages, so a liveness check does not
+restart a host that is still initializing.
+
+Durations use the `[d.]hh:mm:ss` format. Paths marked "CMS host" must be fully qualified on the machine or
+container the Configuration Service runs in.
+
+| Parameter | Description | Default | Accepted values |
+| --- | --- | --- | --- |
+| `Enabled` | Turns provisioning on. | `false` | `true`, `false` |
+| `Provider` | The engine of the server databases are created on: `postgresql` or `mssql`. It is independent of `AppSettings:Datastore`, which selects the Configuration Service's own catalog database; the two may differ. A deployment supports exactly one target provider: an ordinary data store record carries no provider, so one Configuration Service deployment cannot manage data stores on PostgreSQL and on SQL Server at once. Mixed target providers are not supported until the catalog records a provider per data store. | none (required) | `postgresql`, `mssql` (exact) |
+| `AdminConnectionString` | Administrative connection to the target server. May contain `${secret:<name>}` references, resolved by the configured secret provider (see [Secrets](./SECRETS.md)). Never logged. For PostgreSQL only these keys are accepted: `Host`, `Port`, `Username`, `Password`, `Database` (absent or `postgres`), `SSL Mode`, `Root Certificate`, `Timeout`, `Pooling`, `Minimum Pool Size`, `Maximum Pool Size`, `Application Name`. With `SSL Mode` `VerifyCA` or `VerifyFull`, `Root Certificate` is required, because `psql` verifies the server only against that file; with any other `SSL Mode` (an absent one is `Prefer`), `Root Certificate` is refused, because `psql` would verify the server against it while the Configuration Service's own connections do not. With `VerifyCA` or `VerifyFull`, the Configuration Service's own connections and `psql` trust only the PEM certificates in `Root Certificate`, never the operating system's certificate store; `VerifyFull` also requires the server certificate to match the host name. A relative `Root Certificate` path is resolved against the Configuration Service's working directory. The connection string is the only source of the login. `Username` is required for PostgreSQL. `psql` receives only the configured `Password`. When `Password` is omitted, readiness fails with probe `AmbientPassword` if the Configuration Service's own connections would take a password from `PGPASSWORD` or a password file (`PGPASSFILE`, or `.pgpass` in the home directory, `%APPDATA%\postgresql\pgpass.conf` on Windows). Without those sources, passwordless authentication such as `trust` or `peer` works. `psql` never uses GSSAPI encryption (`gssencmode=disable`), so the TLS settings above always apply. GSSAPI (Kerberos) authentication of the administrative login is not supported, because `psql` does not receive the Kerberos credentials: readiness fails with probe `GssAuthentication` when the server authenticates the login that way to `postgres`. Because `pg_hba.conf` is matched per database, each create also checks the staging database itself before `psql` starts, and refuses the create with a permanent `RestoreFailed` (operation `RestoreIntoStaging.GssAuthentication`) when the server authenticates the login to it through GSSAPI. `Host`, `Username`, and `Password`, including resolved secrets, must not contain a line break, which the `psql` password file cannot represent. `Host` must name exactly one server, including when it comes from a resolved secret: every session of an operation must reach the server its lock was taken on, and a host list lets each connection fall over to a different one. A host name whose addresses belong to more than one server is not supported for the same reason. A Unix socket `Host` is accepted. Connect directly to the PostgreSQL server, or through a pooler in session mode that keeps one server backend for each client connection for its whole life; transaction and statement pooling (for example PgBouncer `pool_mode = transaction` or `statement`) are not supported. The per-target lock is a session-level advisory lock, which PgBouncer [does not support in transaction pooling](https://www.pgbouncer.org/features.html), and the service identifies and ends sessions by the server backend that serves them. The service turns Npgsql's own pooling off, which has no effect on an external pooler, and startup does not detect one. | none (required) | A connection string |
+| `AdditionalProtectedDatabaseNames` | Databases on the target server that may never be created over or dropped, in addition to the server's system databases and the Configuration Service's own database, which are always protected. | `[]` | Non-blank names |
+| `TrustPolicyPath` | The trust policy JSON listing the producers whose package attestations are accepted. CMS host. Every operation reads it again, so replace it atomically: write a new file in the same directory and rename it over this one (see [Template package trust](./OPERATIONS.md#template-package-trust)). | none (required) | A file path |
+| `ArtifactDirectory` | Read-only directory holding each allowlisted `<PackageId>.<Version>.nupkg` and its `<PackageId>.<Version>.nupkg.attestation.json`. CMS host. | none (required) | A directory path |
+| `OperationDirectory` | Where each operation creates its private working directory (`dms-provision-<operation id>`, mode `0700`). Must already exist; the service never creates it. Room is needed for a copy of the package and the extracted database artifact. CMS host. On Linux and other Unix hosts the directory and every directory above it must be a real directory (not a symbolic link) owned by `root` or by the Configuration Service user, and writable by its group or by others only with the sticky bit set, as for `/tmp` (`1777`, owned by `root`). Any member of a group that may write a directory can rename entries in it, so group write is not trusted. Otherwise another local account could replace the private directory after it is created, and every operation fails with `StagingFailed` (`OperatorInspectionRequired`, operation `StagePackage.OperationRootUnsafe.<reason>`), as does startup. The service never changes the mode of a directory it did not create. A `umask` of `0002` makes new directories group-writable, so create a dedicated root explicitly, for example `install -d -m 0700 -o <cms user> -g <cms group> /var/lib/dms-provision`, under parents that are not group- or other-writable, and check the path with `namei -l /var/lib/dms-provision`. Omitting the setting uses the process temp directory, normally `/tmp`, which qualifies. Windows is not checked this way; see [SQL Server](./OPERATIONS.md#sql-server) for the access control the operator sets. | the process temp directory | Omit, or a directory path |
+| `Templates:Minimal:PackageId`, `Templates:Minimal:PackageVersion` | The package used for the `Minimal` template. Its manifest must declare `templateKind` `Minimal`. | none (required) | NuGet package id (up to 100 characters); version `major.minor.patch[.revision][-suffix]` |
+| `Templates:Sample:PackageId`, `Templates:Sample:PackageVersion` | The package used for the `Sample` template. Its manifest must declare `templateKind` `Populated`. Must differ from the `Minimal` entry. | none (required) | As above |
+| `Compatibility:DataStandardVersion` | The Data Standard version both packages must declare. It must also be the last segment of both package ids. | none (required) | Dotted numbers, for example `5.2.0` |
+| `Compatibility:EffectiveSchemaHash` | The effective schema hash of the DMS deployment the databases are for. Both packages must declare it. | none (required) | 64 lowercase hex characters |
+| `Compatibility:Projects` | The exact set of resource schemas the DMS deployment serves. Both packages must declare the same set. | none (required) | One or more unique names, including `edfi` |
+| `Compatibility:ApiSchemaFormatVersion` | When set, both packages must declare it. | none | A version string |
+| `Compatibility:RelationalMappingVersion` | When set, both packages must declare it. | none | A version string, for example `v3` |
+| `RestoreTimeout` | The longest one restore may run (one `psql` replay, or one SQL Server `RESTORE`). | `00:30:00` | 1 min – 6 h |
+| `CommandTimeout` | The longest any other administrative command or catalog read may run. | `00:01:00` | 5 s – 10 min |
+| `LockAcquireTimeout` | How long an operation waits for the per-target lock on the target server before failing with `LockTimeout`. | `00:00:05` | 1 s – 60 s |
+| `LockHeartbeatInterval` | How often the session holding a target lock is checked while an operation runs. | `00:00:05` | 1 s – 30 s |
+| `SessionTerminationTimeout` | The longest the service waits to prove a terminated server session is gone. | `00:00:30` | 5 s – 5 min |
+| `OutcomeResolutionAttempts` | Re-reads made to settle a command whose outcome was lost (for example, a dropped connection). | `3` | 1 – 10 |
+| `CleanupAttempts` | Attempts to remove what a failed operation created (staging database, files). | `3` | 1 – 10 |
+| `Postgresql:PsqlPath` | The `psql` executable used to replay PostgreSQL templates. CMS host. | `/usr/bin/psql` | A file path |
+| `Postgresql:MinimumPsqlMajorVersion` | The lowest accepted `psql` major version. It can raise the supported floor but not lower it. | `18` | 18 or more |
+| `Mssql:StagingPath` | The directory the service copies a SQL Server backup into for `RESTORE`. Owned by the Configuration Service user, group shared with the SQL Server service identity, mode `2750`, reached without a symbolic link through directories owned by `root` or the Configuration Service user that only their owner can write, or that carry the sticky bit (see [SQL Server](./OPERATIONS.md#sql-server)). Required for `mssql`. CMS host. | none | A directory path |
+| `Mssql:StagingServerPath` | The same directory as the SQL Server host sees it, in that host's path convention (`/var/opt/...` or `D:\...`). Required for `mssql`. | none | An absolute path |
+| `Mssql:StagingFileMode` | The mode of each staged backup on Unix. Group or other write is refused. Ignored on Windows, where the file takes the access control of the staging directory. | `0640` | Three octal permission digits with an optional leading `0`, such as `640` or `0640`; setuid, setgid, and sticky bits are refused |
+
+In the provided Docker Compose files, `DmsDataStoreProvisioning__<Parameter>` is set from
+`CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_<PARAMETER>`, for example
+`CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ENABLED`. Only the switch, the required settings, and
+`Postgresql:PsqlPath` and `Compatibility:Projects` (first entry, default `edfi`) are passed. Set the optional
+settings, further `Compatibility:Projects` entries (`DmsDataStoreProvisioning__Compatibility__Projects__1`,
+and so on), and timeouts in an overlay. An empty value is not the same as an omitted one: an empty
+`OperationDirectory`, for example, is rejected.
 
 ## SecretsSettings
 

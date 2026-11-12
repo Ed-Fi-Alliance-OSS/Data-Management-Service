@@ -1,0 +1,61 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+
+/// <summary>
+/// The provisioner registered while the feature is disabled: every call returns
+/// <c>Failure(NotReady/FeatureDisabled)</c> and touches nothing. When the feature is enabled the orchestrator
+/// is registered instead and refuses through <see cref="RefusalFor"/> until readiness is <c>Ready</c>
+/// (<c>StartupValidationFailed</c>). Readiness can never be <c>Ready</c> while this
+/// class is the registered provisioner; if it were, that is a registration error and the call throws rather
+/// than pretending to provision.
+/// </summary>
+public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerReadiness readiness)
+    : IDmsDataStoreProvisioner
+{
+    public const string Operation = "Readiness";
+
+    /// <summary>The <c>NotReady</c> failure a call receives under the given readiness (D-2).</summary>
+    public static DmsProvisioningFailure RefusalFor(DmsProvisionerReadiness readiness)
+    {
+        ArgumentNullException.ThrowIfNull(readiness);
+        DmsProvisioningFailureCode code = readiness switch
+        {
+            DmsProvisionerReadiness.Disabled => DmsProvisioningFailureCode.FeatureDisabled,
+            DmsProvisionerReadiness.NotReady => DmsProvisioningFailureCode.StartupValidationFailed,
+            DmsProvisionerReadiness.Ready => throw new InvalidOperationException(
+                "DMS data store provisioning readiness is Ready, but the refusing provisioner is registered instead of the orchestrator."
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(readiness), "Unknown readiness state."),
+        };
+
+        return DmsProvisioningFailure.Create(code, DmsProvisioningDiagnostic.ForOperation(Operation));
+    }
+
+    public Task<DmsArtifactResolution> ResolveArtifactAsync(
+        DmsDatabaseTemplate template,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult<DmsArtifactResolution>(
+            new DmsArtifactResolution.Failure(RefusalFor(readiness.Current), DmsCleanupReport.Clean)
+        );
+
+    public Task<DmsDataStoreCreateResult> CreateAsync(
+        DmsDataStoreCreateRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult<DmsDataStoreCreateResult>(
+            new DmsDataStoreCreateResult.Failure(RefusalFor(readiness.Current), DmsCleanupReport.Clean)
+        );
+
+    public Task<DmsDataStoreDeleteResult> DeleteAsync(
+        DmsDataStoreDeleteRequest request,
+        CancellationToken cancellationToken
+    ) =>
+        Task.FromResult<DmsDataStoreDeleteResult>(
+            new DmsDataStoreDeleteResult.Failure(RefusalFor(readiness.Current), DmsCleanupReport.Clean)
+        );
+}

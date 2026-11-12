@@ -1,0 +1,379 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Buffers.Binary;
+using System.Data;
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using Microsoft.Extensions.Logging;
+using Npgsql;
+
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+
+/// <summary>
+/// The PostgreSQL holder session (D-12): a dedicated unpooled connection to the maintenance database, named
+/// <c>dmsprov:&lt;op&gt;</c>, that holds the target's session-level advisory lock for the operation's
+/// lifetime. The provider-neutral base supplies the execution gate, the heartbeat schedule, loss declaration,
+/// and disposal; this class supplies what only the connection knows: the lock key, the acquisition under
+/// <c>lock_timeout</c>, the <c>SELECT 1</c> probe, the connection-failure classification, the broken-state
+/// read, and the release (<c>pg_advisory_unlock</c>, then close). A session-level advisory lock cannot leave a
+/// live session, so a probe that completes proves the lock is still held, and the lock is gone exactly when
+/// the session is. The physical connection is never replaced or reopened.
+/// </summary>
+internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
+{
+    /// <summary>The lock resource prefix of D-12; the key is derived from it and the lowercased target name.</summary>
+    public const string LockResourcePrefix = "dms-provision-target:v1:";
+
+    /// <summary>The <c>Diagnostic.Operation</c> of an acquisition that failed for an infrastructure reason.</summary>
+    public const string AcquireStep = "AcquireTargetLock";
+
+    /// <summary>
+    /// The resource the readiness lock probe takes: <c>dms-provision-target:v1:__probe__</c>. No
+    /// target name can produce it, because a target name starts with a letter.
+    /// </summary>
+    public const string ProbeResource = "__probe__";
+
+    private const string SessionQuery =
+        "SELECT a.pid, a.backend_start FROM pg_catalog.pg_stat_activity a WHERE a.pid = pg_catalog.pg_backend_pid();";
+
+    private const string SetLockTimeoutStatement =
+        "SELECT pg_catalog.set_config('lock_timeout', @milliseconds, false);";
+
+    private const string ResetLockTimeoutStatement =
+        "SELECT pg_catalog.set_config('lock_timeout', '0', false);";
+
+    private const string LockStatement = "SELECT pg_catalog.pg_advisory_lock(@key);";
+
+    private const string UnlockStatement = "SELECT pg_catalog.pg_advisory_unlock(@key);";
+
+    private const string ProbeStatement = "SELECT 1;";
+
+    private readonly NpgsqlConnection _connection;
+    private readonly TimeSpan _commandTimeout;
+    private readonly TimeProvider _timeProvider;
+
+    private PostgresqlTargetLockSession(
+        NpgsqlConnection connection,
+        long key,
+        DmsServerSessionId session,
+        TimeSpan heartbeatInterval,
+        TimeSpan commandTimeout,
+        TimeProvider timeProvider,
+        ILogger logger
+    )
+        : base(session, heartbeatInterval, commandTimeout, timeProvider, logger)
+    {
+        _connection = connection;
+        Key = key;
+        _commandTimeout = commandTimeout;
+        _timeProvider = timeProvider;
+    }
+
+    /// <summary>The 64-bit advisory lock key this session holds.</summary>
+    public long Key { get; }
+
+    /// <summary>The private connection, for the commands the engine issues inside <see cref="DmsTargetLockHolder.RunAsync{T}"/> only.</summary>
+    public NpgsqlConnection Connection => _connection;
+
+    /// <summary>
+    /// The advisory lock key of D-12: the first eight bytes of the SHA-256 of
+    /// <see cref="LockResourcePrefix"/> plus the lowercased target name, read big-endian as a signed 64-bit
+    /// integer. In <c>pg_locks</c> it appears as <c>classid</c> (the high 32 bits) and <c>objid</c> (the low
+    /// 32 bits) with <c>objsubid = 1</c>, which is how the operator procedure finds the holder.
+    /// </summary>
+    public static long LockKeyFor(DmsTargetDatabaseName name) =>
+        LockKeyForResource(name.Value.ToLowerInvariant());
+
+    /// <summary>The key of the readiness lock probe's resource, <see cref="ProbeResource"/>.</summary>
+    public static long ProbeLockKey => LockKeyForResource(ProbeResource);
+
+    private static long LockKeyForResource(string lowercasedResource)
+    {
+        byte[] resource = Encoding.UTF8.GetBytes(LockResourcePrefix + lowercasedResource);
+        Span<byte> hash = stackalloc byte[SHA256.HashSizeInBytes];
+        SHA256.HashData(resource, hash);
+        return BinaryPrimitives.ReadInt64BigEndian(hash);
+    }
+
+    /// <summary>
+    /// Opens the holder session and takes the lock, waiting at most <paramref name="acquireTimeout"/> on the
+    /// server (<c>lock_timeout</c>, in force for the lock statement only). A lock another session still holds
+    /// when the budget ends is <see cref="DmsTargetLockResult.Timeout"/>; that holder is never identified or
+    /// terminated. A definite refusal of the login or the lock request (<c>42501</c> or class <c>28</c>) is
+    /// <see cref="DmsTargetLockResult.AccessDenied"/>; any other failure closes the connection and is
+    /// <see cref="DmsTargetLockResult.Failure"/>; cancellation closes it and propagates. On success the heartbeat
+    /// is started before the holder is returned.
+    /// </summary>
+    public static Task<DmsTargetLockResult> AcquireAsync(
+        PostgresqlAdminConnection adminConnection,
+        DmsTargetDatabaseName name,
+        DmsOperationId operation,
+        TimeSpan acquireTimeout,
+        TimeSpan heartbeatInterval,
+        TimeProvider timeProvider,
+        ILogger logger,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireAsync(
+            adminConnection,
+            name,
+            operation,
+            acquireTimeout,
+            heartbeatInterval,
+            timeProvider,
+            logger,
+            connectionOpened: null,
+            cancellationToken
+        );
+
+    /// <summary>
+    /// The acquisition with a test seam: <paramref name="connectionOpened"/> receives the holder connection as
+    /// soon as it is open, before the lock is attempted, so a test can keep a reference and prove the
+    /// connection closed on every path that returns without the lock. The open is bounded by
+    /// <c>CommandTimeout</c>: <c>lock_timeout</c> and the orchestrator's step deadlines start only once the
+    /// connection is open, and with <c>Timeout=0</c> a caller that never cancels would otherwise wait for a
+    /// stalled login forever.
+    /// </summary>
+    internal static Task<DmsTargetLockResult> AcquireAsync(
+        PostgresqlAdminConnection adminConnection,
+        DmsTargetDatabaseName name,
+        DmsOperationId operation,
+        TimeSpan acquireTimeout,
+        TimeSpan heartbeatInterval,
+        TimeProvider timeProvider,
+        ILogger logger,
+        Action<NpgsqlConnection>? connectionOpened,
+        CancellationToken cancellationToken
+    ) =>
+        AcquireKeyAsync(
+            adminConnection,
+            LockKeyFor(name),
+            operation,
+            acquireTimeout,
+            heartbeatInterval,
+            timeProvider,
+            logger,
+            connectionOpened,
+            cancellationToken,
+            openBound: adminConnection.CommandTimeout
+        );
+
+    /// <summary>
+    /// The acquisition for an already derived key: a target's (<see cref="LockKeyFor"/>) or the readiness
+    /// probe's (<see cref="ProbeLockKey"/>), which no target name can reach. The target acquisition and the
+    /// readiness probe pass <paramref name="openBound"/>, so the connection open ends at that bound
+    /// (<see cref="DmsBoundedConnectionOpen"/>) and a stalled login is a <see cref="DmsTargetLockResult.Failure"/>.
+    /// </summary>
+    internal static async Task<DmsTargetLockResult> AcquireKeyAsync(
+        PostgresqlAdminConnection adminConnection,
+        long key,
+        DmsOperationId operation,
+        TimeSpan acquireTimeout,
+        TimeSpan heartbeatInterval,
+        TimeProvider timeProvider,
+        ILogger logger,
+        Action<NpgsqlConnection>? connectionOpened,
+        CancellationToken cancellationToken,
+        TimeSpan? openBound = null
+    )
+    {
+        ArgumentNullException.ThrowIfNull(adminConnection);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(acquireTimeout, TimeSpan.Zero);
+        ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(heartbeatInterval, TimeSpan.Zero);
+        ArgumentNullException.ThrowIfNull(timeProvider);
+        ArgumentNullException.ThrowIfNull(logger);
+
+        NpgsqlConnection connection;
+        try
+        {
+            connection = openBound is { } bound
+                ? await DmsBoundedConnectionOpen.OpenAsync(
+                    token =>
+                        adminConnection.OpenAsync(
+                            PostgresqlAdminConnection.MaintenanceDatabaseName,
+                            operation.HolderApplicationName,
+                            token
+                        ),
+                    bound,
+                    timeProvider,
+                    cancellationToken
+                )
+                : await adminConnection.OpenAsync(
+                    PostgresqlAdminConnection.MaintenanceDatabaseName,
+                    operation.HolderApplicationName,
+                    cancellationToken
+                );
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return Failure(exception);
+        }
+
+        connectionOpened?.Invoke(connection);
+        bool held = false;
+        try
+        {
+            DmsServerSessionId session = await ReadSessionAsync(connection, cancellationToken);
+            if (
+                !await TryLockAsync(
+                    connection,
+                    key,
+                    acquireTimeout,
+                    adminConnection.CommandTimeout,
+                    cancellationToken
+                )
+            )
+            {
+                return new DmsTargetLockResult.Timeout();
+            }
+
+            PostgresqlTargetLockSession holder = new(
+                connection,
+                key,
+                session,
+                heartbeatInterval,
+                adminConnection.CommandTimeout,
+                timeProvider,
+                logger
+            );
+            held = true;
+            holder.StartHeartbeat();
+            return new DmsTargetLockResult.Acquired(holder);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return Failure(exception);
+        }
+        finally
+        {
+            if (!held)
+            {
+                await connection.DisposeAsync();
+            }
+        }
+    }
+
+    /// <summary>
+    /// Runs the heartbeat's probe once, now, through the execution gate under <c>CommandTimeout</c>, with the
+    /// heartbeat's loss rules: a connection failure declares the holder lost. The readiness lock probe
+    /// uses it to prove one heartbeat on a fresh holder without waiting for the timer.
+    /// </summary>
+    internal Task<bool> ProbeOnceAsync(CancellationToken cancellationToken) =>
+        RunAsync(ProbeAsync, _commandTimeout, cancellationToken);
+
+    protected override async Task<bool> ProbeAsync(CancellationToken cancellationToken)
+    {
+        await using NpgsqlCommand command = new(ProbeStatement, _connection);
+        await command.ExecuteScalarAsync(cancellationToken);
+        return true;
+    }
+
+    protected override bool IsConnectionFailure(Exception exception) =>
+        PostgresqlErrorClassifier.IsConnectionFailure(exception);
+
+    // FullState is a plain read of the connector's state and never throws.
+    protected override bool IsConnectionBroken => (_connection.FullState & ConnectionState.Broken) != 0;
+
+    /// <summary>Unlocks while the session is still believed alive, then closes the connection either way; the close alone releases a session-level lock.</summary>
+    protected override async ValueTask ReleaseAsync()
+    {
+        try
+        {
+            if (!IsLost && !IsConnectionBroken)
+            {
+                using CancellationTokenSource deadline = new(_commandTimeout, _timeProvider);
+                await using NpgsqlCommand command = new(UnlockStatement, _connection);
+                command.Parameters.AddWithValue("key", Key);
+                await command.ExecuteScalarAsync(deadline.Token);
+            }
+        }
+        finally
+        {
+            await _connection.DisposeAsync();
+        }
+    }
+
+    /// <summary>
+    /// What an acquisition that raised <paramref name="exception"/> held: nothing, either because the server
+    /// definitely refused the login or the lock request for lack of access (<c>42501</c>, class <c>28</c>), which
+    /// retrying cannot change, or because of any other failure. Only the type chain and the SQLSTATE are kept.
+    /// </summary>
+    private static DmsTargetLockResult Failure(Exception exception)
+    {
+        DmsProvisioningDiagnostic diagnostic = PostgresqlErrorClassifier.Diagnostic(exception, AcquireStep);
+        return
+            PostgresqlErrorClassifier.SqlStateOf(exception) is { } sqlState
+            && PostgresqlErrorClassifier.IsAccessRefusal(sqlState)
+            ? new DmsTargetLockResult.AccessDenied(diagnostic)
+            : new DmsTargetLockResult.Failure(diagnostic);
+    }
+
+    private static async Task<DmsServerSessionId> ReadSessionAsync(
+        NpgsqlConnection connection,
+        CancellationToken cancellationToken
+    )
+    {
+        await using NpgsqlCommand command = new(SessionQuery, connection);
+        await using NpgsqlDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
+        if (!await reader.ReadAsync(cancellationToken))
+        {
+            throw new InvalidOperationException("The holder session query returned no row.");
+        }
+
+        long pid = reader.GetInt32(0);
+        DateTime backendStart = await reader.GetFieldValueAsync<DateTime>(1, cancellationToken);
+        return new DmsServerSessionId(
+            pid,
+            new DateTimeOffset(DateTime.SpecifyKind(backendStart, DateTimeKind.Utc), TimeSpan.Zero)
+        );
+    }
+
+    /// <summary>
+    /// <c>lock_timeout</c> bounds the wait on the server and is reset once the lock is held, so later holder
+    /// commands wait under their own deadlines. The driver's timeout on the lock statement is widened to the
+    /// lock budget plus the command timeout: it stays a backstop for an unresponsive server rather than the
+    /// first bound to fire.
+    /// </summary>
+    private static async Task<bool> TryLockAsync(
+        NpgsqlConnection connection,
+        long key,
+        TimeSpan acquireTimeout,
+        TimeSpan commandTimeout,
+        CancellationToken cancellationToken
+    )
+    {
+        await using (NpgsqlCommand setTimeout = new(SetLockTimeoutStatement, connection))
+        {
+            setTimeout.Parameters.AddWithValue("milliseconds", MillisecondsText(acquireTimeout));
+            await setTimeout.ExecuteScalarAsync(cancellationToken);
+        }
+
+        try
+        {
+            await using NpgsqlCommand lockCommand = new(LockStatement, connection)
+            {
+                CommandTimeout = PostgresqlAdminConnection.DriverTimeoutSeconds(
+                    acquireTimeout + commandTimeout
+                ),
+            };
+            lockCommand.Parameters.AddWithValue("key", key);
+            await lockCommand.ExecuteScalarAsync(cancellationToken);
+        }
+        catch (PostgresException exception) when (exception.SqlState == PostgresErrorCodes.LockNotAvailable)
+        {
+            return false;
+        }
+
+        await using NpgsqlCommand resetTimeout = new(ResetLockTimeoutStatement, connection);
+        await resetTimeout.ExecuteScalarAsync(cancellationToken);
+        return true;
+    }
+
+    private static string MillisecondsText(TimeSpan timeout) =>
+        Math.Max(1, (long)Math.Ceiling(timeout.TotalMilliseconds)).ToString(CultureInfo.InvariantCulture);
+}

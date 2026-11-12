@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "payloadB64": "eyJhdHRlc3RhdGlvblZlcnNpb24iOjEsInBhY2thZ2VJZCI6IkVkRmkuQXBpLk1pbmltYWwuVGVtcGxhdGUuUG9zdGdyZVNxbC41LjIuMCIsInBhY2thZ2VWZXJzaW9uIjoiMC4wLjEtZG1zMTQzOC1wYXJpdHkiLCJwYWNrYWdlU2hhMjU2IjoiMzYwYzAyMDIxM2I1ZmEyMzRiMzgyOGFhYjQ4MjVhMGE3NjA2N2Q5YTcxMzg2YTk4MWZmNGJmMDFkZTc0MWJjMSIsInByb2R1Y2VyIjoiZG1zLTE0MzgtcGFyaXR5IiwiY3JlYXRlZFV0YyI6IjIwMjYtMTEtMDZUMDE6NTY6MTUuMDk5NzAwMloifQ==",
+  "signature": {
+    "algorithm": "ECDSA_P256_SHA256",
+    "keyId": "403ecf82e45e2ed4eea4f54742d846faf9b35afd2dbd4bf361bf9cc86e507f8f",
+    "valueB64": "HS46XtuN8iJXvDtHUa5UXox0SlX7VoWoR2zJB2B3Bd+agcdEeMdL9g7hUvZeOyBAWO2/rNVsTJ5Yt++BQeq90w=="
+  }
+}

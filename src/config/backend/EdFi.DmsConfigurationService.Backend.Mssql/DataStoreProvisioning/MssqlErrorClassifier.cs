@@ -1,0 +1,299 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Globalization;
+using System.Net.Sockets;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using Microsoft.Data.SqlClient;
+
+namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+
+/// <summary>
+/// The only reader of <see cref="SqlException"/> in the provisioner. It keeps the error number and severity
+/// of the first SQL Server error in an exception chain and never reads the message, procedure, server, or
+/// any field that can carry a value, and it classifies an error number by what it proves about the
+/// command's effect: a server-reported error whose number rules out a commit is a definite failure;
+/// a connection-class error, a client timeout, or a cancellation leaves the outcome in doubt.
+/// </summary>
+internal static class MssqlErrorClassifier
+{
+    /// <summary>SqlClient's own number for a command that exceeded its client-side timeout: sent, outcome unknown.</summary>
+    public const int ClientTimeout = -2;
+
+    /// <summary>SqlClient's number for a request it cancelled after sending (<c>Operation cancelled by user</c>).</summary>
+    public const int ClientCancelled = 0;
+
+    /// <summary>Operand type clash: two compared values have types with no conversion between them (for example <c>uniqueidentifier</c> and <c>smallint</c>).</summary>
+    public const int OperandTypeClash = 206;
+
+    /// <summary>Invalid column name: a table the query names lacks a column it selects.</summary>
+    public const int InvalidColumnName = 207;
+
+    public const int InvalidObjectName = 208;
+    public const int ObjectPermissionDenied = 229;
+    public const int ColumnPermissionDenied = 230;
+    public const int DatabasePermissionDenied = 262;
+    public const int NoPermissionForAction = 297;
+    public const int ServerPermissionDenied = 300;
+
+    /// <summary>Explicit conversion from one data type to another is not allowed (for example <c>image</c> or <c>rowversion</c> to <c>nvarchar</c>).</summary>
+    public const int ExplicitConversionNotAllowed = 529;
+
+    /// <summary>There is insufficient system memory in a resource pool to run the query; short-lived memory pressure clears on its own.</summary>
+    public const int InsufficientMemory = 701;
+
+    public const int DatabaseDoesNotExist = 911;
+    public const int PrincipalCannotAccessDatabase = 916;
+
+    /// <summary>The session was chosen as a deadlock victim and its transaction rolled back.</summary>
+    public const int DeadlockVictim = 1205;
+
+    /// <summary>A database in single-user mode whose one slot another session holds refuses this use of it.</summary>
+    public const int DatabaseSingleUserOpen = 924;
+
+    public const int DatabaseAlreadyExists = 1801;
+    public const int DatabaseInUseForDrop = 3702;
+    public const int DatabaseInUseForRestore = 3101;
+    public const int RestoreTerminatedAbnormally = 3013;
+    public const int RestoreNoPermission = 3110;
+    public const int BackupDeviceCannotOpen = 3201;
+    public const int BackupMediaFamilyMalformed = 3241;
+    public const int BackupNotAValidBackupSet = 3242;
+
+    /// <summary>The volume on the device is empty: what <c>RESTORE HEADERONLY</c> reports for a zero-byte file it opened.</summary>
+    public const int BackupVolumeEmpty = 3254;
+
+    public const int BatchAborted = 3980;
+    public const int CannotOpenRequestedDatabase = 4060;
+    public const int AlterDatabaseNoPermission = 5011;
+    public const int DatabaseNotExclusivelyLocked = 5030;
+    public const int AlterDatabaseLockNotPlaced = 5061;
+
+    /// <summary>An option of a database in single-user mode cannot change while a user is connected to it.</summary>
+    public const int AlterDatabaseSingleUserConnected = 5064;
+
+    public const int KillNoPermission = 6102;
+    public const int KillNoSuchSession = 6106;
+
+    /// <summary>An argument's data type is invalid for the function or operator it is passed to (for example <c>xml</c> under <c>LIKE</c>).</summary>
+    public const int ArgumentDataTypeInvalid = 8116;
+
+    public const int ActionNoPermission = 15247;
+    public const int LoginFailed = 18456;
+
+    /// <summary>A login refused because the account is disabled; the client sees this number, not <see cref="LoginFailed"/>.</summary>
+    public const int LoginAccountDisabled = 18470;
+
+    /// <summary>The lowest severity at which SQL Server ends the session: the connection is gone.</summary>
+    public const byte FatalSeverity = 20;
+
+    /// <summary>
+    /// Client-side transport failures SqlClient reports as error numbers (named pipes, TCP, SNI): the
+    /// connection never existed or is gone.
+    /// </summary>
+    private static readonly HashSet<int> _transportNumbers =
+    [
+        -1,
+        2,
+        40,
+        53,
+        64,
+        121,
+        233,
+        10053,
+        10054,
+        10060,
+        11001,
+    ];
+
+    /// <summary>The first <see cref="SqlException"/> in the chain, if any.</summary>
+    private static SqlException? FirstSqlException(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is SqlException sql)
+            {
+                return sql;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>The number of the first SQL Server error in the chain (its first reported error), or null when there is none.</summary>
+    public static int? ErrorNumberOf(Exception exception) => FirstSqlException(exception)?.Number;
+
+    /// <summary>
+    /// <see cref="FailureClassOf(int, byte)"/> for the first SQL Server error in the chain; null, an outcome in doubt,
+    /// when there is none.
+    /// </summary>
+    public static DmsCommandFailureClass? FailureClassOf(Exception exception) =>
+        FirstSqlException(exception) is { } sql ? FailureClassOf(sql.Number, sql.Class) : null;
+
+    /// <summary>
+    /// Every error number the first <see cref="SqlException"/> in the chain carries, in the order the server sent
+    /// them (<c>RESTORE</c> reports the specific error, then <c>3013</c>); empty when there is none.
+    /// </summary>
+    public static IReadOnlyList<int> ErrorNumbersOf(Exception exception) =>
+        FirstSqlException(exception) is { } sql
+            ? [.. sql.Errors.Cast<SqlError>().Select(error => error.Number)]
+            : [];
+
+    /// <summary>
+    /// Whether an error with this number and severity proves the session's connection failed (D-12 loss
+    /// evidence): a severity that ends the session, or a client-side transport failure.
+    /// </summary>
+    public static bool IsConnectionClass(int number, byte severity) =>
+        severity >= FatalSeverity || _transportNumbers.Contains(number);
+
+    /// <summary>
+    /// Whether <paramref name="exception"/> proves the session's connection failed: the first SQL Server error
+    /// in the chain is connection class, or, when there is none, a transport failure (<see cref="IOException"/>,
+    /// <see cref="SocketException"/>) sits anywhere in the chain.
+    /// </summary>
+    public static bool IsConnectionFailure(Exception exception)
+    {
+        SqlException? sql = FirstSqlException(exception);
+        if (sql is not null)
+        {
+            return IsConnectionClass(sql.Number, sql.Class);
+        }
+
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is IOException or SocketException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The missing-object error a catalog read maps to "table missing": an invalid object name, which covers a missing schema too.</summary>
+    public static bool IsMissingRelation(int number) => number == InvalidObjectName;
+
+    /// <summary>
+    /// The error a read of a table that exists maps to "column missing": an invalid column name (<c>207</c>), raised
+    /// when the query is compiled, in its own response. It says nothing about the connection, so it is never loss.
+    /// </summary>
+    public static bool IsMissingColumn(int number) => number == InvalidColumnName;
+
+    /// <summary>
+    /// The error a read maps to "column type invalid": the column's type cannot be converted as the query converts it
+    /// (<c>529</c>), raised when the query is compiled and for any row content, so the column's type, not its data,
+    /// is the defect.
+    /// </summary>
+    public static bool IsConversionRefused(int number) => number == ExplicitConversionNotAllowed;
+
+    /// <summary>
+    /// The errors the Populated predicate maps to "its tables are malformed": an invalid column name (<c>207</c>), an
+    /// operand type clash between the join keys (<c>206</c>), or a name type <c>LIKE</c> does not accept (<c>8116</c>).
+    /// Each is raised when the query is compiled, in its own response, whatever rows the tables hold, and says nothing
+    /// about the connection. Type mismatches SQL Server resolves by implicit conversion raise nothing, and a conversion
+    /// that fails only for some row (<c>245</c>) depends on data, so neither is here.
+    /// </summary>
+    public static bool IsPredicateShapeRefusal(int number) =>
+        number is InvalidColumnName or OperandTypeClash or ArgumentDataTypeInvalid;
+
+    /// <summary>
+    /// A definite refusal for lack of a privilege or of access: a denied permission on an object, column,
+    /// database, or server; a principal that cannot access the database; a failed login or a disabled login
+    /// account. Nothing was read or
+    /// opened, and retrying without an operator changing a grant cannot succeed. <c>4060</c> is not here: it
+    /// also reports a database that does not exist, so a caller resolves it by inspection.
+    /// </summary>
+    public static bool IsAccessRefusal(int number) =>
+        number
+            is ObjectPermissionDenied
+                or ColumnPermissionDenied
+                or DatabasePermissionDenied
+                or NoPermissionForAction
+                or ServerPermissionDenied
+                or PrincipalCannotAccessDatabase
+                or RestoreNoPermission
+                or AlterDatabaseNoPermission
+                or KillNoPermission
+                or ActionNoPermission
+                or LoginFailed
+                or LoginAccountDisabled;
+
+    /// <summary>
+    /// Whether a definite rejection names a condition that clears without any change to the request, the artifact, or
+    /// the server's configuration, so the same request can succeed later: the session was a deadlock victim
+    /// (<c>1205</c>), or the server was short of memory (<c>701</c>, which Microsoft documents as able to come from
+    /// short-lived memory pressure that resolves without intervention), among <paramref name="errorNumbers"/>. This
+    /// answers only whether a retry can succeed; whether the command committed is
+    /// <see cref="FailureClassOf(int, byte)"/>'s question, and both are definite there at a nonfatal severity.
+    /// </summary>
+    public static bool IsRetryableRejection(IReadOnlyList<int> errorNumbers)
+    {
+        ArgumentNullException.ThrowIfNull(errorNumbers);
+        return errorNumbers.Contains(DeadlockVictim) || errorNumbers.Contains(InsufficientMemory);
+    }
+
+    /// <summary><see cref="IsRetryableRejection(IReadOnlyList{int})"/> over the error numbers of <paramref name="exception"/>; false when it carries none.</summary>
+    public static bool IsRetryableRejection(Exception exception) =>
+        IsRetryableRejection(ErrorNumbersOf(exception));
+
+    /// <summary>
+    /// The failure class an error proves, or null when the outcome is in doubt: a connection-class
+    /// error, a client timeout (<c>-2</c>), a client cancellation after send (<c>0</c>), or an aborted batch
+    /// (<c>3980</c>). Any other server-reported error came in the command's own response as a rejection of
+    /// that command, which is treated as proof of no commit; a number that does not say so is added here,
+    /// never to the definite set.
+    /// </summary>
+    public static DmsCommandFailureClass? FailureClassOf(int number, byte severity)
+    {
+        if (IsConnectionClass(number, severity) || number is ClientTimeout or ClientCancelled or BatchAborted)
+        {
+            return null;
+        }
+
+        if (IsAccessRefusal(number))
+        {
+            return DmsCommandFailureClass.PrivilegeMissing;
+        }
+
+        return number switch
+        {
+            DatabaseAlreadyExists => DmsCommandFailureClass.DuplicateName,
+            AlterDatabaseLockNotPlaced
+            or DatabaseNotExclusivelyLocked
+            or AlterDatabaseSingleUserConnected
+            or DatabaseSingleUserOpen
+            or DatabaseInUseForDrop
+            or DatabaseInUseForRestore => DmsCommandFailureClass.ObjectInUse,
+            DatabaseDoesNotExist or InvalidObjectName or KillNoSuchSession =>
+                DmsCommandFailureClass.DoesNotExist,
+            _ => DmsCommandFailureClass.Rejected,
+        };
+    }
+
+    /// <summary>A diagnostic carrying the exception's type chain and its first SQL Server error number, nothing else.</summary>
+    public static DmsProvisioningDiagnostic Diagnostic(Exception exception, string operation) =>
+        DmsProvisioningDiagnostic.From(
+            exception,
+            operation,
+            ErrorNumberOf(exception)?.ToString(CultureInfo.InvariantCulture)
+        );
+
+    /// <summary>
+    /// The definite failure a statement's exception proves, or null when the statement's outcome is in doubt. Only an
+    /// exception that is itself a <see cref="SqlException"/> can prove one, and only when
+    /// <see cref="FailureClassOf(Exception)"/> names a class; a SQL Server error wrapped in another exception, a
+    /// cancellation, and every error that class leaves in doubt are null. The failure carries
+    /// <see cref="Diagnostic(Exception, string)"/> under <paramref name="operation"/> and is retryable exactly when
+    /// <see cref="IsRetryableRejection(Exception)"/> says so.
+    /// </summary>
+    public static DmsCommandFailure? DefiniteFailureOf(Exception exception, string operation) =>
+        exception is SqlException && FailureClassOf(exception) is { } failureClass
+            ? new DmsCommandFailure(failureClass, Diagnostic(exception, operation))
+            {
+                Retryable = IsRetryableRejection(exception),
+            }
+            : null;
+}
