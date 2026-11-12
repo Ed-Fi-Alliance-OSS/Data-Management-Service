@@ -160,7 +160,7 @@ public class DataStoreOwnershipPublicationTests
         A.CallTo(() =>
                 tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
             )
-            .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
+            .Returns("valid-token");
 
         HttpClient httpClient = new(handler) { BaseAddress = new Uri("https://api.example.com/") };
 
@@ -701,7 +701,7 @@ public class DataStoreOwnershipPublicationTests
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns(new ConfigurationServiceTokenLease("valid-token", 1));
+                .Returns("valid-token");
 
             HttpClient httpClient = new(
                 HandlerFor(

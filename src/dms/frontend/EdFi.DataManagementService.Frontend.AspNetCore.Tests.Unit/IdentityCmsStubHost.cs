@@ -268,11 +268,6 @@ internal static class IdentityCmsStubHost
             new HttpClient(responseHandler) { BaseAddress = new Uri("https://cms.example.com/") }
         );
 
-        // The token grant has its own client and, as in production, no response handler.
-        var grantClient = new ConfigurationServiceGrantClient(
-            new HttpClient(cms, disposeHandler: false) { BaseAddress = new Uri("https://cms.example.com/") }
-        );
-
         IJwtValidationService jwtValidationService = CreateJwtValidationService();
 
         var identityService = A.Fake<IIdentityService>();
@@ -310,13 +305,11 @@ internal static class IdentityCmsStubHost
 
                 services.Replace(ServiceDescriptor.Scoped<IIdentityService>(_ => identityService));
 
-                // Every CMS-facing production provider resolves one of these clients, so the token
-                // handler, the data-store provider, the application provider and the claim-set provider
-                // all travel over the stub.
+                // Every CMS-facing production provider resolves this client, so the token handler, the
+                // data-store provider, the application provider and the claim-set provider all travel
+                // over the stub.
                 services.RemoveAll<ConfigurationServiceApiClient>();
                 services.AddSingleton(apiClient);
-                services.RemoveAll<ConfigurationServiceGrantClient>();
-                services.AddSingleton(grantClient);
 
                 // The identity snapshot reads tenants through the production CMS data-store provider
                 // rather than the host-wide stand-in above.

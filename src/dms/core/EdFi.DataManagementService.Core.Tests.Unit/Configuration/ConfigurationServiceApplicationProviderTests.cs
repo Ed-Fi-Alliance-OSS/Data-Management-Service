@@ -535,7 +535,7 @@ public class Given_ConfigurationServiceApplicationProvider
                         A<CancellationToken>._
                     )
                 )
-                .Returns(new ConfigurationServiceTokenLease("cms-token", 1));
+                .Returns("cms-token");
 
             return new ConfigurationServiceApplicationProvider(
                 new ConfigurationServiceApiClient(httpClient),

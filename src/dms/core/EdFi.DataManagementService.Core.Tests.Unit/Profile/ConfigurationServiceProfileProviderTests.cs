@@ -199,17 +199,7 @@ internal sealed class CmsProfileHttpDouble : HttpMessageHandler
             A.CallTo(() =>
                     tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
                 )
-                .Returns(new ConfigurationServiceTokenLease("cms-token", 1));
-            A.CallTo(() =>
-                    tokenHandler.RefreshRejectedTokenAsync(
-                        A<ConfigurationServiceTokenLease>._,
-                        A<string>._,
-                        A<string>._,
-                        A<string>._,
-                        A<CancellationToken>._
-                    )
-                )
-                .Returns(new ConfigurationServiceTokenLease("cms-token-replacement", 2));
+                .Returns("cms-token");
         }
 
         return new ConfigurationServiceProfileProvider(
@@ -786,7 +776,7 @@ public class ConfigurationServiceProfileProviderTests
         }
 
         [Test]
-        public void It_keeps_the_failure_category_and_safe_cause()
+        public void It_keeps_the_cause()
         {
             Exception? inner = _thrown!.InnerException;
 
@@ -797,22 +787,12 @@ public class ConfigurationServiceProfileProviderTests
                 case ProfileCmsFailure.Unauthorized:
                 case ProfileCmsFailure.NotFound:
                     // Thrown by the production response handler for the non-success status.
-                    inner
-                        .Should()
-                        .BeOfType<HttpRequestException>()
-                        .Which.StatusCode.Should()
-                        .Be(ExpectedStatusCode());
-                    inner!.Message.Should().Contain(((int)ExpectedStatusCode()).ToString());
+                    inner.Should().BeOfType<HttpRequestException>();
+                    inner!.Message.Should().Contain($"StatusCode: {ExpectedStatusCode()}");
                     break;
                 case ProfileCmsFailure.Timeout:
                     inner.Should().BeOfType<TaskCanceledException>();
-                    inner!.InnerException.Should().BeNull();
-                    break;
-                case ProfileCmsFailure.Transport:
-                    inner.Should().BeOfType<HttpRequestException>();
-                    inner.Should().NotBeSameAs(_cause);
-                    inner!.InnerException.Should().BeNull();
-                    inner.Message.Should().NotContain("cms.example");
+                    inner!.InnerException.Should().BeOfType<TimeoutException>();
                     break;
                 case ProfileCmsFailure.MalformedJson:
                     inner.Should().BeAssignableTo<JsonException>();
@@ -866,7 +846,7 @@ public class ConfigurationServiceProfileProviderBasePathTests
         A.CallTo(() =>
                 tokenHandler.GetTokenAsync(A<string>._, A<string>._, A<string>._, A<CancellationToken>._)
             )
-            .Returns(new ConfigurationServiceTokenLease("cms-token", 1));
+            .Returns("cms-token");
 
         var provider = new ConfigurationServiceProfileProvider(
             new ConfigurationServiceApiClient(client),

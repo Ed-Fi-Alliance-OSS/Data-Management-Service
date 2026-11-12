@@ -3,18 +3,10 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Net;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DataManagementService.Core.Security;
 
-/// <summary>
-/// Maps a failed protected Configuration Service read to an <see cref="HttpRequestException" /> that
-/// carries the numeric status. The response body, the request URI and response headers stay out of
-/// the log and the exception, because the Configuration Service may echo request content in them.
-/// A fixed route label identifies the endpoint without including identifiers or query strings.
-/// A request may opt in to receiving a 404 as a response instead.
-/// </summary>
 public class ConfigurationServiceResponseHandler(ILogger<ConfigurationServiceResponseHandler> logger)
     : DelegatingHandler
 {
@@ -33,53 +25,24 @@ public class ConfigurationServiceResponseHandler(ILogger<ConfigurationServiceRes
 
         if (
             !response.IsSuccessStatusCode
-            && !(response.StatusCode is HttpStatusCode.NotFound && allowsNotFoundResponse)
+            && !(response.StatusCode is System.Net.HttpStatusCode.NotFound && allowsNotFoundResponse)
         )
         {
-            HttpStatusCode statusCode = response.StatusCode;
-            int numericStatus = (int)statusCode;
-            response.Dispose();
+            var errorContent = await response.Content.ReadAsStringAsync(cancellationToken);
+            var statusCode = response.StatusCode;
+            var exceptionDetails =
+                $"Error response from {request.RequestUri}. Error message: {errorContent}. StatusCode: {statusCode}";
 
-            // A 401 starts one recovery in the shared send path and often succeeds there, so it is a
-            // warning here; a 401 that survives recovery reaches the caller, which reports the failure.
-            logger.Log(
-                statusCode is HttpStatusCode.Unauthorized ? LogLevel.Warning : LogLevel.Error,
-                "Configuration Service endpoint {Endpoint} request failed with status code {StatusCode}",
-                EndpointForLogging(request),
-                numericStatus
-            );
-
-            throw new HttpRequestException(
-                HttpRequestError.Unknown,
-                $"Configuration Service request failed with status code {numericStatus}.",
-                inner: null,
+            logger.LogError(
+                "Error response from {RequestUri}. Error message: {Content}. StatusCode: {StatusCode}",
+                request.RequestUri,
+                errorContent,
                 statusCode
             );
+
+            throw new HttpRequestException(exceptionDetails);
         }
 
         return response;
-    }
-
-    private static string EndpointForLogging(HttpRequestMessage request)
-    {
-        switch (request.RequestUri?.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries))
-        {
-            case [.., "v3", "tenants"]:
-                return "v3/tenants";
-            case [.., "v3", "dataStores"]:
-                return "v3/dataStores";
-            case [.., "v3", "apiClients", _]:
-                return "v3/apiClients/{id}";
-            case [.., "v3", "authorizationMetadata"]:
-                return "v3/authorizationMetadata";
-            case [.., "v3", "applications", _]:
-                return "v3/applications/{id}";
-            case [.., "v3", "profiles", _]:
-                return "v3/profiles/{id}";
-            case [.., "v3", "profiles"]:
-                return "v3/profiles";
-            default:
-                return "unrecognized";
-        }
     }
 }

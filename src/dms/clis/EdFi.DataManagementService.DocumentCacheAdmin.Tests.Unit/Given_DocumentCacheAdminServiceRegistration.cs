@@ -11,7 +11,6 @@ using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Backend;
-using EdFi.DataManagementService.Core.Security;
 using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.DocumentCacheAdmin;
 using FluentAssertions;
@@ -19,7 +18,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Serilog;
 
@@ -226,78 +224,6 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .ThrowAsync<OptionsValidationException>()
             .WithMessage("*Projector:PageSize must be positive*");
         bootstrapper.InitializeCount.Should().Be(0);
-    }
-
-    [TestCase("")]
-    [TestCase("0")]
-    [TestCase("cap-sentinel-4b7e2d")]
-    public async Task It_reports_an_invalid_token_cache_cap_before_runtime_schema_initialization(
-        string configuredCap
-    )
-    {
-        IServiceCollection services = new ServiceCollection();
-        CountingEffectiveSchemaBootstrapper bootstrapper = new();
-
-        services.AddLogging();
-        services.AddDocumentCacheAdminRuntimeServices(
-            CreateConfiguration(
-                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
-                new Dictionary<string, string?>
-                {
-                    [ConfigurationServiceTokenCacheOptions.Key] = configuredCap,
-                }
-            ),
-            new LoggerConfiguration().CreateLogger(),
-            DocumentCacheTargetKey.Create(string.Empty, 1)
-        );
-        services.Replace(ServiceDescriptor.Singleton<IEffectiveSchemaBootstrapper>(bootstrapper));
-
-        await using ServiceProvider serviceProvider = services.BuildServiceProvider();
-
-        Func<Task> initialize = () => DocumentCacheAdminRuntimeInitializer.InitializeAsync(serviceProvider);
-
-        (await initialize.Should().ThrowAsync<OptionsValidationException>())
-            .Which.ToString()
-            .Should()
-            .Contain(ConfigurationServiceTokenCacheOptions.Key)
-            .And.NotContain("cap-sentinel-4b7e2d");
-        bootstrapper.InitializeCount.Should().Be(0);
-    }
-
-    [TestCase(null, 0, TestName = "It_is_silent_about_an_absent_token_cache_cap")]
-    [TestCase("90", 1, TestName = "It_warns_once_before_schema_initialization_for_an_explicit_cap")]
-    public async Task It_reports_the_token_cache_cap_deprecation_like_the_web_host(
-        string? configuredCap,
-        int expectedWarnings
-    )
-    {
-        IServiceCollection services = new ServiceCollection();
-        CountingEffectiveSchemaBootstrapper bootstrapper = new();
-        CapWarningRecorder recorder = new(bootstrapper);
-
-        services.AddLogging(logging => logging.AddProvider(recorder));
-        services.AddDocumentCacheAdminRuntimeServices(
-            CreateConfiguration(
-                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
-                configuredCap is null
-                    ? null
-                    : new Dictionary<string, string?>
-                    {
-                        [ConfigurationServiceTokenCacheOptions.Key] = configuredCap,
-                    }
-            ),
-            new LoggerConfiguration().CreateLogger(),
-            DocumentCacheTargetKey.Create(string.Empty, 1)
-        );
-        services.Replace(ServiceDescriptor.Singleton<IEffectiveSchemaBootstrapper>(bootstrapper));
-
-        await using ServiceProvider serviceProvider = services.BuildServiceProvider();
-
-        await DocumentCacheAdminRuntimeInitializer.InitializeAsync(serviceProvider);
-
-        recorder.Warnings.Should().HaveCount(expectedWarnings);
-        recorder.WarningsBeforeSchemaInitialization.Should().Be(expectedWarnings);
-        bootstrapper.InitializeCount.Should().Be(1);
     }
 
     [Test]
@@ -523,47 +449,6 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
             .WithMessage("*ConfigurationServiceSettings:AllowLegacyConnectionStrings is false*");
     }
 
-    /// <summary>
-    /// The non-web graph has no application lifetime service. It still binds the deprecated token
-    /// cache cap - absent as no cap, explicit as an upper bound - and builds the token handler and
-    /// the data store provider that uses it.
-    /// </summary>
-    [TestCase(null, null)]
-    [TestCase("90", 90)]
-    [TestCase("1500", 1500)]
-    public void It_resolves_the_token_cache_cap_without_an_application_lifetime(
-        string? configuredCap,
-        int? expectedCap
-    )
-    {
-        using ServiceProvider serviceProvider = BuildAdminServiceProvider(
-            CreateConfiguration(
-                DocumentCacheAdminCommandSurface.PostgresqlDatastoreOptionValue,
-                configuredCap is null
-                    ? null
-                    : new Dictionary<string, string?>
-                    {
-                        [ConfigurationServiceTokenCacheOptions.Key] = configuredCap,
-                    }
-            ),
-            DocumentCacheTargetKey.Create(string.Empty, 1)
-        );
-
-        serviceProvider.GetService<IHostApplicationLifetime>().Should().BeNull();
-        serviceProvider
-            .GetRequiredService<IOptions<ConfigurationServiceTokenCacheOptions>>()
-            .Value.ExpirationCapSeconds.Should()
-            .Be(expectedCap);
-        serviceProvider
-            .GetRequiredService<IConfigurationServiceTokenHandler>()
-            .Should()
-            .BeOfType<ConfigurationServiceTokenHandler>();
-        serviceProvider
-            .GetRequiredService<IDataStoreProvider>()
-            .Should()
-            .BeOfType<ConfigurationServiceDataStoreProvider>();
-    }
-
     private const string LegacyPlainText = "host=dbhost;port=5432;database=edfi;";
 
     private static ServiceProvider BuildServiceProviderAllowingLegacy(string? allowLegacyConnectionStrings) =>
@@ -745,62 +630,6 @@ public sealed class Given_DocumentCacheAdminServiceRegistration
         {
             InitializeCount++;
             return Task.CompletedTask;
-        }
-    }
-
-    /// <summary>
-    /// Records the token cache cap deprecation warnings, and how many were logged before schema
-    /// initialization started.
-    /// </summary>
-    private sealed class CapWarningRecorder(CountingEffectiveSchemaBootstrapper bootstrapper)
-        : ILoggerProvider
-    {
-        private readonly Lock _gate = new();
-
-        public List<string> Warnings { get; } = [];
-
-        public int WarningsBeforeSchemaInitialization { get; private set; }
-
-        // Serilog also defines ILogger, so the Microsoft.Extensions.Logging one is named in full.
-        public Microsoft.Extensions.Logging.ILogger CreateLogger(string categoryName) => new Recorder(this);
-
-        public void Dispose() { }
-
-        private void Record(LogLevel logLevel, string message)
-        {
-            if (
-                logLevel is not LogLevel.Warning
-                || !message.Contains(ConfigurationServiceTokenCacheOptions.Key)
-            )
-            {
-                return;
-            }
-
-            lock (_gate)
-            {
-                Warnings.Add(message);
-
-                if (bootstrapper.InitializeCount == 0)
-                {
-                    WarningsBeforeSchemaInitialization++;
-                }
-            }
-        }
-
-        private sealed class Recorder(CapWarningRecorder owner) : Microsoft.Extensions.Logging.ILogger
-        {
-            public IDisposable? BeginScope<TState>(TState state)
-                where TState : notnull => null;
-
-            public bool IsEnabled(LogLevel logLevel) => true;
-
-            public void Log<TState>(
-                LogLevel logLevel,
-                EventId eventId,
-                TState state,
-                Exception? exception,
-                Func<TState, Exception?, string> formatter
-            ) => owner.Record(logLevel, formatter(state, exception));
         }
     }
 }

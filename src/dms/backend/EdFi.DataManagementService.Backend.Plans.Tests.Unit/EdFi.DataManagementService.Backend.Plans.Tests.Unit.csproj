@@ -9,7 +9,6 @@
     </PropertyGroup>
     <ItemGroup>
         <PackageReference Include="FakeItEasy" />
-        <PackageReference Include="CsCheck" />
         <PackageReference Include="FluentAssertions" />
         <PackageReference Include="Microsoft.NET.Test.Sdk" />
         <PackageReference Include="Npgsql" />

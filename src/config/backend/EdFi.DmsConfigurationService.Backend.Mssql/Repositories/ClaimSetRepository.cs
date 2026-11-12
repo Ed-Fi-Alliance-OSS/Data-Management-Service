@@ -387,10 +387,16 @@ public class ClaimSetRepository(
                   AND {TenantContext.TenantWhereClause("v")};
                 """;
 
-            var markParameters = new DynamicParameters(new { NewClaimSetName = newClaimSetName, TenantId });
-            // Preserve DATETIME2 precision; an inferred datetime parameter rounds to 1/300 second.
-            markParameters.Add("PendingSince", auditContext.GetCurrentTimestamp(), DbType.DateTime2);
-            await connection.ExecuteAsync(markClientsSql, markParameters, transaction);
+            await connection.ExecuteAsync(
+                markClientsSql,
+                new
+                {
+                    NewClaimSetName = newClaimSetName,
+                    PendingSince = auditContext.GetCurrentTimestamp(),
+                    TenantId,
+                },
+                transaction
+            );
 
             // Polly retry pipeline for handling multi-user conflicts
             ResiliencePipeline<ClaimsHierarchySaveResult> retryPipeline =
@@ -1077,9 +1083,7 @@ public class ClaimSetRepository(
     public async Task<ClaimSetResourceActionMutationResult> ResetAuthorizationStrategies(
         int claimSetId,
         int resourceClaimId
-    ) =>
-        await CreateResourceActionMutationWorkflow()
-            .ResetAuthorizationStrategies(claimSetId, resourceClaimId);
+    ) => await CreateResourceActionMutationWorkflow().ResetAuthorizationStrategies(claimSetId, resourceClaimId);
 
     private ClaimSetResourceActionMutationWorkflow CreateResourceActionMutationWorkflow() =>
         new(
@@ -1107,12 +1111,14 @@ public class ClaimSetRepository(
     )
     {
         string claimSetSql = $"""
-            SELECT ClaimSetName, IsSystemReserved
-            FROM dmscs.ClaimSet WITH (UPDLOCK, HOLDLOCK)
-            WHERE Id = @ClaimSetId AND {ClaimSetWhereClause()};
-            """;
+                SELECT ClaimSetName, IsSystemReserved
+                FROM dmscs.ClaimSet WITH (UPDLOCK, HOLDLOCK)
+                WHERE Id = @ClaimSetId AND {ClaimSetWhereClause()};
+                """;
 
-        return await connection.QuerySingleOrDefaultAsync<ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult>(
+        return await connection.QuerySingleOrDefaultAsync<
+            ClaimSetResourceActionMutationWorkflow.ClaimSetMutationLookupResult
+        >(
             claimSetSql,
             new { ClaimSetId = claimSetId, TenantId },
             transaction
@@ -1124,12 +1130,14 @@ public class ClaimSetRepository(
         DbTransaction transaction
     )
     {
-        const string sql = "SELECT Id, ClaimName FROM dmscs.ResourceClaim WHERE TenantId IS NULL";
+        const string sql =
+            "SELECT Id, ClaimName FROM dmscs.ResourceClaim WHERE TenantId IS NULL";
 
         return (
             await connection.QueryAsync<ResourceClaimMetadataRow>(sql, transaction: transaction)
         ).ToList();
     }
+
 
     private static ClaimSetResponse CreateClaimSetResponse(dynamic row, List<Claim> hierarchy)
     {
