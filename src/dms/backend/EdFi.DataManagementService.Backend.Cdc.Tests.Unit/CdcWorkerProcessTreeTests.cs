@@ -15,6 +15,68 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 public sealed class Given_CdcWorkerProcessTree
 {
     [Test]
+    public async Task It_recognizes_exit_between_opening_and_reading_descendant_stat()
+    {
+        using var process = Process.Start(
+            new ProcessStartInfo("/bin/sleep", "300") { UseShellExecute = false }
+        )!;
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        IOException? readFailure = null;
+        try
+        {
+            await CdcWorkerProcessTree.WaitForDescendantExitAsync(
+                process,
+                cleanup.Token,
+                async (path, token) =>
+                {
+                    using var stat = new StreamReader(File.OpenRead(path));
+                    // Hold an open proc descriptor, then reap the process before reading it.
+                    process.Kill();
+                    await process.WaitForExitAsync(token);
+                    try
+                    {
+                        return await stat.ReadToEndAsync(token);
+                    }
+                    catch (IOException exception)
+                    {
+                        readFailure = exception;
+                        throw;
+                    }
+                }
+            );
+
+            readFailure.Should().BeOfType<IOException>().Which.HResult.Should().Be(3, "Linux reports ESRCH");
+            process.HasExited.Should().BeTrue();
+            cleanup.IsCancellationRequested.Should().BeFalse();
+        }
+        finally
+        {
+            process.Kill();
+            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(5));
+        }
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_preserves_other_descendant_stat_read_failures(bool permissionDenied)
+    {
+        using var process = Process.GetCurrentProcess();
+        Exception readFailure = permissionDenied
+            ? new UnauthorizedAccessException("stat access denied")
+            : new IOException("stat I/O failure", 5); // Linux EIO, not ESRCH.
+        Func<Task> act = () =>
+            CdcWorkerProcessTree.WaitForDescendantExitAsync(
+                process,
+                CancellationToken.None,
+                (_, _) => Task.FromException<string>(readFailure)
+            );
+
+        var thrown = await act.Should().ThrowAsync<Exception>();
+
+        thrown.Which.Should().BeSameAs(readFailure);
+    }
+
+    [Test]
     public async Task It_completes_cleanup_when_a_killed_descendant_remains_an_unreaped_zombie()
     {
         using var holder = Process.Start(

@@ -68,7 +68,7 @@ workflow configuration, and the RecordSize persistence evidence guard. Applicati
 code, fixtures and image inputs were unchanged by `715624dbe`, so the recorded live
 results remain applicable to those scenarios.
 
-The process-cleanup follow-up keeps root exit observation active when descendant
+Commit `60eae892d` keeps root exit observation active when descendant
 inventory fails, bounded by the existing cleanup deadline. Focused process tests
 cover inventory failure before root exit and explicit cleanup cancellation while
 preserving the original failure. These tests cover the exceptional inventory path;
@@ -79,6 +79,35 @@ rerun for these follow-ups, and the November 11 results remain attributed to
 Validation of this follow-up, based on `715624dbe`: all 4,777 CDC unit tests passed
 in Release with zero failures or skips, including both new inventory-failure cases.
 Both new cases failed at the root-exit ordering assertion with the pre-fix behavior.
+
+Commit `d3db9c8f4` then changed Linux descendant-exit polling to recognize zombie
+and dead processes as terminated without waiting for another parent to reap them.
+Process-test assertions and teardown use the same termination semantics. All 13
+focused process tests passed in Release with zero failures or skips, including the
+unreaped-zombie regression; the commit also records that regression failing before
+the fix and a cancellation reproducer completing without a cleanup timeout.
+
+The ESRCH follow-up, based on `d3db9c8f4`, also recognizes process exit when a read
+from an already-open `/proc/<pid>/stat` descriptor fails with Linux ESRCH
+(`IOException.HResult == 3`). Other I/O and permission failures still propagate.
+The regression deterministically opens the descriptor, terminates and reaps the
+process, then reads it. It failed with the actual ESRCH exception before the catch
+was added. Afterward, all 16 focused process tests passed in Release with zero
+failures or skips, including checks that other I/O and permission errors propagate.
+Changed C# files were formatted with CSharpier. The focused command was:
+
+```bash
+dotnet test src/dms/backend/EdFi.DataManagementService.Backend.Cdc.Tests.Unit/EdFi.DataManagementService.Backend.Cdc.Tests.Unit.csproj -c Release --no-restore --nologo --filter 'FullyQualifiedName~Given_CdcWorkerDockerCommand|FullyQualifiedName~Given_CdcWorkerProcessTree' --logger 'console;verbosity=minimal'
+```
+
+These two polling changes affect observation of captured Linux descendants during
+Docker command failure or cancellation cleanup. Successful Docker commands and
+cleanup of already-exited roots do not enter that polling path. Broker settings,
+image inputs, live test selection and live scenario assertions are unchanged, so
+the successful smoke and RecordSize results at `5b700f7` remain applicable to those
+Kafka scenarios. The focused tests validate the changed cleanup behavior. No live
+selections were rerun for these polling changes; the November 11 live results
+remain attributed to `5b700f7`.
 
 ### Recorded live results
 

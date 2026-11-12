@@ -41,7 +41,9 @@ internal static class CdcWorkerProcessTree
                 // root alone does not establish that its Linux descendants have exited.
                 foreach (var descendant in descendants)
                 {
-                    exits.Add(WaitForDescendantExitAsync(descendant, observation.Token));
+                    exits.Add(
+                        WaitForDescendantExitAsync(descendant, observation.Token, File.ReadAllTextAsync)
+                    );
                 }
             }
             finally
@@ -88,7 +90,11 @@ internal static class CdcWorkerProcessTree
         }
     }
 
-    private static async Task WaitForDescendantExitAsync(Process process, CancellationToken cancellationToken)
+    internal static async Task WaitForDescendantExitAsync(
+        Process process,
+        CancellationToken cancellationToken,
+        Func<string, CancellationToken, Task<string>> readStat
+    )
     {
         while (!process.HasExited)
         {
@@ -96,7 +102,7 @@ internal static class CdcWorkerProcessTree
             {
                 // .NET's non-child exit check treats an unreaped Linux zombie as running.
                 // Cleanup needs termination, not reaping by a parent outside our control.
-                string stat = await File.ReadAllTextAsync($"/proc/{process.Id}/stat", cancellationToken);
+                string stat = await readStat($"/proc/{process.Id}/stat", cancellationToken);
                 // The parenthesized process name can itself contain spaces and parentheses.
                 if (stat[stat.LastIndexOf(')') + 2] is 'Z' or 'X' or 'x')
                 {
@@ -110,6 +116,10 @@ internal static class CdcWorkerProcessTree
             catch (DirectoryNotFoundException)
             {
                 return;
+            }
+            catch (IOException exception) when (exception.HResult == 3)
+            {
+                return; // Linux ESRCH: the process exited after its proc file was opened.
             }
             await Task.Delay(10, cancellationToken);
         }
