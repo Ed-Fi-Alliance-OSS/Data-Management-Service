@@ -11,7 +11,7 @@ using Npgsql;
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 
 /// <summary>
-/// The PostgreSQL adapter of the engine port. This build delivers the read members: server facts,
+/// The PostgreSQL adapter of the engine port: server facts,
 /// inspection by name with the instance identity <c>oid</c> plus claim comment (D-13), and the owner judged
 /// before anything connects to a candidate database, instance-bound sessions that verify the instance at open and capture the backend's <c>pid</c> and
 /// <c>backend_start</c> (D-7b), the delivered identity read, and the catalog facts the validator judges,

@@ -12,15 +12,15 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
 /// Records the DMS data store provisioning readiness verdict once at startup, after <c>InitializeDatabase</c>
-/// (spec 4.4, D-2, 7.3). A disabled feature records <c>Disabled</c>. An enabled feature first has its static
+/// (D-2). A disabled feature records <c>Disabled</c>. An enabled feature first has its static
 /// options validated and its protected set built (an exception from either propagates and stops startup with
-/// its text, which names settings and never values), then runs the probe groups of 7.3 and records every
-/// failed probe: secret resolution of the administrative connection string (item 1); the trust policy and
-/// catalog probes (items 2 and 3); and, once the connection string is resolved, the engine's probes (items 4
-/// to 7). When the engine read the server's major version, it is compared with the <c>engineVersion</c> of
-/// every template whose manifest the catalog authenticated (D-9, 6.4 step 2), with the rule every create
+/// its text, which names settings and never values), then runs the startup probe groups and records every
+/// failed probe: secret resolution of the administrative connection string; the trust policy and catalog
+/// probes; and, once the connection string is resolved, the engine's probes (server, privileges, runtime
+/// dependency and staging). When the engine read the server's major version, it is compared with the
+/// <c>engineVersion</c> of every template whose manifest the catalog authenticated (D-9), with the rule every create
 /// applies, so a template no create could restore is <c>EngineIncompatible</c> at startup. The protected set
-/// is logged with sanitized names (item 8). When every probe passes the verdict is
+/// is logged with sanitized names. When every probe passes the verdict is
 /// <c>Ready</c> for the engine's provider; otherwise <c>NotReady</c> with each reason logged at Critical as
 /// <c>DMSPROV-&lt;Code&gt;</c>. A probe group that throws is recorded as <c>StartupValidationFailed</c> under
 /// its probe name rather than stopping the host. The host keeps running either way; the provisioner refuses
@@ -28,7 +28,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// </summary>
 public static class DmsDataStoreProvisioningStartup
 {
-    /// <summary>The probe name of a secret resolution failure (7.3 item 1).</summary>
+    /// <summary>The probe name of a secret resolution failure.</summary>
     public const string SecretResolutionProbe = "SecretResolution";
 
     /// <summary>The probe name under which a catalog validation that threw is recorded.</summary>
@@ -79,7 +79,7 @@ public static class DmsDataStoreProvisioningStartup
             return;
         }
 
-        // 7.3 item 8, built first: a catalog connection string naming no database is static misconfiguration
+        // The protected set, built first: a catalog connection string naming no database is static misconfiguration
         // and stops startup as the options validator does.
         ProtectedDatabaseNames protectedNames = services.GetRequiredService<ProtectedDatabaseNames>();
         logger.LogInformation(
@@ -136,7 +136,7 @@ public static class DmsDataStoreProvisioningStartup
             );
         }
 
-        // D-9 and 6.4 step 2 at startup: a server older than any authenticated template's engine is refused here,
+        // D-9 at startup: a server older than any authenticated template's engine is refused here,
         // not by every create later. Nothing is compared when the server or a manifest could not be read.
         IReadOnlyList<DmsReadinessReason> compatibilityReasons = serverMajorVersion is { } serverMajor
             ? DmsEngineCompatibility.Evaluate(serverMajor, engineRequirements)

@@ -50,7 +50,7 @@ public static class MssqlServiceExtensions
     }
 
     /// <summary>
-    /// Registers the SQL Server adapter of the DMS provisioning engine port (spec 4.4) for
+    /// Registers the SQL Server adapter of the DMS provisioning engine port (<see cref="IDmsTargetEngine"/>) for
     /// <c>DmsDataStoreProvisioning:Provider = mssql</c>, independently of the catalog datastore. The engine reads
     /// its settings, including the staging directory, its server view, and the staged file mode, from the
     /// statically validated options and opens every connection with the resolution the calling operation bound

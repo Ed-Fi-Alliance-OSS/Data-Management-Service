@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 
 /// <summary>
-/// The SQL Server adapter of the engine port. This build delivers the read members: server facts with
+/// The SQL Server adapter of the engine port: server facts with
 /// the default data and log paths and the server's UTC clock, inspection by name
 /// with the instance identity <c>database_id</c> plus primary-file <c>physical_name</c> plus the
 /// <c>create_date</c> snapshot (D-13), instance-bound sessions that verify all three at open and
