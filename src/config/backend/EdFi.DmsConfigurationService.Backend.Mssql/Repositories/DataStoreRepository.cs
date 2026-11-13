@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -35,28 +36,103 @@ public class DataStoreRepository(
 
     private const string DuplicateNameConstraint = "UX_DataStore_TenantId_Name";
 
+    public async Task<int> InsertDataStore(
+        DataStoreInsertCommand command,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        var sql = """
+            INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
+            OUTPUT INSERTED.Id
+            VALUES (@DataStoreType, @Name, @Provider, @ConnectionString, @CreatedBy, @TenantId);
+            """;
+
+        var parameters = new
+        {
+            command.DataStoreType,
+            command.Name,
+            command.Provider,
+            ConnectionString = encryptionService.Encrypt(command.ConnectionString),
+            CreatedBy = auditContext.GetCurrentUser(),
+            TenantId,
+        };
+
+        return await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(sql, parameters, transaction, cancellationToken: cancellationToken)
+        );
+    }
+
+    private static DbConnection GetTransactionConnection(
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(transaction);
+        if (transaction is not SqlTransaction)
+        {
+            throw new ArgumentException(
+                "The supplied transaction must be a SQL Server transaction.",
+                nameof(transaction)
+            );
+        }
+
+        // Reading IsolationLevel rejects completed or disposed transactions before any side effects.
+        _ = transaction.IsolationLevel;
+        if (transaction.Connection is not SqlConnection { State: ConnectionState.Open } connection)
+        {
+            throw new InvalidOperationException("The supplied transaction must have an open connection.");
+        }
+        return connection;
+    }
+
+    /// <summary>
+    /// Removes the ordinary row for provider-local managed lifecycle persistence. The caller must hold
+    /// the job fence and clear the managed aggregate's link in this same transaction before removal.
+    /// Exceptions, including absence and cancellation, must propagate to the owner for rollback;
+    /// this method neither commits nor rolls back the caller's transaction.
+    /// </summary>
+    internal async Task DeleteManagedDataStore(
+        int id,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await DeleteDataStoreRows(id, transaction, cancellationToken) == 0)
+        {
+            throw new InvalidOperationException("The data store does not exist in the selected tenant.");
+        }
+    }
+
+    private Task<int> DeleteDataStoreRows(
+        int id,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        var sql = $"DELETE FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
+        return connection.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                new { Id = id, TenantId },
+                transaction,
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
     public async Task<DataStoreInsertResult> InsertDataStore(DataStoreInsertCommand command)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
-                INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
-                OUTPUT INSERTED.Id
-                VALUES (@DataStoreType, @Name, @Provider, @ConnectionString, @CreatedBy, @TenantId);
-                """;
-
-            var parameters = new
-            {
-                command.DataStoreType,
-                command.Name,
-                command.Provider,
-                ConnectionString = encryptionService.Encrypt(command.ConnectionString),
-                CreatedBy = auditContext.GetCurrentUser(),
-                TenantId,
-            };
-
-            var id = await connection.ExecuteScalarAsync<int>(sql, parameters);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            int id = await InsertDataStore(command, transaction, CancellationToken.None);
+            await transaction.CommitAsync();
             return new DataStoreInsertResult.Success(id);
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
@@ -384,11 +460,12 @@ public class DataStoreRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = $"DELETE FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
-
-            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            int affectedRows = await DeleteDataStoreRows(id, transaction, CancellationToken.None);
             if (affectedRows > 0)
             {
+                await transaction.CommitAsync();
                 return new DataStoreDeleteResult.Success();
             }
             return new DataStoreDeleteResult.FailureNotExists();
