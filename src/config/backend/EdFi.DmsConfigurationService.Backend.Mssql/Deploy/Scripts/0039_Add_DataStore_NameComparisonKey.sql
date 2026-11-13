@@ -39,8 +39,7 @@ BEGIN TRY
     -- CREATE FUNCTION must be the first statement in its batch. A local transaction
     -- makes helper creation and column addition atomic under the existing DbUp policy.
     -- Existence guards permit recovery after commit if DbUp did not persist its journal row.
-    IF OBJECT_ID(N'dmscs.DataStoreNameComparisonKey', N'FN') IS NULL
-        EXEC(N'CREATE FUNCTION dmscs.DataStoreNameComparisonKey (@Name nvarchar(256))
+    DECLARE @FunctionDefinition nvarchar(max) = N'CREATE FUNCTION dmscs.DataStoreNameComparisonKey (@Name nvarchar(256))
         RETURNS varbinary(516)
         WITH SCHEMABINDING
         AS
@@ -59,7 +58,35 @@ BEGIN TRY
 
             -- The length prefix prevents binary padding from merging different lengths.
             RETURN CONVERT(binary(4), DATALENGTH(@Normalized)) + CONVERT(varbinary(512), @Normalized);
-        END;');
+        END;';
+
+    IF OBJECT_ID(N'dmscs.DataStoreNameComparisonKey') IS NULL
+        EXEC(@FunctionDefinition);
+
+    -- Reuse only the approved complete definition, including its signature and body.
+    -- Keep the original 0039 source spelling/indentation for already deployed helpers.
+    -- Only CRLF/LF differences are normalized; custom alternatives are refused, not rewritten.
+    DECLARE @NormalizedDefinition nvarchar(max) =
+        REPLACE(@FunctionDefinition, NCHAR(13) + NCHAR(10), NCHAR(10));
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.sql_modules m
+        JOIN sys.objects o ON o.object_id = m.object_id
+        WHERE m.object_id = OBJECT_ID(N'dmscs.DataStoreNameComparisonKey') AND o.type = 'FN'
+          AND m.is_schema_bound = 1 AND m.uses_ansi_nulls = 1 AND m.uses_quoted_identifier = 1
+          AND DATALENGTH(REPLACE(m.definition, NCHAR(13) + NCHAR(10), NCHAR(10))) = DATALENGTH(@NormalizedDefinition)
+          AND REPLACE(m.definition, NCHAR(13) + NCHAR(10), NCHAR(10)) COLLATE Latin1_General_100_BIN2
+              = @NormalizedDefinition COLLATE Latin1_General_100_BIN2
+    ) OR (SELECT COUNT(*) FROM sys.parameters WHERE object_id = OBJECT_ID(N'dmscs.DataStoreNameComparisonKey')) <> 2
+      OR NOT EXISTS (
+          SELECT 1 FROM sys.parameters
+          WHERE object_id = OBJECT_ID(N'dmscs.DataStoreNameComparisonKey') AND parameter_id = 0
+            AND system_type_id = TYPE_ID(N'varbinary') AND max_length = 516
+      ) OR NOT EXISTS (
+          SELECT 1 FROM sys.parameters
+          WHERE object_id = OBJECT_ID(N'dmscs.DataStoreNameComparisonKey') AND parameter_id = 1
+            AND name = N'@Name' AND system_type_id = TYPE_ID(N'nvarchar') AND max_length = 512
+      )
+        THROW 50039, 'Existing DataStoreNameComparisonKey helper definition does not match the approved migration definition.', 1;
 
     IF COL_LENGTH(N'dmscs.DataStore', N'NameComparisonKey') IS NULL
         EXEC(N'ALTER TABLE dmscs.DataStore
@@ -73,6 +100,17 @@ BEGIN TRY
           AND COLUMNPROPERTY(object_id, name, 'IsPrecise') = 1
     )
         THROW 50039, 'Existing DataStore NameComparisonKey must be a deterministic persisted varbinary(516) computed column.', 1;
+
+    -- SQL Server stores this expression with quoted identifiers and outer parentheses.
+    -- Metadata and a few matching output probes cannot certify the normalization contract.
+    DECLARE @ColumnDefinition nvarchar(max) = N'([dmscs].[DataStoreNameComparisonKey]([Name]))';
+    IF NOT EXISTS (
+        SELECT 1 FROM sys.computed_columns
+        WHERE object_id = OBJECT_ID(N'dmscs.DataStore') AND name = N'NameComparisonKey'
+          AND DATALENGTH(definition) = DATALENGTH(@ColumnDefinition)
+          AND definition COLLATE Latin1_General_100_BIN2 = @ColumnDefinition COLLATE Latin1_General_100_BIN2
+    )
+        THROW 50039, 'Existing DataStore NameComparisonKey column definition does not match the approved migration definition.', 1;
 
     COMMIT TRANSACTION;
 END TRY

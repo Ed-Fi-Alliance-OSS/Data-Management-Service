@@ -367,3 +367,161 @@ public class Given_a_column_addition_failure_during_the_name_key_migration
         column.Should().Be(("int", false));
     }
 }
+
+[TestFixture]
+[Category("MssqlIntegration")]
+[Category("DataStoreNameComparisonKeyUpgrade")]
+[Category("DataStoreNameComparisonKeyDefinitionGuard")]
+public class Given_existing_name_key_definitions_before_migration_replay
+{
+    private JobUpgradeTestDatabase _database = null!;
+    private const string ScriptName =
+        "EdFi.DmsConfigurationService.Backend.Mssql.Deploy.Scripts.0039_Add_DataStore_NameComparisonKey.sql";
+    private const string ColumnDefinition = """
+        SELECT definition FROM sys.computed_columns
+        WHERE object_id = OBJECT_ID(N'dmscs.DataStore') AND name = N'NameComparisonKey';
+        """;
+    private const string FunctionDefinition =
+        "SELECT definition FROM sys.sql_modules WHERE object_id = OBJECT_ID(N'dmscs.DataStoreNameComparisonKey');";
+    private const string Rows = """
+        SELECT Id, Name, CONVERT(varchar(max), NameComparisonKey, 2) AS [Key]
+        FROM dmscs.DataStore ORDER BY Id;
+        """;
+
+    [SetUp]
+    public void Setup()
+    {
+        MssqlTestConfiguration.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server integration tests require the ConnectionStrings__MssqlAdmin environment variable."
+        );
+        _database = new();
+        _database.DeployThrough(38);
+    }
+
+    [TearDown]
+    public Task Teardown() => _database is null ? Task.CompletedTask : _database.DropAsync();
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_replays_the_unmodified_old_0039_definitions_with_either_line_ending(bool crlf)
+    {
+        await using SqlConnection connection = new(_database.ConnectionString);
+        string oldScript = DataStoreNameComparisonKeyLegacyMigration.Script.ReplaceLineEndings(
+            crlf ? "\r\n" : "\n"
+        );
+        await connection.ExecuteAsync(oldScript);
+        await SeedAsync(connection);
+        string helperBefore = await connection.QuerySingleAsync<string>(FunctionDefinition);
+        string columnBefore = await connection.QuerySingleAsync<string>(ColumnDefinition);
+        var rowsBefore = (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).ToArray();
+        string[] objectsBefore = await _database.ConstraintAndIndexNamesAsync("DataStore");
+        string[] journalBefore = await _database.JournalAsync();
+
+        _database.DeployThrough(39);
+        _database.DeployThrough(39);
+
+        (await connection.QuerySingleAsync<string>(FunctionDefinition)).Should().Be(helperBefore);
+        (await connection.QuerySingleAsync<string>(ColumnDefinition)).Should().Be(columnBefore);
+        (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).Should().Equal(rowsBefore);
+        (await _database.ConstraintAndIndexNamesAsync("DataStore")).Should().Equal(objectsBefore);
+        (await _database.JournalAsync()).Should().Equal(journalBefore.Append(ScriptName));
+    }
+
+    [TestCase("helper_without_fold")]
+    [TestCase("helper_with_unprobed_exception")]
+    [TestCase("column_constant")]
+    [TestCase("column_with_unprobed_exception")]
+    public async Task It_refuses_metadata_valid_incompatible_definitions_without_mutation(string corruption)
+    {
+        await using SqlConnection connection = new(_database.ConnectionString);
+        string script = DataStoreNameComparisonKeyLegacyMigration.Script;
+        script = corruption switch
+        {
+            "helper_without_fold" => script.Replace(
+                "N''abcdefghijklmnopqrstuvwxyz''",
+                "N''ABCDEFGHIJKLMNOPQRSTUVWXYZ''"
+            ),
+            "helper_with_unprobed_exception" => script.Replace(
+                "IF @Name IS NULL RETURN NULL;",
+                "IF @Name IS NULL RETURN NULL; IF @Name = N''outside the probe corpus'' RETURN 0x1234;"
+            ),
+            "column_constant" => script.Replace(
+                "AS dmscs.DataStoreNameComparisonKey(Name) PERSISTED",
+                "AS CONVERT(varbinary(516), 0x1234) PERSISTED"
+            ),
+            "column_with_unprobed_exception" => script.Replace(
+                "AS dmscs.DataStoreNameComparisonKey(Name) PERSISTED",
+                "AS dmscs.DataStoreNameComparisonKey(CASE WHEN Name = N''outside the probe corpus'' THEN N''other'' ELSE Name END) PERSISTED"
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(corruption)),
+        };
+        await connection.ExecuteAsync(script);
+        await SeedAsync(connection);
+        // All of these definitions pass the original metadata-only gate.
+        var metadata = await connection.QuerySingleAsync<(
+            bool Persisted,
+            short Length,
+            int Deterministic,
+            int Precise
+        )>(
+            """
+            SELECT is_persisted, max_length, COLUMNPROPERTY(object_id, name, 'IsDeterministic'),
+                COLUMNPROPERTY(object_id, name, 'IsPrecise')
+            FROM sys.computed_columns WHERE object_id = OBJECT_ID(N'dmscs.DataStore') AND name = 'NameComparisonKey';
+            """
+        );
+        metadata.Should().Be((true, (short)516, 1, 1));
+        string helperBefore = await connection.QuerySingleAsync<string>(FunctionDefinition);
+        string columnBefore = await connection.QuerySingleAsync<string>(ColumnDefinition);
+        var rowsBefore = (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).ToArray();
+        string[] journalBefore = await _database.JournalAsync();
+        string[] objectsBefore = await _database.ConstraintAndIndexNamesAsync("DataStore");
+
+        var failure = _database
+            .Deploy(39)
+            .Should()
+            .BeOfType<DatabaseDeployResult.DatabaseDeployFailure>()
+            .Subject;
+
+        failure.Error.Message.Should().Contain("NameComparisonKey").And.Contain("definition");
+        (await connection.QuerySingleAsync<string>(FunctionDefinition)).Should().Be(helperBefore);
+        (await connection.QuerySingleAsync<string>(ColumnDefinition)).Should().Be(columnBefore);
+        (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).Should().Equal(rowsBefore);
+        (await _database.JournalAsync()).Should().Equal(journalBefore);
+        objectsBefore.Should().Contain("UX_DataStore_TenantId_Name");
+        (await _database.ConstraintAndIndexNamesAsync("DataStore")).Should().Equal(objectsBefore);
+    }
+
+    [Test]
+    public async Task It_rolls_back_new_helper_creation_when_an_existing_computed_expression_is_wrong()
+    {
+        await using SqlConnection connection = new(_database.ConnectionString);
+        await connection.ExecuteAsync(
+            "ALTER TABLE dmscs.DataStore ADD NameComparisonKey AS CONVERT(varbinary(516), 0x1234) PERSISTED;"
+        );
+        await SeedAsync(connection);
+        string columnBefore = await connection.QuerySingleAsync<string>(ColumnDefinition);
+        var rowsBefore = (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).ToArray();
+        string[] journalBefore = await _database.JournalAsync();
+        string[] objectsBefore = await _database.ConstraintAndIndexNamesAsync("DataStore");
+
+        var failure = _database
+            .Deploy(39)
+            .Should()
+            .BeOfType<DatabaseDeployResult.DatabaseDeployFailure>()
+            .Subject;
+
+        failure.Error.Message.Should().Contain("NameComparisonKey").And.Contain("definition");
+        (await connection.QuerySingleOrDefaultAsync<string>(FunctionDefinition)).Should().BeNull();
+        (await connection.QuerySingleAsync<string>(ColumnDefinition)).Should().Be(columnBefore);
+        (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).Should().Equal(rowsBefore);
+        (await _database.JournalAsync()).Should().Equal(journalBefore);
+        (await _database.ConstraintAndIndexNamesAsync("DataStore")).Should().Equal(objectsBefore);
+    }
+
+    private static Task SeedAsync(SqlConnection connection) =>
+        connection.ExecuteAsync(
+            "INSERT INTO dmscs.DataStore (Name, DataStoreType) VALUES (@Name, 'SQL'), ('ordinary', 'SQL');",
+            new { Name = "\u3000Guard CAFÉ 😀\u00a0" }
+        );
+}

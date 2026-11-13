@@ -263,3 +263,112 @@ public class Given_a_non_UTF8_database_before_the_name_key_migration
             .Contain("UX_DataStore_TenantId_Name");
     }
 }
+
+[TestFixture]
+[Category("DataStoreNameComparisonKeyUpgrade")]
+[Category("DataStoreNameComparisonKeyDefinitionGuard")]
+public class Given_existing_name_key_definitions_before_migration_replay
+{
+    private JobUpgradeTestDatabase _database = null!;
+    private const string ScriptName =
+        "EdFi.DmsConfigurationService.Backend.Postgresql.Deploy.Scripts.0039_Add_DataStore_NameComparisonKey.sql";
+    private const string ColumnDefinition = """
+        SELECT pg_get_expr(d.adbin, d.adrelid)
+        FROM pg_attrdef d JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum
+        WHERE a.attrelid = 'dmscs."DataStore"'::regclass AND a.attname = 'NameComparisonKey';
+        """;
+    private const string Rows = """
+        SELECT "Id", "Name", "NameComparisonKey" FROM dmscs."DataStore" ORDER BY "Id";
+        """;
+
+    [SetUp]
+    public void Setup()
+    {
+        _database = new();
+        _database.DeployThrough(38);
+    }
+
+    [TearDown]
+    public Task Teardown() => _database is null ? Task.CompletedTask : _database.DropAsync();
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_replays_the_unmodified_old_0039_definitions_with_either_line_ending(bool crlf)
+    {
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await connection.ExecuteAsync(
+            DataStoreNameComparisonKeyLegacyMigration.Script.ReplaceLineEndings(crlf ? "\r\n" : "\n")
+        );
+        await SeedAsync(connection);
+        string columnBefore = await connection.QuerySingleAsync<string>(ColumnDefinition);
+        var rowsBefore = (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).ToArray();
+        string[] journalBefore = await _database.JournalAsync();
+        string[] objectsBefore = await _database.ConstraintAndIndexNamesAsync("DataStore");
+
+        _database.DeployThrough(39);
+        _database.DeployThrough(39);
+
+        (await connection.QuerySingleAsync<string>(ColumnDefinition)).Should().Be(columnBefore);
+        (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).Should().Equal(rowsBefore);
+        (await _database.JournalAsync()).Should().Equal(journalBefore.Append(ScriptName));
+        (await _database.ConstraintAndIndexNamesAsync("DataStore")).Should().Equal(objectsBefore);
+    }
+
+    [TestCase("without_fold")]
+    [TestCase("constant")]
+    [TestCase("unprobed_exception")]
+    public async Task It_refuses_metadata_valid_incompatible_definitions_without_mutation(string corruption)
+    {
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        string script = DataStoreNameComparisonKeyLegacyMigration.Script;
+        script = corruption switch
+        {
+            "without_fold" => script.Replace("'abcdefghijklmnopqrstuvwxyz'", "'ABCDEFGHIJKLMNOPQRSTUVWXYZ'"),
+            "constant" => script.Replace("\"Name\" COLLATE \"C\"", "'constant'::text COLLATE \"C\""),
+            "unprobed_exception" => script.Replace(
+                "\"Name\" COLLATE \"C\"",
+                "(CASE WHEN \"Name\" = 'outside the probe corpus' THEN 'other' ELSE \"Name\" END) COLLATE \"C\""
+            ),
+            _ => throw new ArgumentOutOfRangeException(nameof(corruption)),
+        };
+        await connection.ExecuteAsync(script);
+        await SeedAsync(connection);
+        // These are stored text columns with C collation: the original gate accepts them.
+        var metadata = await connection.QuerySingleAsync<(
+            string Generated,
+            string Type,
+            string Collation,
+            bool Deterministic
+        )>(
+            """
+            SELECT a.attgenerated::text, format_type(a.atttypid, a.atttypmod), c.collname, c.collisdeterministic
+            FROM pg_attribute a JOIN pg_collation c ON c.oid = a.attcollation
+            WHERE a.attrelid = 'dmscs."DataStore"'::regclass AND a.attname = 'NameComparisonKey';
+            """
+        );
+        metadata.Should().Be(("s", "text", "C", true));
+        string columnBefore = await connection.QuerySingleAsync<string>(ColumnDefinition);
+        var rowsBefore = (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).ToArray();
+        string[] journalBefore = await _database.JournalAsync();
+        string[] objectsBefore = await _database.ConstraintAndIndexNamesAsync("DataStore");
+
+        var failure = _database
+            .Deploy(39)
+            .Should()
+            .BeOfType<DatabaseDeployResult.DatabaseDeployFailure>()
+            .Subject;
+
+        failure.Error.Message.Should().Contain("NameComparisonKey").And.Contain("definition");
+        (await connection.QuerySingleAsync<string>(ColumnDefinition)).Should().Be(columnBefore);
+        (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).Should().Equal(rowsBefore);
+        (await _database.JournalAsync()).Should().Equal(journalBefore);
+        objectsBefore.Should().Contain("UX_DataStore_TenantId_Name");
+        (await _database.ConstraintAndIndexNamesAsync("DataStore")).Should().Equal(objectsBefore);
+    }
+
+    private static Task SeedAsync(NpgsqlConnection connection) =>
+        connection.ExecuteAsync(
+            """INSERT INTO dmscs."DataStore" ("Name", "DataStoreType") VALUES (@Name, 'SQL'), ('ordinary', 'SQL');""",
+            new { Name = "\u3000Guard CAFÉ 😀\u00a0" }
+        );
+}
