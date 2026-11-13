@@ -29,26 +29,20 @@ public static class ManagedDataStoreStatusRules
                     or ManagedDataStoreStatus.CreateFailed
                     or ManagedDataStoreStatus.CreateInProgress,
                 ManagedDataStoreStatus.CreateInProgress
+                    or ManagedDataStoreStatus.CreateFailed
                     or ManagedDataStoreStatus.CreateError
             ) => true,
-            (
-                ManagedDataStoreStatus.CreateInProgress,
-                ManagedDataStoreStatus.Created
-                    or ManagedDataStoreStatus.CreateFailed
-            ) => true,
+            (ManagedDataStoreStatus.CreateInProgress, ManagedDataStoreStatus.Created) => true,
             (ManagedDataStoreStatus.Created, ManagedDataStoreStatus.PendingDelete) => true,
             (
                 ManagedDataStoreStatus.PendingDelete
                     or ManagedDataStoreStatus.DeleteFailed
                     or ManagedDataStoreStatus.DeleteInProgress,
                 ManagedDataStoreStatus.DeleteInProgress
+                    or ManagedDataStoreStatus.DeleteFailed
                     or ManagedDataStoreStatus.DeleteError
             ) => true,
-            (
-                ManagedDataStoreStatus.DeleteInProgress,
-                ManagedDataStoreStatus.Deleted
-                    or ManagedDataStoreStatus.DeleteFailed
-            ) => true,
+            (ManagedDataStoreStatus.DeleteInProgress, ManagedDataStoreStatus.Deleted) => true,
             _ => false,
         };
 }

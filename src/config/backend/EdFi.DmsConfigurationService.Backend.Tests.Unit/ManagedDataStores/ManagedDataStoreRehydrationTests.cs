@@ -119,6 +119,127 @@ public class Given_Persisted_Managed_Data_Store
             .Be(state.HistoricalDataStoreId is null ? null : state.TargetName.Value);
     }
 
+    private static ManagedDataStorePersistedState StoredState(ManagedDataStore store) =>
+        new(
+            store.Id,
+            store.TenantId,
+            store.Name,
+            store.Template,
+            store.TargetName,
+            store.ExpectedSourceIdentity,
+            store.Endpoint,
+            store.PinnedArtifact,
+            store.Status,
+            store.DataStoreId,
+            store.HistoricalDataStoreId,
+            store.HistoricalDataStoreName,
+            store.CreateJobId,
+            store.DeleteJobId,
+            store.LastAttempt,
+            store.LastFailure,
+            store.CreatedAt,
+            store.UpdatedAt,
+            store.DeletedAt,
+            store.LastRefreshed,
+            store.LastModifiedDate
+        );
+
+    [TestCase(
+        ManagedDataStoreStatus.PendingCreate,
+        ManagedDataStoreStatus.CreateFailed,
+        ManagedDataStoreStatus.CreateInProgress
+    )]
+    [TestCase(
+        ManagedDataStoreStatus.PendingDelete,
+        ManagedDataStoreStatus.DeleteFailed,
+        ManagedDataStoreStatus.DeleteInProgress
+    )]
+    public void It_restores_repeated_pre_handler_failures_and_resumes_a_later_attempt(
+        ManagedDataStoreStatus pending,
+        ManagedDataStoreStatus failed,
+        ManagedDataStoreStatus inProgress
+    )
+    {
+        var expected = State(pending);
+        var store = ManagedDataStore.Rehydrate(expected);
+        var failure = ManagedDataStoreFailure.RetryableJobFailure();
+
+        // Tenant lookup can fail on consecutive claimed attempts before the handler records in-progress.
+        for (int attempt = 1; attempt <= 2; attempt++)
+        {
+            var observedAt = AcceptedAt.AddMinutes(8 + attempt);
+            store.RecordAttempt(failed, observedAt, attempt, failure);
+            expected = expected with
+            {
+                Status = failed,
+                LastAttempt = attempt,
+                LastFailure = failure,
+                UpdatedAt = observedAt,
+                LastModifiedDate = observedAt,
+                LastRefreshed = observedAt,
+            };
+            store.Should().BeEquivalentTo(expected);
+
+            store = ManagedDataStore.Rehydrate(StoredState(store));
+            store.Should().BeEquivalentTo(expected);
+        }
+
+        Action[] invalid =
+        [
+            () => store.RecordAttempt(failed, AcceptedAt, 0, failure),
+            () => store.RecordAttempt(failed, AcceptedAt, 1, failure),
+            () => store.RecordAttempt(failed, AcceptedAt, 3),
+            () =>
+                store.RecordAttempt(
+                    failed,
+                    AcceptedAt,
+                    3,
+                    ManagedDataStoreFailure.FromJob(JobErrorCode.InvalidPayload)
+                ),
+        ];
+        foreach (var observe in invalid)
+        {
+            observe.Should().Throw<ArgumentException>();
+            store.Should().BeEquivalentTo(expected);
+        }
+
+        var resumedAt = AcceptedAt.AddMinutes(11);
+        store.RecordAttempt(inProgress, resumedAt, 3);
+        store
+            .Should()
+            .BeEquivalentTo(
+                expected with
+                {
+                    Status = inProgress,
+                    LastAttempt = 3,
+                    LastFailure = null,
+                    UpdatedAt = resumedAt,
+                    LastModifiedDate = resumedAt,
+                    LastRefreshed = resumedAt,
+                }
+            );
+
+        if (pending == ManagedDataStoreStatus.PendingCreate)
+        {
+            Action publishWithoutPin = () => store.Publish(101, resumedAt);
+            publishWithoutPin.Should().Throw<InvalidOperationException>();
+            store.PinArtifact(Pin());
+            store.Publish(101, AcceptedAt.AddMinutes(12));
+            store.Status.Should().Be(ManagedDataStoreStatus.Created);
+            store.DataStoreId.Should().Be(101);
+        }
+        else
+        {
+            store.CompleteDelete(AcceptedAt.AddMinutes(12));
+            store.Status.Should().Be(ManagedDataStoreStatus.Deleted);
+            store.DataStoreId.Should().BeNull();
+            store.HistoricalDataStoreId.Should().Be(expected.HistoricalDataStoreId);
+            store.HistoricalDataStoreName.Should().Be(expected.HistoricalDataStoreName);
+            store.PinnedArtifact.Should().Be(expected.PinnedArtifact);
+            store.DeletedAt.Should().Be(AcceptedAt.AddMinutes(12));
+        }
+    }
+
     [Test]
     public void It_resumes_a_retry_with_the_original_identity_and_pin_and_rejects_repinning()
     {

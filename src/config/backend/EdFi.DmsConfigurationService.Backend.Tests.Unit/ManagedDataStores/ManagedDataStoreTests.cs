@@ -185,8 +185,10 @@ public class Given_Managed_Data_Store_Lifecycle
         string[] allowed =
         [
             "PendingCreate>CreateInProgress",
+            "PendingCreate>CreateFailed",
             "PendingCreate>CreateError",
             "CreateFailed>CreateInProgress",
+            "CreateFailed>CreateFailed",
             "CreateFailed>CreateError",
             "CreateInProgress>CreateInProgress",
             "CreateInProgress>CreateError",
@@ -194,8 +196,10 @@ public class Given_Managed_Data_Store_Lifecycle
             "CreateInProgress>CreateFailed",
             "Created>PendingDelete",
             "PendingDelete>DeleteInProgress",
+            "PendingDelete>DeleteFailed",
             "PendingDelete>DeleteError",
             "DeleteFailed>DeleteInProgress",
+            "DeleteFailed>DeleteFailed",
             "DeleteFailed>DeleteError",
             "DeleteInProgress>DeleteInProgress",
             "DeleteInProgress>DeleteError",
