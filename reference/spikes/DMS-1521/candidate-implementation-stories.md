@@ -134,9 +134,9 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 | DMS-1687 (from EDFI-2956), read-only replica | Story 1 (P1–P3) and story 2 (P4), threshold E4 |
 | Design drift, `descriptor_page` in `partitioned-cursor-paging.md` | Story 2 |
 | Keyset contract in `mpack-format-v1.md` | Story 1 updates the contract description. No pack exists to reject: pack emission is not implemented |
-| Test doubles that split or rewrite keyset batches | Story 1: the PostgreSQL `HydrationExecutorTests` splice. Story 2: the SQL Server descriptor split site in `AuthoritativeTimestampReadConsistencyScenario`. `DescriptorReadCommandExecutor` needs no change while the markers stay |
+| Test doubles that split or rewrite keyset batches | Story 1: the PostgreSQL `HydrationExecutorTests` splice. Story 2: the SQL Server descriptor split site in `AuthoritativeTimestampReadConsistencyScenario`. `DescriptorReadCommandExecutor` needs no change only while the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay; story 2 keeps both or updates it |
 | C5, single-document fast path | Unchanged; asserted in both stories |
-| Guarded single-document keyset without the fast path (non-production) | Story 1: implement or remove (the prototype throws) |
+| Guarded single-document keyset without the fast path (non-production) | Story 1: implement it under the new contract (the prototype throws); `flattening-reconstitution.md` names it as the per-dialect fallback |
 | SQL Server recompiles (DMS-1248 comment) | Not observed in either variant; E3 guards it. No separate work |
 | `memtablevar` (SQL Server P1, P3) | Unvalidated lead; no story. The task 11 review decides whether to validate it |
 | `ANALYZE` interim mitigation | Conditional story 3, not triggered |

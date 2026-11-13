@@ -62,9 +62,13 @@ insert, and latch they replace.
 
   The leading and trailing version fences, the owner-row statement, and the boundary read the
   carrier. A zero limit still selects nothing; SQL Server rejects `FETCH NEXT 0`.
-- **The `-- Descriptor acquisition:` and `-- Descriptor page selection boundary` markers are kept**,
-  so `DescriptorReadCommandExecutor` (`Backend.Tests.Unit`) needs no change. If the markers
-  change, that executor changes with them.
+- **The `-- Descriptor acquisition:` and `-- Descriptor page selection boundary` markers are kept.**
+  `DescriptorReadCommandExecutor` (`Backend.Tests.Unit`) finds the batch by these markers. It also
+  picks the anchor column by matching `MAX("ContentVersion")` or `MAX([ContentVersion])` in the
+  command text (`DescriptorReadCommandExecutor.cs` ≈80). The prototype's qualified
+  `MAX(p."ContentVersion")` and `MAX(kj.[ContentVersion])` do not match, so the executor would
+  report the highest `DocumentId` as an anchored page's boundary. Either write the anchor
+  unqualified in the boundary `MAX`, or widen that check in the same PR (C6).
 - **Test churn:** the 18 `Given_DescriptorReadHandler` SQL-text pins, the SQL Server
   type (d) adaptation of the descriptor split site in
   `AuthoritativeTimestampReadConsistencyScenario`, and the new tests below.
@@ -86,7 +90,7 @@ Each edit is **mandated by DMS-1521's decision**
 
 | Document | Section | Edit |
 | --- | --- | --- |
-| `partitioned-cursor-paging.md` | descriptor paragraph of § Carrying the selected-keyset boundary (≈711) | Reconcile the [drift](keyset-temp-table-findings.md#design-drift-descriptor_page). Descriptor selection is carried in the keyset carrier on both engines, with no keyset temp table. The fences, owner rows, and boundary read that one selection per attempt. Keep the existing anchor-column discipline |
+| `partitioned-cursor-paging.md` | descriptor paragraph of § Carrying the selected-keyset boundary (≈711–715) | Reconcile the [drift](keyset-temp-table-findings.md#design-drift-descriptor_page). Descriptor selection is carried in the keyset carrier on both engines, with no keyset temp table. The fences, owner rows, and boundary read that one selection per attempt. Replace the sentence that says the page-rows statement projects an aliased anchor and the handler takes its maximum from that alias (≈713–715; stale since DMS-1401): the boundary statement takes `MAX` of the anchor from the selection. Keep the rule that the anchor is the value page selection ordered by, not the copy in `dms.Document` |
 | `transactions-and-concurrency.md` | descriptor acquisition (≈660) | "materializes its authorized DocumentId keyset once" becomes "selects its authorized DocumentId keyset once and carries it in the batch", with selection-time continuation anchors kept. State that descriptor GET-many issues no DDL on PostgreSQL and runs in read-only transactions |
 
 ## Acceptance criteria
@@ -163,8 +167,12 @@ inconclusive for reviewer sign-off instead of counting it as met.
 - Pin the order of operations (AGENTS.md):
   - the carrier is set before the leading fence reads it;
   - the boundary comes from selection, not from the owner rows.
-- `DescriptorReadCommandExecutor` must keep recognizing the batch and computing the boundary
-  without a change. If it needs one, the markers changed and C6 applies.
+- `DescriptorReadCommandExecutor` must keep recognizing the batch and computing the boundary (see
+  its two text dependencies under Scope). Add one non-empty `ContentVersion`-anchored page whose
+  highest `DocumentId` and highest `ContentVersion` differ, with the boundary computed by the
+  executor (no `selectedBoundaries`), so the test fails if the executor reads the wrong column. No
+  existing test covers this: every anchored descriptor test passes `selectedBoundaries` or returns
+  no rows.
 
 **Integration** (`Backend.Postgresql.Tests.Integration`, `Backend.Mssql.Tests.Integration`):
 
@@ -216,7 +224,9 @@ and `AuthoritativeTimestampReadConsistencyScenario` pass.
 
 **Performance evidence.** Attach R1 and R2 artifacts from runs with `-Fixtures resource,descriptor`
 (the resource run calibrates the observer; the descriptor run itself takes about 2–5 min per
-engine), from three interleaved sessions on one machine. Also report the **residual estimate
+engine), from three interleaved sessions on one machine. Budget a second SQL Server session set:
+the spike's `main` CV at concurrency 8 (13–24%) predicts that N9's c = 8 cells trip the noisy-cell
+rerun. Also report the **residual estimate
 risk** on PostgreSQL: the descriptor readers have no parameters, so once Npgsql auto-prepares them
 (on their third use, `AutoPrepareMinUsages = 3`) their plan is generic, and its keyset estimate is
 frozen at the page of that third use; the first two uses are planned unprepared with the exact
@@ -260,4 +270,4 @@ test-adaptation section, passed every check on both engines:
 
 **3 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
 adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, and a short performance session
-set on each engine.
+set on each engine, plus the likely SQL Server rerun (N9).

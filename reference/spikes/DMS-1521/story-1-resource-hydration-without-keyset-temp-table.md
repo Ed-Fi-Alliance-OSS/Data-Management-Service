@@ -68,8 +68,9 @@ at 32 sessions and the resource batch's at 8 sessions in two of three runs. So S
   single-document fast path gains no parameter. SQL Server binding does not change.
 - **The guarded single-document keyset without the fast path** (`BuildGuardedSingleDocumentBatch`
   with `UseSingleDocumentFastPath: false`). No production caller uses it (C5), and the prototype
-  throws `NotSupportedException`. Implement it under the new contract, or remove the option with
-  its tests.
+  throws `NotSupportedException`. Implement it under the new contract. Do not remove it:
+  `flattening-reconstitution.md` (≈944) names it as the fallback for a dialect that declines the
+  fast path.
 - **Test churn and new tests** (see Test requirements).
 - **Manifest goldens.** Regenerate with `UPDATE_GOLDENS=1` and commit them in the same PR. CI never
   regenerates goldens.
@@ -96,7 +97,7 @@ Each edit is **mandated by DMS-1521's decision**
 | Document | Section | Edit |
 | --- | --- | --- |
 | `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (≈849–904) | The keyset is per dialect. On PostgreSQL: the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server: `#page` for resource hydration and selected pages (the retained fallback and its selection conditions), and a JSON carrier for candidate metadata. Keep one round trip and the first-result-set contract |
-| `flattening-reconstitution.md` | § 7 sketches (≈1818–1828, ≈2576–2582) | `SelectByKeysetSql` "joins the page keyset relation" instead of "expects a keyset table". Reconstituter step 1 becomes "select the page keyset" |
+| `flattening-reconstitution.md` | § 7 sketches (≈1818–1838, ≈2576–2582) | `SelectByKeysetSql` "joins the page keyset relation" instead of "expects a keyset table". The `KeysetTableContract` sketch (≈1833–1838) describes the per-dialect keyset, as in the `mpack-format-v1.md` row. Reconstituter step 1 becomes "select the page keyset" |
 | `flattening-reconstitution.md` | § 6.1 "Single-document fast path" rationale (≈908–909) | The `CREATE`, `INSERT`, and `DROP` the fast path avoids are SQL Server's `#page` cost (P1, P3). On PostgreSQL the page keyset issues no DDL; the fast path still saves the carrier and a join per result set |
 | `flattening-reconstitution.md` | § 7.10 reconstitution inner-loop sketch (≈2595–2596) | "materialize page keyset" becomes "select the page keyset"; "joined to page" becomes "joined to the page keyset relation" |
 | `compiled-mapping-set.md` | step 3 (≈733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset |
@@ -105,7 +106,7 @@ Each edit is **mandated by DMS-1521's decision**
 | `link-injection.md` | keyset join sketch (≈164–217) | "materialized page keyset" becomes "page keyset relation" |
 | `summary.md` | Query reconstitution (≈282) | "materialize a page keyset" becomes "select a page keyset" |
 | `transactions-and-concurrency.md` | standalone hydration (≈644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, resource GET-many and the read-acceleration batches issue no DDL and run in read-only transactions |
-| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (≈687) | On PostgreSQL the selecting statement returns the anchor beside the ids in the first result set; the carrier holds ids only. On SQL Server the anchor travels in `#page` (P1, P3) or the JSON carrier (P2). Invariant 3, "No extra roundtrip" (≈89), holds unchanged |
+| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (≈680–693) | The selected keys are no longer "inserted keys" returned by `RETURNING "DocumentId"` / `OUTPUT INSERTED.[DocumentId]` (≈680–685) on PostgreSQL or on SQL Server P2: the selecting statement returns them. On PostgreSQL the selecting statement returns the anchor beside the ids in the first result set; the carrier holds ids only. On SQL Server the anchor travels in `#page` (P1, P3) or the JSON carrier (P2). Invariant 3, "No extra roundtrip" (≈89), holds unchanged |
 
 ## Acceptance criteria
 
@@ -279,7 +280,9 @@ needs no change either, because P1 keeps `#page`.
 **Performance evidence.** Attach R1 and R2 artifacts (see
 [Thresholds](keyset-temp-table-findings.md#thresholds)), from three interleaved sessions on one
 machine, run from a clean tree. That is about 2.5 h of machine time for PostgreSQL. On SQL Server,
-the read-acceleration and resource fixtures take about 1.5 h per session pair.
+the read-acceleration and resource fixtures take about 1.7 h per session pair (task 6: 49–60 min
+per `main` run). Budget a second SQL Server session set: the spike's `main` CV at concurrency 8
+(22–24%) predicts that N9's c = 8 cells trip the noisy-cell rerun.
 
 ## Implementation guidance (non-binding)
 
@@ -362,9 +365,9 @@ It is a starting point:
 
 - a keyset contract that separates PostgreSQL from SQL Server P1 and P3, while SQL Server P2 gets
   its own relation;
-- the guarded single-document decision;
+- the guarded single-document keyset under the new contract;
 - about 60–70 updated unit pins and the golden regeneration;
 - six new integration tests (no temp tables on each engine, three carrier tests, read-only) and
   the binding unit tests;
 - eleven design-document edits;
-- one interleaved performance session set on each engine.
+- one interleaved performance session set on each engine, plus the likely SQL Server rerun (N9).

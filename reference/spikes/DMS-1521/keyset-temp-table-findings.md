@@ -113,7 +113,12 @@ replacement and must stay unchanged.
 `partitioned-cursor-paging.md` (line 711) says: "Descriptor page selection retrieves its rows in the
 same statement that selects them, so it needs no keyset temp table". Since DMS-1401 (`8a4eda2f6`)
 that is no longer true: P4 materializes `descriptor_page` so that both version fences and the owner
-rows read one selection per attempt. The descriptor story reconciles this text, together with
+rows read one selection per attempt. The paragraph's next sentence is stale since DMS-1401 too: it
+says the page-rows statement projects the anchor under an alias and the handler takes its maximum
+from that alias. DMS-1401 replaced that with the `-- Descriptor page selection boundary`
+statement's `MAX` over the selection (`DescriptorReadHandler.cs` ≈2065–2067); the projection carries
+no anchor alias. The rule the sentence protects still holds: the anchor is the value page selection
+ordered by, not the copy in `dms.Document`. The descriptor story reconciles this text, together with
 `transactions-and-concurrency.md`. This spike does not edit either document.
 
 ### Read replicas (EDFI-2956)
@@ -148,8 +153,10 @@ Found while mapping C1-C6. These are task 4 inputs (failure type (d)) and story 
   A batch-scoped SQL Server variable survives neither split, so the task 4 adaptation covers both.
 - `DescriptorReadCommandExecutor` (`Backend.Tests.Unit`) recognizes the descriptor batch by its
   `-- Descriptor acquisition:` and `-- Descriptor page selection boundary` markers and computes the
-  boundary from the command text. A changed descriptor batch must keep these markers or the
-  executor must change with it.
+  boundary from the command text. It takes the anchor column to be `ContentVersion` only when the
+  text contains `MAX("ContentVersion")` or `MAX([ContentVersion])`, and `DocumentId` otherwise. A
+  changed descriptor batch must keep the markers and that `MAX` text, or the executor must change
+  with it.
 
 ## Prior evidence
 
@@ -838,7 +845,8 @@ against the actual count):
   `INSERT … SELECT` was re-planned on nearly every call; the resource selecting statement stays
   custom (6 of 6).
 
-Both fixed estimates (10, or the first page's size) are far closer to small pages than `baseline`'s
+Both fixed estimates (10, or the size of the page that auto-prepared the readers on their third
+use) are far closer to small pages than `baseline`'s
 2,040, but neither tracks the page. Task 5 measures what they cost at 25 and 500 rows on
 `primary-500k`.
 
@@ -1497,7 +1505,7 @@ had not restarted.
 | Test | Engines | Type | Why |
 |---|---|---|---|
 | 109 of the 112 unit failures (69 batch and dialect text pins, 18 descriptor text pins, 14 parameter-count pins, 8 goldens) | – | (a) | Pins of the old SQL text or parameter list; the same classes and counts as task 4 (c) |
-| 3 unit tests of a guarded single-document keyset without the fast path (`Given_HydrationBatchBuilder_With_A_Single_Document_Keyset` ×2, `…With_Mssql_Single_Document_Fast_Path` flag-disabled) | – | (a), story scope | The prototype throws `NotSupportedException` on this non-production path (every production `PageKeysetSpec.Single` caller passes the fast path, C5); the story implements or removes it |
+| 3 unit tests of a guarded single-document keyset without the fast path (`Given_HydrationBatchBuilder_With_A_Single_Document_Keyset` ×2, `…With_Mssql_Single_Document_Fast_Path` flag-disabled) | – | (a), story scope | The prototype throws `NotSupportedException` on this non-production path (every production `PageKeysetSpec.Single` caller passes the fast path, C5); the story implements it, because `flattening-reconstitution.md` names it as the fallback for a dialect that declines the fast path |
 | `Given_A_{Pgsql,Mssql}_Query_Keyset_That_Returns_Its_Selected_Ids.It_returns_the_maximum_when_every_selected_row_was_deleted_before_hydration`, and the `content_version` variant | both | (d) | The test splices `DELETE`s after the temp-table `INSERT … RETURNING` / `OUTPUT` text, which `inline` does not emit. Adapted (below); passes under both variants |
 | `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls` | PostgreSQL | (a) | Asserts that `page` exists in `pg_class` mid-transaction: a pin of the removed mechanism. Its behavioral sibling in the same fixture (two hydrations in one transaction each return their own document) passes. It hydrates `PageKeysetSpec.Single` with the fast path off, which binds the `bigint[]` and never sets or reads the carrier, so it says nothing about the carrier within one transaction; the stories add that test |
 | `Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorProjection_And_DocumentReferenceLookup_Mssql.It_generates_a_keyset_batch_that_does_use_the_page_temp_table` | SQL Server | (a) | Pins the `#page` text of the comparison (non-fast-path) batch. The class's behavior tests pass, including `It_matches_the_existing_keyset_hydration_result` |
@@ -1526,7 +1534,7 @@ task 6 version, and it applies and reverses cleanly.
 | C3 counts, empty and zero pages, anchors | `LimitZeroCountReadScenario` (18 per engine), `CursorEmptyHydrationScenario`, `WindowedCursorAnchoringScenario` (8), `CursorPublicContractScenario` (8 / 3), the `Given_HydrationReader_With_A_Selected_Keyset_Result_Set` and `…Executor…` unit tests (16), the adapted deleted-before-hydration anchor tests, and the task 4 carrier probes (113 / 113) | Met, both engines |
 | C4 concurrency, authorization, isolation | `CursorPartitionConcurrencyScenario` (3 per engine), `AuthoritativeTimestampReadConsistencyScenario` (31 / 62, with the type (d) adaptation), `*RelationalOwnershipQueryAuthorizationTests`, `*DescriptorQueryOwnershipAuthorizationTests`; zero replay errors at 32 sessions in tasks 5 and 6 | Met, both engines |
 | C5 fast path | Every fast-path-enabled single-document unit pin passes unchanged; `RelationalWriteSmokeTests` 9 / 9; the `DocumentCacheMaterializer*Tests` classes pass in full; the `*Single_Document_Fast_Path*` and `Given_A_Single_DocumentId_Keyset*` integration classes pass, apart from the one type (a) comparison-batch pin; `MssqlWriteSessionCommandStreamTests` passes | Met, both engines |
-| C6 everything changes together | Story scope: the 101 unit text and parameter pins and 8 goldens (2,494 golden lines), the 3 guarded single-document cases, the 2 integration mechanism pins, and the type (d) adaptations at 4 sites (2 in `AuthoritativeTimestampReadConsistencyScenario`, 1 in each engine's `HydrationExecutorTests`). `DescriptorReadCommandExecutor` needs no change, because the descriptor markers are unchanged | Sized |
+| C6 everything changes together | Story scope: the 101 unit text and parameter pins and 8 goldens (2,494 golden lines), the 3 guarded single-document cases, the 2 integration mechanism pins, and the type (d) adaptations at 4 sites (2 in `AuthoritativeTimestampReadConsistencyScenario`, 1 in each engine's `HydrationExecutorTests`). The descriptor markers are unchanged, but `DescriptorReadCommandExecutor` also matches the boundary's unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])`, which the prototype's qualified `MAX(p."ContentVersion")` / `MAX(kj.[ContentVersion])` does not emit. No test caught it, because every anchored descriptor unit test passes explicit `selectedBoundaries` or returns no rows | Sized |
 
 ## Recommendation
 
@@ -1774,8 +1782,8 @@ supports that limit.
 
 | Story | Scope | Sized from | Proposed estimate |
 |---|---|---|---|
-| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement or remove; the prototype throws), goldens, and design docs | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 8 |
-| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change because the markers stay. Reconciles the design drift | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 3 |
+| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it, the documented per-dialect fallback; the prototype throws), goldens, and design docs | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 8 |
+| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 3 |
 | 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3 | 2, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
 
@@ -1927,7 +1935,7 @@ of `3621b1eb6`.
 | Document | Section (lines) | Edit | Story |
 |---|---|---|---|
 | `flattening-reconstitution.md` | § 6.1 "Single round-trip: materialize a `page` keyset" (849–904) | Make the keyset per dialect. On PostgreSQL, the transaction-local carrier, or a `bigint[]` for a selected page, with no DDL. On SQL Server, `#page` for resource hydration and selected pages. Keep one round trip and the first-result-set contract | 1 |
-| `flattening-reconstitution.md` | § 7 sketches (1818–1828 `SelectByKeysetSql` "expects a keyset table"; 2576–2582 reconstituter step 1) | "joins the page keyset relation" instead of a materialized table; step 1 "select the page keyset" | 1 |
+| `flattening-reconstitution.md` | § 7 sketches (1818–1828 `SelectByKeysetSql` "expects a keyset table"; 1833–1838 `KeysetTableContract`; 2576–2582 reconstituter step 1) | "joins the page keyset relation" instead of a materialized table; the `KeysetTableContract` sketch describes the per-dialect keyset, as in the `mpack-format-v1.md` row; step 1 "select the page keyset" | 1 |
 | `flattening-reconstitution.md` | § 6.1 "Single-document fast path" rationale (908–909) | The `CREATE`, `INSERT`, and `DROP` the fast path avoids are SQL Server's `#page` cost (P1, P3). On PostgreSQL the page keyset issues no DDL; the fast path still saves the carrier and a join per result set | 1 |
 | `flattening-reconstitution.md` | § 7.10 reconstitution inner-loop sketch (2595–2596) | "materialize page keyset" becomes "select the page keyset"; "joined to page" becomes "joined to the page keyset relation" | 1 |
 | `compiled-mapping-set.md` | step 3 (733–736) | Replace "temp table / table variable … create/clear + insert" with the per-dialect keyset of § 6.1 | 1 |
@@ -1936,8 +1944,8 @@ of `3621b1eb6`.
 | `link-injection.md` | keyset join sketch (164–217) | "materialized page keyset" becomes "page keyset relation" | 1 |
 | `summary.md` | Query reconstitution (282) | "materialize a page keyset" becomes "select a page keyset" | 1 |
 | `transactions-and-concurrency.md` | standalone hydration (644) | "after keyset materialization" becomes "after keyset selection". Add: on PostgreSQL, resource GET-many and the read-acceleration batches issue no DDL, so they run in read-only transactions (DMS-1687, from EDFI-2956) | 1 |
-| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (687) | On PostgreSQL the selecting statement returns the anchor beside the ids in the first result set, and the carrier holds ids only. On SQL Server the anchor travels in `#page` where it stays (P1, P3) or in the JSON carrier (P2). Invariant 3 (89) is preserved and needs no change | 1 |
-| `partitioned-cursor-paging.md` | descriptor paragraph (711) | Reconcile the [drift](#design-drift-descriptor_page): descriptor selection is carried in the carrier on both engines, with no keyset temp table | 2 |
+| `partitioned-cursor-paging.md` | § Carrying the selected-keyset boundary (680–693) | The selected keys are no longer "inserted keys" returned by `RETURNING` / `OUTPUT INSERTED` (680–685) on PostgreSQL or on SQL Server P2: the selecting statement returns them. On PostgreSQL the selecting statement returns the anchor beside the ids in the first result set, and the carrier holds ids only. On SQL Server the anchor travels in `#page` where it stays (P1, P3) or in the JSON carrier (P2). Invariant 3 (89) is preserved and needs no change | 1 |
+| `partitioned-cursor-paging.md` | descriptor paragraph (711–715) | Reconcile the [drift](#design-drift-descriptor_page): descriptor selection is carried in the carrier on both engines, with no keyset temp table. Replace the anchor-alias sentence (713–715): the boundary statement takes `MAX` of the anchor from the selection. Keep the rule that the anchor is the value page selection ordered by | 2 |
 | `transactions-and-concurrency.md` | descriptor acquisition (660) | "materializes its authorized DocumentId keyset once" becomes "selects … once and carries it in the batch" | 2 |
 
 ## Disposition
