@@ -84,7 +84,10 @@ insert, and latch they replace.
   - `eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1` (≈809) grants
     `CONNECT, TEMPORARY`, and `eng/verification/tests/PublisherSnapshotInterop.Tests.ps1`
     (≈137–139) asserts that grant "because DMS creates temp tables on GET-many". Grant `CONNECT`
-    only, and update the assertion.
+    only, and update the assertion. Also rewrite the `Get-InteropPostgresReadOnlySql` docstring
+    (`PublisherSnapshotInterop.psm1` ≈773–776), which says `TEMPORARY` "has to be granted back
+    (DMS creates temp tables on a GET-many)": only `CONNECT` is granted back, beside the existing
+    `USAGE` and `SELECT` grants.
 
 **Out of scope:**
 
@@ -130,7 +133,12 @@ Each edit is **mandated by DMS-1521's decision**
 ### Correctness (C1–C6)
 
 - **C1.** Every result set keeps the authorized descriptor set and the selected-page order. Nothing
-  runs per document.
+  runs per document. On both engines the carrier drops `descriptor_page`'s
+  `PRIMARY KEY ("DocumentId")`, which today fails the insert on a duplicate selected id, so a
+  duplicate would now be returned twice without an error. Page selection cannot produce one: the
+  descriptor planner tests in the candidate-uniqueness fixtures
+  (`Given_A_{Postgresql,Mssql}_Compiled_Candidate_Relation.It_should_yield_one_row_per_document_id_for_every_descriptor_planner_consumer`)
+  are the guard that must stay green.
 - **C2.** Descriptor responses (URI, code value, namespace, and metadata) are unchanged.
 - **C3.** Total counts, empty and zero-limit pages, offsets, cursor ordering modes, and
   continuation anchors are unchanged.
@@ -139,7 +147,8 @@ Each edit is **mandated by DMS-1521's decision**
   as RCSI.
 - **C5.** No single-document path changes.
 - **C6.** The handler, its tests, the test doubles, the design documents above, and the
-  `TEMPORARY` grant in the snapshot doc and interop harness change in the same PR. The PR also
+  `TEMPORARY` grant in the snapshot doc and interop harness change in the same PR, and the PR
+  records a passing `CONNECT`-only PostgreSQL interop run. The PR also
   adds an entry to `docs/changelog/8.2.0.md`, the changelog for fix version v8.2 (create the file
   if the release has none yet). The entry says that resource and descriptor GET-many work on a
   PostgreSQL read replica and in any read-only transaction
@@ -246,8 +255,20 @@ inconclusive for reviewer sign-off instead of counting it as met.
 - `*DescriptorReadQueryFilterTests` and `*DescriptorQueryOwnershipAuthorizationTests` pass on
   both engines.
 
-**Verification harness** (Pester): `eng/verification/tests/PublisherSnapshotInterop.Tests.ps1`
-passes with the updated grant assertion (`CONNECT` only).
+**Verification harness.**
+
+- Pester: `eng/verification/tests/PublisherSnapshotInterop.Tests.ps1` passes with the updated grant
+  assertion (`CONNECT` only).
+- Live interop run (required). The Pester assertion checks only the generated SQL text, and E4 runs
+  as the tests' admin login, so neither shows that a `CONNECT`-only reader can serve DMS. From the
+  story branch, run
+  `pwsh eng/verification/Invoke-PublisherSnapshotInteropCheck.ps1 -Engine postgresql -Scenario All -Rebuild`.
+  It builds local images, so the snapshot reader role holds `CONNECT` only, and it reads all seven
+  source surfaces through that role (GET-many, `/partitions`, cursor pages, `totalCount`,
+  `/deletes`, `/keyChanges`, `/availableChangeVersions`). Isolated and NoSnapshot must both pass;
+  the PR records the run folder and both pass counts. The harness runs by hand, not in CI; the
+  8.1.0 PostgreSQL run took about 5 minutes. SQL Server needs no run: `TEMPORARY` is a PostgreSQL
+  grant.
 
 **API integration** (`Tests.Integration`, both engines, full suites): `DescriptorRuntimeScenario`,
 `CompactDescriptorResourceScenario`, `LimitZeroCountReadScenario`, the cursor scenarios,
@@ -315,5 +336,5 @@ test-adaptation section, passed every check on both engines:
 ## Estimate
 
 **2 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
-adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness, the changelog entry, and a short performance session
+adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness with one live PostgreSQL interop run, the changelog entry, and a short performance session
 set on each engine, plus the likely SQL Server rerun (N9).

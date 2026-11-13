@@ -1471,7 +1471,7 @@ and P3, where `#page` stays (see [Recommendation](#recommendation)).
 
 ## Correctness validation
 
-Written by task 7. **`inline` changes no behavior on either engine: no type (b) failure.** Every API
+Written by task 7. **`inline` changes no behavior on either engine: no type (b) failure in the lanes run.** Every API
 integration test passes on both engines. Every remaining failure is a pin of the temp-table text or
 mechanism (type (a)), or a test double that rewrites keyset batches (type (d)), which the patch's
 test section now adapts. There are no type (c) failures.
@@ -1511,6 +1511,23 @@ DMS-1624). The SQL Server lane's 9.5-hour gap in its log, between the two suites
 paused in selection mode, not test time: the backend suite ran 01:49–02:01 against a container that
 had not restarted.
 
+**Not run.** The two backend lanes ran the class filters in `experiments/t7-filter-*.txt` (23
+PostgreSQL classes, 29 SQL Server classes), not the whole projects. Keyset-using classes outside
+them were not run:
+
+- The five `PostgresqlDescriptorProjectionTests` classes. Their shared `DescriptorProjectionFixture`
+  hand-writes two readers that join the literal `"page"`, hydrated as `PageKeysetSpec.Single` with
+  the fast path off or as `PageKeysetSpec.Query`. By code reading they fail with `42P01` under
+  `inline`: a fixture dependency on the temp-table name, not a behavior change. Story 1 rewrites the
+  fixture.
+- On both engines, classes that compile their plans and so follow the new relation:
+  `*CollectionDescriptorProjectionTests`, `*DescriptorProjectionPipelineTests`,
+  `*AnchoredAuthorizationRowSetEquivalenceTests`, `*OwnershipTokenPageQueryPlanTests`, and the five
+  `*DocumentCacheMaterializer*` integration classes (fast path); on PostgreSQL also
+  `PostgresqlDescriptorProjectionAliasTests`.
+- `MssqlDescriptorProjectionTests`, which pins `[#page]` in compiled SQL (≈321). Under the prototype
+  that pin is type (a); under story 1 it stays green, because SQL Server keeps its compiled `#page`.
+
 ### Failure classification
 
 | Test | Engines | Type | Why |
@@ -1544,8 +1561,8 @@ task 6 version, and it applies and reverses cleanly.
 | C2 reconstruction | `HydrationExecutorTests` (child and nested-child rows), `*DocumentReferenceLookupPageTests`, `*PageLinkInjectionIntegrationTests`, `DescriptorRuntimeScenario` (24 per engine), `CompactDescriptorResourceScenario` (10), `*DescriptorReadQueryFilterTests` | Met, both engines |
 | C3 counts, empty and zero pages, anchors | `LimitZeroCountReadScenario` (18 per engine), `CursorEmptyHydrationScenario`, `WindowedCursorAnchoringScenario` (8), `CursorPublicContractScenario` (8 / 3), the `Given_HydrationReader_With_A_Selected_Keyset_Result_Set` and `…Executor…` unit tests (16), the adapted deleted-before-hydration anchor tests, and the task 4 carrier probes (113 / 113) | Met, both engines |
 | C4 concurrency, authorization, isolation | `CursorPartitionConcurrencyScenario` (3 per engine), `AuthoritativeTimestampReadConsistencyScenario` (31 / 62, with the type (d) adaptation), `*RelationalOwnershipQueryAuthorizationTests`, `*DescriptorQueryOwnershipAuthorizationTests`; zero replay errors at 32 sessions in tasks 5 and 6 | Met, both engines |
-| C5 fast path | Every fast-path-enabled single-document unit pin passes unchanged; `RelationalWriteSmokeTests` 9 / 9; the `DocumentCacheMaterializer*Tests` classes pass in full; the `*Single_Document_Fast_Path*` and `Given_A_Single_DocumentId_Keyset*` integration classes pass, apart from the one type (a) comparison-batch pin; `MssqlWriteSessionCommandStreamTests` passes | Met, both engines |
-| C6 everything changes together | Story scope: the 101 unit text and parameter pins and 8 goldens (2,494 golden lines), the 3 guarded single-document cases, the 2 integration mechanism pins, and the type (d) adaptations at 4 sites (2 in `AuthoritativeTimestampReadConsistencyScenario`, 1 in each engine's `HydrationExecutorTests`), and three descriptor order checks anchored on `INSERT INTO` that would otherwise pass vacuously (story 2). The descriptor markers are unchanged, but `DescriptorReadCommandExecutor` also matches the boundary's unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])`, which the prototype's qualified `MAX(p."ContentVersion")` / `MAX(kj.[ContentVersion])` does not emit. No test caught it, because every anchored descriptor unit test passes explicit `selectedBoundaries` or returns no rows | Sized |
+| C5 fast path | Every fast-path-enabled single-document unit pin passes unchanged; `RelationalWriteSmokeTests` 9 / 9; the `DocumentCacheMaterializer*Tests` unit classes pass in full (the integration materializer classes were outside the filters; they take the fast path, which `inline` does not change); the `*Single_Document_Fast_Path*` and `Given_A_Single_DocumentId_Keyset*` integration classes pass, apart from the one type (a) comparison-batch pin; `MssqlWriteSessionCommandStreamTests` passes | Met, both engines |
+| C6 everything changes together | Story scope: the 101 unit text and parameter pins and 8 goldens (2,494 golden lines), the 3 guarded single-document cases, the 2 integration mechanism pins, the five PostgreSQL descriptor-projection classes whose shared fixture hand-writes `"page"` joins (outside the task 7 filter; by code reading, they fail with `42P01`), and the type (d) adaptations at 4 sites (2 in `AuthoritativeTimestampReadConsistencyScenario`, 1 in each engine's `HydrationExecutorTests`), and three descriptor order checks anchored on `INSERT INTO` that would otherwise pass vacuously (story 2). The descriptor markers are unchanged, but `DescriptorReadCommandExecutor` also matches the boundary's unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])`, which the prototype's qualified `MAX(p."ContentVersion")` / `MAX(kj.[ContentVersion])` does not emit. No test caught it, because every anchored descriptor unit test passes explicit `selectedBoundaries` or returns no rows | Sized |
 
 ## Recommendation
 
@@ -1653,7 +1670,7 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
   (reported, not a CI test).
 
 **Correctness.** No type (b) failure (task 7): 486 of 486 PostgreSQL API integration tests, and the
-backend read-path suite except 2 type (d) and 1 type (a). Carrier probes: 113 of 113. These cover
+23 filtered backend read-path classes except 2 type (d) and 1 type (a). Carrier probes: 113 of 113. These cover
 no stale ids on a reused connection with `NoResetOnClose`, no leak after a failed batch, retries,
 and every `plan_cache_mode`. C1–C5 are met; C6 is story scope (see
 [C1–C6 matrix](#c1c6-matrix)).
@@ -1748,7 +1765,7 @@ page size. Nothing approaches the 2,100-parameter budget at `MaximumPageSize`.
 `#page` does not reproduce EDFI-2956 on SQL Server. P2 and P4 under `inline` issue no DDL at all.
 
 **Correctness.** No type (b) failure: 491 of 492 SQL Server API integration tests passed (one
-pre-existing `[Ignore]`), and the backend read-path suite passed except 2 type (d) and 1 type (a).
+pre-existing `[Ignore]`), and the 29 filtered backend read-path classes passed except 2 type (d) and 1 type (a).
 The type (d) adaptation of `AuthoritativeTimestampReadConsistencyScenario` carries `@page_keyset`
 across the test's split command. Story 2 needs it at the descriptor split site; the resource
 site keeps `#page` on SQL Server.
@@ -1805,8 +1822,8 @@ supports that limit.
 
 | Story | Scope | Sized from | Proposed estimate |
 |---|---|---|---|
-| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 3 |
-| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, three order checks anchored on `INSERT INTO` that would otherwise pass vacuously, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 2 |
+| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Under story 1 only that half changes; the SQL Server blocks stay byte-identical (AC3). Also 1 PostgreSQL integration mechanism pin, the five `PostgresqlDescriptorProjectionTests` classes (one shared fixture of hand-written `"page"` readers), and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 3 |
+| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, three order checks anchored on `INSERT INTO` that would otherwise pass vacuously, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands; a live `CONNECT`-only PostgreSQL interop run proves it | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 2 |
 | 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3. PostgreSQL only: one `ANALYZE` after each keyset insert in the hydration and descriptor batches, their PostgreSQL text pins, the harness `PgsqlPlanCapture.ClassifyStatement` (it rejects a statement starting with `ANALYZE`), and R1 evidence. Sized below story 2, as before the rescale | 1, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
 

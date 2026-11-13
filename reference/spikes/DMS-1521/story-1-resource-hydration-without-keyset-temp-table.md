@@ -99,7 +99,12 @@ at 32 sessions and the resource batch's at 8 sessions in two of three runs. So S
     parameter. Bind it as production does: an untyped NULL for a query keyset.
 - **Test churn and new tests** (see Test requirements).
 - **Manifest goldens.** Regenerate with `UPDATE_GOLDENS=1` and commit them in the same PR. CI never
-  regenerates goldens.
+  regenerates goldens. Each golden holds an `mssql` and a `pgsql` block, and the regeneration
+  rewrites both. Every golden's `mssql` block must stay byte-identical to `main`: this story
+  compiles no new SQL Server SQL (the candidate batch is built at run time, not compiled into the
+  mapping set), so any SQL Server hunk in the diff is an accidental change. The only allowed
+  exception is a deliberate change to the shared `keyset_table` shape, which the PR names, with
+  every SQL Server `*_sql_sha256` still equal to `main`'s.
 - **The design-document edits** listed below.
 
 **Out of scope:**
@@ -165,7 +170,13 @@ Each edit is **mandated by DMS-1521's decision**
 ### Correctness (C1–C6)
 
 - **C1.** Every hydration result set keeps the fixed authorized document set and the selected-page
-  order. Nothing runs per document.
+  order. Nothing runs per document. PostgreSQL P1–P3 and SQL Server P2 lose the keyset table's
+  `PRIMARY KEY ("DocumentId")`, which today fails the insert on a duplicate selected id (`23505`,
+  `2627`). A duplicate would now be hydrated twice without an error. Page selection cannot produce
+  one, and P3's ids come from P2's candidates: `Given_A_Postgresql_Compiled_Candidate_Relation` and
+  `Given_A_Mssql_Compiled_Candidate_Relation` prove one row per `DocumentId` for every
+  authorization shape, and they are the guard that must stay green. SQL Server P1 and P3 keep
+  `#page` and its key.
 - **C2.** Root and child ordering, descriptor projections, reference lookups, and the
   reconstructed responses are unchanged.
 - **C3.** Total counts, empty and zero-limit pages, offsets, cursor ordering modes, and
@@ -248,7 +259,8 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
   - the selected keys come from selection, not from hydration.
 - Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and `MaximumPageSize`; the
   fast-path command's parameters are unchanged; SQL Server binding is unchanged.
-- SQL Server P1 and P3: the existing pins stay green unchanged. They are the byte-identity guard.
+- SQL Server P1 and P3: the existing pins and the goldens' `mssql` blocks stay unchanged. They are
+  the byte-identity guard.
 - Guarded single-document keyset without the fast path, PostgreSQL: the batch contains no
   `set_config`, binds no keyset parameter, reads `@DocumentId` under the guard predicate, and
   `GetResultSetCount` is unchanged. The existing
@@ -265,7 +277,7 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
   in this story, in `Given_HydrationBatchBuilder_*`, `Given_ReadPlanCompiler`,
   `Given_PgsqlPlanDialect`, `Given_PlanSqlWriterExtensions`, `Given_A_Keyset_That_Carries_No_Anchor`,
   and `Given_RelationalQueryRequestPreprocessor+Given_CompactDescriptorFilters`. Regenerate the
-  8 manifest goldens; about half of the 2,494 changed lines the prototype produced are
+  8 manifest goldens, and check that no hunk falls in an `mssql` block; about half of the 2,494 changed lines the prototype produced are
   PostgreSQL's.
 
 **Integration** (`Backend.Postgresql.Tests.Integration`, `Backend.Mssql.Tests.Integration`):
@@ -319,6 +331,23 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
   `Given_Postgresql_Query_Keysets_In_One_Transaction` (above) replaces it. The fixture's
   behavioral sibling stays, but it is not carrier coverage: it hydrates `PageKeysetSpec.Single`
   with the fast path off, which binds the `bigint[]` and never sets or reads the carrier.
+- **Hand-written keyset readers.** Five classes in `PostgresqlDescriptorProjectionTests`
+  (`Given_Required_Descriptor_FK_Resolves_To_URI`,
+  `Given_Null_Descriptor_FK_Omits_Property_From_Reconstituted_Document`,
+  `Given_Page_With_Multiple_Documents_And_Distinct_Descriptors`,
+  `Given_Descriptor_FK_Cleared_To_Null_Omits_Property_From_Reconstituted_Document`, and
+  `Given_Multi_Document_Page_Created_Via_Query_Keyset_Returns_All_Descriptor_URIs`; 13 tests)
+  hydrate a read plan from one shared fixture, `DescriptorProjectionFixture`. Its two SQL strings
+  (`BuildDescriptorProjectionPlan` ≈61–77, `BuildReadPlan` ≈154–164) join the literal `"page"`.
+  The classes hydrate `PageKeysetSpec.Single` with the fast path off (the five-argument
+  `HydrationExecutor.ExecuteAsync` default) or `PageKeysetSpec.Query`, so once `"page"` is gone
+  they fail with `42P01`. Rewrite the fixture's two SQL strings, for example by compiling the plan
+  with `ReadPlanCompiler`, as `MssqlDescriptorProjectionTests` and the PostgreSQL
+  `…CollectionDescriptorProjectionTests`, `…DescriptorProjectionAliasTests`, and
+  `…DescriptorProjectionPipelineTests` already do. The task 7 filter did not run these classes.
+  `Backend.Tests.Common/DocumentCacheMaterializerLinkBearingMappingSet.cs` also joins `"page"`
+  (≈273, ≈323) but needs no change: only `DocumentCacheMaterializer` uses it, always on the fast
+  path, which reads only `SelectBySingleDocumentSql`.
 - **C5.** `RelationalWriteSmokeTests`, the `DocumentCacheMaterializer*Tests` classes, the
   `*Single_Document_Fast_Path*` classes, and `MssqlWriteSessionCommandStreamTests` pass unchanged.
 
@@ -424,7 +453,8 @@ It is a starting point:
   substituted `@DocumentId` token);
 - the performance harness's PostgreSQL plan capture (literals and the keyset parameter) and its
   unit test;
-- about 60–70 updated unit pins and the golden regeneration;
+- about 60–70 updated unit pins, the golden regeneration, and one shared integration fixture with
+  hand-written `"page"` readers;
 - six new integration tests (no temp tables on each engine, three carrier tests, read-only) and
   the binding unit tests;
 - eleven design-document edits;
