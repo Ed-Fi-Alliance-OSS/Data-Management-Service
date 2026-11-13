@@ -246,8 +246,12 @@ proof that it was put back.
 > **Run this recipe from the DMS revision the artifact records** -- *DMS revision built*,
 > `efc9079a0d760d3c999d97fd5269a932dbaece16` in the Record at the end of this document -- or from a
 > checkout whose `src/` matches it. The hash step 3 expects and the DDL step 5c compares against both
-> come from `src/` at that revision; step 3 checks this and stops otherwise. To bring the dataset onto a
-> newer checkout, use `Copy-NorthridgeDataForward.ps1` instead of this recipe.
+> come from `src/` at that revision; step 3 checks this and stops otherwise.
+> `Copy-NorthridgeDataForward.ps1` is not a route for this artifact: it converts a legacy dump, and its
+> preflight rejects v81, which already has the compact `dms.Descriptor.DescriptorId` and `ResourceKeyId`
+> on the abstract identity tables. Its source is the retained v80 dump
+> (`EdFi_DMS_Northridge_v80_20260819_PG`, see *Superseded* above; 10,576,801 documents), as described
+> under *Copy legacy data into the current compact schema*.
 
 ```shell
 DC=~/src/Data-Management-Service/eng/docker-compose   # your checkout
@@ -288,7 +292,7 @@ ARTIFACT_DMS_REV=efc9079a0d760d3c999d97fd5269a932dbaece16   # DMS revision built
 git cat-file -e "${ARTIFACT_DMS_REV}^{commit}" 2>/dev/null || \
   { echo "commit ${ARTIFACT_DMS_REV} is not in this clone -- fetch the full history (git fetch --unshallow) and retry; do NOT continue"; exit 1; }
 test -d ../../src && git diff --quiet "$ARTIFACT_DMS_REV" HEAD -- ../../src || \
-  { echo "this checkout's src/ differs from the DMS revision the artifact records -- for this recipe check out $ARTIFACT_DMS_REV, or a checkout whose src/ matches it; to bring the dataset onto a newer checkout run Copy-NorthridgeDataForward.ps1 instead of this recipe; do NOT continue"; exit 1; }
+  { echo "this checkout's src/ differs from the DMS revision the artifact records -- for this recipe check out $ARTIFACT_DMS_REV, or a checkout whose src/ matches it; Copy-NorthridgeDataForward.ps1 is not a way out for this artifact: it converts the legacy v80 dump only and rejects v81; do NOT continue"; exit 1; }
 APISCHEMA_VER=1.0.335       # the version THIS artifact was provisioned from
 
 #    Materialize the core package. The repo pins it centrally and references it with
@@ -1109,8 +1113,14 @@ test -n "$VID" || \
 #     POST /v3/applications is create-only as well: a re-run of this step, with the application from an
 #     earlier run still registered under this vendor, answers 400 with "Application 'Local Consumer Read'
 #     already exists for vendor." and stops below. That earlier application's secret was shown once, at its
-#     creation, so there is nothing to look up: delete it first (DELETE $CMS/v3/applications/<id> with the
-#     restore-admin token; GET $CMS/v3/applications lists the ids) or give this one another applicationName.
+#     creation, so there is nothing to look up: remove it first, in two requests with the restore-admin
+#     token (GET $CMS/v3/applications lists the ids). A DELETE alone answers 500 on this restored database
+#     (DMS-1690) for as long as the application has education organizations, so empty them, then delete:
+#       PUT $CMS/v3/applications/<id> with the body below changed in two places: "id":<id> added, and
+#         "educationOrganizationIds":[]. It answers 204 -- or, when a DELETE was already tried, 502 with
+#         "The Application change is saved, but 1 API client is still pending synchronization"; the
+#         change is saved either way.
+#       DELETE $CMS/v3/applications/<id>, which then answers 204.
 BODY="{\"applicationName\":\"Local Consumer Read\",\"vendorId\":${VID},\"claimSetName\":\"EdFiAPIPublisherWriter\",\"educationOrganizationIds\":[255901],\"dataStoreIds\":[1]}"
 APP_RESPONSE=$(AUTH_HTTP POST "$CMS/v3/applications" "$ART/application-post.headers") || \
   { echo "the application request could not be made"; exit 1; }
@@ -1256,7 +1266,7 @@ Every published artifact records the following, on its ticket and in this direct
 | Sourced from | the published v80 artifact named above, itself produced from the Northridge ODS artifact (see the v80 Record). The dataset of record for this republication is `EdFi_DMS_Northridge_v80_20260819_PG` |
 | DMS revision built | `efc9079a0d760d3c999d97fd5269a932dbaece16` -- `main` on 2026-11-04: the revision whose `ddl emit` output the final migration hop recreates, whose `src/` step 3 guards against, and whose compose stack restores the archive. The dump was taken from the migrated database on 2026-11-04 |
 | Branch head at publication | the `DMS-1634` branch carrying this text, based on `main` after `efc9079a0`; its changes are confined to `eng/northridge/` (this file and two test files), so no DMS `src/` code changed on it. Its `main` base does carry `src/` changes after `efc9079a0` (DMS-1664 and later), which is why step 3 stops on this checkout and sends a consumer to `efc9079a0`, the revision the artifact records |
-| Recipe text executed | the v81 text, on 2026-11-05, from a clean slate with non-default credentials. The recipe's shell block is identified by content: steps 1 to 11 ran from the first v81 block (sha256 `9aa86dfe6197572d1a1a7c666fc59860b5a52a4d324e87037b4d3a2b17b937ad`), step 12 from the block of this commit (sha256 `fe66803074e8d9cc0ac338b8d07c211d99feea1907907ce2b144724f6406ddd9`) after two text fixes that run surfaced; both blocks are on DMS-1634 as `recipe-v81.readme-block.*.sh` -- see *Recipe execution record* |
+| Recipe text executed | the v81 text, on 2026-11-05, from a clean slate with non-default credentials. The recipe's shell block is identified by content: steps 1 to 11 ran from the first v81 block (sha256 `9aa86dfe6197572d1a1a7c666fc59860b5a52a4d324e87037b4d3a2b17b937ad`), step 12 from the last block of that day (sha256 `fe66803074e8d9cc0ac338b8d07c211d99feea1907907ce2b144724f6406ddd9`) after two text fixes that run surfaced; both blocks are on DMS-1634 as `recipe-v81.readme-block.*.sh`. The block of this commit (sha256 `0a3706b062c308d14f4b7677aea6a7cef2750c401813f296f82e3f479271dfaa`) differs from that last block in one message and one comment, reworded in review after the run -- see *Recipe execution record* |
 | `SourceIdentity` as shipped | `8b962de6-b979-49aa-bce0-ca59e0a1ad51` -- the same value as v80, because the in-place route keeps it (the copy-forward would have minted a new one); rotate it (step 8), and a consumer whose value still reads this has skipped the step |
 | Engine image | none: the dump was taken with `pg_dump` 18.0 from PostgreSQL 18.0 on Windows, not inside the compose image. The archive header reads `Dumped from database version: 18.0` and `Dumped by pg_dump version: 18.0` (`pg_restore -l`), archive format 1.16. The compose stack at this revision pins `postgres:18.6-alpine`, which restores it |
 | `ResourceKeySeedHash` | `fae376b7b81722efe1878226a49200d74ae68febac7d21f5121a0824236e981b` -- unchanged from v80 |
@@ -1390,12 +1400,25 @@ that text stopped at `no DMS token minted`: the Configuration Service at this re
 re-run of step 12 then met the vendor-exists 400 with its body rendered as bytes (`AUTH_HTTP` now decodes a
 byte-array body) and the application-exists 400 (now documented at the application request; that
 application, left by the first attempt, was removed by SQL because `DELETE /v3/applications/{id}` answered
-500 at this revision, `FK_ApiClientEducationOrganization_ApiClient`). Step 12 was then executed from the
-block of this commit (`fe66803074e8d9cc0ac338b8d07c211d99feea1907907ce2b144724f6406ddd9`) as a resumed block -- the variables, the step 7 and step 9
+500 on the restored database, `FK_ApiClientEducationOrganization_ApiClient`, DMS-1690). Step 12 was then executed from the
+last block of that day (`fe66803074e8d9cc0ac338b8d07c211d99feea1907907ce2b144724f6406ddd9`) as a resumed block -- the variables, the step 7 and step 9
 helpers and the admin token re-established; the one-time registration, the data store re-save and step 10
 not repeated -- and ended with `DMS served the restored dataset: HTTP 200, Total-Count 21628`. The
-transcripts, the executed scripts and their diffs against the README block are on DMS-1634. The shell block
-above is the executed text; the prose around it (the Records and this record) was written after the run.
+transcripts, the executed scripts and their diffs against the README block are on DMS-1634.
+
+The shell block above is that executed text with two changes made in review after the run, neither to a
+command. The message the step 3 guard prints when it stops no longer sends the reader to
+`Copy-NorthridgeDataForward.ps1`, which does not take this artifact; the guard passed in the run, so the
+message was never printed. The comment above the application request in step 12 no longer advises a plain
+`DELETE` of an earlier run's application, the request that answered 500 in the run; it gives the two
+requests that remove it. Those were run on 2026-11-13 through this block's `AUTH_HTTP`, against a
+Configuration Service built at `efc9079a0` over the `dmscs` tables restored from the artifact: `PUT` 204
+then `DELETE` 204, and after a plain `DELETE` (500) `PUT` 502 then `DELETE` 204, with the application
+request answering 201 afterwards both times. The block now hashes to
+`0a3706b062c308d14f4b7677aea6a7cef2750c401813f296f82e3f479271dfaa`; its diff against the executed block and
+that transcript are on DMS-1634 as `recipe-v81.readme-block.review.diff` and
+`review.application-cleanup.transcript.txt`. The prose around the block (the Records and this record) was
+written after the run.
 
 **v80 text (history).** The clean-slate, non-default-credential run of 2026-08-19 executed the
 eleven-step recipe text of the v80 publication head, `b303450ab5fd689526696cb088a76a90b7ef6c14`,

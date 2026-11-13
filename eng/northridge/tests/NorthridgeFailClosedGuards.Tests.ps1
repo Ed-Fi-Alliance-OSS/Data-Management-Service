@@ -1033,12 +1033,16 @@ Describe "Restore recipe stops on a checkout that is not the artifact's DMS revi
         $script:recordedRevision = [regex]::Match($script:readme, '(?m)^\| DMS revision built \| `(?<sha>[0-9a-f]{40})`').Groups["sha"].Value
     }
 
-    It "states the revision prerequisite and the copy-forward alternative before the first recipe command" {
+    It "states the revision prerequisite and what the copy-forward takes before the first recipe command" {
         $script:recordedRevision | Should -Match '^[0-9a-f]{40}$' -Because "the Record must name the DMS revision built"
         $sectionAt = $script:readme.IndexOf('## Restore recipe -- PostgreSQL')
         $preamble = $script:readme.Substring($sectionAt, $script:readme.IndexOf('```shell') - $sectionAt)
         $preamble | Should -Match $script:recordedRevision -Because "the reader must be told which revision the recipe is for before running it"
-        $preamble | Should -Match 'Copy-NorthridgeDataForward\.ps1' -Because "a newer checkout is served by the copy-forward, not by this recipe"
+        $preamble | Should -Match 'Copy-NorthridgeDataForward\.ps1' -Because "the reader must be told what the copy-forward takes before reaching for it"
+        # The false way out: the copy-forward converts a legacy dump and its preflight rejects a compact
+        # artifact, so a recipe for a compact artifact that sends a newer checkout to it sends the reader
+        # into a preflight failure. The source it does take is named instead.
+        $preamble | Should -Match 'EdFi_DMS_Northridge_v80_20260819_PG' -Because "the copy-forward's source is the legacy v80 dump, not the artifact this recipe restores"
     }
 
     It "compares the checkout's src/ against the recorded revision in step 3, before anything is materialized or staged, and stops with the way out" {
@@ -1057,7 +1061,8 @@ Describe "Restore recipe stops on a checkout that is not the artifact's DMS revi
         $guard.Index | Should -BeGreaterThan $script:activeStep3.IndexOf('cd "$DC"') -Because "git runs inside the checkout"
         $guard.Index | Should -BeLessThan $script:activeStep3.IndexOf('dotnet restore') -Because "nothing is materialized or staged from the wrong revision"
         $guard.Groups["message"].Value | Should -Match '\$ARTIFACT_DMS_REV' -Because "the operator is told which revision to check out"
-        $guard.Groups["message"].Value | Should -Match 'Copy-NorthridgeDataForward\.ps1' -Because "the operator on a newer checkout is sent to the copy-forward"
+        $guard.Groups["message"].Value | Should -Match 'Copy-NorthridgeDataForward\.ps1' -Because "the operator is told whether the copy-forward is a way out"
+        $guard.Groups["message"].Value | Should -Match 'legacy v80 dump' -Because "the copy-forward rejects a compact artifact, so the message names the source it takes"
         $guard.Groups["message"].Value | Should -Not -Match 'RECOVER_FROM_REF' -Because "nothing has been set aside yet"
     }
 
