@@ -226,9 +226,14 @@ specific access control logic.
 
 Some DMS endpoints are authorized by a **service claim** in the client's claim
 set, not by a role or a custom scope. The client is an ordinary CMS
-application: its token carries its claim set name as the scope, as for any
-vendor application, and DMS checks that claim set for the service claim. No
-role or scope needs to be configured in either identity provider.
+application: its token carries its claim set name as a scope value, as for any
+vendor application. DMS selects the claim set from the token's scopes exactly as
+for any other request
+([Claim-Set Selection from Token Scopes](#claim-set-selection-from-token-scopes))
+and checks that claim set for the service claim. A token whose scopes recognize
+no claim set, or more than one, is answered `403`; duplicate matching names in
+the metadata are `500` security configuration. No role or scope needs to be
+configured in either identity provider.
 
 | Endpoint | Service claim | Action | Authorization strategy |
 | --- | --- | --- | --- |

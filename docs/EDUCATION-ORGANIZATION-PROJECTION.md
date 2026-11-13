@@ -85,6 +85,13 @@ shipped claim set grants this claim. The credential is an application API
 client with no data store assignments. In multi-tenant mode the client must
 belong to the tenant in the route, so each tenant needs its own credential.
 
+DMS resolves the client's claim set from the token's `scope`: every
+space-separated value is matched against the claim sets DMS has loaded. A token
+whose scopes match more than one claim set is refused with `403`, and two claim
+sets with the same name are a security configuration error,
+`500 urn:ed-fi:api:system:configuration:security`. The Configuration Service
+reader classifies both as `Forbidden`.
+
 Authorization is checked before any query parameter is parsed or any data store
 is looked up.
 
@@ -101,7 +108,10 @@ is looked up.
 
 Supplying any of the four parameters more than once, in any letter case, is
 rejected with `400 parameter-validation-failed` naming the parameter. Unknown
-parameters are ignored.
+parameters are ignored silently: the endpoint does not go through the resource
+API's query validation, so it never adds an `X-EdFi-Warning` header for them.
+Every response, success or problem, carries exactly one
+`Cache-Control: no-store`.
 
 ## Response
 
@@ -513,7 +523,14 @@ life of the process, including the negative verdicts behind
 `database-not-provisioned` and `target-schema-incompatible`. After a database is
 provisioned or repaired under the same connection string, restart every affected
 DMS replica: retrying from the Configuration Service alone cannot clear a cached
-negative verdict.
+negative verdict. A data store whose database was provisioned only after DMS
+first read it therefore keeps answering `503 database-not-provisioned`, which
+the reader classifies as transient, so its job retries until the restart.
+
+This is not catalog lag, which converges without a restart: a data store
+registered after DMS loaded the tenant's catalog is found by the reload on its
+first request, and a changed route context is picked up at the catalog's
+periodic refresh ([target resolution](#target-resolution)).
 
 ### Fixed titles and details
 
@@ -584,9 +601,18 @@ route tenant's catalog. When it is not there, DMS reloads that tenant's catalog
 once and looks again, so a data store registered after DMS started is found by
 its first request.
 
+Only a missing id triggers that reload. A data store DMS already holds whose
+route context changed in the Configuration Service (for example, a `schoolYear`
+context added after DMS loaded the store) is answered `404 target-not-found`,
+without a reload, until the catalog's periodic refresh replaces the stale entry
+(`CacheSettings:DataStoreCacheExpirationSeconds`, 600 seconds by default; with
+`DataStoreCacheRefreshEnabled` set to `false`, only a DMS restart does). The
+next request is then served.
+
 | Situation | Response |
 | --- | --- |
 | The tenant's catalog cannot be reloaded: the Configuration Service is unreachable, answers an error or a malformed document, or holds a primary connection string that cannot be decrypted | `503 urn:ed-fi:api:service-unavailable` |
+| The tenant's catalog holds a primary connection string in the legacy, unencrypted form and DMS runs with `ConfigurationServiceSettings:AllowLegacyConnectionStrings` set to `false`: the whole tenant load fails | `503 urn:ed-fi:api:service-unavailable` |
 | No data store with this id in the route tenant | `404 target-not-found` |
 | The data store's contexts do not match the route qualifiers | `404 target-not-found`, the same body |
 | The data store's provider is not recognized | `409 target-provider-unsupported` |
@@ -732,15 +758,20 @@ and sends `grant_type=client_credentials` with no `scope`. DMS forwards the
 request to the configured identity provider, as it does for every client.
 
 - **Self-contained.** The Configuration Service issues the token. Each token
-  counts toward `IdentitySettings:BearerTokenPerClientLimit` (default 5) until
+  counts toward `IdentitySettings:BearerTokenPerClientLimit` (default 15) until
   it expires or is revoked; see [token budget](#token-budget).
 - **Keycloak.** Keycloak issues the token. The Configuration Service creates
   each application's Keycloak client with its claim set as a default client
-  scope, so a request without `scope` receives it.
-  `BearerTokenPerClientLimit` does not apply. **The reader's Keycloak path has
-  not been validated end to end:** the mechanism described here follows the
-  code, but the Instance Management E2E suite, which exercises the reader
-  against a running stack, uses the self-contained provider only.
+  scope, so a request without `scope` receives it, and Keycloak accepts the
+  percent-encoded Basic credential. `BearerTokenPerClientLimit` does not apply.
+  The reader's Keycloak path is tested end to end against a **single-tenant**
+  DMS in Keycloak mode: the production reader takes its token from Discovery's
+  `urls.oauth`, every page carries a token the Keycloak realm issued, the read
+  returns the written hierarchy, and a credential without the projection claim
+  is refused at the page. That test runs in the SQL Server Keycloak E2E lane
+  (`./build-dms.ps1 E2ETest -IdentityProvider keycloak -RunDmsProjectionReaderKeycloakE2E`).
+  The multi-tenant Instance Management suite still exercises the reader with
+  the self-contained provider only.
 
 Provisioning is the same in both modes: the claim set and application are
 created through the Configuration Service API, which registers the client with
@@ -881,7 +912,17 @@ the token request.
 | --- | --- |
 | `200` that is malformed or over 1 MiB | `MalformedResponse` |
 | `400` or `401` | `TokenRejected` |
-| Any other status, including `403`, `404` and a `2xx` other than `200` | `UnexpectedResponse` |
+| Any other status, including `403`, `404`, `413` and a `2xx` other than `200` | `UnexpectedResponse` |
+
+DMS answers a token error as OAuth JSON (`{"error", "error_description"}`), not
+a problem document, and puts its correlation id in the `X-Correlation-ID`
+header, percent-encoded. The reader classifies a token error by status alone and
+takes the failure's correlation id from that header, decoded once as UTF-8; a
+problem body's own `correlationId`, when there is one, wins. The value is then
+reduced like every correlation id the reader keeps, to `A-Z a-z 0-9 : . _ -` and
+at most 128 characters, so a decoded space is dropped. A header that is repeated
+or malformed, is not UTF-8, is longer than 384 characters, or decodes to more
+than 128 gives none.
 
 **Page request**, then. The projection's own problem types are recognized only
 here.
@@ -938,7 +979,8 @@ The endpoint, its Discovery members and its claim are additive. DMS databases
 need no change: the projection reads existing tables, and the effective schema
 hash is unchanged.
 
-1. **Upgrade the Configuration Service.** Its database upgrade adds the
+1. **Upgrade the Configuration Service.** Its database upgrade (script
+   `0039_Add_EducationOrganizationProjection_Claim.sql`) adds the
    projection claim, with no grants, to the resource claims and to an existing
    catalog's stored claims hierarchy, and leaves existing claims, claim sets
    and grants unchanged; a new catalog receives the claim from the embedded

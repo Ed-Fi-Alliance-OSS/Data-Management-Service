@@ -394,7 +394,7 @@ The Configuration Service reads the DMS education-organization projection over H
 | Credentials:ClientId / Credentials:ClientSecret | The client-credentials pair used in single-tenant mode, and in multi-tenant mode for a tenant without its own entry. | unset | Both or neither |
 | TenantCredentials:&lt;tenant&gt;:ClientId / ClientSecret | The pair for one tenant; the tenant name matches in any letter case. The pair is sent to the token URL that DMS Discovery advertises, as HTTP Basic credentials with each value percent-encoded (RFC 6749 §2.3.1). | none | Both, in every entry |
 | ContractVersions | The projection contract versions this service may request. | `educationOrganizationProjection.v1` | Distinct values from `educationOrganizationProjection.v1` |
-| PageSize | Items requested per page (sent as `limit`). DMS refuses a `limit` above its own `EducationOrganizationProjection:MaximumPageSize`. | `2000` | 1 – 10000 |
+| PageSize | Items requested per page (sent as `limit`). DMS refuses a `limit` above its own `DataManagement:EducationOrganizationProjection:MaximumPageSize`. | `2000` | 1 – 10000 |
 | DiscoveryTimeoutSeconds | Time limit for one Discovery request. | `10` | 1 – 300 |
 | TokenRequestTimeoutSeconds | Time limit for one token request. | `30` | 1 – 300 |
 | PageRequestTimeoutSeconds | Time limit for one page request. | `60` | 1 – 600 |

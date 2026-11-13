@@ -176,17 +176,26 @@ project, and fails if any other function omits the flags.
 when:
 
 1. the file is missing or has no counters;
-2. fewer than **8** results are from live tests, or any live result is not `Passed` (failed,
+2. fewer than **28** results are from live tests, or any live result is not `Passed` (failed,
    skipped or not run). Live tests are the classes in the
-   `EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live` namespace, the only ones that reach
-   DMS; each result is mapped to its class through the TRX test definitions;
-3. any test of the project, live or not, did not pass.
+   `EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live` namespace, the Instance-stack tests
+   that reach DMS; each result is mapped to its class through the TRX test definitions;
+3. any result comes from the `EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Keycloak`
+   namespace (see below);
+4. any test of the project, live or not, did not pass.
 
 The project also holds harness tests (the `Harness` namespace) that need no stack, so the live
 results are counted on their own: a run that discovered or selected no live test cannot pass on
-harness tests alone, and the overall check still rejects a failed harness test. The minimum of 8
-detects that live execution is missing; it is not a coverage inventory. The project has 20 live
-tests, and a run in which at least 8 live tests ran and every test passed is accepted.
+harness tests alone, and the overall check still rejects a failed harness test. The minimum of 28
+equals the project's live test count, so a run that loses a live case fails; it counts results and
+does not name them, so it does not prove that a particular case ran.
+
+**Keycloak fixture.** The project's `Keycloak` namespace holds a fixture (category
+`KeycloakReader`) for the single-tenant DMS E2E stack in Keycloak mode, not for the Instance stack.
+The Instance run filters it out with `--filter "Category!=KeycloakReader"`, and the guard above
+rejects any of its results. It runs through
+`./build-dms.ps1 E2ETest -IdentityProvider keycloak -RunDmsProjectionReaderKeycloakE2E`; see the
+[DMS E2E README](../EdFi.DataManagementService.Tests.E2E/README.md).
 
 In CI the guard, through the target's exit code, is what fails a lane. The two lanes report the
 TRX differently:

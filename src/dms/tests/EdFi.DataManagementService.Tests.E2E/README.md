@@ -55,9 +55,34 @@ pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEn
 # engine variants (the PR-gated signal):
 pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'
 
-# SQL Server, Keycloak identity, same representative set:
-pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)'
+# SQL Server, Keycloak identity, same representative set, then the Configuration Service's
+# education-organization projection reader against the same stack (as CI runs it):
+pwsh ./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider keycloak -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' -RunDmsProjectionReaderKeycloakE2E
 ```
+
+### Projection reader under Keycloak
+
+`-RunDmsProjectionReaderKeycloakE2E` is accepted only by `E2ETest` with `-IdentityProvider keycloak`;
+any other combination is refused before anything starts. After the DMS E2E tests pass, while the
+stack is still up and in the same identity and test-process context, it runs the `KeycloakReader`
+category of `src/config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E`: the production
+Configuration Service reader, with a single-tenant credential, reading through Discovery's
+`urls.oauth` and `urls.educationOrganizationProjection` and checking that Keycloak issued every
+page's token. The fixture registers its own data store, vendor, claim set and applications and
+removes them afterwards. Its inputs (`KEYCLOAK_READER_E2E_*`) are set from the same values the E2E
+test process receives and restored afterwards.
+
+The run writes `TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx`, and
+`Assert-DmsProjectionReaderKeycloakTrxResults` fails the target unless all five named tests of the
+fixture passed and every test passed. It prints
+`DMS projection reader Keycloak E2E: <n> of 5 named live tests passed.` In CI the keycloak entry of
+`run-e2e-tests-mssql` passes the switch, fails if that line is missing from the sanitized setup log
+(and echoes it when present), and uploads the sanitized TRX.
+
+The standard suite's own projection scenario, `Features/General/EducationOrganizationProjection.feature`
+(`@e2e-ci-shard-2 @MssqlRepresentative`), reads the projection through the same Discovery URLs with
+a projection-only credential (200) and a resource-only one (403), so it runs in both SQL Server
+entries and in PostgreSQL shard 2.
 
 ### Filtered and version-coupled runs
 
@@ -168,7 +193,7 @@ suite rows are documented in its own
 | Standard | PostgreSQL | self-contained  | DS 6.1 `@StandardVersion-6_1`, excluding `@MssqlOnly` | `run-e2e-tests-ds61`                         |
 | Standard | PostgreSQL | self-contained  | `@CursorPartitionSizing`, excluding `@MssqlOnly` | `run-e2e-tests-partition-sizing`             |
 | Standard | SQL Server | self-contained  | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql`                        |
-| Standard | SQL Server | keycloak        | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql`                        |
+| Standard | SQL Server | keycloak        | `@MssqlRepresentative` or `@MssqlOnly`, excluding `@PostgresqlOnly`; then the projection reader (`-RunDmsProjectionReaderKeycloakE2E`) | `run-e2e-tests-mssql`                        |
 | Standard | SQL Server | self-contained  | DS 6.1 `@StandardVersion-6_1`, excluding `@PostgresqlOnly` | `run-e2e-tests-mssql-ds61`                   |
 | Standard | PostgreSQL | keycloak        | any, excluding `@MssqlOnly`            | _(locally runnable; not a required PR lane)_ |
 | Standard | SQL Server | self-contained  | DS 5.2 full, excluding `@PostgresqlOnly` | _(locally runnable; not a required PR lane)_ |

@@ -6,6 +6,53 @@ Branch: `DMS-1440` (created from `main` at `5c964676f`). Before approval only th
 
 ## 0. Review history and dispositions
 
+### 0.00 Amendment: synchronization with `main` (2026-11)
+
+The branch merged `main` at `ff84a3444`. Where this amendment and a later section disagree, this
+amendment holds; the sections below are kept as the record of the original design. The final
+validation of the synchronization is recorded in `sync-validation-report.md`, beside this document.
+
+Breaks the merge exposed, each fixed and covered by a test:
+
+- **S1.** `EducationOrganization_View` gained `ResourceKeyId`; the projection compiler excludes it.
+- **S2.** `dms.Descriptor` uses compact descriptor ids (a `DescriptorId` identity, no
+  `Discriminator` or `Uri`); the provider-reader test seeds follow.
+- **S3.** The Configuration Service claim migration is
+  `0039_Add_EducationOrganizationProjection_Claim.sql` (`main` took 0036–0038). A catalog that ran
+  it under its former number is covered by a migration test.
+- **S4–S6, S8.** Compile breaks from `main`'s Discovery parameter change, `ScopeResolutionCacheTests`,
+  `ConfigurationServiceTokenLease` and a duplicate `Errors` helper.
+- **S7.** Compose files are `*.compose.yml`, environment names are `CONFIGURATION_SERVICE_*`, and
+  `docs/CMS-BACKGROUND-JOBS.md` is `docs/CONFIGURATION-SERVICE-BACKGROUND-JOBS.md`.
+
+`main` behavior the branch adopted:
+
+- **M1.** The switch is `DataManagement:EducationOrganizationProjection:Enabled` (default `true`),
+  and the endpoint's limits live in the same section. `AppSettings:EnableEducationOrganizationProjection`
+  (§1.6 D-4, §3.7) is superseded.
+- **M2.** DMS resolves the claim set from all of the token's `scope` values: scopes that match more
+  than one claim set are `403`, and duplicate claim-set names are `500` security configuration. The
+  fact "`ClaimSetName` is the first `scope` claim" no longer holds.
+- **M3.** DMS token errors are OAuth JSON with the correlation id percent-encoded in
+  `X-Correlation-ID`. The reader classifies them by status and takes the correlation id from that
+  header (decoded once, then reduced like every kept correlation id) unless a problem body carries one.
+- **M4.** With `ConfigurationServiceSettings:AllowLegacyConnectionStrings` off, a legacy primary
+  connection string fails the tenant's catalog load: `503 service-unavailable` (§3.5).
+- **M5.** `BearerTokenPerClientLimit` defaults to 15 (§1.5 fact 10 said 5).
+
+Existing behavior made explicit:
+
+- **M14.** A Primary fingerprint verdict, including "not provisioned", is cached for the life of the
+  DMS process, so a database provisioned after DMS first read it needs a DMS restart. This is
+  documented and tested at the component boundary; the cross-component conclusion is derived from the
+  source. A follow-up is proposed in the sync report.
+- **M15.** A data store DMS already holds whose route context changed is `404 target-not-found`
+  without a reload until the catalog's periodic refresh replaces it.
+
+The reader is also exercised end to end against a single-tenant DMS in Keycloak mode
+(`./build-dms.ps1 E2ETest -IdentityProvider keycloak -RunDmsProjectionReaderKeycloakE2E`, run by the SQL
+Server Keycloak CI lane).
+
 ### 0.0 Phase 0.1 contract review (post-approval), 2026-10-02
 
 | # | Finding or decision | Disposition |
