@@ -9,6 +9,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using EdFi.DataManagementService.Core.Handler;
 using EdFi.DataManagementService.Core.Response;
@@ -761,6 +762,69 @@ internal static class EducationOrganizationProjectionScenario
 
         Task<ProjectionResponse> GetStoreAsync(long dataStoreId) =>
             GetAsync(harness, Credentials.Projection, ProjectionPath(TenantA, RouteA, Query(dataStoreId)));
+    }
+
+    /// <summary>
+    /// A store whose database is unprovisioned when DMS first reads its fingerprint keeps answering
+    /// database-not-provisioned once the database is provisioned, and never reads the fingerprint again:
+    /// the production fingerprint provider retains that verdict for the life of the host. A restarted
+    /// host reads the fingerprint afresh and serves the store. The provisioning is simulated: the
+    /// store's fingerprint read is redirected from a leased database whose effective-schema row was
+    /// removed to the provisioned primary, while its rows are always read from the primary.
+    /// </summary>
+    public static async Task It_keeps_a_not_provisioned_verdict_until_the_host_restarts(
+        EducationOrganizationProjectionContext context
+    )
+    {
+        ApiIntegrationHarness harness = Prepare(context);
+        EducationOrganizationProjectionEngine engine = context.Engine;
+        Seeder seeder = await Seeder.CreateAsync(harness, TenantA, RouteA);
+        await seeder.StateAgencyAsync(1, "Projection State");
+
+        string storeConnectionString = engine.WithApplicationName(
+            context.PrimaryConnectionString,
+            "projection-provisioned-later"
+        );
+        string unprovisioned = await context.LeaseDatabaseAsync();
+        await engine.ExecuteAsync(unprovisioned, engine.RemoveFingerprintSql);
+        context.Fingerprints.Redirect(storeConnectionString, unprovisioned);
+        DataStore store = Store(ProvisionedLaterStoreId, storeConnectionString, RouteA, engine.OwnToken);
+        context.Catalog.Register(TenantA, store);
+
+        ProjectionResponse beforeProvisioning = await GetStoreAsync(harness);
+        ShouldBeProjectionProblem(beforeProvisioning, Problem.DatabaseNotProvisioned);
+        beforeProvisioning.Body.Should().NotContain("Projection State");
+        context.Fingerprints.ReadsOf(storeConnectionString).Should().Be(1);
+
+        // The provisioning event: the store's fingerprint now answers from a provisioned database.
+        context.Fingerprints.Redirect(storeConnectionString, context.PrimaryConnectionString);
+        ProjectionResponse afterProvisioning = await GetStoreAsync(harness);
+        ShouldBeProjectionProblem(afterProvisioning, Problem.DatabaseNotProvisioned);
+        afterProvisioning.Body.Should().NotContain("Projection State");
+        context
+            .Fingerprints.ReadsOf(storeConnectionString)
+            .Should()
+            .Be(1, "the not-provisioned verdict is retained, so nothing reads the fingerprint again");
+
+        EducationOrganizationProjectionContext restarted = await context.RestartAsync();
+        restarted.Catalog.Register(TenantA, store);
+        Walk served = await WalkAsync(
+            Prepare(restarted),
+            Credentials.Projection,
+            TenantA,
+            RouteA,
+            ProvisionedLaterStoreId,
+            limit: null
+        );
+        served.Items.Should().Equal(new Item(1, "Projection State", null, StateAgency, null));
+        restarted.Fingerprints.ReadsOf(storeConnectionString).Should().Be(1);
+
+        static Task<ProjectionResponse> GetStoreAsync(ApiIntegrationHarness host) =>
+            GetAsync(
+                host,
+                Credentials.Projection,
+                ProjectionPath(TenantA, RouteA, Query(ProvisionedLaterStoreId))
+            );
     }
 
     /// <summary>

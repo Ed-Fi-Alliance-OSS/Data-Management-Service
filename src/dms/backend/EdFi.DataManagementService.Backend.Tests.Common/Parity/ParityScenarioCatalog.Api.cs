@@ -143,6 +143,12 @@ public static partial class ParityScenarioCatalog
             "It_serves_a_changed_route_context_only_after_a_catalog_refresh"
         ),
         Projection(
+            "Api/EducationOrganizationProjection/KeepsANotProvisionedVerdictUntilTheHostRestarts",
+            "A store whose database is unprovisioned on first use stays 503 database-not-provisioned after provisioning (simulated by redirecting its fingerprint read) with no second fingerprint read, because the production provider retains the verdict; a restarted host reads the fingerprint afresh and serves the store.",
+            "EducationOrganizationProjectionScenario.It_keeps_a_not_provisioned_verdict_until_the_host_restarts",
+            "It_keeps_a_not_provisioned_verdict_until_the_host_restarts"
+        ),
+        Projection(
             "Api/EducationOrganizationProjection/AnswersEachTargetState",
             "Missing provider metadata is served by the registered dialect; the other dialect and an unknown token are 409 target-provider-unsupported; no connection string is 503 service-configuration-error; an absent database is 503 target-unavailable; mismatched and malformed fingerprints are 409 target-schema-incompatible; no fingerprint row is 503 database-not-provisioned; an unloadable catalog is 503 service-unavailable; nothing provider-supplied is disclosed.",
             "EducationOrganizationProjectionScenario.It_answers_each_target_state",

@@ -63,6 +63,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/EducationOrganizationProjection/RejectsABearerTokenOutsideItsLifetime",
         "Api/EducationOrganizationProjection/IsolatesTenantsStoresAndRouteContexts",
         "Api/EducationOrganizationProjection/ServesAChangedRouteContextOnlyAfterACatalogRefresh",
+        "Api/EducationOrganizationProjection/KeepsANotProvisionedVerdictUntilTheHostRestarts",
         "Api/EducationOrganizationProjection/AnswersEachTargetState",
         "Api/EducationOrganizationProjection/MapsReadFailuresBehindACachedFingerprintVerdict",
         "Api/EducationOrganizationProjection/AnswersAnUnavailableMappingWithoutItsDiagnostics",

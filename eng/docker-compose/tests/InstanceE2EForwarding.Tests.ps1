@@ -1147,7 +1147,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
             $script:executed[0] | Should -Not -Match "--no-build"
             $script:executed[0] | Should -Not -Match "--no-restore"
             Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {
-                $MinimumLiveTests -eq 27 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
+                $MinimumLiveTests -eq 28 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
             }
         }
     }

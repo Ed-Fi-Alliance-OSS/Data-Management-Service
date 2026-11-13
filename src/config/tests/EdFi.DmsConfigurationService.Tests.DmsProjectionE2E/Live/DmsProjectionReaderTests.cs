@@ -24,6 +24,28 @@ public static class DmsProjectionReaderTests
         "urn:ed-fi:api:education-organization-projection:target-not-found";
     private const string TargetUnavailableType =
         "urn:ed-fi:api:education-organization-projection:target-unavailable";
+    private const string DatabaseNotProvisionedType = "urn:ed-fi:api:database-not-provisioned";
+
+    /// <summary>The route 2 connection string, naming <paramref name="database"/> on the same server instead.</summary>
+    private static string RouteTwoServerDatabase(string database)
+    {
+        DbConnectionStringBuilder connection = new()
+        {
+            ConnectionString = ProjectionE2EFixture.Current.Environment.RouteTwoConnectionString,
+        };
+        string databaseKey =
+            connection
+                .Keys.Cast<string>()
+                .SingleOrDefault(key =>
+                    key.Equals("Database", StringComparison.OrdinalIgnoreCase)
+                    || key.Equals("Initial Catalog", StringComparison.OrdinalIgnoreCase)
+                )
+            ?? throw new InvalidOperationException(
+                "Setup failed: the route 2 connection string names no database."
+            );
+        connection[databaseKey] = database;
+        return connection.ConnectionString;
+    }
 
     /// <summary>A read of one fixture route through a fresh production registration.</summary>
     public abstract class ReadFixture
@@ -158,26 +180,10 @@ public static class DmsProjectionReaderTests
 
         protected override async Task PrepareAsync()
         {
-            DbConnectionStringBuilder connection = new()
-            {
-                ConnectionString = Fixture.Environment.RouteTwoConnectionString,
-            };
-            string databaseKey =
-                connection
-                    .Keys.Cast<string>()
-                    .SingleOrDefault(key =>
-                        key.Equals("Database", StringComparison.OrdinalIgnoreCase)
-                        || key.Equals("Initial Catalog", StringComparison.OrdinalIgnoreCase)
-                    )
-                ?? throw new InvalidOperationException(
-                    "Setup failed: the route 2 connection string names no database."
-                );
-            connection[databaseKey] = "edfi_dms_projection_reader_e2e_missing";
-
             _dataStoreId = await Fixture.Services.CreateDataStoreAsync(
                 ProjectionE2EFixture.SeededTenant,
                 "Projection Reader E2E missing database",
-                connection.ConnectionString,
+                RouteTwoServerDatabase("edfi_dms_projection_reader_e2e_missing"),
                 new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2099" }
             );
         }
@@ -197,6 +203,47 @@ public static class DmsProjectionReaderTests
                         Stage = FailureStage.Page,
                         HttpStatus = 503,
                         ProblemType = TargetUnavailableType,
+                        PagesRead = 0,
+                    }
+                );
+    }
+
+    /// <summary>
+    /// A store registered against a reachable database that was never provisioned: the server's own system
+    /// database (<c>postgres</c> or <c>master</c>), reached with the route databases' credentials, which holds no
+    /// effective-schema table. DMS's only read of it is the fingerprint query, which finds none.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_store_whose_database_was_never_provisioned : ReadFixture
+    {
+        private int _dataStoreId;
+
+        protected override async Task PrepareAsync()
+        {
+            _dataStoreId = await Fixture.Services.CreateDataStoreAsync(
+                ProjectionE2EFixture.SeededTenant,
+                "Projection Reader E2E never provisioned",
+                RouteTwoServerDatabase(Fixture.Environment.DatabaseEngine == "mssql" ? "master" : "postgres"),
+                new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2097" }
+            );
+        }
+
+        protected override (string Tenant, int DataStoreId) Target() =>
+            (ProjectionE2EFixture.SeededTenant, _dataStoreId);
+
+        // A failure result carries no items: the type of the result is what exposes none.
+        [Test]
+        public void It_fails_with_no_items_as_a_transient_database_not_provisioned_page() =>
+            Failure
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Category = FailureCategory.Transient,
+                        Code = FailureCode.ServiceUnavailable,
+                        Stage = FailureStage.Page,
+                        HttpStatus = 503,
+                        ProblemType = DatabaseNotProvisionedType,
                         PagesRead = 0,
                     }
                 );

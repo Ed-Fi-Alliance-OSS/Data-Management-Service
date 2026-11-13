@@ -2158,7 +2158,7 @@ function RunDmsProjectionReaderE2E {
             --nologo
     }
 
-    Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 27
+    Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 28
 }
 
 function Assert-DmsProjectionReaderTrxResults {

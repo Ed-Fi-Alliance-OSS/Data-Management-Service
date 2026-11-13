@@ -98,6 +98,11 @@ public abstract class MssqlEducationOrganizationProjectionTestBase : MssqlApiInt
             _mapping,
             _clock,
             Reachability,
-            LeaseScenarioDatabaseAsync
+            LeaseScenarioDatabaseAsync,
+            async () =>
+            {
+                await RestartHostAsync();
+                return Context;
+            }
         );
 }

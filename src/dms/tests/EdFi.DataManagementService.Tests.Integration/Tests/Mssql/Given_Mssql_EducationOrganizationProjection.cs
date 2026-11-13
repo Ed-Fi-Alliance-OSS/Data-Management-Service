@@ -56,6 +56,12 @@ public sealed class Given_Mssql_EducationOrganizationProjection : MssqlEducation
         EducationOrganizationProjectionScenario.It_answers_each_target_state(Context);
 
     [Test]
+    public Task It_keeps_a_not_provisioned_verdict_until_the_host_restarts() =>
+        EducationOrganizationProjectionScenario.It_keeps_a_not_provisioned_verdict_until_the_host_restarts(
+            Context
+        );
+
+    [Test]
     public Task It_maps_read_failures_behind_a_cached_fingerprint_verdict() =>
         EducationOrganizationProjectionScenario.It_maps_read_failures_behind_a_cached_fingerprint_verdict(
             Context

@@ -72,6 +72,9 @@ internal static class EducationOrganizationProjectionHost
     /// <summary>A store of tenant A whose route context changes after DMS has cached it.</summary>
     public const long RouteChangedStoreId = 13;
 
+    /// <summary>A store of tenant A whose database is provisioned only after DMS first read it.</summary>
+    public const long ProvisionedLaterStoreId = 14;
+
     public static DataStore Store(
         long id,
         string? connectionString,
@@ -222,7 +225,12 @@ internal static class EducationOrganizationProjectionHost
     }
 }
 
-/// <summary>Everything a projection scenario reaches through, built by the dialect wrapper.</summary>
+/// <summary>
+/// Everything a projection scenario reaches through, built by the dialect wrapper.
+/// <see cref="RestartAsync"/> replaces the host as a process restart would, over the same leased
+/// databases, and returns the context of the new host: a fresh catalog, recorders and caches, with the
+/// fingerprint redirects kept.
+/// </summary>
 internal sealed record EducationOrganizationProjectionContext(
     ApiIntegrationHarness Harness,
     EducationOrganizationProjectionEngine Engine,
@@ -234,5 +242,6 @@ internal sealed record EducationOrganizationProjectionContext(
     SwitchableMappingSetProvider Mapping,
     FakeTimeProvider Clock,
     IDerivativeTargetReachability Reachability,
-    Func<Task<string>> LeaseDatabaseAsync
+    Func<Task<string>> LeaseDatabaseAsync,
+    Func<Task<EducationOrganizationProjectionContext>> RestartAsync
 );

@@ -98,6 +98,11 @@ public abstract class PostgresqlEducationOrganizationProjectionTestBase : Postgr
             _mapping,
             _clock,
             Reachability,
-            LeaseScenarioDatabaseAsync
+            LeaseScenarioDatabaseAsync,
+            async () =>
+            {
+                await RestartHostAsync();
+                return Context;
+            }
         );
 }
