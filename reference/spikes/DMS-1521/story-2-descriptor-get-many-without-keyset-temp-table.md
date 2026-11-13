@@ -179,6 +179,31 @@ inconclusive for reviewer sign-off instead of counting it as met.
 - Pin the order of operations (AGENTS.md):
   - the carrier is set before the leading fence reads it;
   - the boundary comes from selection, not from the owner rows.
+- Re-anchor three existing checks that locate the selection by `INSERT INTO`. Once the insert is
+  gone, `IndexOf("INSERT INTO")` returns -1 and a matcher on it matches nothing, so each would pass
+  without checking anything. Under the prototype, the first and third passed this way. Anchor each
+  on the selecting statement, `set_config(` on PostgreSQL and `FOR JSON PATH` on SQL Server, and
+  assert that the anchor is found:
+  - `DescriptorReadHandlerTests.Consistency.cs` ≈100–102
+    (`It_discards_mixed_descriptor_acquisitions`): the selecting statement comes before
+    `-- Descriptor acquisition: leading`.
+  - `DescriptorReadHandlerTests.Consistency.cs` ≈245
+    (`It_retains_the_selected_boundary_after_descriptor_rows_are_deleted`): on SQL Server,
+    `FOR JSON PATH` comes before `-- Descriptor page selection boundary`. On PostgreSQL the
+    selection runs inside the boundary statement, so `set_config(` lies between the boundary marker
+    and the leading marker; keeping the existing `boundaryQuery > IndexOf(…)` form fails there.
+    This test fails under the prototype only because of its qualified `MAX` (≈241); with an
+    unqualified anchor it would pass unchanged while ≈245 checks nothing.
+  - `DescriptorReadHandlerTests.cs` ≈2533
+    (`It_wraps_a_provider_error_raised_by_descriptor_custom_view_selected_page_fallback`): match
+    the page-selection command on `-- Descriptor page selection boundary`, which only
+    `BuildQueryCommand` emits, instead of `INSERT INTO`.
+
+  The `NotContain("JOIN")` check (≈247) needs no change: on PostgreSQL its slice now also holds the
+  selection, which has no join in that test, and an owner-row boundary would still add one. The
+  zero-limit tests' `NotContain("INSERT INTO")` checks (`DescriptorReadHandlerTests.LimitZero.cs`
+  ≈52, ≈67, ≈107) become redundant, but each test still fails through its paging-fragment check;
+  ≈123's `Contain("INSERT INTO")` is one of the 18 pins.
 - `DescriptorReadCommandExecutor` must keep recognizing the batch and computing the boundary (see
   its two text dependencies under Scope). Add one non-empty `ContentVersion`-anchored page whose
   highest `DocumentId` and highest `ContentVersion` differ, with the boundary computed by the

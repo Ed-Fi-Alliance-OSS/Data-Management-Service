@@ -919,7 +919,7 @@ Every batch kept the same SHA-256 in all three sessions of its variant, every re
 statistic (a within-run p50, p95, throughput, or per-request counter), with the run-to-run CV in
 brackets. Ratios are `I / B`. `m` is `max(2 × CV, 5%)` computed from `B`'s CV, so the improvement
 bound is `ratio ≤ 1 − m` and the non-regression bound is `ratio ≤ 1 + m` (cost) or `≥ 1 − m`
-(throughput). Analysis script: `t5_analyze.py` (task 12 attaches it with the evidence).
+(throughput). Analysis script: `experiments/t5_analyze.py`.
 
 ### Temp-table lifecycle and WAL (AC3)
 
@@ -1129,8 +1129,8 @@ Every batch kept one SHA-256 across the three sessions of its variant, every rep
 (resource and descriptor 1, cache hit 2; forced miss 50–82, bounded by the direct-fill timeout in
 both). The tables read as in [PostgreSQL results](#postgresql-results): mean ± SD across the three
 sessions of each run's statistic, run-to-run CV in brackets, ratios `I / B`, and
-`m = max(2 × CV(B), 5%)`. Analysis script: `t6_analyze.py`, report `t6_report.md` (both under
-`C:\perf\dms-1521\`, attached by task 12).
+`m = max(2 × CV(B), 5%)`. Analysis script: `experiments/t6_analyze.py`; its report `t6_report.md` stays
+beside the runs in `C:\perf\dms-1521\` and is attached by task 12.
 
 **Gate counter.** Task 4 found the server-wide `Temp Tables Creation Rate` too noisy to gate a zero,
 so task 6 gates on a session-filtered Extended Events count (`object_created`, user table, in
@@ -1359,7 +1359,7 @@ rounds), 5%)`.
 
 Runs: `t8-mssql-forms-B01-20261112143320` (`baseline`, `inline`, `tablevar`, `values`, `tvp`;
 51 min) and `t8mem-mssql-forms-B01-20261112155036` (`baseline`, `inline`, `memtablevar`; 36 min),
-plus the `t8smoke` and `t8memsmoke` smokes. Analysis: `t8_analyze.py`, reports `t8_report.md` and
+plus the `t8smoke` and `t8memsmoke` smokes. Analysis: `experiments/t8_analyze.py`, reports `t8_report.md` and
 `t8mem_report.md`. Every form returned exactly `baseline`'s result sets at both page sizes, with 0
 replay errors.
 
@@ -1410,7 +1410,7 @@ ordered, which is the property task 6 found `inline` lacks.
     and
     [Memory-optimized container and filegroup removal](https://learn.microsoft.com/en-us/sql/relational-databases/in-memory-oltp/memory-optimized-container-filegroup-removal?view=sql-server-ver17).
   - **Probe** on `dms-1521-mssql` (SQL Server 2025 RTM-CU7, 17.0.4065.4; 2026-11-12), using the
-    runner's provisioning SQL:
+    runner's provisioning SQL (`experiments/filegroup-removal-probe.sql`, run with `sqlcmd`):
     - With the type present, `REMOVE FILE` failed with Msg 41880 ("There are in-memory database
       objects present").
     - After `DROP TYPE`, it waited in undeploy state 3 until `CHECKPOINT`s issued from another
@@ -1468,7 +1468,7 @@ test section now adapts. There are no type (c) failures.
 ### Runs
 
 `prototype.patch` applied, `DMS1521_KEYSET_VARIANT=inline` set in PowerShell for every test host
-(lane script `t7-lanes.ps1`, attached by task 12), one engine at a time. The API suite runs under
+(lane script `experiments/t7-lanes.ps1`), one engine at a time. The API suite runs under
 the harness defaults (locking `READ COMMITTED`), complementing the RCSI performance runs.
 
 **Deviation: CI-matched containers.** The lanes ran on two temporary containers that copy CI's
@@ -1534,7 +1534,7 @@ task 6 version, and it applies and reverses cleanly.
 | C3 counts, empty and zero pages, anchors | `LimitZeroCountReadScenario` (18 per engine), `CursorEmptyHydrationScenario`, `WindowedCursorAnchoringScenario` (8), `CursorPublicContractScenario` (8 / 3), the `Given_HydrationReader_With_A_Selected_Keyset_Result_Set` and `…Executor…` unit tests (16), the adapted deleted-before-hydration anchor tests, and the task 4 carrier probes (113 / 113) | Met, both engines |
 | C4 concurrency, authorization, isolation | `CursorPartitionConcurrencyScenario` (3 per engine), `AuthoritativeTimestampReadConsistencyScenario` (31 / 62, with the type (d) adaptation), `*RelationalOwnershipQueryAuthorizationTests`, `*DescriptorQueryOwnershipAuthorizationTests`; zero replay errors at 32 sessions in tasks 5 and 6 | Met, both engines |
 | C5 fast path | Every fast-path-enabled single-document unit pin passes unchanged; `RelationalWriteSmokeTests` 9 / 9; the `DocumentCacheMaterializer*Tests` classes pass in full; the `*Single_Document_Fast_Path*` and `Given_A_Single_DocumentId_Keyset*` integration classes pass, apart from the one type (a) comparison-batch pin; `MssqlWriteSessionCommandStreamTests` passes | Met, both engines |
-| C6 everything changes together | Story scope: the 101 unit text and parameter pins and 8 goldens (2,494 golden lines), the 3 guarded single-document cases, the 2 integration mechanism pins, and the type (d) adaptations at 4 sites (2 in `AuthoritativeTimestampReadConsistencyScenario`, 1 in each engine's `HydrationExecutorTests`). The descriptor markers are unchanged, but `DescriptorReadCommandExecutor` also matches the boundary's unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])`, which the prototype's qualified `MAX(p."ContentVersion")` / `MAX(kj.[ContentVersion])` does not emit. No test caught it, because every anchored descriptor unit test passes explicit `selectedBoundaries` or returns no rows | Sized |
+| C6 everything changes together | Story scope: the 101 unit text and parameter pins and 8 goldens (2,494 golden lines), the 3 guarded single-document cases, the 2 integration mechanism pins, and the type (d) adaptations at 4 sites (2 in `AuthoritativeTimestampReadConsistencyScenario`, 1 in each engine's `HydrationExecutorTests`), and three descriptor order checks anchored on `INSERT INTO` that would otherwise pass vacuously (story 2). The descriptor markers are unchanged, but `DescriptorReadCommandExecutor` also matches the boundary's unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])`, which the prototype's qualified `MAX(p."ContentVersion")` / `MAX(kj.[ContentVersion])` does not emit. No test caught it, because every anchored descriptor unit test passes explicit `selectedBoundaries` or returns no rows | Sized |
 
 ## Recommendation
 
@@ -1576,8 +1576,8 @@ most of the hydration gain (API 0.31–0.48×), but it keeps the lifecycle, adds
 and about 1.3 ms per batch, and regressed the 25-row candidate batch under concurrency
 (×0.82–0.84 throughput). It also cannot run in a read-only transaction.
 
-**Read-only transactions (EDFI-2956).** A probe on `dms-1521-postgresql` (PostgreSQL 18.6, 2026-11-12)
-set a database's `default_transaction_read_only = on`. In it, `main`'s keyset prelude failed with
+**Read-only transactions (EDFI-2956).** A probe on `dms-1521-postgresql` (PostgreSQL 18.6, 2026-11-12;
+`experiments/readonly-probe.sql`, run with `psql`) set a database's `default_transaction_read_only = on`. In it, `main`'s keyset prelude failed with
 `cannot execute DROP TABLE in a read-only transaction` (SQLSTATE 25006). `inline`'s selecting
 statement, a carrier-reading join, and a `bigint[]` selected-page join all succeeded, returning 25,
 25, and 3 rows. The probe covers a read-only transaction on a primary; it was not run on an Aurora
@@ -1782,9 +1782,9 @@ supports that limit.
 
 | Story | Scope | Sized from | Proposed estimate |
 |---|---|---|---|
-| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) || 3 |
-| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) || 2 |
-| 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3 | 2, if triggered |
+| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Also 1 PostgreSQL integration mechanism pin, and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 3 |
+| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, three order checks anchored on `INSERT INTO` that would otherwise pass vacuously, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 2 |
+| 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3. PostgreSQL only: one `ANALYZE` after each keyset insert in the hydration and descriptor batches, their PostgreSQL text pins, the harness `PgsqlPlanCapture.ClassifyStatement` (it rejects a statement starting with `ANALYZE`), and R1 evidence. Sized below story 2, as before the rescale | 1, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
 
 Story 2 is blocked by story 1 where it consumes the shared contract: the PostgreSQL carrier name
@@ -1922,8 +1922,8 @@ updates this one call site before running R1.
 
 | Id | Command (repeat three times, alternating `main` and the story branch, from a clean tree) | Analysis |
 |---|---|---|
-| R1 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t5_analyze.py` (attached to DMS-1521), adapted in two ways. Run selection: it picks runs by the labels `B1` and `I2`, while R1 labels both sides `B01`, so select by the `-SequenceId` suffix (`-main`, `-story`). Bounds: it prints the spike's uncapped `m = max(2 × CV, 5%)` and no improvement bound, so the story computes the capped m, T − m, and the inconclusive rule from its printed mean and CV (see Definitions) |
-| R2 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine mssql -Sequence B0 -SequenceId s<n>-<main\|story>` | `t6_analyze.py`, adapted the same way (its run glob `{variant}[0-9]-2*` does not match `B01`) |
+| R1 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence B0 -SequenceId s<n>-<main\|story>` | `experiments/t5_analyze.py`, adapted in two ways. Run selection: it picks runs by the labels `B1` and `I2`, while R1 labels both sides `B01`, so select by the `-SequenceId` suffix (`-main`, `-story`). Bounds: it prints the spike's uncapped `m = max(2 × CV, 5%)` and no improvement bound, so the story computes the capped m, T − m, and the inconclusive rule from its printed mean and CV (see Definitions) |
+| R2 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine mssql -Sequence B0 -SequenceId s<n>-<main\|story>` | `experiments/t6_analyze.py`, adapted the same way (its run glob `{variant}[0-9]-2*` does not match `B01`) |
 | R3 | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine postgresql -Sequence I -Fixtures probes,descriptorprobes` (prototype) | Carrier probes against the prototype only. `-Sequence I` needs `prototype.patch` applied and the probes require `DMS1521_KEYSET_VARIANT=inline`, so neither runs on a story branch; the stories' own carrier tests (one transaction) take their place there |
 
 ## Design-document impact
@@ -1976,14 +1976,15 @@ read-only `git apply --check -R` and never applies or removes the patch itself.
 | 2, smoke and calibration | `pwsh -File reference/spikes/DMS-1521/experiments/Invoke-KeysetSpike.ps1 -Engine <postgresql\|mssql> -Sequence B0 -Smoke` | `smoke1`–`smoke6` | `calibration.json`, `parity.json` |
 | 3, Gate 1 | `… -Engine postgresql -Sequence B0` (no patch), then `… -Sequence A` (patch applied) | `t3-postgresql-*-{B01,A1}-*` | `autoexplain/`, `plans/` |
 | 4, checks | `… -Sequence B -SequenceId t4baseline` and `… -Sequence I -Smoke -SequenceId t4smokeI` per engine; `… -Engine postgresql -Sequence I -Fixtures probes,descriptorprobes -SequenceId t4probes`; unit suites with `DMS1521_KEYSET_VARIANT=inline` | `t4baseline-*`, `t4smokeI-*`, `t4probes-*` | batch SHA-256 in `cells.json` |
-| 5 | `… -Engine postgresql -Sequence B,I -SequenceId t5s<n>`, three sessions | `t5s1`–`t5s3` | `t5_analyze.py` → `t5_report.md` |
-| 6 | `… -Engine mssql -Sequence B,I -SequenceId t6s<n>`, three sessions | `t6s1`–`t6s3` | `t6_analyze.py` → `t6_report.md` |
-| 7 | `t7-lanes.ps1` and `t7-rerun.ps1` (patch applied, `$env:DMS1521_KEYSET_VARIANT = 'inline'`) | `t7-unit-inline`, `t7-pg-inline`, `t7-mssql-inline`, `t7-rerun-*` | `*.trx.failures.txt` |
-| 8 | `… -Engine mssql -Sequence B0 -Fixtures forms -Forms <list>` (no patch) | `t8-*`, `t8mem-*` | `t8_analyze.py` → `t8_report.md`, `t8mem_report.md` |
-| 9, read-only probe | `psql` script: a database with `default_transaction_read_only = on`, then `main`'s `DROP TABLE IF EXISTS "page"` and `inline`'s three statement shapes | (console output, quoted under [Recommendation](#postgresql-inline-on-all-four-paths)) | – |
+| 5 | `… -Engine postgresql -Sequence B,I -SequenceId t5s<n>`, three sessions | `t5s1`–`t5s3` | `experiments/t5_analyze.py` → `t5_report.md` |
+| 6 | `… -Engine mssql -Sequence B,I -SequenceId t6s<n>`, three sessions | `t6s1`–`t6s3` | `experiments/t6_analyze.py` → `t6_report.md` |
+| 7 | `experiments/t7-lanes.ps1` (reads the two `t7-filter-*.txt` beside it) and `experiments/t7-rerun.ps1` (patch applied, `$env:DMS1521_KEYSET_VARIANT = 'inline'`) | `t7-unit-inline`, `t7-pg-inline`, `t7-mssql-inline`, `t7-rerun-*` | `*.trx.failures.txt` |
+| 8 | `… -Engine mssql -Sequence B0 -Fixtures forms -Forms <list>` (no patch) | `t8-*`, `t8mem-*` | `experiments/t8_analyze.py` → `t8_report.md`, `t8mem_report.md` |
+| 9, read-only probe | `psql -U postgres -f reference/spikes/DMS-1521/experiments/readonly-probe.sql` against `dms-1521-postgresql`: a throwaway database with `default_transaction_read_only = on`, then `main`'s `DROP TABLE IF EXISTS "page"` and `inline`'s three statement shapes | (console output, quoted under [Recommendation](#postgresql-inline-on-all-four-paths)) | – |
 
-The analysis scripts, lane scripts, and reports live beside the runs in `C:\perf\dms-1521\` and are
-attached with them.
+The analysis scripts, lane scripts, and both probes are in `experiments/`. The Python scripts read
+`C:\perf\dms-1521\`, the run script's default `-ResultsDirectory`; the lane scripts write there
+too. The reports stay beside the runs and are attached with them.
 
 Each `batches/<kind>.<size>.sql` holds the exact command text. Its `.params.json` records that
 text's `sha256` and `length`, and `cells.json` records the same hash as `batchSha256`. The
