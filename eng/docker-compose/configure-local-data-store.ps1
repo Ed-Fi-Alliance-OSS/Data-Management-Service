@@ -443,12 +443,19 @@ function Resolve-RestoreSeparateConfigDataStore {
         return [pscustomobject]@{ DataStore = $matchingDataStores[0]; RegistrationName = $null }
     }
 
+    # Match the catalog's fixed boundary-whitespace set while retaining the conservative case
+    # comparison for these generated ASCII names. Stored display names remain unchanged.
+    $nameBoundaryWhitespace = [char[]]@(
+        0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,
+        0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+        0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000
+    )
     $registeredNames = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
     foreach ($dataStore in $DataStores) {
-        $null = $registeredNames.Add([string]$dataStore.name)
+        $null = $registeredNames.Add(([string]$dataStore.name).Trim($nameBoundaryWhitespace))
     }
     $registrationName = "Local Development Data Store"
-    for ($suffix = 2; $registeredNames.Contains($registrationName); $suffix++) {
+    for ($suffix = 2; $registeredNames.Contains($registrationName.Trim($nameBoundaryWhitespace)); $suffix++) {
         $registrationName = "Local Development Data Store ($suffix)"
     }
 

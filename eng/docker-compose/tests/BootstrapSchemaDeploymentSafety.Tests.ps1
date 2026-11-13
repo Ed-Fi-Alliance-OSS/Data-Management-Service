@@ -5196,6 +5196,82 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty -Because "the other target's registration is neither updated nor deleted"
         }
 
+        It "skips fixed-whitespace and case aliases of the base and suffix (<Engine>: U+<CodePointLabel>)" -Tag "RegistrationNameComparison" -ForEach @(
+            foreach ($engine in @("postgresql", "mssql")) {
+                foreach ($codePoint in @(
+                    0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,
+                    0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+                    0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000
+                )) {
+                    @{ Engine = $engine; CodePoint = $codePoint; CodePointLabel = $codePoint.ToString("X4") }
+                }
+            }
+        ) {
+            $baseName = [string][char]$CodePoint + "LOCAL DEVELOPMENT DATA STORE"
+            $suffixName = "local development data store (2)" + [char]$CodePoint
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $connection = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $Engine -DatabaseName "edfi_other") -EncryptionKey $script:reuseCmsKey
+                $provider = Get-ReuseProvider -Engine $Engine
+                New-ReuseDataStore -Id 41 -Name $baseName -Provider $provider -ConnectionString $connection
+                New-ReuseDataStore -Id 42 -Name $suffixName -Provider $provider -ConnectionString $connection
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store (3)"
+            @($script:reuseStores.name) | Should -BeExactly @($baseName, $suffixName) -Because "name comparison must not rewrite stored display names"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+        }
+
+        It "preserves characters outside the fixed boundary set and embedded spacing (<Engine>: <Case>)" -Tag "RegistrationNameComparison" -ForEach @(
+            foreach ($engine in @("postgresql", "mssql")) {
+                foreach ($codePoint in @(0x0008, 0x000E, 0x001C, 0x001F, 0x180E, 0x200B, 0xFEFF)) {
+                    @{
+                        Engine = $engine
+                        Case = "boundary U+" + $codePoint.ToString("X4")
+                        ExistingName = [string][char]$codePoint + "Local Development Data Store" + [char]$codePoint
+                    }
+                }
+                @{ Engine = $engine; Case = "embedded ASCII space"; ExistingName = "Local  Development Data Store" }
+                @{ Engine = $engine; Case = "embedded nonbreaking space"; ExistingName = "Local" + [char]0x00A0 + "Development Data Store" }
+            }
+        ) {
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $connection = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $Engine -DatabaseName "edfi_other") -EncryptionKey $script:reuseCmsKey
+                New-ReuseDataStore -Id 41 -Name $ExistingName -Provider (Get-ReuseProvider -Engine $Engine) -ConnectionString $connection
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store"
+            $script:reuseStores[0].name | Should -BeExactly $ExistingName
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+        }
+
+        It "uses target identity for accented display names without rewriting them (<Engine>: <Case>)" -Tag "RegistrationNameComparison" -ForEach @(
+            @{ Engine = "postgresql"; Case = "same target"; SameTarget = $true }
+            @{ Engine = "postgresql"; Case = "unrelated target"; SameTarget = $false }
+            @{ Engine = "mssql"; Case = "same target"; SameTarget = $true }
+            @{ Engine = "mssql"; Case = "unrelated target"; SameTarget = $false }
+        ) {
+            $displayName = [string][char]0x00A0 + "Local Development Data St" + [char]0x00F3 + "re" + [char]0x2003
+            $databaseName = if ($SameTarget) { $script:reuseTarget } else { "edfi_other" }
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $connection = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $Engine -DatabaseName $databaseName) -EncryptionKey $script:reuseCmsKey
+                New-ReuseDataStore -Id 41 -Name $displayName -Provider (Get-ReuseProvider -Engine $Engine) -ConnectionString $connection
+            }
+
+            if ($SameTarget) {
+                @($result.SelectedDataStoreIds) | Should -Be @(41)
+                $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+            }
+            else {
+                @($result.SelectedDataStoreIds) | Should -Be @(9001)
+                $script:reuseTrace | Should -Contain "Add-DataStore"
+                $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store" -Because "accents stay distinct and another target cannot be adopted by name"
+            }
+            $script:reuseStores[0].name | Should -BeExactly $displayName
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+        }
+
         It "selects each target's own registration across repeated single-target restores A, B, A, B (<engine>)" -ForEach @(
             @{ Engine = "postgresql" }
             @{ Engine = "mssql" }
