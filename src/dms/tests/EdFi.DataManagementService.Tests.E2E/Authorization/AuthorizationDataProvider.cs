@@ -486,6 +486,30 @@ public static class AuthorizationDataProvider
         return (response.StatusCode, await response.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// Like <see cref="SendToConfigurationService"/>, with the Location the service answered, which names the
+    /// record a 201 created.
+    /// </summary>
+    internal static async Task<ConfigurationServiceAnswer> CallConfigurationService(
+        HttpMethod method,
+        string path,
+        string json,
+        string systemAdministratorToken
+    )
+    {
+        using HttpRequestMessage request = new(method, path)
+        {
+            Content = new StringContent(json, Encoding.UTF8, "application/json"),
+        };
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", systemAdministratorToken);
+        using HttpResponseMessage response = await _configurationServiceClient.SendAsync(request);
+        return new ConfigurationServiceAnswer(
+            response.StatusCode,
+            await response.Content.ReadAsStringAsync(),
+            response.Headers.Location
+        );
+    }
+
     public static async Task<string> GetToken(string tokenUrl, ClientCredentials clientCredentials)
     {
         var formData = new FormUrlEncodedContent(
