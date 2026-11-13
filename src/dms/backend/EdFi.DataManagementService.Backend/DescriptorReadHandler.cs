@@ -1082,6 +1082,14 @@ internal sealed class DescriptorReadHandler(
             return new DescriptorQueryPreparationResult.Complete(new QueryResult.UnknownFailure(ex.Message));
         }
 
+        // A rejected request is answered before custom-view validation and page planning.
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.ValidationFailure validation)
+        {
+            return new DescriptorQueryPreparationResult.Complete(
+                new QueryResult.QueryFailureValidation([.. validation.Failures])
+            );
+        }
+
         if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.EmptyPage)
         {
             await ValidateCustomViewsAsync(request, authorizationSpec?.CustomViewChecks, cancellationToken)
@@ -1331,6 +1339,14 @@ internal sealed class DescriptorReadHandler(
         {
             return new DescriptorPartitionPreparationResult.Complete(
                 new PartitionResult.UnknownPartitionFailure(ex.Message)
+            );
+        }
+
+        // A rejected request is answered before custom-view validation and boundary planning.
+        if (preprocessingResult.Outcome is RelationalQueryPreprocessingOutcome.ValidationFailure validation)
+        {
+            return new DescriptorPartitionPreparationResult.Complete(
+                new PartitionResult.PartitionFailureValidation([.. validation.Failures])
             );
         }
 

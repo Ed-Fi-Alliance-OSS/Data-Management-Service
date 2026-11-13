@@ -104,6 +104,20 @@ public sealed record SupportedDescriptorQueryField
     public string QueryFieldName { get; }
 
     /// <summary>
+    /// The declared length of the <c>dms.Descriptor</c> string column the field targets, or null when the
+    /// field does not target a string column. Derived from <see cref="Target"/>.
+    /// </summary>
+    public int? StringMaxLength =>
+        Target switch
+        {
+            DescriptorQueryFieldTarget.Namespace => DescriptorStringColumnLengths.Namespace,
+            DescriptorQueryFieldTarget.CodeValue => DescriptorStringColumnLengths.CodeValue,
+            DescriptorQueryFieldTarget.ShortDescription => DescriptorStringColumnLengths.ShortDescription,
+            DescriptorQueryFieldTarget.Description => DescriptorStringColumnLengths.Description,
+            _ => null,
+        };
+
+    /// <summary>
     /// The deterministic descriptor query predicate target.
     /// </summary>
     public DescriptorQueryFieldTarget Target { get; }

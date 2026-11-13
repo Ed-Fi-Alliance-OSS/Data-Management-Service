@@ -305,6 +305,8 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
             ?? throw new InvalidOperationException(
                 "Expected queryFieldMapping to be on ResourceSchema, invalid ApiSchema"
             );
+        JsonNode? jsonSchemaForInsert = _resourceSchemaNode["jsonSchemaForInsert"];
+
         return queryFieldMapping
             .AsObject()
             .AsEnumerable()
@@ -312,16 +314,61 @@ internal class ResourceSchema(JsonNode _resourceSchemaNode)
                 queryField.Key,
                 queryField
                     .Value?.AsArray()
-                    .Select(x => new JsonPathAndType(
-                        x!["path"]!.GetValue<string>(),
-                        x["type"]!.GetValue<string>()
-                    ))
+                    .Select(x =>
+                    {
+                        string path = x!["path"]!.GetValue<string>();
+                        string type = x["type"]!.GetValue<string>();
+
+                        return new JsonPathAndType(
+                            path,
+                            type,
+                            type == "string" ? DeclaredStringMaxLength(jsonSchemaForInsert, path) : null
+                        );
+                    })
                     .ToArray()
                     ?? throw new InvalidOperationException(
                         "Expected queryField to be on queryFieldMapping, invalid ApiSchema"
                     )
             ));
     });
+
+    /// <summary>
+    /// The <c>maxLength</c> the insert schema declares for the string at a query field's document path,
+    /// or null when the path does not resolve to a schema node (for example <c>$.id</c>, which is not a
+    /// document property) or the node declares no bound. Walks <c>properties</c> for each property
+    /// segment and <c>items</c> for each <c>[*]</c> segment.
+    /// </summary>
+    private static int? DeclaredStringMaxLength(JsonNode? jsonSchemaForInsert, string jsonPath)
+    {
+        JsonNode? node = jsonSchemaForInsert;
+
+        if (!jsonPath.StartsWith("$.", StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        foreach (string segment in jsonPath[2..].Split('.'))
+        {
+            bool isArray = segment.EndsWith("[*]", StringComparison.Ordinal);
+            string propertyName = isArray ? segment[..^3] : segment;
+
+            node = node?["properties"]?[propertyName];
+
+            if (isArray)
+            {
+                node = node?["items"];
+            }
+
+            if (node is null)
+            {
+                return null;
+            }
+        }
+
+        return node is JsonObject schemaNode && schemaNode["maxLength"] is JsonValue maxLength
+            ? maxLength.GetValue<int>()
+            : null;
+    }
 
     /// <summary>
     /// The list of QueryFields for this resource. A QueryField is a mapping of a valid query field

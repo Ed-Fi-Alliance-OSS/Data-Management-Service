@@ -416,16 +416,16 @@ public sealed class CoreDdlEmitter
                 $"{_dialect.RenderColumnDefinition(Col("ResourceKeyId"), _dialect.SmallintColumnType, false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(DescriptorIdentityTextColumns.Namespace, IdentityTextType(255), false)},"
+                $"{_dialect.RenderColumnDefinition(DescriptorIdentityTextColumns.Namespace, IdentityTextType(DescriptorStringColumnLengths.Namespace), false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(DescriptorIdentityTextColumns.CodeValue, IdentityTextType(50), false)},"
+                $"{_dialect.RenderColumnDefinition(DescriptorIdentityTextColumns.CodeValue, IdentityTextType(DescriptorStringColumnLengths.CodeValue), false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("ShortDescription"), StringType(75), false)},"
+                $"{_dialect.RenderColumnDefinition(Col("ShortDescription"), StringType(DescriptorStringColumnLengths.ShortDescription), false)},"
             );
             writer.AppendLine(
-                $"{_dialect.RenderColumnDefinition(Col("Description"), StringType(1024), true)},"
+                $"{_dialect.RenderColumnDefinition(Col("Description"), StringType(DescriptorStringColumnLengths.Description), true)},"
             );
             writer.AppendLine(
                 $"{_dialect.RenderColumnDefinition(Col("EffectiveBeginDate"), DateType, true)},"

@@ -404,10 +404,12 @@ internal static class PartitionEndpointScenario
         metrics.Clear();
         commandsBefore = recorder.DatabaseCommands;
 
+        // The value matches no descriptor but stays within codeValue's declared maxLength of 50, which
+        // longer filter values exceed and are rejected for.
         var emptyPageTokens = await ReadPageTokensAsync(
             harness,
             $"{DescriptorPartitionsEndpoint}?number={RequestedPartitionCount}"
-                + $"&codeValue=Partitions-telemetry-none-{Guid.NewGuid():N}"
+                + $"&codeValue=none-{Guid.NewGuid():N}"
         );
 
         (recorder.DatabaseCommands - commandsBefore).Should().Be(PartitionsDatabaseCommands);

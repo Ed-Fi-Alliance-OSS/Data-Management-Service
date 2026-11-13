@@ -5,6 +5,7 @@
 
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -150,10 +151,95 @@ public class Given_DescriptorQueryRequestPreprocessor
             );
     }
 
-    private static MappingSet CreateMappingSet(DescriptorQueryCapability descriptorQueryCapability)
+    /// <summary>
+    /// A SQL Server descriptor string filter wider than its <c>dms.Descriptor</c> column, in UTF-16 code
+    /// units, is rejected as an invalid filter value before any element is preprocessed. The rule is
+    /// SQL Server-specific; PostgreSQL is unchanged.
+    /// </summary>
+    [TestCase("codeValue", "$.codeValue", DescriptorStringColumnLengths.CodeValue)]
+    [TestCase("namespace", "$.namespace", DescriptorStringColumnLengths.Namespace)]
+    [TestCase("shortDescription", "$.shortDescription", DescriptorStringColumnLengths.ShortDescription)]
+    [TestCase("description", "$.description", DescriptorStringColumnLengths.Description)]
+    public void It_rejects_a_sql_server_descriptor_string_wider_than_its_column(
+        string queryFieldName,
+        string documentPath,
+        int columnLength
+    )
     {
-        return RelationalAccessTestData.CreateMappingSet(_requestResource) with
+        string value = new('x', columnLength + 1);
+
+        var result = DescriptorQueryRequestPreprocessor.Preprocess(
+            CreateMappingSet(CreateSupportedQueryCapability(), SqlDialect.Mssql),
+            _descriptorResource,
+            [
+                CreateQueryElement("id", "$.id", "not-a-guid", "string"),
+                CreateQueryElement(queryFieldName, documentPath, value, "string"),
+            ]
+        );
+
+        result
+            .Outcome.Should()
+            .BeOfType<RelationalQueryPreprocessingOutcome.ValidationFailure>()
+            .Which.Failures.Should()
+            .Equal(
+                new WriteValidationFailure(
+                    new JsonPath(documentPath),
+                    $"The value '{value}' is not valid for {queryFieldName}."
+                )
+            );
+        result.QueryElementsInOrder.Should().BeEmpty();
+    }
+
+    [Test]
+    public void It_accepts_a_sql_server_descriptor_string_exactly_as_wide_as_its_column()
+    {
+        var result = DescriptorQueryRequestPreprocessor.Preprocess(
+            CreateMappingSet(CreateSupportedQueryCapability(), SqlDialect.Mssql),
+            _descriptorResource,
+            [
+                CreateQueryElement(
+                    "codeValue",
+                    "$.codeValue",
+                    new string('x', DescriptorStringColumnLengths.CodeValue),
+                    "string"
+                ),
+            ]
+        );
+
+        result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
+    }
+
+    [Test]
+    public void It_accepts_on_postgresql_a_descriptor_string_sql_server_would_reject()
+    {
+        // 50 text elements within the codeValue bound, 100 UTF-16 code units.
+        string value = string.Concat(
+            Enumerable.Repeat("\U0001F600", DescriptorStringColumnLengths.CodeValue)
+        );
+
+        var result = DescriptorQueryRequestPreprocessor.Preprocess(
+            CreateMappingSet(CreateSupportedQueryCapability()),
+            _descriptorResource,
+            [CreateQueryElement("codeValue", "$.codeValue", value, "string")]
+        );
+
+        result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.Continue>();
+        result
+            .QueryElementsInOrder.Single()
+            .Value.Should()
+            .Be(new PreprocessedDescriptorQueryValue.Raw(value));
+    }
+
+    private static MappingSet CreateMappingSet(
+        DescriptorQueryCapability descriptorQueryCapability,
+        SqlDialect dialect = SqlDialect.Pgsql
+    )
+    {
+        var mappingSet = RelationalAccessTestData.CreateMappingSet(_requestResource);
+
+        return mappingSet with
         {
+            Key = mappingSet.Key with { Dialect = dialect },
             DescriptorQueryCapabilitiesByResource = new Dictionary<
                 QualifiedResourceName,
                 DescriptorQueryCapability
