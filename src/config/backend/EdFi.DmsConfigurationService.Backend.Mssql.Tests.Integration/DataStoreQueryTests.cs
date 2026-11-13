@@ -10,12 +10,15 @@ using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration;
 
-[TestFixture(false)]
-[TestFixture(true)]
+[TestFixture(false, false)]
+[TestFixture(true, false)]
+[TestFixture(false, true)]
+[TestFixture(true, true)]
 [NonParallelizable]
 [Category("OrdinaryDataStoreQuery")]
 [Category("MssqlIntegration")]
-public class Given_ordinary_data_store_queries(bool multitenant) : OrdinaryDataStoreQueryTests(multitenant)
+public class Given_ordinary_data_store_queries(bool multitenant, bool canonicalUniqueness)
+    : OrdinaryDataStoreQueryTests(multitenant, canonicalUniqueness)
 {
     private JobUpgradeTestDatabase _database = null!;
     protected override string Provider => "mssql";
@@ -49,7 +52,7 @@ public class Given_ordinary_data_store_queries(bool multitenant) : OrdinaryDataS
                 """
             );
         }
-        _database.DeployThrough(39);
+        _database.DeployThrough(CanonicalUniqueness ? 40 : 39);
     }
 
     protected override Task DropAsync() => _database is null ? Task.CompletedTask : _database.DropAsync();

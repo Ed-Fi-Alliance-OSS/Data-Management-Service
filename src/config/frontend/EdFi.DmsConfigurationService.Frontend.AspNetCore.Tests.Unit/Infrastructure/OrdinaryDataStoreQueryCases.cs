@@ -10,8 +10,8 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastruc
 
 /// <summary>
 /// Shared inputs and independently specified row positions for real-provider repository and HTTP tests.
-/// These fixtures retain legacy uniqueness: composed/decomposed names and
-/// accent-equivalent names are tested separately until the replacement migration is introduced.
+/// The 0039 lane retains legacy uniqueness. The 0040 lane uses distinct canonical
+/// names where legacy rows could tie, and also exercises formerly linguistic equivalents.
 /// </summary>
 public static class OrdinaryDataStoreQueryCases
 {
@@ -59,6 +59,39 @@ public static class OrdinaryDataStoreQueryCases
                     .Where(v => v.Value is not null)
                     .Select(v => v.Key + "=" + Uri.EscapeDataString(v.Value!))
             );
+    }
+
+    public static Case WithCanonicalUniqueness(Case test)
+    {
+        // 0040 prohibits the two legacy within-tenant name ties. Keep every sort/page
+        // case with a distinct adjacent key; the 0039 lane still proves real name ties.
+        // Type/Id tie cases are unchanged in both lanes.
+        if (test.Rows.Length == 9 && test.Rows[6].Name == "\tTie")
+        {
+            Row[] rows = [.. test.Rows];
+            rows[7] = new("\u3000tiebreak");
+            return test with
+            {
+                Rows = rows,
+                ExpectedRows = test.Label == "canonical_name_filter_keeps_Id_ties" ? [6] : test.ExpectedRows,
+            };
+        }
+        // Exercise each formerly linguistic equivalent in the same catalog after 0040.
+        if (test.Rows is [{ Name: "café" }, { Name: "other" }])
+        {
+            return test with
+            {
+                Rows = [.. test.Rows, new("cafe"), new("CAFÉ"), new("cafe\u0301")],
+                ExpectedRows = test.Label switch
+                {
+                    "accent_is_not_folded" => [2],
+                    "non_ASCII_case_is_not_folded" => [3],
+                    "composed_is_not_decomposed" => [4],
+                    _ => test.ExpectedRows,
+                },
+            };
+        }
+        return test;
     }
 
     public static IEnumerable<Case> Cases()

@@ -10,11 +10,14 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 
-[TestFixture(false)]
-[TestFixture(true)]
+[TestFixture(false, false)]
+[TestFixture(true, false)]
+[TestFixture(false, true)]
+[TestFixture(true, true)]
 [NonParallelizable]
 [Category("OrdinaryDataStoreQuery")]
-public class Given_ordinary_data_store_queries(bool multitenant) : OrdinaryDataStoreQueryTests(multitenant)
+public class Given_ordinary_data_store_queries(bool multitenant, bool canonicalUniqueness)
+    : OrdinaryDataStoreQueryTests(multitenant, canonicalUniqueness)
 {
     private JobUpgradeTestDatabase _database = null!;
     protected override string Provider => "postgresql";
@@ -23,7 +26,7 @@ public class Given_ordinary_data_store_queries(bool multitenant) : OrdinaryDataS
     protected override Task DeployAsync()
     {
         _database = new();
-        _database.DeployThrough(39);
+        _database.DeployThrough(CanonicalUniqueness ? 40 : 39);
         return Task.CompletedTask;
     }
 

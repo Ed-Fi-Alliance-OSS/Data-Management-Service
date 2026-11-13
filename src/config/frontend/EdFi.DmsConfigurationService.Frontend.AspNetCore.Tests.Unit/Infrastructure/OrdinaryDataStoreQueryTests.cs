@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using System.Net.Http.Json;
 using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -17,12 +18,13 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
 /// <summary>The same repository and HTTP assertions run against each provider's actual migrated catalog.</summary>
-public abstract class OrdinaryDataStoreQueryTests(bool multitenant)
+public abstract class OrdinaryDataStoreQueryTests(bool multitenant, bool canonicalUniqueness)
 {
     private WebApplicationFactory<Program> _factory = null!;
     private long _tenantA;
     private long _tenantB;
     private long? CurrentTenantId => multitenant ? _tenantA : null;
+    protected bool CanonicalUniqueness => canonicalUniqueness;
 
     protected abstract string Provider { get; }
     protected abstract string ConnectionString { get; }
@@ -100,6 +102,7 @@ public abstract class OrdinaryDataStoreQueryTests(bool multitenant)
     [TestCaseSource(typeof(OrdinaryDataStoreQueryCases), nameof(OrdinaryDataStoreQueryCases.Cases))]
     public async Task It_queries_the_real_repository(OrdinaryDataStoreQueryCases.Case test)
     {
+        test = canonicalUniqueness ? OrdinaryDataStoreQueryCases.WithCanonicalUniqueness(test) : test;
         int[] ids = await SeedAsync(test);
         using IServiceScope scope = _factory.Services.CreateScope();
         if (multitenant)
@@ -123,6 +126,7 @@ public abstract class OrdinaryDataStoreQueryTests(bool multitenant)
     [TestCaseSource(typeof(OrdinaryDataStoreQueryCases), nameof(OrdinaryDataStoreQueryCases.Cases))]
     public async Task It_queries_through_HTTP_with_the_real_repository(OrdinaryDataStoreQueryCases.Case test)
     {
+        test = canonicalUniqueness ? OrdinaryDataStoreQueryCases.WithCanonicalUniqueness(test) : test;
         int[] ids = await SeedAsync(test);
         using HttpClient client = Client();
         using HttpResponseMessage response = await client.GetAsync(
@@ -220,38 +224,152 @@ public abstract class OrdinaryDataStoreQueryTests(bool multitenant)
         }
 
         using HttpClient client = Client();
+        foreach (string displayName in new[] { " CAFé ", " Renamed CAFé " })
+        {
+            if (displayName == " Renamed CAFé ")
+            {
+                using HttpResponseMessage renamed = await client.PutAsJsonAsync(
+                    $"/v3/dataStores/{selectedId}",
+                    new
+                    {
+                        Id = selectedId,
+                        Name = displayName,
+                        DataStoreType = "SQL",
+                        Provider = provider,
+                        ConnectionString = "Server=host;Database= CAFé ;",
+                    }
+                );
+                renamed.StatusCode.Should().Be(HttpStatusCode.NoContent);
+            }
+            foreach (
+                string url in new[]
+                {
+                    "/v3/dataStores/?name=" + Uri.EscapeDataString(displayName) + "&orderBy=name&limit=1",
+                    $"/v3/dataStores/{selectedId}",
+                }
+            )
+            {
+                using HttpResponseMessage response = await client.GetAsync(url);
+                response.StatusCode.Should().Be(HttpStatusCode.OK);
+                JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+                JsonNode row = body is JsonArray array ? array.Should().ContainSingle().Which! : body;
+                row["id"]!.GetValue<int>().Should().Be(selectedId);
+                row["name"]!.GetValue<string>().Should().Be(displayName);
+                row["provider"]!.GetValue<string>().Should().Be(provider);
+                encryption
+                    .Decrypt(Convert.FromBase64String(row["connectionString"]!.GetValue<string>()))
+                    .Should()
+                    .Be("Server=host;Database= CAFé ;");
+                JsonNode context = row["dataStoreContexts"]!.AsArray().Should().ContainSingle().Which!;
+                context["id"]!.GetValue<int>().Should().Be(selectedContextId);
+                context["dataStoreId"]!.GetValue<int>().Should().Be(selectedId);
+                context["contextKey"]!.GetValue<string>().Should().Be("schoolYear");
+                context["contextValue"]!.GetValue<string>().Should().Be(" CAFé ");
+                JsonNode derivative = row["dataStoreDerivatives"]!.AsArray().Should().ContainSingle().Which!;
+                derivative["id"]!.GetValue<int>().Should().Be(selectedDerivativeId);
+                derivative["dataStoreId"]!.GetValue<int>().Should().Be(selectedId);
+                derivative["derivativeType"]!.GetValue<string>().Should().Be("ReadReplica");
+                encryption
+                    .Decrypt(Convert.FromBase64String(derivative["connectionString"]!.GetValue<string>()))
+                    .Should()
+                    .Be("Server=replica;Database= CAFé ;");
+            }
+        }
+    }
+
+    [Test]
+    public async Task It_creates_reads_and_renames_distinct_names_and_maps_duplicates_to_validation_400()
+    {
+        using HttpClient client = Client();
+        // Legacy runs retain their original eligibility; 0040 must admit these previously
+        // linguistic equivalents together even with the SQL Server CI_AI display column.
+        string[] names = canonicalUniqueness
+            ? ["café", "cafe", "CAFÉ", "cafe\u0301", "Store"]
+            : ["café", "other", "Store"];
+        List<int> ids = [];
+        foreach (string name in names)
+        {
+            using HttpResponseMessage created = await client.PostAsJsonAsync(
+                "/v3/dataStores/",
+                new { Name = name, DataStoreType = "SQL" }
+            );
+            string content = await created.Content.ReadAsStringAsync();
+            created.StatusCode.Should().Be(HttpStatusCode.Created, content);
+            ids.Add(JsonNode.Parse(content)!["id"]!.GetValue<int>());
+        }
+        for (int i = 0; i < names.Length; i++)
+        {
+            await AssertNameReadsAsync(client, ids[i], names[i]);
+        }
+
+        string duplicate = canonicalUniqueness ? "\u3000sTORE\u00a0" : "Store";
+        using HttpResponseMessage duplicatePost = await client.PostAsJsonAsync(
+            "/v3/dataStores/",
+            new { Name = duplicate, DataStoreType = "SQL" }
+        );
+        await AssertDuplicateAsync(duplicatePost);
+        using HttpResponseMessage duplicatePut = await client.PutAsJsonAsync(
+            $"/v3/dataStores/{ids[0]}",
+            new
+            {
+                Id = ids[0],
+                Name = duplicate,
+                DataStoreType = "SQL",
+            }
+        );
+        await AssertDuplicateAsync(duplicatePut);
+        await AssertNameReadsAsync(client, ids[0], names[0]);
+
+        string renamed = canonicalUniqueness ? " café-renamed " : "renamed";
+        using HttpResponseMessage renamedResponse = await client.PutAsJsonAsync(
+            $"/v3/dataStores/{ids[0]}",
+            new
+            {
+                Id = ids[0],
+                Name = renamed,
+                DataStoreType = "SQL",
+            }
+        );
+        renamedResponse.StatusCode.Should().Be(HttpStatusCode.NoContent);
+        await AssertNameReadsAsync(client, ids[0], renamed);
+        using HttpResponseMessage oldName = await client.GetAsync(
+            "/v3/dataStores/?name=" + Uri.EscapeDataString(names[0])
+        );
+        oldName.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonNode.Parse(await oldName.Content.ReadAsStringAsync())!.AsArray().Should().BeEmpty();
+        await AssertNameReadsAsync(client, ids[1], names[1]);
+    }
+
+    private static async Task AssertDuplicateAsync(HttpResponseMessage response)
+    {
+        string content = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest, content);
+        response.Headers.Location.Should().BeNull();
+        JsonNode.Parse(content)!["validationErrors"]!["Name"]!
+            .AsArray()
+            .Select(value => value!.GetValue<string>())
+            .Should()
+            .Equal("A data store with this name already exists.");
+    }
+
+    private static async Task AssertNameReadsAsync(HttpClient client, int id, string name)
+    {
         foreach (
             string url in new[]
             {
-                "/v3/dataStores/?name=caf%C3%A9&orderBy=name&limit=1",
-                $"/v3/dataStores/{selectedId}",
+                "/v3/dataStores/?name=" + Uri.EscapeDataString(name),
+                $"/v3/dataStores/{id}",
             }
         )
         {
             using HttpResponseMessage response = await client.GetAsync(url);
-            response.StatusCode.Should().Be(HttpStatusCode.OK);
-            JsonNode body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+            string content = await response.Content.ReadAsStringAsync();
+            response.StatusCode.Should().Be(HttpStatusCode.OK, content);
+            JsonNode body = JsonNode.Parse(content)!;
             JsonNode row = body is JsonArray array ? array.Should().ContainSingle().Which! : body;
-            row["id"]!.GetValue<int>().Should().Be(selectedId);
-            row["name"]!.GetValue<string>().Should().Be(" CAFé ");
-            row["provider"]!.GetValue<string>().Should().Be(provider);
-            encryption
-                .Decrypt(Convert.FromBase64String(row["connectionString"]!.GetValue<string>()))
-                .Should()
-                .Be("Server=host;Database= CAFé ;");
-            JsonNode context = row["dataStoreContexts"]!.AsArray().Should().ContainSingle().Which!;
-            context["id"]!.GetValue<int>().Should().Be(selectedContextId);
-            context["dataStoreId"]!.GetValue<int>().Should().Be(selectedId);
-            context["contextKey"]!.GetValue<string>().Should().Be("schoolYear");
-            context["contextValue"]!.GetValue<string>().Should().Be(" CAFé ");
-            JsonNode derivative = row["dataStoreDerivatives"]!.AsArray().Should().ContainSingle().Which!;
-            derivative["id"]!.GetValue<int>().Should().Be(selectedDerivativeId);
-            derivative["dataStoreId"]!.GetValue<int>().Should().Be(selectedId);
-            derivative["derivativeType"]!.GetValue<string>().Should().Be("ReadReplica");
-            encryption
-                .Decrypt(Convert.FromBase64String(derivative["connectionString"]!.GetValue<string>()))
-                .Should()
-                .Be("Server=replica;Database= CAFé ;");
+            row["id"]!.GetValue<int>().Should().Be(id);
+            row["name"]!.GetValue<string>().Should().Be(name);
+            row.AsObject().Should().NotContainKey("nameComparisonKey");
         }
     }
 

@@ -5,6 +5,85 @@ Feature: DataStores endpoints
               And token received
 
         @DMS-1439 @OrdinaryDataStoreQuery @MssqlRepresentative
+        Scenario: Canonical uniqueness admits accents separately and rejects ASCII case duplicates
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                  {
+                      "dataStoreType": "SQL",
+                      "name": "café {scenarioRunId}",
+                      "connectionString": "Server=localhost;Database=AccentDb;"
+                  }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "accentId"
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                  {
+                      "dataStoreType": "SQL",
+                      "name": "cafe {scenarioRunId}",
+                      "connectionString": "Server=localhost;Database=PlainDb;"
+                  }
+                  """
+             Then it should respond with 201
+              And the response location id is captured as "plainId"
+             When a GET request is made to "/v3/dataStores?name=caf%C3%A9%20{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": {accentId},
+                      "dataStoreType": "SQL",
+                      "name": "café {scenarioRunId}",
+                      "connectionString": "{ignore}",
+                      "dataStoreContexts": [],
+                      "dataStoreDerivatives": []
+                  }]
+                  """
+             When a GET request is made to "/v3/dataStores?name=cafe%20{scenarioRunId}"
+             Then it should respond with 200
+              And the response body is
+                  """
+                  [{
+                      "id": {plainId},
+                      "dataStoreType": "SQL",
+                      "name": "cafe {scenarioRunId}",
+                      "connectionString": "{ignore}",
+                      "dataStoreContexts": [],
+                      "dataStoreDerivatives": []
+                  }]
+                  """
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                  {
+                      "dataStoreType": "SQL",
+                      "name": "Store {scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 201
+             When a POST request is made to "/v3/dataStores" with
+                  """
+                  {
+                      "dataStoreType": "SQL",
+                      "name": "store {scenarioRunId}"
+                  }
+                  """
+             Then it should respond with 400
+              And the response header "location" is not present
+              And the response body is
+                  """
+                  {
+                      "detail": "Data validation failed. See 'validationErrors' for details.",
+                      "type": "urn:ed-fi:management-api:bad-request:data",
+                      "title": "Data Validation Failed",
+                      "status": 400,
+                      "validationErrors": {
+                          "Name": ["A data store with this name already exists."]
+                      },
+                      "errors": []
+                  }
+                  """
+
+        @DMS-1439 @OrdinaryDataStoreQuery @MssqlRepresentative
         Scenario: Ordinary name queries use ASCII case and edge whitespace without accent folding
              When a POST request is made to "/v3/dataStores" with
                   """
