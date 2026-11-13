@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text;
 using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
@@ -428,6 +429,10 @@ public class Given_the_managed_DataStore_migration
                 i.IndexName == "UX_DataStoreManage_TenantId_Name"
                 && i.Definition.Contains("NameComparisonKey")
             );
+        await connection.ExecuteAsync(
+            """DELETE FROM public."dmscs_SchemaVersions" WHERE scriptname = @ScriptName;""",
+            new { ScriptName }
+        );
         _database.DeployThrough(41);
         (await connection.QueryAsync<(string TableName, string IndexName, string Definition)>(INVENTORY))
             .Should()
@@ -579,6 +584,263 @@ public class Given_the_managed_DataStore_migration
         (await _database.TableExistsAsync("DataStoreManage")).Should().BeTrue();
         (await _database.JournalAsync()).Except(journal).Should().Equal(ScriptName);
     }
+
+    [TestCase("nonunique_target")]
+    [TestCase("wrong_target_filter")]
+    [TestCase("wrong_name_key")]
+    [TestCase("missing_link_index")]
+    [TestCase("nullable_source")]
+    [TestCase("weakened_check")]
+    [TestCase("cascade_link")]
+    [TestCase("extra_column")]
+    [TestCase("untrusted_check")]
+    [TestCase("unlogged_table")]
+    [TestCase("inherited_child")]
+    [Category("DataStoreManageCorrection")]
+    public async Task It_refuses_incompatible_replay_without_mutating_schema_data_or_journal(
+        string corruption
+    )
+    {
+        _database.DeployThrough(41);
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await InsertAsync(connection, "retained");
+        string mutation = corruption switch
+        {
+            "nonunique_target" =>
+                """DROP INDEX dmscs."UX_DataStoreManage_ActiveTarget"; CREATE INDEX "UX_DataStoreManage_ActiveTarget" ON dmscs."DataStoreManage" ("EndpointDigest", "TargetDatabaseNameKey") WHERE "Status" <> 'Deleted';""",
+            "wrong_target_filter" =>
+                """DROP INDEX dmscs."UX_DataStoreManage_ActiveTarget"; CREATE UNIQUE INDEX "UX_DataStoreManage_ActiveTarget" ON dmscs."DataStoreManage" ("EndpointDigest", "TargetDatabaseNameKey") WHERE "Status" = 'Created';""",
+            "wrong_name_key" =>
+                """DROP INDEX dmscs."UX_DataStoreManage_TenantId_Name"; CREATE UNIQUE INDEX "UX_DataStoreManage_TenantId_Name" ON dmscs."DataStoreManage" ("TenantId", "Name") WHERE "Status" <> 'Deleted';""",
+            "missing_link_index" => """DROP INDEX dmscs."UX_DataStoreManage_DataStoreId";""",
+            "nullable_source" =>
+                """ALTER TABLE dmscs."DataStoreManage" ALTER COLUMN "ExpectedSourceIdentity" DROP NOT NULL;""",
+            "weakened_check" =>
+                """ALTER TABLE dmscs."DataStoreManage" DROP CONSTRAINT "CK_DataStoreManage_LastAttempt"; ALTER TABLE dmscs."DataStoreManage" ADD CONSTRAINT "CK_DataStoreManage_LastAttempt" CHECK ("LastAttempt" >= -1);""",
+            "cascade_link" =>
+                """ALTER TABLE dmscs."DataStoreManage" DROP CONSTRAINT "FK_DataStoreManage_DataStore"; ALTER TABLE dmscs."DataStoreManage" ADD CONSTRAINT "FK_DataStoreManage_DataStore" FOREIGN KEY ("DataStoreId") REFERENCES dmscs."DataStore" ("Id") ON DELETE CASCADE;""",
+            "inherited_child" =>
+                """CREATE TABLE dmscs."ManagedChild" () INHERITS (dmscs."DataStoreManage");""",
+            "unlogged_table" => """ALTER TABLE dmscs."DataStoreManage" SET UNLOGGED;""",
+            "extra_column" => """ALTER TABLE dmscs."DataStoreManage" ADD "Unexpected" INT NULL;""",
+            "untrusted_check" =>
+                """ALTER TABLE dmscs."DataStoreManage" DROP CONSTRAINT "CK_DataStoreManage_LastAttempt"; ALTER TABLE dmscs."DataStoreManage" ADD CONSTRAINT "CK_DataStoreManage_LastAttempt" CHECK ("LastAttempt" >= 0) NOT VALID;""",
+            _ => throw new ArgumentOutOfRangeException(nameof(corruption)),
+        };
+        await connection.ExecuteAsync(mutation);
+        if (corruption == "inherited_child")
+        {
+            string columns = string.Join(
+                ", ",
+                await connection.QueryAsync<string>(
+                    """SELECT quote_ident(attname) FROM pg_attribute WHERE attrelid = 'dmscs."DataStoreManage"'::regclass AND attnum > 0 AND NOT attisdropped AND attgenerated = '' ORDER BY attnum;"""
+                )
+            );
+            // Inherited tables have no parent unique indexes. A duplicate aggregate is visible through the parent.
+            await connection.ExecuteAsync(
+                $"""INSERT INTO dmscs."ManagedChild" ({columns}) SELECT {columns} FROM ONLY dmscs."DataStoreManage";"""
+            );
+            (await connection.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStoreManage";"""))
+                .Should()
+                .Be(2);
+        }
+
+        await connection.ExecuteAsync(
+            """DELETE FROM public."dmscs_SchemaVersions" WHERE scriptname = @ScriptName;""",
+            new { ScriptName }
+        );
+        string[] journal = await _database.JournalAsync();
+        string[] snapshot = await SchemaAndDataSnapshotAsync(connection);
+
+        var failure = _database
+            .Deploy(41)
+            .Should()
+            .BeOfType<DatabaseDeployResult.DatabaseDeployFailure>()
+            .Subject;
+
+        failure
+            .Error.Message.Should()
+            .Contain("DataStoreManage")
+            .And.Contain("incompatible")
+            .And.Contain("repair");
+        (await _database.JournalAsync()).Should().Equal(journal);
+        (await SchemaAndDataSnapshotAsync(connection)).Should().Equal(snapshot);
+        (await _database.TableExistsAsync("DataStoreManage_0041_Expected")).Should().BeFalse();
+    }
+
+    [TestCase("PinnedProvider", 10)]
+    [TestCase("PinnedTemplateKind", 9)]
+    [TestCase("PinnedPackageId", 100)]
+    [TestCase("PinnedDataStandardVersion", 100)]
+    [TestCase("PinnedPackageSha256", 64)]
+    [TestCase("PinnedArtifactSha256", 64)]
+    [TestCase("PinnedEffectiveSchemaHash", 64)]
+    [TestCase("PinnedInventorySha256", 64)]
+    [Category("DataStoreManageCorrection")]
+    public async Task It_bounds_small_pin_fields_without_truncating_the_boundary(string column, int limit)
+    {
+        _database.DeployThrough(41);
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        Dictionary<string, object?> pin = CompletePin();
+        string boundary = new('a', limit);
+        pin[column] = boundary;
+        int id = await InsertAsync(connection, "bounded pin", values: pin);
+        (
+            await connection.QuerySingleAsync<string>(
+                $"""SELECT "{column}" FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+                new { Id = id }
+            )
+        )
+            .Should()
+            .Be(boundary);
+        Func<Task> excessive = () => UpdateAsync(connection, id, column, boundary + "a");
+        await excessive.Should().ThrowAsync<DbException>();
+        (
+            await connection.QuerySingleAsync<string>(
+                $"""SELECT "{column}" FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+                new { Id = id }
+            )
+        )
+            .Should()
+            .Be(boundary);
+    }
+
+    [TestCase("PinnedPackageVersion")]
+    [TestCase("PinnedApiSchemaFormatVersion")]
+    [TestCase("PinnedRelationalMappingVersion")]
+    [Category("DataStoreManageCorrection")]
+    public async Task It_bounds_large_pin_fields_by_UTF8_bytes_and_round_trips_Unicode(string column)
+    {
+        const int MaximumUtf8Bytes = 16 * 1024 * 1024;
+        _database.DeployThrough(41);
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        Dictionary<string, object?> pin = CompletePin();
+        string boundary = "1.0." + new string('٢', (MaximumUtf8Bytes - 4) / 2);
+        Encoding.UTF8.GetByteCount(boundary).Should().Be(MaximumUtf8Bytes);
+        pin[column] = boundary;
+        int id = await InsertAsync(connection, "large pin", values: pin);
+        (
+            await connection.QuerySingleAsync<string>(
+                $"""SELECT "{column}" FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+                new { Id = id }
+            )
+        )
+            .Should()
+            .Be(boundary);
+        await RejectAsync(
+            () => UpdateAsync(connection, id, column, boundary + "a"),
+            "CK_DataStoreManage_ArtifactPinBounds"
+        );
+        (
+            await connection.QuerySingleAsync<string>(
+                $"""SELECT "{column}" FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+                new { Id = id }
+            )
+        )
+            .Should()
+            .Be(boundary);
+    }
+
+    [Test]
+    [Category("DataStoreManageCorrection")]
+    public async Task It_refuses_a_reserved_sibling_without_touching_the_operator_object()
+    {
+        _database.DeployThrough(41);
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await InsertAsync(connection, "retained");
+        await connection.ExecuteAsync(
+            """
+            CREATE TABLE dmscs."DataStoreManage_0041_Expected" ("OperatorValue" INT NOT NULL);
+            INSERT INTO dmscs."DataStoreManage_0041_Expected" ("OperatorValue") VALUES (17);
+            """
+        );
+        await connection.ExecuteAsync(
+            """DELETE FROM public."dmscs_SchemaVersions" WHERE scriptname = @ScriptName;""",
+            new { ScriptName }
+        );
+        string[] journal = await _database.JournalAsync();
+        string[] snapshot = await SchemaAndDataSnapshotAsync(connection);
+
+        var failure = _database
+            .Deploy(41)
+            .Should()
+            .BeOfType<DatabaseDeployResult.DatabaseDeployFailure>()
+            .Subject;
+
+        failure.Error.Message.Should().Contain("DataStoreManage_0041_Expected").And.Contain("repair");
+        (await _database.JournalAsync()).Should().Equal(journal);
+        (await SchemaAndDataSnapshotAsync(connection)).Should().Equal(snapshot);
+        (
+            await connection.QuerySingleAsync<int>(
+                """SELECT "OperatorValue" FROM dmscs."DataStoreManage_0041_Expected";"""
+            )
+        )
+            .Should()
+            .Be(17);
+    }
+
+    [Test]
+    [Category("DataStoreManageCorrection")]
+    public async Task It_refuses_an_altered_generated_expression_without_mutating_the_existing_schema()
+    {
+        _database.DeployThrough(40);
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await using Stream stream =
+            typeof(EdFi.DmsConfigurationService.Backend.Postgresql.Deploy.DatabaseDeploy).Assembly.GetManifestResourceStream(
+                ScriptName
+            )!;
+        using StreamReader reader = new(stream);
+        string script = await reader.ReadToEndAsync();
+        script.Should().Contain("'sha256'");
+        // Construct a drifted table with identical column positions/types, changing only the digest expression.
+        await connection.ExecuteAsync(script.Replace("'sha256'", "'sha512'", StringComparison.Ordinal));
+        await InsertAsync(connection, "retained");
+        string[] journal = await _database.JournalAsync();
+        string[] snapshot = await SchemaAndDataSnapshotAsync(connection);
+
+        var failure = _database
+            .Deploy(41)
+            .Should()
+            .BeOfType<DatabaseDeployResult.DatabaseDeployFailure>()
+            .Subject;
+
+        failure.Error.Message.Should().Contain("incompatible").And.Contain("repair");
+        (await _database.JournalAsync()).Should().Equal(journal);
+        (await SchemaAndDataSnapshotAsync(connection)).Should().Equal(snapshot);
+        (await _database.TableExistsAsync("DataStoreManage_0041_Expected")).Should().BeFalse();
+    }
+
+    private static Dictionary<string, object?> CompletePin() =>
+        new()
+        {
+            ["PinnedContractVersion"] = 1,
+            ["PinnedProvider"] = "postgresql",
+            ["PinnedPackageId"] = "package.id",
+            ["PinnedPackageVersion"] = "1.2.3",
+            ["PinnedPackageSha256"] = new string('a', 64),
+            ["PinnedArtifactSha256"] = new string('b', 64),
+            ["PinnedTemplateKind"] = "Minimal",
+            ["PinnedDataStandardVersion"] = "5.2",
+            ["PinnedEffectiveSchemaHash"] = new string('c', 64),
+            ["PinnedInventorySha256"] = new string('d', 64),
+            ["PinnedApiSchemaFormatVersion"] = "1.0",
+            ["PinnedRelationalMappingVersion"] = "v3",
+        };
+
+    private static async Task<string[]> SchemaAndDataSnapshotAsync(NpgsqlConnection connection) =>
+        (
+            await connection.QueryAsync<string>(
+                """
+                SELECT jsonb_agg(to_jsonb(a) ORDER BY a.attnum)::text FROM pg_attribute a WHERE a.attrelid = 'dmscs."DataStoreManage"'::regclass
+                UNION ALL SELECT jsonb_agg(to_jsonb(d) ORDER BY d.adnum)::text FROM pg_attrdef d WHERE d.adrelid = 'dmscs."DataStoreManage"'::regclass
+                UNION ALL SELECT jsonb_agg(to_jsonb(c) ORDER BY c.conname)::text FROM pg_constraint c WHERE c.conrelid = 'dmscs."DataStoreManage"'::regclass
+                UNION ALL SELECT jsonb_agg(to_jsonb(i) ORDER BY i.indexrelid)::text FROM pg_index i WHERE i.indrelid = 'dmscs."DataStoreManage"'::regclass
+                UNION ALL SELECT COALESCE(jsonb_agg(to_jsonb(h) ORDER BY h.inhrelid, h.inhseqno), '[]'::jsonb)::text FROM pg_inherits h WHERE h.inhrelid = 'dmscs."DataStoreManage"'::regclass OR h.inhparent = 'dmscs."DataStoreManage"'::regclass
+                UNION ALL SELECT jsonb_build_array(c.relkind, c.relpersistence, c.relispartition)::text FROM pg_class c WHERE c.oid = 'dmscs."DataStoreManage"'::regclass
+                UNION ALL SELECT jsonb_agg(to_jsonb(m) ORDER BY m."Id")::text FROM dmscs."DataStoreManage" m;
+                """
+            )
+        ).ToArray();
 
     // Non-ASCII vectors are deliberate direct-storage probes of the common key, not valid managed API names.
     public static IEnumerable<TestCaseData> ManagedNameVectors() =>

@@ -194,3 +194,60 @@ must compare every descriptor field against the exact operation-bound administra
 snapshot, alongside the lifecycle/job fencing checks. Before publication, also
 validate the exact runtime snapshot used for encryption. A separately resolved
 pre-call comparison alone is insufficient (specification sections 5.6–5.7). The canonical name key itself is never hashed.
+
+
+### Managed migration replay and refusal
+
+0041 owns its DDL transaction. For a fresh catalog it creates the approved schema.
+For an existing `DataStoreManage`, it holds an exclusive table/write lock.
+PostgreSQL requires a permanent ordinary table without partition or inheritance
+relationships: unlogged storage is not durable, and inherited child rows can
+bypass the parent's unique indexes. It creates an empty `DataStoreManage_0041_Expected` sibling from the same canonical
+DDL. It compares the server-parsed column, identity configuration, default,
+generated expression, constraint and required-index definitions, including
+validation/trust, uniqueness, ordered keys, filters and provider NULL semantics.
+Identity counters already consumed by real rows are not compared. The empty
+sibling is removed before commit. This requires the normal migration DDL
+permissions to create and drop tables/indexes; comparison can conservatively
+refuse equivalent custom definitions. A pre-existing object using its reserved name
+is refused without alteration.
+
+Only a compatible schema permits recovery of a missing journal entry. A missing,
+disabled, untrusted or incompatible approved object stops with an actionable
+repair diagnostic; 0041 does not silently add or replace it. Transaction rollback
+preserves the pre-attempt schema, data and journal. This also refuses an older,
+unapproved unbounded-pin schema; plan an explicit operator repair or restore,
+rather than deleting its journal entry to request an automatic conversion.
+Additional custom indexes are preserved and remain subject to the inventory and
+operator reconciliation above.
+
+### Trusted-artifact pin storage bounds
+
+These bounds preserve strings already admitted by the provisioner. They derive
+from existing validation and package-container limits; they do not introduce new
+provisioner/API limits or truncate pins.
+
+| Pin fields | Storage bound | Existing source |
+| --- | --- | --- |
+| Provider | 10 characters | [`DmsTrustedArtifactPin`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/DataStoreProvisioning/DmsTrustedArtifactPin.cs): `postgresql` / `mssql` |
+| TemplateKind | 9 characters | [`RestoreManifestShapeValidator`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/DataStoreProvisioning/Manifest/RestoreManifestShapeValidator.cs): `Minimal` / `Populated` |
+| PackageSha256, ArtifactSha256, EffectiveSchemaHash, InventorySha256 | 64 characters each | SHA-256 hex pin/manifest contract |
+| PackageId | 100 characters | [`DmsDataStoreProvisioningOptionsValidator.MaximumPackageIdLength`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/DataStoreProvisioning/DmsDataStoreProvisioningOptionsValidator.cs) |
+| DataStandardVersion | 100 characters | The bounded package ID must end in `.` plus this value, checked by options validation and [`TemplateArtifactCatalog`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/DataStoreProvisioning/Catalog/TemplateArtifactCatalog.cs) |
+| PackageVersion, ApiSchemaFormatVersion, RelationalMappingVersion | 16,777,216 UTF-8 bytes each | [`TemplatePackageStager.MaxManifestEntryBytes`](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/DataStoreProvisioning/Packaging/TemplatePackageStager.cs) bounds the containing manifest |
+
+The last three fields have no smaller declared string limit. Their conservative
+bound comes from the existing 16 MiB manifest envelope; actual manifests also
+need room for their other fields. PackageVersion uses the allowlist spelling,
+which must match the manifest identity ignoring case. Its existing numeric/ASCII
+suffix grammar makes that case comparison preserve UTF-8 length. The separate
+1 MiB nuspec envelope is not used as a UTF-8 string limit because XML permits other
+encodings.
+
+PostgreSQL enforces these large bounds with `octet_length` CHECKs in its required
+UTF8 database. SQL Server uses `nvarchar(max)` plus CHECKs on the byte length of a
+lossless `varchar(max)` conversion under `Latin1_General_100_BIN2_UTF8`; its 4,000
+UTF-16-unit declaration ceiling cannot express these larger bounds. Both stores
+therefore impose finite bounds, preserve Unicode, and reject oversized values.
+These checks supplement the complete-pin all-or-none constraint; the typed model
+still owns artifact semantics and lifecycle immutability.

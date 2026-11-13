@@ -10,10 +10,16 @@
 -- Pin immutability, legal transitions and same-tenant link verification belong to the model
 -- and fenced repository transactions. Job IDs deliberately have no FK: retention removes jobs.
 
-BEGIN;
+-- Pin string bounds derive from existing validators and the 16 MiB manifest envelope;
+-- see catalog-name-uniqueness-rollout.md. Large Unicode values are bounded by UTF-8 bytes.
+-- Replay builds an empty sibling from this one canonical DDL definition. It never repairs
+-- an existing table or index by name; incompatible objects require explicit operator repair.
 
--- A committed migration whose journal write was lost can be replayed.
-CREATE TABLE IF NOT EXISTS dmscs."DataStoreManage" (
+BEGIN;
+DO $migration$
+DECLARE
+    definition constant text := $definition$
+CREATE TABLE dmscs."DataStoreManage" (
     "Id" INT GENERATED ALWAYS AS IDENTITY,
     "TenantId" BIGINT NULL,
     "Name" VARCHAR(46) NOT NULL,
@@ -54,15 +60,15 @@ CREATE TABLE IF NOT EXISTS dmscs."DataStoreManage" (
     "LastRefreshed" TIMESTAMP NOT NULL,
     "LastModifiedDate" TIMESTAMP NOT NULL,
     "PinnedContractVersion" INT NULL,
-    "PinnedProvider" TEXT NULL,
-    "PinnedPackageId" TEXT NULL,
+    "PinnedProvider" VARCHAR(10) NULL,
+    "PinnedPackageId" VARCHAR(100) NULL,
     "PinnedPackageVersion" TEXT NULL,
-    "PinnedPackageSha256" TEXT NULL,
-    "PinnedArtifactSha256" TEXT NULL,
-    "PinnedTemplateKind" TEXT NULL,
-    "PinnedDataStandardVersion" TEXT NULL,
-    "PinnedEffectiveSchemaHash" TEXT NULL,
-    "PinnedInventorySha256" TEXT NULL,
+    "PinnedPackageSha256" VARCHAR(64) NULL,
+    "PinnedArtifactSha256" VARCHAR(64) NULL,
+    "PinnedTemplateKind" VARCHAR(9) NULL,
+    "PinnedDataStandardVersion" VARCHAR(100) NULL,
+    "PinnedEffectiveSchemaHash" VARCHAR(64) NULL,
+    "PinnedInventorySha256" VARCHAR(64) NULL,
     "PinnedApiSchemaFormatVersion" TEXT NULL,
     "PinnedRelationalMappingVersion" TEXT NULL,
     CONSTRAINT "PK_DataStoreManage" PRIMARY KEY ("Id"),
@@ -85,6 +91,10 @@ CREATE TABLE IF NOT EXISTS dmscs."DataStoreManage" (
             AND (("LastFailureProvisioningCode" IS NOT NULL AND length("LastFailureProvisioningCode") > 0 AND "LastFailureJobCode" IS NULL)
                 OR ("LastFailureProvisioningCode" IS NULL AND "LastFailureJobCode" IS NOT NULL AND length("LastFailureJobCode") > 0)))),
     CONSTRAINT "CK_DataStoreManage_JobIds" CHECK (length("CreateJobId") > 0 AND ("DeleteJobId" IS NULL OR length("DeleteJobId") > 0)),
+    CONSTRAINT "CK_DataStoreManage_ArtifactPinBounds" CHECK (
+        ("PinnedPackageVersion" IS NULL OR octet_length("PinnedPackageVersion") <= 16777216)
+        AND ("PinnedApiSchemaFormatVersion" IS NULL OR octet_length("PinnedApiSchemaFormatVersion") <= 16777216)
+        AND ("PinnedRelationalMappingVersion" IS NULL OR octet_length("PinnedRelationalMappingVersion") <= 16777216)),
     CONSTRAINT "CK_DataStoreManage_ArtifactPin" CHECK (
         ("PinnedContractVersion" IS NULL AND "PinnedProvider" IS NULL
             AND "PinnedPackageId" IS NULL AND "PinnedPackageVersion" IS NULL
@@ -100,12 +110,109 @@ CREATE TABLE IF NOT EXISTS dmscs."DataStoreManage" (
             AND "PinnedApiSchemaFormatVersion" IS NOT NULL AND "PinnedRelationalMappingVersion" IS NOT NULL))
 );
 
-CREATE UNIQUE INDEX IF NOT EXISTS "UX_DataStoreManage_TenantId_Name" ON dmscs."DataStoreManage" ("TenantId", "NameComparisonKey") NULLS NOT DISTINCT WHERE "Status" <> 'Deleted';
+CREATE UNIQUE INDEX "UX_DataStoreManage_TenantId_Name" ON dmscs."DataStoreManage" ("TenantId", "NameComparisonKey") NULLS NOT DISTINCT WHERE "Status" <> 'Deleted';
+CREATE UNIQUE INDEX "UX_DataStoreManage_ActiveTarget" ON dmscs."DataStoreManage" ("EndpointDigest", "TargetDatabaseNameKey") WHERE "Status" <> 'Deleted';
+CREATE UNIQUE INDEX "UX_DataStoreManage_DataStoreId" ON dmscs."DataStoreManage" ("DataStoreId") WHERE "DataStoreId" IS NOT NULL;
+CREATE INDEX "IX_DataStoreManage_TenantId" ON dmscs."DataStoreManage" ("TenantId");
+$definition$;
+    actual_table oid;
+    expected_table oid;
+    incompatible boolean;
+BEGIN
+    IF to_regclass('dmscs."DataStoreManage_0041_Expected"') IS NOT NULL THEN
+        RAISE EXCEPTION 'DataStoreManage replay is incompatible with reserved DataStoreManage_0041_Expected object; inspect and repair explicitly before retrying.';
+    END IF;
+    actual_table := to_regclass('dmscs."DataStoreManage"');
+    IF actual_table IS NULL THEN
+        EXECUTE definition;
+        RETURN;
+    END IF;
+    IF NOT EXISTS (SELECT 1 FROM pg_class WHERE oid = actual_table AND relkind = 'r') THEN
+        RAISE EXCEPTION 'DataStoreManage object is incompatible; inspect and repair explicitly before retrying.';
+    END IF;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "UX_DataStoreManage_ActiveTarget" ON dmscs."DataStoreManage" ("EndpointDigest", "TargetDatabaseNameKey") WHERE "Status" <> 'Deleted';
+    LOCK TABLE dmscs."DataStoreManage" IN ACCESS EXCLUSIVE MODE;
+    -- Durability and inheritance are table semantics, not column/index properties.
+    -- Recheck under the lock so concurrent DDL cannot change the admitted table shape.
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_class
+        WHERE oid = actual_table AND relkind = 'r' AND relpersistence = 'p' AND NOT relispartition
+    ) OR EXISTS (
+        SELECT 1 FROM pg_inherits WHERE inhrelid = actual_table OR inhparent = actual_table
+    ) THEN
+        RAISE EXCEPTION 'DataStoreManage table persistence or inheritance is incompatible; inspect and repair explicitly before retrying.';
+    END IF;
+    EXECUTE replace(definition, 'DataStoreManage', 'DataStoreManage_0041_Expected');
+    expected_table := 'dmscs."DataStoreManage_0041_Expected"'::regclass;
 
-CREATE UNIQUE INDEX IF NOT EXISTS "UX_DataStoreManage_DataStoreId" ON dmscs."DataStoreManage" ("DataStoreId") WHERE "DataStoreId" IS NOT NULL;
+    -- Compare server-parsed column definitions, not a separate hand-maintained type matrix.
+    -- Identity configuration is compared; consumed sequence values are deliberately excluded.
+    WITH columns AS (
+        SELECT a.attrelid, jsonb_build_array(
+            a.attnum, a.attname, a.atttypid, a.atttypmod, a.attnotnull, a.attcollation,
+            a.attidentity, a.attgenerated, pg_get_expr(d.adbin, d.adrelid),
+            seq.seqtypid, seq.seqstart, seq.seqincrement, seq.seqmin, seq.seqmax,
+            seq.seqcache, seq.seqcycle) AS shape
+        FROM pg_attribute a
+        LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
+        LEFT JOIN pg_sequence seq ON seq.seqrelid = pg_get_serial_sequence(a.attrelid::regclass::text, a.attname)::regclass
+        WHERE a.attrelid IN (actual_table, expected_table) AND a.attnum > 0 AND NOT a.attisdropped
+    )
+    SELECT EXISTS (
+        (SELECT shape FROM columns WHERE attrelid = actual_table
+         EXCEPT SELECT shape FROM columns WHERE attrelid = expected_table)
+        UNION ALL
+        (SELECT shape FROM columns WHERE attrelid = expected_table
+         EXCEPT SELECT shape FROM columns WHERE attrelid = actual_table)
+    ) INTO incompatible;
+    IF incompatible THEN
+        RAISE EXCEPTION 'DataStoreManage table definition is incompatible; inspect and repair explicitly before retrying.';
+    END IF;
 
-CREATE INDEX IF NOT EXISTS "IX_DataStoreManage_TenantId" ON dmscs."DataStoreManage" ("TenantId");
+    -- Identifier normalization is limited to expected object names. Expressions and literal
+    -- values are compared unchanged; JSONB equality is independent of database collation.
+    WITH constraints AS (
+        SELECT c.conrelid,
+            CASE WHEN c.conrelid = expected_table
+                THEN replace(c.conname, 'DataStoreManage_0041_Expected', 'DataStoreManage')
+                ELSE c.conname END AS name,
+            jsonb_build_array(c.contype, c.condeferrable, c.condeferred, c.convalidated,
+                c.connoinherit, COALESCE((to_jsonb(c)->>'conenforced')::boolean, true),
+                pg_get_constraintdef(c.oid, true)) AS shape
+        FROM pg_constraint c
+        WHERE c.conrelid IN (actual_table, expected_table) AND c.contype <> 'n'
+    )
+    SELECT EXISTS (
+        SELECT 1 FROM constraints e
+        LEFT JOIN constraints a ON a.conrelid = actual_table AND a.name COLLATE "C" = e.name COLLATE "C"
+        WHERE e.conrelid = expected_table AND (a.name IS NULL OR a.shape IS DISTINCT FROM e.shape)
+    ) INTO incompatible;
+    IF incompatible THEN
+        RAISE EXCEPTION 'DataStoreManage approved constraint is missing or incompatible; inspect and repair explicitly before retrying.';
+    END IF;
 
+    WITH indexes AS (
+        SELECT i.indrelid,
+            CASE WHEN i.indrelid = expected_table
+                THEN replace(c.relname, 'DataStoreManage_0041_Expected', 'DataStoreManage')
+                ELSE c.relname END AS name,
+            jsonb_build_array(c.relam, i.indisunique, i.indisprimary, i.indisexclusion,
+                i.indimmediate, i.indisvalid, i.indisready, i.indislive, i.indnullsnotdistinct,
+                i.indnatts, i.indnkeyatts, i.indkey::text, i.indcollation::text,
+                i.indclass::text, i.indoption::text,
+                pg_get_expr(i.indexprs, i.indrelid), pg_get_expr(i.indpred, i.indrelid)) AS shape
+        FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+        WHERE i.indrelid IN (actual_table, expected_table)
+    )
+    SELECT EXISTS (
+        SELECT 1 FROM indexes e
+        LEFT JOIN indexes a ON a.indrelid = actual_table AND a.name COLLATE "C" = e.name COLLATE "C"
+        WHERE e.indrelid = expected_table AND (a.name IS NULL OR a.shape IS DISTINCT FROM e.shape)
+    ) INTO incompatible;
+    IF incompatible THEN
+        RAISE EXCEPTION 'DataStoreManage approved index is missing or incompatible; inspect and repair explicitly before retrying.';
+    END IF;
+
+    DROP TABLE dmscs."DataStoreManage_0041_Expected";
+END $migration$;
 COMMIT;
