@@ -16,11 +16,11 @@ formatter, normalizer or query evaluator is recreated in fixture tests.
 
 ## Approval and source pins
 
-The user's approval in the implementation session was:
+The architectural reviewer's revision-9 approval, relayed into the implementation session, was:
 
 > Revision 9 is approved as an implementation spec, including the proposed ordinary catalog compatibility changes. Proceed one step at a time and stop after each local commit for review, as the spec requires.
 
-That later instruction supersedes the external document's retained preapproval
+That relayed architectural approval supersedes the external document's retained preapproval
 status. The user limited the next work to step 1.1; it does not authorize automatic
 progression through later steps or a push.
 
@@ -110,7 +110,7 @@ hook. No snapshot criterion is claimed implemented or tested by this step.
 
 AC17 remains strict: PostgreSQL and SQL Server must exhibit identical observable
 API/state behavior. The user selected “Keep strict parity; revise the design.”
-Full revision-9 approval explicitly includes the following compatibility changes;
+The architectural reviewer's revision-9 approval explicitly includes the following compatibility changes;
 they are **recorded here, not implemented in step 1.1**.
 
 Canonical name equality trims only U+0009–000D, U+0020, U+0085, U+00A0, U+1680,
