@@ -167,6 +167,9 @@ descriptor-only session would read E1 and E2 zeros from an unproven observer. 50
 `MaximumPageSize`; a deployment configured above it runs outside this evidence (findings,
 [Recommendation](keyset-temp-table-findings.md#recommendation), Page-size bound). Three interleaved
 sessions: `main`, then the story branch, three times, on one machine.
+These cells also gate the candidate-selection caller (`ReadQueryCandidateRowsAsync`). Its batch
+differs from GET-many's only in the owner-rows select list, so every statement that reads the
+carrier is the same. Keep it that way, or add a candidate replay cell.
 Ratios are story branch ÷ `main`, and `m = min(max(2 × CV, 5%), 20%)` from `main`'s three runs.
 A cell whose `2 × CV` exceeds 20% is rerun; if it still exceeds 20%, the PR reports it as
 inconclusive for reviewer sign-off instead of counting it as met.
@@ -285,8 +288,8 @@ and `AuthoritativeTimestampReadConsistencyScenario` pass.
   baseline, so nothing else tells the replica's descriptors apart. After the replica is switched
   to `default_transaction_read_only = on`, GET `/data/ed-fi/schoolTypeDescriptors?totalCount=true`
   with no snapshot header and assert 200 with the marker. As the positive control, the same
-  request on story 1's branch (or `main`) returns 500 with `25006` from the `descriptor_page`
-  prelude; the PR records that run.
+  request on story 1's branch (or `main`) returns 500 with the generic body, and DMS's error log
+  shows `25006` from the `descriptor_page` prelude; the PR quotes that log line.
 
 - **Type (d) adaptation**, SQL Server descriptor split site (≈644–690). The double re-executes the
   descriptor command as two commands at the `-- Descriptor acquisition:` markers. A batch-scoped

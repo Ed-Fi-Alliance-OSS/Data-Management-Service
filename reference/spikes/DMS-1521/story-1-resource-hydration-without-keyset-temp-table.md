@@ -97,6 +97,14 @@ at 32 sessions and the resource batch's at 8 sessions in two of three runs. So S
     spike's `SpikePgsqlPlanCapture` splitter does.
   - The replay binds only the page-selection values, but every keyset reader references the keyset
     parameter. Bind it as production does: an untyped NULL for a query keyset.
+- **The performance harness's observer probe**
+  (`src/dms/tests/EdFi.DataManagementService.Performance.Harness/Smoke/ObserverProbeScenario.cs`).
+  It asserts `page_ids` in the PostgreSQL batch text (≈47). It runs only by hand
+  (`[Explicit]`, as `Given_Postgresql_ObserverProbe`), as the checkpoint before a harness evidence
+  run, so CI would not notice a break. Keep the `page_ids` CTE name, as the prototype does, or move
+  the PostgreSQL marker to the new selecting statement. Reword its comment (≈43–44), which says
+  the batch is recognizable by the keyset temp table: PostgreSQL has none after this story.
+  SQL Server's `[#page]` marker stays valid, because P1 keeps `#page`.
 - **Test churn and new tests** (see Test requirements).
 - **Manifest goldens.** Regenerate with `UPDATE_GOLDENS=1` and commit them in the same PR. CI never
   regenerates goldens. Each golden holds an `mssql` and a `pgsql` block, and the regeneration
@@ -189,9 +197,9 @@ Each edit is **mandated by DMS-1521's decision**
 - **C5.** The single-document fast path (GET by id, writes, cache materialization) produces the
   same SQL and binding as on `main`.
 - **C6.** Plan contracts, SQL generation, binding, readers, manifests, goldens, tests, the
-  performance harness's PostgreSQL plan capture, and the design documents above change in the same
-  PR. Story 2 adds the release's changelog entry for DMS-1687; if story 2 misses the release, this
-  story adds it for resource GET-many instead.
+  performance harness's PostgreSQL plan capture and observer probe, and the design documents above
+  change in the same PR. Story 2 adds the release's changelog entry for DMS-1687; if story 2
+  misses the release, this story adds it for resource GET-many instead.
 
 ### Performance thresholds
 
@@ -396,13 +404,17 @@ needs no change either, because P1 keeps `#page`.
   2. Run `ALTER DATABASE <replica> SET default_transaction_read_only = on` from `postgres`, and
      terminate the replica's existing sessions: a database setting reaches only new sessions.
      `PostgresqlTargetReachability.SetAllowConnectionsAsync` does the same for `ALLOW_CONNECTIONS`.
+     DMS holds none between requests: the in-process host never publishes data-store ownership,
+     so `NpgsqlDataSourceCache` disposes each request's data source, closing its connections, when
+     the request ends. The GET opens a new session.
   3. GET `/data/ed-fi/students?totalCount=true` with no snapshot header. Assert 200, the replica's
      marker Student, and the replica's count (2).
 
   No reset is needed: each lease is an isolated database, dropped from `postgres` at teardown. As
-  the positive control, the same request on `main` returns 500 with
-  `25006: cannot execute DROP TABLE in a read-only transaction`; the PR records that run. Story 2
-  adds its descriptor test to this class.
+  the positive control, the same request on `main` returns 500 with the generic
+  unexpected-condition body. DMS's error log (`RequestResponseLoggingMiddleware`) shows the
+  `PostgresException` `25006: cannot execute DROP TABLE in a read-only transaction`, and the PR
+  quotes that log line. Story 2 adds its descriptor test to this class.
 
 **Performance evidence.** Attach R1 and R2 artifacts (see
 [Thresholds](keyset-temp-table-findings.md#thresholds)), from three interleaved sessions on one
@@ -483,8 +495,9 @@ It is a starting point:
   JSON carrier.
 - **Relates to** DMS-1521 (the spike), DMS-848, and DMS-1687.
 - **Fixes** DMS-1687 for resource GET-many (P1). The descriptor path follows in story 2.
-- **Starts** after the DMS-1521 approval gate accepts the PostgreSQL transaction-local carrier for
-  production.
+- **Ready.** DMS-1521 accepted the PostgreSQL transaction-local carrier for production (findings,
+  [Disposition](keyset-temp-table-findings.md#disposition)). The conditions are this story's
+  in-transaction carrier tests and generic-plan gates (P3, P4).
 
 ## Estimate
 

@@ -25,13 +25,14 @@ folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.m
 
 | Story | Condition | Status |
 | --- | --- | --- |
-| 3. Interim PostgreSQL `ANALYZE` mitigation | Task 3's mitigation verdict is favorable (met), **and** either story 1 cannot ship in 8.2 or PostgreSQL has no validated replacement | Not triggered. PostgreSQL has a validated replacement. It is drafted only if the task 11 review decides that story 1 cannot ship in 8.2. Even then it covers the hydration and descriptor batches only, and it does not fix EDFI-2956 |
+| 3. Interim PostgreSQL `ANALYZE` mitigation | Task 3's mitigation verdict is favorable (met), **and** either story 1 cannot ship in 8.2 or PostgreSQL has no validated replacement | Not triggered. PostgreSQL has a validated replacement. It is filed only if story 1 slips from 8.2 ([Disposition](keyset-temp-table-findings.md#disposition)). Even then it covers the hydration and descriptor batches only, and it does not fix EDFI-2956 |
 | 4. Provisioning | A validated recommendation uses a DDL-based option | Not triggered. Nothing recommended adds DDL. The SQL Server lead `memtablevar` (memory-optimized table variable) would need it, but it is unvalidated, and unvalidated leads never become story scope |
 
 ## Dependency and delivery order
 
-- Story 1 depends on no other story; it starts when the task 11 review accepts the PostgreSQL
-  carrier (see Ready-to-start gates). It defines the shared keyset contract: how a keyset that is not a table
+- Story 1 depends on no other story and is ready: the PostgreSQL carrier was accepted
+  ([Disposition](keyset-temp-table-findings.md#disposition)), on conditions that are story 1's own
+  tests. It defines the shared keyset contract: how a keyset that is not a table
   is rendered and bound, the PostgreSQL carrier and its set-before-read rule, and the SQL Server
   JSON carrier for a batch that selects its own page.
 - Story 2 is blocked by story 1. It reuses the carrier name and rules on PostgreSQL, and the JSON
@@ -104,7 +105,7 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 
 | Story | Start condition |
 | --- | --- |
-| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Ready once the task 11 review accepts the PostgreSQL transaction-local carrier for production. |
+| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Ready. The PostgreSQL transaction-local carrier was accepted for production ([Disposition](keyset-temp-table-findings.md#disposition)). Its conditions, the in-transaction carrier tests and the generic-plan gates (P3, P4), are story 1's acceptance criteria. |
 | [Story 2](story-2-descriptor-get-many-without-keyset-temp-table.md) | Design may start now. Implementation starts once story 1's keyset contract (carrier name, set-before-read rule, SQL Server JSON carrier) is merged. |
 
 ## Story files
@@ -144,7 +145,7 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 | C5, single-document fast path | Unchanged; asserted in both stories |
 | Guarded single-document keyset without the fast path (non-production) | Story 1: implement it under the new contract on PostgreSQL (the prototype throws; SQL Server keeps `#page`). It reads the substituted `@DocumentId` token under the guard and adds no result set, because its id is unknown at bind time and `GetResultSetCount` counts none. `flattening-reconstitution.md` names it as the per-dialect fallback |
 | SQL Server recompiles (DMS-1248 comment) | Not observed in either variant; E3 guards it. No separate work |
-| `memtablevar` (SQL Server P1, P3) | Unvalidated lead; no story. The task 11 review decides whether to validate it |
+| `memtablevar` (SQL Server P1, P3) | Unvalidated lead; no story. Not pursued ([Disposition](keyset-temp-table-findings.md#disposition)): reopen only if SQL Server shows tempdb contention in the field |
 | `ANALYZE` interim mitigation | Conditional story 3, not triggered |
 
 Every recommended path maps to a story, and every finding has a disposition. Neither story may

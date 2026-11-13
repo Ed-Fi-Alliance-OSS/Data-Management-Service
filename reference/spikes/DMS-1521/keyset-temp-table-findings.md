@@ -37,8 +37,8 @@ the four paths can drop theirs now. The other two keep `#page` until a replaceme
   sessions in two of three runs, ×0.99–×1.17 at 32). That breaks AC5's third priority. So `inline` is recommended where it passes every
   criterion, descriptor and candidate metadata (×1.9–×2.7 throughput at 32 sessions), and `#page`
   stays on P1 and P3 (AC6). A memory-optimized table variable passed every screening criterion
-  for P1 and P3, but it needs DDL provisioning. It remains an unvalidated lead for the task 11
-  review.
+  for P1 and P3, but it needs DDL provisioning. It remains an unvalidated lead and is not pursued
+  (see [Disposition](#disposition)).
 - **`ANALYZE` works as an interim PostgreSQL mitigation** (resource API 0.31–0.48×). It keeps the
   temp table, adds catalog writes, and does not fix EDFI-2956. It qualifies for a story only if
   story 1 cannot ship in 8.2.
@@ -59,7 +59,7 @@ nothing under `src/dms/backend` changed between the two commits.
 | P1 | Resource GET-many (query keyset, the default path) | `RelationalDocumentStoreRepository` -> `IDocumentHydrator` -> `ConsistentHydrationExecutor` -> `HydrationBatchBuilder` with `PageKeysetSpec.Query` (built by `RelationalQueryPageKeysetPlanner`) | `page` / `#page` | Page selection inside the batch (`WITH page_ids AS (...) INSERT ... RETURNING` / `OUTPUT INSERTED`) |
 | P2 | Read-acceleration candidate metadata (only when `DocumentCache:ReadAcceleration:Enabled`, default `false`) | `RelationalDocumentStoreRepository.cs:2104` -> `HydrationBatchBuilder.BuildCandidateMetadataBatch` (`HydrationBatchBuilder.cs:149`, DDL at line 162) | `page` / `#page` | Page selection inside the batch |
 | P3 | Read-acceleration fallback on cache misses (selected page) | `RelationalDocumentStoreRepository.cs:1998`, `PageKeysetSpec.SelectedPage` | `page` / `#page` with `Ordinal` | The client: PostgreSQL binds 2 parameters per id into a `VALUES` insert; SQL Server binds one JSON parameter and inserts from `OPENJSON` |
-| P4 | Descriptor GET-many, and descriptor read-acceleration candidate selection (only when read acceleration is enabled) | `DescriptorReadHandler.BuildQueryCommand` (`DescriptorReadHandler.cs:2025`), added by DMS-1401 (`8a4eda2f6`, 2026-10-14). Two callers: `ReadQueryRowsAsync` (`DescriptorRowProjection.FullRow`) and `ReadQueryCandidateRowsAsync` (`DescriptorRowProjection.CandidateMetadata`, line 1729). The spike measured the GET-many caller; the candidate caller issues the same DDL and passed task 7 through `Given_*_DocumentCacheReadAcceleration_With_DescriptorRuntime` | `descriptor_page` / `#descriptor_page` | Page selection inside the batch (`INSERT INTO ... <PageDocumentIdSql>`); both version fences, the owner rows, and the `MAX(...)` boundary read it |
+| P4 | Descriptor GET-many, and descriptor read-acceleration candidate selection (only when read acceleration is enabled) | `DescriptorReadHandler.BuildQueryCommand` (`DescriptorReadHandler.cs:2025`), added by DMS-1401 (`8a4eda2f6`, 2026-10-14). Two callers: `ReadQueryRowsAsync` (`DescriptorRowProjection.FullRow`) and `ReadQueryCandidateRowsAsync` (`DescriptorRowProjection.CandidateMetadata`, line 1729). The spike measured the GET-many caller, whose cells stand in for the candidate caller (see [Recommendation](#recommendation)); the candidate caller issues the same DDL and passed task 7 through `Given_*_DocumentCacheReadAcceleration_With_DescriptorRuntime` | `descriptor_page` / `#descriptor_page` | Page selection inside the batch (`INSERT INTO ... <PageDocumentIdSql>`); both version fences, the owner rows, and the `MAX(...)` boundary read it |
 
 The shared DDL for P1-P3 is `IPlanSqlDialect.AppendCreateKeysetTempTable`:
 
@@ -1468,7 +1468,9 @@ screening numbers and the three missing steps. Task 8 is complete.
 
 Task 9 later narrowed this. `inline` passed every criterion on SQL Server's candidate-metadata (P2)
 and descriptor (P4) paths, so it is recommended there. "No validated replacement" applies to P1
-and P3, where `#page` stays (see [Recommendation](#recommendation)).
+and P3, where `#page` stays (see [Recommendation](#recommendation)). Task 11 then closed the lead:
+`memtablevar` is not pursued, and is reopened only if SQL Server shows tempdb contention in the
+field (see [Disposition](#disposition)).
 
 ## Correctness validation
 
@@ -1569,6 +1571,10 @@ task 6 version, and it applies and reverses cleanly.
 
 Written by task 9. The recommendation is made per engine and per path. An engine's path is
 recommended only if `inline` met every Gate 2 criterion on it and task 7 found no type (b) failure.
+For P4, the GET-many cells also stand in for the read-acceleration candidate caller
+(`ReadQueryCandidateRowsAsync`). Both callers pass the same planned query to `BuildQueryCommand`,
+and the batches differ only in the owner-rows select list (`CandidateMetadata` projects 7 of
+`FullRow`'s 11 columns over the same joins), so every statement that reads the keyset is identical.
 Unvalidated leads are listed separately and do not become story scope.
 
 **Page-size bound.** Every measurement used 25- and 500-row pages. 500 is the default
@@ -1686,9 +1692,9 @@ and every `plan_cache_mode`. C1–C5 are met; C6 is story scope (see
 
 **Retained fallback: none.** No PostgreSQL path keeps a temp table.
 
-**Carrier acceptance.** The plan reserves the production acceptance of the transaction-local carrier
-for the task 11 review (resolved decision 2). Its evidence is in the task 4 probes, task 5, and
-task 7. A transaction-mode pooler is not a hazard for it: the setting is transaction-local and is
+**Carrier acceptance.** The plan reserved the production acceptance of the transaction-local carrier
+for the task 11 review (resolved decision 2), which accepted it (see [Disposition](#disposition)).
+Its evidence is in the task 4 probes, task 5, and task 7. A transaction-mode pooler is not a hazard for it: the setting is transaction-local and is
 always set before it is read within the same transaction. A session-level temp table would be a
 hazard there.
 
@@ -1698,7 +1704,7 @@ The mechanism is not new to DMS. Since DMS-1332 (in `v8.1.0`), the write path's
 `set_config(…, true)` and read with `current_setting(…, true)`. Its predicate already reaches a
 hydration batch through `HydrationBatchBuilder.BuildGuardedSingleDocumentBatch`.
 `MssqlCompositeTargetCarrier` is the SQL Server counterpart, on batch-local variables whose names
-are reserved from the bound parameters. What the task 11 review accepts is therefore the read-path
+are reserved from the bound parameters. What the task 11 review accepted is therefore the read-path
 use: a list of up to 500 ids, folded into custom plans at planning time, read by about eleven
 statements per batch, and run in read-only transactions.
 
@@ -1813,7 +1819,8 @@ Adopting it would also need:
 - **Availability:** In-Memory OLTP must be confirmed for every supported edition and hosting tier,
   and the RCSI and snapshot transaction paths must be exercised.
 
-The task 11 review decides whether to spend more machine time on it. Until then, no story adopts it.
+Not pursued ([Disposition](#disposition)): reopen only if SQL Server shows tempdb contention in the
+field. No story adopts it.
 
 ### Interim PostgreSQL mitigation (`ANALYZE`)
 
@@ -1826,7 +1833,8 @@ otherwise**:
 - It regressed the 25-row candidate batch under concurrency.
 - It fails on read-only connections (EDFI-2956).
 
-If the task 11 review finds that story 1 cannot ship in 8.2, the mitigation should be limited to
+If story 1 slips from 8.2, the only case in which story 3 is filed ([Disposition](#disposition)),
+the mitigation should be limited to
 the hydration and descriptor batches, not the candidate batch. The single-run task 3 evidence
 supports that limit.
 
@@ -1836,7 +1844,7 @@ supports that limit.
 |---|---|---|---|
 | 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Under story 1 only that half changes; the SQL Server blocks stay byte-identical (AC3). Also 1 PostgreSQL integration mechanism pin, the five `PostgresqlDescriptorProjectionTests` classes (one shared fixture of hand-written `"page"` readers), and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many (backend batches, and through the API from a read-only read replica), the two PostgreSQL fast-path negative checks the story empties (one re-anchored on a positive check, one deleted), and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 3 |
 | 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, three order checks anchored on `INSERT INTO` that would otherwise pass vacuously, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands; a live `CONNECT`-only PostgreSQL interop run proves it. Adds a descriptor GET-many test to story 1's API read-only replica class | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 2 |
-| 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3. PostgreSQL only: one `ANALYZE` after each keyset insert in the hydration and descriptor batches, their PostgreSQL text pins, the harness `PgsqlPlanCapture.ClassifyStatement` (it rejects a statement starting with `ANALYZE`), and R1 evidence. Sized below story 2, as before the rescale | 1, if triggered |
+| 3. Interim `ANALYZE` mitigation | Only if story 1 slips from 8.2 ([Disposition](#disposition)) | Task 3. PostgreSQL only: one `ANALYZE` after each keyset insert in the hydration and descriptor batches, their PostgreSQL text pins, the harness `PgsqlPlanCapture.ClassifyStatement` (it rejects a statement starting with `ANALYZE`), and R1 evidence. Sized below story 2, as before the rescale | 1, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
 
 Story 2 is blocked by story 1 where it consumes the shared contract: the PostgreSQL carrier name
