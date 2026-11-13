@@ -54,7 +54,10 @@ client row; clients with a row are unaffected.
 > `edfi_admin_api/authMetadata_readonly_access` covers every Configuration
 > Service read a single-tenant DMS makes. With multi-tenancy enabled, DMS also
 > reads `GET /v3/tenants`, which this scope does not grant, so a multi-tenant
-> DMS needs `edfi_admin_api/readonly_access`.
+> DMS needs `edfi_admin_api/readonly_access` (or `edfi_admin_api/full_access`).
+
+The `readonly_access` and `authMetadata_readonly_access` scopes are confirmed CMS-only extensions;
+see [Confirmed CMS-only extensions](./API-CLIENT-AND-INSTANCE-CONFIGURATION.md#confirmed-cms-only-extensions-to-management-api-v3).
 
 ### How the Configuration Service Evaluates Token Scopes
 

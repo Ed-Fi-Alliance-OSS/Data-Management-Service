@@ -38,7 +38,11 @@ public static class ConfigurationServiceOpenApiTransformers
         document.Info = new OpenApiInfo
         {
             Title = "Ed-Fi API Configuration Service API",
-            Description = "API for configuring and managing the Ed-Fi API.",
+            Description =
+                "API for configuring and managing the Ed-Fi API.\n\n"
+                + "This API intentionally extends the shared Ed-Fi Management API v3 contract with "
+                + "CMS-only response fields and OAuth scopes. See the "
+                + "[confirmed CMS-only extensions](https://github.com/Ed-Fi-Alliance-OSS/Data-Management-Service/blob/main/docs/API-CLIENT-AND-INSTANCE-CONFIGURATION.md#confirmed-cms-only-extensions-to-management-api-v3).",
             Contact = new OpenApiContact { Url = new Uri(new Uri(EdFiWebsite), "what-is-ed-fi/contact/") },
             Version = "1",
         };
