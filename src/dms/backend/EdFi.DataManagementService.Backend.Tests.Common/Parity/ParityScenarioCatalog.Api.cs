@@ -125,6 +125,12 @@ public static partial class ParityScenarioCatalog
             "It_answers_the_authorization_matrix"
         ),
         Projection(
+            "Api/EducationOrganizationProjection/RejectsABearerTokenOutsideItsLifetime",
+            "A bearer token signed for the projection credential and checked by the production JWT validator is 401 once expired and before its start, and reads the projection within its lifetime.",
+            "EducationOrganizationProjectionScenario.It_rejects_a_bearer_token_outside_its_lifetime",
+            "It_rejects_a_bearer_token_outside_its_lifetime"
+        ),
+        Projection(
             "Api/EducationOrganizationProjection/IsolatesTenantsStoresAndRouteContexts",
             "A store answers only in its own tenant and route context (404 target-not-found otherwise, a qualifier mismatch indistinguishable from an unknown store), a cursor is bound to its tenant and qualifiers, a store registered after startup is found by one catalog reload, and an empty provisioned store reads as one empty page.",
             "EducationOrganizationProjectionScenario.It_isolates_tenants_stores_and_route_contexts",

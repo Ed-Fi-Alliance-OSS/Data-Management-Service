@@ -354,6 +354,30 @@ public class Given_Projection_Requests_That_Fail_Before_Reading_Served_Over_Http
         response.StatusCode.Should().Be(HttpStatusCode.OK, await response.Content.ReadAsStringAsync());
     }
 
+    /// <summary>
+    /// The projection ignores a parameter it does not define, with no warning header: the resource
+    /// endpoints' ignored-parameter warning is not part of this contract.
+    /// </summary>
+    [Test]
+    public async Task It_ignores_an_unknown_parameter_without_a_warning()
+    {
+        using HttpResponseMessage plain = await EducationOrganizationProjectionHttp.Get(
+            _factory,
+            "?dataStoreId=3788"
+        );
+        using HttpResponseMessage withUnknown = await EducationOrganizationProjectionHttp.Get(
+            _factory,
+            "?dataStoreId=3788&pageSize=5&color=blue"
+        );
+        string plainBody = await plain.Content.ReadAsStringAsync();
+        string withUnknownBody = await withUnknown.Content.ReadAsStringAsync();
+
+        plain.StatusCode.Should().Be(HttpStatusCode.OK, plainBody);
+        withUnknown.StatusCode.Should().Be(HttpStatusCode.OK, withUnknownBody);
+        withUnknownBody.Should().Be(plainBody);
+        withUnknown.Headers.Contains("X-EdFi-Warning").Should().BeFalse();
+    }
+
     [Test]
     public async Task It_answers_an_unauthenticated_request_with_an_uncacheable_problem()
     {

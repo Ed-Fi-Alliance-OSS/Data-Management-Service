@@ -38,6 +38,10 @@ public sealed class Given_Postgresql_EducationOrganizationProjection
         EducationOrganizationProjectionScenario.It_answers_the_authorization_matrix(Context);
 
     [Test]
+    public Task It_rejects_a_bearer_token_outside_its_lifetime() =>
+        EducationOrganizationProjectionScenario.It_rejects_a_bearer_token_outside_its_lifetime(Context);
+
+    [Test]
     public Task It_isolates_tenants_stores_and_route_contexts() =>
         EducationOrganizationProjectionScenario.It_isolates_tenants_stores_and_route_contexts(Context);
 

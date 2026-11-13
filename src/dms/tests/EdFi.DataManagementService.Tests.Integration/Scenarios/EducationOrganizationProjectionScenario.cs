@@ -394,6 +394,54 @@ internal static class EducationOrganizationProjectionScenario
     }
 
     /// <summary>
+    /// A signed bearer token with the projection credential's client and claim set, checked by the
+    /// production JWT validator: outside its lifetime it is answered 401 before any projection step,
+    /// and the same claims within their lifetime read the projection.
+    /// </summary>
+    public static async Task It_rejects_a_bearer_token_outside_its_lifetime(
+        EducationOrganizationProjectionContext context
+    )
+    {
+        ApiIntegrationHarness harness = Prepare(context);
+        Seeder seeder = await Seeder.CreateAsync(harness, TenantA, RouteA);
+        await seeder.StateAgencyAsync(1, "Projection State");
+
+        string path = ProjectionPath(TenantA, RouteA, Query(PrimaryStoreId));
+        DateTime now = DateTime.UtcNow;
+        ProjectionCredential expired = SignedTokens.Issue(
+            Credentials.Projection,
+            notBefore: now.AddHours(-2),
+            expires: now.AddHours(-1)
+        );
+        ProjectionCredential notYetValid = SignedTokens.Issue(
+            Credentials.Projection,
+            notBefore: now.AddHours(1),
+            expires: now.AddHours(2)
+        );
+        ProjectionCredential current = SignedTokens.Issue(
+            Credentials.Projection,
+            notBefore: now.AddMinutes(-5),
+            expires: now.AddMinutes(30)
+        );
+
+        foreach (
+            (string name, ProjectionCredential credential) in new[]
+            {
+                ("an expired token", expired),
+                ("a token not yet valid", notYetValid),
+            }
+        )
+        {
+            ProjectionResponse response = await GetAsync(harness, credential, path);
+            ShouldBeProblem(response, 401, AuthenticationType, name);
+            response.Body.Should().NotContain("Projection State", name);
+        }
+
+        Walk walk = await WalkAsync(harness, current, TenantA, RouteA, PrimaryStoreId, limit: null);
+        walk.Items.Should().Equal(new Item(1, "Projection State", null, StateAgency, null));
+    }
+
+    /// <summary>
     /// A store answers only in its own tenant and route context; a cursor binds to the tenant and the
     /// qualifiers it was issued for; a store registered after startup is found by one catalog reload;
     /// and a provisioned store with no education organizations reads as one empty page.

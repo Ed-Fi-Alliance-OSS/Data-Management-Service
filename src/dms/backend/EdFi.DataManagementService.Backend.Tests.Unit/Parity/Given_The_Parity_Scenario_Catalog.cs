@@ -60,6 +60,7 @@ public class Given_The_Parity_Scenario_Catalog
         "Api/EducationOrganizationProjection/WalksTheHierarchyWithParentPrecedence",
         "Api/EducationOrganizationProjection/RefusesAChangedSetAndHonorsTheCursorLifetime",
         "Api/EducationOrganizationProjection/AnswersTheAuthorizationMatrix",
+        "Api/EducationOrganizationProjection/RejectsABearerTokenOutsideItsLifetime",
         "Api/EducationOrganizationProjection/IsolatesTenantsStoresAndRouteContexts",
         "Api/EducationOrganizationProjection/AnswersEachTargetState",
         "Api/EducationOrganizationProjection/MapsReadFailuresBehindACachedFingerprintVerdict",

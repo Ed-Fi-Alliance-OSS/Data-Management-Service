@@ -4,7 +4,9 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -16,6 +18,11 @@ using EdFi.DataManagementService.Tests.Integration.Fixtures;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
+using Microsoft.IdentityModel.Protocols;
+using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 
 namespace EdFi.DataManagementService.Tests.Integration.Doubles;
 
@@ -169,12 +176,72 @@ internal sealed class EducationOrganizationProjectionClaimSetProvider(FixtureCon
 }
 
 /// <summary>
-/// Resolves each <see cref="EducationOrganizationProjectionCredentials"/> token to its client and claim
-/// set. Any other token is invalid. A projection credential carries no data store, as provisioned; the
-/// resource credential carries the data stores its seeding routes use.
+/// Issues bearer tokens signed by a test key and validates them with the production
+/// <see cref="JwtValidationService"/>, so a request carrying one runs the real signature, issuer,
+/// audience and lifetime checks. Clock skew is zero, so a token is expired the moment it expires.
 /// </summary>
-internal sealed class CredentialJwtValidationService(IReadOnlyList<long> resourceDataStoreIds)
-    : IJwtValidationService
+internal sealed class SignedProjectionTokens
+{
+    private const string Issuer = "https://projection-tests.example.org/realms/edfi";
+    private const string Audience = "ed-fi-ods-api";
+
+    private readonly RsaSecurityKey _signingKey = new(RSA.Create(2048)) { KeyId = "projection-test-key" };
+
+    public SignedProjectionTokens()
+    {
+        OpenIdConnectConfiguration configuration = new() { Issuer = Issuer };
+        configuration.SigningKeys.Add(_signingKey);
+
+        Validator = new JwtValidationService(
+            new StaticConfigurationManager<OpenIdConnectConfiguration>(configuration),
+            Options.Create(
+                new JwtAuthenticationOptions
+                {
+                    Authority = Issuer,
+                    Audience = Audience,
+                    ClockSkewSeconds = 0,
+                }
+            ),
+            NullLogger<JwtValidationService>.Instance
+        );
+    }
+
+    public IJwtValidationService Validator { get; }
+
+    /// <summary>A token for the credential's client and claim set, valid between the two instants.</summary>
+    public ProjectionCredential Issue(ProjectionCredential credential, DateTime notBefore, DateTime expires)
+    {
+        JwtSecurityToken jwt = new(
+            issuer: Issuer,
+            audience: Audience,
+            claims:
+            [
+                new Claim("client_id", credential.ClientId),
+                new Claim("scope", credential.ClaimSetName),
+                new Claim("jti", Guid.NewGuid().ToString("N")),
+            ],
+            notBefore: notBefore,
+            expires: expires,
+            signingCredentials: new SigningCredentials(_signingKey, SecurityAlgorithms.RsaSha256)
+        );
+
+        return credential with
+        {
+            Token = new JwtSecurityTokenHandler().WriteToken(jwt),
+        };
+    }
+}
+
+/// <summary>
+/// Resolves each <see cref="EducationOrganizationProjectionCredentials"/> token to its client and claim
+/// set. A token in JWT form is validated by <paramref name="signedTokens"/>; any other token is invalid.
+/// A projection credential carries no data store, as provisioned; the resource credential carries the
+/// data stores its seeding routes use.
+/// </summary>
+internal sealed class CredentialJwtValidationService(
+    IReadOnlyList<long> resourceDataStoreIds,
+    IJwtValidationService signedTokens
+) : IJwtValidationService
 {
     private readonly Dictionary<string, ProjectionCredential> _credentials =
         EducationOrganizationProjectionCredentials.All.ToDictionary(credential => credential.Token);
@@ -182,13 +249,21 @@ internal sealed class CredentialJwtValidationService(IReadOnlyList<long> resourc
     public Task<(ClaimsPrincipal?, ClientAuthorizations?)> ValidateAndExtractClientAuthorizationsAsync(
         string token,
         CancellationToken cancellationToken
-    ) => Task.FromResult(Resolve(token));
+    ) => ResolveAsync(token, cancellationToken);
 
     public Task<(ClaimsPrincipal?, ClientAuthorizations?)> ValidateAndExtractClientAuthorizationsAsync(
         string authorizationHeader,
         int tokenStartIndex,
         CancellationToken cancellationToken
-    ) => Task.FromResult(Resolve(authorizationHeader[tokenStartIndex..].Trim()));
+    ) => ResolveAsync(authorizationHeader[tokenStartIndex..].Trim(), cancellationToken);
+
+    private Task<(ClaimsPrincipal?, ClientAuthorizations?)> ResolveAsync(
+        string token,
+        CancellationToken cancellationToken
+    ) =>
+        !_credentials.ContainsKey(token) && token.Count(static character => character == '.') == 2
+            ? signedTokens.ValidateAndExtractClientAuthorizationsAsync(token, cancellationToken)
+            : Task.FromResult(Resolve(token));
 
     private (ClaimsPrincipal?, ClientAuthorizations?) Resolve(string token)
     {

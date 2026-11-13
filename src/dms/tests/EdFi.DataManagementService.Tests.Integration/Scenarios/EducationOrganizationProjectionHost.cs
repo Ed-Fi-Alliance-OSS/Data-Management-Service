@@ -190,6 +190,11 @@ internal static class EducationOrganizationProjectionHost
     };
 
     /// <summary>
+    /// Signs bearer tokens that the production JWT validator checks; shared by every projection host.
+    /// </summary>
+    public static SignedProjectionTokens SignedTokens { get; } = new();
+
+    /// <summary>
     /// Replaces authentication and client binding with the credential doubles, and installs the log
     /// recorder and the fingerprint and mapping decorators. Runs after the shared doubles, so these win.
     /// </summary>
@@ -202,7 +207,7 @@ internal static class EducationOrganizationProjectionHost
     {
         services.RemoveAll<IJwtValidationService>();
         services.AddSingleton<IJwtValidationService>(
-            new CredentialJwtValidationService([PrimaryStoreId, TenantBStoreId])
+            new CredentialJwtValidationService([PrimaryStoreId, TenantBStoreId], SignedTokens.Validator)
         );
         services.RemoveAll<IApplicationContextProvider>();
         services.AddSingleton<IApplicationContextProvider>(

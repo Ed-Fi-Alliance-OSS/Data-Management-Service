@@ -634,6 +634,17 @@ public class ServiceClaimAuthorizationMiddlewareTests
             [IdentityResourceClaim(action, AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)]
         );
 
+    private static ClaimSet ProjectionClaimSet(string name) =>
+        new(
+            name,
+            [
+                ProjectionResourceClaim(
+                    "Read",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+            ]
+        );
+
     /// <summary>
     /// An identity request whose authorizations carry '|'-separated scope values, shaped as JWT
     /// extraction produces them: the claim-set name is set only for one distinct scope value.
@@ -1251,5 +1262,128 @@ public class ServiceClaimAuthorizationMiddlewareTests
                     "The service claim's authorization strategies for claim set 'EdOrgProjectionReader' and action 'Read' must be exactly ['NoFurtherAuthorizationRequired']."
                 );
         }
+    }
+
+    /// <summary>
+    /// A projection token whose scope values name two claim sets is refused even though each grants
+    /// Read on the projection claim: claim-set resolution precedes the service-claim check.
+    /// </summary>
+    [TestFixture("Alpha|Beta")]
+    [TestFixture("Beta|Alpha")]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_Scope_Values_That_Identify_Two_Claim_Sets(
+        string scopeValueList
+    )
+    {
+        private RequestInfo _requestInfo = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = CreateProvider(
+                ProjectionClaimSet("Alpha"),
+                ProjectionClaimSet("Beta")
+            );
+            _requestInfo = CreateScopedRequestInfo(scopeValueList);
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(
+                    claimSetProvider,
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                ),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_returns_403_with_the_generic_ambiguity_error()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            Errors(_requestInfo).Should().Equal("The token identifies multiple claim sets.");
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+    }
+
+    /// <summary>
+    /// Duplicate claim-set names in the security metadata are a security-configuration failure for a
+    /// projection request, as for any service request, even though the matched claim sets grant Read.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_Duplicate_Matching_Claim_Set_Metadata
+    {
+        private RequestInfo _requestInfo = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = CreateProvider(
+                ProjectionClaimSet("Alpha"),
+                ProjectionClaimSet("alpha")
+            );
+            _requestInfo = CreateScopedRequestInfo("Alpha");
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(
+                    claimSetProvider,
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                ),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_returns_a_security_configuration_500()
+        {
+            _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:system:configuration:security");
+            Errors(_requestInfo).Should().Equal("The security metadata contains duplicate claim-set names.");
+        }
+
+        [Test]
+        public void It_does_not_continue() => _continuations.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The control for the two fixtures above: one claim set granting Read, named by one scope value
+    /// among others that match nothing, authorizes the projection request.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_Scope_Values_That_Identify_One_Claim_Set
+    {
+        private RequestInfo _requestInfo = null!;
+        private int _continuations;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            IClaimSetProvider claimSetProvider = CreateProvider(ProjectionClaimSet("Alpha"));
+            _requestInfo = CreateScopedRequestInfo("profile|Alpha");
+
+            _continuations = await ExecuteCountingContinuations(
+                CreateMiddleware(
+                    claimSetProvider,
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                ),
+                _requestInfo
+            );
+        }
+
+        [Test]
+        public void It_continues() => _continuations.Should().Be(1);
+
+        [Test]
+        public void It_selects_the_matched_claim_set() =>
+            _requestInfo.ClientAuthorizations.ClaimSetName.Should().Be("Alpha");
     }
 }
