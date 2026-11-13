@@ -87,6 +87,7 @@ public static class LiveServicesCleanupTests
                 "admin-secret",
                 "postgresql",
                 "Host=db;Database=route2",
+                "Host=db;Database=route3",
                 [],
                 new Dictionary<string, int> { [Tenant] = 5 }
             );

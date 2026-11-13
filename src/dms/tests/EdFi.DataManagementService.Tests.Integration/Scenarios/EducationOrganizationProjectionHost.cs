@@ -69,6 +69,9 @@ internal static class EducationOrganizationProjectionHost
     public const long MalformedFingerprintStoreId = 11;
     public const long NotProvisionedStoreId = 12;
 
+    /// <summary>A store of tenant A whose route context changes after DMS has cached it.</summary>
+    public const long RouteChangedStoreId = 13;
+
     public static DataStore Store(
         long id,
         string? connectionString,

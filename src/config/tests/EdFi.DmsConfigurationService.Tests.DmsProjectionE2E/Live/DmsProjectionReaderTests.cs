@@ -343,6 +343,73 @@ public static class DmsProjectionReaderTests
     }
 
     /// <summary>
+    /// A store registered through the Configuration Service after DMS has loaded the tenant's catalog: a live read
+    /// of the seeded store first makes DMS load that catalog, then the new store's first read is served, with no DMS
+    /// restart between. This shows only that such a store is served on its first read. It claims nothing about how
+    /// DMS finds it (a reload on the miss or an expiry-driven refresh) and nothing about timing; the API integration
+    /// scenarios prove the mechanism.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_store_registered_after_dms_loaded_the_tenant_catalog
+    {
+        private ReaderHost _host = null!;
+        private EducationOrganizationProjectionReadResult _catalogLoadingRead = null!;
+        private EducationOrganizationProjectionReadResult _newStoreRead = null!;
+
+        [OneTimeSetUp]
+        public async Task ReadAsync()
+        {
+            ProjectionE2EFixture fixture = ProjectionE2EFixture.Current;
+            _host = new ReaderHost(fixture);
+
+            int seededStoreId = fixture.Environment.Route(ProjectionE2EFixture.SeededQualifier).DataStoreId;
+            _catalogLoadingRead = await _host.ReadAsync(
+                ProjectionE2EFixture.SeededTenant,
+                seededStoreId,
+                await fixture.Services.DataStoreContextsAsync(
+                    ProjectionE2EFixture.SeededTenant,
+                    seededStoreId
+                )
+            );
+
+            // The second tenant's provisioned database, empty, under a route context of its own.
+            int newStoreId = await fixture.Services.CreateDataStoreAsync(
+                ProjectionE2EFixture.SeededTenant,
+                "Projection Reader E2E registered after catalog load",
+                fixture.Environment.RouteThreeConnectionString,
+                new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2098" }
+            );
+            _newStoreRead = await _host.ReadAsync(
+                ProjectionE2EFixture.SeededTenant,
+                newStoreId,
+                await fixture.Services.DataStoreContextsAsync(ProjectionE2EFixture.SeededTenant, newStoreId)
+            );
+        }
+
+        [OneTimeTearDown]
+        public void DisposeHost() => _host?.Dispose();
+
+        [Test]
+        public void It_reads_the_seeded_store_first_so_dms_has_loaded_the_tenant_catalog() =>
+            _catalogLoadingRead
+                .Should()
+                .BeOfType<EducationOrganizationProjectionReadResult.Success>()
+                .Subject.Items.Should()
+                .Equal(ProjectionE2EFixture.SeededItems);
+
+        [Test]
+        public void It_serves_the_new_store_on_its_first_read_as_one_empty_page()
+        {
+            EducationOrganizationProjectionReadResult.Success success = _newStoreRead
+                .Should()
+                .BeOfType<EducationOrganizationProjectionReadResult.Success>()
+                .Subject;
+            success.Items.Should().BeEmpty();
+            success.PageCount.Should().Be(1);
+        }
+    }
+
+    /// <summary>
     /// DMS unreachable: the reader's base URL is a loopback listener, bound for the whole fixture, that accepts every
     /// connection and closes it at once. The port listens throughout, so no closed-port race decides the outcome, and
     /// no timer is involved.

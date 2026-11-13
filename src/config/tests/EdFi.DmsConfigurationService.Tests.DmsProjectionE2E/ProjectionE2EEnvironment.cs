@@ -30,6 +30,7 @@ public sealed class ProjectionE2EEnvironment
         string adminClientSecret,
         string databaseEngine,
         string routeTwoConnectionString,
+        string routeThreeConnectionString,
         IReadOnlyList<FixtureRoute> routes,
         IReadOnlyDictionary<string, int> vendorIdsByTenant
     )
@@ -40,6 +41,7 @@ public sealed class ProjectionE2EEnvironment
         AdminClientSecret = adminClientSecret;
         DatabaseEngine = databaseEngine;
         RouteTwoConnectionString = routeTwoConnectionString;
+        RouteThreeConnectionString = routeThreeConnectionString;
         Routes = routes;
         VendorIdsByTenant = vendorIdsByTenant;
     }
@@ -57,6 +59,12 @@ public sealed class ProjectionE2EEnvironment
 
     /// <summary>The connection string registered for route database 2. Secret-bearing: never logged.</summary>
     public string RouteTwoConnectionString { get; }
+
+    /// <summary>
+    /// The connection string registered for route database 3, the provisioned database of the second tenant's
+    /// route. Secret-bearing: never logged.
+    /// </summary>
+    public string RouteThreeConnectionString { get; }
 
     public IReadOnlyList<FixtureRoute> Routes { get; }
 
@@ -94,6 +102,7 @@ public sealed class ProjectionE2EEnvironment
             adminClientSecret,
             databaseEngine,
             Required("INSTANCE_E2E_DATABASE_2_CONNECTION_STRING"),
+            Required("INSTANCE_E2E_DATABASE_3_CONNECTION_STRING"),
             ReadRoutes(Required("INSTANCE_E2E_ROUTE_MANIFEST")),
             vendorIdsByTenant
         );

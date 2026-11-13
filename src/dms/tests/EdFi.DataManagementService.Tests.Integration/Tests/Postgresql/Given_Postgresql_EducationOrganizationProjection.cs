@@ -46,6 +46,12 @@ public sealed class Given_Postgresql_EducationOrganizationProjection
         EducationOrganizationProjectionScenario.It_isolates_tenants_stores_and_route_contexts(Context);
 
     [Test]
+    public Task It_serves_a_changed_route_context_only_after_a_catalog_refresh() =>
+        EducationOrganizationProjectionScenario.It_serves_a_changed_route_context_only_after_a_catalog_refresh(
+            Context
+        );
+
+    [Test]
     public Task It_answers_each_target_state() =>
         EducationOrganizationProjectionScenario.It_answers_each_target_state(Context);
 

@@ -443,8 +443,9 @@ internal static class EducationOrganizationProjectionScenario
 
     /// <summary>
     /// A store answers only in its own tenant and route context; a cursor binds to the tenant and the
-    /// qualifiers it was issued for; a store registered after startup is found by one catalog reload;
-    /// and a provisioned store with no education organizations reads as one empty page.
+    /// qualifiers it was issued for; a store's id requested before the catalog holds it is not found
+    /// after one reload, and found by one more reload once registered; and a provisioned store with no
+    /// education organizations reads as one empty page.
     /// </summary>
     public static async Task It_isolates_tenants_stores_and_route_contexts(
         EducationOrganizationProjectionContext context
@@ -526,7 +527,19 @@ internal static class EducationOrganizationProjectionScenario
         ShouldBeProjectionProblem(unknown, Problem.TargetNotFound);
         WithoutCorrelation(mismatch).Should().Be(WithoutCorrelation(unknown));
 
-        // A store registered after startup: one reload on the first miss, none afterwards.
+        // A store registered after startup, its id known before the catalog holds it. While it is
+        // absent, a request misses, reloads exactly once and is not found; once registered, the next
+        // request reloads once more and is served; after that, nothing reloads.
+        reloads = context.Catalog.ReloadCount(TenantA);
+        ProjectionResponse notYetRegistered = await GetAsync(
+            harness,
+            Credentials.Projection,
+            ProjectionPath(TenantA, RouteA, Query(LateStoreId))
+        );
+        ShouldBeProjectionProblem(notYetRegistered, Problem.TargetNotFound);
+        notYetRegistered.Body.Should().NotContain("Projection State");
+        context.Catalog.ReloadCount(TenantA).Should().Be(reloads + 1);
+
         context.Catalog.Register(
             TenantA,
             Store(LateStoreId, context.PrimaryConnectionString, RouteA, context.Engine.OwnToken)
@@ -577,6 +590,80 @@ internal static class EducationOrganizationProjectionScenario
         );
         ShouldBeSuccess(sameRoute, PrimaryStoreId);
         ItemsOf(sameRoute).Select(item => item.Id).Should().Equal(10);
+    }
+
+    /// <summary>
+    /// A cached store whose route context the Configuration Service changes: a request under the new
+    /// context is not found and reloads nothing, because the id is already in the cached catalog; once
+    /// the catalog's expiry-driven refresh replaces the cache, the same request is served and the old
+    /// context is the mismatch. A changed context converges through the refresh, never through a reload
+    /// on the mismatch.
+    /// </summary>
+    public static async Task It_serves_a_changed_route_context_only_after_a_catalog_refresh(
+        EducationOrganizationProjectionContext context
+    )
+    {
+        ApiIntegrationHarness harness = Prepare(context);
+        Seeder seeder = await Seeder.CreateAsync(harness, TenantA, RouteA);
+        await seeder.StateAgencyAsync(1, "Projection State");
+        ProjectionRoute changedRoute = RouteA with { SchoolYear = "2026" };
+
+        // DMS caches the store under its first route context.
+        context.Catalog.Register(
+            TenantA,
+            Store(RouteChangedStoreId, context.PrimaryConnectionString, RouteA, context.Engine.OwnToken)
+        );
+        Walk cached = await WalkAsync(
+            harness,
+            Credentials.Projection,
+            TenantA,
+            RouteA,
+            RouteChangedStoreId,
+            limit: null
+        );
+        cached.Items.Should().Equal(new Item(1, "Projection State", null, StateAgency, null));
+
+        // The Configuration Service now holds the store under 2026; DMS still caches 2025.
+        context.Catalog.Register(
+            TenantA,
+            Store(RouteChangedStoreId, context.PrimaryConnectionString, changedRoute, context.Engine.OwnToken)
+        );
+        int reloads = context.Catalog.ReloadCount(TenantA);
+        ProjectionResponse lagging = await GetAsync(
+            harness,
+            Credentials.Projection,
+            ProjectionPath(TenantA, changedRoute, Query(RouteChangedStoreId))
+        );
+        ShouldBeProjectionProblem(lagging, Problem.TargetNotFound);
+        lagging.Body.Should().NotContain("Projection State");
+        context
+            .Catalog.ReloadCount(TenantA)
+            .Should()
+            .Be(reloads, "a route-context mismatch on a cached id does not reload the catalog");
+        context.Catalog.RefreshCount(TenantA).Should().Be(0);
+
+        context.Catalog.ExpireCache(TenantA);
+        Walk refreshed = await WalkAsync(
+            harness,
+            Credentials.Projection,
+            TenantA,
+            changedRoute,
+            RouteChangedStoreId,
+            limit: null
+        );
+        refreshed.Items.Should().Equal(cached.Items);
+        context.Catalog.RefreshCount(TenantA).Should().Be(1);
+        context.Catalog.ReloadCount(TenantA).Should().Be(reloads);
+
+        ShouldBeProjectionProblem(
+            await GetAsync(
+                harness,
+                Credentials.Projection,
+                ProjectionPath(TenantA, RouteA, Query(RouteChangedStoreId))
+            ),
+            Problem.TargetNotFound
+        );
+        context.Catalog.ReloadCount(TenantA).Should().Be(reloads);
     }
 
     /// <summary>

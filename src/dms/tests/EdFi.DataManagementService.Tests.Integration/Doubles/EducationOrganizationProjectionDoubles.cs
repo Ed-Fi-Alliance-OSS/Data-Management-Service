@@ -339,7 +339,9 @@ internal sealed class TenantBindingApplicationContextProvider(
 /// <summary>
 /// A multi-tenant data-store catalog with the Configuration Service's two views: what DMS has cached,
 /// and what the Configuration Service would return on a reload. A store registered after startup is
-/// only in the second until a request misses and reloads. A tenant can be made to fail every reload.
+/// only in the second until a request misses and reloads, or until the test expires the cache and the
+/// next expiry-driven refresh replaces it; no clock is involved. A tenant can be made to fail every
+/// reload.
 /// </summary>
 internal sealed class ProjectionDataStoreCatalog : IDataStoreProvider
 {
@@ -372,6 +374,16 @@ internal sealed class ProjectionDataStoreCatalog : IDataStoreProvider
     /// <summary>How many times the tenant's catalog was reloaded.</summary>
     public int ReloadCount(string tenant) => Volatile.Read(ref _tenants[tenant].ReloadCount);
 
+    /// <summary>
+    /// Marks the tenant's cached catalog expired: the next <see cref="RefreshInstancesIfExpiredAsync"/>
+    /// replaces it with the Configuration Service's view, as the production provider does once its
+    /// time-to-live has passed.
+    /// </summary>
+    public void ExpireCache(string tenant) => _tenants[tenant].Expired = true;
+
+    /// <summary>How many expiry-driven refreshes replaced the tenant's cached catalog.</summary>
+    public int RefreshCount(string tenant) => Volatile.Read(ref _tenants[tenant].RefreshCount);
+
     public Task<IList<DataStore>> LoadDataStores(
         string? tenant = null,
         CancellationToken cancellationToken = default
@@ -395,7 +407,21 @@ internal sealed class ProjectionDataStoreCatalog : IDataStoreProvider
     public Task RefreshInstancesIfExpiredAsync(
         string? tenant = null,
         CancellationToken cancellationToken = default
-    ) => Task.CompletedTask;
+    )
+    {
+        TenantCatalog catalog = Catalog(tenant);
+        lock (catalog)
+        {
+            if (catalog.Expired)
+            {
+                catalog.Expired = false;
+                catalog.Cached = catalog.Remote;
+                Interlocked.Increment(ref catalog.RefreshCount);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
 
     public IReadOnlyList<DataStore> GetAll(string? tenant = null) => Catalog(tenant).Cached;
 
@@ -421,7 +447,9 @@ internal sealed class ProjectionDataStoreCatalog : IDataStoreProvider
         public volatile IReadOnlyList<DataStore> Cached = stores;
         public volatile IReadOnlyList<DataStore> Remote = stores;
         public volatile bool FailReloads;
+        public volatile bool Expired;
         public int ReloadCount;
+        public int RefreshCount;
     }
 }
 

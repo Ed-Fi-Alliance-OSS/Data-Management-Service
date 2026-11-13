@@ -132,9 +132,15 @@ public static partial class ParityScenarioCatalog
         ),
         Projection(
             "Api/EducationOrganizationProjection/IsolatesTenantsStoresAndRouteContexts",
-            "A store answers only in its own tenant and route context (404 target-not-found otherwise, a qualifier mismatch indistinguishable from an unknown store), a cursor is bound to its tenant and qualifiers, a store registered after startup is found by one catalog reload, and an empty provisioned store reads as one empty page.",
+            "A store answers only in its own tenant and route context (404 target-not-found otherwise, a qualifier mismatch indistinguishable from an unknown store), a cursor is bound to its tenant and qualifiers, a store id requested before the catalog holds it is 404 after exactly one reload and served after one more reload once registered, and an empty provisioned store reads as one empty page.",
             "EducationOrganizationProjectionScenario.It_isolates_tenants_stores_and_route_contexts",
             "It_isolates_tenants_stores_and_route_contexts"
+        ),
+        Projection(
+            "Api/EducationOrganizationProjection/ServesAChangedRouteContextOnlyAfterACatalogRefresh",
+            "A cached store whose route context changes is 404 target-not-found under the new context with no catalog reload, and is served under it once the expiry-driven refresh replaces the cache, the old context then being the mismatch.",
+            "EducationOrganizationProjectionScenario.It_serves_a_changed_route_context_only_after_a_catalog_refresh",
+            "It_serves_a_changed_route_context_only_after_a_catalog_refresh"
         ),
         Projection(
             "Api/EducationOrganizationProjection/AnswersEachTargetState",
