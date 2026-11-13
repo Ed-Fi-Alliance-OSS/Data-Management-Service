@@ -34,13 +34,64 @@ internal sealed class ProjectionLogCapture : ILogEventSink
 {
     public const string HostingDiagnosticsSourceContext = "Microsoft.AspNetCore.Hosting.Diagnostics";
 
+    /// <summary>Only a failure bound: a wait that reaches it fails the fixture; it never paces a test.</summary>
+    private static readonly TimeSpan _requestFinishedFailureBound = TimeSpan.FromSeconds(30);
+
     private readonly ConcurrentQueue<LogEvent> _events = new();
+    private TaskCompletionSource _nextEvent = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     public IReadOnlyList<LogEvent> Events => [.. _events];
 
-    public void Emit(LogEvent logEvent) => _events.Enqueue(logEvent);
+    public void Emit(LogEvent logEvent)
+    {
+        _events.Enqueue(logEvent);
+        Interlocked
+            .Exchange(ref _nextEvent, new(TaskCreationOptions.RunContinuationsAsynchronously))
+            .TrySetResult();
+    }
 
     public void Clear() => _events.Clear();
+
+    /// <summary>
+    /// Completes once the framework has written <paramref name="count"/> request-finished events for
+    /// <paramref name="path"/>. The hosting layer writes that event when it disposes the request context,
+    /// after the client already holds the response, so assertions made as soon as a response arrives can
+    /// run before the request's last event exists.
+    /// </summary>
+    public async Task WaitForRequestsFinished(string path, int count)
+    {
+        using CancellationTokenSource bound = new(_requestFinishedFailureBound);
+
+        while (true)
+        {
+            // Taken before counting, so an event emitted after the count completes this task.
+            Task nextEvent = Volatile.Read(ref _nextEvent).Task;
+
+            if (RequestFinishedCount(path) >= count)
+            {
+                return;
+            }
+
+            try
+            {
+                await nextEvent.WaitAsync(bound.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException(
+                    $"Expected {count} request-finished event(s) for {path} within "
+                        + $"{_requestFinishedFailureBound}; captured {RequestFinishedCount(path)}."
+                );
+            }
+        }
+    }
+
+    private int RequestFinishedCount(string path) =>
+        Events.Count(logEvent =>
+            Scalar(logEvent, "SourceContext") == HostingDiagnosticsSourceContext
+            && logEvent.MessageTemplate.Text.StartsWith("Request finished ", StringComparison.Ordinal)
+            && Scalar(logEvent, "Path") == path
+        );
 
     public Action<IServiceCollection> Register =>
         services =>
@@ -151,6 +202,10 @@ public class Given_Projection_Requests_With_Cursors_Through_The_Production_Pipel
         await Send(client, $"?dataStoreId=3788&cursor={RepeatedCursorA}&Cursor={RepeatedCursorB}");
 
         using HttpResponseMessage control = await client.GetAsync($"/metadata?cursor={ControlCursor}");
+
+        // Each request's last framework event follows its response; no assertion runs before all of them.
+        await _capture.WaitForRequestsFinished(Route, _projectionStatuses.Count);
+        await _capture.WaitForRequestsFinished("/metadata", 1);
     }
 
     private async Task<HttpResponseMessage> Send(HttpClient client, string query, bool authenticated = true)
@@ -391,6 +446,9 @@ public class Given_A_Projection_Request_Path_Form(ProjectionLogPathCase pathCase
         };
 
         _response = await _host.Get($"{pathCase.RequestPath}?dataStoreId=3788&cursor={Cursor}&limit=2");
+
+        // The request's last framework event follows its response; no assertion runs before it.
+        await _capture.WaitForRequestsFinished(ExpectedPath, 1);
     }
 
     [OneTimeTearDown]
