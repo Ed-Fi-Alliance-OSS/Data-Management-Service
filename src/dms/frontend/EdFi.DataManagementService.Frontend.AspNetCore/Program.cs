@@ -340,6 +340,8 @@ OptionsValidationException? ReportInvalidConfiguration(WebApplication app)
         // what routes a failure into the graceful path below instead of surfacing later, during host
         // start, past every guard in this file.
         _ = app.Services.GetRequiredService<IOptions<CoreAppSettings>>().Value;
+        // Likewise validated by ValidateOnStart, whether or not the endpoint is enabled.
+        _ = app.Services.GetRequiredService<IOptions<EducationOrganizationProjectionSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ConfigurationServiceSettings>>().Value;
         _ = app.Services.GetRequiredService<IOptions<MappingSetProviderOptions>>().Value;
         _ = app.Services.GetRequiredService<IOptions<ReverseProxySettings>>().Value;

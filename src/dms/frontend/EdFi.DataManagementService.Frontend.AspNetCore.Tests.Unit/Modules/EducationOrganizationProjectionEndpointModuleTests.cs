@@ -118,7 +118,7 @@ internal sealed class ProjectionFrontendHost : IAsyncDisposable
 
         Dictionary<string, string?> settings = new()
         {
-            ["AppSettings:EnableEducationOrganizationProjection"] = enableProjection ? "true" : "false",
+            ["DataManagement:EducationOrganizationProjection:Enabled"] = enableProjection ? "true" : "false",
             ["AppSettings:MultiTenancy"] = mode.MultiTenancy ? "true" : "false",
             ["AppSettings:RouteQualifierSegments"] = mode.QualifierSegments,
         };

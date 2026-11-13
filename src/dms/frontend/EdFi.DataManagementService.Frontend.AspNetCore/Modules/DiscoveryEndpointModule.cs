@@ -12,7 +12,7 @@ using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using EducationOrganizationProjectionSettings = EdFi.DataManagementService.Core.Configuration.EducationOrganizationProjectionSettings;
 using IdentityManagementOptions = EdFi.DataManagementService.Core.Configuration.IdentityManagementOptions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -91,7 +91,7 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         IOptions<AppSettings> appSettings,
         ITenantValidator tenantValidator,
         IOptions<IdentityManagementOptions> identityManagementOptions,
-        IOptions<CoreAppSettings> coreOptions
+        IOptions<EducationOrganizationProjectionSettings> projectionOptions
     )
     {
         // Validate tenant if multi-tenancy is enabled and tenant is provided in route
@@ -161,10 +161,10 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             response["urls"]!["identity"] = $"{rootUrl}{routeQualifierPrefix}/identity/v2/";
         }
 
-        // AppSettings:EnableEducationOrganizationProjection adds exactly two members: the endpoint
+        // DataManagement:EducationOrganizationProjection:Enabled adds exactly two members: the endpoint
         // URL template and the top-level contract-version list. Turning it off removes only those
         // two; urls.oauth, which a projection client also reads, is listed either way.
-        if (coreOptions.Value.EnableEducationOrganizationProjection)
+        if (projectionOptions.Value.Enabled)
         {
             response["urls"]!["educationOrganizationProjection"] =
                 $"{rootUrl}{routeQualifierPrefix}{EducationOrganizationProjectionEndpointModule.RouteSuffix}";

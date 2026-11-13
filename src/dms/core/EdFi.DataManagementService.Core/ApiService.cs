@@ -801,7 +801,9 @@ internal class ApiService : IApiService
     /// </remarks>
     private PipelineProvider CreateEducationOrganizationProjectionPipeline()
     {
-        EducationOrganizationProjectionSettings settings = _appSettings.Value.EducationOrganizationProjection;
+        EducationOrganizationProjectionSettings settings = _serviceProvider
+            .GetRequiredService<IOptions<EducationOrganizationProjectionSettings>>()
+            .Value;
         TimeProvider timeProvider = _serviceProvider.GetRequiredService<TimeProvider>();
 
         List<IPipelineStep> steps =

@@ -6,7 +6,7 @@
 Describe "Education-organization projection toggle wiring" {
     # -ForEach arrays are evaluated at discovery time, before any BeforeAll runs, so the paths
     # are computed inline from $PSScriptRoot rather than from a script-scoped variable.
-    It "wires AppSettings__EnableEducationOrganizationProjection to DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION, defaulting to true, in <_>" -ForEach @(
+    It "wires DataManagement__EducationOrganizationProjection__Enabled to DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION, defaulting to true, in <_>" -ForEach @(
         (Join-Path $PSScriptRoot "../local-dms.compose.yml"),
         (Join-Path $PSScriptRoot "../published-dms.compose.yml"),
         (Join-Path $PSScriptRoot "../../azure-vm/compose/docker-compose.yml")
@@ -15,7 +15,8 @@ Describe "Education-organization projection toggle wiring" {
         Test-Path -LiteralPath $path | Should -BeTrue -Because "the compose file must exist at $path"
         $content = Get-Content -LiteralPath $path -Raw
 
-        $content | Should -Match 'AppSettings__EnableEducationOrganizationProjection:\s*"?\$\{DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION:-true\}"?'
+        $content | Should -Match 'DataManagement__EducationOrganizationProjection__Enabled:\s*"?\$\{DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION:-true\}"?'
+        $content | Should -Not -Match 'AppSettings__EnableEducationOrganizationProjection' -Because "DMS no longer reads that key"
     }
 
     It "defaults DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION to true in <_>" -ForEach @(

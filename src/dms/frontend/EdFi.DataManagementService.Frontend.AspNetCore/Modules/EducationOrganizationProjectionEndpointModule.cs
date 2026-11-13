@@ -5,7 +5,7 @@
 
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure;
 using Microsoft.Extensions.Options;
-using CoreAppSettings = EdFi.DataManagementService.Core.Configuration.AppSettings;
+using EducationOrganizationProjectionSettings = EdFi.DataManagementService.Core.Configuration.EducationOrganizationProjectionSettings;
 using FrontendAppSettings = EdFi.DataManagementService.Frontend.AspNetCore.Configuration.AppSettings;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -13,7 +13,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// <summary>
 /// Maps the education-organization projection endpoint,
 /// <c>GET {prefix}/management/education-organizations</c>, gated by
-/// AppSettings:EnableEducationOrganizationProjection (default true). The prefix is the fixed-route
+/// DataManagement:EducationOrganizationProjection:Enabled (default true). The prefix is the fixed-route
 /// prefix: <c>{tenant}</c> first in multi-tenant mode, then each configured route qualifier. With the
 /// toggle off nothing is mapped and the route falls through to the fallback 404.
 /// </summary>
@@ -23,7 +23,7 @@ namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
 /// </remarks>
 public class EducationOrganizationProjectionEndpointModule(
     IOptions<FrontendAppSettings> frontendOptions,
-    IOptions<CoreAppSettings> coreOptions
+    IOptions<EducationOrganizationProjectionSettings> projectionOptions
 ) : IEndpointModule
 {
     /// <summary>
@@ -33,7 +33,7 @@ public class EducationOrganizationProjectionEndpointModule(
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        if (!coreOptions.Value.EnableEducationOrganizationProjection)
+        if (!projectionOptions.Value.Enabled)
         {
             return;
         }

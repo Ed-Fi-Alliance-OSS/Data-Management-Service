@@ -35,7 +35,7 @@ Admin API `educationOrganizationModel`.
 Clients do not compose the URL. They read it from the Discovery document, served
 at `GET {base}/` in single-tenant mode and `GET {base}/{tenant}` in multi-tenant
 mode. When the deployment enables the endpoint
-(`AppSettings:EnableEducationOrganizationProjection`, default `true`), Discovery
+(`DataManagement:EducationOrganizationProjection:Enabled`, default `true`), Discovery
 carries:
 
 ```json
@@ -619,8 +619,8 @@ The two providers read the set differently:
 | Connection whose cleanup cannot be confirmed | The read ends its own server session, so the connection is never reused | The connection's pool is cleared, so the connection is never reused |
 
 The lock wait and the statement are bounded by
-`EducationOrganizationProjection:ReadLockTimeoutSeconds` and
-`ReadCommandTimeoutSeconds` ([Configuration](./CONFIGURATION.md#appsettings)).
+`DataManagement:EducationOrganizationProjection:ReadLockTimeoutSeconds` and
+`ReadCommandTimeoutSeconds` ([Configuration](./CONFIGURATION.md#datamanagementeducationorganizationprojection)).
 The effect of each isolation level on writers is described under
 [effect on writers](#effect-on-writers-and-measured-cost).
 
@@ -947,7 +947,7 @@ hash is unchanged.
    [Claims Loading Guide](./CLAIMS-LOADING-GUIDE.md#upgrading-an-existing-deployment-education-organization-projection-claim).
 2. **Provision** the claim set, application and credential for each tenant
    ([above](#provisioning-the-configuration-service-credential)).
-3. **Deploy DMS** with `AppSettings:EnableEducationOrganizationProjection`
+3. **Deploy DMS** with `DataManagement:EducationOrganizationProjection:Enabled`
    `true`, its default.
 4. **Configure the reader** (`DmsBaseUrl` and the credentials) and restart the
    Configuration Service. Until a background job uses the reader, its section

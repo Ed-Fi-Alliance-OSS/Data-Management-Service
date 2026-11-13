@@ -6,15 +6,18 @@
 namespace EdFi.DataManagementService.Core.Configuration;
 
 /// <summary>
-/// Limits for the education-organization projection endpoint, bound from
-/// <c>AppSettings:EducationOrganizationProjection</c>.
+/// The switch and limits of the education-organization projection endpoint, bound from the
+/// <c>DataManagement:EducationOrganizationProjection</c> section.
 /// </summary>
 /// <remarks>
-/// Each value has an inclusive range enforced by <see cref="AppSettingsValidator"/> at startup,
-/// whether or not <see cref="AppSettings.EnableEducationOrganizationProjection"/> is on.
+/// Each limit has an inclusive range enforced at startup by
+/// <see cref="EducationOrganizationProjectionSettingsValidator"/>, whether or not <see cref="Enabled"/>
+/// is on.
 /// </remarks>
 public sealed record EducationOrganizationProjectionSettings
 {
+    public const string SectionName = "DataManagement:EducationOrganizationProjection";
+
     public const int MaximumPageSizeDefault = 2000;
     public const int MaximumPageSizeMinimum = 1;
     public const int MaximumPageSizeMaximum = 10000;
@@ -34,6 +37,12 @@ public sealed record EducationOrganizationProjectionSettings
     public const int ReadCommandTimeoutSecondsDefault = 60;
     public const int ReadCommandTimeoutSecondsMinimum = 5;
     public const int ReadCommandTimeoutSecondsMaximum = 600;
+
+    /// <summary>
+    /// If true, maps the projection endpoint under <c>/management</c> and advertises it in Discovery.
+    /// Defaults to true.
+    /// </summary>
+    public bool Enabled { get; init; } = true;
 
     /// <summary>
     /// Upper bound for the <c>limit</c> query parameter, and the page size applied when it is

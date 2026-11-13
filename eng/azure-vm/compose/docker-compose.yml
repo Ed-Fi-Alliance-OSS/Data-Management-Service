@@ -64,7 +64,7 @@ x-dms-common-env: &dms-common-env
   # Opt-in DMS-owned /identity/v2 surface (default off).
   DataManagement__IdentityManagement__Enabled: "${DMS_ENABLE_IDENTITY_MANAGEMENT:-false}"
   # Education-organization projection endpoint (default on).
-  AppSettings__EnableEducationOrganizationProjection: "${DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION:-true}"
+  DataManagement__EducationOrganizationProjection__Enabled: "${DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION:-true}"
   # Opt-in for troubleshooting / claim-set iteration (default off).
   AppSettings__ManagementEndpoints__Enabled: "${DMS_ENABLE_MANAGEMENT_ENDPOINTS:-false}"
   AppSettings__ManagementEndpoints__RequiredRole: "${DMS_MANAGEMENT_REQUIRED_ROLE:-}"

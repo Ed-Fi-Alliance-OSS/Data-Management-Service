@@ -50,18 +50,6 @@ public class AppSettings
     public string? AuthenticationService { get; set; }
 
     /// <summary>
-    /// If true, maps the education-organization projection endpoint under /management and
-    /// advertises it in Discovery. Defaults to true.
-    /// </summary>
-    public bool EnableEducationOrganizationProjection { get; set; } = true;
-
-    /// <summary>
-    /// Limits for the education-organization projection endpoint, validated whether or not
-    /// <see cref="EnableEducationOrganizationProjection"/> is on.
-    /// </summary>
-    public EducationOrganizationProjectionSettings EducationOrganizationProjection { get; set; } = new();
-
-    /// <summary>
     /// Comma-separated list of domain names to exclude from OpenAPI documentation generation.
     /// Domains listed here will not appear in the generated OpenAPI specifications.
     /// </summary>

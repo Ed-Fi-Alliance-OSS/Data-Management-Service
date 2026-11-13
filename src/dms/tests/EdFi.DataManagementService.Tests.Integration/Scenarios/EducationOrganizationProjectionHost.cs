@@ -147,13 +147,13 @@ internal static class EducationOrganizationProjectionHost
     {
         Dictionary<string, string> settings = new()
         {
-            ["AppSettings:EnableEducationOrganizationProjection"] = "true",
-            ["AppSettings:EducationOrganizationProjection:ReadLockTimeoutSeconds"] =
+            ["DataManagement:EducationOrganizationProjection:Enabled"] = "true",
+            ["DataManagement:EducationOrganizationProjection:ReadLockTimeoutSeconds"] =
                 readLockTimeoutSeconds.ToString(CultureInfo.InvariantCulture),
         };
         if (maxProjectionRows is { } rows)
         {
-            settings["AppSettings:EducationOrganizationProjection:MaxProjectionRows"] = rows.ToString(
+            settings["DataManagement:EducationOrganizationProjection:MaxProjectionRows"] = rows.ToString(
                 CultureInfo.InvariantCulture
             );
         }
