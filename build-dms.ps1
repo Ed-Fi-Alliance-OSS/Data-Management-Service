@@ -192,17 +192,17 @@ param(
     [string]
     $TestFilter,
 
-    # Optional Ed-Fi Data Standard version. Forwarded to the start scripts, which compose the
-    # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
-    [string]
-    [ValidateSet("5.2", "6.1")]
-    $DataStandardVersion,
-
     # E2ETest with -IdentityProvider keycloak only: after the DMS E2E tests, while the stack is still up,
     # runs the Configuration Service's DMS projection reader against it (the reader project's
     # KeycloakReader category) and guards its TRX.
     [switch]
-    $RunDmsProjectionReaderKeycloakE2E
+    $RunDmsProjectionReaderKeycloakE2E,
+
+    # Optional Ed-Fi Data Standard version. Forwarded to the start scripts, which compose the
+    # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
+    [string]
+    [ValidateSet("5.2", "6.1")]
+    $DataStandardVersion
 )
 
 # Check script-level bindings before imports or dispatch: even explicit false/empty CDC inputs
