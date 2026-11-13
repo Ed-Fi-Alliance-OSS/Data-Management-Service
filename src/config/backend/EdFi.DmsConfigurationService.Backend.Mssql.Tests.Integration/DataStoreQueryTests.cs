@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.Jobs;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using Microsoft.Data.SqlClient;
@@ -52,7 +53,17 @@ public class Given_ordinary_data_store_queries(bool multitenant, bool canonicalU
                 """
             );
         }
-        _database.DeployThrough(CanonicalUniqueness ? 40 : 39);
+        _database.DeployThrough(CanonicalUniqueness ? 41 : 39);
+        if (!CanonicalUniqueness)
+        {
+            // Keep the legacy ordinary uniqueness rule for query qualification, while supplying the
+            // managed table required by current mutations. This is not a production rollout path.
+            var result = new Deploy.DatabaseDeploy
+            {
+                ScriptFilter = name => JobUpgradeTestDatabase.ScriptNumber(name) == 41,
+            }.DeployDatabase(_database.ConnectionString);
+            Assert.That(result, Is.TypeOf<DatabaseDeployResult.DatabaseDeploySuccess>());
+        }
     }
 
     protected override Task DropAsync() => _database is null ? Task.CompletedTask : _database.DropAsync();

@@ -43,6 +43,18 @@ public class DataStoreRepository(
     )
     {
         DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        if (
+            await DataStoreCatalog.HasManagedNameReservationAsync(
+                transaction,
+                TenantId,
+                command.Name,
+                null,
+                cancellationToken
+            )
+        )
+        {
+            throw new DataStoreCatalog.NameReservedException();
+        }
         var sql = """
             INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
             OUTPUT INSERTED.Id
@@ -106,15 +118,16 @@ public class DataStoreRepository(
         }
     }
 
-    private Task<int> DeleteDataStoreRows(
+    private async Task<int> DeleteDataStoreRows(
         int id,
         DbTransaction transaction,
         CancellationToken cancellationToken
     )
     {
         DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, TenantId, cancellationToken);
         var sql = $"DELETE FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
-        return connection.ExecuteAsync(
+        return await connection.ExecuteAsync(
             new CommandDefinition(
                 sql,
                 new { Id = id, TenantId },
@@ -134,6 +147,10 @@ public class DataStoreRepository(
             int id = await InsertDataStore(command, transaction, CancellationToken.None);
             await transaction.CommitAsync();
             return new DataStoreInsertResult.Success(id);
+        }
+        catch (DataStoreCatalog.NameReservedException)
+        {
+            return new DataStoreInsertResult.FailureDuplicateName();
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
         {
@@ -395,6 +412,31 @@ public class DataStoreRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            await DataStoreCatalog.AcquireTenantGateAsync(transaction, TenantId, CancellationToken.None);
+            bool exists = await connection.ExecuteScalarAsync<bool>(
+                $"""SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()}) THEN 1 ELSE 0 END AS bit);""",
+                new { command.Id, TenantId },
+                transaction
+            );
+            if (!exists)
+            {
+                return new DataStoreUpdateResult.FailureNotExists();
+            }
+            if (
+                await DataStoreCatalog.HasManagedNameReservationAsync(
+                    transaction,
+                    TenantId,
+                    command.Name,
+                    command.Id,
+                    CancellationToken.None
+                )
+            )
+            {
+                return new DataStoreUpdateResult.FailureDuplicateName();
+            }
+
             bool preserveConnectionString = ConnectionStringWrite.PreservesExistingValue(
                 command.ConnectionString
             );
@@ -436,11 +478,12 @@ public class DataStoreRepository(
                 );
             }
 
-            var affectedRows = await connection.ExecuteAsync(sql, parameters);
+            var affectedRows = await connection.ExecuteAsync(sql, parameters, transaction);
             if (affectedRows == 0)
             {
                 return new DataStoreUpdateResult.FailureNotExists();
             }
+            await transaction.CommitAsync();
             return new DataStoreUpdateResult.Success();
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
