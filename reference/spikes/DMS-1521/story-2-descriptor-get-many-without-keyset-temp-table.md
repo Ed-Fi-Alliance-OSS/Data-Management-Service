@@ -283,6 +283,6 @@ test-adaptation section, passed every check on both engines:
 
 ## Estimate
 
-**3 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
+**2 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
 adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness, and a short performance session
 set on each engine, plus the likely SQL Server rerun (N9).

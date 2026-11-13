@@ -11,8 +11,8 @@ stories:
 
 | ID | Candidate story | Paths and engines | Estimate |
 | --- | --- | --- | --- |
-| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. Owns the shared keyset-contract work | 8 |
-| [Story 2](story-2-descriptor-get-many-without-keyset-temp-table.md) | Descriptor GET-many without `descriptor_page` | P4 on PostgreSQL and SQL Server | 3 |
+| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. Owns the shared keyset-contract work | 3 |
+| [Story 2](story-2-descriptor-get-many-without-keyset-temp-table.md) | Descriptor GET-many without `descriptor_page` | P4 on PostgreSQL and SQL Server | 2 |
 
 Paths, as numbered in the findings: P1 resource GET-many (query keyset), P2 read-acceleration
 candidate metadata, P3 read-acceleration selected-page fallback, P4 descriptor GET-many.

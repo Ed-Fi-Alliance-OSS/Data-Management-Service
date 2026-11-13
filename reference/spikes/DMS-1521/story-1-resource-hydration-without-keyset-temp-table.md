@@ -398,7 +398,7 @@ It is a starting point:
 
 ## Estimate
 
-**8 story points.** The prototype exists, but production work remains:
+**3 story points.** The prototype exists, but production work remains:
 
 - a keyset contract that separates PostgreSQL from SQL Server P1 and P3, while SQL Server P2 gets
   its own relation;
