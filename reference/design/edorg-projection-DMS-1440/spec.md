@@ -47,7 +47,9 @@ Existing behavior made explicit:
   documented and tested at the component boundary; the cross-component conclusion is derived from the
   source. A follow-up is proposed in the sync report.
 - **M15.** A data store DMS already holds whose route context changed is `404 target-not-found`
-  without a reload until the catalog's periodic refresh replaces it.
+  without a reload until the tenant's catalog is loaded again: by the first request after the cache
+  expiration (request-triggered, and off when expiry refresh is disabled) or by a request for any id
+  the cached catalog does not hold.
 
 The reader is also exercised end to end against a single-tenant DMS in Keycloak mode
 (`./build-dms.ps1 E2ETest -IdentityProvider keycloak -RunDmsProjectionReaderKeycloakE2E`, run by the SQL

@@ -529,8 +529,9 @@ the reader classifies as transient, so its job retries until the restart.
 
 This is not catalog lag, which converges without a restart: a data store
 registered after DMS loaded the tenant's catalog is found by the reload on its
-first request, and a changed route context is picked up at the catalog's
-periodic refresh ([target resolution](#target-resolution)).
+first request, and a changed route context is picked up when the tenant's
+catalog is next loaded, by an expiry refresh or a miss
+([target resolution](#target-resolution)).
 
 ### Fixed titles and details
 
@@ -604,10 +605,20 @@ its first request.
 Only a missing id triggers that reload. A data store DMS already holds whose
 route context changed in the Configuration Service (for example, a `schoolYear`
 context added after DMS loaded the store) is answered `404 target-not-found`,
-without a reload, until the catalog's periodic refresh replaces the stale entry
-(`CacheSettings:DataStoreCacheExpirationSeconds`, 600 seconds by default; with
-`DataStoreCacheRefreshEnabled` set to `false`, only a DMS restart does). The
-next request is then served.
+without a reload, until the tenant's catalog is loaded again, which happens in
+one of two ways:
+
+- **Expiry refresh.** The first request for the tenant after
+  `CacheSettings:DataStoreCacheExpirationSeconds` (600 seconds by default) has
+  elapsed reloads the catalog before it is used. The refresh is triggered by
+  that request, not by a timer, and it is off when `DataStoreCacheRefreshEnabled`
+  is `false` or the expiration is not positive.
+- **A miss.** A request for any data store id the cached catalog does not hold
+  reloads the whole tenant catalog, which replaces the stale entry too. This
+  happens whether or not expiry refresh is enabled.
+
+The first request after either reload is served. A DMS restart also clears the
+stale entry.
 
 | Situation | Response |
 | --- | --- |
