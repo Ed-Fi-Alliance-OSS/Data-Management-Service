@@ -139,7 +139,13 @@ Each edit is **mandated by DMS-1521's decision**
   as RCSI.
 - **C5.** No single-document path changes.
 - **C6.** The handler, its tests, the test doubles, the design documents above, and the
-  `TEMPORARY` grant in the snapshot doc and interop harness change in the same PR.
+  `TEMPORARY` grant in the snapshot doc and interop harness change in the same PR. The PR also
+  adds an entry to `docs/changelog/8.2.0.md`, the changelog for fix version v8.2 (create the file
+  if the release has none yet). The entry says that resource and descriptor GET-many work on a
+  PostgreSQL read replica and in any read-only transaction
+  ([DMS-1687](https://edfi.atlassian.net/browse/DMS-1687)), and that the PostgreSQL reader role
+  no longer needs `TEMPORARY` (`docs/SNAPSHOTS-AND-READ-REPLICAS.md`), although DMS 8.1 still
+  does. It cites only the ticket and that doc.
 
 ### Performance thresholds
 
@@ -309,5 +315,5 @@ test-adaptation section, passed every check on both engines:
 ## Estimate
 
 **2 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
-adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness, and a short performance session
+adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness, the changelog entry, and a short performance session
 set on each engine, plus the likely SQL Server rerun (N9).

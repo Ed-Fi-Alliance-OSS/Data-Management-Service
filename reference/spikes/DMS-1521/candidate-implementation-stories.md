@@ -39,7 +39,8 @@ folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.m
   changes `DescriptorReadHandler` itself.
 - Jira links: story 1 **blocks** story 2. Both **relate to** DMS-1521, DMS-848, and DMS-1687.
 - Story 1 fixes [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) (GET-many fails on a PostgreSQL read replica; cloned from
-  [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for the resource paths. The fix is complete only when story 2 also
+  [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for resource GET-many (P1). P2 and P3 never reach a replica: read
+  acceleration falls back to P1 on a derivative target. The fix is complete only when story 2 also
   lands, because the descriptor batch issues the same DDL.
 
 ### Dependency graph
@@ -54,7 +55,7 @@ graph TD
   DMS1521 -. relates .- S1
   DMS1521 -. relates .- S2
   S1 --> S2
-  S1 -. fixes resource paths .-> DMS1687
+  S1 -. fixes resource GET-many .-> DMS1687
   S2 -. fixes descriptor path .-> DMS1687
 ```
 
@@ -135,7 +136,7 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 | AC5, priorities and the SQL Server explanation | [Recommendation](keyset-temp-table-findings.md#sql-server-inline-on-descriptor-and-candidate-metadata-page-stays-on-p1-and-p3); no story for SQL Server P1 and P3 |
 | AC6, retained `#page` (SQL Server P1, P3) | Documented in [Retained fallback](keyset-temp-table-findings.md#retained-fallback). Story 1 keeps those batches byte-identical (E5) and records the condition in `flattening-reconstitution.md` |
 | AC7, thresholds | Each story's acceptance criteria |
-| DMS-1687 (from EDFI-2956), read-only replica | Story 1 (P1–P3) and story 2 (P4), threshold E4. Story 2 also drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness |
+| DMS-1687 (from EDFI-2956), read-only replica | Story 1 (P1) and story 2 (P4), threshold E4. Only P1 and P4 reach a replica; P2 and P3 run only on the primary, so story 1's read-only tests for them are hardening. Story 2 also drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, and adds the release's changelog entry |
 | Performance harness `PgsqlPlanCapture` (rejects string literals; binds only page-selection values) | Story 1 updates it with a unit test, so the PostgreSQL resource hydration batches in the baseline and final-gate runs can still be captured. The final gate's PostgreSQL descriptor run (`Given_Postgresql_FinalGateDescriptorRun`) already fails on `main`: the capture rejects `--` comments (`PgsqlPlanCapture.cs` ≈109–110), and DMS-1401 (`8a4eda2f6`) added marker comments to the descriptor batch. Neither story changes that; story 1's literal support also accepts story 2's literals |
 | Design drift, `descriptor_page` in `partitioned-cursor-paging.md` | Story 2 |
 | Keyset contract in `mpack-format-v1.md` | Story 1 updates the contract description. No pack exists to reject: pack emission is not implemented |

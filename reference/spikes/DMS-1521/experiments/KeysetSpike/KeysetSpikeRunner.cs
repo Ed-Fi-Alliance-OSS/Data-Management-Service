@@ -205,6 +205,15 @@ public static class KeysetSpikeRunner
             );
         }
 
+        // The API windows run each request on a new backend (the in-process host never publishes
+        // data-store ownership, so the data-source cache disposes each request's pool): custom plans
+        // only. Production's pooled connections reach generic plans, so the offset-0 resource batch
+        // also runs the one-connection replay window the fallback batch gets.
+        foreach ((ReplayBatch batch, _) in batches.Where(item => item.Replay))
+        {
+            await AutoExplainReplayAsync(context, run, $"resource.replay.{batch.PageSize}", batch);
+        }
+
         await CaptureEvidenceAsync(
             settings,
             context,
@@ -831,8 +840,37 @@ public static class KeysetSpikeRunner
                     result.Errors == 0 && result.WarmupErrors == 0,
                     $"auto_explain {label}: replay errors"
                 );
+
+                // The fresh pool served one sequential client, so this is the replay's physical
+                // connection and its session-local prepared statements. Recorded, not required: on
+                // main the recreated temp table invalidates them.
+                run.WriteJson($"autoexplain/{label}.prepared.json", await PreparedStatementsAsync(fresh));
             }
         );
+    }
+
+    private static async Task<JsonArray> PreparedStatementsAsync(ReplayTarget target)
+    {
+        await using DbConnection connection = await target.OpenAsync();
+        await using DbCommand command = connection.CreateCommand();
+        command.CommandText =
+            "SELECT statement, generic_plans, custom_plans FROM pg_prepared_statements WHERE NOT from_sql ORDER BY prepare_time;";
+        JsonArray statements = [];
+        await using DbDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string text = reader.GetString(0);
+            statements.Add(
+                new JsonObject
+                {
+                    ["genericPlans"] = reader.GetInt64(1),
+                    ["customPlans"] = reader.GetInt64(2),
+                    ["statement"] = text.Length > 220 ? text[..220] : text,
+                }
+            );
+        }
+
+        return statements;
     }
 
     internal static void Guard(KeysetSpikeSettings settings, RunArtifacts run)

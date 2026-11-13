@@ -13,8 +13,9 @@ ids inside the batch instead.
 - **SQL Server:** candidate metadata (P2) only. Resource GET-many (P1) and the selected-page
   fallback (P3) keep `#page`, byte-identical to `main`.
 - **Owns** the shared keyset-contract work that story 2 consumes.
-- **Fixes** [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) (cloned from [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for the
-  resource paths.
+- **Fixes** [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) (cloned from [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for
+  resource GET-many (P1). P2 and P3 never run on a replica: read acceleration falls back to P1 on a
+  derivative target.
 - **Evidence:** [DMS-1521 findings](keyset-temp-table-findings.md), with the prototype in
   [`experiments/prototype.patch`](experiments/prototype.patch).
 
@@ -175,7 +176,8 @@ Each edit is **mandated by DMS-1521's decision**
   same SQL and binding as on `main`.
 - **C6.** Plan contracts, SQL generation, binding, readers, manifests, goldens, tests, the
   performance harness's PostgreSQL plan capture, and the design documents above change in the same
-  PR.
+  PR. Story 2 adds the release's changelog entry for DMS-1687; if story 2 misses the release, this
+  story adds it for resource GET-many instead.
 
 ### Performance thresholds
 
@@ -191,13 +193,13 @@ and deep.
 | E1 | PostgreSQL catalog `n_tup_ins` + `n_tup_del` per request on the resource, candidate, and fallback batches (calibrated observer) | = 0 | 0 (`main` 44) |
 | E2 | SQL Server temp tables per candidate batch: XE `object_created`. `Temp Tables Creation Rate` is reported, not gated (server-wide); the CI batch-text check guards against table variables | XE = 0 in every window; a window whose server counter reads non-zero is repeated | 0 (`main` 1) |
 | E3 | SQL Server `sql_statement_recompile` events and `plan_generation_num` change after warmup | = 0 | 0 |
-| E4 | PostgreSQL P1–P3 under `default_transaction_read_only = on` | succeed, exact rows | probe passed |
+| E4 | PostgreSQL P1–P3 under `default_transaction_read_only = on` | succeed, exact rows | probe passed (P1 and P3 shapes) |
 | E5 | SHA-256 of the SQL Server P1 and P3 batch texts | equal to `main` | – |
 | E6 | Database commands per request | equal to `main` | equal |
 | P1 | PostgreSQL resource GET-many API p50 | ratio ≤ 0.74 − m | 0.29–0.47 |
 | P2 | PostgreSQL resource GET-many API p95 | ratio ≤ 0.74 − m | 0.30–0.48 |
-| P3 | Child-collection execution time per request (resource and fallback; driver-path `auto_explain`) | ratio ≤ 0.52 − m | 0.002–0.021 |
-| P4 | Child-collection buffers per request (resource and fallback) | ratio ≤ 0.74 − m | 0.023–0.466 |
+| P3 | Child-collection execution time per request, 25 and 500 rows (driver-path `auto_explain`: the resource API window, custom plans; the one-connection replay windows for the resource and fallback batches, generic plans) | ratio ≤ 0.52 − m | 0.002–0.021 (the resource one-connection window was not run; see below) |
+| P4 | Child-collection buffers per request, same windows as P3 | ratio ≤ 0.74 − m | 0.023–0.466 |
 | P5 | Fallback batch replay p50 and p95 at concurrency 1, and p95 at 32 | ratio ≤ 0.59 − m | 0.02–0.17 |
 | N2 | PostgreSQL cache-hit API p50 / p95 | ratio ≤ 1 + m | 0.84–0.88 |
 | N3 | PostgreSQL forced-miss complete API p50 / p95 | ratio ≤ 1 + m | 0.69–0.90 |
@@ -210,14 +212,28 @@ and deep.
 | N10 | SQL Server candidate logical reads per request | ratio ≤ 1 + m | 0.81 |
 | N11 | SQL Server resource GET-many API p50 / p95 (P1 unchanged) | ratio ≤ 1 + m | 0.94–1.02 |
 
-The PR reports child-collection cost under both PostgreSQL plan types: custom (the API window) and
-generic (the one-connection fallback window after five executions). It also reports the plan node
-types (`Index Scan` expected) as supporting evidence; they are not a threshold. Beside N8 it also
-reports the SQL Server candidate batch's p95 and p99 at concurrency 8 and 32, at 25 and 500 rows
-(reported, not gated): the prototype raised the p99 at 32 sessions from 70.8 to 314 ms at 500 rows,
-and in one of three sessions its p95 at 8 sessions and 25 rows from 5.9 to 63.2 ms. If the story's
-design keeps either tail, the PR names its cause (for example, memory-grant or parallelism waits on the `OPENJSON`
-statements).
+P3 and P4 gate child-collection cost under both PostgreSQL plan types, for both batches that load
+child rows. The API window runs custom plans only: the in-process host never publishes data-store
+ownership, so each request runs on a new backend. Production's pooled connections auto-prepare, so
+the readers reach generic plans there. R1 therefore also replays the offset-0 resource batch and the
+fallback batch on one connection, 20 times, and records that connection's
+`pg_prepared_statements` (`autoexplain/<label>.prepared.json`). A one-connection window counts only
+when, on the story branch, it shows `generic_plans > 0` for every keyset reader; otherwise it is
+rerun. This gate holds whichever binding option the story picks (see Prepared plans), and it matters
+most if the story gives each keyset kind its own relation: carrier-only resource readers would have
+an estimate frozen at their third use. The spike ran the one-connection window for the fallback
+batch only. Under the prototype it shares the resource batch's reader text, and its child time was
+0.27 ms generic against 0.30 ms custom at 25 rows, and 3.57 against 3.54 ms at 500. The PR also
+reports the plan node types (`Index Scan` expected) as supporting evidence; they are not a
+threshold.
+
+Beside N8 the PR reports the SQL Server candidate batch's p95 and p99 at concurrency 8 and 32, at
+25 and 500 rows (reported, not gated; findings
+[Recommendation](keyset-temp-table-findings.md#sql-server-inline-on-descriptor-and-candidate-metadata-page-stays-on-p1-and-p3),
+item 1, records why the tail is accepted on this opt-in path). The prototype raised the p99 at 32
+sessions from 70.8 to 314 ms at 500 rows, and in one of three sessions its p95 at 8 sessions and
+25 rows from 5.9 to 63.2 ms. If the story's design keeps either tail, the PR names its cause (for
+example, memory-grant or parallelism waits on the `OPENJSON` statements).
 
 ## Test requirements
 
@@ -289,7 +305,9 @@ statements).
   after each commit or rollback, which catches a session-level (`is_local = false`) carrier.
 - **Read-only** (E4). Resource GET-many, candidate selection, and a selected page in a transaction
   with `default_transaction_read_only = on`. `main`'s DDL prelude, run as a positive control,
-  fails with SQLSTATE 25006.
+  fails with SQLSTATE 25006. Resource GET-many is the DMS-1687 case. Candidate selection and the
+  selected page run only on the primary (read acceleration falls back to P1 on a replica), so
+  their cases are hardening for a read-only primary.
 - **Selected-page order.** Keep `Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentIds`
   green.
 - **Type (d) adaptation.** `Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids`, both
@@ -392,7 +410,7 @@ It is a starting point:
 - **Blocks** story 2, which reuses the carrier name, the set-before-read rule, and the SQL Server
   JSON carrier.
 - **Relates to** DMS-1521 (the spike), DMS-848, and DMS-1687.
-- **Fixes** DMS-1687 for the resource paths. The descriptor path follows in story 2.
+- **Fixes** DMS-1687 for resource GET-many (P1). The descriptor path follows in story 2.
 - **Starts** after the DMS-1521 approval gate accepts the PostgreSQL transaction-local carrier for
   production.
 

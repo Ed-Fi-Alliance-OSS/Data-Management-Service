@@ -129,8 +129,12 @@ on an Aurora PostgreSQL reader instance. DMS 8.1 routes the GET to the reader, w
 `25006: cannot execute DROP TABLE in a read-only transaction`, and the API returns 500.
 EDFI-2956 was cloned on 2026-11-11 to [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687), which tracks the fix in DMS.
 
-Every PostgreSQL keyset path (P1-P4) issues this DDL, so a read-only-safe keyset is a requirement
-for the recommendation, not just a side effect:
+Every PostgreSQL keyset path (P1-P4) issues this DDL, but only P1 and P4 reach a replica. On a
+non-primary target, read acceleration returns the plain relational query before candidate selection
+runs (`DocumentCacheReadAccelerationCoordinator.cs`: `QueryAsync` ≈527–547, `TryGetSelectedTargetKey`
+≈1013–1021, `DerivativeTargetSelected`), because the document cache describes the parent database.
+P2 and P3 run read-only only on a read-only primary, so their read-only behavior is hardening. A
+read-only-safe keyset is a requirement for the recommendation, not just a side effect:
 
 - The ANALYZE-only mitigation keeps the temp table and adds another write, so it does not fix
   EDFI-2956.
@@ -1072,10 +1076,17 @@ because every request scans about 2 million child rows. Under `I`, throughput ke
   two commands of a cache-hit request share one pid). Prepared statements therefore never reached
   PostgreSQL's five-execution switch to a generic plan on the API path, and all its plans are
   custom plans, in `B` and `I` alike. The pooled replays and the fallback window (one physical
-  connection) provide the steady-state, generic-plan evidence above. The cause was not
-  established in this task: production's `NpgsqlDataSourceCache` keeps its data source, and the
-  leased connection string has `pooling=True`. It affects both variants equally, and it is
-  recorded for task 9's prepared-plan statement and the story evidence.
+  connection) provide the steady-state, generic-plan evidence above. The cause, found later by
+  reading the code (not run), is the in-process API host, not production. The host replaces the
+  data-store provider with `FakeDataStoreProvider`
+  (`src/dms/tests/EdFi.DataManagementService.Tests.Integration/Doubles/ExternalDoublesRegistration.cs`
+  ≈100, ≈136–143), which never calls `IDataStoreOwnershipReconciler.Reconcile`; only
+  `ConfigurationServiceDataStoreProvider` (≈266) does. `NpgsqlDataSourceCache` therefore builds
+  every data source as retired (≈135) and disposes it when the request's lease ends (≈296–300), so
+  the next request opens a new pool and a new backend. Production publishes ownership, so its
+  pools persist and auto-prepare (`NpgsqlDataSourceLifetime.cs` ≈57–58, `MaxAutoPrepare = 256`),
+  and the readers reach generic plans. It affects both variants equally; the stories gate generic
+  plans with one-connection windows (see [Thresholds](#thresholds)).
 - **Spike-plan planning time** per batch is slightly higher under `I` (resource 6.74 → 7.06 ms
   and 7.89 → 8.50 ms; one plan per statement, all custom), because the inline relation is a longer
   expression than a temp-table name. Under re-use (above), `I` plans far less often, so planning
@@ -1628,9 +1639,12 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
   statements yet (inferred, not probed; see [Plans and planning](#plans-and-planning)); on one connection they go generic after five
   executions, like the other parameterized readers. Plan time per request falls by 5–94%.
 - **The API path ran on a new backend per request** in both variants, so its plans were all custom
-  plans. The cause was not established; it affects `B` and `I` equally. The pooled replays and the
-  one-connection fallback window supply the generic-plan evidence. Story 1's evidence must show
-  child cost under both plan types (the Testing Strategy requirement).
+  plans. The cause is the in-process host, which never publishes data-store ownership, so the
+  data-source cache disposes each request's pool (see [Plans and planning](#plans-and-planning));
+  production's pools persist and reach generic plans. It affects `B` and `I` equally. The pooled
+  replays and the one-connection fallback window supply the generic-plan evidence. Story 1 gates
+  child cost under both plan types, for the resource and fallback batches (P3, P4; the Testing
+  Strategy requirement).
 - **Residual risk, descriptor path.** A connection whose third descriptor page (the one that
   auto-prepares the readers) is small keeps that estimate for later pages. The descriptor
   statements join small descriptor tables by key, and no measured cell regressed, but no run
@@ -1680,15 +1694,24 @@ both through `AppendRelation` and gives no guidance on this point; story 1 desig
 
 **Why, in AC5 order.**
 
-1. **The create and drop go where nothing regresses.** P2 and P4 create 0 temp tables in all their
+1. **The create and drop go where no gated metric regresses.** P2 and P4 create 0 temp tables in all their
    `I` windows, measured with the calibrated XE count. Their `PAGELATCH` contention (12.7–17.2
    waits and 8–62 ms per request at 32 sessions) is gone. Replay p50 and p95 at concurrency 1 fall
    to 0.45–0.93×, throughput at 32 rises ×1.89–×2.68, and logical reads fall (descriptor 6,607 →
    5,755 at 500 rows; candidate 4,066 → 3,276). Every API cell stays within its non-regression
    bound. One cost is not gated: the candidate batch's p99 at 500 rows and 32 sessions rises from
    70.8 to 314 ms (×4.4, consistent across the three sessions, CV 16%) while its p95 falls to
-   0.31×. Story 1 reports that p99 beside N8, so its PR shows whether the production design keeps
-   the tail.
+   0.31×. The tail is accepted on this path, for three reasons:
+   - P2 runs only with read acceleration on, which is off by default
+     (`DocumentCache:ReadAcceleration:Enabled` is `false` in the shipped `appsettings.json` and the
+     compose default).
+   - Every other measure at that cell improves: p50 0.19×, p95 0.31×, throughput ×1.89.
+   - `I`'s p99 at 32 sessions is 244 ms at 25 rows and 314 ms at 500. `main`'s is 199–1,253 ms on
+     the other seven replay cells, and 70.8 ms at 500 rows is its lowest. So ×4.4 compares `I`'s
+     tail with `main`'s tightest cell; it is not a cost that appears only at 500 rows.
+
+   The cause is still unknown, so story 1 reports that p99 beside N8, and its PR names the cause if
+   the production design keeps the tail.
 2. **Hydration is not a SQL Server problem.** `#page` has statistics (estimate 25), every child
    statement seeks in both variants, and neither variant recompiled after warmup. The DMS-1248
    recompile concern did not occur on these paths.
@@ -1884,12 +1907,16 @@ cells at offset 0, shallow, and deep):
 |---|---|---|---|---|---|---|
 | P1 | Resource GET-many API p50 | 0.47 | 0.74 | ≤ 0.69 | 0.29–0.47 | R1 `cells.json` |
 | P2 | Resource GET-many API p95 | 0.48 | 0.74 | ≤ 0.69 (0.65 at the spike's largest m, 8.8%) | 0.30–0.48 | R1 `cells.json` |
-| P3 | Child-collection execution time, summed per request (resource and fallback, driver path `auto_explain`) | 0.021 | 0.52 | ≤ 0.47 | 0.002–0.021 | R1 `autoexplain/` |
-| P4 | Child-collection buffers, summed per request (resource and fallback) | 0.466 | 0.74 | ≤ 0.69 | 0.023–0.466 | R1 `autoexplain/` |
+| P3 | Child-collection execution time, summed per request (driver path `auto_explain`: the resource API window, custom plans; one-connection replay windows for the resource and fallback batches, generic plans) | 0.021 | 0.52 | ≤ 0.47 | 0.002–0.021 (resource one-connection window not run) | R1 `autoexplain/` |
+| P4 | Child-collection buffers, summed per request (same windows as P3) | 0.466 | 0.74 | ≤ 0.69 | 0.023–0.466 | R1 `autoexplain/` |
 | P5 | Fallback batch replay p50 and p95 at concurrency 1, and p95 at 32 | 0.17 | 0.59 | ≤ T − m (m capped at 20%, so ≤ 0.39 at worst) | 0.02–0.17 | R1 `replays.json` |
 
-Child statements must be shown under both custom and generic plans: the API window and the
-one-connection fallback window. Their node types (`Index Scan` expected) are reported as supporting
+P3 and P4 gate child statements under both custom and generic plans: the API window (custom, a new
+backend per request in the in-process host) and the one-connection replay windows for the resource
+and fallback batches. A one-connection window counts only when, on the story branch, its
+`autoexplain/<label>.prepared.json` shows `generic_plans > 0` for every keyset reader; otherwise
+it is rerun. The spike ran that window for the fallback batch only; under the prototype it shares
+the resource batch's reader text. Node types (`Index Scan` expected) are reported as supporting
 evidence, not as a threshold.
 
 **Non-regression thresholds** (ratio ≤ 1 + m for cost, ≥ 1 − m for rate). The "Spike `1 + m`"
