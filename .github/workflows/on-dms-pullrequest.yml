@@ -2900,12 +2900,18 @@ jobs:
       - name: Require the DMS Projection Reader Keycloak E2E Guard
         if: matrix.identityprovider == 'keycloak' && steps.e2e.outcome == 'success' && steps.sanitize.outcome == 'success'
         run: |
-          # A missing TRX would only skip its upload, so a run that silently skipped the reader is caught here:
-          # the guard prints this line only after it has checked every named live test.
+          # A missing TRX would only skip its upload, so a run that silently skipped the reader is caught here.
+          # The Keycloak TRX guard prints this line once it has counted the named live tests, before its final
+          # checks; a failed check still fails the E2E step, and this step then does not run. The line is
+          # echoed from the SANITIZED log, because the log itself is uploaded only when the job fails.
           $log = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}/build-dms-setup.log"
-          if (-not (Test-Path -LiteralPath $log) -or -not (Select-String -LiteralPath $log -SimpleMatch -Quiet 'DMS projection reader Keycloak E2E: ')) {
+          $guardLine = if (Test-Path -LiteralPath $log) {
+              Select-String -LiteralPath $log -SimpleMatch 'DMS projection reader Keycloak E2E: ' | Select-Object -Last 1
+          }
+          if ($null -eq $guardLine) {
               throw "The sanitized setup log has no DMS projection reader Keycloak E2E guard line; the reader run did not complete."
           }
+          Write-Host $guardLine.Line
 
       - name: Show Sanitized DMS E2E Setup Log
         if: failure() && steps.sanitize.outcome == 'success'

@@ -860,6 +860,8 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
                 ))
             $guardStep | Should -Match ([regex]::Escape("'DMS projection reader Keycloak E2E: '"))
             $guardStep | Should -Match 'throw '
+            $guardStep | Should -Match ([regex]::Escape('Write-Host $guardLine.Line')) `
+                -Because "a successful job uploads no setup log, so the sanitized guard line is the evidence the run kept"
 
             (Get-Content -LiteralPath $script:buildScriptPath -Raw) |
                 Should -Match ([regex]::Escape('Write-Output "DMS projection reader Keycloak E2E: ')) `
