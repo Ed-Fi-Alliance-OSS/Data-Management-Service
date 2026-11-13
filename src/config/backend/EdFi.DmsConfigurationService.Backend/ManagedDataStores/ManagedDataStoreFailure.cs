@@ -26,6 +26,40 @@ public sealed record ManagedDataStoreFailure
     public DmsProvisioningFailureCode? ProvisioningCode { get; }
     public string? JobCode { get; }
 
+    /// <summary>Restore bounded stored evidence without reconstructing diagnostics or accepting free text.</summary>
+    public static ManagedDataStoreFailure Rehydrate(
+        DmsProvisioningFailureCategory category,
+        DmsProvisioningFailureCode? provisioningCode,
+        string? jobCode
+    )
+    {
+        if (provisioningCode is { } code)
+        {
+            if (jobCode is not null || !DmsProvisioningFailure.CategoriesOf(code).Contains(category))
+            {
+                throw new ArgumentException("Invalid persisted provisioning failure metadata.");
+            }
+        }
+        else
+        {
+            JobErrorCode? known = JobErrorCode.Infrastructure.FirstOrDefault(known => known.Code == jobCode);
+            if (
+                known is null
+                || (
+                    category != FromJob(known).Category
+                    && !(
+                        known == JobErrorCode.HandlerFailed
+                        && category == DmsProvisioningFailureCategory.Transient
+                    )
+                )
+            )
+            {
+                throw new ArgumentException("Invalid persisted job failure metadata.");
+            }
+        }
+        return new(category, provisioningCode, jobCode);
+    }
+
     public static ManagedDataStoreFailure FromProvisioner(DmsProvisioningFailure failure)
     {
         ArgumentNullException.ThrowIfNull(failure);
