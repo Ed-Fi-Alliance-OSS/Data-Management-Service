@@ -183,8 +183,13 @@ inconclusive for reviewer sign-off instead of counting it as met.
   `set_config` would return the previous page's rows. Each page returns exactly its own boundary,
   version ids, and owner rows, and the zero-limit and empty pages return none. It fails if either
   path skips `set_config`, for example by copying `main`'s zero-limit shortcut, which skips
-  selection (`DescriptorReadHandler.cs` ≈2047–2058). Separately, on one pooled physical connection, a failed batch followed by an empty
-  page, with the carrier reading `''` after each, catches a session-level carrier.
+  selection (`DescriptorReadHandler.cs` ≈2047–2058).
+- **Carrier across transactions** (PostgreSQL). On one pooled physical connection: a non-empty
+  page, then a failed batch (an error after the boundary statement sets the carrier), then an
+  empty page. The carrier reads `''` after each commit or rollback. The read after the non-empty
+  page is the one that catches a session-level (`is_local = false`) carrier: PostgreSQL reverts
+  even a session-level `set_config` when its transaction aborts, and an empty page writes `''`
+  itself, so neither later read can.
 - **Read-only** (E4), with `main`'s DDL prelude failing with SQLSTATE 25006 as the positive
   control.
 - `*DescriptorReadQueryFilterTests` and `*DescriptorQueryOwnershipAuthorizationTests` pass on
@@ -212,10 +217,15 @@ and `AuthoritativeTimestampReadConsistencyScenario` pass.
 **Performance evidence.** Attach R1 and R2 artifacts from runs with `-Fixtures resource,descriptor`
 (the resource run calibrates the observer; the descriptor run itself takes about 2–5 min per
 engine), from three interleaved sessions on one machine. Also report the **residual estimate
-risk** on PostgreSQL: the descriptor readers have no parameters, so their plan is always generic,
-and its keyset estimate is frozen at the first page planned on that connection. On one connection,
-read a 1-row page and then a 500-row page, and report the 500-row batch's time against a fresh
-connection. This is reported evidence, not a CI test; the spike did not measure the sequence.
+risk** on PostgreSQL: the descriptor readers have no parameters, so once Npgsql auto-prepares them
+(on their third use, `AutoPrepareMinUsages = 3`) their plan is generic, and its keyset estimate is
+frozen at the page of that third use; the first two uses are planned unprepared with the exact
+carrier. On one physical connection, read a 1-row page three times, confirm in
+`pg_prepared_statements` that the readers' `generic_plans` is above 0, then read a 500-row page.
+Report its time against a connection whose first three pages held 500 rows. Also report the plan
+the boundary statement uses: it now carries the page selection, and under `plan_cache_mode = auto`
+it went generic after five executions in the spike's probe (`main` re-planned it on nearly every
+call). This is reported evidence, not a CI test; the spike did not measure the sequence.
 
 ## Implementation guidance (non-binding)
 
@@ -249,5 +259,5 @@ test-adaptation section, passed every check on both engines:
 ## Estimate
 
 **3 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
-adaptation, three integration tests, two design-document edits, and a short performance session
+adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, and a short performance session
 set on each engine.

@@ -329,7 +329,14 @@ It is a starting point:
   `OPENJSON(@page_keyset) WITH ([DocumentId] bigint '$.DocumentId', [Ordinal] int '$.Ordinal')`.
 - **Prepared plans.** Under `plan_cache_mode = auto`, the parameterized readers take five custom
   plans with an exact estimate, then a generic plan that estimates 10 rows. Both were measured as
-  cheap on `primary-500k`. Do not force a plan mode.
+  cheap on `primary-500k`. Do not force a plan mode. In the prototype, a query keyset binds
+  `@page_document_ids` as an untyped NULL and a selected page as `bigint[]`, against the same reader
+  text. Npgsql keys auto-prepared statements by SQL text and runs an execution whose parameter
+  types differ unprepared, so on one connection only the kind that prepares the readers first gets
+  their prepared plans; the other re-plans every call, as `main` does (spike probe: 7 prepared
+  executions of 16 alternating uses per reader). Either bind the query keyset's NULL as a typed
+  `bigint[]`, so both kinds share one prepared statement per reader, or keep the untyped NULL and
+  state the trade-off in the PR.
 - **Byte-identity check.** Before the PR, compare the SHA-256 of each captured batch (`cells.json`
   in R1 and R2) between `main` and the branch. SQL Server P1 and P3 must match exactly (E5).
 - **Existing carrier.** The write path already uses this mechanism: `PgsqlCompositeTargetCarrier`

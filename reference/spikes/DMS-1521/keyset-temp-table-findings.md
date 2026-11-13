@@ -798,7 +798,8 @@ order, the carrier read back afterwards on the same connection, and the backend 
 
 Each probe batch runs in its own transaction, and the carrier is transaction-local. These probes
 therefore show that nothing survives a commit or rollback, and the `''` reading rules out a
-session-level carrier. They do not run two batches in one transaction, which is the only place a
+session-level carrier on the resource paths. The descriptor probes check result sets only and never
+read the carrier back, so story 2's own carrier test covers that batch. They do not run two batches in one transaction, which is the only place a
 batch could read another's ids; both stories add that test.
 
 **Plans actually used** (from `pg_prepared_statements` on the probe's own connection, and
@@ -807,9 +808,10 @@ against the actual count):
 
 | Statements | Class | `auto` | `force_custom_plan` | `force_generic_plan` |
 |---|---|---|---|---|
-| Resource keyset readers (10 statements) | Parameterized (`@page_document_ids`) | 50 custom then 20 generic plans: 5 custom per statement, then the generic plan; by execution 8 the estimate is a **fixed 10 rows** for a 25-row page | 70 custom; estimate exact (25 for 25) | 70 generic; estimate fixed at 10 |
+| Resource keyset readers (10 statements) | Parameterized (`@page_document_ids`) | 50 custom then 20 generic plans, all from the query-keyset executions (the alternating selected pages ran unprepared, see below): 5 custom per statement, then the generic plan; by execution 8 the estimate is a **fixed 10 rows** for a 25-row page | 70 custom; estimate exact (25 for 25) | 70 generic; estimate fixed at 10 |
 | Query-keyset carrier statement | Parameterized (`limit`, `offset`) | custom | custom | generic |
 | Descriptor keyset readers (3 statements) | Carrier-only (no parameters) | 42 generic, 0 custom | 42 generic, 0 custom | 42 generic, 0 custom |
+| Descriptor boundary statement (holds the page selection) | Parameterized (`resourceKeyId`, `limit`, `offset`) | 5 custom, then 9 generic | 14 custom | 14 generic |
 
 - A **custom plan estimates the carrier exactly.** `current_setting` is stable, so the planner
   evaluates it while planning, and each statement in the pipelined batch is planned after the
@@ -818,9 +820,23 @@ against the actual count):
 - Under the default `auto` mode **the resource readers converge on the generic plan** after five
   executions, because with an untyped-NULL or array parameter the generic plan's cost is no worse.
   Its keyset estimate is PostgreSQL's fixed 10 rows for an array of unknown length.
-- A **carrier-only statement always gets a generic plan**, whatever the mode, and its estimate is
-  frozen at the carrier's size when the statement was first planned on that connection: 25 here,
-  still 25 for an empty page. A connection whose first descriptor page held 1 row keeps estimating 1.
+- **Query keysets and selected pages do not share these prepared statements.** The probe alternates
+  them on one connection, 16 uses of each reader text, yet each reader shows 7 prepared executions
+  (the two version statements 8 and 6), against 14 for the probe's parameterless carrier read. A
+  query keyset binds `@page_document_ids` as an untyped NULL and a selected page as `bigint[]`;
+  Npgsql keys auto-prepared statements by SQL text and runs an execution whose parameter types
+  differ unprepared. On a connection serving both kinds, the one that reaches three uses first owns
+  the readers' prepared plans, and the other re-plans them on every call, as `main` does.
+- A **carrier-only statement always gets a generic plan once prepared**, whatever the mode, and its
+  estimate is frozen at the carrier's size on the execution that auto-prepared it. Npgsql prepares a
+  statement on its third use (`AutoPrepareMinUsages = 3`; 14 generic plans over 16 uses per reader
+  here); the first two uses are planned unprepared with the exact carrier. Here the third use was a
+  25-row page, so the estimate stays 25, even for an empty page. A connection whose third descriptor
+  page held 1 row keeps estimating 1.
+- The **descriptor boundary statement**, which now holds the page selection, is parameterized: under
+  `auto` it took 5 custom plans, then generic ones (9 of 14). On `main` the descriptor
+  `INSERT … SELECT` was re-planned on nearly every call; the resource selecting statement stays
+  custom (6 of 6).
 
 Both fixed estimates (10, or the first page's size) are far closer to small pages than `baseline`'s
 2,040, but neither tracks the page. Task 5 measures what they cost at 25 and 500 rows on
@@ -1587,9 +1603,10 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
 
 | Statements | Class | Custom plan | Generic plan | What `plan_cache_mode = auto` chose |
 |---|---|---|---|---|
-| Resource and selected-page keyset readers | Parameterized (`@page_document_ids`) | Estimate exact: `current_setting` is stable and folded at planning, and each statement in the pipelined batch is planned after the carrier is set | Fixed estimate of 10 rows | 5 custom plans per statement, then generic (probe: 50 custom, then 20 generic) |
+| Resource and selected-page keyset readers | Parameterized (`@page_document_ids`) | Estimate exact: `current_setting` is stable and folded at planning, and each statement in the pipelined batch is planned after the carrier is set | Fixed estimate of 10 rows | 5 custom plans per statement, then generic (probe: 50 custom, then 20 generic, all query-keyset executions). A query keyset (untyped NULL) and a selected page (`bigint[]`) do not share the prepared statement on one connection: the kind that prepares it first owns it, and the other re-plans every call |
 | Query-keyset selecting statement | Parameterized (`limit`, `offset`, filters) | as in `main` | as in `main` | custom |
-| Descriptor keyset readers | Carrier-only (no parameters) | never used | Always generic; estimate frozen at the carrier's size when the statement was first planned on that connection | generic (42 of 42) |
+| Descriptor keyset readers | Carrier-only (no parameters) | never used | Always generic once prepared; estimate frozen at the carrier's size on the third use, which auto-prepares it (`AutoPrepareMinUsages = 3`) | generic (42 of 42) |
+| Descriptor selecting (boundary) statement | Parameterized (`resourceKeyId`, `limit`, `offset`, filters) | exact, as in `main` | – | generic after five executions (probe: 5 custom, then 9 generic); `main` re-planned it on nearly every call |
 
 - **Both fixed estimates are cheap on `primary-500k`.** In the fallback window on one physical
   connection, child cost per request was 0.30 ms under the first 5 replays' custom plans and
@@ -1606,10 +1623,12 @@ at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relat
   plans. The cause was not established; it affects `B` and `I` equally. The pooled replays and the
   one-connection fallback window supply the generic-plan evidence. Story 1's evidence must show
   child cost under both plan types (the Testing Strategy requirement).
-- **Residual risk, descriptor path.** A connection whose first descriptor page is small keeps that
-  estimate for later pages. The descriptor statements join small descriptor tables by key, and no
-  measured cell regressed, but no run planned a 1-row page and then read a 500-row page on the same
-  connection. Story 2 adds that sequence to its performance evidence (reported, not a CI test).
+- **Residual risk, descriptor path.** A connection whose third descriptor page (the one that
+  auto-prepares the readers) is small keeps that estimate for later pages. The descriptor
+  statements join small descriptor tables by key, and no measured cell regressed, but no run
+  prepared the readers on a 1-row page and then read a 500-row page on the same connection. Story 2
+  adds that sequence (three 1-row pages, then a 500-row page) to its performance evidence
+  (reported, not a CI test).
 
 **Correctness.** No type (b) failure (task 7): 486 of 486 PostgreSQL API integration tests, and the
 backend read-path suite except 2 type (d) and 1 type (a). Carrier probes: 113 of 113. These cover
