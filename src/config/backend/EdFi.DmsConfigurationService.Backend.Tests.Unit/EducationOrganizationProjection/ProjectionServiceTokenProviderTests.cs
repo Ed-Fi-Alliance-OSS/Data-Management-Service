@@ -125,6 +125,27 @@ public class ProjectionServiceTokenProviderTests
     private static ProjectionServiceToken ShouldBeIssued(ProjectionServiceTokenResult result) =>
         result.Should().BeOfType<ProjectionServiceTokenResult.Issued>().Which.Token;
 
+    private static string? CorrelationIdOf(ProjectionServiceTokenResult result) =>
+        result.Should().BeOfType<ProjectionServiceTokenResult.Failed>().Which.Failure.CorrelationId;
+
+    /// <summary>A DMS token endpoint error: RFC 6749 JSON, with the correlation id percent-encoded in a header.</summary>
+    private static HttpResponseMessage OAuthError(
+        HttpStatusCode status,
+        string error,
+        string? correlationHeader
+    )
+    {
+        HttpResponseMessage response = DmsResponses.Text(
+            status,
+            $$"""{"error":"{{error}}","error_description":"The request was refused."}"""
+        );
+        if (correlationHeader is not null)
+        {
+            response.Headers.TryAddWithoutValidation("X-Correlation-ID", correlationHeader);
+        }
+        return response;
+    }
+
     /// <summary>A Token-stage failure with the code's own category and nothing read.</summary>
     private static void ShouldFailWith(ProjectionServiceTokenResult result, Code code, int? httpStatus)
     {
@@ -833,6 +854,94 @@ public class ProjectionServiceTokenProviderTests
         }
     }
 
+    /// <summary>Every status the DMS token endpoint answers an error with, in its RFC 6749 form.</summary>
+    [TestFixture(400, "invalid_request", Code.TokenRejected)]
+    [TestFixture(400, "unsupported_grant_type", Code.TokenRejected)]
+    [TestFixture(401, "invalid_client", Code.TokenRejected)]
+    [TestFixture(413, "invalid_request", Code.UnexpectedResponse)]
+    [TestFixture(429, "temporarily_unavailable", Code.RateLimited)]
+    [TestFixture(500, "server_error", Code.ServiceUnavailable)]
+    [TestFixture(502, "server_error", Code.ServiceUnavailable)]
+    [TestFixture(503, "temporarily_unavailable", Code.ServiceUnavailable)]
+    public class Given_a_token_error_in_the_dms_oauth_format(int status, string error, Code expected)
+    {
+        private ProjectionServiceTokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup() =>
+            _result = await new Harness(
+                FakeDmsHandler.Answering(() =>
+                    OAuthError((HttpStatusCode)status, error, "0HNABCDEF%3A00000001")
+                )
+            ).GetAsync();
+
+        [Test]
+        public void It_is_classified() => ShouldFailWith(_result, expected, status);
+
+        [Test]
+        public void It_takes_the_correlation_id_from_the_decoded_header() =>
+            CorrelationIdOf(_result).Should().Be("0HNABCDEF:00000001");
+    }
+
+    [TestFixture]
+    public class Given_a_token_error_with_a_correlation_id_in_a_problem_body_and_a_header
+    {
+        private static async Task<ProjectionServiceTokenResult> GetWith(string problemBody)
+        {
+            HttpResponseMessage Respond()
+            {
+                HttpResponseMessage response = DmsResponses.Text(
+                    HttpStatusCode.Unauthorized,
+                    problemBody,
+                    "application/problem+json"
+                );
+                response.Headers.TryAddWithoutValidation("X-Correlation-ID", "from-header");
+                return response;
+            }
+
+            return await new Harness(FakeDmsHandler.Answering(Respond)).GetAsync();
+        }
+
+        [Test]
+        public async Task It_keeps_the_problem_body_correlation_id() =>
+            CorrelationIdOf(
+                    await GetWith("""{"type":"urn:ed-fi:api:security","correlationId":"from-body"}""")
+                )
+                .Should()
+                .Be("from-body");
+
+        [Test]
+        public async Task It_takes_the_header_when_the_problem_body_has_none() =>
+            CorrelationIdOf(await GetWith("""{"type":"urn:ed-fi:api:security"}"""))
+                .Should()
+                .Be("from-header");
+    }
+
+    [TestFixture]
+    public class Given_a_token_error_with_an_unusable_correlation_header
+    {
+        private static readonly object?[][] _headers =
+        [
+            ["a%20b", "ab"],
+            ["abc%zz", null],
+            ["%C3%28", null],
+            [new string('a', EducationOrganizationProjectionFailure.MaxCorrelationIdLength + 1), null],
+        ];
+
+        [TestCaseSource(nameof(_headers))]
+        public async Task It_keeps_only_a_sanitized_decoded_value(string header, string? expected)
+        {
+            ProjectionServiceTokenResult result = await new Harness(
+                FakeDmsHandler.Answering(() =>
+                    OAuthError(HttpStatusCode.Unauthorized, "invalid_client", header)
+                )
+            ).GetAsync();
+
+            ShouldFailWith(result, Code.TokenRejected, 401);
+            CorrelationIdOf(result).Should().Be(expected);
+        }
+    }
+
     [TestFixture("not json")]
     [TestFixture("")]
     [TestFixture("[]")]
@@ -1188,6 +1297,9 @@ public class ProjectionServiceTokenProviderTests
         // DMS text is carried, sanitized, in the failure's problem fields; it does not repeat a credential, so the
         // credential checks below cover only what the provider itself could add.
         private const string HostileJson = "FORGED\\r\\nline <b>";
+
+        // The same text as DMS would percent-encode it into X-Correlation-ID.
+        private const string HostileHeader = "FORGED%0D%0Aline%20%3Cb%3E";
         private RecordingLoggerProvider _recorder = null!;
         private List<ProjectionServiceTokenResult> _results = null!;
         private string _basicParameter = null!;
@@ -1210,6 +1322,7 @@ public class ProjectionServiceTokenProviderTests
                         "send failed " + TenantSecret,
                         new IOException("Basic " + _basicParameter)
                     ),
+                    3 => OAuthError(HttpStatusCode.Unauthorized, "invalid_client", HostileHeader),
                     _ => TokenResponse("SECRET-ACCESS-TOKEN-1440"),
                 };
 
@@ -1243,7 +1356,7 @@ public class ProjectionServiceTokenProviderTests
                 provider.GetRequiredService<IProjectionServiceTokenProvider>();
             DateTimeOffset deadline = DateTimeOffset.UtcNow.AddMinutes(10);
             _results = [];
-            for (int i = 0; i < 3; i++)
+            for (int i = 0; i < 4; i++)
             {
                 _results.Add(await tokens.GetTokenAsync(Tenant, _tokenUrl, deadline, CancellationToken.None));
             }
@@ -1261,7 +1374,11 @@ public class ProjectionServiceTokenProviderTests
                         : "Issued"
                 )
                 .Should()
-                .Equal("TokenRejected", "NetworkError", "Issued");
+                .Equal("TokenRejected", "NetworkError", "TokenRejected", "Issued");
+
+        [Test]
+        public void It_keeps_only_the_sanitized_correlation_id_of_a_hostile_header() =>
+            CorrelationIdOf(_results[2]).Should().Be("FORGEDlineb");
 
         [Test]
         public void It_logs_only_the_projection_http_records() =>
@@ -1304,6 +1421,6 @@ public class ProjectionServiceTokenProviderTests
 
         [Test]
         public void It_returns_the_token_itself_to_the_caller() =>
-            ShouldBeIssued(_results[2]).AccessToken.Should().Be("SECRET-ACCESS-TOKEN-1440");
+            ShouldBeIssued(_results[3]).AccessToken.Should().Be("SECRET-ACCESS-TOKEN-1440");
     }
 }

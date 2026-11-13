@@ -272,7 +272,16 @@ public sealed class ProjectionServiceTokenProvider(
 
         if (response.StatusCode != HttpStatusCode.OK)
         {
+            // DMS token endpoint errors are RFC 6749 JSON with the correlation id in a header; a problem body's own
+            // correlation id wins.
             ProblemFields problem = await ProjectionHttpContent.ReadProblemAsync(response, cancellationToken);
+            if (problem.CorrelationId is null)
+            {
+                problem = problem with
+                {
+                    CorrelationId = ProjectionHttpContent.ReadCorrelationIdHeader(response),
+                };
+            }
             return (
                 null,
                 Failure(

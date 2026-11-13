@@ -149,4 +149,84 @@ public class ProjectionHttpContentTests
                 .Be(expectedType);
         }
     }
+
+    [TestFixture]
+    public class Given_x_correlation_id_headers
+    {
+        private static string? Read(params string[] values)
+        {
+            HttpResponseMessage response = new(HttpStatusCode.Unauthorized);
+            foreach (string value in values)
+            {
+                response.Headers.TryAddWithoutValidation("X-Correlation-ID", value);
+            }
+            return ProjectionHttpContent.ReadCorrelationIdHeader(response);
+        }
+
+        [TestCase("0HNABCDEF%3A00000001", "0HNABCDEF:00000001")]
+        [TestCase("a%20b", "a b")]
+        [TestCase("a%E2%82%ACb", "a€b")]
+        [TestCase("plain-id_1.2", "plain-id_1.2")]
+        public void It_percent_decodes_the_value_as_utf8(string header, string expected) =>
+            Read(header).Should().Be(expected);
+
+        [Test]
+        public void It_decodes_only_once() => Read("abc%253A").Should().Be("abc%3A");
+
+        [TestCase("abc%")]
+        [TestCase("abc%3")]
+        [TestCase("abc%zz")]
+        [TestCase("abc%+1")]
+        [TestCase("%C3%28")]
+        [TestCase("%FF")]
+        [TestCase("a b")]
+        [TestCase("abé")]
+        public void It_reads_nothing_from_a_malformed_value(string header) => Read(header).Should().BeNull();
+
+        [Test]
+        public void It_reads_nothing_without_the_header() =>
+            ProjectionHttpContent
+                .ReadCorrelationIdHeader(new HttpResponseMessage(HttpStatusCode.Unauthorized))
+                .Should()
+                .BeNull();
+
+        [Test]
+        public void It_reads_nothing_from_a_repeated_header() => Read("c-1", "c-2").Should().BeNull();
+
+        [Test]
+        public void It_reads_a_value_that_decodes_to_the_kept_length() =>
+            Read(new string('a', EducationOrganizationProjectionFailure.MaxCorrelationIdLength))
+                .Should()
+                .Be(new string('a', EducationOrganizationProjectionFailure.MaxCorrelationIdLength));
+
+        [Test]
+        public void It_reads_nothing_from_a_value_that_decodes_past_the_kept_length() =>
+            Read(new string('a', EducationOrganizationProjectionFailure.MaxCorrelationIdLength + 1))
+                .Should()
+                .BeNull();
+
+        [Test]
+        public void It_reads_a_raw_value_of_the_raw_bound()
+        {
+            string header = string.Concat(
+                Enumerable.Repeat("%41", EducationOrganizationProjectionFailure.MaxCorrelationIdLength)
+            );
+            header.Length.Should().Be(ProjectionHttpContent.MaxCorrelationIdHeaderLength);
+
+            Read(header)
+                .Should()
+                .Be(new string('A', EducationOrganizationProjectionFailure.MaxCorrelationIdLength));
+        }
+
+        [Test]
+        public void It_reads_nothing_from_a_raw_value_past_the_raw_bound_however_short_it_decodes()
+        {
+            // Each "%C3%A9" is six raw characters decoding to one: 65 of them decode to 65 characters.
+            string header = string.Concat(Enumerable.Repeat("%C3%A9", 65));
+            header.Length.Should().BeGreaterThan(ProjectionHttpContent.MaxCorrelationIdHeaderLength);
+            Read(string.Concat(Enumerable.Repeat("%C3%A9", 64))).Should().Be(new string('é', 64));
+
+            Read(header).Should().BeNull();
+        }
+    }
 }
