@@ -119,18 +119,21 @@ public sealed class FaultInjectingHandler(FaultPlan plan) : DelegatingHandler
 /// <summary>
 /// The production reader registration (<see cref="ServiceCollectionExtensions.AddDmsEducationOrganizationProjectionReader"/>)
 /// configured with the fixture's per-tenant projection credentials and the live DMS, plus the fault handler. One per
-/// test fixture, so Discovery and token caches never carry over between cases.
+/// test fixture, so Discovery and token caches never carry over between cases. A case can point it at another base
+/// URL with <c>dmsBaseUrl</c>.
 /// </summary>
 public sealed class ReaderHost : IDisposable
 {
     private readonly ServiceProvider _provider;
 
-    public ReaderHost(ProjectionE2EFixture fixture, int pageSize = 2)
+    public ReaderHost(ProjectionE2EFixture fixture, int pageSize = 2, Uri? dmsBaseUrl = null)
     {
         string section = DmsEducationOrganizationProjectionSettings.SectionName;
         Dictionary<string, string?> values = new()
         {
-            [$"{section}:DmsBaseUrl"] = fixture.Environment.DmsBaseUrl.ToString().TrimEnd('/'),
+            [$"{section}:DmsBaseUrl"] = (dmsBaseUrl ?? fixture.Environment.DmsBaseUrl)
+                .ToString()
+                .TrimEnd('/'),
             [$"{section}:PageSize"] = pageSize.ToString(System.Globalization.CultureInfo.InvariantCulture),
         };
         foreach ((string tenant, ClientCredentials client) in fixture.ProjectionClients)

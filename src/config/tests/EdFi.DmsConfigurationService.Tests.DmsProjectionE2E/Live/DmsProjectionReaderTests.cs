@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Net;
+using System.Net.Sockets;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using FluentAssertions;
 using FailureCategory = EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection.EducationOrganizationProjectionFailureCategory;
@@ -305,6 +307,151 @@ public static class DmsProjectionReaderTests
         [Test]
         public void It_makes_four_walks() =>
             Host.Plan.Pages.Select(page => page.Attempt).Distinct().Should().Equal(1, 2, 3, 4);
+    }
+
+    [TestFixture]
+    public class Given_a_transport_fault_on_page_2 : ReadFixture
+    {
+        protected override void Arrange(FaultPlan plan) =>
+            plan.OnPage = (page, _) =>
+                page.AttemptPage == 2
+                    ? Task.FromException<HttpResponseMessage?>(
+                        new HttpRequestException("Injected transport fault on page 2.")
+                    )
+                    : Task.FromResult<HttpResponseMessage?>(null);
+
+        // A failure result carries no items: the type of the result is what exposes none.
+        [Test]
+        public void It_fails_with_no_items_as_a_transient_network_error_at_the_page_stage() =>
+            Failure
+                .Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Category = FailureCategory.Transient,
+                        Code = FailureCode.NetworkError,
+                        Stage = FailureStage.Page,
+                        HttpStatus = (int?)null,
+                        PagesRead = 1,
+                        Restarts = 0,
+                    }
+                );
+
+        [Test]
+        public void It_requests_no_page_after_the_faulted_one() =>
+            Host.Plan.Pages.Select(page => (page.Attempt, page.AttemptPage)).Should().Equal((1, 1), (1, 2));
+    }
+
+    /// <summary>
+    /// DMS unreachable: the reader's base URL is a loopback listener, bound for the whole fixture, that accepts every
+    /// connection and closes it at once. The port listens throughout, so no closed-port race decides the outcome, and
+    /// no timer is involved.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_dms_base_url_that_closes_every_connection
+    {
+        private ClosingListener _listener = null!;
+        private ReaderHost _host = null!;
+        private EducationOrganizationProjectionReadResult _result = null!;
+
+        [OneTimeSetUp]
+        public async Task ReadAsync()
+        {
+            ProjectionE2EFixture fixture = ProjectionE2EFixture.Current;
+            _listener = new ClosingListener();
+            _host = new ReaderHost(fixture, dmsBaseUrl: _listener.BaseUrl);
+
+            int dataStoreId = fixture.Environment.Route(ProjectionE2EFixture.SeededQualifier).DataStoreId;
+            _result = await _host.ReadAsync(
+                ProjectionE2EFixture.SeededTenant,
+                dataStoreId,
+                await fixture.Services.DataStoreContextsAsync(ProjectionE2EFixture.SeededTenant, dataStoreId)
+            );
+        }
+
+        [OneTimeTearDown]
+        public async Task DisposeAsync()
+        {
+            _host?.Dispose();
+            if (_listener is not null)
+            {
+                await _listener.DisposeAsync();
+            }
+        }
+
+        // A failure result carries no items: the type of the result is what exposes none.
+        [Test]
+        public void It_fails_with_no_items_as_a_transient_network_error_at_discovery() =>
+            _result
+                .Should()
+                .BeOfType<EducationOrganizationProjectionReadResult.Failure>()
+                .Subject.Detail.Should()
+                .BeEquivalentTo(
+                    new
+                    {
+                        Category = FailureCategory.Transient,
+                        Code = FailureCode.NetworkError,
+                        Stage = FailureStage.Discovery,
+                        HttpStatus = (int?)null,
+                        PagesRead = 0,
+                    }
+                );
+
+        [Test]
+        public void It_sends_no_token_or_page_request() =>
+            _host.Plan.Requests.Should().Equal(new RecordedRequest(RequestKind.Discovery, 0, 0));
+
+        [Test]
+        public void It_reaches_a_listening_endpoint() => _listener.Accepted.Should().BePositive();
+    }
+
+    /// <summary>A loopback TCP listener that accepts every connection and closes it at once, until disposed.</summary>
+    private sealed class ClosingListener : IAsyncDisposable
+    {
+        private readonly TcpListener _listener = new(IPAddress.Loopback, 0);
+        private readonly CancellationTokenSource _stop = new();
+        private readonly Task _accepting;
+        private int _accepted;
+
+        public ClosingListener()
+        {
+            _listener.Start();
+            BaseUrl = new Uri($"http://127.0.0.1:{((IPEndPoint)_listener.LocalEndpoint).Port}/");
+            _accepting = AcceptAsync();
+        }
+
+        public Uri BaseUrl { get; }
+
+        /// <summary>The connections accepted so far; each is counted before it is closed.</summary>
+        public int Accepted => Volatile.Read(ref _accepted);
+
+        private async Task AcceptAsync()
+        {
+            while (true)
+            {
+                Socket socket;
+                try
+                {
+                    socket = await _listener.AcceptSocketAsync(_stop.Token);
+                }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+
+                Interlocked.Increment(ref _accepted);
+                socket.Dispose();
+            }
+        }
+
+        public async ValueTask DisposeAsync()
+        {
+            await _stop.CancelAsync();
+            await _accepting;
+            _listener.Stop();
+            _listener.Dispose();
+            _stop.Dispose();
+        }
     }
 
     [TestFixture]
