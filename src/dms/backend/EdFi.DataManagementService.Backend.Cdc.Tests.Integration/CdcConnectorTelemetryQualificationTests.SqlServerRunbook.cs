@@ -3,9 +3,12 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
+using System.Data.Common;
 using System.Globalization;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
+using Microsoft.Data.SqlClient;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
@@ -32,6 +35,162 @@ public sealed class Given_SqlServerCdcRunbookRetention
 
 internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
+    private async Task EstablishCompletedCleanupJobAsync(CancellationToken token)
+    {
+        await using var connection = CreateProviderAdminConnection(await ReadMappedProviderPortAsync(token));
+        await connection.OpenAsync(token);
+        var initial = await ReadStateAsync(token);
+        await WriteInspectionEvidenceAsync(
+            "cdc-sqlserver-retention-inspect",
+            "initial-job-history",
+            initial,
+            token
+        );
+        // This disposable fixture deliberately exercises cleanup completion. The operational runbook
+        // still forbids running cleanup merely to make a production observation appear current.
+        var completed = await CdcSqlServerCompletedJob.RunAsync(
+            initial,
+            ReadStateAsync,
+            StartAsync,
+            ReadCompletionAsync,
+            token
+        );
+        await WriteInspectionEvidenceAsync(
+            "cdc-sqlserver-retention-inspect",
+            "completed-cleanup-execution",
+            completed,
+            token
+        );
+
+        async Task<CdcSqlServerJobState> ReadStateAsync(CancellationToken cancellation)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandTimeout = 10;
+            command.CommandText = """
+                SELECT c.job_id,
+                       COALESCE((SELECT MAX(h.instance_id) FROM msdb.dbo.sysjobhistory h WHERE h.job_id=c.job_id AND h.step_id=0), 0),
+                       (SELECT COUNT(*) FROM msdb.dbo.sysjobhistory h WHERE h.job_id=c.job_id AND h.step_id=0),
+                       CONVERT(bit, CASE WHEN a.start_execution_date IS NOT NULL AND a.stop_execution_date IS NULL THEN 1 ELSE 0 END),
+                       (SELECT COUNT(*) FROM msdb.dbo.sysjobhistory h JOIN msdb.dbo.cdc_jobs capture ON capture.job_id=h.job_id
+                        WHERE capture.database_id=DB_ID() AND capture.job_type=N'capture' AND h.step_id=0)
+                FROM msdb.dbo.cdc_jobs c
+                JOIN msdb.dbo.sysjobs j ON j.job_id=c.job_id AND j.enabled=1
+                LEFT JOIN msdb.dbo.sysjobactivity a ON a.job_id=c.job_id
+                    AND a.session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+                WHERE c.database_id=DB_ID() AND c.job_type=N'cleanup';
+                """;
+            await using var reader = await command.ExecuteReaderAsync(cancellation);
+            if (!await reader.ReadAsync(cancellation))
+            {
+                throw new InvalidOperationException("CDC fixture cleanup job is missing or disabled.");
+            }
+            var state = new CdcSqlServerJobState(
+                reader.GetGuid(0),
+                reader.GetInt32(1),
+                reader.GetInt32(2),
+                reader.GetBoolean(3),
+                reader.GetInt32(4)
+            );
+            if (await reader.ReadAsync(cancellation))
+            {
+                throw new InvalidOperationException("CDC fixture cleanup job identity is ambiguous.");
+            }
+            return state;
+        }
+
+        async Task<CdcSqlServerJobRequest> StartAsync(Guid jobId, CancellationToken cancellation)
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandTimeout = 10;
+            // SQL Agent truncates request timestamps to seconds. Match that precision.
+            // This fixture owns manual starts after setup. Scheduled executions have source 1.
+            command.CommandText = """
+                SET @requested = GETDATE();
+                SET @requested = DATEADD(millisecond, -DATEPART(millisecond, @requested), @requested);
+                SELECT @session = MAX(session_id) FROM msdb.dbo.syssessions;
+                EXEC msdb.dbo.sp_start_job @job_id=@job;
+                """;
+            AddParameter(command, "@job", jobId);
+            var requested = command.CreateParameter();
+            requested.ParameterName = "@requested";
+            requested.DbType = DbType.DateTime;
+            requested.Direction = ParameterDirection.Output;
+            command.Parameters.Add(requested);
+            var session = command.CreateParameter();
+            session.ParameterName = "@session";
+            session.DbType = DbType.Int32;
+            session.Direction = ParameterDirection.Output;
+            command.Parameters.Add(session);
+            try
+            {
+                await command.ExecuteNonQueryAsync(cancellation);
+                return new(true, (int)session.Value!, (DateTime)requested.Value!);
+            }
+            catch (SqlException exception) when (exception.Number == 22022)
+            {
+                // Join only the exact active/queued execution observed after Agent rejects our
+                // start. An earlier completed execution cannot certify this joined request.
+                await using var active = connection.CreateCommand();
+                active.CommandTimeout = 10;
+                active.CommandText = """
+                    SELECT session_id, run_requested_date FROM msdb.dbo.sysjobactivity
+                    WHERE job_id=@job AND session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+                      AND run_requested_date IS NOT NULL AND stop_execution_date IS NULL;
+                    """;
+                AddParameter(active, "@job", jobId);
+                await using var reader = await active.ExecuteReaderAsync(cancellation);
+                if (!await reader.ReadAsync(cancellation))
+                {
+                    // It may have completed since sp_start_job rejected our request. Retry
+                    // under the caller's existing deadline rather than accepting stale history.
+                    return CdcSqlServerJobRequest.Retry;
+                }
+                return new(false, reader.GetInt32(0), reader.GetDateTime(1));
+            }
+        }
+
+        async Task<CdcSqlServerJobExecution> ReadCompletionAsync(
+            Guid jobId,
+            int boundary,
+            CancellationToken cancellation
+        )
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandTimeout = 10;
+            // job_history_id ties the terminal history row to Agent's execution identity.
+            // The helper validates the session, request time and request source before accepting it.
+            command.CommandText = """
+                SELECT h.job_id, h.instance_id, h.run_status,
+                       a.session_id, a.run_requested_date, CONVERT(int, a.run_requested_source)
+                FROM msdb.dbo.sysjobactivity a
+                JOIN msdb.dbo.sysjobhistory h ON h.job_id=a.job_id AND h.instance_id=a.job_history_id
+                WHERE a.job_id=@job AND a.session_id=(SELECT MAX(session_id) FROM msdb.dbo.syssessions)
+                  AND a.stop_execution_date IS NOT NULL AND h.step_id=0 AND h.instance_id>@boundary;
+                """;
+            AddParameter(command, "@job", jobId);
+            AddParameter(command, "@boundary", boundary);
+            await using var reader = await command.ExecuteReaderAsync(cancellation);
+            return await reader.ReadAsync(cancellation)
+                ? new(
+                    reader.GetGuid(0),
+                    reader.GetInt32(1),
+                    reader.GetInt32(2),
+                    reader.GetInt32(3),
+                    reader.GetDateTime(4),
+                    reader.GetInt32(5)
+                )
+                : new(jobId, 0, -1, 0, default, 0);
+        }
+    }
+
+    private static void AddParameter(DbCommand command, string name, object value)
+    {
+        var parameter = command.CreateParameter();
+        parameter.ParameterName = name;
+        parameter.Value = value;
+        command.Parameters.Add(parameter);
+    }
+
     internal async Task QualifySqlServerRunbookRetentionAsync(
         CdcConnectorTemplateRequest request,
         CancellationToken token
@@ -48,6 +207,8 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             ["<target-database>"] = SqlServerDatabaseName,
             ["<monitor-login>"] = "sa",
         };
+        await AssertHeartbeatAndCommittedOffsetProgressAsync(request, token);
+        await EstablishCompletedCleanupJobAsync(token);
         for (int sample = 0; sample < 2; sample++)
         {
             await AssertHeartbeatAndCommittedOffsetProgressAsync(request, token);

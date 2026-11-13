@@ -65,8 +65,11 @@ public sealed class CdcConnectorTelemetryAdapter(
         {
             return Failure(CdcDeploymentComponent.Metrics, CdcDeploymentFailure.InvalidInput);
         }
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var operationTimer = new CancellationTokenSource(request.Timing.WaitTimeout, clock);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationTimer.Token
+        );
         var component = CdcDeploymentComponent.Worker;
         try
         {
@@ -161,14 +164,14 @@ public sealed class CdcConnectorTelemetryAdapter(
         }
     }
 
-    private static async Task<T> CallAsync<T>(
+    private async Task<T> CallAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<T>> call,
         CancellationToken token
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, clock);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         return await call(timeout.Token).WaitAsync(timeout.Token);
     }
 

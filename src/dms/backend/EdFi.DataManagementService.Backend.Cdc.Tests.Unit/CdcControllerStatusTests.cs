@@ -9,6 +9,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -105,19 +106,33 @@ internal partial class Given_CdcControllerStatus(Ddl.CdcProvider provider) : Cdc
             _worker,
             _metrics,
             _positions,
-            TimeProvider.System
+            ObservationTime
         );
 
     private void ResetStatus() =>
-        _status = new(_store, _bindings, _connect, _ => Validation(), TimeProvider.System);
+        _status = new(_store, _bindings, _connect, _ => Validation(), ObservationTime);
 
     private CdcControllerStatusTarget Selection() => new(_request, _runtime, 1000);
 
     private Task<CdcControllerStatusResult> RunStatusAsync(CancellationToken token = default) =>
         _status.StatusAsync([Selection()], token);
 
-    private async Task<CdcControllerTargetStatus> TargetStatusAsync() =>
-        (await RunStatusAsync()).Targets.Single();
+    private async Task<CdcControllerTargetStatus> TargetStatusAsync()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await RunStatusAsync(watchdog.Token);
+        watchdog.IsCancellationRequested.Should().BeFalse();
+        return result.Targets.Single();
+    }
+
+    private FakeTimeProvider UseStatusClock()
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        ReplaceObservationTime(clock);
+        _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        ResetStatus();
+        return clock;
+    }
 
     [Test]
     public async Task It_reports_fresh_component_health_without_a_new_barrier_or_durable_readiness()
@@ -361,7 +376,12 @@ internal partial class Given_CdcControllerStatus(Ddl.CdcProvider provider) : Cdc
             A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
                 .Invokes(() => _stops++)
                 .Throws(new IOException("private-stop-failure"));
-            ShortTiming(40);
+            A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+                .Returns(
+                    new CdcTransportResult<CdcConnectStatus>.Unavailable(
+                        new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                    )
+                );
         }
         ResetStatus();
         _identity = new('b', 64);

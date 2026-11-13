@@ -861,7 +861,17 @@ public sealed class Given_PinnedImageFixtureComposeCleanup(
     public async Task It_does_not_repeat_cleanup_on_later_disposal()
     {
         string[] commands = [.. _docker.Commands];
-        await _fixture.DisposeAsync();
+        Func<Task> dispose = () => _fixture.DisposeAsync().AsTask();
+        if (_failure is null)
+        {
+            await dispose();
+        }
+        else
+        {
+            (await dispose.Should().ThrowAsync<InvalidOperationException>())
+                .Which.Should()
+                .BeSameAs(_failure);
+        }
         _docker.Commands.Should().Equal(commands);
     }
 

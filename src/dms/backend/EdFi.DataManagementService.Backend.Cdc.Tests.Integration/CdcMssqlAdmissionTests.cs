@@ -18,6 +18,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
 public sealed class Given_SqlServer_Controller_Admission
 {
     private CdcProviderAdmissionFixture _fixture = null!;
@@ -866,7 +867,7 @@ public sealed class Given_SqlServer_Controller_Admission
         }
         if (fail)
         {
-            await CdcControllerFixture.WaitAsync(
+            await _fixture.Probes.WaitAsync(
                 async ct =>
                     await _fixture.ScalarAsync<int>(
                         "SELECT COUNT(*) FROM msdb.dbo.sysjobactivity WHERE job_id = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = 'capture') AND session_id = (SELECT MAX(session_id) FROM msdb.dbo.syssessions) AND start_execution_date IS NOT NULL AND stop_execution_date IS NULL",
@@ -880,7 +881,7 @@ public sealed class Given_SqlServer_Controller_Admission
                 "DECLARE @id uniqueidentifier = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = 'capture'); EXEC msdb.dbo.sp_update_jobstep @job_id = @id, @step_id = 1, @command = N'THROW 50000, ''injected capture job failure'', 1;', @retry_attempts = 0, @on_fail_action = 2; EXEC msdb.dbo.sp_update_job @job_id = @id, @enabled = 1; EXEC msdb.dbo.sp_start_job @job_id = @id;",
                 Token
             );
-            await CdcControllerFixture.WaitAsync(
+            await _fixture.Probes.WaitAsync(
                 async ct =>
                     await _fixture.ScalarAsync<int>(
                         "SELECT COUNT(*) FROM msdb.dbo.sysjobhistory WHERE job_id = (SELECT job_id FROM msdb.dbo.cdc_jobs WHERE database_id = DB_ID() AND job_type = 'capture') AND step_id = 0 AND run_status = 0",
@@ -1004,7 +1005,7 @@ public sealed class Given_SqlServer_Controller_Admission
             [partition.Topic],
             new() { OperationTimeout = TimeSpan.FromSeconds(15) }
         );
-        await CdcControllerFixture.WaitAsync(
+        await _fixture.Probes.WaitAsync(
             async ct =>
                 (await _fixture.Kafka.InspectTopicAsync(_fixture.Request, partition.Topic, ct)).State
                 == CdcTransportEvidenceState.Absent,

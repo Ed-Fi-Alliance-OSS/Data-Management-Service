@@ -24,6 +24,9 @@ public sealed class CdcInitialEnableWorkflow(
     ICdcProviderSourcePositionAdapter positions
 )
 {
+    internal TimeProvider Clock { get; init; } = TimeProvider.System;
+    internal Action<CancellationToken> OnDeadlineStarted { get; init; } = _ => { };
+
     internal ICdcBindingLifecycleService Bindings { get; init; } =
         new CdcBindingLifecycleService(new LocalCdcBindingStateStore(stateRoot), TimeProvider.System);
 
@@ -37,12 +40,14 @@ public sealed class CdcInitialEnableWorkflow(
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
+        using var deadline = new CancellationTokenSource(request.Timing.WaitTimeout, Clock);
         using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken,
-            operationDeadline
+            operationDeadline,
+            deadline.Token
         );
-        timeout.CancelAfter(request.Timing.WaitTimeout);
         var token = timeout.Token;
+        OnDeadlineStarted(token);
         var readiness = new CdcInitialReadiness(
             new(stateRoot),
             Bindings,
@@ -53,7 +58,7 @@ public sealed class CdcInitialEnableWorkflow(
             worker,
             metrics,
             positions,
-            TimeProvider.System
+            Clock
         );
         bool established = false;
         try

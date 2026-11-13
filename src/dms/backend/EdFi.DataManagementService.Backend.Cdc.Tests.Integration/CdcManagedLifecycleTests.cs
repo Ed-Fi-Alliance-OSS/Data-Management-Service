@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Confluent.Kafka;
@@ -23,13 +24,14 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
 public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider provider)
 {
     private CdcProviderAdmissionFixture _fixture = null!;
     private CancellationTokenSource _timeout = null!;
     private CancellationToken Token => _timeout.Token;
     private CdcControllerStatusTarget Target => new(_fixture.Request, _fixture.Runtime, 60_000);
-    private readonly List<object> _evidence = [];
+    private readonly ConcurrentQueue<object> _evidence = new();
 
     [SetUp]
     public async Task Setup()
@@ -68,7 +70,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
         await File.WriteAllTextAsync(
             path,
             JsonSerializer.Serialize(
-                new { Test = TestContext.CurrentContext.Test.Name, Evidence = _evidence }
+                new { Test = TestContext.CurrentContext.Test.Name, Evidence = _evidence.ToArray() }
             )
         );
         TestContext.AddTestAttachment(path, "Sanitized managed lifecycle observations");
@@ -103,7 +105,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
             status.Tasks.Should().BeEmpty();
             (await OffsetAsync()).Should().BeEquivalentTo(offset);
             ProgressHighWatermark().Should().Be(published);
-            _evidence.Add(
+            _evidence.Enqueue(
                 new
                 {
                     At = DateTimeOffset.UtcNow,
@@ -132,8 +134,8 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
         start.Ready.Should().BeTrue();
         Func<Task> initial = () => _fixture.Runtime.ObserveInitialDatabaseAsync(Token);
         await initial.Should().ThrowAsync<InvalidOperationException>();
-        await CdcControllerFixture.WaitAsync(
-            async _ => !Equals(await OffsetAsync(), offset),
+        await _fixture.Probes.WaitAsync(
+            async ct => !Equals(await OffsetAsync(ct), offset),
             _fixture.Request.Timing.WaitTimeout,
             TimeSpan.FromMilliseconds(250),
             Token
@@ -430,7 +432,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
             }
         };
         var offsetsRemoved = await retirement.RetireAsync(request, request.Binding.Generation, true, Token);
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, Retirement = offsetsRemoved });
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, Retirement = offsetsRemoved });
         offsetsRemoved.Succeeded.Should().BeFalse();
         connectorDeletionInterrupted.Should().BeTrue();
         Observed(await _fixture.Infrastructure.Connect.ReadOffsetEvidenceAsync(request, Token))
@@ -446,9 +448,9 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
             .State!.Incident.Should()
             .BeEquivalentTo(incident);
         _fixture.Infrastructure.BeforeConnectCall = _ => { };
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, StoppedOffsetAbsenceVerified = true });
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, StoppedOffsetAbsenceVerified = true });
         var partial = await retirement.RetireAsync(request, request.Binding.Generation, true, Token);
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, Retirement = partial });
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, Retirement = partial });
         partial.Succeeded.Should().BeFalse();
         interruptedCleanup.Interrupted.Should().BeTrue();
         (await _fixture.Infrastructure.Bindings.ExactMatchBindingAsync(request.Binding, Token))
@@ -545,7 +547,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
             .State.Should()
             .Be(CdcTransportEvidenceState.Unavailable);
         await AssertMarkedRetirementCompleteAsync();
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 SourceHistory = "Historical",
@@ -668,7 +670,7 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
                 operation,
                 Token
             );
-            _evidence.Add(
+            _evidence.Enqueue(
                 new
                 {
                     Scenario = scenario,
@@ -739,14 +741,16 @@ public sealed partial class Given_Cdc_Controller_Managed_Lifecycle(CdcProvider p
     private async Task<CdcManagedLifecycleResult> ExecuteAsync(CdcManagedLifecycleOperation operation)
     {
         var result = await _fixture.Controllers.Lifecycle.ExecuteAsync(Target, operation, Token);
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, Result = result });
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, Result = result });
         return result;
     }
 
-    private async Task<object> OffsetAsync()
+    private Task<object> OffsetAsync() => OffsetAsync(Token);
+
+    private async Task<object> OffsetAsync(CancellationToken token)
     {
         var offset = Observed(
-            await _fixture.Infrastructure.Connect.ReadOffsetEvidenceAsync(_fixture.Request, Token)
+            await _fixture.Infrastructure.Connect.ReadOffsetEvidenceAsync(_fixture.Request, token)
         );
         offset.State.Should().Be(CdcConnectOffsetState.Streaming);
         return provider == CdcProvider.Postgresql ? offset.Postgresql : offset.SqlServer;

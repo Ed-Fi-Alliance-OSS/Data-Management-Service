@@ -8,6 +8,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -77,15 +78,14 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
                     if (++reads == 1)
                     {
                         AssertRegistrationPending();
+                        clock.AdvanceDeadline(_request.Timing.CallTimeout);
                         await Task.Delay(Timeout.InfiniteTimeSpan, token);
                     }
                     return Observed<IReadOnlyDictionary<string, string>>(_live);
                 }
             );
 
-        (await RunAsync().WaitAsync(TimeSpan.FromSeconds(3)))
-            .State.Should()
-            .Be(CdcTransportEvidenceState.Observed);
+        (await RunWithWatchdogAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
         _posts.Should().Be(1);
         clock.PollDelays.Should().Be(1);
     }
@@ -101,17 +101,20 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         SetRegistrationConfigurationReads(_ => new CdcTransportResult<
             IReadOnlyDictionary<string, string>
         >.Unavailable(new(CdcDeploymentComponent.Connect, failure)));
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
+        clock.OnPoll = () =>
+        {
+            if (clock.PollDelays == 3)
+            {
+                clock.AdvanceDeadline(_request.Timing.WaitTimeout - clock.Elapsed);
+            }
+        };
 
-        var result = await RunAsync().WaitAsync(TimeSpan.FromSeconds(3));
+        var result = await RunWithWatchdogAsync();
 
         result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(CdcDeploymentFailure.Timeout);
         result.Diagnostics[0].Component.Should().Be(CdcDeploymentComponent.Connect);
-        elapsed
-            .Elapsed.Should()
-            .BeGreaterThanOrEqualTo(_request.Timing.WaitTimeout - TimeSpan.FromMilliseconds(50));
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
-        clock.PollDelays.Should().BeGreaterThan(1);
+        clock.Elapsed.Should().Be(_request.Timing.WaitTimeout);
+        clock.PollDelays.Should().Be(3);
         _posts.Should().Be(1);
         AssertRegistrationPending();
     }
@@ -322,12 +325,17 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         var clock = await UseRegistrationClockAsync();
         var timing = _request.Timing;
         SetPersistentExpiry(clock, stage);
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
-        var result = await RunAsync().WaitAsync(TimeSpan.FromSeconds(3));
+        clock.OnPoll = () =>
+        {
+            if (clock.PollDelays == 3)
+            {
+                clock.AdvanceDeadline(timing.WaitTimeout - clock.Elapsed);
+            }
+        };
+        var result = await RunWithWatchdogAsync();
         result.Diagnostics.Should().ContainSingle().Which.Failure.Should().Be(CdcDeploymentFailure.Timeout);
-        elapsed.Elapsed.Should().BeGreaterThanOrEqualTo(timing.WaitTimeout - TimeSpan.FromMilliseconds(50));
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
-        clock.PollDelays.Should().BeGreaterThan(1);
+        clock.Elapsed.Should().Be(timing.WaitTimeout);
+        clock.PollDelays.Should().Be(3);
         _request.Timing.Should().Be(timing);
         _posts.Should().Be(1);
         AssertEstablishmentPending();
@@ -498,9 +506,25 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
         AssertEstablishmentPending();
     }
 
+    private async Task<CdcTransportResult<CdcConnectorRegistrationReceipt>> RunWithWatchdogAsync()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await RunAsync(watchdog.Token);
+        watchdog.IsCancellationRequested.Should().BeFalse();
+        return result;
+    }
+
     private async Task<RegistrationClock> UseRegistrationClockAsync()
     {
         var clock = new RegistrationClock();
+        ObservationTime = clock;
+        await _services.DisposeAsync();
+        var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(clock)
+            .AddCdcConnectorTemplates()
+            .AddDmsCdcControlPlane();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
+        _services = services.BuildServiceProvider();
         var database = await _runtime.ObserveInitialDatabaseAsync(CancellationToken.None);
         A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._))
             .ReturnsLazily(() => database with { ObservedAt = clock.GetUtcNow() });
@@ -529,7 +553,10 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
             _connect,
             _worker,
             clock
-        );
+        )
+        {
+            PollDelayAsync = clock.DelayAsync,
+        };
         return clock;
     }
 
@@ -583,24 +610,40 @@ internal class Given_CdcConnectorRegistration(Ddl.CdcProvider provider) : CdcReg
 
     private sealed class RegistrationClock : TimeProvider
     {
+        private readonly FakeTimeProvider _time = new(DateTimeOffset.UtcNow);
         private TimeSpan _advance;
         public int PollDelays { get; private set; }
         public Action OnPoll { get; set; } = () => { };
+        public TimeSpan Elapsed => _time.GetUtcNow() - _time.Start;
 
-        public override DateTimeOffset GetUtcNow() => DateTimeOffset.UtcNow + _advance;
+        public override DateTimeOffset GetUtcNow() => _time.GetUtcNow() + _advance;
 
+        public override long TimestampFrequency => _time.TimestampFrequency;
+
+        public override long GetTimestamp() => _time.GetTimestamp();
+
+        // These observation-expiry cases deliberately move wall time without spending a call budget.
         public void Advance(TimeSpan elapsed) => _advance += elapsed;
+
+        public void AdvanceDeadline(TimeSpan elapsed) => _time.Advance(elapsed);
 
         public override ITimer CreateTimer(
             TimerCallback callback,
             object? state,
             TimeSpan dueTime,
             TimeSpan period
-        )
+        ) => _time.CreateTimer(callback, state, dueTime, period);
+
+        public Task DelayAsync(TimeSpan delay, TimeProvider clock, CancellationToken token)
         {
+            delay.Should().BePositive();
+            clock.Should().BeSameAs(this);
             PollDelays++;
             OnPoll();
-            return TimeProvider.System.CreateTimer(callback, state, dueTime, period);
+            token.ThrowIfCancellationRequested();
+            _time.Advance(delay);
+            token.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
         }
     }
 

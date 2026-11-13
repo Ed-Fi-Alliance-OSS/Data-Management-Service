@@ -15,7 +15,12 @@ namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 /// acknowledgement). Pass ConfigureServices to the internal CDC runtime factory overload.
 /// Arm/release between serialized fixture phases; dispose the runtime and this gate at teardown.
 /// </summary>
-internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSpan timeout) : IAsyncDisposable
+internal sealed class CdcProjectionGate(
+    DocumentCacheTargetKey targetKey,
+    TimeSpan timeout,
+    TimeSpan drainTimeout = default,
+    TimeProvider clock = null!
+) : IAsyncDisposable
 {
     private readonly DocumentCacheTargetKey _targetKey =
         targetKey ?? throw new ArgumentNullException(nameof(targetKey));
@@ -26,12 +31,30 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
                 nameof(timeout),
                 "Gate deadline must be positive and at most five minutes."
             );
+    private readonly TimeProvider _clock = clock ?? TimeProvider.System;
+    private readonly TimeSpan _drainTimeout = ValidateDrainTimeout(drainTimeout, timeout);
+
+    private static TimeSpan ValidateDrainTimeout(TimeSpan drainTimeout, TimeSpan observationTimeout)
+    {
+        if (drainTimeout == default)
+        {
+            return observationTimeout;
+        }
+        if (drainTimeout <= TimeSpan.Zero || drainTimeout > TimeSpan.FromMinutes(5))
+        {
+            throw new ArgumentOutOfRangeException(nameof(drainTimeout));
+        }
+        return drainTimeout;
+    }
+
+    private CancellationToken _phaseToken;
     private readonly Lock _sync = new();
     private readonly CancellationTokenSource _shutdown = new();
     private TaskCompletionSource _released = NewSignal();
     private TaskCompletionSource<CdcProjectionPauseObservation> _arrived = NewArrival();
     private TaskCompletionSource _drained = NewSignal();
     private Task _disposal = Task.CompletedTask;
+    internal Task CleanupCompletion { get; private set; } = Task.CompletedTask;
     private int _active;
     private long _documentId;
     private bool _paused;
@@ -68,16 +91,25 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
     }
 
     /// <summary>Zero selects all work for the target, including a not-yet-created API document.</summary>
-    public void Pause(long documentId = 0)
+    public void Pause(CancellationToken phaseToken, long documentId = 0)
     {
         ArgumentOutOfRangeException.ThrowIfNegative(documentId);
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
+            if (!phaseToken.CanBeCanceled)
+            {
+                throw new ArgumentException(
+                    "A hold requires an owning phase cancellation token.",
+                    nameof(phaseToken)
+                );
+            }
+            phaseToken.ThrowIfCancellationRequested();
             if (_paused || _overlap || _active != 0)
             {
                 throw new InvalidOperationException("Arm the gate only between completed processing phases.");
             }
+            _phaseToken = phaseToken;
             _documentId = documentId;
             _released = NewSignal();
             _arrived = NewArrival();
@@ -88,11 +120,11 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
 
     /// <summary>Hold the first real candidate at the writer boundary, then block subsequent
     /// processor calls before even their fast-path acknowledgement. Zero binds the first document.</summary>
-    public void PauseForOverlap(long documentId = 0)
+    public void PauseForOverlap(CancellationToken phaseToken, long documentId = 0)
     {
         lock (_sync)
         {
-            Pause(documentId);
+            Pause(phaseToken, documentId);
             _paused = false;
             _overlap = true;
             _overlapStarted = false;
@@ -111,7 +143,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             {
                 throw new InvalidOperationException("Arm overlap before awaiting materialization.");
             }
-            return _materialized.Task.WaitAsync(_timeout, token);
+            return _materialized.Task.WaitAsync(_timeout, _clock, token);
         }
     }
 
@@ -137,7 +169,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             {
                 throw new InvalidOperationException("Arm overlap before awaiting completion.");
             }
-            return _written.Task.WaitAsync(_timeout, token);
+            return _written.Task.WaitAsync(_timeout, _clock, token);
         }
     }
 
@@ -152,7 +184,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             {
                 throw new InvalidOperationException("Arm the gate before awaiting an arrival.");
             }
-            return _arrived.Task.WaitAsync(_timeout, cancellationToken);
+            return _arrived.Task.WaitAsync(_timeout, _clock, cancellationToken);
         }
     }
 
@@ -172,10 +204,17 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
     /// An expired/cancelled hold or a provider backoff cannot count as a successful resumed drain.</summary>
     public async Task ResumeHeldProcessingAsync(CancellationToken token)
     {
+        token.ThrowIfCancellationRequested();
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            if (!_paused || !_arrived.Task.IsCompletedSuccessfully || _active == 0 || _heldProcessingFailed)
+            if (
+                !_paused
+                || !_arrived.Task.IsCompletedSuccessfully
+                || _active == 0
+                || _heldProcessingFailed
+                || _phaseToken.IsCancellationRequested
+            )
             {
                 throw new InvalidOperationException(
                     "A live held processor call is required before resuming."
@@ -198,7 +237,11 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return (_active == 0 ? Task.CompletedTask : _drained.Task).WaitAsync(_timeout, token);
+            return (_active == 0 ? Task.CompletedTask : _drained.Task).WaitAsync(
+                _drainTimeout,
+                _clock,
+                token
+            );
         }
     }
 
@@ -209,6 +252,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
     )
     {
         Task release;
+        CancellationToken phaseToken;
         bool hold;
         lock (_sync)
         {
@@ -226,6 +270,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
                 _documentId = request.WorkItem.DocumentId;
                 _overlapStarted = true;
             }
+            phaseToken = selected && (_paused || _overlap) ? _phaseToken : CancellationToken.None;
             release = hold ? _released.Task : Task.CompletedTask;
             if (hold)
             {
@@ -239,9 +284,10 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
             using CancellationTokenSource linked = CancellationTokenSource.CreateLinkedTokenSource(
                 cancellationToken,
                 request.TargetContext.CancellationToken,
-                _shutdown.Token
+                _shutdown.Token,
+                phaseToken
             );
-            await release.WaitAsync(_timeout, linked.Token).ConfigureAwait(false);
+            await release.WaitAsync(linked.Token).ConfigureAwait(false);
             linked.Token.ThrowIfCancellationRequested();
             var result = await inner.ProcessItemAsync(request, linked.Token).ConfigureAwait(false);
             if (hold && result.Outcome != DocumentCacheProjectionItemProcessOutcome.Continue)
@@ -286,7 +332,8 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
                 _arrived.TrySetCanceled();
                 _materialized.TrySetCanceled();
                 _written.TrySetCanceled();
-                _disposal = StopAsync(_active == 0 ? Task.CompletedTask : _drained.Task);
+                CleanupCompletion = StopAsync(_active == 0 ? Task.CompletedTask : _drained.Task);
+                _disposal = CleanupCompletion.WaitAsync(_drainTimeout, _clock);
             }
             return new(_disposal);
         }
@@ -294,9 +341,16 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
 
     private async Task StopAsync(Task drained)
     {
-        await _shutdown.CancelAsync().ConfigureAwait(false);
-        await drained.WaitAsync(_timeout).ConfigureAwait(false);
-        _shutdown.Dispose();
+        try
+        {
+            // A throwing cancellation callback must not bypass the processor drain.
+            // DisposeAsync bounds the wait; the owner retains this task until both operations exit.
+            await Task.WhenAll(_shutdown.CancelAsync(), drained).ConfigureAwait(false);
+        }
+        finally
+        {
+            _shutdown.Dispose();
+        }
     }
 
     private async Task<DocumentCacheWriterResult> WriteAsync(
@@ -325,7 +379,7 @@ internal sealed class CdcProjectionGate(DocumentCacheTargetKey targetKey, TimeSp
         if (hold)
         {
             // The candidate stays on the real processor's stack. No copy or re-materialization.
-            await release.WaitAsync(_timeout, request.CancellationToken).ConfigureAwait(false);
+            await release.WaitAsync(request.CancellationToken).ConfigureAwait(false);
             request.CancellationToken.ThrowIfCancellationRequested();
         }
         var result = await inner.WriteAsync(request).ConfigureAwait(false);

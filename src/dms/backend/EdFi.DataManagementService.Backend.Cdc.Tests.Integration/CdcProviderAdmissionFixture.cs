@@ -67,7 +67,8 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
     [Path.Combine(TestContext.CurrentContext.TestDirectory, "Fixtures", "minimal-api-schema.json")];
     public string Database { get; } = "admission_" + Guid.NewGuid().ToString("N");
     private ServiceProvider _services = null!;
-    private bool _disposed;
+    private Task _disposal = null!;
+    internal CdcFixtureProbes Probes { get; } = new();
     private DbConnection _providerConnection = null!;
     private IConfigurationRoot _configuration = null!;
     private ApiSchemaFileLoadResult.SuccessResult _schema = null!;
@@ -213,6 +214,13 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                 },
                 composeKafka: composeKafka,
                 offlineKafka: offlineKafka
+            );
+            // Preparation owns the database and policy gate before worker launch. Initial bind
+            // recovery may replace worker endpoints; publish the final request before admission.
+            suite.Request = CdcFixtureRequests.WithWorkerEndpoints(
+                suite.Request,
+                suite.Infrastructure.ConnectEndpoint,
+                await suite.Infrastructure.MetricsEndpointAsync(cancellationToken)
             );
             return suite;
         }
@@ -610,7 +618,7 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
                 )
             );
         }
-        await CdcControllerFixture.WaitAsync(
+        await Probes.WaitAsync(
             async ct =>
             {
                 var result = await Registration().RegisterAsync(Request, Runtime, ct);
@@ -974,61 +982,55 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         }
     }
 
-    public async ValueTask DisposeAsync()
+    public ValueTask DisposeAsync()
     {
-        if (_disposed)
-        {
-            return;
-        }
-        _disposed = true;
+        // Infrastructure probes may still use the runtime and provider connections owned here.
+        // Transfer the entire cleanup before releasing any of those dependencies.
+        _disposal ??= Probes.DisposeResourcesAsync(() =>
+            Infrastructure is not null
+                ? Infrastructure.Probes.DisposeResourcesAsync(DisposeResourcesAsync)
+                : DisposeResourcesAsync()
+        );
+        return new(_disposal);
+    }
+
+    private Task DisposeResourcesAsync()
+    {
         AppDomain.CurrentDomain.FirstChanceException -= _observeValidationFailure;
-        List<Exception> failures = [];
-        async Task CleanupAsync(Func<Task> cleanup)
-        {
-            try
+        return Probes.DisposeInOrderAsync(
+            // Startup can already have removed an incomplete root.
+            () =>
+                Infrastructure is not null && Directory.Exists(Infrastructure.StateRoot)
+                    ? WriteEvidenceAsync()
+                    : Task.CompletedTask,
+            () =>
             {
-                await cleanup();
-            }
-            catch (Exception exception)
+                BeforeRuntimeCall = _ => { };
+                AfterRuntimeCall = _ => { };
+                if (Infrastructure is not null)
+                {
+                    Hooks.OnBoundary = _ => { };
+                }
+                return Task.CompletedTask;
+            },
+            () => Runtime is not null ? Runtime.DisposeAsync().AsTask() : Task.CompletedTask,
+            () =>
+                _providerConnection is not null
+                    ? _providerConnection.DisposeAsync().AsTask()
+                    : Task.CompletedTask,
+            () =>
             {
-                failures.Add(exception);
-            }
-        }
-        // Startup can already have removed an incomplete root; never replace its original failure.
-        if (Infrastructure is not null && Directory.Exists(Infrastructure.StateRoot))
-        {
-            await CleanupAsync(WriteEvidenceAsync);
-        }
-        BeforeRuntimeCall = _ => { };
-        AfterRuntimeCall = _ => { };
-        if (Infrastructure is not null)
-        {
-            Hooks.OnBoundary = _ => { };
-        }
-        if (Runtime is not null)
-        {
-            await CleanupAsync(() => Runtime.DisposeAsync().AsTask());
-        }
-        if (_providerConnection is not null)
-        {
-            await CleanupAsync(() => _providerConnection.DisposeAsync().AsTask());
-        }
-        Kafka?.Dispose();
-        if (_services is not null)
-        {
-            await CleanupAsync(() => _services.DisposeAsync().AsTask());
-        }
-        (_configuration as IDisposable)?.Dispose();
-        if (Infrastructure is not null)
-        {
-            await CleanupAsync(() => Infrastructure.DisposeAsync().AsTask());
-        }
-        if (failures.Count > 0)
-        {
-            throw new InvalidOperationException(
-                "Admission fixture evidence or cleanup failed. Details redacted."
-            );
-        }
+                Kafka?.Dispose();
+                return Task.CompletedTask;
+            },
+            () => _services is not null ? _services.DisposeAsync().AsTask() : Task.CompletedTask,
+            () =>
+            {
+                (_configuration as IDisposable)?.Dispose();
+                return Task.CompletedTask;
+            },
+            () => Infrastructure is not null ? Infrastructure.DisposeAsync().AsTask() : Task.CompletedTask
+        );
     }
 
     private sealed class ManagedSource(

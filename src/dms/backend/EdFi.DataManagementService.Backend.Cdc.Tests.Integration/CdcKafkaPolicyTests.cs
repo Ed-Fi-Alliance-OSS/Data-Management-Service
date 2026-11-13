@@ -42,6 +42,8 @@ public sealed class Given_authorized_three_broker_cdc_policy
             _peer = _fixture.Request("b");
             await _fixture.PrepareOffsetsAsync(_request, timeout.Token);
             Value(await _fixture.StartPolicyWorkerAsync(_request, true, timeout.Token));
+            _request = _fixture.RefreshWorkerEndpoints(_request);
+            _peer = _fixture.RefreshWorkerEndpoints(_peer);
             await _fixture.ProvisionTopicsAsync(_request, timeout.Token);
             await _fixture.ProvisionTopicsAsync(_peer, timeout.Token);
             foreach (var request in new[] { _request, _peer })
@@ -66,7 +68,11 @@ public sealed class Given_authorized_three_broker_cdc_policy
     }
 
     [SetUp]
-    public void Setup() => _timeout = new(TimeSpan.FromMinutes(4));
+    public void Setup()
+    {
+        _fixture.Probes.RequireAvailable();
+        _timeout = new(TimeSpan.FromMinutes(4));
+    }
 
     [TearDown]
     public void Teardown() => _timeout.Dispose();
@@ -465,9 +471,9 @@ public sealed class Given_authorized_three_broker_cdc_policy
         {
             await _fixture.DeleteTopicAsync(intent.Name);
         }
-        await WaitAsync(
-            async () =>
-                (await _fixture.Adapter.InspectTopicAsync(request, intent.Name, Token)).State
+        await _fixture.WaitAsync(
+            async ct =>
+                (await _fixture.Adapter.InspectTopicAsync(request, intent.Name, ct)).State
                 == CdcTransportEvidenceState.Absent,
             Token
         );
@@ -596,14 +602,10 @@ public sealed class Given_authorized_three_broker_cdc_policy
             await _fixture.Adapter.ReconcileMissingGrantsAsync(_request, false, Token);
             // One authorized effect, followed only by live read-back until the grant propagates.
             // A native acknowledgement or the adapter's first read-back is not reusable readiness.
-            await WaitAsync(
-                async () =>
+            await _fixture.WaitAsync(
+                async ct =>
                     CdcDeploymentKafkaPolicy
-                        .ValidateAcls(
-                            _request,
-                            await _fixture.Adapter.InspectAclsAsync(_request, Token),
-                            false
-                        )
+                        .ValidateAcls(_request, await _fixture.Adapter.InspectAclsAsync(_request, ct), false)
                         .State == CoreCdc.CdcKafkaPolicyItemState.Satisfied,
                 Token
             );
@@ -720,10 +722,10 @@ public sealed class Given_authorized_three_broker_cdc_policy
         {
             // A lost/delayed read-back can require another governed cleanup pass. Reconcile absence,
             // including NotFound after an earlier delete, without substituting a native acknowledgement.
-            await WaitAsync(
-                async () =>
+            await _fixture.WaitAsync(
+                async ct =>
                 {
-                    var result = await _fixture.Adapter.DeleteAsync(scope, kind, Token);
+                    var result = await _fixture.Adapter.DeleteAsync(scope, kind, ct);
                     return result is CdcTransportResult<CoreCdc.CdcGovernedArtifact>.Observed observed
                         && observed.Value.CleanupState
                             is CoreCdc.CdcCleanupState.Deleted

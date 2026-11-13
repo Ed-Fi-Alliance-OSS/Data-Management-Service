@@ -20,6 +20,10 @@ internal sealed class CdcRuntimeOwner(
     private CdcRestartObservations _restartObservations = null!;
     private bool _disposed;
     private bool _stopFailed;
+    private Task _pendingCleanup = Task.CompletedTask;
+    private bool _drainFailed;
+    private bool _phaseDrainFailed;
+    internal CancellationToken HoldToken { get; private set; }
 
     public ICdcProjectionRuntime Runtime =>
         _runtime ?? throw new InvalidOperationException("CDC_API_RUNTIME_STOPPED");
@@ -31,10 +35,51 @@ internal sealed class CdcRuntimeOwner(
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return await action(token);
+            if (_phaseDrainFailed)
+            {
+                throw new InvalidOperationException("CDC_API_PHASE_DRAIN_FAILED");
+            }
+            using var phase = CancellationTokenSource.CreateLinkedTokenSource(token);
+            HoldToken = phase.Token;
+            T result = default!;
+            Exception failure = null!;
+            try
+            {
+                // Runtime StartAsync may retain the execution token for its background service.
+                // Only holds use the narrower token cancelled when this phase ends.
+                result = await action(token);
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+            try
+            {
+                // A hold cannot outlive the serialized phase, including a failed scan.
+                await phase.CancelAsync();
+                if (_gate is not null)
+                {
+                    await _gate.WaitUntilIdleAsync(CancellationToken.None);
+                }
+            }
+            catch (Exception cleanupFailure)
+            {
+                _phaseDrainFailed = true;
+                if (failure is not null)
+                {
+                    throw new AggregateException("CDC_API_PHASE_AND_DRAIN_FAILED", failure, cleanupFailure);
+                }
+                throw;
+            }
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+            return result;
         }
         finally
         {
+            HoldToken = CancellationToken.None;
             _serial.Release();
         }
     }
@@ -66,6 +111,13 @@ internal sealed class CdcRuntimeOwner(
             {
                 await gate.DisposeAsync();
             }
+        }
+        catch (TimeoutException) when (!gate.CleanupCompletion.IsCompleted)
+        {
+            _stopFailed = true;
+            _drainFailed = true;
+            _pendingCleanup = FinishPendingStopAsync(gate.CleanupCompletion, runtime, restartObservations);
+            throw new CdcPendingCleanupException(_pendingCleanup);
         }
         catch (Exception exception)
         {
@@ -101,11 +153,44 @@ internal sealed class CdcRuntimeOwner(
         }
     }
 
+    private static async Task FinishPendingStopAsync(
+        Task gateCleanup,
+        ICdcProjectionRuntime runtime,
+        CdcRestartObservations observations
+    )
+    {
+        try
+        {
+            await gateCleanup;
+        }
+        finally
+        {
+            try
+            {
+                if (runtime is not null)
+                {
+                    await runtime.DisposeAsync();
+                }
+            }
+            finally
+            {
+                if (observations is not null)
+                {
+                    await observations.DisposeAsync();
+                }
+            }
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         await _serial.WaitAsync();
         try
         {
+            if (_drainFailed)
+            {
+                throw new CdcPendingCleanupException(_pendingCleanup);
+            }
             if (_disposed)
             {
                 return;

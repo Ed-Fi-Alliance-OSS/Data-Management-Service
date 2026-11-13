@@ -43,7 +43,7 @@ internal sealed partial class CdcApiScenarios
                 await CheckpointAsync(scenarioId, "healthy-before-fault", source, source.ContentVersion);
 
                 await phase.Gate.WaitUntilIdleAsync(ct);
-                phase.Gate.Pause(source.DocumentId);
+                phase.Gate.Pause(phase.HoldToken, source.DocumentId);
                 try
                 {
                     await phase.RunWithUnavailableOffsetsAsync(

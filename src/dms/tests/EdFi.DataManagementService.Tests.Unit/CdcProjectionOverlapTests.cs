@@ -19,7 +19,7 @@ public partial class Given_CdcProjectionGate
         await _processing;
         _writer.Calls.Clear();
         _materializer.Calls.Clear();
-        _gate.PauseForOverlap();
+        _gate.PauseForOverlap(_phase.Token);
         _processing = _processor.ProcessItemAsync(Request(_context, 101), _cancellation.Token);
         return await _gate.WaitUntilMaterializedAsync();
     }
@@ -32,6 +32,8 @@ public partial class Given_CdcProjectionGate
         var candidate = _materializer.Candidate;
         _materializer.Calls.Should().ContainSingle();
         _writer.Calls.Should().ContainSingle().Which.Candidate.Should().BeNull();
+        _processing.IsCompleted.Should().BeFalse();
+        _clock.Advance(TimeSpan.FromMinutes(6));
         _processing.IsCompleted.Should().BeFalse();
         Task<CdcProjectionWriteObservation> written = _gate.WaitUntilWrittenAsync();
         written.IsCompleted.Should().BeFalse();
@@ -144,10 +146,12 @@ public partial class Given_CdcProjectionGate
     }
 
     [Test]
-    public async Task It_times_out_the_materialized_hold_without_publishing_or_reporting_completion()
+    public async Task It_cancels_the_materialized_hold_at_the_phase_deadline_without_publishing_or_reporting_completion()
     {
         await ArrangeOverlapAsync();
-        (await _processing).Outcome.Should().Be(DocumentCacheProjectionItemProcessOutcome.TargetBackoff);
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        Func<Task> processing = () => _processing;
+        await processing.Should().ThrowAsync<OperationCanceledException>();
         _writer.Calls.Should().ContainSingle().Which.Candidate.Should().BeNull();
         using var cancellation = new CancellationTokenSource();
         var written = _gate.WaitUntilWrittenAsync(cancellation.Token);
@@ -158,15 +162,16 @@ public partial class Given_CdcProjectionGate
     }
 
     [Test]
-    public async Task It_times_out_the_next_attempt_before_its_writer_fast_path()
+    public async Task It_cancels_the_next_attempt_at_the_phase_deadline_before_its_writer_fast_path()
     {
         await ArrangeOverlapAsync();
         _gate.ReleaseCandidate();
         await _processing;
         _processing = _processor.ProcessItemAsync(Request(_context, 101));
         await _gate.WaitUntilPausedAsync();
+        _clock.Advance(TimeSpan.FromMinutes(10));
         Func<Task> act = () => _processing;
-        await act.Should().ThrowAsync<TimeoutException>();
+        await act.Should().ThrowAsync<OperationCanceledException>();
         _writer.Calls.Should().HaveCount(2);
     }
 
@@ -175,7 +180,7 @@ public partial class Given_CdcProjectionGate
     {
         _gate.Release();
         await _processing;
-        _gate.PauseForOverlap();
+        _gate.PauseForOverlap(_phase.Token);
         var materialized = _gate.WaitUntilMaterializedAsync();
         var written = _gate.WaitUntilWrittenAsync();
         var next = _gate.WaitUntilPausedAsync();

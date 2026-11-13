@@ -683,7 +683,7 @@ public sealed partial class CdcKafkaAdminAdapter
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
-        return await call().WaitAsync(request.Timing.CallTimeout, cancellationToken);
+        return await CdcOperationDrain.Track(call()).WaitAsync(request.Timing.CallTimeout, cancellationToken);
     }
 
     private static async Task<CdcTransportResult<T>> GuardAsync<T>(

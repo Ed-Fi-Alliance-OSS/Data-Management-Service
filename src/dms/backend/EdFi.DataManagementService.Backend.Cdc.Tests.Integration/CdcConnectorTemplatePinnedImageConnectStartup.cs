@@ -12,7 +12,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
     private sealed record ConnectStartupAttempt(int Attempt, int ExitCode, string Category);
 
-    private async Task StartKafkaConnectWithRetryAsync(CancellationToken cancellationToken)
+    private async Task StartKafkaConnectWithRetryAsync(
+        CancellationToken cancellationToken,
+        CdcFixturePorts initialPorts = null!
+    )
     {
         const int maximumAttempts = 3;
         List<ConnectStartupAttempt> attempts = [];
@@ -20,10 +23,22 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         {
             for (int attempt = 1; attempt <= maximumAttempts; attempt++)
             {
-                DockerCommandResult result = await _docker.RunAllowingFailureAsync(
-                    BuildKafkaConnectRunArguments(),
-                    cancellationToken
-                );
+                cancellationToken.ThrowIfCancellationRequested();
+                if (initialPorts is not null)
+                {
+                    initialPorts.Release(1);
+                    initialPorts.Release(2);
+                }
+                DockerCommandResult result = _controllerComposeKafka
+                    ? await RunControllerComposeAsync(
+                        ["up", "--detach", "--wait", "kafka-cdc-worker"],
+                        cancellationToken,
+                        allowingFailure: true
+                    )
+                    : await _docker.RunAllowingFailureAsync(
+                        BuildKafkaConnectRunArguments(),
+                        cancellationToken
+                    );
                 bool portConflict = IsPortBindFailure(result.StandardError);
                 string category = (result.ExitCode, portConflict) switch
                 {
@@ -47,9 +62,23 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 // before retry, even if the caller canceled while Docker was starting it.
                 using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(20));
                 await _docker.RunAsync(["rm", "-f", "-v", ConnectContainerName], cleanup.Token);
-                // Requests already contain these endpoints: changing ports would invalidate them.
-                // Retry only briefly for transient conflicts; a persistent owner remains fatal.
-                await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (initialPorts is not null)
+                {
+                    initialPorts.Replace(1);
+                    initialPorts.Replace(2);
+                    _controllerConnectPort = initialPorts.Ports[1];
+                    _controllerMetricsPort = initialPorts.Ports[2];
+                    if (_controllerComposeKafka)
+                    {
+                        await PrepareControllerComposeAsync(cancellationToken);
+                    }
+                }
+                else
+                {
+                    // Recovery of an already launched worker retains the endpoints held by clients.
+                    await Task.Delay(TimeSpan.FromMilliseconds(250), cancellationToken);
+                }
             }
         }
         finally

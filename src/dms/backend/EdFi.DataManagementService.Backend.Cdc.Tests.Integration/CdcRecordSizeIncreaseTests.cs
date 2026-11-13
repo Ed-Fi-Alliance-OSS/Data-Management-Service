@@ -20,6 +20,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
 public sealed partial class Given_Cdc_Controller_Record_Size_Increase(CdcProvider provider)
 {
     private const int Ceiling = 2_000_000;

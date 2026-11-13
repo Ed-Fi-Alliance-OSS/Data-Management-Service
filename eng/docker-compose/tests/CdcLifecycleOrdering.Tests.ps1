@@ -1420,12 +1420,12 @@ Invoke-CdcDeploymentLifecycle 'dms-local' '/unused/start.ps1' @{ d = $true; v = 
     It 'serializes independent wrapper processes with the same deployment lock' {
         $modulePath = Join-Path $script:root 'cdc-lifecycle.psm1'
         $childPath = Join-Path $script:root 'contend.ps1'
-        $ready = Join-Path $script:root 'lock-ready'
         $acquired = Join-Path $script:root 'lock-acquired'
         @'
-param($ModulePath, $ReadyPath, $AcquiredPath)
+param($ModulePath, $AcquiredPath)
+[Console]::Error.WriteLine('CDC_WRAPPER_TEST_READY')
+[Console]::In.ReadLine() | Out-Null
 Import-Module $ModulePath
-'waiting' | Set-Content $ReadyPath
 $lock = & (Get-Module cdc-lifecycle) { Enter-CdcDeploymentLock 'dms-local' }
 try { 'acquired' | Set-Content $AcquiredPath } finally { $lock.Dispose() }
 '@ | Set-Content $childPath
@@ -1434,13 +1434,15 @@ try { 'acquired' | Set-Content $AcquiredPath } finally { $lock.Dispose() }
         $launcher = Get-Command pwsh -CommandType Application | Select-Object -First 1
         $info = [Diagnostics.ProcessStartInfo]::new($launcher.Source)
         $info.UseShellExecute = $false
-        foreach ($arg in @('-NoProfile', '-File', $childPath, $modulePath, $ready, $acquired)) { $info.ArgumentList.Add($arg) }
+        $info.RedirectStandardInput = $true
+        $info.RedirectStandardError = $true
+        foreach ($arg in @('-NoProfile', '-File', $childPath, $modulePath, $acquired)) { $info.ArgumentList.Add($arg) }
         $child = [Diagnostics.Process]::Start($info)
         try {
-            $deadline = [DateTimeOffset]::UtcNow.AddSeconds(5)
-            while (-not (Test-Path $ready) -and [DateTimeOffset]::UtcNow -lt $deadline) { Start-Sleep -Milliseconds 50 }
-            Test-Path $ready | Should -BeTrue
-            Start-Sleep -Milliseconds 200
+            $child.StandardError.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(30)).GetAwaiter().GetResult() | Should -Be 'CDC_WRAPPER_TEST_READY'
+            $child.StandardInput.WriteLine('continue')
+            $child.StandardInput.Close()
+            $child.StandardError.ReadLineAsync().WaitAsync([TimeSpan]::FromSeconds(30)).GetAwaiter().GetResult() | Should -Be 'CDC_DEPLOYMENT_LOCK_CONTENDED'
             Test-Path $acquired | Should -BeFalse
             $lock.Dispose()
             $child.WaitForExit(5000) | Should -BeTrue

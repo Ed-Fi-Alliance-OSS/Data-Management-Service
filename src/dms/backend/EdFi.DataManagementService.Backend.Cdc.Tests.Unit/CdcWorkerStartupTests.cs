@@ -3,10 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using System.Diagnostics;
 using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
@@ -208,10 +209,19 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
     {
         ShortTiming(200);
         using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        ConfigureCompose(boundary, async token => await Task.Delay(Timeout.InfiniteTimeSpan, token));
-        var elapsed = Stopwatch.StartNew();
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        ConfigureCompose(
+            boundary,
+            async token =>
+            {
+                token.IsCancellationRequested.Should().BeFalse();
+                clock.Advance(_request.Timing.CallTimeout);
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+            clock: clock
+        );
         var result = await StartAsync(guard.Token);
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(800));
+        guard.IsCancellationRequested.Should().BeFalse();
         result
             .Diagnostics.Should()
             .ContainSingle()
@@ -249,15 +259,23 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
             TimeSpan.FromSeconds(1),
             TimeSpan.FromSeconds(1)
         );
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
         ConfigureCompose(
             "worker-up",
-            async token => await Task.Delay(Timeout.InfiniteTimeSpan, token),
-            TimeSpan.FromMilliseconds(600)
+            async token =>
+            {
+                token.IsCancellationRequested.Should().BeFalse();
+                // Broker took 600 ms; the worker's own call timer has 600 ms left.
+                clock.Advance(TimeSpan.FromMilliseconds(400));
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            },
+            TimeSpan.FromMilliseconds(600),
+            clock
         );
         using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(5));
-        var elapsed = Stopwatch.StartNew();
         var result = await StartAsync(guard.Token);
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(1400));
+        guard.IsCancellationRequested.Should().BeFalse();
+        clock.GetUtcNow().Subtract(clock.Start).Should().Be(_request.Timing.WaitTimeout);
         result
             .Diagnostics.Should()
             .ContainSingle()
@@ -286,9 +304,21 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
     private void ConfigureCompose(
         string boundary,
         Func<CancellationToken, Task> stall,
-        TimeSpan brokerDelay = default
+        TimeSpan brokerDelay = default,
+        FakeTimeProvider clock = null!
     )
     {
+        ObservationTime = clock ?? TimeProvider.System;
+        if (clock is not null)
+        {
+            _services.Dispose();
+            var services = new ServiceCollection()
+                .AddSingleton(ObservationTime)
+                .AddCdcConnectorTemplates()
+                .AddDmsCdcControlPlane();
+            services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
+            _services = services.BuildServiceProvider();
+        }
         int configs = 0;
         var docker = new Given_CdcWorkerComposeStartup.Docker(
             async (args, token) =>
@@ -306,7 +336,8 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
                 _effects.Add(phase);
                 if (phase == "broker-up" && brokerDelay > TimeSpan.Zero)
                 {
-                    await Task.Delay(brokerDelay, token);
+                    clock!.Advance(brokerDelay);
+                    token.ThrowIfCancellationRequested();
                 }
                 if (phase == boundary)
                 {
@@ -317,10 +348,12 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
         );
         _startup = new(
             new CdcKafkaProvisioning(
-                _root,
+                _store,
+                _services.GetRequiredService<ICdcBindingLifecycleService>(),
                 _kafka,
                 _runtime,
-                new CdcKafkaProducerInspection(_connect, _worker)
+                new CdcKafkaProducerInspection(_connect, _worker),
+                ObservationTime
             ),
             new CdcComposeWorkerStartupTransport(
                 "/compose/kafka-cdc.compose.yml",
@@ -329,7 +362,13 @@ internal sealed class Given_CdcWorkerStartup(bool retained)
                 new HashSet<string> { "example/qualified@" + _request.WorkerPolicy.QualifiedImageDigest },
                 docker
             )
-        );
+            {
+                Clock = ObservationTime,
+            }
+        )
+        {
+            Clock = ObservationTime,
+        };
     }
 
     private void AssertComposePhases(string boundary)
@@ -529,13 +568,15 @@ public sealed class Given_CdcWorkerComposeStartup
     public async Task It_bounds_inspection_and_startup_without_a_caller_token(bool worker, bool inspection)
     {
         _request = WithTiming(_request, TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(5));
-        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var clock = new FakeTimeProvider();
         var docker = new Docker(
             async (args, token) =>
             {
                 _commands.Add(string.Join(" ", args));
                 if (args.Contains("config") == inspection)
                 {
+                    clock.Advance(_request.Timing.CallTimeout);
                     using var guarded = CancellationTokenSource.CreateLinkedTokenSource(token, guard.Token);
                     await Task.Delay(Timeout.InfiniteTimeSpan, guarded.Token);
                 }
@@ -548,7 +589,10 @@ public sealed class Given_CdcWorkerComposeStartup
             "selected-project",
             new HashSet<string> { Image },
             docker
-        );
+        )
+        {
+            Clock = clock,
+        };
         Func<Task> act = () =>
             worker
                 ? _transport.StartWorkerAsync(_request, CancellationToken.None)
@@ -563,19 +607,27 @@ public sealed class Given_CdcWorkerComposeStartup
     public async Task It_shares_the_same_deadline_token_across_inspection_and_startup(bool worker)
     {
         _request = WithTiming(_request, TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(5));
-        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        using var guard = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var clock = new FakeTimeProvider();
+        bool inspectionEntered = false;
+        bool startupEntered = false;
         CancellationToken inspectionToken = default;
         var docker = new Docker(
             async (args, token) =>
             {
                 if (args.Contains("config"))
                 {
+                    inspectionEntered = true;
                     inspectionToken = token;
-                    await Task.Delay(TimeSpan.FromMilliseconds(300), token);
+                    clock.Advance(TimeSpan.FromMilliseconds(300));
+                    token.IsCancellationRequested.Should().BeFalse();
                     return _configuration;
                 }
+                startupEntered = true;
                 token.Should().Be(inspectionToken);
                 token.Should().NotBe(guard.Token);
+                token.IsCancellationRequested.Should().BeFalse();
+                clock.Advance(TimeSpan.FromMilliseconds(200));
                 await Task.Delay(Timeout.InfiniteTimeSpan, token);
                 return "";
             }
@@ -586,14 +638,19 @@ public sealed class Given_CdcWorkerComposeStartup
             "selected-project",
             new HashSet<string> { Image },
             docker
-        );
-        var elapsed = Stopwatch.StartNew();
+        )
+        {
+            Clock = clock,
+        };
         Func<Task> act = () =>
             worker
                 ? _transport.StartWorkerAsync(_request, guard.Token)
                 : _transport.StartBrokerAsync(_request, guard.Token);
         await act.Should().ThrowAsync<OperationCanceledException>();
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromMilliseconds(750));
+        inspectionEntered.Should().BeTrue();
+        startupEntered.Should().BeTrue();
+        inspectionToken.IsCancellationRequested.Should().BeTrue();
+        clock.GetUtcNow().Subtract(clock.Start).Should().Be(_request.Timing.CallTimeout);
         guard.IsCancellationRequested.Should().BeFalse();
     }
 

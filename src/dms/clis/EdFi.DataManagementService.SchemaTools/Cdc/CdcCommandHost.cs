@@ -71,7 +71,15 @@ public static class CdcCommandHost
             DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
         };
 
-    public static Command Create(ICdcCommandRunner runner, TextWriter output, TextWriter error)
+    public static Command Create(ICdcCommandRunner runner, TextWriter output, TextWriter error) =>
+        Create(runner, output, error, Task.CompletedTask);
+
+    private static Command Create(
+        ICdcCommandRunner runner,
+        TextWriter output,
+        TextWriter error,
+        Task invocationReady
+    )
     {
         var group = new Command(
             "cdc",
@@ -149,6 +157,8 @@ public static class CdcCommandHost
             command.SetAction(
                 async (parse, token) =>
                 {
+                    await invocationReady;
+                    using var lockDiagnostics = CdcControllerLockDiagnostics.ReportTo(error);
                     CdcCommandResult result;
                     try
                     {
@@ -224,7 +234,8 @@ public static class CdcCommandHost
     {
         var root = new RootCommand();
         root.Options.Add(new Option<bool>("--verbose", "-v") { Recursive = true });
-        root.Subcommands.Add(Create(runner, output, error));
+        var invocationReady = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        root.Subcommands.Add(Create(runner, output, error, invocationReady.Task));
         var parse = root.Parse(args);
         if (parse.Errors.Count > 0 || args.Length < 2)
         {
@@ -238,7 +249,7 @@ public static class CdcCommandHost
             await WriteAsync(failure, output, error);
             return failure.ExitCode;
         }
-        return await parse.InvokeAsync(
+        var invocation = parse.InvokeAsync(
             new InvocationConfiguration
             {
                 Output = output,
@@ -248,6 +259,10 @@ public static class CdcCommandHost
             },
             token
         );
+        // The pinned System.CommandLine version registers signal handlers only after the action
+        // returns its first incomplete task. Do not enter controller work before that registration.
+        invocationReady.SetResult();
+        return await invocation;
     }
 
     public static string Name(CdcCommandOperation operation) =>

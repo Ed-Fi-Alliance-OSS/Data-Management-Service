@@ -4,8 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
-using System.Net;
-using System.Net.Sockets;
 using System.Text.Json;
 using Confluent.Kafka;
 using Confluent.Kafka.Admin;
@@ -22,18 +20,21 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// actual authenticated clients exercise access. No substitute provider, producer-capacity or ACL evidence.
 /// SASL/PLAIN is confined to an isolated Docker network and loopback ports, with ephemeral credentials.
 /// </summary>
-internal sealed partial class CdcKafkaPolicyFixture(bool secured)
+internal sealed partial class CdcKafkaPolicyFixture(bool secured, IDockerCli docker = null!)
     : IAsyncDisposable,
         ICdcKafkaAuthorizationInspection,
         ICdcWorkerStartupTransport,
         ICdcKafkaProducerInspection
 {
-    private readonly DockerCli _docker = new();
+    internal CdcFixtureProbes Probes { get; } = new();
+    private Task _disposal = null!;
+    private readonly IDockerCli _docker = docker ?? new DockerCli();
     private readonly string _prefix = "cdc-policy-" + Guid.NewGuid().ToString("N")[..12];
     private readonly string _password = Guid.NewGuid().ToString("N");
-    private readonly int[] _ports = Enumerable.Range(0, secured ? 3 : 1).Select(_ => FreePort()).ToArray();
-    private readonly int _workerPort = FreePort();
-    private readonly int _metricsPort = FreePort();
+    private readonly CdcFixturePorts _reservedPorts = new(secured ? 5 : 3);
+    private int[] _ports => _reservedPorts.Ports[..^2];
+    private int _workerPort => _reservedPorts.Ports[^2];
+    private int _metricsPort => _reservedPorts.Ports[^1];
     private readonly List<string> _containers = [];
     private readonly List<string> _volumes = [];
     private readonly string _root = Path.Combine(
@@ -82,28 +83,41 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
             string volume = Broker(i) + "-data";
             await DockerAsync(["volume", "create", volume], token);
             _volumes.Add(volume);
-            await StartNodeAsync(i, 1_048_576, token);
+            await CdcFixtureDockerStartup.RunAsync(
+                async attemptToken =>
+                {
+                    _reservedPorts.Release(i);
+                    return await StartNodeAsync(i, 1_048_576, attemptToken);
+                },
+                cleanupToken => DockerAsync(["rm", "-f", "-v", Broker(i)], cleanupToken),
+                () => _reservedPorts.Replace(i),
+                token
+            );
         }
         _admin = new AdminClientBuilder(new AdminClientConfig(Client("admin")))
             .SetLogHandler((_, _) => { })
             .SetErrorHandler((_, _) => { })
             .Build();
         await WaitAsync(
-            () => Task.FromResult(_admin.GetMetadata(TimeSpan.FromSeconds(3)).Brokers.Count == _ports.Length),
+            ct => Task.FromResult(_admin.GetMetadata(TimeSpan.FromSeconds(3)).Brokers.Count == _ports.Length),
             token
         );
         Adapter = Value(CdcKafkaAdminAdapter.Create(new AdminClientConfig(Client("admin")), this));
         // Neither shared-store preparation nor policy observation can initialize a projection runtime.
         Controller = new(_root, Adapter, null!, this);
         await WaitAsync(
-            async () =>
-                (await Adapter.InspectAclsAsync(Request(), token))
+            async ct =>
+                (await Adapter.InspectAclsAsync(Request(), ct))
                 is CdcTransportResult<CdcKafkaAclEvidence>.Observed,
             token
         );
     }
 
-    private async Task StartNodeAsync(int index, int replicaFetchBytes, CancellationToken token)
+    private async Task<DockerCommandResult> StartNodeAsync(
+        int index,
+        int replicaFetchBytes,
+        CancellationToken token
+    )
     {
         List<string> args =
         [
@@ -191,7 +205,7 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
             _containers.Add(Broker(index));
         }
 
-        await DockerAsync(args, token);
+        return await _docker.RunAllowingFailureAsync(args, token);
     }
 
     internal CdcDeploymentRequest Request(string instance = "a", bool production = true)
@@ -287,9 +301,9 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
             await CreateTopicAsync(request, topic, token);
         }
         await WaitAsync(
-            async () =>
+            async ct =>
             {
-                var acls = await Adapter.ReconcileMissingGrantsAsync(request, false, token);
+                var acls = await Adapter.ReconcileMissingGrantsAsync(request, false, ct);
                 var validation = CdcDeploymentKafkaPolicy.ValidateAcls(request, acls, false);
                 validation.UnsafeGrants.Should().BeFalse();
                 return validation.State == CoreCdc.CdcKafkaPolicyItemState.Satisfied;
@@ -305,13 +319,9 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
     )
     {
         await WaitAsync(
-            async () =>
+            async ct =>
                 CdcDeploymentKafkaPolicy
-                    .ObserveTopic(
-                        request,
-                        topic,
-                        await Adapter.CreateMissingTopicAsync(request, topic, token)
-                    )
+                    .ObserveTopic(request, topic, await Adapter.CreateMissingTopicAsync(request, topic, ct))
                     .State == CoreCdc.CdcKafkaPolicyItemState.Satisfied,
             token
         );
@@ -349,8 +359,8 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
 
     internal Task PrepareOffsetsAsync(CdcDeploymentRequest request, CancellationToken token) =>
         WaitAsync(
-            async () =>
-                (await Controller.ProvisionOffsetStoreAsync(request, token))
+            async ct =>
+                (await Controller.ProvisionOffsetStoreAsync(request, ct))
                     is CdcTransportResult<CoreCdc.CdcConnectOffsetStorePolicyObservation>.Observed observed
                 && observed.Value.PolicyState == CoreCdc.CdcConnectOffsetStorePolicyState.Satisfied,
             token
@@ -460,7 +470,7 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
 
     public Task StartBrokerAsync(CdcDeploymentRequest request, CancellationToken cancellationToken) =>
         WaitAsync(
-            () => Task.FromResult(_admin.GetMetadata(TimeSpan.FromSeconds(3)).Brokers.Count == _ports.Length),
+            ct => Task.FromResult(_admin.GetMetadata(TimeSpan.FromSeconds(3)).Brokers.Count == _ports.Length),
             cancellationToken
         );
 
@@ -521,19 +531,52 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
             );
         }
 
-        List<string> args =
-        [
-            "run",
-            "--detach",
-            "--name",
-            Worker,
-            "--network",
-            _prefix,
-            "-p",
-            $"127.0.0.1:{_workerPort}:8083",
-            "-p",
-            $"127.0.0.1:{_metricsPort}:9404",
-        ];
+        await StartWorkerContainerAsync(cancellationToken);
+        request = RefreshWorkerEndpoints(request);
+        WorkerLaunches++;
+        string started = await DockerAsync(
+            ["inspect", Worker, "--format", "{{.State.StartedAt}}"],
+            cancellationToken
+        );
+        WorkerStartedAt = DateTimeOffset.Parse(started, CultureInfo.InvariantCulture);
+        await WaitAsync(
+            async ct =>
+            {
+                using HttpClient http = new() { Timeout = TimeSpan.FromSeconds(3) };
+                using var response = await http.GetAsync(request.ConnectEndpoint, ct);
+                return response.IsSuccessStatusCode;
+            },
+            cancellationToken
+        );
+        await WaitAsync(
+            async ct =>
+            {
+                using HttpClient http = new() { Timeout = TimeSpan.FromSeconds(3) };
+                using var response = await http.GetAsync(request.WorkerMetricsEndpoint, ct);
+                return response.IsSuccessStatusCode;
+            },
+            cancellationToken
+        );
+        await WaitAsync(
+            async ct =>
+                (await DockerAsync(["logs", Worker], ct)).Contains(
+                    "Finished starting connectors and tasks",
+                    StringComparison.Ordinal
+                ),
+            cancellationToken
+        );
+    }
+
+    internal CdcDeploymentRequest RefreshWorkerEndpoints(CdcDeploymentRequest request) =>
+        CdcFixtureRequests.WithWorkerEndpoints(
+            request,
+            new($"http://127.0.0.1:{_workerPort}/"),
+            new($"http://127.0.0.1:{_metricsPort}/metrics")
+        );
+
+    internal async Task StartWorkerContainerAsync(CancellationToken cancellationToken)
+    {
+        List<string> environment = [];
         Dictionary<string, string> env = new()
         {
             ["BOOTSTRAP_SERVERS"] = string.Join(
@@ -561,34 +604,42 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
         }
         foreach (var (key, value) in env)
         {
-            args.AddRange(["-e", key + "=" + value]);
+            environment.AddRange(["-e", key + "=" + value]);
         }
 
-        args.Add(CdcQualifiedWorkerImage.Image);
         _containers.Add(Worker);
-        await DockerAsync(args, cancellationToken);
-        WorkerLaunches++;
-        string started = await DockerAsync(
-            ["inspect", Worker, "--format", "{{.State.StartedAt}}"],
-            cancellationToken
-        );
-        WorkerStartedAt = DateTimeOffset.Parse(started, CultureInfo.InvariantCulture);
-        using HttpClient http = new() { Timeout = TimeSpan.FromSeconds(3) };
-        await WaitAsync(
-            async () => (await http.GetAsync(request.ConnectEndpoint, cancellationToken)).IsSuccessStatusCode,
-            cancellationToken
-        );
-        await WaitAsync(
-            async () =>
-                (await http.GetAsync(request.WorkerMetricsEndpoint, cancellationToken)).IsSuccessStatusCode,
-            cancellationToken
-        );
-        await WaitAsync(
-            async () =>
-                (await DockerAsync(["logs", Worker], cancellationToken)).Contains(
-                    "Finished starting connectors and tasks",
-                    StringComparison.Ordinal
-                ),
+        await CdcFixtureDockerStartup.RunAsync(
+            attemptToken =>
+            {
+                _reservedPorts.Release(_reservedPorts.Ports.Length - 2);
+                _reservedPorts.Release(_reservedPorts.Ports.Length - 1);
+                return _docker.RunAllowingFailureAsync(
+                    [
+                        "run",
+                        "--detach",
+                        "--name",
+                        Worker,
+                        "--network",
+                        _prefix,
+                        "-p",
+                        $"127.0.0.1:{_workerPort}:8083",
+                        "-p",
+                        $"127.0.0.1:{_metricsPort}:9404",
+                        .. environment,
+                        CdcQualifiedWorkerImage.Image,
+                    ],
+                    attemptToken
+                );
+            },
+            cleanupToken => DockerAsync(["rm", "-f", "-v", Worker], cleanupToken),
+            () =>
+            {
+                if (WorkerLaunches == 0)
+                {
+                    _reservedPorts.Replace(_reservedPorts.Ports.Length - 2);
+                    _reservedPorts.Replace(_reservedPorts.Ports.Length - 1);
+                }
+            },
             cancellationToken
         );
     }
@@ -613,9 +664,9 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
         using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(1));
         int consistent = 0;
         await WaitAsync(
-            async () =>
+            async ct =>
             {
-                var result = await Adapter.InspectTopicAsync(Request(), topic, timeout.Token);
+                var result = await Adapter.InspectTopicAsync(Request(), topic, ct);
                 bool matches =
                     result is CdcTransportResult<CdcKafkaTopicEvidence>.Observed found
                     && found.Value.Configuration.TryGetValue(key, out var entry)
@@ -670,7 +721,7 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
                 .Build();
             int brokerId = i + 1;
             await WaitAsync(
-                () =>
+                ct =>
                 {
                     var metadata = client.GetMetadata(TimeSpan.FromSeconds(3));
                     return Task.FromResult(
@@ -743,7 +794,7 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
         using CancellationTokenSource timeout = new(TimeSpan.FromMinutes(1));
         int consistent = 0;
         await WaitAsync(
-            async () =>
+            async ct =>
             {
                 var result = await _admin.DescribeAclsAsync(
                     filter,
@@ -830,7 +881,7 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
 
     internal Task WaitForReplicasAsync(string topic, CancellationToken token) =>
         WaitAsync(
-            () =>
+            ct =>
             {
                 var partitions = _admin
                     .GetMetadata(topic, TimeSpan.FromSeconds(3))
@@ -884,11 +935,15 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
     internal async Task ChangeBrokerCapacityAsync(int bytes, CancellationToken token)
     {
         await DockerAsync(["rm", "-f", "-v", Broker(0)], token);
-        await StartNodeAsync(0, bytes, token);
+        var restarted = await StartNodeAsync(0, bytes, token);
+        if (restarted.ExitCode != 0)
+        {
+            throw new InvalidOperationException("Kafka qualification broker restart failed.");
+        }
         await WaitAsync(
-            async () =>
+            async ct =>
             {
-                var evidence = await Adapter.InspectBrokersAsync(Request(), token);
+                var evidence = await Adapter.InspectBrokersAsync(Request(), ct);
                 return evidence is CdcTransportResult<CdcKafkaBrokerEvidence>.Observed found
                     && found.Value.Brokers.Count == _ports.Length
                     && found.Value.Brokers.Single(b => b.BrokerId == 1).ReplicaFetchMaxBytes == bytes;
@@ -952,28 +1007,27 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
         return ((CdcTransportResult<T>.Observed)result).Value;
     }
 
-    internal static async Task WaitAsync(Func<Task<bool>> predicate, CancellationToken token)
-    {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(TimeSpan.FromMinutes(2));
-        while (true)
-        {
-            timeout.Token.ThrowIfCancellationRequested();
-            try
+    internal Task WaitAsync(Func<CancellationToken, Task<bool>> predicate, CancellationToken token) =>
+        Probes.WaitAsync(
+            async ct =>
             {
-                if (await predicate().WaitAsync(timeout.Token))
+                try
                 {
-                    return;
+                    return await predicate(ct);
                 }
-            }
-            catch (Exception exception)
-                when (exception is KafkaException or HttpRequestException or TaskCanceledException)
-            {
-                // Startup polling retries transient transport failures within one finite deadline.
-            }
-            await Task.Delay(TimeSpan.FromMilliseconds(500), timeout.Token);
-        }
-    }
+                catch (Exception exception)
+                    when (!ct.IsCancellationRequested
+                        && exception is KafkaException or HttpRequestException or TaskCanceledException
+                    )
+                {
+                    // Only transient failures are retried, within the same cancellable observation.
+                    return false;
+                }
+            },
+            TimeSpan.FromMinutes(2),
+            TimeSpan.FromMilliseconds(500),
+            token
+        );
 
     private async Task<string> DockerAsync(IReadOnlyList<string> args, CancellationToken token)
     {
@@ -988,15 +1042,15 @@ internal sealed partial class CdcKafkaPolicyFixture(bool secured)
         return result.StandardOutput.Trim();
     }
 
-    private static int FreePort()
+    public ValueTask DisposeAsync()
     {
-        using TcpListener listener = new(IPAddress.Loopback, 0);
-        listener.Start();
-        return ((IPEndPoint)listener.LocalEndpoint).Port;
+        _disposal ??= Probes.DisposeResourcesAsync(DisposeResourcesAsync);
+        return new(_disposal);
     }
 
-    public async ValueTask DisposeAsync()
+    private async Task DisposeResourcesAsync()
     {
+        _reservedPorts.Dispose();
         Adapter?.Dispose();
         _admin?.Dispose();
         bool failed = false;
