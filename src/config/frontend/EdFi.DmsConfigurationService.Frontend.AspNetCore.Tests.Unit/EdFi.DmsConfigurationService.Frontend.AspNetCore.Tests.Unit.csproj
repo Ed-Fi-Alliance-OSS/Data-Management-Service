@@ -25,5 +25,9 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <EmbeddedResource Include="..\..\..\..\reference\design\managed-data-stores-DMS-1439\conformance-fixtures.json"
+                          LogicalName="DMS1439.ConformanceFixtures.json" />
+    </ItemGroup>
     <Import Project="PluginCmsFixtures.targets" />
 </Project>
