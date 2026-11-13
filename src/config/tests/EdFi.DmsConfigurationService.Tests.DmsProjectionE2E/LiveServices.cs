@@ -21,12 +21,16 @@ public sealed record ClientCredentials(string Tenant, int ApplicationId, string 
 /// added to <see cref="CleanupRegistry"/> as soon as its id is known, before any later request or check, so a call that
 /// fails part-way still has its record removed. A call that does not answer as expected throws
 /// <see cref="InvalidOperationException"/> naming the call and its status, never a credential, token or connection
-/// string.
+/// string. A tenant of <see cref="SingleTenant"/> addresses a single-tenant stack: no <c>Tenant</c> header, no tenant or
+/// route segment in a DMS path.
 /// </summary>
 public sealed class LiveServices : IDisposable
 {
     public const string ProjectionClaimName =
         "http://ed-fi.org/identity/claims/services/educationOrganizationProjection";
+
+    /// <summary>The tenant of a single-tenant stack.</summary>
+    public const string SingleTenant = "";
 
     private readonly ProjectionE2EEnvironment _environment;
     private readonly CleanupRegistry _cleanup;
@@ -159,7 +163,8 @@ public sealed class LiveServices : IDisposable
         string tenant,
         string name,
         string claimSetName,
-        IReadOnlyList<int> dataStoreIds
+        IReadOnlyList<int> dataStoreIds,
+        int? vendorId = null
     )
     {
         using HttpResponseMessage response = await CmsSendAsync(
@@ -168,7 +173,7 @@ public sealed class LiveServices : IDisposable
             "v3/applications",
             new JsonObject
             {
-                ["vendorId"] = _environment.VendorIdsByTenant[tenant],
+                ["vendorId"] = vendorId ?? _environment.VendorIdsByTenant[tenant],
                 ["applicationName"] = name,
                 ["claimSetName"] = claimSetName,
                 ["educationOrganizationIds"] = new JsonArray(),
@@ -192,6 +197,29 @@ public sealed class LiveServices : IDisposable
             application["key"]!.GetValue<string>(),
             application["secret"]!.GetValue<string>()
         );
+    }
+
+    /// <summary>Registers a vendor owning <paramref name="namespacePrefixes"/> and returns its id.</summary>
+    public async Task<int> CreateVendorAsync(string tenant, string company, string namespacePrefixes)
+    {
+        using HttpResponseMessage response = await CmsSendAsync(
+            HttpMethod.Post,
+            tenant,
+            "v3/vendors",
+            new JsonObject
+            {
+                ["company"] = company,
+                ["contactName"] = "Projection Reader E2E",
+                ["contactEmailAddress"] = "projection-reader-e2e@example.com",
+                ["namespacePrefixes"] = namespacePrefixes,
+            }
+        );
+        int vendorId = await CreatedIdAsync(response, $"creating vendor {company}");
+        _cleanup.Add(
+            $"vendor {vendorId} in {tenant}",
+            () => CmsDeleteAsync(tenant, $"v3/vendors/{vendorId}")
+        );
+        return vendorId;
     }
 
     /// <summary>
@@ -281,7 +309,11 @@ public sealed class LiveServices : IDisposable
     {
         using HttpRequestMessage request = new(
             HttpMethod.Post,
-            Dms($"management/{Uri.EscapeDataString(tenant)}/reload-claimsets")
+            Dms(
+                tenant == SingleTenant
+                    ? "management/reload-claimsets"
+                    : $"management/{Uri.EscapeDataString(tenant)}/reload-claimsets"
+            )
         );
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await AdminTokenAsync());
         using HttpResponseMessage response = await _http.SendAsync(request);
@@ -308,7 +340,7 @@ public sealed class LiveServices : IDisposable
     {
         using HttpRequestMessage request = new(
             HttpMethod.Post,
-            Dms($"{RoutePath(route)}/data/ed-fi/{resource}")
+            Dms($"{RoutePrefix(route)}data/ed-fi/{resource}")
         )
         {
             Content = JsonContent.Create(body),
@@ -347,7 +379,7 @@ public sealed class LiveServices : IDisposable
         using HttpRequestMessage request = new(
             HttpMethod.Get,
             Dms(
-                $"{RoutePath(route)}/management/education-organizations?dataStoreId="
+                $"{RoutePrefix(route)}management/education-organizations?dataStoreId="
                     + route.DataStoreId.ToString(CultureInfo.InvariantCulture)
             )
         );
@@ -358,8 +390,11 @@ public sealed class LiveServices : IDisposable
 
     public void Dispose() => _http.Dispose();
 
-    private static string RoutePath(FixtureRoute route) =>
-        $"{Uri.EscapeDataString(route.Tenant)}/{route.DistrictId}/{route.SchoolYear}";
+    /// <summary>The route's tenant and qualifier segments with a trailing slash; nothing on a single-tenant stack.</summary>
+    private static string RoutePrefix(FixtureRoute route) =>
+        route.Tenant == SingleTenant
+            ? ""
+            : $"{Uri.EscapeDataString(route.Tenant)}/{route.DistrictId}/{route.SchoolYear}/";
 
     private Uri Cms(string path) => new(_environment.ConfigServiceUrl, path);
 
@@ -387,7 +422,11 @@ public sealed class LiveServices : IDisposable
     {
         using HttpRequestMessage request = new(method, Cms(path));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", await AdminTokenAsync());
-        request.Headers.Add("Tenant", tenant);
+        if (tenant != SingleTenant)
+        {
+            request.Headers.Add("Tenant", tenant);
+        }
+
         if (body is not null)
         {
             request.Content = JsonContent.Create(body);

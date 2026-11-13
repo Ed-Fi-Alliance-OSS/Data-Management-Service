@@ -987,13 +987,14 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
         # with its outcome. Outcomes are "Passed", "Failed" or "NotExecuted" (a skipped test); the counters agree.
         function New-Trx {
             [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper that writes a fixture file under Pester TestDrive; no -WhatIf surface.')]
-            param([string] $Path, [string[]] $LiveOutcomes = @(), [string[]] $HarnessOutcomes = @())
+            param([string] $Path, [string[]] $LiveOutcomes = @(), [string[]] $HarnessOutcomes = @(), [string[]] $KeycloakOutcomes = @())
 
             $definitions = [System.Text.StringBuilder]::new()
             $results = [System.Text.StringBuilder]::new()
             $tests = @(
                 $LiveOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live.DmsProjectionReaderTests+Given_a_case"; Outcome = $_ } }
                 $HarnessOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Harness.LiveServicesCleanupTests+Given_a_case"; Outcome = $_ } }
+                $KeycloakOutcomes | ForEach-Object { [pscustomobject]@{ Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Keycloak.KeycloakProjectionReaderTests+Given_a_case"; Outcome = $_ } }
             )
             for ($index = 0; $index -lt $tests.Count; $index++) {
                 $id = [guid]::NewGuid()
@@ -1076,6 +1077,13 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
                 Should -Throw "*must pass every test; it ran 30 and passed 29*"
         }
 
+        It "rejects a run that includes a Keycloak reader result, even a passed one" {
+            $trx = Join-Path $TestDrive "keycloak-included.trx"
+            New-Trx -Path $trx -LiveOutcomes (Repeat "Passed" 20) -HarnessOutcomes (Repeat "Passed" 10) -KeycloakOutcomes @("Passed")
+            { Assert-DmsProjectionReaderTrxResults -TrxFile $trx -MinimumLiveTests 8 } |
+                Should -Throw "*must run no Keycloak reader test; it ran 1*"
+        }
+
         It "rejects a missing results file" {
             { Assert-DmsProjectionReaderTrxResults -TrxFile (Join-Path $TestDrive "absent.trx") -MinimumLiveTests 8 } |
                 Should -Throw "*wrote no results file*"
@@ -1144,6 +1152,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
 
             $script:executed | Should -HaveCount 1
             $script:executed[0] | Should -Match "dotnet test \`$project"
+            $script:executed[0] | Should -Match '--filter "Category!=KeycloakReader"'
             $script:executed[0] | Should -Not -Match "--no-build"
             $script:executed[0] | Should -Not -Match "--no-restore"
             Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {

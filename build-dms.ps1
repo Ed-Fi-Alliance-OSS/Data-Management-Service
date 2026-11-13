@@ -2138,7 +2138,8 @@ function RunDmsProjectionReaderE2E {
     .SYNOPSIS
         Runs the Configuration Service's DMS projection reader project against the Instance stack, inside the
         same test-process context as the Reqnroll suite. It always builds and restores the project, even with
-        -UsePrebuiltOutput: the shared CI build artifact holds only DMS output.
+        -UsePrebuiltOutput: the shared CI build artifact holds only DMS output. The project's Keycloak reader
+        fixture targets the single-tenant DMS E2E stack, so it is filtered out here.
     #>
     param(
         [string]
@@ -2152,6 +2153,7 @@ function RunDmsProjectionReaderE2E {
     Invoke-Execute {
         dotnet test $project `
             --configuration $Configuration `
+            --filter "Category!=KeycloakReader" `
             --logger "trx;LogFileName=$trxFile" `
             --logger console `
             --verbosity normal `
@@ -2167,7 +2169,9 @@ function Assert-DmsProjectionReaderTrxResults {
         Fails unless the reader project's TRX shows at least -MinimumLiveTests results from the live tests (the
         project's Live namespace, the only tests that reach DMS), every one of them passed, and every test of the
         project passed. The live results are counted on their own because the project also holds harness tests
-        that need no stack: a run that discovers or selects no live test must not pass on harness tests alone.
+        that need no stack: a run that discovers or selects no live test must not pass on harness tests alone. It
+        also fails if any result comes from the project's Keycloak namespace, whose fixture never belongs to an
+        Instance run.
     #>
     param(
         [string]
@@ -2178,6 +2182,7 @@ function Assert-DmsProjectionReaderTrxResults {
     )
 
     $liveClassPrefix = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Live."
+    $keycloakClassPrefix = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Keycloak."
 
     if (-not (Test-Path -LiteralPath $TrxFile)) {
         throw "DMS projection reader E2E wrote no results file at '$TrxFile'."
@@ -2202,10 +2207,21 @@ function Assert-DmsProjectionReaderTrxResults {
             $classByTestId[[string]$_.testId].StartsWith($liveClassPrefix, [System.StringComparison]::Ordinal)
         }
     )
+    $keycloakResults = @(
+        @($trx.TestRun.Results.UnitTestResult) | Where-Object {
+            $null -ne $_ -and
+            $classByTestId.ContainsKey([string]$_.testId) -and
+            $classByTestId[[string]$_.testId].StartsWith($keycloakClassPrefix, [System.StringComparison]::Ordinal)
+        }
+    )
     $livePassed = @($liveResults | Where-Object { $_.outcome -eq "Passed" }).Count
     $total = [int]$counters.total
     $passed = [int]$counters.passed
     Write-Output "DMS projection reader E2E: $livePassed of $($liveResults.Count) live tests passed; $passed of $total tests passed."
+
+    if ($keycloakResults.Count -gt 0) {
+        throw "DMS projection reader E2E on the Instance stack must run no Keycloak reader test; it ran $($keycloakResults.Count)."
+    }
 
     if ($liveResults.Count -lt $MinimumLiveTests -or $livePassed -ne $liveResults.Count) {
         throw "DMS projection reader E2E must run at least $MinimumLiveTests live tests and pass all of them; it ran $($liveResults.Count) and passed $livePassed."

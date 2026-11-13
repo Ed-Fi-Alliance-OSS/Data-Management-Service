@@ -25,25 +25,14 @@ public class ProjectionE2EFixture
     public const string EmptyTenant = "Tenant_255902";
     public const string EmptyQualifier = "255902/2024";
 
-    private const string Namespace = "uri://ed-fi.org";
-    private const string DescriptorCode = "ProjectionReaderE2E";
-
     private static ProjectionE2EFixture? _current;
 
     private ProjectionE2EEnvironment? _environment;
     private LiveServices? _services;
 
     /// <summary>The hierarchy written for the run, in ascending id order, as the projection serves it.</summary>
-    public static IReadOnlyList<EducationOrganizationProjectionItem> SeededItems { get; } =
-    [
-        new(1, "Reader E2E State", "RE SEA", "edfi.StateEducationAgency", null),
-        new(10, "Reader E2E Region Ten", null, "edfi.EducationServiceCenter", 1),
-        new(100, "Reader E2E District 100", "RE 100", "edfi.LocalEducationAgency", 10),
-        new(101, "Reader E2E District 101", null, "edfi.LocalEducationAgency", 100),
-        new(100001, "Reader E2E School 100001", null, "edfi.School", 100),
-        new(101001, "Escuela Lectora 101001 ñ", null, "edfi.School", 101),
-        new(900001, "Reader E2E School 900001", null, "edfi.School", null),
-    ];
+    public static IReadOnlyList<EducationOrganizationProjectionItem> SeededItems =>
+        ProjectionHierarchySeed.Items;
 
     public static ProjectionE2EFixture Current =>
         _current ?? throw new InvalidOperationException("The projection E2E fixture was not set up.");
@@ -123,110 +112,6 @@ public class ProjectionE2EFixture
             ]
         );
         string token = await Services.ClientTokenAsync(seeder);
-
-        foreach (
-            (string resource, string descriptor) in new[]
-            {
-                ("educationOrganizationCategoryDescriptors", "EducationOrganizationCategoryDescriptor"),
-                ("gradeLevelDescriptors", "GradeLevelDescriptor"),
-                ("localEducationAgencyCategoryDescriptors", "LocalEducationAgencyCategoryDescriptor"),
-            }
-        )
-        {
-            await Services.PostResourceAsync(
-                token,
-                route,
-                resource,
-                new JsonObject
-                {
-                    ["namespace"] = $"{Namespace}/{descriptor}",
-                    ["codeValue"] = DescriptorCode,
-                    ["shortDescription"] = DescriptorCode,
-                },
-                allowExisting: true
-            );
-        }
-
-        foreach (EducationOrganizationProjectionItem item in SeededItems)
-        {
-            (string resource, JsonObject body) = Body(item);
-            await Services.PostResourceAsync(token, route, resource, body, allowExisting: false);
-        }
-    }
-
-    /// <summary>The resource and body that make DMS serve <paramref name="item"/> with its expected parent.</summary>
-    private static (string Resource, JsonObject Body) Body(EducationOrganizationProjectionItem item)
-    {
-        JsonObject body = new() { ["nameOfInstitution"] = item.NameOfInstitution };
-        if (item.ShortNameOfInstitution is { } shortName)
-        {
-            body["shortNameOfInstitution"] = shortName;
-        }
-
-        JsonArray Categories() =>
-            new(
-                new JsonObject
-                {
-                    ["educationOrganizationCategoryDescriptor"] =
-                        $"{Namespace}/EducationOrganizationCategoryDescriptor#{DescriptorCode}",
-                }
-            );
-
-        long id = item.EducationOrganizationId;
-        switch (item.Discriminator)
-        {
-            case "edfi.StateEducationAgency":
-                body["stateEducationAgencyId"] = id;
-                body["categories"] = Categories();
-                return ("stateEducationAgencies", body);
-            case "edfi.EducationServiceCenter":
-                body["educationServiceCenterId"] = id;
-                body["categories"] = Categories();
-                body["stateEducationAgencyReference"] = new JsonObject { ["stateEducationAgencyId"] = 1 };
-                return ("educationServiceCenters", body);
-            case "edfi.LocalEducationAgency":
-                body["localEducationAgencyId"] = id;
-                body["categories"] = Categories();
-                body["localEducationAgencyCategoryDescriptor"] =
-                    $"{Namespace}/LocalEducationAgencyCategoryDescriptor#{DescriptorCode}";
-                if (id == 100)
-                {
-                    // Parent precedence: the service center wins over the state agency.
-                    body["educationServiceCenterReference"] = new JsonObject
-                    {
-                        ["educationServiceCenterId"] = 10,
-                    };
-                    body["stateEducationAgencyReference"] = new JsonObject { ["stateEducationAgencyId"] = 1 };
-                }
-                else
-                {
-                    body["parentLocalEducationAgencyReference"] = new JsonObject
-                    {
-                        ["localEducationAgencyId"] = item.ParentId,
-                    };
-                }
-
-                return ("localEducationAgencies", body);
-            case "edfi.School":
-                body["schoolId"] = id;
-                body["educationOrganizationCategories"] = Categories();
-                body["gradeLevels"] = new JsonArray(
-                    new JsonObject
-                    {
-                        ["gradeLevelDescriptor"] = $"{Namespace}/GradeLevelDescriptor#{DescriptorCode}",
-                    }
-                );
-                if (item.ParentId is { } localAgency)
-                {
-                    body["localEducationAgencyReference"] = new JsonObject
-                    {
-                        ["localEducationAgencyId"] = localAgency,
-                    };
-                }
-
-                return ("schools", body);
-            default:
-                throw new InvalidOperationException($"No seeding body for {item.Discriminator}.");
-        }
+        await ProjectionHierarchySeed.SeedAsync(Services, token, route);
     }
 }
