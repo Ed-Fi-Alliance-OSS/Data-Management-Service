@@ -5,6 +5,8 @@
 
 using System.Net;
 using System.Text.Json;
+using System.Text.RegularExpressions;
+using System.Xml.Linq;
 using EdFi.InstanceManagement.Tests.E2E.Management;
 using FluentAssertions;
 using Reqnroll;
@@ -325,35 +327,175 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         );
     }
 
-    [Then("the discovery metadata urls should resolve")]
-    public async Task ThenTheDiscoveryMetadataUrlsShouldResolve()
+    [Then("the discovery metadata urls should resolve to usable documents")]
+    public async Task ThenTheDiscoveryMetadataUrlsShouldResolveToUsableDocuments()
     {
         context.LastResponse.Should().NotBeNull("Discovery response must be available");
 
-        var responseBody = await context.LastResponse!.Content.ReadAsStringAsync();
-        using var responseDoc = JsonDocument.Parse(responseBody);
-        var urls = responseDoc.RootElement.GetProperty("urls");
-        string[] metadataUrlKeys = ["dependencies", "openApiMetadata", "xsdMetadata"];
-
-        using var metadataClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
-
-        foreach (string metadataUrlKey in metadataUrlKeys)
+        var discoveryResponse = context.LastResponse!;
+        try
         {
-            urls.TryGetProperty(metadataUrlKey, out var metadataUrlProperty)
-                .Should()
-                .BeTrue($"Discovery response should include urls.{metadataUrlKey}");
+            var discoveryUri = discoveryResponse.RequestMessage?.RequestUri;
+            discoveryUri.Should().NotBeNull("Discovery request URI must be available");
 
-            metadataUrlProperty.ValueKind.Should().Be(JsonValueKind.String);
-            var metadataUrl = metadataUrlProperty.GetString();
-            metadataUrl
-                .Should()
-                .NotBeNullOrWhiteSpace($"Discovery response should include a usable urls.{metadataUrlKey}");
+            var responseBody = await discoveryResponse.Content.ReadAsStringAsync();
+            string dependenciesUrl;
+            string specificationsUrl;
+            string xsdUrl;
+            using (var responseDoc = JsonDocument.Parse(responseBody))
+            {
+                var urls = responseDoc.RootElement.GetProperty("urls");
+                dependenciesUrl = ReadAdvertisedUrl(urls, "dependencies");
+                specificationsUrl = ReadAdvertisedUrl(urls, "openApiMetadata");
+                xsdUrl = ReadAdvertisedUrl(urls, "xsdMetadata");
+            }
 
-            context.LastResponse = await metadataClient.GetByLocationAsync(metadataUrl!);
-            context
-                .LastResponse.StatusCode.Should()
-                .Be(HttpStatusCode.OK, $"Discovery-advertised {metadataUrlKey} URL should resolve");
+            using var metadataClient = new DmsApiClient(TestConfiguration.DmsApiUrl, "");
+
+            await VerifyDependenciesAsync(metadataClient, dependenciesUrl, discoveryUri!);
+            await VerifyResourcesSpecificationAsync(metadataClient, specificationsUrl, discoveryUri!);
+            await VerifyCoreXsdAsync(metadataClient, xsdUrl, discoveryUri!);
         }
+        finally
+        {
+            discoveryResponse.Dispose();
+            context.LastResponse = null;
+        }
+    }
+
+    private static string ReadAdvertisedUrl(JsonElement urls, string key)
+    {
+        urls.TryGetProperty(key, out var property)
+            .Should()
+            .BeTrue($"Discovery response should include urls.{key}");
+        property.ValueKind.Should().Be(JsonValueKind.String);
+
+        var url = property.GetString();
+        url.Should().NotBeNullOrWhiteSpace($"Discovery response should include a usable urls.{key}");
+        return url!;
+    }
+
+    private static string RequireStringProperty(JsonElement element, string name, string what)
+    {
+        element.ValueKind.Should().Be(JsonValueKind.Object, $"{what} entries must be objects");
+        element.TryGetProperty(name, out var property).Should().BeTrue($"{what} entries must have '{name}'");
+        property.ValueKind.Should().Be(JsonValueKind.String, $"{what} '{name}' must be a string");
+        var value = property.GetString();
+        value.Should().NotBeNullOrWhiteSpace($"{what} '{name}' must not be blank");
+        return value!;
+    }
+
+    private static async Task<JsonDocument> GetJsonDocumentAsync(DmsApiClient client, Uri uri, string what)
+    {
+        using var response = await client.GetByLocationAsync(uri.ToString());
+        response.StatusCode.Should().Be(HttpStatusCode.OK, $"{what} should resolve");
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json", $"{what} media type");
+        var body = await response.Content.ReadAsStringAsync();
+        return JsonDocument.Parse(body);
+    }
+
+    private static async Task VerifyDependenciesAsync(DmsApiClient client, string url, Uri discoveryUri)
+    {
+        var uri = DiscoveryUrlAssertions.AssertConcreteContextUrl(url, discoveryUri);
+        using var document = await GetJsonDocumentAsync(client, uri, "dependencies");
+
+        document.RootElement.ValueKind.Should().Be(JsonValueKind.Array, "dependencies must be an array");
+        List<string> resources = [];
+        foreach (var item in document.RootElement.EnumerateArray())
+        {
+            resources.Add(RequireStringProperty(item, "resource", "dependency"));
+            item.TryGetProperty("order", out var order).Should().BeTrue("dependency must have 'order'");
+            order.ValueKind.Should().Be(JsonValueKind.Number);
+            order.TryGetInt32(out _).Should().BeTrue("dependency 'order' must be an integer");
+            item.TryGetProperty("operations", out var operations).Should().BeTrue();
+            operations.ValueKind.Should().Be(JsonValueKind.Array, "dependency 'operations' must be an array");
+            foreach (var operation in operations.EnumerateArray())
+            {
+                operation.ValueKind.Should().Be(JsonValueKind.String);
+            }
+        }
+
+        resources.Should().Contain("/ed-fi/students", "the core Students resource must be a dependency");
+    }
+
+    private static async Task VerifyResourcesSpecificationAsync(
+        DmsApiClient client,
+        string url,
+        Uri discoveryUri
+    )
+    {
+        var uri = DiscoveryUrlAssertions.AssertConcreteContextUrl(url, discoveryUri);
+        string endpointUri;
+        using (var listing = await GetJsonDocumentAsync(client, uri, "specifications"))
+        {
+            listing.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            var resources = listing
+                .RootElement.EnumerateArray()
+                .Where(entry => RequireStringProperty(entry, "name", "specification") == "Resources")
+                .ToList();
+            resources.Should().ContainSingle("exactly one Resources specification is advertised");
+            endpointUri = RequireStringProperty(resources[0], "endpointUri", "specification");
+        }
+
+        var specUri = DiscoveryUrlAssertions.AssertConcreteContextUrl(endpointUri, discoveryUri);
+        using var spec = await GetJsonDocumentAsync(client, specUri, "Resources specification");
+
+        spec.RootElement.ValueKind.Should().Be(JsonValueKind.Object);
+        spec.RootElement.TryGetProperty("openapi", out var version).Should().BeTrue();
+        version.ValueKind.Should().Be(JsonValueKind.String);
+        Regex
+            .IsMatch(version.GetString()!, @"^3\.\d+\.\d+$")
+            .Should()
+            .BeTrue("the Resources document must declare an OpenAPI 3.x version");
+        spec.RootElement.TryGetProperty("paths", out var paths).Should().BeTrue();
+        paths.ValueKind.Should().Be(JsonValueKind.Object);
+        paths.TryGetProperty("/ed-fi/students", out _).Should().BeTrue("the core Students path must exist");
+    }
+
+    private static async Task VerifyCoreXsdAsync(DmsApiClient client, string url, Uri discoveryUri)
+    {
+        var uri = DiscoveryUrlAssertions.AssertConcreteContextUrl(url, discoveryUri);
+        string filesUrl;
+        using (var sections = await GetJsonDocumentAsync(client, uri, "XSD sections"))
+        {
+            sections.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            var core = sections
+                .RootElement.EnumerateArray()
+                .Where(entry => RequireStringProperty(entry, "name", "XSD section") == "ed-fi")
+                .ToList();
+            core.Should().ContainSingle("exactly one ed-fi XSD section is advertised");
+            filesUrl = RequireStringProperty(core[0], "files", "XSD section");
+        }
+
+        var filesUri = DiscoveryUrlAssertions.AssertConcreteContextUrl(filesUrl, discoveryUri);
+        string fileUrl;
+        using (var files = await GetJsonDocumentAsync(client, filesUri, "XSD file list"))
+        {
+            files.RootElement.ValueKind.Should().Be(JsonValueKind.Array);
+            List<string> coreFiles = [];
+            foreach (var entry in files.RootElement.EnumerateArray())
+            {
+                entry.ValueKind.Should().Be(JsonValueKind.String);
+                var candidate = entry.GetString()!;
+                if (
+                    Uri.TryCreate(candidate, UriKind.Absolute, out var candidateUri)
+                    && candidateUri.Segments[^1] == "Ed-Fi-Core.xsd"
+                )
+                {
+                    coreFiles.Add(candidate);
+                }
+            }
+
+            coreFiles.Should().ContainSingle("exactly one Ed-Fi-Core.xsd file is advertised");
+            fileUrl = coreFiles[0];
+        }
+
+        var fileUri = DiscoveryUrlAssertions.AssertConcreteContextUrl(fileUrl, discoveryUri);
+        using var xsdResponse = await client.GetByLocationAsync(fileUri.ToString());
+        xsdResponse.StatusCode.Should().Be(HttpStatusCode.OK, "the advertised core XSD should download");
+        xsdResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        var xml = await xsdResponse.Content.ReadAsStringAsync();
+        XDocument.Parse(xml).Root!.Name.Should().Be(XName.Get("schema", "http://www.w3.org/2001/XMLSchema"));
     }
 
     [When("a GET request is made to metadata path {string}")]

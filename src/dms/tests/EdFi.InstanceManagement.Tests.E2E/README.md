@@ -145,6 +145,45 @@ lifecycle and the test-process environment contract it establishes, the `@Instan
 scenarios fail fast (missing/invalid fixture state), so run the tests only through the build
 target unless that exact lifecycle and contract already exist in your session.
 
+## Routed metadata and token introspection coverage
+
+[DMS-1237](../../../../reference/spikes/DMS-1237/multitenancy-e2e-test-strategy.md) chose focused Instance
+coverage of routed endpoints alongside the unchanged standard suite, rather than replaying the full
+standard suite on routed deployments.
+
+`RouteQualifierDiscovery.feature` follows the concrete URLs that the fully qualified
+`Tenant_255901/255901/2024` Discovery document advertises, anonymously and without reconstructing any path:
+
+- `dependencies`: a JSON array whose entries have a string `resource`, integer `order` and string-array
+  `operations`, including the core `/ed-fi/students` witness.
+- `openApiMetadata` -> the single `Resources` specification -> its `endpointUri`: a JSON OpenAPI 3.x document
+  whose `paths` contain `/ed-fi/students`.
+- `xsdMetadata` -> the single `ed-fi` section -> its `files` list -> the single `Ed-Fi-Core.xsd` URL: an
+  `application/xml` document whose root is the XML Schema `schema` element.
+
+Every advertised URL must be absolute, same-origin, contain the original route as complete path segments and
+contain no `{`/`}` placeholders. The direct-file and tenant-only XSD scenarios in `TenantAwareDiscovery.feature`
+remain as compatibility checks. The standard suite continues to own full model and content assertions.
+
+`RouteQualifierTokenIntrospection.feature` obtains a fresh token from each route's advertised `oauth` URL
+(using the owning tenant's fixture credentials, not the legacy first-tenant key) and POSTs JSON to the
+advertised `tokenInfo` URL. It covers:
+
+- Three owning-tenant successes: `Tenant_255901/255901/2024`, `Tenant_255901/255901/2025` and
+  `Tenant_255902/255902/2024` (the second-tenant positive control). Each asserts `active`, the owning
+  application's `client_id` (compared without printing keys), the fixture claim set and namespace prefix, and
+  `Cache-Control: no-store`.
+- Two negatives on the first tenant's 2024 route: no bearer header (401 with a Bearer challenge) and a
+  non-matching body token (400 with the token-mismatch error).
+- A cross-tenant negative: the first tenant's token sent to the second tenant's advertised `tokenInfo`
+  (404 with no introspection payload).
+
+Limits: these tests perform no data writes or resets and assert nothing about education-organization hierarchy
+or profile contents. Two routes in one tenant answering successfully shows the endpoint is usable per route; it
+does not prove year-specific introspection data isolation. The combined tenant/district/year configuration is
+not an exhaustive replay of independent routing flags or resources; the standard suite and the frontend unit
+tests own that breadth.
+
 ## Route-context databases and environment (names, not values)
 
 The three district/school-year route databases default to the fixed routes and can be
