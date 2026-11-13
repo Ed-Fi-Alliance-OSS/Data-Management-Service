@@ -69,7 +69,11 @@ graph TD
 - Tests: `Backend.Plans.Tests.Unit`, `Backend.Tests.Unit`, `Backend.Postgresql.Tests.Integration`,
   `Backend.Mssql.Tests.Integration`, and the API integration suite
   `src/dms/tests/EdFi.DataManagementService.Tests.Integration`.
+- Performance harness (story 1): `src/dms/tests/EdFi.DataManagementService.Performance.Harness/Measurement/PgsqlPlanCapture.cs`,
+  whose splitter rejects string literals and whose replay binds only page-selection values.
 - Design documents: `reference/design/backend-redesign/design-docs/`.
+- Operator doc and verification harness (story 2): `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and
+  `eng/verification/PublisherSnapshotInterop/`, which grant `TEMPORARY` for GET-many.
 
 No story adds a project, and neither changes `RelationalMappingVersion` or the DDL.
 
@@ -131,12 +135,13 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 | AC5, priorities and the SQL Server explanation | [Recommendation](keyset-temp-table-findings.md#sql-server-inline-on-descriptor-and-candidate-metadata-page-stays-on-p1-and-p3); no story for SQL Server P1 and P3 |
 | AC6, retained `#page` (SQL Server P1, P3) | Documented in [Retained fallback](keyset-temp-table-findings.md#retained-fallback). Story 1 keeps those batches byte-identical (E5) and records the condition in `flattening-reconstitution.md` |
 | AC7, thresholds | Each story's acceptance criteria |
-| DMS-1687 (from EDFI-2956), read-only replica | Story 1 (P1–P3) and story 2 (P4), threshold E4 |
+| DMS-1687 (from EDFI-2956), read-only replica | Story 1 (P1–P3) and story 2 (P4), threshold E4. Story 2 also drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness |
+| Performance harness `PgsqlPlanCapture` (rejects string literals; binds only page-selection values) | Story 1 updates it with a unit test, so baseline and final-gate runs keep working on PostgreSQL |
 | Design drift, `descriptor_page` in `partitioned-cursor-paging.md` | Story 2 |
 | Keyset contract in `mpack-format-v1.md` | Story 1 updates the contract description. No pack exists to reject: pack emission is not implemented |
 | Test doubles that split or rewrite keyset batches | Story 1: the PostgreSQL `HydrationExecutorTests` splice. Story 2: the SQL Server descriptor split site in `AuthoritativeTimestampReadConsistencyScenario`. `DescriptorReadCommandExecutor` needs no change only while the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay; story 2 keeps both or updates it |
 | C5, single-document fast path | Unchanged; asserted in both stories |
-| Guarded single-document keyset without the fast path (non-production) | Story 1: implement it under the new contract (the prototype throws); `flattening-reconstitution.md` names it as the per-dialect fallback |
+| Guarded single-document keyset without the fast path (non-production) | Story 1: implement it under the new contract on PostgreSQL (the prototype throws; SQL Server keeps `#page`). It reads the substituted `@DocumentId` token under the guard and adds no result set, because its id is unknown at bind time and `GetResultSetCount` counts none. `flattening-reconstitution.md` names it as the per-dialect fallback |
 | SQL Server recompiles (DMS-1248 comment) | Not observed in either variant; E3 guards it. No separate work |
 | `memtablevar` (SQL Server P1, P3) | Unvalidated lead; no story. The task 11 review decides whether to validate it |
 | `ANALYZE` interim mitigation | Conditional story 3, not triggered |

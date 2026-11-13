@@ -73,6 +73,18 @@ insert, and latch they replace.
   type (d) adaptation of the descriptor split site in
   `AuthoritativeTimestampReadConsistencyScenario`, and the new tests below.
 - **The design-document edits** listed below.
+- **The `TEMPORARY` grant.** After this story, no PostgreSQL read creates a temp table: story 1
+  removes P1–P3, this story removes P4, and these are the only two producers of `CREATE TEMP TABLE`
+  in production code. Story 1 cannot make these edits alone, because `descriptor_page` still needs
+  the privilege until this story lands.
+  - `docs/SNAPSHOTS-AND-READ-REPLICAS.md`: drop `TEMPORARY` from the PostgreSQL recipe's grant
+    (≈85), from the minimum grant set for DMS reads (≈98–102), and from the failure table, whose
+    `42501: permission denied to create temporary tables` row describes GET-many (≈112). Read
+    replicas use the same grants (≈204).
+  - `eng/verification/PublisherSnapshotInterop/PublisherSnapshotInterop.psm1` (≈809) grants
+    `CONNECT, TEMPORARY`, and `eng/verification/tests/PublisherSnapshotInterop.Tests.ps1`
+    (≈137–139) asserts that grant "because DMS creates temp tables on GET-many". Grant `CONNECT`
+    only, and update the assertion.
 
 **Out of scope:**
 
@@ -126,8 +138,8 @@ Each edit is **mandated by DMS-1521's decision**
   three-attempt acquisition and fence contract, under SQL Server locking `READ COMMITTED` as well
   as RCSI.
 - **C5.** No single-document path changes.
-- **C6.** The handler, its tests, the test doubles, and the design documents above change in the
-  same PR.
+- **C6.** The handler, its tests, the test doubles, the design documents above, and the
+  `TEMPORARY` grant in the snapshot doc and interop harness change in the same PR.
 
 ### Performance thresholds
 
@@ -203,6 +215,9 @@ inconclusive for reviewer sign-off instead of counting it as met.
 - `*DescriptorReadQueryFilterTests` and `*DescriptorQueryOwnershipAuthorizationTests` pass on
   both engines.
 
+**Verification harness** (Pester): `eng/verification/tests/PublisherSnapshotInterop.Tests.ps1`
+passes with the updated grant assertion (`CONNECT` only).
+
 **API integration** (`Tests.Integration`, both engines, full suites): `DescriptorRuntimeScenario`,
 `CompactDescriptorResourceScenario`, `LimitZeroCountReadScenario`, the cursor scenarios,
 `Given_*_DocumentCacheReadAcceleration_With_DescriptorRuntime` (the candidate-selection caller),
@@ -269,5 +284,5 @@ test-adaptation section, passed every check on both engines:
 ## Estimate
 
 **3 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
-adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, and a short performance session
+adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness, and a short performance session
 set on each engine, plus the likely SQL Server rerun (N9).

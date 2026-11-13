@@ -70,7 +70,32 @@ at 32 sessions and the resource batch's at 8 sessions in two of three runs. So S
   with `UseSingleDocumentFastPath: false`). No production caller uses it (C5), and the prototype
   throws `NotSupportedException`. Implement it under the new contract. Do not remove it:
   `flattening-reconstitution.md` (≈944) names it as the fallback for a dialect that declines the
-  fast path.
+  fast path. The work is PostgreSQL only: SQL Server keeps `#page` for this batch, as for P1 and P3.
+  Neither PostgreSQL mechanism above fits it, for two reasons:
+  - Its id is not known when the batch is bound. The only caller co-batches it into the composite
+    write command and replaces the `@DocumentId` token with the composite carrier's in-database
+    expression after the batch is built (`RelationalWriteFirstPhase.cs` ≈1062–1087;
+    `NULLIF(current_setting('dms.composite_target_documentid', true), '')::bigint`). So the
+    `bigint[]` cannot carry it, and the composite command binds no keyset parameter.
+  - A `SELECT set_config(…)` statement would add a result set. The composite reader skips this
+    batch by `HydrationExecutor.GetResultSetCount`, which counts no selected-keys result set for a
+    `Single` keyset.
+
+  So the guarded batch reads the `@DocumentId` token under the guard predicate, adds no statement,
+  and binds no array. For example, its keyset relation becomes
+  `unnest(CASE WHEN <guard> THEN ARRAY[@DocumentId] END) WITH ORDINALITY`, which yields no rows when
+  the guard is false. The relation is compiled into every table's `SelectByKeysetSql`, so the
+  builder substitutes the relation text when it builds the guarded batch.
+- **The performance harness's PostgreSQL plan capture**
+  (`src/dms/tests/EdFi.DataManagementService.Performance.Harness/Measurement/PgsqlPlanCapture.cs`).
+  `PerfBaselineRunPipeline` and `PerfFinalGateRunPipeline` replay every PostgreSQL resource
+  hydration batch through it, for `eng/performance/invoke-traditional-baseline.ps1` and
+  `invoke-final-gate.ps1`. Today it would fail on this story's batch in two ways:
+  - `SplitHydrationBatch` throws on any string literal, and this batch has several
+    (`'dms.page_keyset'`, `','`, `''`). Teach it single-quoted literals, including `''`, as the
+    spike's `SpikePgsqlPlanCapture` splitter does.
+  - The replay binds only the page-selection values, but every keyset reader references the keyset
+    parameter. Bind it as production does: an untyped NULL for a query keyset.
 - **Test churn and new tests** (see Test requirements).
 - **Manifest goldens.** Regenerate with `UPDATE_GOLDENS=1` and commit them in the same PR. CI never
   regenerates goldens.
@@ -148,8 +173,9 @@ Each edit is **mandated by DMS-1521's decision**
   isolation contract. The version fences and the three-attempt retry behave as on `main`.
 - **C5.** The single-document fast path (GET by id, writes, cache materialization) produces the
   same SQL and binding as on `main`.
-- **C6.** Plan contracts, SQL generation, binding, readers, manifests, goldens, tests, and the
-  design documents above change in the same PR.
+- **C6.** Plan contracts, SQL generation, binding, readers, manifests, goldens, tests, the
+  performance harness's PostgreSQL plan capture, and the design documents above change in the same
+  PR.
 
 ### Performance thresholds
 
@@ -207,6 +233,17 @@ statements).
 - Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and `MaximumPageSize`; the
   fast-path command's parameters are unchanged; SQL Server binding is unchanged.
 - SQL Server P1 and P3: the existing pins stay green unchanged. They are the byte-identity guard.
+- Guarded single-document keyset without the fast path, PostgreSQL: the batch contains no
+  `set_config`, binds no keyset parameter, reads `@DocumentId` under the guard predicate, and
+  `GetResultSetCount` is unchanged. The existing
+  `It_does_not_return_selected_ids_from_the_guarded_materialization` checks only that `RETURNING`
+  and `OUTPUT INSERTED` are absent, so a `set_config` statement would pass it. The SQL Server
+  guarded test (`It_should_emit_the_sql_server_guarded_keyset_batch_when_the_feature_flag_is_disabled`)
+  stays green unchanged.
+- Performance harness (`Performance.Harness.Tests.Unit`): add a `PgsqlPlanCaptureTests` case that
+  splits this story's PostgreSQL resource batch shape (literals included) and binds its keyset
+  parameter. The existing cases split hand-written text with no literals, so they cannot catch this,
+  and the harness pipelines refuse to run in CI unless `PERF_ALLOW_CI` is set.
 - Update the pins of the old PostgreSQL text and parameter lists, and the candidate pins on both
   engines. Task 7 counted 112 failing unit tests for the whole prototype. About 60–70 of them are
   in this story, in `Given_HydrationBatchBuilder_*`, `Given_ReadPlanCompiler`,
@@ -365,7 +402,10 @@ It is a starting point:
 
 - a keyset contract that separates PostgreSQL from SQL Server P1 and P3, while SQL Server P2 gets
   its own relation;
-- the guarded single-document keyset under the new contract;
+- the guarded single-document keyset under the new contract (PostgreSQL only, reading the
+  substituted `@DocumentId` token);
+- the performance harness's PostgreSQL plan capture (literals and the keyset parameter) and its
+  unit test;
 - about 60–70 updated unit pins and the golden regeneration;
 - six new integration tests (no temp tables on each engine, three carrier tests, read-only) and
   the binding unit tests;
