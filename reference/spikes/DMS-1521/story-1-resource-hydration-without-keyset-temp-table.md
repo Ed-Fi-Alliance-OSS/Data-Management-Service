@@ -159,11 +159,14 @@ Each edit is **mandated by DMS-1521's decision**
    a reused pooled connection (`NoResetOnClose`), after a failed batch, after an empty page, and
    across two hydrations in one transaction.
 7. On PostgreSQL, resource GET-many, candidate selection, and the selected-page fallback succeed
-   in a transaction with `default_transaction_read_only = on`.
+   in a transaction with `default_transaction_read_only = on`. Resource GET-many routed to a read
+   replica whose database forces `default_transaction_read_only = on` returns 200 with the
+   replica's rows (the DMS-1687 path).
 8. Every multi-document request uses the same number of database commands as on `main`: resource
    GET-many 1, cache hit 2.
 9. Binding is unchanged on SQL Server. On PostgreSQL:
-   - a selected page binds one `bigint[]` at every page size up to `MaximumPageSize` (500);
+   - a selected page binds one `bigint[]` at every page size (tested at 1, 25, and 500, the
+     default `MaximumPageSize`);
    - a query keyset binds at most one parameter more than `main`;
    - the single-document fast-path command binds exactly the parameters it binds on `main`.
 
@@ -197,14 +200,16 @@ fixture for N11). Three interleaved sessions: `main`, then the story branch, thr
 machine. Ratios are story branch ÷ `main`, and `m = min(max(2 × CV, 5%), 20%)` from `main`'s
 three runs. A cell whose `2 × CV` exceeds 20% is rerun; if it still exceeds 20%, the PR reports it
 as inconclusive for reviewer sign-off instead of counting it as met. PostgreSQL cells are on `primary-500k` at 25 and 500 rows; resource cells at offset 0, shallow,
-and deep.
+and deep. 500 is the default `MaximumPageSize`; a deployment configured above it runs outside this
+evidence (findings, [Recommendation](keyset-temp-table-findings.md#recommendation), Page-size
+bound).
 
 | Id | Metric | Bound | Spike result |
 | --- | --- | --- | --- |
 | E1 | PostgreSQL catalog `n_tup_ins` + `n_tup_del` per request on the resource, candidate, and fallback batches (calibrated observer) | = 0 | 0 (`main` 44) |
 | E2 | SQL Server temp tables per candidate batch: XE `object_created`. `Temp Tables Creation Rate` is reported, not gated (server-wide); the CI batch-text check guards against table variables | XE = 0 in every window; a window whose server counter reads non-zero is repeated | 0 (`main` 1) |
 | E3 | SQL Server `sql_statement_recompile` events and `plan_generation_num` change after warmup | = 0 | 0 |
-| E4 | PostgreSQL P1–P3 under `default_transaction_read_only = on` | succeed, exact rows | probe passed (P1 and P3 shapes) |
+| E4 | PostgreSQL P1–P3 under `default_transaction_read_only = on` (backend batch tests), and resource GET-many through the API from a read-only read replica | succeed, exact rows; API 200 with the replica's rows | probe passed (P1 and P3 shapes); API not run |
 | E5 | SHA-256 of the SQL Server P1 and P3 batch texts | equal to `main` | – |
 | E6 | Database commands per request | equal to `main` | equal |
 | P1 | PostgreSQL resource GET-many API p50 | ratio ≤ 0.74 − m | 0.29–0.47 |
@@ -217,7 +222,7 @@ and deep.
 | N4 | PostgreSQL candidate replay p50 at c = 1, p95 at c = 32; throughput at c = 8 and 32 | latency ≤ 1 + m; throughput ≥ 1 − m | 0.19–0.43; ×2.1–×5.9 |
 | N5 | PostgreSQL plan time per request (resource, candidate, fallback) | ratio ≤ 1 + m | 0.06–0.95 (resource and fallback) |
 | N6 | PostgreSQL WAL bytes per request, clean windows | ratio ≤ 1 + m | 0 |
-| N7 | SQL Server cache-hit and forced-miss complete API p50 / p95 | ratio ≤ 1 + m | 0.37–1.00 |
+| N7 | SQL Server cache-hit API p50 / p95. The forced-miss complete API p50 / p95 is reported, not gated: both variants sit at the 5 s direct-fill timeout (p50 5,282–5,335 ms), so it could flag only a regression above about 265 ms | ratio ≤ 1 + m (cache hit) | 0.37–1.00 |
 | N8 | SQL Server candidate replay p50 / p95 at c = 1, p95 at c = 32 | ratio ≤ 1 + m | 0.06–0.78 |
 | N9 | SQL Server candidate replay throughput at c = 8 and 32 | ratio ≥ 1 − m | ×1.89–×2.68 at 32; ×1.20–×1.30 at 8 (`main` CV 22–24%: rerun under the noisy-cell rule) |
 | N10 | SQL Server candidate logical reads per request | ratio ≤ 1 + m | 0.81 |
@@ -257,7 +262,8 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
 - Pin the order of operations (AGENTS.md):
   - the PostgreSQL carrier is set in the selecting statement, before any statement that reads it;
   - the selected keys come from selection, not from hydration.
-- Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and `MaximumPageSize`; the
+- Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and 500 (the default
+  `MaximumPageSize`); the
   fast-path command's parameters are unchanged; SQL Server binding is unchanged.
 - SQL Server P1 and P3: the existing pins and the goldens' `mssql` blocks stay unchanged. They are
   the byte-identity guard.
@@ -349,7 +355,23 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
   (≈273, ≈323) but needs no change: only `DocumentCacheMaterializer` uses it, always on the fast
   path, which reads only `SelectBySingleDocumentSql`.
 - **C5.** `RelationalWriteSmokeTests`, the `DocumentCacheMaterializer*Tests` classes, the
-  `*Single_Document_Fast_Path*` classes, and `MssqlWriteSessionCommandStreamTests` pass unchanged.
+  `*Single_Document_Fast_Path*` classes, and `MssqlWriteSessionCommandStreamTests` pass unchanged,
+  except the two PostgreSQL negative checks this story empties. After this story the PostgreSQL
+  keyset batch has no `"page"`, `CREATE TEMP TABLE`, or `DROP TABLE` either, so neither check
+  would fail if the fast path fell back to the keyset path:
+  - `Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorProjection_And_DocumentReferenceLookup.It_generates_a_batch_without_the_page_temp_table`
+    (`Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs` ≈725–730). Its plan comes
+    from `ReadPlanCompiler`, so its keyset readers render the new relation. Replace the three
+    `NotContain` checks with one positive check: the batch starts with the direct
+    document-metadata select that reads `WHERE d."DocumentId" = @DocumentId`, as the unit pin
+    `Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path.It_should_start_with_direct_document_metadata_select`
+    does. Do not anchor on `set_config`: a `Single` keyset with the fast path off binds the
+    `bigint[]` and never emits it.
+  - `Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path.It_should_not_emit_pgsql_page_temp_table_work`
+    (unit). Delete it: its fixture's `StartWith` and reader-order tests already fail on a fallback.
+
+  The SQL Server twin (`Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs` ≈956) stays,
+  because SQL Server keeps `#page`.
 
 **API integration** (`Tests.Integration`, both engines, full suites). These scenarios must pass:
 `CursorPagingExecutionScenario`, `CursorPartitionAuthorizationMatrixScenario`,
@@ -360,6 +382,27 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
 PostgreSQL resource split site in `AuthoritativeTimestampReadConsistencyScenario` needs no change:
 its two commands share one transaction, so the carrier survives. The SQL Server resource site
 needs no change either, because P1 keeps `#page`.
+
+- **Read-only replica (DMS-1687, E4).** E4's backend tests run only the batches, as the admin
+  login, and story 2's interop run uses a writable restored snapshot. Neither shows that a whole
+  GET-many request succeeds on a read-only replica, which is the DMS-1687 path (an Aurora reader
+  that forces `default_transaction_read_only`). Add a PostgreSQL class in
+  `Tests.Integration/Tests/Postgresql/`, a read-only variant of `Given_Postgresql_DerivativeRouting`
+  (for example `Given_Postgresql_DerivativeRouting_With_A_ReadOnly_Replica`) that leases a
+  `ReadReplica`:
+  1. Seed the distinguishable Students as `DerivativeRoutingSupport.SeedDistinguishableStudentsAsync`
+     does. Seeding posts through the API with the replica published as the parent, so the replica
+     must still be writable then.
+  2. Run `ALTER DATABASE <replica> SET default_transaction_read_only = on` from `postgres`, and
+     terminate the replica's existing sessions: a database setting reaches only new sessions.
+     `PostgresqlTargetReachability.SetAllowConnectionsAsync` does the same for `ALLOW_CONNECTIONS`.
+  3. GET `/data/ed-fi/students?totalCount=true` with no snapshot header. Assert 200, the replica's
+     marker Student, and the replica's count (2).
+
+  No reset is needed: each lease is an isolated database, dropped from `postgres` at teardown. As
+  the positive control, the same request on `main` returns 500 with
+  `25006: cannot execute DROP TABLE in a read-only transaction`; the PR records that run. Story 2
+  adds its descriptor test to this class.
 
 **Performance evidence.** Attach R1 and R2 artifacts (see
 [Thresholds](keyset-temp-table-findings.md#thresholds)), from three interleaved sessions on one
@@ -455,7 +498,7 @@ It is a starting point:
   unit test;
 - about 60–70 updated unit pins, the golden regeneration, and one shared integration fixture with
   hand-written `"page"` readers;
-- six new integration tests (no temp tables on each engine, three carrier tests, read-only) and
-  the binding unit tests;
+- six new integration tests (no temp tables on each engine, three carrier tests, read-only), one
+  API integration test (read-only replica), and the binding unit tests;
 - eleven design-document edits;
 - one interleaved performance session set on each engine, plus the likely SQL Server rerun (N9).

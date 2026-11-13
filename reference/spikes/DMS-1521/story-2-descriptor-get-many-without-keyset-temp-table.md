@@ -126,7 +126,9 @@ Each edit is **mandated by DMS-1521's decision**
    statement reads it. No batch reads a previous batch's ids: not on a reused pooled connection
    (`NoResetOnClose`), not after an empty page, and not after a failed batch.
 7. On PostgreSQL, descriptor GET-many succeeds in a transaction with
-   `default_transaction_read_only = on`.
+   `default_transaction_read_only = on`. Descriptor GET-many routed to a read replica whose
+   database forces `default_transaction_read_only = on` returns 200 with the replica's rows (the
+   DMS-1687 path).
 8. Binding is unchanged on both engines: `resourceKeyId`, `offset`, and `limit`, plus any filter
    parameters.
 
@@ -161,7 +163,9 @@ Each edit is **mandated by DMS-1521's decision**
 Measured with R1 (PostgreSQL) and R2 (SQL Server) run with `-Fixtures resource,descriptor`, judged
 on the descriptor fixture (`descriptors-25k`) at limits 25 and 500. The resource run is there to
 calibrate the observer: the run script calibrates only in the resource fixture, so a
-descriptor-only session would read E1 and E2 zeros from an unproven observer. Three interleaved
+descriptor-only session would read E1 and E2 zeros from an unproven observer. 500 is the default
+`MaximumPageSize`; a deployment configured above it runs outside this evidence (findings,
+[Recommendation](keyset-temp-table-findings.md#recommendation), Page-size bound). Three interleaved
 sessions: `main`, then the story branch, three times, on one machine.
 Ratios are story branch ÷ `main`, and `m = min(max(2 × CV, 5%), 20%)` from `main`'s three runs.
 A cell whose `2 × CV` exceeds 20% is rerun; if it still exceeds 20%, the PR reports it as
@@ -172,7 +176,7 @@ inconclusive for reviewer sign-off instead of counting it as met.
 | E1 | PostgreSQL catalog `n_tup_ins` + `n_tup_del` per descriptor request (calibrated observer) | = 0 | 0 (`main` 42) |
 | E2 | SQL Server temp tables per descriptor request: XE `object_created`. `Temp Tables Creation Rate` is reported, not gated (server-wide); the CI batch-text check guards against table variables | XE = 0 in every window; a window whose server counter reads non-zero is repeated | 0 (`main` 1) |
 | E3 | SQL Server `sql_statement_recompile` events and `plan_generation_num` change after warmup | = 0 | 0 |
-| E4 | PostgreSQL descriptor GET-many under `default_transaction_read_only = on` | succeeds, exact rows | – |
+| E4 | PostgreSQL descriptor GET-many under `default_transaction_read_only = on` (backend batch test), and through the API from a read-only read replica | succeeds, exact rows; API 200 with the replica's rows | – |
 | E6 | Database commands per request | 1, equal to `main` | 1 |
 | N1 | PostgreSQL descriptor API p50 / p95 | ratio ≤ 1 + m | 0.73–0.99 |
 | N4 | PostgreSQL descriptor replay p50 at c = 1, p95 at c = 32; throughput at c = 8 and 32 | latency ≤ 1 + m; throughput ≥ 1 − m | 0.12–0.46; ×1.8–×8.8 |
@@ -275,6 +279,15 @@ inconclusive for reviewer sign-off instead of counting it as met.
 `Given_*_DocumentCacheReadAcceleration_With_DescriptorRuntime` (the candidate-selection caller),
 and `AuthoritativeTimestampReadConsistencyScenario` pass.
 
+- **Read-only replica (DMS-1687, E4).** Add a descriptor test to story 1's read-only variant of
+  `Given_Postgresql_DerivativeRouting`. During seeding, while the replica is still writable, post
+  a marker `schoolTypeDescriptors` descriptor to the replica: the three databases come from one
+  baseline, so nothing else tells the replica's descriptors apart. After the replica is switched
+  to `default_transaction_read_only = on`, GET `/data/ed-fi/schoolTypeDescriptors?totalCount=true`
+  with no snapshot header and assert 200 with the marker. As the positive control, the same
+  request on story 1's branch (or `main`) returns 500 with `25006` from the `descriptor_page`
+  prelude; the PR records that run.
+
 - **Type (d) adaptation**, SQL Server descriptor split site (≈644–690). The double re-executes the
   descriptor command as two commands at the `-- Descriptor acquisition:` markers. A batch-scoped
   variable does not survive that split, so the double must carry the full carrier across it:
@@ -336,5 +349,5 @@ test-adaptation section, passed every check on both engines:
 ## Estimate
 
 **2 story points**: one handler with two dialect branches, 18 text pins, one SQL Server test-double
-adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness with one live PostgreSQL interop run, the changelog entry, and a short performance session
+adaptation, five integration tests (no temp tables on each engine, two carrier tests, read-only), one API integration test (read-only replica), two design-document edits, the `TEMPORARY` grant in the snapshot doc and interop harness with one live PostgreSQL interop run, the changelog entry, and a short performance session
 set on each engine, plus the likely SQL Server rerun (N9).

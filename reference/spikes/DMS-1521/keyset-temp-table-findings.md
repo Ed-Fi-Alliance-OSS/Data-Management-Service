@@ -1274,7 +1274,8 @@ sessions):
 | Candidate | 500 | 0.76 / 0.78 | 0.31 | ×1.89 | pass |
 
 - Every API cell meets non-regression. The forced-miss cells sit at the 5 s direct-fill timeout in
-  both variants (see [Method and environment](#method-and-environment)); the cache-hit 500-row
+  both variants (see [Method and environment](#method-and-environment)), so with m ≥ 5% they could
+  flag only a regression above about 265 ms; the stories report them, not gate them. The cache-hit 500-row
   `B` p95 (734 ms, CV 104%) comes from one session's outliers.
 - The descriptor and candidate batches read the carrier in only four and two statements, against
   about eleven in the hydration batches (statement counts above), so their extra parses cost less
@@ -1570,6 +1571,14 @@ Written by task 9. The recommendation is made per engine and per path. An engine
 recommended only if `inline` met every Gate 2 criterion on it and task 7 found no type (b) failure.
 Unvalidated leads are listed separately and do not become story scope.
 
+**Page-size bound.** Every measurement used 25- and 500-row pages. 500 is the default
+`MaximumPageSize`, which an operator can raise (`AppSettings__MaximumPageSize`,
+`docs/CONFIGURATION.md`); `AppSettingsValidator` rejects only values ≤ 0. Two costs grow with page
+size and were not measured above 500: SQL Server's `OPENJSON` re-parse in every statement that
+reads the carrier (two in P2, four in P4), and the PostgreSQL generic plans' fixed keyset estimate
+(10 rows for the parameterized readers; the third use's page for carrier-only readers). The
+recommendation holds for pages of up to 500 rows.
+
 ### PostgreSQL: `inline` on all four paths
 
 **Mechanism** (as prototyped; see [Candidates and representative SQL](#candidates-and-representative-sql)):
@@ -1631,7 +1640,7 @@ the old contract.
 | Single-document fast path (C5) | unchanged | unchanged: the array is bound only when the batch text reads it |
 
 The 2,100-parameter limit is SQL Server's. On PostgreSQL the selected page now uses one parameter
-at `MaximumPageSize` (500) instead of 1,000. The batch text is longer: the relation repeats about
+at 500 rows (the default `MaximumPageSize`) instead of 1,000. The batch text is longer: the relation repeats about
 330 characters per keyset join, and the resource batch grows from 7,774 to 14,922 characters.
 
 **Prepared-plan behavior** (from `pg_prepared_statements` on the probe's own connection, and
@@ -1772,8 +1781,11 @@ site keeps `#page` on SQL Server.
 
 **Combined forced-miss request.** Under this recommendation, a forced-miss request runs the `inline`
 candidate batch, then the `#page` fallback batch. That makes one temp table per request instead of
-two. The two batches are separate commands and were each measured, but not this combination; story
-1's evidence covers it.
+two. The two batches are separate commands that run one after the other, so the combination's
+keyset cost is the sum of its parts, and each part is covered: the candidate batch by N8–N10 (P2),
+the fallback batch by E5 (P3's text is byte-identical to `main`). The combination itself is not
+measured. The SQL Server forced-miss complete API cell cannot show it, because both variants sit at
+the 5 s direct-fill timeout, so N7 reports that cell and does not gate it.
 
 **Support floor.** SQL Server 2025 (RTM-CU7) is the tested environment. The supported minimum is
 unconfirmed, and that does not block this recommendation. `OPENJSON` and `FOR JSON PATH` are
@@ -1822,8 +1834,8 @@ supports that limit.
 
 | Story | Scope | Sized from | Proposed estimate |
 |---|---|---|---|
-| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Under story 1 only that half changes; the SQL Server blocks stay byte-identical (AC3). Also 1 PostgreSQL integration mechanism pin, the five `PostgresqlDescriptorProjectionTests` classes (one shared fixture of hand-written `"page"` readers), and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many, and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 3 |
-| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, three order checks anchored on `INSERT INTO` that would otherwise pass vacuously, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands; a live `CONNECT`-only PostgreSQL interop run proves it | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 2 |
+| 1. Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. The shared keyset-contract work: contract, `AppendRelation`, batch builder, binding, the guarded single-document keyset without the fast path (implement it on PostgreSQL from the substituted `@DocumentId` token with no added result set, the documented per-dialect fallback; the prototype throws), goldens, design docs, and the performance harness's `PgsqlPlanCapture`, which rejects string literals and binds only page-selection values | Unit churn (task 4 (c), task 7). Of the 112 failing unit tests, about 60–70 are PostgreSQL text or parameter pins. The SQL Server hydration pins stay, because P1 and P3 keep `#page`, and the 18 descriptor pins move to story 2. The 8 manifest goldens hold both dialects (2,494 changed lines across both; about half are PostgreSQL's). Under story 1 only that half changes; the SQL Server blocks stay byte-identical (AC3). Also 1 PostgreSQL integration mechanism pin, the five `PostgresqlDescriptorProjectionTests` classes (one shared fixture of hand-written `"page"` readers), and the type (d) splice in `HydrationExecutorTests` on PostgreSQL. New tests: deterministic no-temp-table integration tests (`pg_stat_xact_sys_tables` in a test-owned transaction, with a positive control; SQL Server batch-text check), carrier reuse in one transaction and failure, `MaximumPageSize` binding, read-only GET-many (backend batches, and through the API from a read-only read replica), the two PostgreSQL fast-path negative checks the story empties (one re-anchored on a positive check, one deleted), and two pinned orderings. Evidence: three interleaved PostgreSQL sessions (`main` and the story branch, about 2.5 h of machine time) and the SQL Server read-acceleration and resource fixtures (N11, E5) | 3 |
+| 2. Descriptor GET-many without `descriptor_page` | P4 on both engines: `DescriptorReadHandler` (outside the seam; both its GET-many and read-acceleration candidate callers), the 18 descriptor text pins, three order checks anchored on `INSERT INTO` that would otherwise pass vacuously, the SQL Server type (d) adaptation at the descriptor split site of `AuthoritativeTimestampReadConsistencyScenario` (the PostgreSQL split already shares one transaction), and `DescriptorReadCommandExecutor`, which needs no change only if the markers and its unqualified `MAX("ContentVersion")` / `MAX([ContentVersion])` match stay (the prototype's qualified boundary breaks the latter). Reconciles the design drift, and drops the `TEMPORARY` grant from `docs/SNAPSHOTS-AND-READ-REPLICAS.md` and the snapshot interop harness, since no PostgreSQL read needs it once P4 lands; a live `CONNECT`-only PostgreSQL interop run proves it. Adds a descriptor GET-many test to story 1's API read-only replica class | Task 4 (c), task 7; descriptor evidence from `-Fixtures resource,descriptor` sessions (the resource run calibrates the observer; the descriptor run takes about 2–5 min per engine) | 2 |
 | 3. Interim `ANALYZE` mitigation | Only if story 1 cannot ship in 8.2 (task 11) | Task 3. PostgreSQL only: one `ANALYZE` after each keyset insert in the hydration and descriptor batches, their PostgreSQL text pins, the harness `PgsqlPlanCapture.ClassifyStatement` (it rejects a statement starting with `ANALYZE`), and R1 evidence. Sized below story 2, as before the rescale | 1, if triggered |
 | 4. Provisioning | Not triggered: no recommended mechanism adds DDL | – | – |
 
@@ -1948,7 +1960,7 @@ column shows the spike's uncapped values; under the cap no bound exceeds 1.20, a
 | N4 | PostgreSQL | Descriptor and candidate replay p50 at c = 1, p95 at c = 32; throughput at c = 8 and 32 | latency 0.12–0.46; ×1.8–×8.8 | per cell | R1 |
 | N5 | PostgreSQL | Plan time per request (`pg_stat_statements`, c = 1 window), all four batches | 0.06–0.95 (resource and fallback) | per cell | R1 |
 | N6 | PostgreSQL | WAL bytes per request in clean windows, all four batches | 0 | – | R1 |
-| N7 | SQL Server | Descriptor and cache-hit API p50 / p95, 25 and 500; forced-miss complete API p50 / p95 | 0.37–1.01 | 1.05–3.09 | R2 |
+| N7 | SQL Server | Descriptor and cache-hit API p50 / p95, 25 and 500. The forced-miss complete API p50 / p95 is reported, not gated: both variants sit at the 5 s direct-fill timeout, so it could flag only a regression above about 265 ms | 0.37–1.01 | 1.05–3.09 | R2 |
 | N8 | SQL Server | Descriptor and candidate replay p50 / p95 at c = 1, p95 at c = 32 | 0.05–0.93 | per cell | R2 |
 | N9 | SQL Server | Descriptor and candidate replay throughput at c = 8 and 32 | ×1.89–×2.68 at 32; ×1.20–×1.49 at 8 (`main` CV 13–24%, so every c = 8 cell is rerun under the noisy-cell rule) | per cell | R2 |
 | N10 | SQL Server | Logical reads per request, descriptor and candidate batches (`SET STATISTICS IO`) | 0.81–0.87 | 1.05 | R2 `plans/` |
@@ -1994,7 +2006,18 @@ of `3621b1eb6`.
 
 ## Disposition
 
-*Pending (task 11).*
+Task 11 decisions, answered in the PR #1455 review (Adam, round 6, commit `2433147`, 2026-11-13):
+
+- **PostgreSQL carrier: accepted** for production. `set_config('dms.page_keyset', …, true)` is
+  transaction-local, writes no WAL, is allowed on a hot standby, and matches the write path's
+  `PgsqlCompositeTargetCarrier` (DMS-1332). The conditions are story 1's tests: two batches in one
+  transaction, and the generic-plan gates (P3, P4).
+- **SQL Server support floor: unconfirmed.** SQL Server 2025 is the tested environment. The
+  recommended changes use only SQL Server 2016-level constructs, so they do not move whatever floor
+  product chooses.
+- **`memtablevar`:** not pursued. Reopen only if SQL Server shows tempdb contention in the field.
+- **Release:** story 1 in 8.2 is the team's planning call; the evidence does not argue against it.
+  The conditional `ANALYZE` story is filed only if story 1 slips.
 
 ## Appendix: reproduction
 
