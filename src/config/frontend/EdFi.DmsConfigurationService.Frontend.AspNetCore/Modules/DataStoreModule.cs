@@ -29,7 +29,14 @@ public class DataStoreModule : IEndpointModule
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/dataStores/", InsertDataStore);
-        endpoints.MapLimitedAccess("/v3/dataStores/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/dataStores/", GetAll)
+            .WithDescription(
+                "Filters combine within the selected tenant before paging. Sort fields are id, name, and dataStoreType (case-insensitive). "
+                    + "Name ordering uses the trimmed, ASCII-folded name; type ordering uses the exact stored text. Both use lexicographic UTF-8 byte order, then id in the same direction. "
+                    + "Directions are asc, ascending, desc, and descending (case-insensitive); an explicit sort field defaults to ascending. "
+                    + "Without orderBy, results use id ascending even when direction is supplied. An omitted limit returns all remaining rows, including with offset alone."
+            );
         endpoints.MapLimitedAccess($"/v3/dataStores/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/dataStores/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/dataStores/{{id}}", Delete);

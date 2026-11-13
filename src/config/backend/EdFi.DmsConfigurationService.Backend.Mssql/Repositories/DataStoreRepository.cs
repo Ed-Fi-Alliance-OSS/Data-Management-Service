@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -76,15 +77,21 @@ public class DataStoreRepository(
     >(StringComparer.OrdinalIgnoreCase)
     {
         ["id"] = "Id",
-        ["dataStoreType"] = "DataStoreType",
-        ["name"] = "Name",
+        ["dataStoreType"] =
+            "CONVERT(varbinary(200), CONVERT(varchar(200), DataStoreType COLLATE Latin1_General_100_BIN2_UTF8))",
+        // The equality key contains a four-byte length and UTF-16 payload. Decode the text,
+        // then encode UTF-8 for lexical ordering; ordering the equality key would sort by length.
+        ["name"] =
+            "CONVERT(varbinary(1024), CONVERT(varchar(1024), CONVERT(nvarchar(256), SUBSTRING(NameComparisonKey, 5, 512)) COLLATE Latin1_General_100_BIN2_UTF8))",
     };
 
     private static string BuildOrderByClause(DataStoreQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            string direction = query.IsDescending ? "DESC" : "ASC";
+            string tieBreaker = col == "Id" ? string.Empty : $", Id {direction}";
+            return $"ORDER BY {col} {direction}{tieBreaker}";
         }
         return "ORDER BY Id";
     }
@@ -98,11 +105,17 @@ public class DataStoreRepository(
         }
         if (query.Name is not null)
         {
-            conditions.Add("Name = @Name");
+            // @Name is already canonical and unbounded. The column's nvarchar(256) helper
+            // must not truncate a longer filter into a matching stored-name prefix.
+            conditions.Add(
+                "NameComparisonKey = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)"
+            );
         }
         if (query.DataStoreType is not null)
         {
-            conditions.Add("DataStoreType = @DataStoreType");
+            conditions.Add(
+                "CONVERT(varbinary(max), DataStoreType) = CONVERT(varbinary(max), @DataStoreType) AND DATALENGTH(DataStoreType) = DATALENGTH(@DataStoreType)"
+            );
         }
         return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -122,6 +135,24 @@ public class DataStoreRepository(
                 {query.BuildSqlServerPagingClause()};
                 """;
 
+            var parameters = new DynamicParameters(
+                new
+                {
+                    query.Limit,
+                    query.Offset,
+                    TenantId,
+                    query.Id,
+                }
+            );
+            // Explicit nvarchar(max) parameters preserve overlength and trailing-space inputs.
+            parameters.Add(
+                "Name",
+                query.Name is null ? null : CatalogName.Canonicalize(query.Name),
+                DbType.String,
+                size: -1
+            );
+            parameters.Add("DataStoreType", query.DataStoreType, DbType.String, size: -1);
+
             var results = await connection.QueryAsync<(
                 int Id,
                 string DataStoreType,
@@ -129,18 +160,7 @@ public class DataStoreRepository(
                 string? Provider,
                 byte[]? ConnectionString,
                 long? TenantId
-            )>(
-                sql,
-                new
-                {
-                    query.Limit,
-                    query.Offset,
-                    TenantId,
-                    query.Id,
-                    query.Name,
-                    query.DataStoreType,
-                }
-            );
+            )>(sql, parameters);
 
             var dataStoreList = results.ToList();
             if (!dataStoreList.Any())

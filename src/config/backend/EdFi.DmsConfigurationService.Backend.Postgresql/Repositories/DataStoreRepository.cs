@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -78,16 +79,18 @@ public class DataStoreRepository(
         string
     >(StringComparer.OrdinalIgnoreCase)
     {
-        ["id"] = "Id",
-        ["dataStoreType"] = "DataStoreType",
-        ["name"] = "Name",
+        ["id"] = "\"Id\"",
+        ["dataStoreType"] = "\"DataStoreType\" COLLATE \"C\"",
+        ["name"] = "\"NameComparisonKey\" COLLATE \"C\"",
     };
 
     private static string BuildOrderByClause(DataStoreQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return PostgresqlIdentifier.OrderBy(col, query.IsDescending);
+            string direction = query.IsDescending ? "DESC" : "ASC";
+            string tieBreaker = col == "\"Id\"" ? string.Empty : $", \"Id\" {direction}";
+            return $"ORDER BY {col} {direction}{tieBreaker}";
         }
         return PostgresqlIdentifier.OrderBy("Id", isDescending: false);
     }
@@ -101,11 +104,11 @@ public class DataStoreRepository(
         }
         if (query.Name is not null)
         {
-            conditions.Add("\"Name\" = @Name");
+            conditions.Add("\"NameComparisonKey\" = @Name COLLATE \"C\"");
         }
         if (query.DataStoreType is not null)
         {
-            conditions.Add("\"DataStoreType\" = @DataStoreType");
+            conditions.Add("convert_to(\"DataStoreType\", 'UTF8') = convert_to(@DataStoreType, 'UTF8')");
         }
         return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -140,7 +143,7 @@ public class DataStoreRepository(
                     query.Offset,
                     TenantId,
                     query.Id,
-                    query.Name,
+                    Name = query.Name is null ? null : CatalogName.Canonicalize(query.Name),
                     query.DataStoreType,
                 }
             );
