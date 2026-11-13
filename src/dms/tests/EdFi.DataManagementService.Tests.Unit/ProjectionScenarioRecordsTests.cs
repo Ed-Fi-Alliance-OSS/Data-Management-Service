@@ -19,7 +19,7 @@ internal sealed class FakeConfigurationService
 {
     private int _nextId = 100;
     private readonly Dictionary<string, HttpStatusCode> _answers = new(StringComparer.Ordinal);
-    private readonly HashSet<string> _throwing = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, Func<Exception>> _throwing = new(StringComparer.Ordinal);
 
     public List<string> Calls { get; } = [];
 
@@ -29,16 +29,20 @@ internal sealed class FakeConfigurationService
     public void Answer(HttpMethod method, string path, HttpStatusCode status) =>
         _answers[$"{method} {path}"] = status;
 
-    public void Throw(HttpMethod method, string path) => _throwing.Add($"{method} {path}");
+    public void Throw(HttpMethod method, string path) =>
+        Throw(method, path, () => new HttpRequestException("connection refused"));
+
+    public void Throw(HttpMethod method, string path, Func<Exception> exception) =>
+        _throwing[$"{method} {path}"] = exception;
 
     public Task<ConfigurationServiceAnswer> CallAsync(HttpMethod method, string path, string json)
     {
         string call = $"{method} {path}";
         Calls.Add(call);
 
-        if (_throwing.Contains(call))
+        if (_throwing.TryGetValue(call, out Func<Exception>? exception))
         {
-            throw new HttpRequestException("connection refused");
+            throw exception();
         }
 
         if (_answers.TryGetValue(call, out HttpStatusCode status))
@@ -273,5 +277,51 @@ public class ProjectionScenarioRecordsTests
 
         [Test]
         public void It_counts_it_as_removed() => _failures.Should().BeEmpty();
+    }
+
+    [TestFixture]
+    public class Given_a_deletion_that_throws_an_exception_outside_the_http_failures
+    {
+        private const string SecretInMessage = "Password=cleanup-secret";
+
+        private FakeConfigurationService _service = null!;
+        private IReadOnlyList<string> _failures = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // NUnit runs SetUp before every test of the fixture: each starts with a fresh service.
+            _service = new FakeConfigurationService();
+
+            // Cancelled, but not a TaskCanceledException; its message carries a secret.
+            _service.Throw(
+                HttpMethod.Delete,
+                "v3/applications/102",
+                () => new OperationCanceledException($"cancelled {SecretInMessage}")
+            );
+            ProjectionScenarioRecords records = new(_service.CallAsync);
+
+            int dataStoreId = await records.CreateDataStoreAsync("Host=dms-postgresql"); // 100
+            int vendorId = await records.CreateVendorAsync("uri://ed-fi.org"); // 101
+            await records.CreateApplicationAsync(vendorId, "EdFiSandbox", [dataStoreId]); // 102
+            await records.ImportClaimSetAsync(ClaimSet()); // 103
+
+            _failures = await records.RemoveAllAsync();
+        }
+
+        [Test]
+        public void It_still_attempts_every_later_deletion() =>
+            _service
+                .Deletions.Should()
+                .Equal(
+                    "DELETE v3/applications/102",
+                    "DELETE v3/claimSets/103",
+                    "DELETE v3/vendors/101",
+                    "DELETE v3/dataStores/100"
+                );
+
+        [Test]
+        public void It_reports_the_exception_type_and_never_its_message() =>
+            _failures.Should().Equal("deleting v3/applications/102 failed with OperationCanceledException");
     }
 }

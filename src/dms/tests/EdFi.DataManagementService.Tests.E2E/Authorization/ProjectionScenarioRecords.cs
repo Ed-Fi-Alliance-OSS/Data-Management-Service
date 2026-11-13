@@ -122,8 +122,9 @@ internal sealed class ProjectionScenarioRecords(ConfigurationServiceCall configu
 
     /// <summary>
     /// Deletes every tracked record in dependency order and stops tracking them. A record already gone (404) counts
-    /// as removed. Every deletion is attempted even when an earlier one fails; the failures are returned, each
-    /// naming the record and the answer, never a body that could carry a credential.
+    /// as removed. Every deletion is attempted even when an earlier one fails or throws (any exception but one
+    /// that leaves the process unusable); the failures are returned, each naming the record and the status or
+    /// exception type, never a body or exception message that could carry a credential.
     /// </summary>
     public async Task<IReadOnlyList<string>> RemoveAllAsync()
     {
@@ -157,7 +158,7 @@ internal sealed class ProjectionScenarioRecords(ConfigurationServiceCall configu
                     }
                 }
                 catch (Exception exception)
-                    when (exception is HttpRequestException or TaskCanceledException or IOException)
+                    when (exception is not (OutOfMemoryException or StackOverflowException))
                 {
                     failures.Add($"deleting {path} failed with {exception.GetType().Name}");
                 }
