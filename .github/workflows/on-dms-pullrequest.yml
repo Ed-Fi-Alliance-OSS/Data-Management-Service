@@ -2843,7 +2843,8 @@ jobs:
           $diagDir = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           New-Item -ItemType Directory -Path $diagDir -Force | Out-Null
           $diagFile = Join-Path $diagDir 'build-dms-setup.log'
-          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' *> $diagFile
+          # The keycloak entry also runs the DMS projection reader's Keycloak fixture against the same stack.
+          & pwsh -NoProfile -File ./build-dms.ps1 E2ETest -UsePrebuiltOutput -Configuration ${{ env.CONFIGURATION }} -SkipDockerBuild -DatabaseEngine mssql -IdentityProvider ${{ matrix.identityprovider }} -EnvironmentFile './.env.e2e' -TestFilter '(Category=@MssqlRepresentative|Category=@MssqlOnly)&(Category!=@PostgresqlOnly)' ${{ matrix.identityprovider == 'keycloak' && '-RunDmsProjectionReaderKeycloakE2E' || '' }} *> $diagFile
           $buildExitCode = $LASTEXITCODE
           if ($buildExitCode -ne 0) {
               throw "build-dms.ps1 E2ETest failed with exit code $buildExitCode. See the sanitized build-dms-setup.log artifact."
@@ -2896,6 +2897,16 @@ jobs:
           ./eng/ci/sanitize-e2e-artifacts.ps1 -Path "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}"
           ./eng/ci/sanitize-e2e-artifacts.ps1 -Path "./TestResults"
 
+      - name: Require the DMS Projection Reader Keycloak E2E Guard
+        if: matrix.identityprovider == 'keycloak' && steps.e2e.outcome == 'success' && steps.sanitize.outcome == 'success'
+        run: |
+          # A missing TRX would only skip its upload, so a run that silently skipped the reader is caught here:
+          # the guard prints this line only after it has checked every named live test.
+          $log = "${{ github.workspace }}/logs/e2e-mssql-${{ matrix.identityprovider }}/build-dms-setup.log"
+          if (-not (Test-Path -LiteralPath $log) -or -not (Select-String -LiteralPath $log -SimpleMatch -Quiet 'DMS projection reader Keycloak E2E: ')) {
+              throw "The sanitized setup log has no DMS projection reader Keycloak E2E guard line; the reader run did not complete."
+          }
+
       - name: Show Sanitized DMS E2E Setup Log
         if: failure() && steps.sanitize.outcome == 'success'
         run: |
@@ -2923,6 +2934,15 @@ jobs:
           reporter: dotnet-trx
           list-tests: failed
           use-actions-summary: "true"
+
+      - name: Upload DMS Projection Reader Keycloak E2E Results
+        if: always() && steps.sanitize.outcome == 'success' && hashFiles('TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx') != ''
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mssql-keycloak-dms-projection-reader-e2e-results
+          path: TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx
+          if-no-files-found: ignore
+          retention-days: 10
 
       - name: Summarize DMS E2E Test Timings
         if: always() && steps.sanitize.outcome == 'success'

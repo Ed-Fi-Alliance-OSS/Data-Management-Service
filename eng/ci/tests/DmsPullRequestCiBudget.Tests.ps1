@@ -830,6 +830,56 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
         }
     }
 
+    Context "The DMS projection reader Keycloak run belongs to the Keycloak SQL Server entry only (DMS-1440)" {
+        # The switch is honored only with -IdentityProvider keycloak, so the workflow must add it for that
+        # matrix entry alone; and a run that silently skipped the reader would only skip its upload, so the
+        # entry also fails on a missing guard line.
+        BeforeAll {
+            $script:mssqlBlock = Get-JobBlock -JobName 'run-e2e-tests-mssql'
+        }
+
+        It "adds -RunDmsProjectionReaderKeycloakE2E only through the keycloak matrix expression on the E2E line" {
+            $runLine = @($script:mssqlBlock -split "`n" | Where-Object { $_ -match '\./build-dms\.ps1 E2ETest\b' })
+
+            $runLine.Count | Should -Be 1
+            $runLine[0] | Should -Match ([regex]::Escape(
+                    "`${{ matrix.identityprovider == 'keycloak' && '-RunDmsProjectionReaderKeycloakE2E' || '' }}"
+                ))
+            @($script:lines | Where-Object { $_ -match 'RunDmsProjectionReaderKeycloakE2E' }).Count | Should -Be 1 `
+                -Because "no other lane runs the Keycloak reader fixture"
+        }
+
+        It "fails the keycloak entry, after sanitization, when the setup log lacks the guard line the build script prints" {
+            $guardStep = [regex]::Match(
+                $script:mssqlBlock,
+                "(?ms)^      - name: Require the DMS Projection Reader Keycloak E2E Guard\s*$.*?(?=^      - name:)"
+            ).Value
+            $guardStep | Should -Not -BeNullOrEmpty
+            $guardStep | Should -Match ([regex]::Escape(
+                    "if: matrix.identityprovider == 'keycloak' && steps.e2e.outcome == 'success' && steps.sanitize.outcome == 'success'"
+                ))
+            $guardStep | Should -Match ([regex]::Escape("'DMS projection reader Keycloak E2E: '"))
+            $guardStep | Should -Match 'throw '
+
+            (Get-Content -LiteralPath $script:buildScriptPath -Raw) |
+                Should -Match ([regex]::Escape('Write-Output "DMS projection reader Keycloak E2E: ')) `
+                    -Because "the step searches for the line the Keycloak TRX guard prints"
+            $script:mssqlBlock.IndexOf('id: sanitize') |
+                Should -BeLessThan $script:mssqlBlock.IndexOf('Require the DMS Projection Reader Keycloak E2E Guard')
+        }
+
+        It "uploads the Keycloak reader TRX only after sanitization succeeded" {
+            $uploadStep = [regex]::Match(
+                $script:mssqlBlock,
+                "(?ms)^      - name: Upload DMS Projection Reader Keycloak E2E Results\s*$.*?(?=^      - name:)"
+            ).Value
+            $uploadStep | Should -Match ([regex]::Escape("steps.sanitize.outcome == 'success'"))
+            $uploadStep | Should -Match ([regex]::Escape(
+                    "path: TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx"
+                ))
+        }
+    }
+
     Context "Package verification is deliberately not a shared-build consumer" {
         # It is the one job DMS-1474 counts among the redundant solution builds that does not become
         # a consumer, so the decision is pinned here rather than left as an omission from the

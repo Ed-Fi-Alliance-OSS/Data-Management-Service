@@ -196,7 +196,13 @@ param(
     # matching .env.ds<NN> overlay onto -EnvironmentFile. Omit for the default (DS 5.2).
     [string]
     [ValidateSet("5.2", "6.1")]
-    $DataStandardVersion
+    $DataStandardVersion,
+
+    # E2ETest with -IdentityProvider keycloak only: after the DMS E2E tests, while the stack is still up,
+    # runs the Configuration Service's DMS projection reader against it (the reader project's
+    # KeycloakReader category) and guards its TRX.
+    [switch]
+    $RunDmsProjectionReaderKeycloakE2E
 )
 
 # Check script-level bindings before imports or dispatch: even explicit false/empty CDC inputs
@@ -209,6 +215,14 @@ $cdcParametersSupplied = @(
 if ($Command -ne 'E2ETest' -and $cdcParametersSupplied.Count -gt 0) {
     throw "Command '$Command' does not support CDC parameters: $($cdcParametersSupplied -join ', '). These parameters require E2ETest. For initial bootstrap, use eng/docker-compose/bootstrap-local-dms.ps1 or bootstrap-published-dms.ps1 with their existing CDC inputs."
 }
+
+# The Keycloak reader run needs the single-tenant DMS E2E stack in Keycloak mode, so it is refused before
+# anything starts for any other command or identity provider.
+if ($RunDmsProjectionReaderKeycloakE2E -and ($Command -ne 'E2ETest' -or $IdentityProvider -ne 'keycloak')) {
+    throw "-RunDmsProjectionReaderKeycloakE2E requires the E2ETest command with -IdentityProvider keycloak; got '$Command' with -IdentityProvider $IdentityProvider."
+}
+# Splatted into the E2ETest dispatch only when set, so a run without it dispatches exactly as before.
+$keycloakReaderDispatchArguments = if ($RunDmsProjectionReaderKeycloakE2E) { @{ RunDmsProjectionReaderKeycloakE2E = $true } } else { @{} }
 
 # Captured here (script scope) rather than at the point of use: $PSBoundParameters inside the
 # Invoke-Main script block below reflects that block's own bindings, not this script's, so the
@@ -983,7 +997,11 @@ function RunE2E {
 
         [Parameter(Mandatory)]
         [ValidateSet("keycloak", "self-contained")]
-        [string] $IdentityProvider
+        [string] $IdentityProvider,
+
+        # Runs the DMS projection reader's Keycloak fixture after the tests, in the same identity and
+        # process context, while the stack is still up.
+        [switch] $RunDmsProjectionReaderKeycloakE2E
     )
 
     # Run only the standard E2E tests, excluding instance management tests
@@ -1010,6 +1028,78 @@ function RunE2E {
                     -Filter "EdFi.DataManagementService.Tests.E2E" `
                     -TestFilter $effectiveTestFilter `
                     -ResultNameSuffix $E2ETestSettings.TestResultSuffix
+            }
+
+            if ($RunDmsProjectionReaderKeycloakE2E) {
+                Invoke-WithDmsProjectionReaderKeycloakContext -E2ETestSettings $E2ETestSettings -Action {
+                    RunDmsProjectionReaderE2E -Keycloak
+                }
+            }
+        }
+    }
+}
+
+function Invoke-WithDmsProjectionReaderKeycloakContext {
+    <#
+    .SYNOPSIS
+        Runs -Action with the KEYCLOAK_READER_E2E_* inputs of the DMS projection reader's Keycloak fixture, taken
+        from the values this E2E run already uses: the DMS and Configuration Service host URLs and the
+        Configuration Service admin client from the environment file (as the Instance reader run takes them), the
+        DMS JWT authority the identity environment set as the expected issuer, and the engine and Docker-network
+        data-store connection string the E2E test process receives. Each variable's prior state is restored.
+        Values are secret-bearing and never written to output.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [pscustomobject]
+        $E2ETestSettings,
+
+        [Parameter(Mandatory)]
+        [scriptblock]
+        $Action
+    )
+
+    Import-Module -Name "$PSScriptRoot/eng/docker-compose/env-utility.psm1" -Force
+    $environmentValues = ReadValuesFromEnvFile $E2ETestSettings.EnvironmentFile
+    $identityClientSecrets = Resolve-IdentityClientSecretConfiguration -EnvValues $environmentValues
+
+    $variables = [ordered]@{
+        "KEYCLOAK_READER_E2E_DMS_BASE_URL"                 = [string](Resolve-DockerLocalDmsBaseUrl -EnvValues $environmentValues)
+        "KEYCLOAK_READER_E2E_CONFIG_SERVICE_URL"           = [string](Resolve-CmsBaseUrl -EnvValues $environmentValues)
+        "KEYCLOAK_READER_E2E_CONFIG_ADMIN_CLIENT_ID"       = "DmsConfigurationService"
+        "KEYCLOAK_READER_E2E_CONFIG_ADMIN_CLIENT_SECRET"   = [string]$identityClientSecrets.DmsConfigurationServiceClientSecret
+        "KEYCLOAK_READER_E2E_EXPECTED_ISSUER"              = [string]$env:DMS_JWT_AUTHORITY
+        "KEYCLOAK_READER_E2E_DATABASE_ENGINE"              = [string]$E2ETestSettings.DatabaseEngine
+        "KEYCLOAK_READER_E2E_DATA_STORE_CONNECTION_STRING" = [string]$E2ETestSettings.DataStoreConnectionString
+    }
+
+    $missing = @($variables.Keys | Where-Object { [string]::IsNullOrWhiteSpace($variables[$_]) })
+    if ($missing.Count -gt 0) {
+        throw "DMS projection reader Keycloak E2E inputs could not be resolved: $($missing -join ', ')."
+    }
+
+    $previousState = @{}
+    foreach ($name in $variables.Keys) {
+        $previousState[$name] = [pscustomobject]@{
+            Existed = (Test-Path -LiteralPath "Env:$name")
+            Value   = [System.Environment]::GetEnvironmentVariable($name)
+        }
+    }
+
+    try {
+        foreach ($name in $variables.Keys) {
+            Set-Item -LiteralPath "Env:$name" -Value $variables[$name]
+        }
+
+        & $Action
+    }
+    finally {
+        foreach ($name in $variables.Keys) {
+            if ($previousState[$name].Existed) {
+                Set-Item -LiteralPath "Env:$name" -Value $previousState[$name].Value
+            }
+            else {
+                Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
             }
         }
     }
@@ -1524,8 +1614,16 @@ function E2ETests {
         # Get-E2ETestEnvironmentContext (empty is normalized to postgresql) and reused from the
         # returned context for every downstream step.
         [string]
-        $DatabaseEngine = "postgresql"
+        $DatabaseEngine = "postgresql",
+
+        # Keycloak only (checked at script level): runs the DMS projection reader's Keycloak fixture after the
+        # tests, inside RunE2E's identity and process context.
+        [switch]
+        $RunDmsProjectionReaderKeycloakE2E
     )
+
+    # Passed on only when set, so a run without it calls RunE2E exactly as before.
+    $keycloakReaderArguments = if ($RunDmsProjectionReaderKeycloakE2E) { @{ RunDmsProjectionReaderKeycloakE2E = $true } } else { @{} }
 
     if ($LoadSeedData) {
         throw "E2ETest -LoadSeedData is not supported after legacy backend removal. E2ETest resets and provisions E2E_DATABASE_NAME with provision-e2e-database.ps1 before tests run; use StartEnvironment -LoadSeedData or add a relational/API seed path instead."
@@ -1549,7 +1647,7 @@ function E2ETests {
                 -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild `
                 -Configuration $Configuration -UsePrebuiltTools:$UsePrebuiltOutput -IdentityProvider $IdentityProvider
         }
-        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider }
+        Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider @keycloakReaderArguments }
         return
     }
     if ($CdcSettingsPath -or $CdcBindingStatePath) { throw 'CDC settings/state parameters require -EnableKafkaCdc.' }
@@ -1585,7 +1683,7 @@ function E2ETests {
             -StartDmsAfterProvisioning:$deferDmsStart
     }
 
-    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider }
+    Invoke-Step { RunE2E -TestFilter $TestFilter -E2ETestSettings $e2eTestSettings -IdentityProvider $IdentityProvider @keycloakReaderArguments }
 }
 
 function Wait-ForConfigServiceAndClientRegistration {
@@ -2136,31 +2234,103 @@ function Test-InstanceE2ERunsDmsProjectionReader {
 function RunDmsProjectionReaderE2E {
     <#
     .SYNOPSIS
-        Runs the Configuration Service's DMS projection reader project against the Instance stack, inside the
-        same test-process context as the Reqnroll suite. It always builds and restores the project, even with
-        -UsePrebuiltOutput: the shared CI build artifact holds only DMS output. The project's Keycloak reader
-        fixture targets the single-tenant DMS E2E stack, so it is filtered out here.
+        Runs the Configuration Service's DMS projection reader project. It always builds and restores the
+        project, even with -UsePrebuiltOutput: the shared CI build artifact holds only DMS output.
+
+        By default it runs against the Instance stack, inside the same test-process context as the Reqnroll
+        suite, with the project's Keycloak reader fixture filtered out. With -Keycloak it runs only that
+        fixture (category KeycloakReader), against the single-tenant DMS E2E stack in Keycloak mode, with the
+        inputs Invoke-WithDmsProjectionReaderKeycloakContext provides.
     #>
     param(
         [string]
-        $DatabaseEngine
+        $DatabaseEngine,
+
+        [switch]
+        $Keycloak
     )
 
     $project = "$PSScriptRoot/src/config/tests/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.csproj"
-    $trxFile = "$testResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.$DatabaseEngine.trx"
+    $resultName = if ($Keycloak) { "keycloak" } else { $DatabaseEngine }
+    $categoryFilter = if ($Keycloak) { "Category=KeycloakReader" } else { "Category!=KeycloakReader" }
+    $trxFile = "$testResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.$resultName.trx"
     Remove-Item -LiteralPath $trxFile -ErrorAction SilentlyContinue
 
     Invoke-Execute {
         dotnet test $project `
             --configuration $Configuration `
-            --filter "Category!=KeycloakReader" `
+            --filter $categoryFilter `
             --logger "trx;LogFileName=$trxFile" `
             --logger console `
             --verbosity normal `
             --nologo
     }
 
-    Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 28
+    if ($Keycloak) {
+        Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trxFile
+    }
+    else {
+        Assert-DmsProjectionReaderTrxResults -TrxFile $trxFile -MinimumLiveTests 28
+    }
+}
+
+function Assert-DmsProjectionReaderKeycloakTrxResults {
+    <#
+    .SYNOPSIS
+        Fails unless the Keycloak reader TRX exists, every test in it passed, and each named live test of the
+        Keycloak fixture is present, under the project's Keycloak namespace, with outcome Passed. A run that
+        selects the wrong category, or loses a case, cannot pass on a count alone.
+    #>
+    param(
+        [string]
+        $TrxFile
+    )
+
+    $keycloakClassPrefix = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.Keycloak."
+    $namedLiveTests = @(
+        "It_resolves_the_production_reader",
+        "It_sends_one_discovery_get_one_token_post_to_the_advertised_url_and_then_only_pages",
+        "It_reads_every_page_with_a_token_keycloak_issued",
+        "It_reads_the_seeded_hierarchy_with_its_parents",
+        "It_refuses_a_resource_only_credential_at_the_page_stage"
+    )
+
+    if (-not (Test-Path -LiteralPath $TrxFile)) {
+        throw "DMS projection reader Keycloak E2E wrote no results file at '$TrxFile'."
+    }
+
+    [xml]$trx = Get-Content -LiteralPath $TrxFile -Raw
+    $counters = $trx.TestRun.ResultSummary.Counters
+    if ($null -eq $counters) {
+        throw "DMS projection reader Keycloak E2E results file '$TrxFile' has no counters."
+    }
+
+    $classByTestId = @{}
+    foreach ($test in @($trx.TestRun.TestDefinitions.UnitTest)) {
+        if ($null -ne $test) {
+            $classByTestId[[string]$test.id] = [string]$test.TestMethod.className
+        }
+    }
+    $passedNames = @(
+        @($trx.TestRun.Results.UnitTestResult) | Where-Object {
+            $null -ne $_ -and
+            $_.outcome -eq "Passed" -and
+            $classByTestId.ContainsKey([string]$_.testId) -and
+            $classByTestId[[string]$_.testId].StartsWith($keycloakClassPrefix, [System.StringComparison]::Ordinal)
+        } | ForEach-Object { [string]$_.testName }
+    )
+    $missing = @($namedLiveTests | Where-Object { $passedNames -notcontains $_ })
+    $total = [int]$counters.total
+    $passed = [int]$counters.passed
+    Write-Output "DMS projection reader Keycloak E2E: $($namedLiveTests.Count - $missing.Count) of $($namedLiveTests.Count) named live tests passed."
+
+    if ($missing.Count -gt 0) {
+        throw "DMS projection reader Keycloak E2E must pass every named live test; not passed: $($missing -join ', ')."
+    }
+
+    if ($total -lt $namedLiveTests.Count -or $passed -ne $total) {
+        throw "DMS projection reader Keycloak E2E must pass every test; it ran $total and passed $passed."
+    }
 }
 
 function Assert-DmsProjectionReaderTrxResults {
@@ -2633,10 +2803,15 @@ function Invoke-TestExecution {
         $EnvironmentOverlayFile,
 
         [string]
-        $DatabaseEngine = "postgresql"
+        $DatabaseEngine = "postgresql",
+
+        [switch]
+        $RunDmsProjectionReaderKeycloakE2E
     )
+    # Passed on only when set, so a run without it calls E2ETests exactly as before.
+    $keycloakReaderArguments = if ($RunDmsProjectionReaderKeycloakE2E) { @{ RunDmsProjectionReaderKeycloakE2E = $true } } else { @{} }
     switch ($Filter) {
-        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine -EnableKafkaCdc:$EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath } }
+        E2ETests { Invoke-Step { E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine -EnableKafkaCdc:$EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath @keycloakReaderArguments } }
         UnitTests { Invoke-Step { UnitTests } }
         IntegrationTests { Invoke-Step { IntegrationTests } }
         Default { "Unknown Test Type" }
@@ -2742,7 +2917,7 @@ Invoke-Main {
             Invoke-Publish
         }
         UnitTest { Invoke-TestExecution UnitTests }
-        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine -EnableKafkaCdc:$EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath }
+        E2ETest { Invoke-TestExecution E2ETests -UsePublishedImage:$UsePublishedImage -SkipDockerBuild:$SkipDockerBuild -LoadSeedData:$LoadSeedData -IdentityProvider $IdentityProvider -TestFilter $TestFilter -EnvironmentOverlayFile $EnvironmentOverlayFile -DatabaseEngine $DatabaseEngine -EnableKafkaCdc:$EnableKafkaCdc -CdcSettingsPath $CdcSettingsPath -CdcBindingStatePath $CdcBindingStatePath @keycloakReaderDispatchArguments }
         InstanceE2ETest {
             $instanceE2EArguments = @{
                 SkipDockerBuild     = [bool]$SkipDockerBuild

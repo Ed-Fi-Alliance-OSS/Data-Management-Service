@@ -966,6 +966,7 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
                 "ConvertTo-NormalizedTestFilter",
                 "Test-InstanceE2ERunsDmsProjectionReader",
                 "Assert-DmsProjectionReaderTrxResults",
+                "Assert-DmsProjectionReaderKeycloakTrxResults",
                 "RunDmsProjectionReaderE2E",
                 "RunInstanceE2E"
             )) {
@@ -1093,8 +1094,16 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
     Context "running the project" {
         BeforeEach {
             $script:executed = [System.Collections.Generic.List[string]]::new()
-            Mock Invoke-Execute { $script:executed.Add($Command.ToString()) }
+            $script:observedFilters = [System.Collections.Generic.List[string]]::new()
+            $script:observedTrxFiles = [System.Collections.Generic.List[string]]::new()
+            # The dotnet test line takes its filter and TRX from variables, which the mock reads from the caller.
+            Mock Invoke-Execute {
+                $script:executed.Add($Command.ToString())
+                $script:observedFilters.Add([string]$categoryFilter)
+                $script:observedTrxFiles.Add([string]$trxFile)
+            }
             Mock Assert-DmsProjectionReaderTrxResults { }
+            Mock Assert-DmsProjectionReaderKeycloakTrxResults { }
             $script:Configuration = "Release"
             $script:testResults = $TestDrive
             $script:solutionRoot = "src/dms"
@@ -1152,12 +1161,122 @@ Describe "Instance E2E runs the DMS projection reader project once per engine la
 
             $script:executed | Should -HaveCount 1
             $script:executed[0] | Should -Match "dotnet test \`$project"
-            $script:executed[0] | Should -Match '--filter "Category!=KeycloakReader"'
+            $script:executed[0] | Should -Match '--filter \$categoryFilter'
+            $script:observedFilters[0] | Should -BeExactly 'Category!=KeycloakReader'
             $script:executed[0] | Should -Not -Match "--no-build"
             $script:executed[0] | Should -Not -Match "--no-restore"
             Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 1 -Exactly -ParameterFilter {
                 $MinimumLiveTests -eq 28 -and $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.mssql.trx"
             }
+            Should -Invoke Assert-DmsProjectionReaderKeycloakTrxResults -Times 0 -Exactly
+        }
+
+        It "with -Keycloak runs only the Keycloak fixture, names its TRX keycloak, and applies the Keycloak guard" {
+            RunDmsProjectionReaderE2E -Keycloak
+
+            $script:executed | Should -HaveCount 1
+            $script:executed[0] | Should -Match "dotnet test \`$project"
+            $script:observedFilters[0] | Should -BeExactly 'Category=KeycloakReader'
+            $script:observedTrxFiles[0] | Should -BeLike "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx"
+            Should -Invoke Assert-DmsProjectionReaderKeycloakTrxResults -Times 1 -Exactly -ParameterFilter {
+                $TrxFile -like "*EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx"
+            }
+            Should -Invoke Assert-DmsProjectionReaderTrxResults -Times 0 -Exactly
+        }
+    }
+
+    Context "the Keycloak TRX guard" {
+        BeforeAll {
+            $script:keycloakNamedTests = @(
+                "It_resolves_the_production_reader",
+                "It_sends_one_discovery_get_one_token_post_to_the_advertised_url_and_then_only_pages",
+                "It_reads_every_page_with_a_token_keycloak_issued",
+                "It_reads_the_seeded_hierarchy_with_its_parents",
+                "It_refuses_a_resource_only_credential_at_the_page_stage"
+            )
+
+            # A TRX holding the given named results, each with its class and outcome.
+            function New-KeycloakTrx {
+                [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helper that writes a fixture file under Pester TestDrive; no -WhatIf surface.')]
+                param([string] $Path, [object[]] $Results)
+
+                $definitions = [System.Text.StringBuilder]::new()
+                $resultXml = [System.Text.StringBuilder]::new()
+                foreach ($result in $Results) {
+                    $id = [guid]::NewGuid()
+                    [void]$definitions.Append("<UnitTest name=`"$($result.Name)`" id=`"$id`"><TestMethod className=`"$($result.Class)`" name=`"$($result.Name)`" /></UnitTest>")
+                    [void]$resultXml.Append("<UnitTestResult testId=`"$id`" testName=`"$($result.Name)`" outcome=`"$($result.Outcome)`" />")
+                }
+                $passed = @($Results | Where-Object { $_.Outcome -eq "Passed" }).Count
+                Set-Content -LiteralPath $Path -Value (
+                    '<TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010">' +
+                    "<Results>$resultXml</Results><TestDefinitions>$definitions</TestDefinitions>" +
+                    '<ResultSummary outcome="Completed">' +
+                    "<Counters total=`"$($Results.Count)`" passed=`"$passed`" />" +
+                    '</ResultSummary></TestRun>'
+                )
+            }
+
+            function Named {
+                param([string[]] $Names, [string] $Outcome = "Passed", [string] $Namespace = "Keycloak")
+                return @($Names | ForEach-Object {
+                        [pscustomobject]@{
+                            Name = $_
+                            Class = "EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.$Namespace.KeycloakProjectionReaderTests+Given_the_production_reader_against_the_keycloak_dms_stack"
+                            Outcome = $Outcome
+                        }
+                    })
+            }
+        }
+
+        It "accepts every named live test passed, and prints the guard line" {
+            $trx = Join-Path $TestDrive "keycloak-complete.trx"
+            New-KeycloakTrx -Path $trx -Results (Named $script:keycloakNamedTests)
+
+            $output = Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trx
+            ($output | Out-String) | Should -Match "DMS projection reader Keycloak E2E: 5 of 5 named live tests passed\."
+        }
+
+        It "rejects a run missing a named live test" {
+            $trx = Join-Path $TestDrive "keycloak-missing.trx"
+            New-KeycloakTrx -Path $trx -Results (Named ($script:keycloakNamedTests | Select-Object -First 4))
+
+            { Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trx } |
+                Should -Throw "*not passed: It_refuses_a_resource_only_credential_at_the_page_stage*"
+        }
+
+        It "rejects a named live test that failed" {
+            $trx = Join-Path $TestDrive "keycloak-failed.trx"
+            New-KeycloakTrx -Path $trx -Results @(
+                Named ($script:keycloakNamedTests | Select-Object -First 4)
+                Named @("It_refuses_a_resource_only_credential_at_the_page_stage") -Outcome "Failed"
+            )
+
+            { Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trx } |
+                Should -Throw "*not passed: It_refuses_a_resource_only_credential_at_the_page_stage*"
+        }
+
+        It "rejects named tests outside the Keycloak namespace, such as a run of the wrong category" {
+            $trx = Join-Path $TestDrive "keycloak-wrong-namespace.trx"
+            New-KeycloakTrx -Path $trx -Results (Named $script:keycloakNamedTests -Namespace "Live")
+
+            { Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trx } | Should -Throw "*must pass every named live test*"
+        }
+
+        It "rejects a run where every named test passed but another did not" {
+            $trx = Join-Path $TestDrive "keycloak-extra-failed.trx"
+            New-KeycloakTrx -Path $trx -Results @(
+                Named $script:keycloakNamedTests
+                Named @("It_does_something_else") -Outcome "Failed"
+            )
+
+            { Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile $trx } |
+                Should -Throw "*must pass every test; it ran 6 and passed 5*"
+        }
+
+        It "rejects a missing results file" {
+            { Assert-DmsProjectionReaderKeycloakTrxResults -TrxFile (Join-Path $TestDrive "absent-keycloak.trx") } |
+                Should -Throw "*wrote no results file*"
         }
     }
 }
