@@ -25,7 +25,8 @@ public sealed class JobWorkerService(
     JobExecutor executor,
     IOptions<JobOptions> options,
     TimeProvider timeProvider,
-    ILogger<JobWorkerService> logger
+    ILogger<JobWorkerService> logger,
+    JobClaimPolicy claimPolicy
 ) : BackgroundService
 {
     internal static readonly EventId JobsExhausted = new(1437_10, nameof(JobsExhausted));
@@ -90,7 +91,12 @@ public sealed class JobWorkerService(
     private async Task PollAsync(JobOptions settings, CancellationToken stoppingToken)
     {
         switch (
-            await leaseRepository.Exhaust(settings.MaxAttempts, JobErrorCode.AttemptsExhausted, stoppingToken)
+            await leaseRepository.Exhaust(
+                settings.MaxAttempts,
+                JobErrorCode.AttemptsExhausted,
+                claimPolicy,
+                stoppingToken
+            )
         )
         {
             case JobExhaustResult.Success { ExhaustedCount: > 0 } exhausted:
@@ -115,6 +121,7 @@ public sealed class JobWorkerService(
                 Owner,
                 (int)settings.LeaseDuration.TotalSeconds,
                 settings.MaxAttempts,
+                claimPolicy,
                 stoppingToken
             );
             if (claim is not JobClaimResult.Claimed claimed)

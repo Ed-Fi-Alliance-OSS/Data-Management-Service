@@ -220,7 +220,8 @@ public class JobLeaseRepositoryTests
 
         /// <summary>
         /// The locks the given session holds right now: table, partition, or page locks other than intent locks,
-        /// which would mean escalation, and key (row) locks.
+        /// and key (row) locks. OBJECT.UPDSTATS synchronizes statistics updates, not table data access:
+        /// https://learn.microsoft.com/sql/relational-databases/system-dynamic-management-objects/sys-dm-tran-locks-transact-sql
         /// </summary>
         protected static async Task<LockFootprint> HeldLocksAsync(
             SqlConnection connection,
@@ -230,6 +231,7 @@ public class JobLeaseRepositoryTests
                 """
                 SELECT
                     COUNT(CASE WHEN resource_type IN (N'OBJECT', N'HOBT', N'PAGE') AND request_mode NOT LIKE N'I%'
+                        AND NOT (resource_type = N'OBJECT' AND COALESCE(resource_subtype, N'') = N'UPDSTATS')
                         THEN 1 END) AS CoarseLocks,
                     COUNT(CASE WHEN resource_type = N'KEY' THEN 1 END) AS KeyLocks
                 FROM sys.dm_tran_locks
@@ -1949,6 +1951,23 @@ public class JobLeaseRepositoryTests
         {
             _result.Should().BeOfType<JobExhaustResult.Success>().Which.ExhaustedCount.Should().Be(1);
             _lockedRow.Status.Should().Be(JobStatuses.Pending);
+        }
+    }
+
+    [TestFixture]
+    public class Given_an_exclusive_job_table_lock : JobLeaseTestBase
+    {
+        [Test]
+        public async Task It_counts_the_table_data_lock_as_a_coarse_lock()
+        {
+            await SeedJobAsync();
+            SqlConnection connection = Connection!;
+            await using var transaction = await connection.BeginTransactionAsync();
+            await connection.ExecuteScalarAsync<long>(
+                "SELECT COUNT_BIG(*) FROM dmscs.Job WITH (TABLOCKX, HOLDLOCK);",
+                transaction: transaction
+            );
+            (await HeldLocksAsync(connection, transaction)).CoarseLocks.Should().BeGreaterThan(0);
         }
     }
 

@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -13,6 +14,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Http.Extensions;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -26,10 +28,36 @@ public class DataStoreModule : IEndpointModule
             httpContext.TraceIdentifier
         );
 
+    private static IResult ManagedConflict(HttpContext httpContext, int manageId)
+    {
+        var request = httpContext.Request;
+        string managedUrl = UriHelper.BuildAbsolute(
+            request.Scheme,
+            request.Host,
+            new PathString(request.PathBase.Value?.TrimEnd('/')),
+            new PathString("/v3/dataStores/manage/" + manageId.ToString(CultureInfo.InvariantCulture))
+        );
+        return Results.Json(
+            FailureResponse.ForConflict(
+                $"This data store is managed. Use {managedUrl} to manage it.",
+                httpContext.TraceIdentifier
+            ),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+    }
+
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
         endpoints.MapSecuredPost("/v3/dataStores/", InsertDataStore);
-        endpoints.MapLimitedAccess("/v3/dataStores/", GetAll);
+        endpoints
+            .MapLimitedAccess("/v3/dataStores/", GetAll)
+            .WithDescription(
+                "Filters combine within the selected tenant before paging. Sort fields are id, name, and dataStoreType (case-insensitive). "
+                    + "Name ordering uses the trimmed, ASCII-folded name; type ordering uses the exact stored text. Both use lexicographic UTF-8 byte order, then id in the same direction. "
+                    + "Directions are asc, ascending, desc, and descending (case-insensitive); an explicit sort field defaults to ascending. "
+                    + "Without orderBy, results use id ascending even when direction is supplied. An omitted limit returns all remaining rows, including with offset alone."
+            );
         endpoints.MapLimitedAccess($"/v3/dataStores/{{id}}", GetById);
         endpoints.MapSecuredPut($"/v3/dataStores/{{id}}", Update);
         endpoints.MapSecuredDelete($"/v3/dataStores/{{id}}", Delete);
@@ -119,6 +147,7 @@ public class DataStoreModule : IEndpointModule
         return updateResult switch
         {
             DataStoreUpdateResult.Success => Results.NoContent(),
+            DataStoreUpdateResult.FailureManaged managed => ManagedConflict(httpContext, managed.ManageId),
             DataStoreUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound(
                     $"DataStore {id} not found. It may have been recently deleted.",
@@ -141,6 +170,7 @@ public class DataStoreModule : IEndpointModule
         return deleteResult switch
         {
             DataStoreDeleteResult.Success => Results.NoContent(),
+            DataStoreDeleteResult.FailureManaged managed => ManagedConflict(httpContext, managed.ManageId),
             DataStoreDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound(
                     $"DataStore {id} not found. It may have been recently deleted.",

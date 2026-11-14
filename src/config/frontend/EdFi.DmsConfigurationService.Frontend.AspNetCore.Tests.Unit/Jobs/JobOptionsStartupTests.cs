@@ -24,6 +24,35 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 /// </summary>
 public class JobOptionsStartupTests
 {
+    [TestFixture]
+    public class Given_restart_scoped_management_enablement
+    {
+        [TestCase(null, false)]
+        [TestCase("true", false)]
+        [TestCase("false", true)]
+        public void It_captures_the_management_switch_without_disabling_other_job_types(
+            string? value,
+            bool excludesManaged
+        )
+        {
+            Dictionary<string, string> hostSettings = [];
+            if (value is not null)
+            {
+                hostSettings["AppSettings:EnableDataStoreManagement"] = value;
+            }
+            using var factory = CreateFactory([], hostSettings);
+            using var client = factory.CreateClient();
+            var policy = factory.Services.GetRequiredService<JobClaimPolicy>();
+            policy.ExcludesManagedDataStores.Should().Be(excludesManaged);
+            policy.Allows("DataStore.RefreshEducationOrganizations").Should().BeTrue();
+            var configuration = factory.Services.GetRequiredService<IConfiguration>();
+            configuration["AppSettings:EnableDataStoreManagement"] = excludesManaged ? "true" : "false";
+            ((IConfigurationRoot)configuration).Reload();
+            factory.Services.GetRequiredService<JobClaimPolicy>().Should().BeSameAs(policy);
+            policy.ExcludesManagedDataStores.Should().Be(excludesManaged);
+        }
+    }
+
     /// <summary>
     /// <paramref name="settings"/> reach the options binders; <paramref name="hostSettings"/> go through
     /// <c>UseSetting</c>, because the datastore and the tenancy mode are read while the services are registered, before

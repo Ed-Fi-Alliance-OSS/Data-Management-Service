@@ -11,7 +11,11 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 /// Checks a job with <see cref="JobCommandValidator"/> and enqueues only what passes, with the serializer's form of the
 /// payload, in the caller's transaction when one is supplied (spec D-18).
 /// </summary>
-public sealed class JobEnqueuer(JobCommandValidator validator, IJobRepository repository) : IJobEnqueuer
+public sealed class JobEnqueuer(
+    JobCommandValidator validator,
+    IJobRepository repository,
+    JobClaimPolicy claimPolicy
+) : IJobEnqueuer
 {
     public async Task<JobEnqueueResult> EnqueueAsync(
         JobEnqueueCommand command,
@@ -20,6 +24,11 @@ public sealed class JobEnqueuer(JobCommandValidator validator, IJobRepository re
     )
     {
         ArgumentNullException.ThrowIfNull(command);
+
+        if (!claimPolicy.Allows(command.JobType))
+        {
+            return new JobEnqueueResult.ManagementDisabled();
+        }
 
         return validator.Check(command.JobType, command.PayloadVersion, command.PayloadJson) switch
         {

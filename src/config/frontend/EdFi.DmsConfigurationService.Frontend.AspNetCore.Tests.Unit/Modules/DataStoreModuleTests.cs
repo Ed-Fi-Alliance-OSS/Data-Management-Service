@@ -540,6 +540,61 @@ public class DataStoreModuleTests
     }
 
     [TestFixture]
+    public class Given_ordinary_catalog_query_binding : DataStoreModuleTests
+    {
+        [Test]
+        public async Task It_preserves_display_filter_text_for_the_repository_comparison_policy()
+        {
+            DataStoreQuery? captured = null;
+            A.CallTo(() => _dataStoreRepository.QueryDataStore(A<DataStoreQuery>.Ignored))
+                .Invokes((DataStoreQuery query) => captured = query)
+                .Returns(new DataStoreQueryResult.Success([]));
+            using HttpClient client = SetUpClient();
+            using HttpResponseMessage response = await client.GetAsync(
+                "/v3/dataStores/?id=17&name=%20CAF%C3%A9%20&dataStoreType=SQL%20&orderBy=NaMe&direction=DeScEnDiNg&offset=2&limit=3"
+            );
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            captured
+                .Should()
+                .BeEquivalentTo(
+                    new DataStoreQuery
+                    {
+                        Id = 17,
+                        Name = " CAFé ",
+                        DataStoreType = "SQL ",
+                        OrderBy = "NaMe",
+                        Direction = "DeScEnDiNg",
+                        Offset = 2,
+                        Limit = 3,
+                    }
+                );
+        }
+
+        [TestCase("", null, null)]
+        [TestCase("?offset=2", 2, null)]
+        [TestCase("?direction=desc", null, "desc")]
+        public async Task It_keeps_omitted_limit_and_sort_field_unset(
+            string query,
+            int? offset,
+            string? direction
+        )
+        {
+            DataStoreQuery? captured = null;
+            A.CallTo(() => _dataStoreRepository.QueryDataStore(A<DataStoreQuery>.Ignored))
+                .Invokes((DataStoreQuery value) => captured = value)
+                .Returns(new DataStoreQueryResult.Success([]));
+            using HttpClient client = SetUpClient();
+            using HttpResponseMessage response = await client.GetAsync("/v3/dataStores/" + query);
+            response.StatusCode.Should().Be(HttpStatusCode.OK);
+            captured.Should().NotBeNull();
+            captured!.Limit.Should().BeNull();
+            captured.OrderBy.Should().BeNull();
+            captured.Offset.Should().Be(offset);
+            captured.Direction.Should().Be(direction);
+        }
+    }
+
+    [TestFixture]
     public class Given_Invalid_PagingQuery : DataStoreModuleTests
     {
         [SetUp]

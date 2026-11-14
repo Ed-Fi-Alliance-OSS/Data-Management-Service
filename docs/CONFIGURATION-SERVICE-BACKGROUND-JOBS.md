@@ -27,7 +27,7 @@ database coordinates them, so running several instances is safe and adds capacit
 
 ## Configuration
 
-All settings are in the `JobSettings` section and are documented, with defaults and accepted
+Job runtime settings are in the `JobSettings` section and are documented, with defaults and accepted
 ranges, in [Configuration: JobSettings](./CONFIGURATION.md#jobsettings). The service validates
 them at startup and refuses to start when one is out of range or when the lease leaves no room
 for a late renewal.
@@ -36,6 +36,19 @@ Fixed limits that are not configurable: a payload of at most 4000 characters; a 
 message of at most 1000 characters; a 5 s wait for the row lock of an ownership write and of a
 fence; a fence needs at least 2 s of lease left once its lock is held; exhaustion changes at most
 1000 rows per transaction; a schedule materialization must finish within 10 s.
+
+### Managed data-store enablement
+
+`AppSettings:EnableDataStoreManagement` defaults to `true` and is captured at startup. Use the
+same value on every replica and restart them to change it. When `false`, claim and exhaustion
+selection exclude exactly `ManagedDataStore.Create` and `ManagedDataStore.Delete`, preserving
+their rows, attempts and fencing tokens. Managed acceptance and enqueue paths also refuse new
+work before secret resolution or catalog writes. Registrations remain intact; re-enabling resumes
+eligible persisted work without resetting its counters or artifact pins.
+
+Other job types, recurring schedules, polling and retention remain operational. This switch does
+not immediately cancel work already executing and does not activate managed handlers or HTTP
+routes. There are no managed recurring schedules.
 
 ## Job lifecycle
 
@@ -75,11 +88,10 @@ data-store lifecycle (DMS-1439) must meet both:
   the exhaustion paths above. It must reconcile from the job's persisted terminal state, and it
   must allow for `FinishedJobRetention`. That setting is configurable, so a finished job may be
   deleted sooner than the default seven days.
-- **Suppress its own job types when its feature is off.** Claims take any eligible job, whatever
-  its type. `WorkerEnabled=false` stops every job type, and a job type with no registered handler
-  is still claimed and fails with `UnsupportedJobType`. Neither of these leaves managed jobs
-  unclaimed and unscheduled while refresh jobs and polling keep running. The lifecycle feature
-  must design that suppression itself.
+- **Suppress its own job types when its feature is off.** Managed operations use the selective
+  policy described under [Managed data-store enablement](#managed-data-store-enablement).
+  `WorkerEnabled=false` stops every job type; removing a handler still allows its jobs to be
+  claimed and fail with `UnsupportedJobType`.
 
 ### Failure classification and public error text
 

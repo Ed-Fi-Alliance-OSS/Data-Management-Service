@@ -20,6 +20,7 @@ public static class JobServiceCollectionExtensions
     /// </summary>
     public static IServiceCollection AddJobServices(this IServiceCollection services)
     {
+        services.TryAddSingleton(JobClaimPolicy.All);
         services.TryAddSingleton(Instance<JobHandlerRegistrations>(services));
         services.TryAddSingleton(Instance<JobErrorCodeRegistrations>(services));
         services.TryAddSingleton<IJobHandlerRegistry, JobHandlerRegistry>();

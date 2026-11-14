@@ -72,6 +72,21 @@ public class JobRuntimeIntegrationTests
             string owner,
             int leaseSeconds,
             int maxAttempts,
+            JobClaimPolicy policy,
+            CancellationToken cancellationToken
+        ) => inner.ClaimNext(owner, leaseSeconds, maxAttempts, policy, cancellationToken);
+
+        public Task<JobExhaustResult> Exhaust(
+            int maxAttempts,
+            JobErrorCode errorCode,
+            JobClaimPolicy policy,
+            CancellationToken cancellationToken
+        ) => inner.Exhaust(maxAttempts, errorCode, policy, cancellationToken);
+
+        public Task<JobClaimResult> ClaimNext(
+            string owner,
+            int leaseSeconds,
+            int maxAttempts,
             CancellationToken cancellationToken
         ) => inner.ClaimNext(owner, leaseSeconds, maxAttempts, cancellationToken);
 
@@ -178,7 +193,8 @@ public class JobRuntimeIntegrationTests
                 Executor,
                 Options.Create(Settings),
                 TimeProvider.System,
-                NullLogger<JobWorkerService>.Instance
+                NullLogger<JobWorkerService>.Instance,
+                JobClaimPolicy.All
             );
 
         public JobScheduleDispatcherService Dispatcher() =>

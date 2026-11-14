@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
@@ -12,6 +13,18 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 public interface IDataStoreRepository
 {
     Task<DataStoreInsertResult> InsertDataStore(DataStoreInsertCommand command);
+
+    /// <summary>
+    /// Inserts using exactly the caller's active transaction. Returns only on success; exceptions,
+    /// including cancellation, must propagate to the transaction owner so it rolls back the whole unit
+    /// of work. This method never opens a connection, commits, or rolls back the caller's transaction.
+    /// </summary>
+    Task<int> InsertDataStore(
+        DataStoreInsertCommand command,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    );
+
     Task<DataStoreQueryResult> QueryDataStore(DataStoreQuery query);
     Task<DataStoreGetResult> GetDataStore(int id);
     Task<DataStoreUpdateResult> UpdateDataStore(DataStoreUpdateCommand command);
@@ -54,6 +67,9 @@ public record DataStoreUpdateResult
 
     public record FailureNotExists() : DataStoreUpdateResult();
 
+    /// <summary>The current managed link prevents ordinary mutation; nothing was written.</summary>
+    public record FailureManaged(int ManageId) : DataStoreUpdateResult();
+
     /// <summary>
     /// Another data store in the caller's tenant already has this name; nothing was written
     /// </summary>
@@ -67,6 +83,9 @@ public record DataStoreDeleteResult
     public record Success() : DataStoreDeleteResult();
 
     public record FailureNotExists() : DataStoreDeleteResult();
+
+    /// <summary>The current managed link prevents ordinary mutation; nothing was written.</summary>
+    public record FailureManaged(int ManageId) : DataStoreDeleteResult();
 
     public record FailureUnknown(string FailureMessage) : DataStoreDeleteResult();
 }

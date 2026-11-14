@@ -5,6 +5,7 @@
 
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -42,6 +43,13 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     private const string OwnershipPredicate = """
         j."Id" = @Id AND j."LeaseOwner" = @Owner AND j."FencingToken" = @Token AND j."Status" = 'InProgress'
           AND j."LeaseExpiresAt" > t.now
+        """;
+
+    private const string ReadRetryJobSql = $"""
+        {FreshTime}
+        SELECT j."JobId", j."TenantId", j."JobType", j."AttemptCount"
+        FROM "dmscs"."Job" AS j, t
+        WHERE {OwnershipPredicate};
         """;
 
     private const string RenewSql = $"""
@@ -124,6 +132,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 OR ("Status" = 'InProgress' AND "LeaseExpiresAt" <= (now() AT TIME ZONE 'UTC')))
               AND "Status" IN ('Pending', 'InProgress')
               AND "AttemptCount" < @MaxAttempts
+              AND (NOT @ExcludeManagedJobs OR "JobType" COLLATE "C" NOT IN (@ManagedCreate, @ManagedDelete))
             ORDER BY "NextAttemptAt", "Id"
             LIMIT 1
             FOR UPDATE SKIP LOCKED
@@ -159,6 +168,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             SELECT "Id"
             FROM "dmscs"."Job"
             WHERE "AttemptCount" >= @MaxAttempts
+              AND (NOT @ExcludeManagedJobs OR "JobType" COLLATE "C" NOT IN (@ManagedCreate, @ManagedDelete))
               AND ("Status" = 'Pending'
                 OR ("Status" = 'InProgress' AND "LeaseExpiresAt" <= (now() AT TIME ZONE 'UTC')))
               AND "Status" IN ('Pending', 'InProgress')
@@ -179,10 +189,18 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     /// <summary>Test seam: hooks into every session this repository opens.</summary>
     internal JobDatabaseSessionHooks? SessionHooks { get; init; }
 
+    public Task<JobClaimResult> ClaimNext(
+        string owner,
+        int leaseSeconds,
+        int maxAttempts,
+        CancellationToken cancellationToken
+    ) => ClaimNext(owner, leaseSeconds, maxAttempts, JobClaimPolicy.All, cancellationToken);
+
     public async Task<JobClaimResult> ClaimNext(
         string owner,
         int leaseSeconds,
         int maxAttempts,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     )
     {
@@ -203,6 +221,9 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                                 Owner = owner,
                                 LeaseSeconds = leaseSeconds,
                                 MaxAttempts = maxAttempts,
+                                ExcludeManagedJobs = policy.ExcludesManagedDataStores,
+                                ManagedCreate = ManagedJobTypes.Create,
+                                ManagedDelete = ManagedJobTypes.Delete,
                             },
                             budget,
                             token
@@ -227,9 +248,16 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         }
     }
 
+    public Task<JobExhaustResult> Exhaust(
+        int maxAttempts,
+        JobErrorCode errorCode,
+        CancellationToken cancellationToken
+    ) => Exhaust(maxAttempts, errorCode, JobClaimPolicy.All, cancellationToken);
+
     public async Task<JobExhaustResult> Exhaust(
         int maxAttempts,
         JobErrorCode errorCode,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     )
     {
@@ -251,7 +279,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 int rows;
                 try
                 {
-                    rows = await RunExhaustBatchAsync(session, maxAttempts, errorCode, batch);
+                    rows = await RunExhaustBatchAsync(session, maxAttempts, errorCode, batch, policy);
                 }
                 catch (Exception exception)
                 {
@@ -294,7 +322,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         JobDatabaseSession session,
         int maxAttempts,
         JobErrorCode errorCode,
-        JobDeadline batch
+        JobDeadline batch,
+        JobClaimPolicy policy
     ) =>
         session.RunAsync(
             "ExhaustBatch",
@@ -306,6 +335,9 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                         new
                         {
                             MaxAttempts = maxAttempts,
+                            ExcludeManagedJobs = policy.ExcludesManagedDataStores,
+                            ManagedCreate = ManagedJobTypes.Create,
+                            ManagedDelete = ManagedJobTypes.Delete,
                             ErrorMessage = errorCode.Message,
                             ModifiedBy = SystemUser,
                             BatchSize = JobLeaseTimings.ExhaustBatchSize,
@@ -376,7 +408,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 BackoffSeconds = backoffSeconds,
             },
             id,
-            cancellationToken
+            cancellationToken,
+            projectManagedRetry: true
         );
 
     public Task<JobWriteResult> FailTerminal(
@@ -428,7 +461,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         string guardedUpdateSql,
         object parameters,
         long id,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool projectManagedRetry = false
     )
     {
         JobDeadline budget = JobDeadline.Start(timings.RenewalTimeout);
@@ -457,6 +491,26 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 cancellationToken
             );
 
+            ManagedJobRetryOutcome.Target? retryTarget = null;
+            if (projectManagedRetry)
+            {
+                var job = await session.RunAsync(
+                    "ReadRetryJob",
+                    token =>
+                        session.Connection.QuerySingleOrDefaultAsync<ManagedJobRetryOutcome.Job>(
+                            PostgresqlJobSession.Command(session, ReadRetryJobSql, parameters, budget, token)
+                        ),
+                    budget,
+                    cancellationToken
+                );
+                if (job is null)
+                {
+                    return new JobWriteResult.OwnershipLost();
+                }
+                retryTarget = await ManagedJobRetryOutcome.LockAsync(session, job, budget, cancellationToken);
+            }
+
+            // Sample ownership again after any catalog gate or aggregate lock wait.
             guardedWriteSent = true;
             WrittenRow? written = await session.RunAsync(
                 "GuardedWrite",
@@ -470,6 +524,17 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             if (written is null)
             {
                 return new JobWriteResult.OwnershipLost();
+            }
+
+            if (retryTarget is not null)
+            {
+                await ManagedJobRetryOutcome.WriteAsync(
+                    session,
+                    retryTarget,
+                    written.DatabaseUtcNow,
+                    budget,
+                    cancellationToken
+                );
             }
 
             if (BeforeOwnershipCommit is { } beforeCommit)
