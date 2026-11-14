@@ -649,7 +649,7 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
     private static CdcConnectorTemplateSmokeSettings BuildSettings(bool keepContainers = false) =>
         new(
             "connect@sha256:qualified",
-            "redpanda:qualified",
+            CdcComposeBrokerSizeDeployment.BrokerImage,
             "postgres:qualified",
             FailFast: true,
             keepContainers

@@ -44,14 +44,16 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                 [
                     "exec",
                     BrokerContainerName,
-                    "rpk",
-                    "topic",
-                    "alter-config",
-                    topic,
-                    "--set",
-                    $"max.message.bytes={budget.ToString(CultureInfo.InvariantCulture)}",
-                    "--brokers",
+                    "/opt/kafka/bin/kafka-configs.sh",
+                    "--bootstrap-server",
                     KafkaBootstrapServers,
+                    "--entity-type",
+                    "topics",
+                    "--entity-name",
+                    topic,
+                    "--alter",
+                    "--add-config",
+                    $"max.message.bytes={budget.ToString(CultureInfo.InvariantCulture)}",
                 ],
                 token
             );
@@ -83,35 +85,61 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
                     "this isolated broker has one in-sync replica and no inter-broker replication hop"
                 );
         }
-        long batchLimit = await ReadBrokerLimitAsync("kafka_batch_max_bytes");
-        long requestLimit = await ReadBrokerLimitAsync("kafka_request_max_bytes");
-        batchLimit.Should().BeGreaterThanOrEqualTo(budget);
+        var broker = admin.GetMetadata(TimeSpan.FromSeconds(10)).Brokers.Single();
+        var brokerConfigs = await admin
+            .DescribeConfigsAsync(
+                [
+                    new ConfigResource
+                    {
+                        Type = ResourceType.Broker,
+                        Name = broker.BrokerId.ToString(CultureInfo.InvariantCulture),
+                    },
+                ],
+                new DescribeConfigsOptions { RequestTimeout = TimeSpan.FromSeconds(10) }
+            )
+            .WaitAsync(token);
+        return ObserveRecordSizeLimits(
+            budget,
+            topicLimit,
+            brokerConfigs.Single().Entries,
+            CreateByteConsumerConfig()
+        );
+    }
+
+    internal static MessageContractSizeLimits ObserveRecordSizeLimits(
+        int budget,
+        int topicLimit,
+        IReadOnlyDictionary<string, ConfigEntryResult> brokerConfig,
+        ConsumerConfig consumer
+    )
+    {
+        // Kafka's message.max.bytes is the broker default, overridden by each topic's
+        // max.message.bytes. It is not a second batch ceiling on explicitly configured topics.
+        long defaultMessageLimit = ReadBrokerLimit("message.max.bytes");
+        long requestLimit = ReadBrokerLimit("socket.request.max.bytes");
+        topicLimit.Should().Be(budget);
         requestLimit.Should().BeGreaterThan(budget, "the broker request path has framing headroom");
-        ConsumerConfig consumer = CreateByteConsumerConfig();
         consumer.MaxPartitionFetchBytes.Should().BeGreaterThanOrEqualTo(budget);
         consumer.FetchMaxBytes.Should().BeGreaterThanOrEqualTo(budget);
         return new(
             budget,
             topicLimit,
-            batchLimit,
+            defaultMessageLimit,
             requestLimit,
             consumer.MaxPartitionFetchBytes!.Value,
             consumer.FetchMaxBytes!.Value,
             1
         );
 
-        async Task<long> ReadBrokerLimitAsync(string name)
+        long ReadBrokerLimit(string name)
         {
-            var result = await _docker.RunAsync(
-                ["exec", BrokerContainerName, "rpk", "cluster", "config", "get", name],
-                token
-            );
             bool parsed = long.TryParse(
-                result.StandardOutput.Trim(),
+                brokerConfig[name].Value,
                 CultureInfo.InvariantCulture,
                 out long value
             );
             parsed.Should().BeTrue($"broker size property {name} must be numeric (output redacted)");
+            value.Should().BePositive();
             return value;
         }
     }
@@ -176,7 +204,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 internal sealed record MessageContractSizeLimits(
     int MaxRecordBytes,
     int TopicMaxMessageBytes,
-    long BrokerBatchMaxBytes,
+    long BrokerDefaultMessageMaxBytes,
     long BrokerRequestMaxBytes,
     int ConsumerPartitionFetchBytes,
     int ConsumerFetchBytes,

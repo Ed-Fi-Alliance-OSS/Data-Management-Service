@@ -48,7 +48,7 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
                 CdcProvider.Postgresql,
                 new(
                     "connect:qualified",
-                    "redpanda:qualified",
+                    CdcComposeBrokerSizeDeployment.BrokerImage,
                     "postgres:qualified",
                     true,
                     scenario == "keep-containers"

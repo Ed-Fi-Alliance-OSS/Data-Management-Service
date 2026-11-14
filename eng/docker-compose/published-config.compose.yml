@@ -72,6 +72,25 @@ services:
       JobSettings__FinishedJobRetention: ${CONFIGURATION_SERVICE_JOBS_FINISHED_JOB_RETENTION:-7.00:00:00}
       JobSettings__RetentionInterval: ${CONFIGURATION_SERVICE_JOBS_RETENTION_INTERVAL:-01:00:00}
       JobSettings__RetentionBatchSize: ${CONFIGURATION_SERVICE_JOBS_RETENTION_BATCH_SIZE:-500}
+      # DMS data store provisioning (docs/CONFIGURATION.md, DmsDataStoreProvisioning). Off by default.
+      # When enabled, every line without a default must be set, and the trust policy, artifact
+      # directory and (SQL Server) staging directory must be mounted. Optional settings are not
+      # passed here because an empty value is not the same as an omitted one; set them in an overlay.
+      DmsDataStoreProvisioning__Enabled: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ENABLED:-false}
+      DmsDataStoreProvisioning__Provider: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_PROVIDER:-}
+      DmsDataStoreProvisioning__AdminConnectionString: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ADMIN_CONNECTION_STRING:-}
+      DmsDataStoreProvisioning__TrustPolicyPath: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_TRUST_POLICY_PATH:-}
+      DmsDataStoreProvisioning__ArtifactDirectory: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ARTIFACT_DIRECTORY:-}
+      DmsDataStoreProvisioning__Templates__Minimal__PackageId: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_TEMPLATES_MINIMAL_PACKAGE_ID:-}
+      DmsDataStoreProvisioning__Templates__Minimal__PackageVersion: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_TEMPLATES_MINIMAL_PACKAGE_VERSION:-}
+      DmsDataStoreProvisioning__Templates__Sample__PackageId: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_TEMPLATES_SAMPLE_PACKAGE_ID:-}
+      DmsDataStoreProvisioning__Templates__Sample__PackageVersion: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_TEMPLATES_SAMPLE_PACKAGE_VERSION:-}
+      DmsDataStoreProvisioning__Compatibility__DataStandardVersion: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_COMPATIBILITY_DATA_STANDARD_VERSION:-}
+      DmsDataStoreProvisioning__Compatibility__EffectiveSchemaHash: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_COMPATIBILITY_EFFECTIVE_SCHEMA_HASH:-}
+      DmsDataStoreProvisioning__Compatibility__Projects__0: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_COMPATIBILITY_PROJECTS_0:-edfi}
+      DmsDataStoreProvisioning__Postgresql__PsqlPath: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_POSTGRESQL_PSQL_PATH:-/usr/bin/psql}
+      DmsDataStoreProvisioning__Mssql__StagingPath: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_MSSQL_STAGING_PATH:-}
+      DmsDataStoreProvisioning__Mssql__StagingServerPath: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_MSSQL_STAGING_SERVER_PATH:-}
       SecretsSettings__CacheExpirationSeconds: ${CONFIGURATION_SERVICE_SECRETS_CACHE_EXPIRATION_SECONDS:-300}
       SecretsSettings__ResolveTimeoutSeconds: ${CONFIGURATION_SERVICE_SECRETS_RESOLVE_TIMEOUT_SECONDS:-10}
       IdentitySettings__EncryptionKey: ${CONFIGURATION_SERVICE_IDENTITY_ENCRYPTION_KEY:?set a unique key; required even when the Keycloak identity provider leaves it unused (see docs/DOCKER.md)}

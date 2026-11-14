@@ -51,7 +51,6 @@ public sealed class Given_PinnedImageFixtureConnectReadinessLiveRecovery(CdcProv
                     return Task.CompletedTask;
                 },
                 exposeBroker: true,
-                nativeKafka: true,
                 waitForConnect: async (resources, token) =>
                 {
                     var result = await docker.RunAsync(

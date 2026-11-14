@@ -1,0 +1,256 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using Npgsql;
+
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+
+/// <summary>
+/// The environmental validation of the PostgreSQL adapter. Every probe group runs and
+/// every failing rule is reported, so an operator sees the complete picture in one restart; the lock probe
+/// alone is skipped when the server could not be reached, because it would only repeat that failure.
+/// Nothing is created, altered, or signalled on the server: the probes read catalogs, take and release one
+/// advisory lock no target can use, and run <c>psql --version</c>. Caller cancellation propagates; every
+/// other failure is a reason. Every connection the probes open is bounded by <c>CommandTimeout</c>
+/// (<see cref="DmsBoundedConnectionOpen"/>), so a stalled login is a reason instead of a startup that never ends.
+/// </summary>
+public sealed partial class PostgresqlDmsTargetEngine
+{
+    public async Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken)
+    {
+        List<DmsReadinessReason> reasons = [];
+        (bool serverReachable, int? serverMajorVersion) = await ValidateServerAsync(
+            reasons,
+            cancellationToken
+        );
+
+        PsqlVersionProbeResult psql = await PsqlVersionProbe.ProbeAsync(
+            _settings.PsqlPath,
+            PsqlVersionProbe.DefaultTimeout,
+            _timeProvider,
+            cancellationToken
+        );
+        if (PostgresqlEnvironment.EvaluatePsql(psql, _settings.MinimumPsqlMajorVersion) is { } psqlReason)
+        {
+            reasons.Add(psqlReason);
+        }
+
+        if (ClientCertificateReason() is { } certificateReason)
+        {
+            reasons.Add(certificateReason);
+        }
+
+        if (AmbientPasswordReason() is { } passwordReason)
+        {
+            reasons.Add(passwordReason);
+        }
+
+        if (serverReachable && await ProbeTargetLockAsync(cancellationToken) is { } lockReason)
+        {
+            reasons.Add(lockReason);
+        }
+
+        return reasons.Count == 0
+            ? new DmsEngineEnvironment.Ready() { ServerMajorVersion = serverMajorVersion }
+            : new DmsEngineEnvironment.NotReady(reasons) { ServerMajorVersion = serverMajorVersion };
+    }
+
+    /// <summary>
+    /// <see cref="PostgresqlEnvironment.EvaluateClientCertificate"/> over this process's environment, read as Npgsql
+    /// reads it. A connection string that cannot be read adds nothing here: the server probe opens the same one and
+    /// reports it.
+    /// </summary>
+    private DmsReadinessReason? ClientCertificateReason()
+    {
+        string sslMode;
+        try
+        {
+            sslMode = _adminConnection.ToLibpqSettings().SslMode;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return null;
+        }
+
+        return PostgresqlEnvironment.EvaluateClientCertificate(
+            sslMode,
+            Environment.GetEnvironmentVariable("PGSSLCERT"),
+            Environment.GetEnvironmentVariable(OperatingSystem.IsWindows() ? "APPDATA" : "HOME"),
+            File.Exists
+        );
+    }
+
+    /// <summary>
+    /// <see cref="PostgresqlEnvironment.EvaluateAmbientPassword"/> over this process's environment, read as Npgsql
+    /// reads it. A connection string that cannot be read adds nothing here, as in <see cref="ClientCertificateReason"/>.
+    /// </summary>
+    private DmsReadinessReason? AmbientPasswordReason()
+    {
+        string configuredPassword;
+        try
+        {
+            configuredPassword = _adminConnection.ToLibpqSettings().Password;
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            return null;
+        }
+
+        return PostgresqlEnvironment.EvaluateAmbientPassword(
+            configuredPassword,
+            Environment.GetEnvironmentVariable("PGPASSWORD"),
+            Environment.GetEnvironmentVariable("PGPASSFILE"),
+            Environment.GetEnvironmentVariable(OperatingSystem.IsWindows() ? "APPDATA" : "HOME"),
+            File.Exists
+        );
+    }
+
+    /// <summary>
+    /// Connects, reads the facts, and applies the server rules; returns whether the server was reached and its
+    /// major version (<c>server_version_num / 10000</c>, as <see cref="ReadServerFactsAsync"/> reports it), null
+    /// when the facts could not be read.
+    /// </summary>
+    private async Task<(bool Reachable, int? MajorVersion)> ValidateServerAsync(
+        List<DmsReadinessReason> reasons,
+        CancellationToken cancellationToken
+    )
+    {
+        NpgsqlConnection connection;
+        try
+        {
+            connection = await DmsBoundedConnectionOpen.OpenAsync(
+                _adminConnection.OpenMaintenanceAsync,
+                _adminConnection.CommandTimeout,
+                _timeProvider,
+                cancellationToken
+            );
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            reasons.Add(ServerFailure(exception, PostgresqlEnvironment.ConnectOperation));
+            return (false, null);
+        }
+
+        await using (connection)
+        {
+            try
+            {
+                PostgresqlEnvironmentFacts facts = await PostgresqlEnvironment.ReadFactsAsync(
+                    connection,
+                    cancellationToken
+                );
+                reasons.AddRange(PostgresqlEnvironment.Evaluate(facts));
+                return (true, facts.ServerVersionNum / 10000);
+            }
+            catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+            {
+                reasons.Add(ServerFailure(exception, PostgresqlEnvironment.ReadFactsOperation));
+                return (true, null);
+            }
+        }
+    }
+
+    /// <summary>
+    /// A connection-class failure, or a connection not opened within the readiness bound, is
+    /// <c>ServerUnavailable</c>; anything else the server or the driver raised (an authentication refusal, a
+    /// value the driver cannot parse) is <c>StartupValidationFailed</c>. Only the type chain and the SQLSTATE
+    /// are kept.
+    /// </summary>
+    private static DmsReadinessReason ServerFailure(Exception exception, string operation) =>
+        new(
+            exception is TimeoutException || PostgresqlErrorClassifier.IsConnectionFailure(exception)
+                ? DmsProvisioningFailureCode.ServerUnavailable
+                : DmsProvisioningFailureCode.StartupValidationFailed,
+            PostgresqlEnvironment.TargetServerProbe,
+            DmsProvisioningDiagnostic.From(
+                exception,
+                operation,
+                PostgresqlErrorClassifier.SqlStateOf(exception)
+            )
+        );
+
+    /// <summary>
+    /// Acquires the probe lock (<c>dms-provision-target:v1:__probe__</c>) on a holder session as
+    /// an operation would, under <c>LockAcquireTimeout</c>, runs one heartbeat probe on it, and releases it.
+    /// Contention past the budget is <c>LockTimeout</c>; a failed acquisition or a heartbeat that finds the
+    /// holder lost is <c>LockUnavailable</c>.
+    /// </summary>
+    private async Task<DmsReadinessReason?> ProbeTargetLockAsync(CancellationToken cancellationToken)
+    {
+        DmsTargetLockResult result = await PostgresqlTargetLockSession.AcquireKeyAsync(
+            _adminConnection,
+            PostgresqlTargetLockSession.ProbeLockKey,
+            DmsOperationId.New(),
+            _settings.LockAcquireTimeout,
+            _settings.LockHeartbeatInterval,
+            _timeProvider,
+            _logger,
+            connectionOpened: null,
+            cancellationToken,
+            openBound: _adminConnection.CommandTimeout
+        );
+        if (ProbeLockReasonOf(result) is { } refused)
+        {
+            return refused;
+        }
+
+        await using PostgresqlTargetLockSession holder = (PostgresqlTargetLockSession)
+            ((DmsTargetLockResult.Acquired)result).Holder;
+        try
+        {
+            await holder.ProbeOnceAsync(cancellationToken);
+        }
+        catch (Exception exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            return new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                PostgresqlEnvironment.TargetLockProbe,
+                DmsProvisioningDiagnostic.From(
+                    exception,
+                    PostgresqlEnvironment.LockHeartbeatOperation,
+                    PostgresqlErrorClassifier.SqlStateOf(exception)
+                )
+            );
+        }
+
+        return holder.IsLost
+            ? new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                PostgresqlEnvironment.TargetLockProbe,
+                DmsProvisioningDiagnostic.ForOperation(PostgresqlEnvironment.LockHeartbeatOperation)
+            )
+            : null;
+    }
+
+    /// <summary>
+    /// The readiness reason for a probe-lock acquisition that held nothing, or null when the lock was acquired:
+    /// contention past the budget is <c>LockTimeout</c>; an infrastructure failure, or a definite refusal of the
+    /// login or the lock request, is <c>LockUnavailable</c> with the engine's diagnostic. At startup an
+    /// authentication refusal is already the <c>TargetServer</c> probe's <c>StartupValidationFailed</c>, so the lock
+    /// probe keeps one reason for every failed acquisition.
+    /// </summary>
+    internal static DmsReadinessReason? ProbeLockReasonOf(DmsTargetLockResult result) =>
+        result switch
+        {
+            DmsTargetLockResult.Acquired => null,
+            DmsTargetLockResult.Timeout => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockTimeout,
+                PostgresqlEnvironment.TargetLockProbe,
+                DmsProvisioningDiagnostic.ForOperation(PostgresqlTargetLockSession.AcquireStep)
+            ),
+            DmsTargetLockResult.Failure failure => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                PostgresqlEnvironment.TargetLockProbe,
+                failure.Diagnostic
+            ),
+            DmsTargetLockResult.AccessDenied refused => new DmsReadinessReason(
+                DmsProvisioningFailureCode.LockUnavailable,
+                PostgresqlEnvironment.TargetLockProbe,
+                refused.Diagnostic
+            ),
+            _ => throw new InvalidOperationException("Unknown target lock result."),
+        };
+}

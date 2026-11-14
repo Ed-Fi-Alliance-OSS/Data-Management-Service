@@ -759,36 +759,36 @@ internal sealed class RepresentationRestampCdcStateFixture : IAsyncDisposable
             [
                 "exec",
                 _brokerContainerName,
-                "rpk",
-                "topic",
-                "consume",
+                "/opt/kafka/bin/kafka-console-consumer.sh",
+                "--topic",
                 _request.PublicTopicName,
-                "--brokers",
+                "--bootstrap-server",
                 $"{_brokerContainerName}:9092",
-                "--offset",
-                "start",
-                "--num",
+                "--from-beginning",
+                "--max-messages",
                 expectedCount.ToString(System.Globalization.CultureInfo.InvariantCulture),
-                "--format",
-                "%t\t%k\t%v\n",
+                "--formatter-property",
+                "print.key=true",
+                "--formatter-property",
+                "key.separator=\t",
             ],
             cancellationToken
         );
 
         CdcStateRecord[] records = result
             .StandardOutput.Split('\n', StringSplitOptions.RemoveEmptyEntries)
-            .Select(ParseRecord)
+            .Select(line => ParseRecord(_request.PublicTopicName, line))
             .ToArray();
         records.Should().HaveCount(expectedCount);
         return records;
     }
 
-    private static CdcStateRecord ParseRecord(string line)
+    internal static CdcStateRecord ParseRecord(string topic, string line)
     {
-        string[] fields = line.TrimEnd('\r').Split('\t', 3);
-        fields.Should().HaveCount(3);
-        using JsonDocument document = JsonDocument.Parse(fields[2]);
-        return new CdcStateRecord(fields[0], fields[1], document.RootElement.Clone());
+        string[] fields = line.TrimEnd('\r').Split('\t', 2);
+        fields.Should().HaveCount(2);
+        using JsonDocument document = JsonDocument.Parse(fields[1]);
+        return new CdcStateRecord(topic, fields[0], document.RootElement.Clone());
     }
 
     private async Task<SeededDocument> SeedCanonicalDescriptorAsync(

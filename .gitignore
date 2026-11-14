@@ -506,3 +506,8 @@ docs/.superpowers/
 
 # CDC execution reports are retained outside source control.
 /reference/cdc-documentation/evidence/
+
+# DMS-1438 trust parity fixture: a PowerShell-produced tiny package and its attestation, committed on purpose
+# (see the README beside them). Only this directory re-includes the ignored patterns above.
+!/src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Trust/*.nupkg
+!/src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit/Fixtures/DataStoreProvisioning/Trust/*.nupkg.attestation.json

@@ -1,0 +1,915 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Diagnostics;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Trust;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Npgsql;
+using static EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning.DmsProvisioningTestServer;
+
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.DataStoreProvisioning;
+
+/// <summary>
+/// Step 5.1 on PostgreSQL: the real feed packages in <c>DMS_TEMPLATE_PACKAGE_DIRECTORY</c>, signed with an ephemeral
+/// key and allowlisted through the real catalog, replayed by a real <c>psql</c>. Minimal and Sample each create a target
+/// that carries the expected identity, the manifest's effective schema and canonical inventory, and passes every
+/// validation gate including security; a second create reconciles without mutating; a delete drops it. A database cloned
+/// from the operation's own staging database (the same artifact, another identity) takes the name before the rename and
+/// is refused untouched. With the replay held after the whole real dump, inside its open transaction, a caller
+/// cancellation and an expiry of the restore bound, both triggered by the test, roll it back and drop the staging
+/// database. A tampered package and a package for the other engine are refused before any engine call. Both template
+/// kinds provision unchanged while <c>template1</c> holds local objects and an open session (F-05).
+/// </summary>
+[Category(Category)]
+public class PostgresqlRealPackageTests
+{
+    private static readonly Guid _foreignIdentity = Guid.Parse("5d4c3b2a-1f0e-4d9c-8b7a-6f5e4d3c2b1a");
+
+    private static RealTemplatePackage RequireRealPackage(string databaseEngine, string templateKind)
+    {
+        RequireConfiguredOrSkip();
+        RequirePsqlOrSkip();
+        if (!RealTemplatePackage.IsConfigured)
+        {
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
+                $"{RealTemplatePackage.DirectoryVariable} is not set; the real-package fixtures are skipped."
+            );
+        }
+
+        return RealTemplatePackage.Find(databaseEngine, templateKind);
+    }
+
+    private static RealTemplatePackage RequireRealPackage(string templateKind) =>
+        RequireRealPackage(RestoreManifest.PostgresqlEngine, templateKind);
+
+    private static DmsProvisioningFailure FailureOf(DmsDataStoreCreateResult result) =>
+        result.Should().BeOfType<DmsDataStoreCreateResult.Failure>().Subject.Detail;
+
+    private static Task<DmsLiveTargetState> InspectAsync(DmsDatabaseName name) =>
+        DmsProvisioningTestServer.Engine().InspectAsync(name, default);
+
+    /// <summary>Sessions named <paramref name="applicationName"/> idle inside an open transaction.</summary>
+    private static Task<int> OpenTransactionsNamedAsync(string applicationName) =>
+        ScalarOnServerAsync<int>(
+            "SELECT COUNT(*)::int FROM pg_catalog.pg_stat_activity a WHERE a.application_name = @app AND a.state = 'idle in transaction';",
+            ("app", applicationName)
+        );
+
+    /// <summary>
+    /// The lane engine with its replay held (Step 5.1 review): a wrapper runs the real <c>psql</c> with the engine's
+    /// arguments and the real dump unchanged, then one trailing <c>\!</c>, inside the same single transaction, writes a
+    /// marker naming <c>psql</c> and the holding shell and sleeps until the runner kills the process tree. Nothing
+    /// commits while the replay is held, so the caller's cancellation, or the restore bound that only the test fires
+    /// (<see cref="ControlledRestoreDeadline"/>), always meets the whole dump replayed and uncommitted, however fast the
+    /// replay ran. <see cref="Release"/> ends a hold the runner did not. The runner gives <c>psql</c> a cleared
+    /// environment, so the shell commands use the absolute paths of <c>mv</c> and <c>sleep</c>, resolved here (Ubuntu
+    /// has them under <c>/usr/bin</c>, Alpine under <c>/bin</c>); a host with neither fails setup at once.
+    /// </summary>
+    private sealed class HeldReplay : IDisposable
+    {
+        private static readonly string[] _utilityDirectories = ["/usr/bin", "/bin"];
+
+        private readonly string _directory;
+        private readonly string _marker;
+
+        /// <summary>The first executable <paramref name="name"/> in <see cref="_utilityDirectories"/>; fails the fixture when there is none.</summary>
+        private static string ResolveUtility(string name)
+        {
+            foreach (string directory in _utilityDirectories)
+            {
+                string candidate = Path.Combine(directory, name);
+                if (
+                    !OperatingSystem.IsWindows()
+                    && File.Exists(candidate)
+                    && (File.GetUnixFileMode(candidate) & UnixFileMode.OtherExecute) != 0
+                )
+                {
+                    return candidate;
+                }
+            }
+
+            Assert.Fail(
+                $"The held replay needs an executable '{name}' in {string.Join(" or ", _utilityDirectories)}."
+            );
+            return string.Empty;
+        }
+
+        public HeldReplay()
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                Assert.Ignore("The held replay wraps psql in a POSIX shell script.");
+            }
+
+            string move = ResolveUtility("mv");
+            string sleep = ResolveUtility("sleep");
+            _directory = Path.Combine(
+                Path.GetTempPath(),
+                "dms1438-held-replay-" + DmsOperationId.New().Value
+            );
+            Directory.CreateDirectory(_directory);
+            _marker = Path.Combine(_directory, "held");
+            string wrapper = Path.Combine(_directory, "psql");
+            File.WriteAllText(
+                wrapper,
+                $"#!/bin/sh\nexec '{PsqlPath}' \"$@\" --command '\\! echo $PPID $$ > {_marker}.tmp && {move} {_marker}.tmp {_marker} && exec {sleep} infinity'\n"
+            );
+            if (!OperatingSystem.IsWindows())
+            {
+                File.SetUnixFileMode(
+                    wrapper,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute
+                );
+            }
+
+            Engine = new PostgresqlDmsTargetEngine(
+                AdminConnection(),
+                Settings(restoreTimeout: ControlledRestoreDeadline.RestoreTimeout),
+                TimeProvider.System,
+                NullLogger.Instance,
+                new PsqlRestoreRunner(
+                    wrapper,
+                    ControlledRestoreDeadline.RestoreTimeout,
+                    Deadline,
+                    NullLogger.Instance
+                )
+            );
+        }
+
+        public ControlledRestoreDeadline Deadline { get; } = new();
+
+        public PostgresqlDmsTargetEngine Engine { get; }
+
+        /// <summary>
+        /// Waits until the replay has run the whole dump and holds its transaction open. When <paramref name="create"/>
+        /// ends first, the replay can no longer be held: the fixture fails at once with what the create ended with,
+        /// instead of waiting out the marker's bound. False if the bound passes with the create still running.
+        /// </summary>
+        public async Task<bool> WaitUntilHeldAsync(HeldCreate create)
+        {
+            Task<bool> held = WaitUntilAsync(
+                () => Task.FromResult(File.Exists(_marker) || create.Running.IsCompleted),
+                TimeSpan.FromMinutes(3)
+            );
+            bool settled = await held;
+            if (!File.Exists(_marker) && create.Running.IsCompleted)
+            {
+                Assert.Fail($"The create ended before its replay was held: {Describe(create.Running)}.");
+            }
+
+            return settled && File.Exists(_marker);
+        }
+
+        /// <summary>A completed create's outcome as codes and type names only.</summary>
+        private static string Describe(Task<DmsDataStoreCreateResult> ended) =>
+            ended.Status switch
+            {
+                TaskStatus.Faulted => "exception "
+                    + DmsProvisioningDiagnostic.TypeChain(ended.Exception!.InnerException!),
+                TaskStatus.Canceled => "cancelled",
+                _ => ended.Result switch
+                {
+                    DmsDataStoreCreateResult.Failure failure =>
+                        $"{failure.Detail.Code} at {failure.Detail.Diagnostic.Operation} ({failure.Detail.Diagnostic.ProviderErrorCode})",
+                    DmsDataStoreCreateResult result => result.GetType().Name,
+                },
+            };
+
+        /// <summary>
+        /// Kills the held <c>psql</c> first, so its transaction ends uncommitted, then the shell holding it; nothing when
+        /// the hold never began or the runner already ended it.
+        /// </summary>
+        public void Release()
+        {
+            if (!File.Exists(_marker))
+            {
+                return;
+            }
+
+            string[] held = File.ReadAllText(_marker)
+                .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            KillIfRunning(int.Parse(held[0]), "psql");
+            KillIfRunning(int.Parse(held[1]), "sleep");
+        }
+
+        private static void KillIfRunning(int processId, string processName)
+        {
+            try
+            {
+                using Process process = Process.GetProcessById(processId);
+                if (process.ProcessName == processName)
+                {
+                    process.Kill();
+                }
+            }
+            catch (ArgumentException)
+            {
+                // No longer running.
+            }
+            catch (InvalidOperationException)
+            {
+                // Exited meanwhile.
+            }
+        }
+
+        /// <summary>Ends the hold the test owns, then removes the wrapper and the marker.</summary>
+        public void Dispose()
+        {
+            Release();
+            if (Directory.Exists(_directory))
+            {
+                Directory.Delete(_directory, recursive: true);
+            }
+        }
+    }
+
+    /// <summary>Tears a held fixture down: the create first, ending its hold, then the lane; the hold's files go last.</summary>
+    private static Task TeardownHeldAsync(HeldCreate? create, Lane? lane, HeldReplay? replay) =>
+        HeldCreate.RunAllAsync(
+            () =>
+                create?.StopAsync(() =>
+                {
+                    replay?.Release();
+                    return Task.CompletedTask;
+                })
+                ?? Task.CompletedTask,
+            () => lane?.DisposeAsync().AsTask() ?? Task.CompletedTask
+        );
+
+    [TestFixture(RestoreManifest.MinimalTemplateKind)]
+    [TestFixture(RestoreManifest.PopulatedTemplateKind)]
+    public class Given_a_real_package_is_created_reconciled_and_deleted(string templateKind)
+    {
+        private Lane? _lane;
+        private RealTemplatePackage _package = null!;
+        private DmsDataStoreCreateResult _created = null!;
+        private CreatedEvidence _evidence = null!;
+        private DmsDataStoreCreateResult _reconciled = null!;
+        private string[] _reconcileCalls = [];
+        private DmsDataStoreDeleteResult _deleted = null!;
+        private DmsLiveTargetState _targetAfterDelete = null!;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        private static DmsDatabaseTemplate TemplateFor(string kind) =>
+            kind == RestoreManifest.MinimalTemplateKind
+                ? DmsDatabaseTemplate.Minimal
+                : DmsDatabaseTemplate.Sample;
+
+        /// <summary>The engine members that change a database; a reconcile calls none of them.</summary>
+        private static readonly string[] _mutatingMembers =
+        [
+            nameof(IDmsTargetEngine.CreateStagingAsync),
+            nameof(IDmsTargetEngine.RestoreIntoStagingAsync),
+            nameof(IDmsTargetEngine.RenameIntoTargetAsync),
+            nameof(IDmsTargetEngine.AssignMarkerAsync),
+            nameof(IDmsTargetEngine.FenceAsync),
+            nameof(IDmsTargetEngine.DropInstanceAsync),
+            nameof(IDmsTargetEngine.DropStagingAsync),
+        ];
+
+        /// <summary>What the created target holds, read on side sessions after the create.</summary>
+        private sealed record CreatedEvidence(
+            Guid Identity,
+            string EffectiveSchema,
+            string InventorySha256,
+            DmsTargetValidation Validation
+        );
+
+        private static async Task<CreatedEvidence> CreatedEvidenceAsync(
+            Lane lane,
+            RealTemplatePackage package
+        )
+        {
+            PostgresqlDmsTargetEngine side = DmsProvisioningTestServer.Engine();
+            DmsInstanceIdentity instance = (await side.InspectAsync(lane.Target, default))
+                .Should()
+                .BeOfType<DmsLiveTargetState.Present>()
+                .Subject.Instance;
+            DmsTargetFacts facts;
+            DmsIdentityRead identity;
+            DmsSession session = (await side.OpenSessionAsync(lane.Target, instance, default))
+                .Should()
+                .BeOfType<DmsSessionOpenResult.Opened>()
+                .Subject.Session;
+            await using (session)
+            {
+                facts = await side.ReadTargetFactsAsync(session, default);
+                identity = await side.ReadIdentityAsync(session, default);
+            }
+
+            string inventory = DmsTargetValidator.TryBuildInventory(
+                facts,
+                out CanonicalInventory? built,
+                out string? defect
+            )
+                ? CanonicalInventoryHash.Compute(built)
+                : "defect:" + defect;
+            DmsTargetValidation validation = DmsTargetValidator.Validate(
+                facts,
+                identity,
+                package.Manifest,
+                package.Manifest.Projects,
+                new DmsTargetValidationRule.Reconcile(lane.Request.ExpectedSourceIdentity)
+            );
+            string effectiveSchema = await new TestDatabase(lane.Target.Value).ScalarAsync<string>(
+                "SELECT \"EffectiveSchemaHash\" || '|' || \"ResourceKeyCount\" || '|' || \"ApiSchemaFormatVersion\" FROM \"dms\".\"EffectiveSchema\";"
+            );
+            Guid targetIdentity = await lane.TargetIdentityAsync();
+            await WaitForNoSessionsOnAsync(lane.Target.Value);
+            return new CreatedEvidence(targetIdentity, effectiveSchema, inventory, validation);
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            _package = RequireRealPackage(templateKind);
+            _lane = await Lane.BuildAsync(_package, TemplateFor(templateKind), new LaneHooks());
+            _created = await _lane.CreateAsync();
+            _evidence = await CreatedEvidenceAsync(_lane, _package);
+
+            int callsBefore = _lane.Engine.Calls.Count;
+            _reconciled = await _lane.CreateAsync();
+            _reconcileCalls = [.. _lane.Engine.Calls.Skip(callsBefore).Select(call => call.Member)];
+
+            _deleted = await _lane.DeleteAsync();
+            _targetAfterDelete = await InspectAsync(_lane.Target);
+            _stagingAfter = await InspectAsync(_lane.Operation.StagingDatabaseName);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_creates_the_target_from_the_allowlisted_package() =>
+            _created
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Created>()
+                .Which.Artifact.Should()
+                .Match<DmsTrustedArtifactPin>(pin =>
+                    pin.PackageId == _package.PackageId
+                    && pin.PackageVersion == _package.PackageVersion
+                    && pin.TemplateKind == templateKind
+                    && pin.InventorySha256 == _package.Manifest.InventorySha256
+                );
+
+        [Test]
+        public void It_marks_the_target_with_the_expected_identity() =>
+            _evidence.Identity.Should().Be(_lane!.Request.ExpectedSourceIdentity);
+
+        [Test]
+        public void It_carries_the_manifests_effective_schema() =>
+            _evidence
+                .EffectiveSchema.Should()
+                .Be(
+                    $"{_package.Manifest.EffectiveSchemaHash}|{_package.Manifest.ResourceKeyCount}|{_package.Manifest.ApiSchemaFormatVersion}"
+                );
+
+        [Test]
+        public void It_reads_back_the_canonical_inventory_the_producer_hashed() =>
+            _evidence.InventorySha256.Should().Be(_package.Manifest.InventorySha256);
+
+        [Test]
+        public void It_passes_every_validation_gate_including_security() =>
+            _evidence.Validation.Should().Be(new DmsTargetValidation.Valid());
+
+        [Test]
+        public void It_reconciles_a_second_create_without_any_mutating_call()
+        {
+            _reconciled.Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
+            _reconcileCalls.Should().NotBeEmpty().And.NotContain(_mutatingMembers);
+        }
+
+        [Test]
+        public void It_drops_the_target_on_delete() =>
+            (
+                _deleted.Should().BeOfType<DmsDataStoreDeleteResult.Dropped>().Subject.Cleanup.HasResidue,
+                _targetAfterDelete
+            )
+                .Should()
+                .Be((false, new DmsLiveTargetState.Absent()));
+
+        [Test]
+        public void It_leaves_no_staging_database_and_no_operation_entry() =>
+            (_stagingAfter, _lane!.OperationEntries.Length).Should().Be((new DmsLiveTargetState.Absent(), 0));
+    }
+
+    /// <summary>
+    /// F-05 (D-5), end to end: <c>template1</c> holds a marker table and function, and an open session, while each
+    /// real package is created. The staging database is a copy of <c>template0</c>, so the create succeeds (and with
+    /// it the validator's exact canonical inventory) and the target holds no marker; the delete drops it. A staging
+    /// database copied from <c>template1</c> would be refused with <c>55006</c> while the session is open, or would
+    /// carry the markers into the inventory. Teardown undoes only what setup reached: it closes the session, and
+    /// removes the markers from <c>template1</c> even when another cleanup action fails, then asserts they are gone.
+    /// </summary>
+    [TestFixture(RestoreManifest.MinimalTemplateKind)]
+    [TestFixture(RestoreManifest.PopulatedTemplateKind)]
+    [NonParallelizable]
+    public class Given_template1_holds_a_local_object_and_a_connection(string templateKind)
+    {
+        private bool _template1Touched;
+        private NpgsqlConnection? _template1Session;
+        private Lane? _lane;
+        private long _markersInTemplate1;
+        private long _template1SessionsDuringCreate;
+        private DmsDataStoreCreateResult _created = null!;
+        private long _markersInTarget = -1;
+        private DmsDataStoreDeleteResult? _deleted;
+        private DmsLiveTargetState? _targetAfterDelete;
+
+        private static DmsDatabaseTemplate TemplateFor(string kind) =>
+            kind == RestoreManifest.MinimalTemplateKind
+                ? DmsDatabaseTemplate.Minimal
+                : DmsDatabaseTemplate.Sample;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(templateKind);
+            _template1Touched = true;
+            await AddTemplate1MarkersAsync();
+            _markersInTemplate1 = await ScalarInTemplate1Async(Template1MarkerCount);
+            _template1Session = await OpenTemplate1Async();
+
+            _lane = await Lane.BuildAsync(package, TemplateFor(templateKind), new LaneHooks());
+            _template1SessionsDuringCreate = await Template1SessionCountAsync();
+            _created = await _lane.CreateAsync();
+            if (_created is DmsDataStoreCreateResult.Created)
+            {
+                _markersInTarget = await new TestDatabase(_lane.Target.Value).ScalarAsync<long>(
+                    Template1MarkerCount
+                );
+                await WaitForNoSessionsOnAsync(_lane.Target.Value);
+                _deleted = await _lane.DeleteAsync();
+                _targetAfterDelete = await InspectAsync(_lane.Target);
+            }
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            try
+            {
+                try
+                {
+                    if (_lane is not null)
+                    {
+                        await _lane.DisposeAsync();
+                    }
+                }
+                finally
+                {
+                    if (_template1Session is not null)
+                    {
+                        await _template1Session.DisposeAsync();
+                    }
+                }
+            }
+            finally
+            {
+                if (_template1Touched)
+                {
+                    await RemoveTemplate1MarkersAsync();
+                    (await ScalarInTemplate1Async(Template1MarkerCount))
+                        .Should()
+                        .Be(0, "teardown removes the template1 markers");
+                }
+            }
+        }
+
+        [Test]
+        public void It_created_both_markers_in_template1() => _markersInTemplate1.Should().Be(2);
+
+        [Test]
+        public void It_held_a_template1_session_during_the_create() =>
+            _template1SessionsDuringCreate.Should().BeGreaterThanOrEqualTo(1);
+
+        [Test]
+        public void It_creates_the_target_past_the_exact_inventory_check() =>
+            _created
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Created>(
+                    "a staging database from template0 is unaffected by template1 (failure: {0} at {1})",
+                    (_created as DmsDataStoreCreateResult.Failure)?.Detail.Code,
+                    (_created as DmsDataStoreCreateResult.Failure)?.Detail.Diagnostic.Operation
+                );
+
+        [Test]
+        public void It_carries_no_template1_marker_into_the_target() => _markersInTarget.Should().Be(0);
+
+        [Test]
+        public void It_drops_the_target_on_delete()
+        {
+            _deleted.Should().BeOfType<DmsDataStoreDeleteResult.Dropped>();
+            _targetAfterDelete.Should().Be(new DmsLiveTargetState.Absent());
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_database_of_the_same_artifact_takes_the_target_name_before_the_rename
+    {
+        private Lane? _lane;
+        private readonly LaneHooks _hooks = new();
+        private DmsDataStoreCreateResult _result = null!;
+        private ForeignEvidence _before = null!;
+        private ForeignEvidence _after = null!;
+        private DmsLiveTargetState _stagingAfter = null!;
+
+        private sealed record ForeignEvidence(
+            DmsInstanceIdentity.Postgresql Instance,
+            Guid Identity,
+            string Sentinel,
+            long ObjectCount,
+            string Inventory
+        );
+
+        private static async Task<ForeignEvidence> ForeignEvidenceAsync(DmsTargetDatabaseName target)
+        {
+            TestDatabase foreign = new(target.Value);
+            DmsInstanceIdentity.Postgresql instance = await foreign.CatalogInstanceAsync();
+            ForeignEvidence evidence = new(
+                instance,
+                await foreign.ScalarAsync<Guid>(
+                    "SELECT \"SourceIdentity\" FROM \"dms\".\"DataStoreIdentity\";"
+                ),
+                await foreign.ScalarAsync<string>(
+                    "SELECT string_agg(marker, ',') FROM public.collision_sentinel;"
+                ),
+                await foreign.ScalarAsync<long>(TargetEvidence.ObjectCountQuery),
+                await TargetEvidence.InventoryFingerprintAsync(target, instance)
+            );
+            await WaitForNoSessionsOnAsync(target.Value);
+            return evidence;
+        }
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(RestoreManifest.MinimalTemplateKind);
+            _lane = await Lane.BuildAsync(package, DmsDatabaseTemplate.Minimal, _hooks);
+            _hooks.Probe = async (point, operation) =>
+            {
+                if (point != DmsProvisioningHookPoint.BeforeRename)
+                {
+                    return;
+                }
+
+                // The validated staging database is the restored artifact: a clone of it is the same artifact's
+                // content under the target name, given another identity and a sentinel.
+                await WaitForNoSessionsOnAsync(operation.StagingDatabaseName.Value);
+                await ExecuteOnServerAsync(
+                    $"CREATE DATABASE {PostgresqlIdentifiers.Quote(_lane.Target.Value)} TEMPLATE {PostgresqlIdentifiers.Quote(operation.StagingDatabaseName.Value)};"
+                );
+                await new TestDatabase(_lane.Target.Value).ExecuteAsync(
+                    $"UPDATE \"dms\".\"DataStoreIdentity\" SET \"SourceIdentity\" = '{_foreignIdentity:D}'; CREATE TABLE public.collision_sentinel (marker text NOT NULL); INSERT INTO public.collision_sentinel (marker) VALUES ('foreign');"
+                );
+                _before = await ForeignEvidenceAsync(_lane.Target);
+            };
+            _result = await _lane.CreateAsync();
+            _after = await ForeignEvidenceAsync(_lane.Target);
+            _stagingAfter = await InspectAsync(_lane.Operation.StagingDatabaseName);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_refuses_the_database_as_owned_by_another_identity() =>
+            FailureOf(_result).Code.Should().Be(DmsProvisioningFailureCode.TargetUnowned);
+
+        [Test]
+        public void It_discovered_the_collision_by_the_rename_alone() =>
+            _lane!
+                .Engine.RenameOutcomes.Should()
+                .ContainSingle()
+                .Which.Should()
+                .BeOfType<DmsCommandOutcome<DmsInstanceIdentity>.Failed>()
+                .Which.Failure.Class.Should()
+                .Be(DmsCommandFailureClass.DuplicateName);
+
+        [Test]
+        public void It_addressed_the_foreign_database_with_nothing_but_the_rename_and_the_reconcile_read() =>
+            _lane!
+                .TargetMutations.Select(call => call.Member)
+                .Should()
+                .Equal(
+                    nameof(IDmsTargetEngine.RenameIntoTargetAsync),
+                    nameof(IDmsTargetEngine.OpenSessionAsync)
+                );
+
+        [Test]
+        public void It_left_the_foreign_database_exactly_as_it_was()
+        {
+            _before
+                .Should()
+                .Match<ForeignEvidence>(evidence =>
+                    evidence.Identity == _foreignIdentity && evidence.Sentinel == "foreign"
+                );
+            _after.Should().Be(_before);
+        }
+
+        [Test]
+        public void It_dropped_its_own_staging_database() =>
+            _stagingAfter.Should().Be(new DmsLiveTargetState.Absent());
+    }
+
+    [TestFixture]
+    public class Given_the_caller_cancels_while_the_real_replay_is_held
+    {
+        private HeldReplay? _replay;
+        private Lane? _lane;
+        private HeldCreate? _create;
+        private int _openTransactions;
+        private Exception? _thrown;
+        private DmsLiveTargetState _stagingAfter = null!;
+        private DmsLiveTargetState _targetAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(RestoreManifest.PopulatedTemplateKind);
+            _replay = new HeldReplay();
+            Lane lane = _lane = await Lane.BuildAsync(
+                package,
+                DmsDatabaseTemplate.Sample,
+                new LaneHooks(),
+                _replay.Engine,
+                ControlledRestoreDeadline.RestoreTimeout
+            );
+            _create = HeldCreate.Start(token => lane.Service.CreateAsync(lane.Request, token));
+            (await _replay.WaitUntilHeldAsync(_create))
+                .Should()
+                .BeTrue("the replay must hold the whole dump before the caller cancels");
+            _openTransactions = await OpenTransactionsNamedAsync(lane.Operation.RestoreApplicationName);
+
+            await _create.CancelAsync();
+            Task<DmsDataStoreCreateResult> ended = await _create.JoinAsync();
+            try
+            {
+                await ended;
+            }
+            catch (Exception exception)
+            {
+                _thrown = exception;
+            }
+
+            _stagingAfter = await InspectAsync(lane.Operation.StagingDatabaseName);
+            _targetAfter = await InspectAsync(lane.Target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            try
+            {
+                await TeardownHeldAsync(_create, _lane, _replay);
+            }
+            finally
+            {
+                _replay?.Dispose();
+            }
+        }
+
+        [Test]
+        public void It_cancelled_the_replay_while_it_held_the_whole_dump_uncommitted() =>
+            (_openTransactions, _lane!.Engine.RestoreOutcomes.Single())
+                .Should()
+                .Be(
+                    (
+                        1,
+                        new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                            new DmsCommandFailure(
+                                DmsCommandFailureClass.Rejected,
+                                DmsProvisioningDiagnostic.ForOperation(DmsEngineOperations.RestoreCancelled)
+                            )
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_propagates_the_callers_cancellation() =>
+            _thrown.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_drops_the_staging_database_and_leaves_the_target_absent() =>
+            (_stagingAfter, _targetAfter, _lane!.OperationEntries.Length)
+                .Should()
+                .Be((new DmsLiveTargetState.Absent(), new DmsLiveTargetState.Absent(), 0));
+    }
+
+    [TestFixture]
+    public class Given_the_restore_bound_expires_while_the_real_replay_is_held
+    {
+        private HeldReplay? _replay;
+        private Lane? _lane;
+        private HeldCreate? _create;
+        private int _openTransactions;
+        private DmsDataStoreCreateResult _result = null!;
+        private DmsLiveTargetState _stagingAfter = null!;
+        private DmsLiveTargetState _targetAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(RestoreManifest.PopulatedTemplateKind);
+            _replay = new HeldReplay();
+            Lane lane = _lane = await Lane.BuildAsync(
+                package,
+                DmsDatabaseTemplate.Sample,
+                new LaneHooks(),
+                _replay.Engine,
+                ControlledRestoreDeadline.RestoreTimeout
+            );
+            _create = HeldCreate.Start(token => lane.Service.CreateAsync(lane.Request, token));
+            (await _replay.WaitUntilHeldAsync(_create))
+                .Should()
+                .BeTrue("the replay must hold the whole dump before the bound expires");
+            _openTransactions = await OpenTransactionsNamedAsync(lane.Operation.RestoreApplicationName);
+
+            _replay
+                .Deadline.Expire()
+                .Should()
+                .Be(1, "exactly the restore bound of the held replay must fire before the create is awaited");
+            _result = await await _create.JoinAsync();
+            _stagingAfter = await InspectAsync(lane.Operation.StagingDatabaseName);
+            _targetAfter = await InspectAsync(lane.Target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            try
+            {
+                await TeardownHeldAsync(_create, _lane, _replay);
+            }
+            finally
+            {
+                _replay?.Dispose();
+            }
+        }
+
+        [Test]
+        public void It_expired_the_bound_while_the_replay_held_the_whole_dump_uncommitted() =>
+            (_openTransactions, _lane!.Engine.RestoreOutcomes.Single())
+                .Should()
+                .Be(
+                    (
+                        1,
+                        new DmsCommandOutcome<DmsInstanceIdentity>.Failed(
+                            new DmsCommandFailure(
+                                DmsCommandFailureClass.Rejected,
+                                DmsProvisioningDiagnostic.ForOperation(DmsEngineOperations.RestoreTimedOut)
+                            )
+                        )
+                    )
+                );
+
+        [Test]
+        public void It_reports_a_transient_timeout()
+        {
+            DmsProvisioningFailure failure = FailureOf(_result);
+            (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.TimedOut,
+                        DmsProvisioningFailureCategory.Transient,
+                        DmsEngineOperations.RestoreTimedOut
+                    )
+                );
+        }
+
+        [Test]
+        public void It_drops_the_staging_database_and_leaves_the_target_absent() =>
+            (
+                ((DmsDataStoreCreateResult.Failure)_result).Cleanup.HasResidue,
+                _lane!.Engine.CountOf(nameof(IDmsTargetEngine.DropStagingAsync)),
+                _stagingAfter,
+                _targetAfter
+            )
+                .Should()
+                .Be((false, 1, new DmsLiveTargetState.Absent(), new DmsLiveTargetState.Absent()));
+    }
+
+    [TestFixture]
+    public class Given_the_allowlisted_package_is_tampered_after_its_pin_was_resolved
+    {
+        private Lane? _lane;
+        private DmsDataStoreCreateResult _result = null!;
+        private DmsLiveTargetState _targetAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(RestoreManifest.MinimalTemplateKind);
+            _lane = await Lane.BuildAsync(package, DmsDatabaseTemplate.Minimal, new LaneHooks());
+            RealTemplatePackage.Tamper(_lane.PackagePath);
+            _result = await _lane.CreateAsync();
+            _targetAfter = await InspectAsync(_lane.Target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_refuses_the_package_as_untrusted()
+        {
+            DmsProvisioningFailure failure = FailureOf(_result);
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ArtifactUntrusted,
+                        TemplateArtifactCatalog.VerifyAttestationStep
+                            + "."
+                            + nameof(TrustRefusalReason.PackageHashMismatch)
+                    )
+                );
+        }
+
+        [Test]
+        public void It_makes_no_engine_call_and_leaves_the_target_absent() =>
+            (_lane!.Engine.Calls.Count, _targetAfter, _lane.OperationEntries.Length)
+                .Should()
+                .Be((0, new DmsLiveTargetState.Absent(), 0));
+    }
+
+    [TestFixture]
+    public class Given_the_allowlist_is_pointed_at_the_sql_server_package
+    {
+        private Lane? _lane;
+        private Lane.Deployment _switched = null!;
+        private DmsDataStoreCreateResult _result = null!;
+        private DmsLiveTargetState _targetAfter = null!;
+
+        [OneTimeSetUp]
+        public async Task Setup()
+        {
+            RealTemplatePackage package = RequireRealPackage(RestoreManifest.MinimalTemplateKind);
+            RealTemplatePackage swapped = RealTemplatePackage.Find(
+                RestoreManifest.MssqlEngine,
+                RestoreManifest.MinimalTemplateKind
+            );
+            _lane = await Lane.BuildAsync(package, DmsDatabaseTemplate.Minimal, new LaneHooks());
+            _switched = await _lane.SwitchAllowlistAsync(swapped);
+            _result = await _switched.Service.CreateAsync(_lane.Request, default);
+            _targetAfter = await InspectAsync(_lane.Target);
+        }
+
+        [OneTimeTearDown]
+        public async Task Teardown()
+        {
+            if (_lane is not null)
+            {
+                await _lane.DisposeAsync();
+            }
+        }
+
+        [Test]
+        public void It_refuses_the_manifests_engine()
+        {
+            DmsProvisioningFailure failure = FailureOf(_result);
+            (failure.Code, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ManifestMismatch,
+                        TemplateArtifactCatalog.MatchConfigurationStep
+                            + "."
+                            + nameof(RestoreManifest.DatabaseEngine)
+                    )
+                );
+        }
+
+        [Test]
+        public void It_makes_no_engine_call_and_leaves_the_target_absent() =>
+            (_switched.Engine.Calls.Count, _targetAfter, _lane!.OperationEntries.Length)
+                .Should()
+                .Be((0, new DmsLiveTargetState.Absent(), 0));
+    }
+}

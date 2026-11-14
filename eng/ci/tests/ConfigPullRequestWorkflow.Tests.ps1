@@ -164,11 +164,43 @@ bash "$CLASSIFIER"
         @{ Job = 'verify-security-metadata-tools' }
         @{ Job = 'run-unit-tests' }
         @{ Job = 'run-e2e-tests' }
+        @{ Job = 'run-dms-provisioning-integration-tests' }
     ) {
         $block = Get-JobBlock $Job
         $block | Should -Match '(?m)^    needs: detect-fresh-build-changes$'
         $block | Should -Match "github.event_name != 'pull_request' \|\|\s+needs.detect-fresh-build-changes.outputs.config_relevant == 'true'"
         (Get-JobBlock 'config-ci-gate') | Should -Match "(?m)^      - $Job$"
+    }
+
+    It 'runs the DmsProvisioning category only in its own lane' {
+        (Get-JobBlock 'run-integration-tests') | Should -Match "build-config\.ps1 IntegrationTest .*-IntegrationTestFilter 'Category!=DmsProvisioning'"
+        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $job | Should -Match '--filter "Category=DmsProvisioning"'
+        foreach ($variable in @(
+            'ConnectionStrings__PostgresqlDmsAdmin', 'ConnectionStrings__MssqlDmsAdmin', 'DMS_PROVISIONING_PSQL_PATH',
+            'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH', 'DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH'
+        )) {
+            $job | Should -Match "(?m)^      ${variable}: "
+        }
+        $job | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
+        $job | Should -Match '"DMS_TEMPLATE_PACKAGE_DIRECTORY=\$directory" \| Out-File -FilePath \$env:GITHUB_ENV'
+        (Get-JobBlock 'event_file') | Should -Match 'needs: \[.*run-dms-provisioning-integration-tests'
+    }
+
+    It 'gives SQL Server read access to the staging directory through the runner group only' {
+        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $job | Should -Match 'chmod 2750 "\$staging"'
+        $job | Should -Match '--group-add "\$\(id -g\)"'
+        $job | Should -Match '--volume "\$DMS_PROVISIONING_MSSQL_STAGING_PATH:\$DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH"'
+    }
+
+    It 'downloads the four released template packages pinned by SHA-256' {
+        $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
+        $job | Should -Match '_packaging/EdFi%40Release/nuget/v3/index\.json'
+        $pins = [regex]::Matches($job, '(?m)^\s+"EdFi\.Api\.(Minimal|Populated)\.Template\.(PostgreSql|MsSql)\.5\.2\.0" = "[0-9a-f]{64}"$')
+        @($pins | ForEach-Object { "$($_.Groups[1].Value)/$($_.Groups[2].Value)" } | Sort-Object -Unique) |
+            Should -Be @('Minimal/MsSql', 'Minimal/PostgreSql', 'Populated/MsSql', 'Populated/PostgreSql')
+        $job | Should -Match 'if \(\$actual -ne \$expected\[\$id\]\)'
     }
 
     It 'runs versioning and workflow tests plus the reusable local package smoke without publication' {

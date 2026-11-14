@@ -1,162 +1,61 @@
-This repository contains the **Ed-Fi Data Management Service (DMS) Platform**, which consists of two main applications:
+# Ed-Fi DMS Platform
 
-1. **Ed-Fi Data Management Service (DMS)** - An implementation of Ed-Fi Resources API, Ed-Fi Descriptors API, and Ed-Fi Discovery API, in `./src/dms`. In official product documentation this is called the "Ed-Fi API".
-2. **Ed-Fi DMS Configuration Service (CMS)** - An implementation of the Ed-Fi Management API specification, in `./src/config`
+- `src/dms`: Data Management Service (DMS), implementing the Ed-Fi Resources, Descriptors,
+  and Discovery APIs. Official product documentation calls this the **Ed-Fi API**.
+- `src/config`: DMS Configuration Service (CMS), implementing the Ed-Fi Management API.
+  See [CMS instructions](src/config/AGENTS.md) when working in that service.
 
-### Code Style
+## Code Style
 
-- Only use .NET 10 code style, including modern C# language features (e.g., primary constructors, pattern matching, records, target-typed new, collection expressions, and file-scoped namespaces).
-- Declare variables non-nullable.
-- Always use `is null` or `is not null` instead of `== null` or `!= null`.
-- Use `System.Text.Json` for JSON serialization and parsing in .NET application code and build tooling. Do not introduce new `Newtonsoft.Json` dependencies or usages.
-
-### Format Code
-
-- `dotnet csharpier format <directory or file>`
+- Follow the project's configured C# version, `.editorconfig`, and surrounding conventions.
+- Prefer non-nullable declarations; use nullable types when absence is a valid state.
+- Use `is null` / `is not null` instead of `== null` / `!= null`.
+- Use `System.Text.Json` for JSON in .NET application code and build tooling; do not add
+  `Newtonsoft.Json` dependencies or usages.
+- Format changed C# files with `dotnet csharpier format <directory or file>`.
 
 ## RelationalMappingVersion Release Cadence
 
-`SchemaHashConstants.RelationalMappingVersion` in
-`src/dms/core/EdFi.DataManagementService.Core/Utilities/SchemaHashConstants.cs`
-tracks the **DMS release line**, not individual changes.
+`SchemaHashConstants.RelationalMappingVersion` tracks the DMS release line.
 
-- Bump it at most **once per release**, and only if relational mapping actually changed during that release cycle.
-- Once the current release line's value has been bumped, further relational mapping changes landing before that release ships keep the same value. Do not bump again.
-- Never lower or revert the value.
+- Bump at most once per release, only when relational mapping changes; never lower the value.
+- Keep `v3` throughout DMS 8.1. The next eligible bump is `v4` at the first qualifying mapping
+  change after 8.1 ships. Do not infer the release line from `src/dms/Directory.Build.props`.
+- Each bump changes `EffectiveSchemaHash` for every dialect and forces database reprovisioning.
+  Mapping-only physical changes can require reprovisioning even when the hash is unchanged,
+  because generated DDL and mapping-set output are not hash inputs.
 
-Current mapping:
+For mapping changes, consult the [release history](docs/RELATIONAL-BACKEND.md#relationalmappingversion-release-cadence)
+and [provisioning guide](docs/RELATIONAL-BACKEND.md#reprovisioning-and-legacy-data-carry-forward).
 
-- DMS 8.0 released with `v1`.
-- DMS 8.1 releases with `v3`. The 8.1 cycle bumped twice (`v1` -> `v2` -> `v3`), which is more than the convention allows; `v3` stands as the value 8.1 releases with and must not be reverted.
-- Any relational mapping change landing before the 8.1 release keeps `v3`.
-- The next legitimate bump is `v4`, at the first qualifying relational mapping change after 8.1 ships.
+## Testing Conventions
 
-Do not infer the current release line from `src/dms/Directory.Build.props`; it is not kept in step with the release line. To review the constant's actual change history:
+- Use NUnit, FluentAssertions, and FakeItEasy for mocks when needed. Name test files after
+  the area tested, fixtures with `Given_`, and test methods with `It_`.
+- Add regression tests that fail without the fix, including observable operation-order
+  differences. Assertions should establish the required behavior.
+- Synchronize asynchronous tests with explicit signals or fake time where supported;
+  do not repair races by increasing delays.
 
-```powershell
-git log --oneline --date=short --format="%h %cd %s" -G "public const string RelationalMappingVersion" -- src\dms\core\EdFi.DataManagementService.Core\Utilities\SchemaHashConstants.cs
-```
+## Running Tests
 
-Why the cadence matters: `EffectiveSchemaHashProvider` includes the constant in the hashed manifest, so changing it changes `EffectiveSchemaHash` for every dialect. Databases provisioned against the previous hash then fail startup validation in `ValidateStartupInstancesTask` and receive HTTP 503 at request time until they are re-provisioned. Every bump is a forced re-provision of every existing database, so each extra bump within one release cycle forces an extra one. Holding the value also has a cost: `EffectiveSchemaHash` does not include generated DDL or mapping-set output, so a mapping-only physical change made without a bump can leave validation unable to detect a database provisioned before that change; those databases must be deliberately reprovisioned. See `docs/RELATIONAL-BACKEND.md` for the full schema-fingerprint validation flow.
-
-## Working with Data Management Service E2E Tests
-
-The Data Management Service E2E tests directory is `src/dms/tests/EdFi.DataManagementService.Tests.E2E/`.
-
-The Data Management Service E2E tests interact with a Docker stack named dms-local. Examine the docker log files to assist in debugging E2E tests.
-
-On Linux with Docker Engine, check `systemctl status docker --no-pager` and, if stopped, start it with `sudo systemctl start docker`. Docker Desktop is not required. Verify `docker ps` succeeds in the current execution session.
-
-You must teardown and setup when you switch branches or change debugging code in DMS.
-
-Data Management Service E2E tests do not always clean up after themselves. Teardown and setup between test runs if you see inconsistent behavior.
-
-If local E2E tests fail before issuing API requests, check for environment/runtime issues such as unsupported `NODE_OPTIONS` values or container health checks failing because required shell tools are missing.
-
-When running E2E tests from a shell that has `NODE_OPTIONS` set, clear it for the test command if Playwright reports an unsupported Node option, for example: `env -u NODE_OPTIONS dotnet test ...`.
-
-### Setup Data Management Service E2E test Docker environment
-
-1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
-2. Run: `pwsh ./setup-local-dms.ps1`
-
-### Run Data Management Service E2E tests
-
-For DMS E2E tests, prefer the repo-root `build-dms.ps1 E2ETest` path when you want a complete test run.
-
-The build script performs the Docker setup, provisions `E2E_DATABASE_NAME` with generated DDL including `dms."EffectiveSchema"`, starts or restarts DMS against the provisioned database, clears unsupported `NODE_OPTIONS`, and sets `AppSettings__DataStoreDatabaseName` for the E2E test process.
-
-Example shard run from the repository root:
-
-```powershell
-./build-dms.ps1 E2ETest -Configuration Release -SkipDockerBuild -IdentityProvider self-contained -EnvironmentFile './.env.e2e' -TestFilter '(Category=@e2e-ci-shard-3)&(Category!=@MssqlOnly)'
-```
-
-PostgreSQL runs exclude `@MssqlOnly` and SQL Server runs exclude `@PostgresqlOnly`; see the E2E README for each lane's filter.
-
-The direct setup path is also valid for local relational E2E testing. `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e` configures the CMS data store to use `E2E_DATABASE_NAME`, provisions that database with generated DDL including `dms."EffectiveSchema"`, and starts DMS after provisioning. Direct `dotnet test` is valid after this setup when the test process is configured for the same database; the default `.env.e2e` and E2E `appsettings.json` both use `edfi_datamanagementservice_e2e`. If a custom environment file changes `E2E_DATABASE_NAME`, also set `AppSettings__DataStoreDatabaseName` to that value for direct `dotnet test` runs.
-
-If you only need to inspect the relational Docker environment manually, you can use this setup path:
-
-1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
-2. Run: `pwsh ./teardown-local-dms.ps1`
-3. Run: `pwsh ./setup-local-dms.ps1 -EnvironmentFile ./.env.e2e`
-4. Verify the DMS container is using PostgreSQL:
-   - `docker inspect ed-fi-api --format '{{range .Config.Env}}{{println .}}{{end}}' | rg 'Datastore'`
-   - Expected values include `AppSettings__Datastore=postgresql`.
-
-### Teardown Data Management Service E2E test Docker environment
-
-1. Navigate to `src/dms/tests/EdFi.DataManagementService.Tests.E2E`
-2. Run: `pwsh ./teardown-local-dms.ps1`
-3. This will:
-   - Stop all containers in the dms-local stack
-   - Remove all associated volumes
-   - Remove locally-built images (ed-fi-api-local and ed-fi-api-config-local)
-
-Use `src/dms/tests/EdFi.InstanceManagement.Tests.E2E` only for the Instance Management E2E suite; it uses route-context settings and a different instance setup.
-
-## Working with DMS API-Level Integration Tests
-
-The API-level integration tests directory is `src/dms/tests/EdFi.DataManagementService.Tests.Integration/`. These are not Docker-stack E2E tests: they boot the DMS HTTP pipeline in-process and lease real PostgreSQL or SQL Server databases from configured admin connection strings.
-
-For SQL Server/MSSQL tests, `ConnectionStrings__MssqlAdmin` must point to a running SQL Server. If the variable is absent, MSSQL tests skip. If the variable is present but stale, tests fail during fixture database setup with a SQL Server connection error before any API request is issued. Troubleshoot that as environment setup, not as a test result:
-
-```powershell
-Get-ChildItem Env:ConnectionStrings__MssqlAdmin -ErrorAction SilentlyContinue
-Test-NetConnection -ComputerName localhost -Port 14333
-docker ps --filter name=dms-mssql-integration-2025
-docker logs dms-mssql-integration-2025 --tail 80
-```
-
-Known-good local MSSQL setup:
-
-```powershell
-docker run --name dms-mssql-integration-2025 -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='EdFi_Dms1!' -p 14333:1433 -d mcr.microsoft.com/mssql/server:2025-latest
-$env:ConnectionStrings__MssqlAdmin = "Server=localhost,14333;User Id=sa;Password=EdFi_Dms1!;TrustServerCertificate=true"
-dotnet test src/dms/tests/EdFi.DataManagementService.Tests.Integration/EdFi.DataManagementService.Tests.Integration.csproj --filter "Category=MssqlIntegration"
-```
-
-If the container already exists, use `docker start dms-mssql-integration-2025`. The version-suffixed name keeps SQL Server 2025 separate from any `dms-mssql-integration` container created from the earlier SQL Server 2022 instructions; do not reuse that legacy container, because tests gated on SQL Server 2025 (such as the native-json evaluation fixture) silently skip on it. Remove it with `docker rm -f dms-mssql-integration` once anything you need from it is saved. If port `14333` is busy, map another host port and use the same port in `ConnectionStrings__MssqlAdmin`.
-
-## Working with DMS Configuration Management Service E2E Tests
-
-The DMS Configuration Management Service E2E tests directory is `src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/`.
-
-The DMS Configuration Management Service E2E tests have a similar setup and environment to the Data Management Service E2E tests. They have their own `setup-local-cms.ps1` for setup and `teardown-local-cms.ps1` for teardown.
-
-## Working with MSSQL Backend Integration Tests
-
-See [RUNNING-LOCALLY.md](docs/RUNNING-LOCALLY.md#mssql-backend-integration-provisioning-diagnostics)
-for provisioning diagnostics, concurrency settings, and local shard filters.
-
-Before running MSSQL backend integration tests, verify that a SQL Server instance is listening locally on the expected test port, commonly `localhost,1434`. If no suitable instance is running, start a temporary SQL Server container and pass its admin connection string to the test command with `ConnectionStrings__MssqlAdmin`.
-
-Example local container setup:
-
-1. Start SQL Server:
-   - `docker run --rm --name dms-codex-mssql -e ACCEPT_EULA=Y -e MSSQL_SA_PASSWORD='<StrongPassword>' -p 1434:1433 -d mcr.microsoft.com/mssql/server:2025-latest`
-2. Wait until SQL Server is ready before running tests.
-3. Run MSSQL integration tests with:
-   - `ConnectionStrings__MssqlAdmin='Server=localhost,1434;User Id=sa;Password=<StrongPassword>;TrustServerCertificate=True;Encrypt=True' dotnet test <mssql test project or solution> --filter <filter>`
-4. Stop the temporary container after the run:
-   - `docker stop dms-codex-mssql`
-
-## Testing Guidelines
-
-- Use NUnit with FluentAssertions, and FakeItEasy for mocks when necessary.
-- NUnit tests should follow the existing style, which is filenames named like the code area being tested,
-  TestFixture classes named with prefix "Given_", a Setup method which does arrange and act, and Test methods with "It_" prefixes for each individual assert.
-- When order of operations matters (e.g. truncate-then-filter vs. filter-then-truncate), write an explicit test for the case where the "obvious" order changes client-visible behavior — order-of-operations regressions are the kind of thing code review misses without a targeted test.
-- Avoid tests that pass regardless of whether the feature exists (e.g. `NotBeEmpty()` instead of an exact value, asserting on a hardcoded constant that never varies with input, or an ordering invariant enforced only by a comment). Before adding a test, ask "would this fail if the feature were reverted?"
-- Be wary of tests that depend on arbitrary millisecond timings: a short timeout, `Task.Delay`, or `CancelAfter` that assumes one timer or state change happens before another. CI runners are resource-constrained, so timer callbacks can run late and in any order, and these tests become flaky. Add timing-dependent tests only when they are truly valuable, and make them as durable as possible:
-  - Wait on a deterministic signal, such as a cancellation token, `TaskCompletionSource`, or test hook, instead of a fixed delay.
-  - Use a fake `TimeProvider` where the code supports one.
-  - Never "fix" a race by lengthening a delay.
-
-  Passing locally does not show that a timing-dependent test is sound.
+- **DMS E2E:** Prefer repo-root `build-dms.ps1 E2ETest`. Use the
+  [E2E README](src/dms/tests/EdFi.DataManagementService.Tests.E2E/README.md) for engine filters,
+  setup, and troubleshooting. Use `-SkipDockerBuild` only when existing images contain the
+  changes being tested; rebuild after changing containerized code.
+- **API integration:** These tests host the HTTP pipeline in-process against real databases.
+  Use [local setup](docs/RUNNING-LOCALLY.md#api-level-integration-tests) and the
+  [fixture guide](src/dms/tests/EdFi.DataManagementService.Tests.Integration/README.md).
+- **MSSQL backend integration:** Use the
+  [provisioning diagnostics](docs/RUNNING-LOCALLY.md#mssql-backend-integration-provisioning-diagnostics)
+  for database setup, concurrency, and shard filters.
+- **Instance Management E2E:** Use its [own suite](src/dms/tests/EdFi.InstanceManagement.Tests.E2E/README.md);
+  it requires route-context settings and a different instance setup from DMS E2E.
+- **CMS E2E:** Use the suite's
+  [setup](src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/setup-local-cms.ps1) and
+  [teardown](src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/teardown-local-cms.ps1) scripts.
 
 ## Logging
 
-- Always normalize / sanitize strings derived from a client before logging them
-- Log a value's already-normalized string (`someId.Value`), never the wrapping record/struct itself
+- Normalize / sanitize client-derived strings before logging them.
+- Log the already-normalized string (`someId.Value`), never the wrapping record/struct itself.

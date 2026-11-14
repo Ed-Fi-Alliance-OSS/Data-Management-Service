@@ -1,0 +1,97 @@
+{
+  "schemas": [
+    {
+      "schemaName": "tracked_changes_edfi",
+      "objects": [
+        {
+          "name": "School",
+          "type": "TABLE"
+        },
+        {
+          "name": "AcademicWeek",
+          "type": "table"
+        }
+      ]
+    },
+    {
+      "schemaName": "edfi",
+      "objects": [
+        {
+          "name": "SchoolView",
+          "type": "view"
+        },
+        {
+          "name": "School",
+          "type": "table"
+        },
+        {
+          "name": "GetSchoolCount",
+          "type": "FUNCTION"
+        },
+        {
+          "name": "AcademicWeek",
+          "type": "table"
+        }
+      ]
+    },
+    {
+      "schemaName": "dms",
+      "objects": [
+        {
+          "name": "EffectiveSchema",
+          "type": "table"
+        },
+        {
+          "name": "Document",
+          "type": "Table"
+        },
+        {
+          "name": "GetMaxChangeVersion",
+          "type": "function"
+        },
+        {
+          "name": "DataStoreIdentity",
+          "type": "table"
+        }
+      ]
+    },
+    {
+      "schemaName": "public",
+      "objects": []
+    },
+    {
+      "schemaName": "we\"ird\\schema",
+      "objects": [
+        {
+          "name": "namé",
+          "type": "table"
+        },
+        {
+          "name": "tab\tname",
+          "type": "table"
+        },
+        {
+          "name": "del",
+          "type": "table"
+        },
+        {
+          "name": "emoji😀",
+          "type": "table"
+        },
+        {
+          "name": "apple",
+          "type": "table"
+        },
+        {
+          "name": "Zebra",
+          "type": "table"
+        }
+      ]
+    }
+  ],
+  "principals": [
+    "zeta_reader",
+    "Alpha_writer",
+    "alpha_writer"
+  ]
+}

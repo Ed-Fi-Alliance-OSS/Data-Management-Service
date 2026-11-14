@@ -26,5 +26,12 @@
     <ItemGroup>
         <ProjectReference Include="..\EdFi.DataManagementService.Backend.Cdc\EdFi.DataManagementService.Backend.Cdc.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <None
+            Include="../../../../eng/docker-compose/kafka-broker.compose.yml"
+            Link="kafka-broker.compose.yml"
+            CopyToOutputDirectory="PreserveNewest"
+        />
+    </ItemGroup>
     <Import Project="../Fixtures/cdc/message-contract/MessageContractFixtures.props" />
 </Project>

@@ -376,9 +376,12 @@ jobs:
       - name: Build
         run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
 
+      # The DmsProvisioning category needs psql, the shared staging volume and the template
+      # packages, and fails under GitHub Actions without them, so only
+      # run-dms-provisioning-integration-tests runs it.
       - name: Run Integration Tests
         if: success()
-        run: ./build-config.ps1 IntegrationTest -Configuration ${{ env.CONFIGURATION }}
+        run: ./build-config.ps1 IntegrationTest -Configuration ${{ env.CONFIGURATION }} -IntegrationTestFilter 'Category!=DmsProvisioning'
         env:
           ConnectionStrings__MssqlAdmin: "Server=localhost,1433;User Id=sa;Password=IntegrationTest1!;TrustServerCertificate=true"
 
@@ -390,6 +393,184 @@ jobs:
           overwrite: true
           path: |
             **/*.trx
+
+  # Live DMS template provisioning lanes (DMS-1438) on both engines: builder packages plus the
+  # released template packages from the public feed, which the tests sign with an ephemeral key.
+  # SQL Server restores from a runner directory it reads through the runner's group, so it runs
+  # through docker run instead of services: (a service starts before the directory exists).
+  run-dms-provisioning-integration-tests:
+    name: Run DMS Provisioning Integration Tests
+    needs: detect-fresh-build-changes
+    if: >-
+      github.event_name != 'pull_request' ||
+      needs.detect-fresh-build-changes.outputs.config_relevant == 'true'
+    runs-on: ubuntu-latest
+    # Bounds a hung held restore; a full run of both categories takes about ten minutes.
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      MSSQL_SA_PASSWORD: "DmsProvisioning1!"
+      ConnectionStrings__PostgresqlDmsAdmin: "Host=127.0.0.1;Port=5432;Username=postgres;Database=postgres"
+      ConnectionStrings__MssqlDmsAdmin: "Server=127.0.0.1,1433;User Id=sa;Password=DmsProvisioning1!;TrustServerCertificate=true"
+      DMS_PROVISIONING_PSQL_PATH: /usr/lib/postgresql/18/bin/psql
+      DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH: /var/opt/dms-template-staging
+      # The released template packages and the effective schema hash their manifests declare.
+      TEMPLATE_PACKAGE_VERSION: "8.1.0"
+      DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH: "6f7cac1476c6ede6140762df73f04c9b71f3af95f57b0ed03e0e6fa44a799d78"
+    services:
+      postgres:
+        image: postgres:18.6-alpine
+        options: >-
+          --health-cmd="pg_isready"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+        ports:
+          - 5432:5432
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+    steps:
+      - name: Checkout the Repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Cache Nuget packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+
+      # The PostgreSQL 18 dumps use psql meta-commands older clients reject.
+      - name: Install the PostgreSQL 18 client
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes postgresql-common
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install --yes postgresql-client-18
+          "$DMS_PROVISIONING_PSQL_PATH" --version
+
+      # 2750 owned by the runner: the tests write staged backups 0640, SQL Server reads them
+      # through the runner's group, and the readiness check refuses a group-writable directory.
+      - name: Prepare the Staging Directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="$RUNNER_TEMP/dms-template-staging"
+          mkdir -p "$staging"
+          chgrp "$(id -g)" "$staging"
+          chmod 2750 "$staging"
+          stat -c '%A %U:%G %n' "$staging"
+          echo "DMS_PROVISIONING_MSSQL_STAGING_PATH=$staging" >> "$GITHUB_ENV"
+
+      - name: Start SQL Server
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --detach --name dms-provisioning-mssql \
+            --group-add "$(id -g)" \
+            --env ACCEPT_EULA=Y \
+            --env MSSQL_SA_PASSWORD \
+            --publish 1433:1433 \
+            --volume "$DMS_PROVISIONING_MSSQL_STAGING_PATH:$DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH" \
+            mcr.microsoft.com/mssql/server:2025-latest
+          for attempt in $(seq 1 60); do
+            if docker exec dms-provisioning-mssql /opt/mssql-tools18/bin/sqlcmd \
+                -S localhost -U sa -P "$MSSQL_SA_PASSWORD" -C -Q "SELECT 1" > /dev/null 2>&1; then
+              echo "SQL Server is ready."
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs dms-provisioning-mssql
+          echo "SQL Server did not become ready." >&2
+          exit 1
+
+      # Pinned by SHA-256: the tests sign whatever they find, so a changed package must fail here.
+      - name: Download the Template Packages
+        run: |
+          $ErrorActionPreference = "Stop"
+          $expected = [ordered]@{
+              "EdFi.Api.Minimal.Template.PostgreSql.5.2.0" = "bdc9142e730d2b28cbf7e4e821d26e6b74d6ad3d53ee069f528fcc4d52e67af2"
+              "EdFi.Api.Populated.Template.PostgreSql.5.2.0" = "034c1c3e1051e56c5658a4feba13f9d7987a0240e3afa1b0da324c9db46f4d20"
+              "EdFi.Api.Minimal.Template.MsSql.5.2.0" = "c87ba7d9ec1802007987cb97874a39a68d4171c4a4adbbe39a7a0e6b7901f8a6"
+              "EdFi.Api.Populated.Template.MsSql.5.2.0" = "9bd0a54a10fbe345a56fea05d419a6c8d8b532db8948ba4e915aa4f86a53b66b"
+          }
+          $index = Invoke-RestMethod "https://pkgs.dev.azure.com/ed-fi-alliance/Ed-Fi-Alliance-OSS/_packaging/EdFi%40Release/nuget/v3/index.json"
+          $baseAddress = @($index.resources | Where-Object { $_."@type" -like "PackageBaseAddress*" })[0]."@id"
+          $directory = Join-Path $env:RUNNER_TEMP "dms-template-packages"
+          New-Item -ItemType Directory -Force -Path $directory | Out-Null
+          $version = $env:TEMPLATE_PACKAGE_VERSION
+          foreach ($id in $expected.Keys) {
+              $lowerId = $id.ToLowerInvariant()
+              $file = Join-Path $directory "$id.$version.nupkg"
+              Invoke-WebRequest "$baseAddress$lowerId/$version/$lowerId.$version.nupkg" -OutFile $file
+              $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $file).Hash.ToLowerInvariant()
+              if ($actual -ne $expected[$id]) {
+                  throw "$id $version has SHA-256 $actual; expected $($expected[$id])."
+              }
+              Write-Output "$id $version $actual"
+          }
+          "DMS_TEMPLATE_PACKAGE_DIRECTORY=$directory" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Build
+        run: ./build-config.ps1 Build -Configuration ${{ env.CONFIGURATION }}
+
+      # A lane setting the job forgot fails its fixtures (DmsProvisioningLaneRequirement); the
+      # result check also fails a run in which any test was skipped for another reason.
+      - name: Run DMS Provisioning Integration Tests
+        run: |
+          $projects = @(
+              "src/config/backend/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.csproj",
+              "src/config/backend/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration/EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.csproj"
+          )
+          $results = "dms-provisioning-test-results"
+          $problems = [System.Collections.Generic.List[string]]::new()
+          foreach ($project in $projects) {
+              $name = [IO.Path]::GetFileNameWithoutExtension($project)
+              dotnet test $project --configuration $env:CONFIGURATION --no-build --no-restore --nologo `
+                  --filter "Category=DmsProvisioning" `
+                  --results-directory $results `
+                  --logger "trx;LogFileName=$name.trx" `
+                  --logger "console;verbosity=normal"
+              if ($LASTEXITCODE -ne 0) {
+                  $problems.Add("$name exited with $LASTEXITCODE")
+              }
+              $trx = Join-Path $results "$name.trx"
+              if (-not (Test-Path -LiteralPath $trx)) {
+                  $problems.Add("$name wrote no results")
+                  continue
+              }
+              $counters = ([xml](Get-Content -LiteralPath $trx -Raw)).TestRun.ResultSummary.Counters
+              Write-Output "${name}: total $($counters.total), passed $($counters.passed), failed $($counters.failed), not executed $($counters.notExecuted)"
+              if ([int]$counters.total -eq 0 -or [int]$counters.passed -ne [int]$counters.total) {
+                  $problems.Add("$name passed $($counters.passed) of $($counters.total)")
+              }
+          }
+          if ($problems.Count -gt 0) {
+              throw "DMS provisioning integration tests did not all run and pass: $($problems -join '; ')."
+          }
+
+      - name: Show SQL Server Logs
+        if: failure()
+        run: docker logs dms-provisioning-mssql
+
+      - name: Upload DMS Provisioning Test Results
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DMS Provisioning Integration Test Results
+          overwrite: true
+          path: dms-provisioning-test-results/*.trx
 
   run-e2e-tests:
     name: Run E2E Tests
@@ -884,7 +1065,7 @@ jobs:
   event_file:
     name: Upload Event File
     runs-on: ubuntu-latest
-    needs: [verify-lock-files, run-parity-pester-tests, verify-security-metadata-tools, verify-secrets-contract, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, fresh-rebuild-docker-image]
+    needs: [verify-lock-files, run-parity-pester-tests, verify-security-metadata-tools, verify-secrets-contract, run-unit-tests, run-e2e-tests, run-e2e-tests-mssql, run-e2e-tests-mssql-multitenant, run-integration-tests, run-dms-provisioning-integration-tests, fresh-rebuild-docker-image]
     # always() overrides the skip a draft inherits through needs, so the draft check is repeated.
     if: always() && github.event.pull_request.draft != true
     steps:
@@ -915,6 +1096,7 @@ jobs:
       - verify-security-metadata-tools
       - run-unit-tests
       - run-integration-tests
+      - run-dms-provisioning-integration-tests
       - run-e2e-tests
       - run-e2e-tests-mssql
       - run-e2e-tests-mssql-multitenant

@@ -108,7 +108,6 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
         CdcProvider provider,
         CancellationToken token,
         Func<CdcControllerFixture, CancellationToken, Task> beforeWorker = null!,
-        bool nativeKafka = false,
         bool composeKafka = false,
         bool offlineKafka = false
     )
@@ -133,7 +132,6 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
                     }
                 },
                 exposeBroker: true,
-                nativeKafka: nativeKafka,
                 composeKafka: composeKafka,
                 offlineKafka: offlineKafka
             );

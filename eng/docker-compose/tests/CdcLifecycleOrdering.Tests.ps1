@@ -344,6 +344,24 @@ DOCKER_LOG_MAX_SIZE=${T74_NESTED}
             $script:inputChecks | Should -Be 5
         }
 
+        It 'rejects a broker image change before retained startup effects and preserves stopped inventory' {
+            $broker = Join-Path $script:root 'kafka-broker.compose.yml'
+            $current = Get-Content $broker -Raw
+            $differentImage = 'apache/kafka:other@sha256:' + ('b' * 64)
+            [regex]::Replace($current, '(?m)^(    image:).*$', ('$1 ' + $differentImage)) | Set-Content $broker
+            Register-CdcDeploymentHandoff (New-TestHandoff 42) (Join-Path $script:root 'state')
+            $script:live = @('connector-42')
+            Invoke-TestLifecycle @{ d = $true }
+            (Read-TestDeployment).Phase | Should -Be Stopped
+            $path = Join-Path $script:root '.cdc-deployments/dms-local.json'
+            $inventory = Get-Content $path -Raw
+            $script:trace.Clear()
+            Set-Content $broker $current
+            { Invoke-TestLifecycle @{} } | Should -Throw '*inventory*'
+            $script:trace.Count | Should -Be 0
+            (Get-Content $path -Raw) | Should -Be $inventory
+        }
+
         It 'rejects <fault> before controller or infrastructure effects' -ForEach @(
             @{ fault = 'changed-input' }, @{ fault = 'missing-inputs' }, @{ fault = 'missing-hash' },
             @{ fault = 'legacy-hash-only' }, @{ fault = 'scope' }, @{ fault = 'selected-file' }

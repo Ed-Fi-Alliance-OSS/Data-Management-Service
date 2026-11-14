@@ -119,6 +119,10 @@ param(
     [string]
     $E2ETestFilter = "",
 
+    # Optional dotnet test --filter expression applied to integration test runs
+    [string]
+    $IntegrationTestFilter = "",
+
     # An explicit fixture bypasses default E2E claims staging.
     [string]
     $ClaimsFixtureDirectory = ""
@@ -299,7 +303,7 @@ function UnitTests {
 }
 
 function IntegrationTests {
-    Invoke-Execute { RunTests -Filter "*.Tests.Integration" }
+    Invoke-Execute { RunTests -Filter "*.Tests.Integration" -TestFilter $IntegrationTestFilter }
 }
 
 function RunE2E {

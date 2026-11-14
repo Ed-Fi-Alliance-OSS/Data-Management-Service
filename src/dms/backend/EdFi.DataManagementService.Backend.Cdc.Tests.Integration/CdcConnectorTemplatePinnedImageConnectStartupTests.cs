@@ -50,7 +50,13 @@ public sealed class Given_PinnedImageFixtureConnectStartup(int failures, string 
         _failure = Assert.CatchAsync(async () =>
             await CdcConnectorTemplatePinnedImageFixture.StartAsync(
                 CdcProvider.Postgresql,
-                new("connect@sha256:qualified", "redpanda:qualified", "postgres:qualified", true, false),
+                new(
+                    "connect@sha256:qualified",
+                    CdcComposeBrokerSizeDeployment.BrokerImage,
+                    "postgres:qualified",
+                    true,
+                    false
+                ),
                 _docker,
                 ResourcePrefix,
                 cancellation.Token,

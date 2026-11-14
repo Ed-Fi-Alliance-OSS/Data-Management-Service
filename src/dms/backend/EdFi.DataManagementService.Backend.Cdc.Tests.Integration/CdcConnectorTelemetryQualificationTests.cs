@@ -99,20 +99,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             peerConfig["schema.history.internal.kafka.topic"] = request.SchemaHistoryTopicName + ".peer";
             peerTopics.Add(request.SchemaHistoryTopicName + ".peer");
         }
-        await _docker.RunAsync(
-            [
-                "exec",
-                BrokerContainerName,
-                "rpk",
-                "topic",
-                "create",
-                "--if-not-exists",
-                .. peerTopics,
-                "--brokers",
-                KafkaBootstrapServers,
-            ],
-            token
-        );
+        foreach (string topic in peerTopics)
+        {
+            await CreateKafkaTopicAsync(topic, 1, [], token);
+        }
         using var created = await _httpClient.PostAsJsonAsync(
             "/connectors",
             new CdcKafkaConnectRegistrationPayload(new(peerName), peerConfig),
