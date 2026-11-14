@@ -278,4 +278,134 @@ public sealed class DataStoreManageRepository(
             );
         }
     }
+
+    public async Task<DataStoreManageDeleteResult> AcceptDeleteAsync(
+        int id,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        long? tenantId = tenantContextProvider.Context is TenantContext.Multitenant tenant
+            ? tenant.TenantId
+            : null;
+        try
+        {
+            await using SqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync(cancellationToken);
+            await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+            await DataStoreCatalog.AcquireTenantGateAsync(transaction, tenantId, cancellationToken);
+            var parameters = new { Id = id, TenantId = tenantId };
+            var row = await connection.QuerySingleOrDefaultAsync<(string? Status, int? DataStoreId)>(
+                new CommandDefinition(
+                    """
+                    SELECT "Status", "DataStoreId" FROM dmscs."DataStoreManage" WITH (UPDLOCK, HOLDLOCK)
+                    WHERE "Id" = @Id AND ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL));
+                    """,
+                    parameters,
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            );
+            if (row.Status is null or "Deleted")
+            {
+                return new DataStoreManageDeleteResult.NotFound();
+            }
+            // Only known wire names become caller-visible states, never arbitrary persisted text.
+            if (
+                !Enum.TryParse(row.Status, out ManagedDataStoreStatus status)
+                || !Enum.IsDefined(status)
+                || status.ToString() != row.Status
+            )
+            {
+                throw new InvalidOperationException("The managed lifecycle status is invalid.");
+            }
+            if (status != ManagedDataStoreStatus.Created)
+            {
+                return new DataStoreManageDeleteResult.InvalidState(status);
+            }
+            // The FK alone does not establish tenant ownership. Lock order is gate, aggregate, ordinary row.
+            int? ordinaryId = await connection.QuerySingleOrDefaultAsync<int?>(
+                new CommandDefinition(
+                    """
+                    SELECT "Id" FROM dmscs."DataStore" WITH (UPDLOCK, HOLDLOCK)
+                    WHERE "Id" = @DataStoreId AND ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL));
+                    """,
+                    new { row.DataStoreId, TenantId = tenantId },
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            );
+            if (ordinaryId is null)
+            {
+                throw new InvalidOperationException("The current managed data store link is invalid.");
+            }
+            // State/tenant outcomes take precedence. Check the latched gate immediately before writing.
+            if (readiness.Current is not DmsProvisionerReadiness.Ready)
+            {
+                return new DataStoreManageDeleteResult.ProvisioningUnavailable();
+            }
+            int updated = await connection.ExecuteAsync(
+                new CommandDefinition(
+                    """
+                    DECLARE @AcceptedAt datetime2(7) = SYSUTCDATETIME();
+                    UPDATE dmscs."DataStoreManage"
+                    SET "Status" = 'PendingDelete', "LastAttempt" = 0,
+                        "LastFailureCategory" = NULL, "LastFailureProvisioningCode" = NULL, "LastFailureJobCode" = NULL,
+                        "UpdatedAt" = @AcceptedAt, "LastModifiedDate" = @AcceptedAt
+                    WHERE "Id" = @Id AND ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL))
+                        AND "Status" = 'Created' AND "DeleteJobId" IS NULL;
+                    """,
+                    parameters,
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            );
+            if (updated != 1)
+            {
+                throw new InvalidOperationException("Managed delete acceptance was not saved.");
+            }
+            var payload = (JobPayloadWriteResult.Success)
+                JobPayloadSerializer.Serialize(new DeleteManagedDataStorePayload(id));
+            JobEnqueueResult enqueued = await enqueuer.EnqueueAsync(
+                new(ManagedJobTypes.Delete, ManagedJobTypes.PayloadVersion, payload.Json),
+                transaction,
+                cancellationToken
+            );
+            if (enqueued is not JobEnqueueResult.Success success)
+            {
+                return new DataStoreManageDeleteResult.EnqueueFailed(enqueued);
+            }
+            updated = await connection.ExecuteAsync(
+                new CommandDefinition(
+                    """
+                    UPDATE dmscs."DataStoreManage" SET "DeleteJobId" = @JobId
+                    WHERE "Id" = @Id AND ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL))
+                        AND "Status" = 'PendingDelete' AND "DeleteJobId" IS NULL;
+                    """,
+                    new
+                    {
+                        success.JobId,
+                        Id = id,
+                        TenantId = tenantId,
+                    },
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            );
+            if (updated != 1)
+            {
+                throw new InvalidOperationException("Managed delete job linkage was not saved.");
+            }
+            await transaction.CommitAsync(cancellationToken);
+            return new DataStoreManageDeleteResult.Success(success.JobId);
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            // Disposal rolls back every non-success. An ambiguous commit acknowledgement is never retried.
+            return new DataStoreManageDeleteResult.FailureUnknown(
+                MssqlJobDiagnostics.From(exception, "AcceptManagedDataStoreDelete")
+            );
+        }
+    }
 }

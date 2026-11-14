@@ -90,6 +90,11 @@ public partial class Given_data_store_namespace_reservations
             CreateManagedDataStorePayload,
             CreateManagedDataStorePayloadValidator
         >(ManagedJobTypes.Create, 1);
+        services.AddJobHandler<
+            AcceptanceOnlyDeleteHandler,
+            DeleteManagedDataStorePayload,
+            DeleteManagedDataStorePayloadValidator
+        >(ManagedJobTypes.Delete, ManagedJobTypes.PayloadVersion);
         services.AddSingleton<IJobRepository>(
             new JobRepository(
                 Options.Create(

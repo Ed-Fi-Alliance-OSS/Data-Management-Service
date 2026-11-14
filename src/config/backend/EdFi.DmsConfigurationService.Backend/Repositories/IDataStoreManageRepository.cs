@@ -23,6 +23,8 @@ public interface IDataStoreManageRepository
         ManagedDataStoreCreateCommand command,
         CancellationToken cancellationToken
     );
+
+    Task<DataStoreManageDeleteResult> AcceptDeleteAsync(int id, CancellationToken cancellationToken);
 }
 
 public abstract record DataStoreManageQueryResult
@@ -97,4 +99,20 @@ public abstract record DataStoreManageCreateResult
     public sealed record TargetReserved() : DataStoreManageCreateResult;
 
     public sealed record EnqueueFailed(JobEnqueueResult Failure) : DataStoreManageCreateResult;
+}
+
+/// <summary>Internal acceptance outcomes, never a management API response body.</summary>
+public abstract record DataStoreManageDeleteResult
+{
+    public sealed record Success(string JobId) : DataStoreManageDeleteResult;
+
+    public sealed record NotFound() : DataStoreManageDeleteResult;
+
+    public sealed record InvalidState(ManagedDataStoreStatus Status) : DataStoreManageDeleteResult;
+
+    public sealed record ProvisioningUnavailable() : DataStoreManageDeleteResult;
+
+    public sealed record EnqueueFailed(JobEnqueueResult Failure) : DataStoreManageDeleteResult;
+
+    public sealed record FailureUnknown(JobFailureDiagnostic Diagnostic) : DataStoreManageDeleteResult;
 }
