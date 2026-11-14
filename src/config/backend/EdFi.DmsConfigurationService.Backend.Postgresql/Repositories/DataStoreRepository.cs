@@ -179,6 +179,24 @@ public class DataStoreRepository(
         }
     }
 
+    // Admission is issued only after the managed repository verifies the locked recorded operation.
+    internal async Task DeleteManagedDataStore(
+        DataStoreManageRepository.DeletionAdmission admission,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        if (admission.TenantId != TenantId)
+        {
+            throw new InvalidOperationException("The managed deletion partition has changed.");
+        }
+        int removed = await DeleteDataStoreRows(admission.DataStoreId, transaction, cancellationToken);
+        if (removed != (admission.AlreadyAbsent ? 0 : 1))
+        {
+            throw new InvalidOperationException("The verified ordinary data store has changed.");
+        }
+    }
+
     private async Task<int> DeleteDataStoreRows(
         int id,
         DbTransaction transaction,

@@ -89,12 +89,21 @@ public partial class Given_data_store_namespace_reservations
                 "DataStore",
                 "DataStoreContext",
                 "DataStoreDerivative",
+                "ApiClientDataStore",
+                "ApiClient",
+                "Application",
+                "Vendor",
             }
         )
         {
-            string key = table == "Job" ? "JobId" : "Id";
+            string orderBy = table switch
+            {
+                "Job" => "\"JobId\"",
+                "ApiClientDataStore" => "\"ApiClientId\", \"DataStoreId\"",
+                _ => "\"Id\"",
+            };
             tables.Add(
-                (await connection.QueryAsync($"SELECT * FROM dmscs.\"{table}\" ORDER BY \"{key}\";"))
+                (await connection.QueryAsync($"SELECT * FROM dmscs.\"{table}\" ORDER BY {orderBy};"))
                     .Select(row => (IDictionary<string, object>)row)
                     .ToArray()
             );

@@ -27,6 +27,16 @@ public interface IDataStoreManageRepository
     Task<DataStoreManageDeleteResult> AcceptDeleteAsync(int id, CancellationToken cancellationToken);
 
     /// <summary>
+    /// Finalizes catalog deletion through the execution's fence after physical ownership/absence has
+    /// been verified by the caller. Failures propagate so every catalog write rolls back together.
+    /// </summary>
+    Task CompleteDeleteAsync(
+        ManagedDataStoreDeleteCommand command,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
     /// Publishes through the execution's fence. Failures, including lease loss, fence unavailability and
     /// cancellation, propagate for rollback; the handler must use the existing safe job diagnostics.
     /// </summary>
