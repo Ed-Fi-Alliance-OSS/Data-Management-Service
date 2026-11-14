@@ -8,7 +8,6 @@ using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
@@ -196,18 +195,37 @@ internal static class DataStoreCatalog
         {
             throw new InvalidOperationException("The supplied transaction must have an open connection.");
         }
+        if (resources.Length == 0)
+        {
+            return;
+        }
+
+        // VALUES works below compatibility level 130 too. Exhaustion supplies at most 1000 gates,
+        // so the ordered set needs one round trip and remains below SQL Server's parameter limit.
+        DynamicParameters parameters = new();
+        string rows = string.Join(
+            ",",
+            resources.Select(
+                (resource, index) =>
+                {
+                    string ordinal = index.ToString(CultureInfo.InvariantCulture);
+                    parameters.Add("Resource" + ordinal, resource, DbType.String, size: -1);
+                    return $"({ordinal}, @Resource{ordinal})";
+                }
+            )
+        );
 
         int result;
         try
         {
             result = await connection.ExecuteScalarAsync<int>(
                 new CommandDefinition(
-                    """
+                    $"""
                     DECLARE @Wait int = @@LOCK_TIMEOUT;
                     IF @Wait < 0 OR @Wait > 5000 SET @Wait = 5000;
                     DECLARE @Result int = 0, @Resource nvarchar(255);
                     DECLARE gates CURSOR LOCAL FAST_FORWARD FOR
-                        SELECT value FROM OPENJSON(@Resources) ORDER BY CONVERT(int, [key]);
+                        SELECT Resource FROM (VALUES {rows}) r(Ordinal, Resource) ORDER BY Ordinal;
                     OPEN gates;
                     FETCH NEXT FROM gates INTO @Resource;
                     WHILE @@FETCH_STATUS = 0
@@ -221,7 +239,7 @@ internal static class DataStoreCatalog
                     DEALLOCATE gates;
                     SELECT @Result;
                     """,
-                    new { Resources = JsonSerializer.Serialize(resources) },
+                    parameters,
                     transaction,
                     cancellationToken: cancellationToken
                 )

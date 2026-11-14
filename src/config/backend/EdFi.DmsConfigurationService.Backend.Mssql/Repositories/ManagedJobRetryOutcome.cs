@@ -4,7 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
-using System.Text.Json;
+using System.Globalization;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
@@ -213,6 +213,21 @@ internal static class ManagedJobRetryOutcome
             budget,
             CancellationToken.None
         );
+        // Keep persisted job IDs parameterized and the batch under the SQL Server parameter limit.
+        DynamicParameters jobParameters = new();
+        string jobRows = string.Join(
+            ",",
+            managedJobs.Values.Select(
+                (job, index) =>
+                {
+                    string ordinal = index.ToString(CultureInfo.InvariantCulture);
+                    jobParameters.Add("Job" + ordinal, job.JobId, DbType.String, size: -1);
+                    string tenant = job.TenantId?.ToString(CultureInfo.InvariantCulture) ?? "NULL";
+                    string isCreate = job.JobType == ManagedJobTypes.Create ? "1" : "0";
+                    return $"(@Job{ordinal}, {tenant}, {isCreate})";
+                }
+            )
+        );
         var aggregates = (
             await session.RunAsync(
                 "LockRetryAggregate",
@@ -224,7 +239,7 @@ internal static class ManagedJobRetryOutcome
                             DECLARE @Candidates TABLE (Id int, JobId nvarchar(150), TenantId bigint, IsCreate bit);
                             INSERT INTO @Candidates (Id, JobId, TenantId, IsCreate)
                             SELECT m.Id, j.JobId, j.TenantId, j.IsCreate
-                            FROM OPENJSON(@Jobs) WITH (JobId nvarchar(150), TenantId bigint, IsCreate bit) j
+                            FROM (VALUES {jobRows}) j(JobId, TenantId, IsCreate)
                             JOIN dmscs.DataStoreManage m ON {MatchingExhaustedAggregate};
                             -- Discover without update locks, then seek only candidate primary keys and recheck
                             -- identity/state under the aggregate locks. Rejected scan rows retain no update locks.
@@ -236,17 +251,7 @@ internal static class ManagedJobRetryOutcome
                             ORDER BY m.Id
                             OPTION (FORCE ORDER);
                             """,
-                            new
-                            {
-                                Jobs = JsonSerializer.Serialize(
-                                    managedJobs.Values.Select(job => new
-                                    {
-                                        job.JobId,
-                                        job.TenantId,
-                                        IsCreate = job.JobType == ManagedJobTypes.Create,
-                                    })
-                                ),
-                            },
+                            jobParameters,
                             budget,
                             token
                         )
@@ -278,39 +283,41 @@ internal static class ManagedJobRetryOutcome
         {
             return;
         }
-        var targets = aggregates.Select(aggregate =>
-        {
-            var job = managedJobs[aggregate.JobId];
-            return new
-            {
-                aggregate.Id,
-                Status = job.JobType == ManagedJobTypes.Create ? "CreateError" : "DeleteError",
-                Attempt = job.AttemptCount,
-                Now = job.DatabaseUtcNow,
-            };
-        });
         var failure = ManagedDataStoreFailure.FromJob(JobErrorCode.AttemptsExhausted);
+        DynamicParameters targetParameters = new(
+            new { Category = failure.Category.ToString(), failure.JobCode }
+        );
+        string targetRows = string.Join(
+            ",",
+            aggregates.Select(
+                (aggregate, index) =>
+                {
+                    var job = managedJobs[aggregate.JobId];
+                    string ordinal = index.ToString(CultureInfo.InvariantCulture);
+                    targetParameters.Add("Now" + ordinal, job.DatabaseUtcNow, DbType.DateTime2);
+                    string id = aggregate.Id.ToString(CultureInfo.InvariantCulture);
+                    string attempt = job.AttemptCount.ToString(CultureInfo.InvariantCulture);
+                    string status = job.JobType == ManagedJobTypes.Create ? "CreateError" : "DeleteError";
+                    return $"({id}, N'{status}', {attempt}, @Now{ordinal})";
+                }
+            )
+        );
         int updated = await session.RunAsync(
             "WriteRetryAggregate",
             token =>
                 session.Connection.ExecuteAsync(
                     MssqlJobSession.Command(
                         session,
-                        """
+                        $"""
                         UPDATE m
                         SET Status = t.Status, LastAttempt = t.Attempt,
                             LastFailureCategory = @Category, LastFailureProvisioningCode = NULL,
                             LastFailureJobCode = @JobCode,
                             UpdatedAt = t.Now, LastModifiedDate = t.Now, LastRefreshed = t.Now
-                        FROM OPENJSON(@Targets) WITH (Id int, Status nvarchar(30), Attempt int, Now datetime2) t
+                        FROM (VALUES {targetRows}) t(Id, Status, Attempt, Now)
                         JOIN dmscs.DataStoreManage m ON m.Id = t.Id;
                         """,
-                        new
-                        {
-                            Targets = JsonSerializer.Serialize(targets),
-                            Category = failure.Category.ToString(),
-                            failure.JobCode,
-                        },
+                        targetParameters,
                         budget,
                         token
                     )
