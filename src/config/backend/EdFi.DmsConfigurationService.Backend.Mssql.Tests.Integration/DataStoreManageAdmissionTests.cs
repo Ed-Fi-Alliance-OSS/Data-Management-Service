@@ -393,6 +393,25 @@ public partial class Given_data_store_namespace_reservations
                 .BeTrue("the successor must wait on the same physical target lock");
             second.IsCompleted.Should().BeFalse();
             admissions.Should().Be(1);
+            // Keep the admitted holder paused until the real server lock budget expires. Physical
+            // work need not finish within a contender's budget, so exercise the retry deterministically.
+            var failure = (await second.WaitAsync(TimeSpan.FromSeconds(30)))
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Failure>()
+                .Subject;
+            await TestContext.Out.WriteLineAsync(
+                $"SuccessorFailure: Code={failure.Detail.Code}; Category={failure.Detail.Category}; "
+                    + $"Operation={failure.Detail.Diagnostic.Operation}; "
+                    + $"CleanupHasResidue={failure.Cleanup.HasResidue}; ResidueCount={failure.Cleanup.Residue.Count}"
+            );
+            failure.Detail.Code.Should().Be(DmsProvisioningFailureCode.LockTimeout);
+            failure.Detail.Category.Should().Be(DmsProvisioningFailureCategory.Transient);
+            failure.Detail.Diagnostic.Operation.Should().Be("AcquireTargetLock");
+            failure.Cleanup.HasResidue.Should().BeFalse();
+            failure.Cleanup.Residue.Should().BeEmpty();
+            first.IsCompleted.Should().BeFalse();
+            admissions.Should().Be(1);
+            lane.Engine.CountOf(nameof(IDmsTargetEngine.CreateStagingAsync)).Should().Be(0);
         }
         finally
         {
@@ -407,21 +426,36 @@ public partial class Given_data_store_namespace_reservations
         Func<Task> stalePublish = () =>
             PublicationRepository().PublishCreateAsync(old.Command, old.Execution, default);
         await stalePublish.Should().ThrowAsync<JobLeaseLostException>();
-        var successorResult = await second!;
-        if (successorResult is DmsDataStoreCreateResult.Failure failure)
-        {
-            await TestContext.Out.WriteLineAsync(
-                $"SuccessorFailure: Code={failure.Detail.Code}; Category={failure.Detail.Category}; "
-                    + $"Operation={failure.Detail.Diagnostic.Operation}; "
-                    + $"CleanupHasResidue={failure.Cleanup.HasResidue}; ResidueCount={failure.Cleanup.Residue.Count}"
-            );
-        }
-        successorResult.Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
+        // Compose a later attempt with a new real lease and its persisted attempt transition. This
+        // proves admission/publication fencing; runtime handler retry scheduling is a later step.
+        var retryClaim = await ReclaimAdmission(successor.Claim);
+        retryClaim.AttemptCount.Should().Be(successor.Claim.AttemptCount + 1);
+        var retry = successor with { Claim = retryClaim, Execution = AdmissionExecution(retryClaim) };
+        (
+            await lane.Service.CreateAsync(
+                AdmissionRequest(retry),
+                endpoint,
+                (actual, token) =>
+                    AdmitManagedOperation(retry.Command, retry.Execution, false, actual, token),
+                default
+            )
+        )
+            .Should()
+            .BeOfType<DmsDataStoreCreateResult.Reconciled>();
         int catalogId = await PublicationRepository()
-            .PublishCreateAsync(successor.Command, successor.Execution, default);
-        (await PublicationRepository().PublishCreateAsync(successor.Command, successor.Execution, default))
+            .PublishCreateAsync(retry.Command, retry.Execution, default);
+        (await PublicationRepository().PublishCreateAsync(retry.Command, retry.Execution, default))
             .Should()
             .Be(catalogId);
+        await using var connection = await Open();
+        (
+            await connection.ExecuteScalarAsync<int>(
+                """SELECT COUNT(*) FROM dmscs."DataStore" WHERE "Name" = @Name AND "TenantId" IS NULL;""",
+                new { retry.Command.Identity.Name }
+            )
+        )
+            .Should()
+            .Be(1);
         lane.Engine.CountOf(nameof(IDmsTargetEngine.CreateStagingAsync)).Should().Be(1);
         lane.Engine.CountOf(nameof(IDmsTargetEngine.AssignMarkerAsync)).Should().Be(1);
         admissions.Should().Be(2);
