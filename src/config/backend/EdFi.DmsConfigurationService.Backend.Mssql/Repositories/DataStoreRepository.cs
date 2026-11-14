@@ -42,7 +42,7 @@ public class DataStoreRepository(
         CancellationToken cancellationToken
     )
     {
-        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        _ = GetTransactionConnection(transaction, cancellationToken);
         if (
             await DataStoreCatalog.HasManagedNameReservationAsync(
                 transaction,
@@ -55,6 +55,66 @@ public class DataStoreRepository(
         {
             throw new DataStoreCatalog.NameReservedException();
         }
+        return await InsertDataStoreRow(command, transaction, cancellationToken);
+    }
+
+    /// <summary>Requires admission minted by managed publication under the supplied fence and tenant gate.</summary>
+    internal async Task<int> InsertManagedDataStore(
+        DataStoreManageRepository.PublicationAdmission admission,
+        string runtimeConnectionString,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        if (TenantId != admission.TenantId)
+        {
+            throw new InvalidOperationException(
+                "The ordinary repository publication partition does not match."
+            );
+        }
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, admission.TenantId, cancellationToken);
+        DynamicParameters parameters = new(new { admission.Id, admission.TenantId });
+        parameters.Add("Name", CatalogName.Canonicalize(admission.Name), DbType.String, size: -1);
+        if (
+            await connection.ExecuteScalarAsync<bool>(
+                new CommandDefinition(
+                    """
+                    SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dmscs."DataStore" WHERE ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL)) AND "NameComparisonKey" = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)
+                        UNION ALL
+                        SELECT 1 FROM dmscs."DataStoreManage"
+                        WHERE ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL)) AND "NameComparisonKey" = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)
+                            AND "Status" <> 'Deleted' AND "Id" <> @Id) THEN 1 ELSE 0 END AS bit);
+                    """,
+                    parameters,
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            )
+        )
+        {
+            throw new DataStoreCatalog.NameReservedException();
+        }
+        return await InsertDataStoreRow(
+            new DataStoreInsertCommand
+            {
+                Name = admission.Name,
+                DataStoreType = "Shared",
+                Provider = admission.Provider,
+                ConnectionString = runtimeConnectionString,
+            },
+            transaction,
+            cancellationToken
+        );
+    }
+
+    private async Task<int> InsertDataStoreRow(
+        DataStoreInsertCommand command,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
         var sql = """
             INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
             OUTPUT INSERTED.Id

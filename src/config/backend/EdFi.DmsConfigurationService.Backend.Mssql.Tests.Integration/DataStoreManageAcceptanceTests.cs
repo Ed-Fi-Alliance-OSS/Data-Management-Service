@@ -125,7 +125,8 @@ public partial class Given_data_store_namespace_reservations
         long? tenantId = null,
         IDmsDataStoreProvisionerReadiness? readiness = null,
         string? applicationName = null,
-        ProtectedDatabaseNames? protectedNames = null
+        ProtectedDatabaseNames? protectedNames = null,
+        DataStoreRepository? ordinaryRepository = null
     )
     {
         SqlConnectionStringBuilder builder = new(_database.ConnectionString);
@@ -145,7 +146,8 @@ public partial class Given_data_store_namespace_reservations
             CreateTenantContext(tenantId),
             readiness ?? CreateReadiness(),
             enqueuer,
-            protectedNames ?? ProtectedDatabaseNames.Create("cms", [])
+            protectedNames ?? ProtectedDatabaseNames.Create("cms", []),
+            ordinaryRepository ?? Repository(tenantId)
         );
     }
 

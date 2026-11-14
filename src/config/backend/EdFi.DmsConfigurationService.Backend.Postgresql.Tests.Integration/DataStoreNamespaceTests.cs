@@ -66,7 +66,8 @@ public partial class Given_data_store_namespace_reservations
     private DataStoreRepository Repository(
         long? tenantId = null,
         string? applicationName = null,
-        IAuditContext? audit = null
+        IAuditContext? audit = null,
+        IConnectionStringEncryptionService? encryption = null
     )
     {
         NpgsqlConnectionStringBuilder builder = new(_database.ConnectionString);
@@ -83,7 +84,7 @@ public partial class Given_data_store_namespace_reservations
                 }
             ),
             NullLogger<DataStoreRepository>.Instance,
-            A.Fake<IConnectionStringEncryptionService>(),
+            encryption ?? A.Fake<IConnectionStringEncryptionService>(),
             A.Fake<IConnectionStringReader>(),
             A.Fake<IDataStoreContextRepository>(),
             A.Fake<IDataStoreDerivativeRepository>(),

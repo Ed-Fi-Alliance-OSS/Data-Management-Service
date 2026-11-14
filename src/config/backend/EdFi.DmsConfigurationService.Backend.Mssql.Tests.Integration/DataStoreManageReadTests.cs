@@ -444,7 +444,7 @@ public partial class Given_data_store_namespace_reservations
             .BeOfType<DataStoreManageQueryResult.InvalidRequest>();
     }
 
-    private static DataStoreManageRepository InvalidConnectionReadRepository() =>
+    private DataStoreManageRepository InvalidConnectionReadRepository() =>
         new(
             Options.Create(
                 new DatabaseOptions
@@ -456,7 +456,8 @@ public partial class Given_data_store_namespace_reservations
             CreateTenantContext(null),
             CreateReadiness(),
             A.Fake<IJobEnqueuer>(),
-            ProtectedDatabaseNames.Create("cms", [])
+            ProtectedDatabaseNames.Create("cms", []),
+            Repository()
         );
 
     [Test, Category("ManagedDataStoreReads")]

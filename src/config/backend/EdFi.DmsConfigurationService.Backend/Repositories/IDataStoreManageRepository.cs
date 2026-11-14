@@ -25,6 +25,56 @@ public interface IDataStoreManageRepository
     );
 
     Task<DataStoreManageDeleteResult> AcceptDeleteAsync(int id, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// Publishes through the execution's fence. Failures, including lease loss, fence unavailability and
+    /// cancellation, propagate for rollback; the handler must use the existing safe job diagnostics.
+    /// </summary>
+    Task<int> PublishCreateAsync(
+        ManagedDataStorePublishCommand command,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+}
+
+/// <summary>
+/// Immutable operation identity and the already validated runtime connection snapshot. The caller must
+/// resolve that snapshot for this endpoint and target before publication; publication performs no resolution
+/// or physical database work. This secret-bearing command must never be logged or returned to clients.
+/// </summary>
+public sealed record ManagedDataStorePublishCommand(
+    int Id,
+    ManagedDataStoreCreateCommand Identity,
+    DmsTrustedArtifactPin PinnedArtifact,
+    string RuntimeConnectionString
+)
+{
+    public override string ToString() => nameof(ManagedDataStorePublishCommand);
+
+    public bool IsValid(ProtectedDatabaseNames protectedNames) =>
+        Id > 0
+        && Identity is not null
+        && Identity.IsValid(protectedNames)
+        && !string.IsNullOrWhiteSpace(RuntimeConnectionString)
+        && PinnedArtifact is { } pin
+        && pin.ContractVersion == DmsTrustedArtifactPin.CurrentContractVersion
+        && pin.Provider == Identity.Endpoint.Provider
+        && pin.TemplateKind == Identity.Template.TemplateKind
+        && !Array.Exists(
+            new[]
+            {
+                pin.PackageId,
+                pin.PackageVersion,
+                pin.PackageSha256,
+                pin.ArtifactSha256,
+                pin.DataStandardVersion,
+                pin.EffectiveSchemaHash,
+                pin.InventorySha256,
+                pin.ApiSchemaFormatVersion,
+                pin.RelationalMappingVersion,
+            },
+            string.IsNullOrWhiteSpace
+        );
 }
 
 public abstract record DataStoreManageQueryResult

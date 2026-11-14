@@ -68,8 +68,8 @@ internal static class DataStoreCatalog
     }
 
     /// <summary>
-    /// Managed acceptance checks both namespaces with no exclusion. Publication must later add its
-    /// own verified reservation/current-link path together with the job fence and aggregate identity.
+    /// Managed acceptance checks both namespaces with no exclusion. Publication uses its own verified
+    /// reservation/current-link path together with the job fence and aggregate identity.
     /// </summary>
     internal static async Task<bool> HasNameReservationAsync(
         DbTransaction transaction,

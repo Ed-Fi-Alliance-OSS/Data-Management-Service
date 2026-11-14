@@ -17,12 +17,13 @@ using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
-public sealed class DataStoreManageRepository(
+public sealed partial class DataStoreManageRepository(
     IOptions<DatabaseOptions> databaseOptions,
     ITenantContextProvider tenantContextProvider,
     IDmsDataStoreProvisionerReadiness readiness,
     IJobEnqueuer enqueuer,
-    ProtectedDatabaseNames protectedNames
+    ProtectedDatabaseNames protectedNames,
+    DataStoreRepository dataStoreRepository
 ) : IDataStoreManageRepository
 {
     public async Task<DataStoreManageGetResult> GetByIdAsync(int id, CancellationToken cancellationToken) =>
