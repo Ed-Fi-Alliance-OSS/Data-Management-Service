@@ -67,6 +67,9 @@ public record DataStoreUpdateResult
 
     public record FailureNotExists() : DataStoreUpdateResult();
 
+    /// <summary>The current managed link prevents ordinary mutation; nothing was written.</summary>
+    public record FailureManaged(int ManageId) : DataStoreUpdateResult();
+
     /// <summary>
     /// Another data store in the caller's tenant already has this name; nothing was written
     /// </summary>
@@ -80,6 +83,9 @@ public record DataStoreDeleteResult
     public record Success() : DataStoreDeleteResult();
 
     public record FailureNotExists() : DataStoreDeleteResult();
+
+    /// <summary>The current managed link prevents ordinary mutation; nothing was written.</summary>
+    public record FailureManaged(int ManageId) : DataStoreDeleteResult();
 
     public record FailureUnknown(string FailureMessage) : DataStoreDeleteResult();
 }

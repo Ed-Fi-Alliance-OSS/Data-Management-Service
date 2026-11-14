@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using System.Net;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -13,6 +14,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation.Results;
+using Microsoft.AspNetCore.Http.Extensions;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -25,6 +27,25 @@ public class DataStoreModule : IEndpointModule
             [new ValidationFailure("Name", DuplicateNameError)],
             httpContext.TraceIdentifier
         );
+
+    private static IResult ManagedConflict(HttpContext httpContext, int manageId)
+    {
+        var request = httpContext.Request;
+        string managedUrl = UriHelper.BuildAbsolute(
+            request.Scheme,
+            request.Host,
+            new PathString(request.PathBase.Value?.TrimEnd('/')),
+            new PathString("/v3/dataStores/manage/" + manageId.ToString(CultureInfo.InvariantCulture))
+        );
+        return Results.Json(
+            FailureResponse.ForConflict(
+                $"This data store is managed. Use {managedUrl} to manage it.",
+                httpContext.TraceIdentifier
+            ),
+            contentType: "application/problem+json",
+            statusCode: (int)HttpStatusCode.Conflict
+        );
+    }
 
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -126,6 +147,7 @@ public class DataStoreModule : IEndpointModule
         return updateResult switch
         {
             DataStoreUpdateResult.Success => Results.NoContent(),
+            DataStoreUpdateResult.FailureManaged managed => ManagedConflict(httpContext, managed.ManageId),
             DataStoreUpdateResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound(
                     $"DataStore {id} not found. It may have been recently deleted.",
@@ -148,6 +170,7 @@ public class DataStoreModule : IEndpointModule
         return deleteResult switch
         {
             DataStoreDeleteResult.Success => Results.NoContent(),
+            DataStoreDeleteResult.FailureManaged managed => ManagedConflict(httpContext, managed.ManageId),
             DataStoreDeleteResult.FailureNotExists => Results.Json(
                 FailureResponse.ForNotFound(
                     $"DataStore {id} not found. It may have been recently deleted.",

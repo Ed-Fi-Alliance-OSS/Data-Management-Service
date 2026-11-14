@@ -18,7 +18,7 @@ using NUnit.Framework;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
 /// <summary>The same repository and HTTP assertions run against each provider's actual migrated catalog.</summary>
-public abstract class OrdinaryDataStoreQueryTests(bool multitenant, bool canonicalUniqueness)
+public abstract partial class OrdinaryDataStoreQueryTests(bool multitenant, bool canonicalUniqueness)
 {
     private WebApplicationFactory<Program> _factory = null!;
     private long _tenantA;
@@ -33,6 +33,8 @@ public abstract class OrdinaryDataStoreQueryTests(bool multitenant, bool canonic
     protected abstract Task<long> InsertTenantAsync(string name);
     protected abstract Task<int> InsertAsync(OrdinaryDataStoreQueryCases.Row row, long? tenantId);
     protected abstract Task ClearStoresAsync();
+    protected abstract Task<int> LinkManagedAsync(int id, long? tenantId);
+    protected abstract Task UnlinkManagedAsync(int manageId);
 
     [OneTimeSetUp]
     public async Task StartHost()
@@ -47,10 +49,15 @@ public abstract class OrdinaryDataStoreQueryTests(bool multitenant, bool canonic
             builder.UseSetting("AppSettings:MultiTenancy", multitenant.ToString());
             builder.UseSetting("DatabaseSettings:DatabaseConnection", ConnectionString);
             builder.UseSetting("DmsDataStoreProvisioning:Enabled", "false");
+            builder.UseSetting("AppSettings:EnableDataStoreManagement", "false");
             builder.UseSetting("JobSettings:WorkerEnabled", "false");
             builder.UseSetting("JobSettings:SchedulerEnabled", "false");
             builder.UseSetting("JobSettings:RetentionEnabled", "false");
-            builder.ConfigureServices(services => services.AddTestAuthentication());
+            builder.ConfigureServices(services =>
+            {
+                services.AddTestAuthentication();
+                services.AddSingleton<IStartupFilter, TestPathBaseStartupFilter>();
+            });
         });
     }
 

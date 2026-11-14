@@ -27,7 +27,7 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
 [TestFixture]
 [NonParallelizable]
 [Category("DataStoreNamespace")]
-public class Given_data_store_namespace_reservations
+public partial class Given_data_store_namespace_reservations
 {
     private JobUpgradeTestDatabase _database = null!;
 
@@ -245,7 +245,7 @@ public class Given_data_store_namespace_reservations
     }
 
     [Test]
-    public async Task It_excludes_only_its_own_link_on_rename_and_preserves_not_found_precedence()
+    public async Task It_rejects_its_own_current_link_before_name_conflicts_and_preserves_not_found_precedence()
     {
         var repository = Repository();
         int id = (await repository.InsertDataStore(Insert("Store")))
@@ -253,14 +253,10 @@ public class Given_data_store_namespace_reservations
             .BeOfType<DataStoreInsertResult.Success>()
             .Subject.Id;
         await using var connection = await Open();
-        await Reserve(connection, "Store", status: "Created", dataStoreId: id);
+        int manageId = await Reserve(connection, "Store", status: "Created", dataStoreId: id);
         await Reserve(connection, "other");
-        (await repository.UpdateDataStore(Rename(id, "store")))
-            .Should()
-            .BeOfType<DataStoreUpdateResult.Success>();
-        (await repository.UpdateDataStore(Rename(id, "other")))
-            .Should()
-            .BeOfType<DataStoreUpdateResult.FailureDuplicateName>();
+        AssertManaged(await repository.UpdateDataStore(Rename(id, "store")), manageId);
+        AssertManaged(await repository.UpdateDataStore(Rename(id, "other")), manageId);
         (await repository.UpdateDataStore(Rename(int.MaxValue, "other")))
             .Should()
             .BeOfType<DataStoreUpdateResult.FailureNotExists>();

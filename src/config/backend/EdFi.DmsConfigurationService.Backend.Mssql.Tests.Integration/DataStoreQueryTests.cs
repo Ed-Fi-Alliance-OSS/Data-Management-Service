@@ -71,7 +71,7 @@ public class Given_ordinary_data_store_queries(bool multitenant, bool canonicalU
     protected override async Task ClearStoresAsync()
     {
         await using SqlConnection connection = new(ConnectionString);
-        await connection.ExecuteAsync("""DELETE FROM dmscs.DataStore;""");
+        await connection.ExecuteAsync("""DELETE FROM dmscs.DataStoreManage; DELETE FROM dmscs.DataStore;""");
     }
 
     protected override async Task<long> InsertTenantAsync(string name)
@@ -94,6 +94,36 @@ public class Given_ordinary_data_store_queries(bool multitenant, bool canonicalU
                 row.Type,
                 TenantId = tenantId,
             }
+        );
+    }
+
+    protected override async Task<int> LinkManagedAsync(int id, long? tenantId)
+    {
+        await using SqlConnection connection = new(ConnectionString);
+        return await connection.ExecuteScalarAsync<int>(
+            """
+            INSERT INTO dmscs."DataStoreManage" ("Name", "TenantId", "Template", "Status", "DataStoreId", "TargetDatabaseName", "ExpectedSourceIdentity", "EndpointDescriptor", "CreateJobId", "CreatedAt", "UpdatedAt", "LastRefreshed", "LastModifiedDate") OUTPUT inserted.Id
+            VALUES ('managed', @TenantId, 'Minimal', 'DeleteError', @Id, @Target, @Source, @Endpoint, @Job, @Timestamp, @Timestamp, @Timestamp, @Timestamp) ;
+            """,
+            new
+            {
+                Id = id,
+                TenantId = tenantId,
+                Target = "target_" + Guid.NewGuid().ToString("N"),
+                Source = Guid.NewGuid(),
+                Endpoint = "[1,\"mssql\",\"tcp\",\"secret.internal\",5432,null,\"admin_db\"]",
+                Job = Guid.NewGuid().ToString("N"),
+                Timestamp = new DateTime(2026, 1, 2, 3, 4, 5, DateTimeKind.Unspecified),
+            }
+        );
+    }
+
+    protected override async Task UnlinkManagedAsync(int manageId)
+    {
+        await using SqlConnection connection = new(ConnectionString);
+        await connection.ExecuteAsync(
+            """UPDATE dmscs."DataStoreManage" SET "DataStoreId" = NULL, "Status" = 'Deleted' WHERE "Id" = @Id;""",
+            new { Id = manageId }
         );
     }
 }

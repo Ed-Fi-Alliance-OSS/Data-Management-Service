@@ -395,6 +395,28 @@ public class DataStoreRepository(
         }
     }
 
+    // The tenant gate precedes every mutable read and is held with the row lock through commit.
+    // Publication/unlinking must use the same gate so a current link cannot appear after this guard.
+    private async Task<bool> LockDataStore(int id, DbTransaction transaction)
+    {
+        DbConnection connection = GetTransactionConnection(transaction, CancellationToken.None);
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, TenantId, CancellationToken.None);
+        return await connection.QuerySingleOrDefaultAsync<int?>(
+            $"""SELECT "Id" FROM dmscs."DataStore" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()} FOR UPDATE;""",
+            new { Id = id, TenantId },
+            transaction
+        )
+            is not null;
+    }
+
+    private Task<int?> FindManagedLink(int id, DbTransaction transaction) =>
+        GetTransactionConnection(transaction, CancellationToken.None)
+            .QuerySingleOrDefaultAsync<int?>(
+                $"""SELECT "Id" FROM dmscs."DataStoreManage" WHERE "DataStoreId" = @Id AND {TenantContext.TenantWhereClause()};""",
+                new { Id = id, TenantId },
+                transaction
+            );
+
     public async Task<DataStoreUpdateResult> UpdateDataStore(DataStoreUpdateCommand command)
     {
         await using var connection = new NpgsqlConnection(databaseOptions.Value.DatabaseConnection);
@@ -402,15 +424,13 @@ public class DataStoreRepository(
         {
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
-            await DataStoreCatalog.AcquireTenantGateAsync(transaction, TenantId, CancellationToken.None);
-            bool exists = await connection.ExecuteScalarAsync<bool>(
-                $"""SELECT EXISTS (SELECT 1 FROM dmscs."DataStore" WHERE "Id" = @Id AND {TenantContext.TenantWhereClause()});""",
-                new { command.Id, TenantId },
-                transaction
-            );
-            if (!exists)
+            if (!await LockDataStore(command.Id, transaction))
             {
                 return new DataStoreUpdateResult.FailureNotExists();
+            }
+            if (await FindManagedLink(command.Id, transaction) is int manageId)
+            {
+                return new DataStoreUpdateResult.FailureManaged(manageId);
             }
             if (
                 await DataStoreCatalog.HasManagedNameReservationAsync(
@@ -496,6 +516,14 @@ public class DataStoreRepository(
         {
             await connection.OpenAsync();
             await using var transaction = await connection.BeginTransactionAsync();
+            if (!await LockDataStore(id, transaction))
+            {
+                return new DataStoreDeleteResult.FailureNotExists();
+            }
+            if (await FindManagedLink(id, transaction) is int manageId)
+            {
+                return new DataStoreDeleteResult.FailureManaged(manageId);
+            }
             int affectedRows = await DeleteDataStoreRows(id, transaction, CancellationToken.None);
             if (affectedRows > 0)
             {
