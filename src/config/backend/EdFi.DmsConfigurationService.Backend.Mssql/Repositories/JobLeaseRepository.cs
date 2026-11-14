@@ -165,6 +165,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             LeaseExpiresAt = NULL,
             LastModifiedAt = SYSUTCDATETIME(),
             ModifiedBy = @ModifiedBy
+        OUTPUT inserted.JobId, inserted.TenantId, inserted.JobType, inserted.AttemptCount,
+            inserted.FinishedAt AS DatabaseUtcNow
         WHERE AttemptCount >= @MaxAttempts
           AND (@ExcludeManagedJobs = 0 OR (
                   NOT (JobType COLLATE Latin1_General_100_BIN2 = @ManagedCreate AND DATALENGTH(JobType) = DATALENGTH(@ManagedCreate))
@@ -295,8 +297,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         {
             await MssqlJobSession.OpenAsync(session, budget, cancellationToken);
 
-            // Each batch is one statement in its own short transaction, and one deadline bounds the batch, its
-            // begin and commit included. The stopping token is checked immediately before every batch, the first
+            // Each batch commits the terminal jobs and matching managed outcomes together under one deadline,
+            // including begin and commit. The stopping token is checked immediately before every batch, the first
             // included, and is not passed to the batch, so a batch that has started commits or fails on its own,
             // and every committed batch stays committed when the sweep stops.
             while (!cancellationToken.IsCancellationRequested)
@@ -306,10 +308,10 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
 
                 await MssqlJobSession.BeginAsync(session, budget, CancellationToken.None);
                 JobDeadline batch = budget;
-                int rows = await session.RunAsync(
+                var jobs = await session.RunAsync(
                     "ExhaustBatch",
                     token =>
-                        session.Connection.ExecuteAsync(
+                        session.Connection.QueryAsync<ManagedJobRetryOutcome.ExhaustedJob>(
                             MssqlJobSession.Command(
                                 session,
                                 ExhaustBatchSql,
@@ -330,6 +332,9 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                     batch,
                     CancellationToken.None
                 );
+
+                await ManagedJobRetryOutcome.WriteExhaustedAsync(session, jobs, batch);
+                int rows = jobs.Count();
 
                 if (BeforeExhaustBatchCommit is { } beforeCommit)
                 {
@@ -455,7 +460,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 ErrorMessage = errorCode.Message,
             },
             id,
-            cancellationToken
+            cancellationToken,
+            terminalError: errorCode
         );
 
     public Task<JobWriteResult> ReleaseToPending(
@@ -487,7 +493,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         object parameters,
         long id,
         CancellationToken cancellationToken,
-        bool projectManagedRetry = false
+        bool projectManagedRetry = false,
+        JobErrorCode? terminalError = null
     )
     {
         JobDeadline budget = JobDeadline.Start(timings.RenewalTimeout);
@@ -516,7 +523,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             );
 
             ManagedJobRetryOutcome.Target? retryTarget = null;
-            if (projectManagedRetry)
+            if (projectManagedRetry || terminalError is not null)
             {
                 var job = await session.RunAsync(
                     "ReadRetryJob",
@@ -531,7 +538,13 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 {
                     return new JobWriteResult.OwnershipLost();
                 }
-                retryTarget = await ManagedJobRetryOutcome.LockAsync(session, job, budget, cancellationToken);
+                retryTarget = await ManagedJobRetryOutcome.LockAsync(
+                    session,
+                    job,
+                    budget,
+                    cancellationToken,
+                    terminal: terminalError is not null
+                );
             }
 
             // Sample ownership again after any catalog gate or aggregate lock wait.
@@ -557,7 +570,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                     retryTarget,
                     written.DatabaseUtcNow,
                     budget,
-                    cancellationToken
+                    cancellationToken,
+                    terminalError
                 );
             }
 

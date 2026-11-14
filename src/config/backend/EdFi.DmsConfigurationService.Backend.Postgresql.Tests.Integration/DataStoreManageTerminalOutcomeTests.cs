@@ -1,0 +1,830 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data.Common;
+using Dapper;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
+
+namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
+
+public partial class Given_data_store_namespace_reservations
+{
+    private static Task<JobWriteResult> Terminal(JobLeaseRepository repository, ClaimedJob claim) =>
+        repository.FailTerminal(
+            claim.Id,
+            claim.LeaseOwner,
+            claim.FencingToken,
+            JobErrorCode.InvalidPayload,
+            default
+        );
+
+    private static async Task AssertTerminalCommitted(
+        DbConnection connection,
+        int id,
+        ClaimedJob claim,
+        bool delete
+    )
+    {
+        var aggregate = await DeleteRow(connection, id);
+        aggregate["Status"].Should().Be(delete ? "DeleteError" : "CreateError");
+        aggregate["LastAttempt"].Should().Be(claim.AttemptCount);
+        aggregate["LastFailureCategory"].Should().Be("Permanent");
+        aggregate["LastFailureProvisioningCode"].Should().BeNull();
+        aggregate["LastFailureJobCode"].Should().Be(JobErrorCode.InvalidPayload.Code);
+        var job = await connection.QuerySingleAsync<RetryJobRow>(
+            """SELECT "Status", "LeaseOwner", "LeaseExpiresAt", "FinishedAt", "NextAttemptAt", "LastModifiedAt" FROM dmscs."Job" WHERE "Id" = @Id;""",
+            new { claim.Id }
+        );
+        job.Status.Should().Be("Error");
+        job.LeaseOwner.Should().BeNull();
+        job.LeaseExpiresAt.Should().BeNull();
+        job.FinishedAt.Should().Be(job.LastModifiedAt);
+        aggregate["UpdatedAt"].Should().Be(job.LastModifiedAt);
+        aggregate["LastModifiedDate"].Should().Be(job.LastModifiedAt);
+        aggregate["LastRefreshed"].Should().Be(job.LastModifiedAt);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_rolls_back_both_outcomes_when_interrupted_between_writes_or_before_commit(
+        [Values(false, true)] bool delete,
+        [Values("GuardedWrite", "WriteRetryAggregate")] string interruptedAfter
+    )
+    {
+        var seed = await SeedRetry(delete);
+        string before = await DeleteAcceptanceSnapshot();
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                AfterOperation = (operation, _) =>
+                    operation == interruptedAfter
+                        ? Task.FromException(new InvalidOperationException("Injected retry interruption."))
+                        : Task.CompletedTask,
+            },
+        };
+        (await Terminal(repository, seed.Claim)).Should().BeOfType<JobWriteResult.ResultUnknown>();
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_rolls_back_pending_when_the_database_rejects_the_failed_projection(
+        [Values(false, true)] bool delete,
+        [Values(false, true)] bool exhausted
+    )
+    {
+        var seed = await SeedRetry(delete);
+        await using var connection = await Open();
+        if (exhausted)
+        {
+            await ExpireTerminalClaim(connection, seed.Claim);
+        }
+        await connection.ExecuteAsync(
+            """ALTER TABLE dmscs."DataStoreManage" ADD CONSTRAINT "CK_RetryProjectionTest" CHECK ("Status" NOT IN ('CreateError', 'DeleteError'));"""
+        );
+        try
+        {
+            string before = await DeleteAcceptanceSnapshot();
+            var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings);
+            if (exhausted)
+            {
+                (await repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default))
+                    .Should()
+                    .BeOfType<JobExhaustResult.FailureUnknown>();
+            }
+            else
+            {
+                (await Terminal(repository, seed.Claim)).Should().BeOfType<JobWriteResult.ResultUnknown>();
+            }
+            (await DeleteAcceptanceSnapshot()).Should().Be(before);
+        }
+        finally
+        {
+            await connection.ExecuteAsync(
+                """ALTER TABLE dmscs."DataStoreManage" DROP CONSTRAINT "CK_RetryProjectionTest";"""
+            );
+        }
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_keeps_both_committed_outcomes_when_the_commit_acknowledgement_is_lost(
+        [Values(false, true)] bool delete
+    )
+    {
+        var seed = await SeedRetry(delete);
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                AfterOperation = (operation, _) =>
+                    operation == "Commit"
+                        ? Task.FromException(
+                            new InvalidOperationException("Injected lost commit acknowledgement.")
+                        )
+                        : Task.CompletedTask,
+            },
+        };
+        (await Terminal(repository, seed.Claim)).Should().BeOfType<JobWriteResult.ResultUnknown>();
+        await using var connection = await Open();
+        await AssertTerminalCommitted(connection, seed.Id, seed.Claim, delete);
+        string committed = await DeleteAcceptanceSnapshot();
+        (await Terminal(repository, seed.Claim)).Should().BeOfType<JobWriteResult.OwnershipLost>();
+        (await DeleteAcceptanceSnapshot()).Should().Be(committed);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_does_not_project_without_live_current_ownership(
+        [Values(false, true)] bool delete,
+        [Values("owner", "token", "expired")] string stale
+    )
+    {
+        var seed = await SeedRetry(delete);
+        if (stale == "expired")
+        {
+            await using var connection = await Open();
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE "Id" = @Id;""",
+                new { seed.Claim.Id }
+            );
+        }
+        string before = await DeleteAcceptanceSnapshot();
+        List<string> operations = [];
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                BeforeOperation = (operation, _) =>
+                {
+                    operations.Add(operation);
+                    return Task.CompletedTask;
+                },
+            },
+        };
+        (
+            await repository.FailTerminal(
+                seed.Claim.Id,
+                stale == "owner" ? "stale-worker" : seed.Claim.LeaseOwner,
+                seed.Claim.FencingToken + (stale == "token" ? 1 : 0),
+                JobErrorCode.InvalidPayload,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobWriteResult.OwnershipLost>();
+        operations.Should().NotContain("RetryTenantGate");
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_requires_exact_persisted_partition_current_job_and_operation(
+        [Values(false, true)] bool delete,
+        [Values(false, true)] bool exhausted,
+        [Values("tenant", "job", "job-case", "job-space", "type", "type-case", "type-space", "ordinary")]
+            string mismatch
+    )
+    {
+        var seed = await SeedRetry(delete);
+        await using var connection = await Open();
+        string jobColumn = delete ? "DeleteJobId" : "CreateJobId";
+        if (mismatch == "tenant")
+        {
+            long tenantId = await Tenant("other-retry-tenant");
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."Job" SET "TenantId" = @TenantId WHERE "Id" = @Id;""",
+                new { seed.Claim.Id, TenantId = tenantId }
+            );
+        }
+        else if (mismatch.StartsWith("job", StringComparison.Ordinal))
+        {
+            // Use a lettered sentinel so the case mismatch is deterministic even for an all-digit generated ID.
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."Job" SET "JobId" = 'RetryOperation' WHERE "Id" = @Id;""",
+                new { seed.Claim.Id }
+            );
+            string jobId = mismatch switch
+            {
+                "job-case" => "retryoperation",
+                "job-space" => "RetryOperation ",
+                _ => "new-operation",
+            };
+            await connection.ExecuteAsync(
+                $"UPDATE dmscs.\"DataStoreManage\" SET \"{jobColumn}\" = @JobId WHERE \"Id\" = @Id;",
+                new { seed.Id, JobId = jobId }
+            );
+        }
+        else
+        {
+            string type = mismatch switch
+            {
+                "type" => delete ? ManagedJobTypes.Create : ManagedJobTypes.Delete,
+                "type-case" => seed.Claim.JobType.ToLowerInvariant(),
+                "type-space" => seed.Claim.JobType + " ",
+                _ => "ordinary-job",
+            };
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."Job" SET "JobType" = @Type WHERE "Id" = @Id;""",
+                new { seed.Claim.Id, Type = type }
+            );
+        }
+        var before = await DeleteRow(connection, seed.Id);
+        List<string> operations = [];
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                BeforeOperation = (operation, _) =>
+                {
+                    operations.Add(operation);
+                    return Task.CompletedTask;
+                },
+            },
+        };
+        if (exhausted)
+        {
+            await ExpireTerminalClaim(connection, seed.Claim);
+            (await repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default))
+                .Should()
+                .BeOfType<JobExhaustResult.Success>()
+                .Which.ExhaustedCount.Should()
+                .Be(1);
+        }
+        else
+        {
+            (await Terminal(repository, seed.Claim)).Should().BeOfType<JobWriteResult.Success>();
+        }
+        (await DeleteRow(connection, seed.Id)).Should().BeEquivalentTo(before);
+        if (mismatch is "type-case" or "type-space" or "ordinary")
+        {
+            operations.Should().NotContain("RetryTenantGate");
+            operations.Should().NotContain("LockRetryAggregate");
+        }
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_preserves_created_deleted_and_newer_delete_operations(
+        [Values(false, true)] bool exhausted,
+        [Values("Created", "Deleted", "newer-delete")] string protectedState
+    )
+    {
+        ClaimedJob claim;
+        int id;
+        if (protectedState == "Deleted")
+        {
+            var deletion = await SeedDeletion();
+            await PublicationRepository().CompleteDeleteAsync(deletion.Command, deletion.Execution, default);
+            claim = deletion.Claim;
+            id = deletion.Command.Id;
+        }
+        else
+        {
+            var creation = await SeedPublication();
+            await PublicationRepository().PublishCreateAsync(creation.Command, creation.Execution, default);
+            claim = creation.Claim;
+            id = creation.Command.Id;
+            if (protectedState == "newer-delete")
+            {
+                using var services = AcceptanceServices(null);
+                (
+                    await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
+                        .AcceptDeleteAsync(id, default)
+                )
+                    .Should()
+                    .BeOfType<DataStoreManageDeleteResult.Success>();
+            }
+        }
+        await using var connection = await Open();
+        var before = await DeleteRow(connection, id);
+        await TerminalOrExhaust(claim, exhausted);
+        (await DeleteRow(connection, id)).Should().BeEquivalentTo(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_rechecks_database_time_after_waiting_for_the_gate_or_aggregate(
+        [Values("gate", "aggregate")] string heldLock
+    )
+    {
+        var seed = await SeedRetry(false);
+        await using var observer = await Open();
+        var before = await DeleteRow(observer, seed.Id);
+        await using var blocker = await Open();
+        await using var transaction = await blocker.BeginTransactionAsync();
+        if (heldLock == "gate")
+        {
+            await DataStoreCatalog.AcquireTenantGateAsync(transaction, null, default);
+        }
+        else
+        {
+            await blocker.ExecuteScalarAsync<int>(
+                """SELECT "Id" FROM dmscs."DataStoreManage" WHERE "Id" = @Id FOR UPDATE;""",
+                new { seed.Id },
+                transaction
+            );
+        }
+        DateTime expires = await observer.ExecuteScalarAsync<DateTime>(
+            """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') + interval '2 seconds' WHERE "Id" = @Id RETURNING "LeaseExpiresAt";""",
+            new { seed.Claim.Id }
+        );
+        var enteringWait = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                BeforeOperation = (operation, _) =>
+                {
+                    if (operation == (heldLock == "gate" ? "RetryTenantGate" : "LockRetryAggregate"))
+                    {
+                        enteringWait.TrySetResult();
+                    }
+                    return Task.CompletedTask;
+                },
+            },
+        };
+        Task<JobWriteResult> retry = Terminal(repository, seed.Claim);
+        try
+        {
+            await enteringWait.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            // Observe the database clock, not a guessed delay, while the requested lock remains held.
+            while (
+                await observer.ExecuteScalarAsync<DateTime>("SELECT clock_timestamp() AT TIME ZONE 'UTC';")
+                < expires
+            )
+            {
+                await Task.Delay(20, timeout.Token);
+            }
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+        (await retry).Should().BeOfType<JobWriteResult.OwnershipLost>();
+        (await DeleteRow(observer, seed.Id)).Should().BeEquivalentTo(before);
+        (
+            await observer.ExecuteScalarAsync<string>(
+                """SELECT "Status" FROM dmscs."Job" WHERE "Id" = @Id;""",
+                new { seed.Claim.Id }
+            )
+        )
+            .Should()
+            .Be("InProgress");
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_terminal_projects_an_unstarted_create_without_a_payload_or_pin()
+    {
+        using var services = AcceptanceServices(null);
+        var ready = new DmsDataStoreProvisionerReadiness();
+        ready.Record(new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UtcNow));
+        var accepted = (
+            await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), readiness: ready)
+                .AcceptCreateAsync(CreateCommand("Unstarted", "postgresql"), default)
+        )
+            .Should()
+            .BeOfType<DataStoreManageCreateResult.Success>()
+            .Subject;
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings);
+        var claim = (await repository.ClaimNext("pre-handler-worker", 300, 5, default))
+            .Should()
+            .BeOfType<JobClaimResult.Claimed>()
+            .Subject.Job;
+        await using var connection = await Open();
+        await connection.ExecuteAsync(
+            """UPDATE dmscs."Job" SET "Payload" = '{}', "PayloadVersion" = 99 WHERE "Id" = @Id;""",
+            new { claim.Id }
+        );
+        (await Terminal(repository, claim)).Should().BeOfType<JobWriteResult.Success>();
+        await AssertTerminalCommitted(connection, accepted.Id, claim, false);
+        (await DeleteRow(connection, accepted.Id))["PinnedContractVersion"].Should().BeNull();
+        (await PublicationRepository().GetByIdAsync(accepted.Id, default))
+            .Should()
+            .BeOfType<DataStoreManageGetResult.Success>();
+    }
+
+    private async Task TerminalOrExhaust(ClaimedJob claim, bool exhausted)
+    {
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings);
+        if (!exhausted)
+        {
+            (await Terminal(repository, claim)).Should().BeOfType<JobWriteResult.Success>();
+            return;
+        }
+        await using var connection = await Open();
+        await connection.ExecuteAsync(
+            """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE "Id" = @Id;""",
+            new { claim.Id }
+        );
+        (await repository.Exhaust(claim.AttemptCount, JobErrorCode.AttemptsExhausted, default))
+            .Should()
+            .BeOfType<JobExhaustResult.Success>()
+            .Which.ExhaustedCount.Should()
+            .Be(1);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_retains_bounded_terminal_evidence_and_every_identity_field(
+        [Values(false, true)] bool delete,
+        [Values("Pending", "InProgress", "Failed")] string startingState,
+        [Values(
+            "InvalidPayload",
+            "UnsupportedPayloadVersion",
+            "TenantUnavailable",
+            "AttemptsExhausted",
+            "ConsumerRejected"
+        )]
+            string code
+    )
+    {
+        long tenantId = await Tenant("terminal-tenant");
+        var seed = await SeedRetry(delete, tenantId);
+        await using var connection = await Open();
+        string operation = delete ? "Delete" : "Create";
+        await connection.ExecuteAsync(
+            """
+            UPDATE dmscs."DataStoreManage" SET "Status" = @Status WHERE "Id" = @Id;
+            UPDATE dmscs."Job" SET "Payload" = '{}', "PayloadVersion" = 99 WHERE "Id" = @JobRowId;
+            """,
+            new
+            {
+                seed.Id,
+                Status = startingState == "Pending" ? "Pending" + operation : operation + startingState,
+                JobRowId = seed.Claim.Id,
+            }
+        );
+        var before = await DeleteRow(connection, seed.Id);
+        var error =
+            JobErrorCode.Infrastructure.FirstOrDefault(x => x.Code == code)
+            ?? new JobErrorCode(code, "The consumer rejected the job.");
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).FailTerminal(
+                seed.Claim.Id,
+                seed.Claim.LeaseOwner,
+                seed.Claim.FencingToken,
+                error,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobWriteResult.Success>();
+        var after = await DeleteRow(connection, seed.Id);
+        after["Status"].Should().Be(operation + "Error");
+        after["LastAttempt"].Should().Be(seed.Claim.AttemptCount);
+        after["LastFailureCategory"]
+            .Should()
+            .Be(code == "AttemptsExhausted" ? "OperatorInspectionRequired" : "Permanent");
+        after["LastFailureJobCode"].Should().Be(code == "ConsumerRejected" ? "HandlerFailed" : code);
+        after["LastFailureProvisioningCode"].Should().BeNull();
+        (
+            await connection.ExecuteScalarAsync<string>(
+                """SELECT "ErrorMessage" FROM dmscs."Job" WHERE "Id" = @Id;""",
+                new { seed.Claim.Id }
+            )
+        )
+            .Should()
+            .Be(error.Message);
+        foreach (
+            string field in new[]
+            {
+                "Status",
+                "LastAttempt",
+                "LastFailureCategory",
+                "LastFailureProvisioningCode",
+                "LastFailureJobCode",
+                "UpdatedAt",
+                "LastModifiedDate",
+                "LastRefreshed",
+            }
+        )
+        {
+            before.Remove(field);
+            after.Remove(field);
+        }
+        after.Should().BeEquivalentTo(before);
+        (await PublicationRepository(tenantId).GetByIdAsync(seed.Id, default))
+            .Should()
+            .BeOfType<DataStoreManageGetResult.Success>();
+    }
+
+    private static Task ExpireTerminalClaim(DbConnection connection, ClaimedJob claim) =>
+        connection.ExecuteAsync(
+            """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE "Id" = @Id;""",
+            new { claim.Id }
+        );
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_exhausts_the_last_attempt_before_dispatch_and_retains_inspection_evidence(
+        [Values(false, true)] bool delete,
+        [Values("Pending", "InProgress", "Failed")] string startingState
+    )
+    {
+        var seed = await SeedRetry(delete);
+        await using var connection = await Open();
+        string operation = delete ? "Delete" : "Create";
+        await connection.ExecuteAsync(
+            """
+            UPDATE dmscs."DataStoreManage" SET "Status" = @Status, "LastAttempt" = 0 WHERE "Id" = @Id;
+            UPDATE dmscs."Job" SET "Payload" = '{}', "PayloadVersion" = 99 WHERE "Id" = @JobRowId;
+            """,
+            new
+            {
+                seed.Id,
+                Status = startingState == "Pending" ? "Pending" + operation : operation + startingState,
+                JobRowId = seed.Claim.Id,
+            }
+        );
+        await ExpireTerminalClaim(connection, seed.Claim);
+        var before = await DeleteRow(connection, seed.Id);
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
+                1,
+                JobErrorCode.AttemptsExhausted,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobExhaustResult.Success>()
+            .Which.ExhaustedCount.Should()
+            .Be(1);
+        var after = await DeleteRow(connection, seed.Id);
+        after["Status"].Should().Be(operation + "Error");
+        after["LastAttempt"].Should().Be(1);
+        after["LastFailureCategory"].Should().Be("OperatorInspectionRequired");
+        after["LastFailureJobCode"].Should().Be("AttemptsExhausted");
+        DateTime finished = await connection.ExecuteScalarAsync<DateTime>(
+            """SELECT "FinishedAt" FROM dmscs."Job" WHERE "Id" = @Id;""",
+            new { seed.Claim.Id }
+        );
+        after["UpdatedAt"].Should().Be(finished);
+        foreach (
+            string field in new[]
+            {
+                "Status",
+                "LastAttempt",
+                "LastFailureCategory",
+                "LastFailureProvisioningCode",
+                "LastFailureJobCode",
+                "UpdatedAt",
+                "LastModifiedDate",
+                "LastRefreshed",
+            }
+        )
+        {
+            before.Remove(field);
+            after.Remove(field);
+        }
+        after.Should().BeEquivalentTo(before);
+        // Real retention removes the only job evidence; the aggregate must remain independently readable.
+        (await new JobRetentionRepository(PublicationOptions).DeleteFinishedOlderThan(0, 1000, default))
+            .Should()
+            .BeOfType<JobRetentionResult.Success>();
+        (
+            await connection.ExecuteScalarAsync<int>(
+                """SELECT COUNT(*) FROM dmscs."Job" WHERE "Id" = @Id;""",
+                new { seed.Claim.Id }
+            )
+        )
+            .Should()
+            .Be(0);
+        (await PublicationRepository().GetByIdAsync(seed.Id, default))
+            .Should()
+            .BeOfType<DataStoreManageGetResult.Success>();
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_rolls_back_exhaustion_if_projection_fails_and_keeps_committed_unknown_outcomes(
+        [Values(false, true)] bool delete,
+        [Values("ExhaustBatch", "WriteRetryAggregate", "Commit")] string interruptedAfter
+    )
+    {
+        var seed = await SeedRetry(delete);
+        await using var connection = await Open();
+        await ExpireTerminalClaim(connection, seed.Claim);
+        string before = await DeleteAcceptanceSnapshot();
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                AfterOperation = (operation, _) =>
+                    operation == interruptedAfter
+                        ? Task.FromException(new InvalidOperationException("Injected exhaust interruption."))
+                        : Task.CompletedTask,
+            },
+        };
+        (await repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default))
+            .Should()
+            .BeOfType<JobExhaustResult.FailureUnknown>();
+        if (interruptedAfter != "Commit")
+        {
+            (await DeleteAcceptanceSnapshot()).Should().Be(before);
+            return;
+        }
+        var aggregate = await DeleteRow(connection, seed.Id);
+        aggregate["Status"].Should().Be(delete ? "DeleteError" : "CreateError");
+        aggregate["LastFailureCategory"].Should().Be("OperatorInspectionRequired");
+        (
+            await connection.ExecuteScalarAsync<string>(
+                """SELECT "Status" FROM dmscs."Job" WHERE "Id" = @Id;""",
+                new { seed.Claim.Id }
+            )
+        )
+            .Should()
+            .Be("Error");
+        string committed = await DeleteAcceptanceSnapshot();
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
+                1,
+                JobErrorCode.AttemptsExhausted,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobExhaustResult.Success>()
+            .Which.ExhaustedCount.Should()
+            .Be(0);
+        (await DeleteAcceptanceSnapshot()).Should().Be(committed);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_prevents_retention_from_erasing_an_uncommitted_terminal_projection(
+        [Values(false, true)] bool exhausted
+    )
+    {
+        var seed = await SeedRetry(false);
+        await using var connection = await Open();
+        if (exhausted)
+        {
+            await ExpireTerminalClaim(connection, seed.Claim);
+        }
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                AfterOperation = async (operation, token) =>
+                {
+                    if (operation == (exhausted ? "ExhaustBatch" : "GuardedWrite"))
+                    {
+                        held.TrySetResult();
+                        await release.Task.WaitAsync(token);
+                    }
+                },
+            },
+        };
+        Task<JobExhaustResult>? exhaust = exhausted
+            ? repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default)
+            : null;
+        Task<JobWriteResult>? terminal = exhausted ? null : Terminal(repository, seed.Claim);
+        var retention = new JobRetentionRepository(PublicationOptions);
+        try
+        {
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            (await retention.DeleteFinishedOlderThan(0, 1000, default))
+                .Should()
+                .BeOfType<JobRetentionResult.Success>()
+                .Which.DeletedCount.Should()
+                .Be(0);
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+        if (exhaust is not null)
+        {
+            (await exhaust).Should().BeOfType<JobExhaustResult.Success>();
+        }
+        if (terminal is not null)
+        {
+            (await terminal).Should().BeOfType<JobWriteResult.Success>();
+        }
+        (await retention.DeleteFinishedOlderThan(0, 1000, default))
+            .Should()
+            .BeOfType<JobRetentionResult.Success>()
+            .Which.DeletedCount.Should()
+            .Be(1);
+        var aggregate = await DeleteRow(connection, seed.Id);
+        aggregate["Status"].Should().Be("CreateError");
+        aggregate["LastFailureJobCode"].Should().Be(exhausted ? "AttemptsExhausted" : "InvalidPayload");
+        (await PublicationRepository().GetByIdAsync(seed.Id, default))
+            .Should()
+            .BeOfType<DataStoreManageGetResult.Success>();
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_commits_full_managed_exhaust_batches_and_honors_cancellation_between_batches(
+        [Values(false, true)] bool cancelBetweenBatches,
+        [Values(false, true)] bool multitenant
+    )
+    {
+        long? firstTenant = multitenant ? await Tenant("batch-first") : null;
+        long? secondTenant = multitenant ? await Tenant("batch-second") : null;
+        var seed = await SeedRetry(false);
+        await using var connection = await Open();
+        await ExpireTerminalClaim(connection, seed.Claim);
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO dmscs."Job" ("JobId", "TenantId", "JobType", "PayloadVersion", "Payload", "Status", "AttemptCount", "NextAttemptAt")
+            SELECT concat('batch-', n), CASE n % 3 WHEN 1 THEN @FirstTenant WHEN 2 THEN @SecondTenant ELSE NULL END, @JobType, 1, '{}', 'Pending', 1, @Now FROM generate_series(1, 1000) AS n;
+            INSERT INTO dmscs."DataStoreManage" ("Name", "TenantId", "Template", "Status", "TargetDatabaseName", "ExpectedSourceIdentity",
+                "EndpointDescriptor", "CreateJobId", "CreatedAt", "UpdatedAt", "LastRefreshed", "LastModifiedDate")
+            SELECT concat('Batch', n), CASE n % 3 WHEN 1 THEN @FirstTenant WHEN 2 THEN @SecondTenant ELSE NULL END, 'Minimal', 'PendingCreate', concat('dms_batch_', n), "ExpectedSourceIdentity",
+                "EndpointDescriptor", concat('batch-', n), @Now, @Now, @Now, @Now
+            FROM dmscs."DataStoreManage" CROSS JOIN generate_series(1, 1000) AS n WHERE "Id" = @Id;
+            """,
+            new
+            {
+                seed.Id,
+                FirstTenant = firstTenant,
+                SecondTenant = secondTenant,
+                JobType = ManagedJobTypes.Create,
+                Now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
+            }
+        );
+        using var stopping = new CancellationTokenSource();
+        List<int> batches = [];
+        List<int> gatesPerBatch = [];
+        int tenantGates = 0;
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                BeforeOperation = (operation, _) =>
+                {
+                    if (operation == "RetryTenantGate")
+                    {
+                        tenantGates++;
+                    }
+                    return Task.CompletedTask;
+                },
+            },
+            AfterExhaustBatch = count =>
+            {
+                batches.Add(count);
+                gatesPerBatch.Add(tenantGates);
+                tenantGates = 0;
+                if (cancelBetweenBatches)
+                {
+                    stopping.Cancel();
+                }
+            },
+        };
+        (await repository.Exhaust(1, JobErrorCode.AttemptsExhausted, stopping.Token))
+            .Should()
+            .BeOfType<JobExhaustResult.Success>()
+            .Which.ExhaustedCount.Should()
+            .Be(cancelBetweenBatches ? 1000 : 1001);
+        batches.Should().Equal(cancelBetweenBatches ? new[] { 1000 } : new[] { 1000, 1 });
+        // The full batch contains interleaved default and named tenants; every selected partition is gated once.
+        int firstBatchGates = multitenant ? 3 : 1;
+        gatesPerBatch
+            .Should()
+            .Equal(cancelBetweenBatches ? new[] { firstBatchGates } : new[] { firstBatchGates, 1 });
+        (
+            await connection.ExecuteScalarAsync<int>(
+                """SELECT COUNT(*) FROM dmscs."DataStoreManage" WHERE "Status" = 'CreateError' AND "LastAttempt" = 1 AND "LastFailureJobCode" = 'AttemptsExhausted' AND "LastFailureCategory" = 'OperatorInspectionRequired';"""
+            )
+        )
+            .Should()
+            .Be(cancelBetweenBatches ? 1000 : 1001);
+        (
+            await connection.ExecuteScalarAsync<int>(
+                """SELECT COUNT(*) FROM dmscs."Job" j JOIN dmscs."DataStoreManage" m ON j."JobId" COLLATE "C" = m."CreateJobId" WHERE j."Status" = 'Error' AND m."Status" <> 'CreateError';"""
+            )
+        )
+            .Should()
+            .Be(0);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_keeps_managed_exhaustion_excluded_and_live_leases_untouched(
+        [Values(false, true)] bool live
+    )
+    {
+        var seed = await SeedRetry(false);
+        if (!live)
+        {
+            await using var connection = await Open();
+            await ExpireTerminalClaim(connection, seed.Claim);
+        }
+        string before = await DeleteAcceptanceSnapshot();
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
+                1,
+                JobErrorCode.AttemptsExhausted,
+                live ? JobClaimPolicy.All : JobClaimPolicy.ExcludeManagedDataStores,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobExhaustResult.Success>()
+            .Which.ExhaustedCount.Should()
+            .Be(0);
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+}

@@ -11,10 +11,18 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 
-/// <summary>Projects a retry only inside the lease repository's transaction, after its fresh guarded write.</summary>
+/// <summary>Projects managed outcomes only inside the lease repository's job-locked transaction.</summary>
 internal static class ManagedJobRetryOutcome
 {
     internal sealed record Job(string JobId, long? TenantId, string JobType, int AttemptCount);
+
+    internal sealed record ExhaustedJob(
+        string JobId,
+        long? TenantId,
+        string JobType,
+        int AttemptCount,
+        DateTime DatabaseUtcNow
+    );
 
     internal sealed record Target(int Id, int Attempt, string Status);
 
@@ -24,7 +32,9 @@ internal static class ManagedJobRetryOutcome
         JobDatabaseSession session,
         Job job,
         JobDeadline budget,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool terminal = false,
+        bool tenantGateHeld = false
     )
     {
         // Ordinary jobs also run on older schemas; never touch the managed catalog for them.
@@ -33,12 +43,15 @@ internal static class ManagedJobRetryOutcome
             return null;
         }
         bool isCreate = job.JobType == ManagedJobTypes.Create;
-        await session.RunAsync(
-            "RetryTenantGate",
-            token => DataStoreCatalog.AcquireTenantGateAsync(session.Transaction!, job.TenantId, token),
-            budget,
-            cancellationToken
-        );
+        if (!tenantGateHeld)
+        {
+            await session.RunAsync(
+                "RetryTenantGate",
+                token => DataStoreCatalog.AcquireTenantGateAsync(session.Transaction!, job.TenantId, token),
+                budget,
+                cancellationToken
+            );
+        }
         var aggregate = await session.RunAsync(
             "LockRetryAggregate",
             token =>
@@ -73,9 +86,13 @@ internal static class ManagedJobRetryOutcome
         }
         if (job.AttemptCount <= 0 || job.AttemptCount < aggregate.LastAttempt)
         {
-            throw new InvalidOperationException("The managed retry attempt is inconsistent.");
+            throw new InvalidOperationException("The managed job attempt is inconsistent.");
         }
-        return new(aggregate.Id, job.AttemptCount, isCreate ? "CreateFailed" : "DeleteFailed");
+        return new(
+            aggregate.Id,
+            job.AttemptCount,
+            (isCreate ? "Create" : "Delete") + (terminal ? "Error" : "Failed")
+        );
     }
 
     internal static async Task WriteAsync(
@@ -83,10 +100,17 @@ internal static class ManagedJobRetryOutcome
         Target target,
         DateTime databaseUtcNow,
         JobDeadline budget,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        JobErrorCode? terminalError = null
     )
     {
-        var failure = ManagedDataStoreFailure.RetryableJobFailure();
+        // Consumer codes remain on Job; retained aggregate evidence accepts only the bounded infrastructure taxonomy.
+        var failure = terminalError is null
+            ? ManagedDataStoreFailure.RetryableJobFailure()
+            : ManagedDataStoreFailure.FromJob(
+                JobErrorCode.Infrastructure.FirstOrDefault(known => known.Code == terminalError.Code)
+                    ?? JobErrorCode.HandlerFailed
+            );
         DynamicParameters parameters = new(
             new
             {
@@ -122,7 +146,52 @@ internal static class ManagedJobRetryOutcome
         );
         if (updated != 1)
         {
-            throw new InvalidOperationException("The managed retry outcome was not saved.");
+            throw new InvalidOperationException("The managed job outcome was not saved.");
+        }
+    }
+
+    internal static async Task WriteExhaustedAsync(
+        JobDatabaseSession session,
+        IEnumerable<ExhaustedJob> jobs,
+        JobDeadline budget
+    )
+    {
+        // Every job row is already locked. Take tenant gates in a stable order across overlapping batches,
+        // and only once per tenant, before locking that tenant's matching aggregates.
+        foreach (
+            var tenant in jobs.Where(job => job.JobType is ManagedJobTypes.Create or ManagedJobTypes.Delete)
+                .GroupBy(job => job.TenantId)
+                .OrderBy(group => group.Key)
+        )
+        {
+            await session.RunAsync(
+                "RetryTenantGate",
+                token => DataStoreCatalog.AcquireTenantGateAsync(session.Transaction!, tenant.Key, token),
+                budget,
+                CancellationToken.None
+            );
+            foreach (var job in tenant.OrderBy(job => job.JobId, StringComparer.Ordinal))
+            {
+                var target = await LockAsync(
+                    session,
+                    new(job.JobId, job.TenantId, job.JobType, job.AttemptCount),
+                    budget,
+                    CancellationToken.None,
+                    terminal: true,
+                    tenantGateHeld: true
+                );
+                if (target is not null)
+                {
+                    await WriteAsync(
+                        session,
+                        target,
+                        job.DatabaseUtcNow,
+                        budget,
+                        CancellationToken.None,
+                        JobErrorCode.AttemptsExhausted
+                    );
+                }
+            }
         }
     }
 }
