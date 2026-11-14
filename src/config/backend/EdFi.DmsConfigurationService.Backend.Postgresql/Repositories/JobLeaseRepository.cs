@@ -45,6 +45,13 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
           AND j."LeaseExpiresAt" > t.now
         """;
 
+    private const string ReadRetryJobSql = $"""
+        {FreshTime}
+        SELECT j."JobId", j."TenantId", j."JobType", j."AttemptCount"
+        FROM "dmscs"."Job" AS j, t
+        WHERE {OwnershipPredicate};
+        """;
+
     private const string RenewSql = $"""
         {FreshTime}
         UPDATE "dmscs"."Job" AS j
@@ -401,7 +408,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 BackoffSeconds = backoffSeconds,
             },
             id,
-            cancellationToken
+            cancellationToken,
+            projectManagedRetry: true
         );
 
     public Task<JobWriteResult> FailTerminal(
@@ -453,7 +461,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         string guardedUpdateSql,
         object parameters,
         long id,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool projectManagedRetry = false
     )
     {
         JobDeadline budget = JobDeadline.Start(timings.RenewalTimeout);
@@ -482,6 +491,26 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 cancellationToken
             );
 
+            ManagedJobRetryOutcome.Target? retryTarget = null;
+            if (projectManagedRetry)
+            {
+                var job = await session.RunAsync(
+                    "ReadRetryJob",
+                    token =>
+                        session.Connection.QuerySingleOrDefaultAsync<ManagedJobRetryOutcome.Job>(
+                            PostgresqlJobSession.Command(session, ReadRetryJobSql, parameters, budget, token)
+                        ),
+                    budget,
+                    cancellationToken
+                );
+                if (job is null)
+                {
+                    return new JobWriteResult.OwnershipLost();
+                }
+                retryTarget = await ManagedJobRetryOutcome.LockAsync(session, job, budget, cancellationToken);
+            }
+
+            // Sample ownership again after any catalog gate or aggregate lock wait.
             guardedWriteSent = true;
             WrittenRow? written = await session.RunAsync(
                 "GuardedWrite",
@@ -495,6 +524,17 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             if (written is null)
             {
                 return new JobWriteResult.OwnershipLost();
+            }
+
+            if (retryTarget is not null)
+            {
+                await ManagedJobRetryOutcome.WriteAsync(
+                    session,
+                    retryTarget,
+                    written.DatabaseUtcNow,
+                    budget,
+                    cancellationToken
+                );
             }
 
             if (BeforeOwnershipCommit is { } beforeCommit)
