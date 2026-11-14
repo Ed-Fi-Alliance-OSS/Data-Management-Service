@@ -44,7 +44,7 @@ public partial class Given_data_store_namespace_reservations
     {
         await using var connection = await Open();
         await connection.ExecuteAsync(
-            """DELETE FROM dmscs."DataStoreManage"; DELETE FROM dmscs."DataStore"; DELETE FROM dmscs."Tenant";"""
+            """DELETE FROM dmscs."DataStoreManage"; DELETE FROM dmscs."Job"; DELETE FROM dmscs."DataStore"; DELETE FROM dmscs."Tenant";"""
         );
     }
 
