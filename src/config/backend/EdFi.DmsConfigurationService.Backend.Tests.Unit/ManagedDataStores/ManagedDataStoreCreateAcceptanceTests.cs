@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
@@ -17,6 +18,31 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.ManagedDataStores;
 [TestFixture]
 public class Given_managed_data_store_create_acceptance
 {
+    [TestCase("Ready")]
+    [TestCase("Disabled")]
+    [TestCase("StartupPending")]
+    public async Task It_refuses_disabled_management_before_resolution_or_repository_access(string readiness)
+    {
+        var source = A.Fake<IDmsAdminConnectionSource>();
+        var repository = A.Fake<IDataStoreManageRepository>();
+        ManagedDataStoreCreateAcceptance acceptance = new(
+            Readiness(readiness),
+            source,
+            PostgresqlManagedEndpoint.TryParse,
+            ProtectedDatabaseNames.Create("cms", []),
+            repository,
+            JobClaimPolicy.ExcludeManagedDataStores
+        );
+        (await acceptance.AcceptAsync(Request(), default))
+            .Should()
+            .BeOfType<DataStoreManageCreateResult.ManagementDisabled>();
+        A.CallTo(() => source.ResolveAsync(A<CancellationToken>._)).MustNotHaveHappened();
+        A.CallTo(() =>
+                repository.AcceptCreateAsync(A<ManagedDataStoreCreateCommand>._, A<CancellationToken>._)
+            )
+            .MustNotHaveHappened();
+    }
+
     private static DmsDataStoreProvisionerReadiness Readiness(string state, string provider = "postgresql")
     {
         DmsDataStoreProvisionerReadiness readiness = new();
@@ -51,7 +77,8 @@ public class Given_managed_data_store_create_acceptance
             source,
             parser ?? PostgresqlManagedEndpoint.TryParse,
             protectedNames ?? ProtectedDatabaseNames.Create("cms", []),
-            repository
+            repository,
+            EdFi.DmsConfigurationService.Backend.Jobs.JobClaimPolicy.All
         );
 
     private static DataStoreManageInsertCommand Request() =>

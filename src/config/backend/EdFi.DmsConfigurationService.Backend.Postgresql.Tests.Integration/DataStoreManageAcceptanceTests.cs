@@ -147,7 +147,8 @@ public partial class Given_data_store_namespace_reservations
             readiness ?? CreateReadiness(),
             enqueuer,
             protectedNames ?? ProtectedDatabaseNames.Create("cms", []),
-            ordinaryRepository ?? Repository(tenantId)
+            ordinaryRepository ?? Repository(tenantId),
+            EdFi.DmsConfigurationService.Backend.Jobs.JobClaimPolicy.All
         );
     }
 
@@ -676,7 +677,8 @@ public partial class Given_data_store_namespace_reservations
             source,
             PostgresqlManagedEndpoint.TryParse,
             ProtectedDatabaseNames.Create("cms", []),
-            repository
+            repository,
+            JobClaimPolicy.All
         );
         (await acceptance.AcceptAsync(new() { Name = "Store", DatabaseTemplate = "Minimal" }, default))
             .Should()
@@ -719,7 +721,8 @@ public partial class Given_data_store_namespace_reservations
             source,
             PostgresqlManagedEndpoint.TryParse,
             ProtectedDatabaseNames.Create("cms", []),
-            ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), readiness: readiness)
+            ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), readiness: readiness),
+            JobClaimPolicy.All
         );
         (await acceptance.AcceptAsync(new() { Name = "Store", DatabaseTemplate = "Minimal" }, default))
             .Should()
@@ -819,7 +822,8 @@ public partial class Given_data_store_namespace_reservations
             source,
             parser,
             ProtectedDatabaseNames.Create("cms", []),
-            ManagedRepository(decorator, readiness: ready)
+            ManagedRepository(decorator, readiness: ready),
+            JobClaimPolicy.All
         );
         (await acceptance.AcceptAsync(new() { Name = "Store", DatabaseTemplate = "Minimal" }, default))
             .Should()
@@ -899,7 +903,8 @@ public partial class Given_data_store_namespace_reservations
             source,
             PostgresqlManagedEndpoint.TryParse,
             ProtectedDatabaseNames.Create("cms", []),
-            ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
+            ManagedRepository(services.GetRequiredService<IJobEnqueuer>()),
+            JobClaimPolicy.All
         );
         Task<DataStoreManageCreateResult> pending = acceptance.AcceptAsync(
             new() { Name = "store", DatabaseTemplate = "Minimal" },

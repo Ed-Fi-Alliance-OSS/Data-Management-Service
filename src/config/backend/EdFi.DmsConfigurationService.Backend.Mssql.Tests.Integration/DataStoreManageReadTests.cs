@@ -457,7 +457,8 @@ public partial class Given_data_store_namespace_reservations
             CreateReadiness(),
             A.Fake<IJobEnqueuer>(),
             ProtectedDatabaseNames.Create("cms", []),
-            Repository()
+            Repository(),
+            EdFi.DmsConfigurationService.Backend.Jobs.JobClaimPolicy.All
         );
 
     [Test, Category("ManagedDataStoreReads")]

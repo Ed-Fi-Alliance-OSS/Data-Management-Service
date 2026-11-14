@@ -19,6 +19,15 @@ public interface IJobLeaseRepository
         CancellationToken cancellationToken
     );
 
+    /// <summary>Applies the restart-scoped exclusions before choosing or locking a candidate.</summary>
+    Task<JobClaimResult> ClaimNext(
+        string owner,
+        int leaseSeconds,
+        int maxAttempts,
+        JobClaimPolicy policy,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>
     /// Terminates jobs at or over <paramref name="maxAttempts"/> with <paramref name="errorCode"/>, in
     /// committed batches of at most 1 000 rows, checking <paramref name="cancellationToken"/> between batches.
@@ -26,6 +35,14 @@ public interface IJobLeaseRepository
     Task<JobExhaustResult> Exhaust(
         int maxAttempts,
         JobErrorCode errorCode,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Leaves excluded jobs unchanged, including their attempts, fencing tokens and leases.</summary>
+    Task<JobExhaustResult> Exhaust(
+        int maxAttempts,
+        JobErrorCode errorCode,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     );
 

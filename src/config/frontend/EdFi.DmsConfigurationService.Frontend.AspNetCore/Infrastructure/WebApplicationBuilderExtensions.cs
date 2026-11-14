@@ -15,6 +15,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Mssql;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
@@ -385,6 +386,14 @@ public static class WebApplicationBuilderExtensions
     /// </summary>
     private static void ConfigureJobOptions(IServiceCollection services, IConfiguration configuration)
     {
+        // Capture once when the host is composed; configuration reloads must not change job eligibility.
+        DataStoreManagementOptions management =
+            configuration.GetSection("AppSettings").Get<DataStoreManagementOptions>() ?? new();
+        services.AddSingleton(
+            management.EnableDataStoreManagement
+                ? JobClaimPolicy.All
+                : JobClaimPolicy.ExcludeManagedDataStores
+        );
         services.AddSingleton<IValidateOptions<JobOptions>, JobOptionsValidator>();
         services
             .AddOptions<JobOptions>()

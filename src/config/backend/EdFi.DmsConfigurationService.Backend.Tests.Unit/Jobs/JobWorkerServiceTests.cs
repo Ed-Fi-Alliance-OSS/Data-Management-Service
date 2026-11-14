@@ -58,6 +58,21 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
         string owner,
         int leaseSeconds,
         int maxAttempts,
+        JobClaimPolicy policy,
+        CancellationToken cancellationToken
+    ) => ClaimNext(owner, leaseSeconds, maxAttempts, cancellationToken);
+
+    public Task<JobExhaustResult> Exhaust(
+        int maxAttempts,
+        JobErrorCode errorCode,
+        JobClaimPolicy policy,
+        CancellationToken cancellationToken
+    ) => Exhaust(maxAttempts, errorCode, cancellationToken);
+
+    public Task<JobClaimResult> ClaimNext(
+        string owner,
+        int leaseSeconds,
+        int maxAttempts,
         CancellationToken cancellationToken
     )
     {
@@ -247,7 +262,8 @@ public sealed class WorkerHarness : IDisposable
             _executor.Executor,
             Options.Create(_executor.Settings),
             _executor.Time,
-            Logger
+            Logger,
+            EdFi.DmsConfigurationService.Backend.Jobs.JobClaimPolicy.All
         );
     }
 

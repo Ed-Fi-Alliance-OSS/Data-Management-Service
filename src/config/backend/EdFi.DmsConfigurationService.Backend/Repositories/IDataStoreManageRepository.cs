@@ -144,6 +144,8 @@ public sealed record ManagedDataStoreCreateCommand(
 /// <summary>Internal acceptance outcomes, never a management API response body.</summary>
 public abstract record DataStoreManageCreateResult
 {
+    public sealed record ManagementDisabled() : DataStoreManageCreateResult;
+
     public sealed record Success(int Id, string JobId) : DataStoreManageCreateResult;
 
     public sealed record InvalidRequest() : DataStoreManageCreateResult;
@@ -164,6 +166,8 @@ public abstract record DataStoreManageCreateResult
 /// <summary>Internal acceptance outcomes, never a management API response body.</summary>
 public abstract record DataStoreManageDeleteResult
 {
+    public sealed record ManagementDisabled() : DataStoreManageDeleteResult;
+
     public sealed record Success(string JobId) : DataStoreManageDeleteResult;
 
     public sealed record NotFound() : DataStoreManageDeleteResult;

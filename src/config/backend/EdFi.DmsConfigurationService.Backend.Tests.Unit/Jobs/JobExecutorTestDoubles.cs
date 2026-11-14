@@ -195,6 +195,21 @@ public sealed class ScriptedLeaseRepository : IJobLeaseRepository
         string owner,
         int leaseSeconds,
         int maxAttempts,
+        JobClaimPolicy policy,
+        CancellationToken cancellationToken
+    ) => ClaimNext(owner, leaseSeconds, maxAttempts, cancellationToken);
+
+    public Task<JobExhaustResult> Exhaust(
+        int maxAttempts,
+        JobErrorCode errorCode,
+        JobClaimPolicy policy,
+        CancellationToken cancellationToken
+    ) => Exhaust(maxAttempts, errorCode, cancellationToken);
+
+    public Task<JobClaimResult> ClaimNext(
+        string owner,
+        int leaseSeconds,
+        int maxAttempts,
         CancellationToken cancellationToken
     )
     {

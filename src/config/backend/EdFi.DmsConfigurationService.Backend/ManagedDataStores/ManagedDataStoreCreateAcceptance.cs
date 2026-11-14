@@ -22,7 +22,8 @@ public sealed class ManagedDataStoreCreateAcceptance(
     IDmsAdminConnectionSource adminConnections,
     ManagedDataStoreEndpointParser parseEndpoint,
     ProtectedDatabaseNames protectedNames,
-    IDataStoreManageRepository repository
+    IDataStoreManageRepository repository,
+    JobClaimPolicy claimPolicy
 )
 {
     public async Task<DataStoreManageCreateResult> AcceptAsync(
@@ -32,6 +33,10 @@ public sealed class ManagedDataStoreCreateAcceptance(
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
+        if (claimPolicy.ExcludesManagedDataStores)
+        {
+            return new DataStoreManageCreateResult.ManagementDisabled();
+        }
         if (
             !new DataStoreManageInsertCommand.Validator().Validate(command).IsValid
             || !DmsDatabaseTemplate.TryFromWireValue(command.DatabaseTemplate, out var template)

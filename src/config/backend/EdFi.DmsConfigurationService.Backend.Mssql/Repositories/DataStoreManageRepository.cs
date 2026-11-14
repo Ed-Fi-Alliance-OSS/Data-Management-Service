@@ -23,7 +23,8 @@ public sealed partial class DataStoreManageRepository(
     IDmsDataStoreProvisionerReadiness readiness,
     IJobEnqueuer enqueuer,
     ProtectedDatabaseNames protectedNames,
-    DataStoreRepository dataStoreRepository
+    DataStoreRepository dataStoreRepository,
+    JobClaimPolicy claimPolicy
 ) : IDataStoreManageRepository
 {
     public async Task<DataStoreManageGetResult> GetByIdAsync(int id, CancellationToken cancellationToken) =>
@@ -159,6 +160,10 @@ public sealed partial class DataStoreManageRepository(
     {
         ArgumentNullException.ThrowIfNull(command);
         cancellationToken.ThrowIfCancellationRequested();
+        if (claimPolicy.ExcludesManagedDataStores)
+        {
+            return new DataStoreManageCreateResult.ManagementDisabled();
+        }
         if (!command.IsValid(protectedNames))
         {
             return new DataStoreManageCreateResult.InvalidRequest();
@@ -286,6 +291,10 @@ public sealed partial class DataStoreManageRepository(
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (claimPolicy.ExcludesManagedDataStores)
+        {
+            return new DataStoreManageDeleteResult.ManagementDisabled();
+        }
         long? tenantId = tenantContextProvider.Context is TenantContext.Multitenant tenant
             ? tenant.TenantId
             : null;

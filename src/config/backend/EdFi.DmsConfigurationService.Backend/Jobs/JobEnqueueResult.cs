@@ -12,6 +12,8 @@ public record JobEnqueueResult
 
     public record FailureUnsupportedType() : JobEnqueueResult;
 
+    public record ManagementDisabled() : JobEnqueueResult;
+
     public record FailureUnsupportedVersion() : JobEnqueueResult;
 
     /// <summary>The payload broke its contract; <paramref name="ReasonCode"/> is a fixed code, not input text.</summary>
