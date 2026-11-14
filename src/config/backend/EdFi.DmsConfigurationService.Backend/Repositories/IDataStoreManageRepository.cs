@@ -36,39 +36,12 @@ public sealed record ManagedDataStoreCreateCommand(
             || TargetName == default
             || ExpectedSourceIdentity == Guid.Empty
             || Endpoint is null
-            || string.IsNullOrWhiteSpace(Endpoint.Host)
-            || Endpoint.Host != Endpoint.Host.Trim()
-            || Endpoint.Host.Any(char.IsControl)
+            || !Endpoint.IsCanonical()
         )
         {
             return false;
         }
 
-        // The provider parser owns locator normalization. Direct callers must still supply a complete,
-        // supported descriptor and the deployment-validated generated target, never arbitrary routing data.
-        bool validEndpoint = Endpoint switch
-        {
-            {
-                Provider: "postgresql",
-                Transport: "tcp" or "unix",
-                Port: > 0 and <= 65535,
-                Instance: null,
-                MaintenanceDatabase: "postgres"
-            } => true,
-            { Provider: "mssql", Transport: "tcp", MaintenanceDatabase: "master" } => (
-                Endpoint.Port is > 0 and <= 65535 && Endpoint.Instance is null
-            )
-                || (
-                    Endpoint.Port is null
-                    && !string.IsNullOrWhiteSpace(Endpoint.Instance)
-                    && Endpoint.Instance.All(c => char.IsAsciiLetterOrDigit(c) || c is '_' or '-')
-                ),
-            _ => false,
-        };
-        if (!validEndpoint)
-        {
-            return false;
-        }
         try
         {
             return TargetName == ManagedDataStoreNameFormatter.Format(Name, Template, protectedNames);
