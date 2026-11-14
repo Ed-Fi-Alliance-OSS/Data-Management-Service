@@ -552,9 +552,10 @@ Describe "pull-ci-images workflow wiring" {
         $barePulls | Should -HaveCount 0
     }
 
-    It "checks out the repository before the local action in each release image-tag job" {
-        # Neither job had a checkout before this action existed, and both run only on release, so a
-        # dropped checkout would first appear during a release instead of on a pull request.
+    It "checks out the repository before validating the release tag in each release image-tag job" {
+        # These jobs pull nothing, so the checkout exists only to let the validation step import
+        # ./eng/ci/release-classification.psm1 from the workspace; a dropped checkout would first
+        # fail during a release instead of on a pull request.
         $releaseLines = @(Get-Content -LiteralPath (Join-Path $script:workflowRoot "on-release.yml"))
 
         foreach ($jobName in @("tag-dms-image", "tag-cs-image")) {
@@ -562,19 +563,19 @@ Describe "pull-ci-images workflow wiring" {
             $block | Should -Not -BeNullOrEmpty -Because "$jobName must exist"
 
             $checkoutIndex = -1
-            $actionIndex = -1
+            $validateIndex = -1
             for ($k = 0; $k -lt $block.Count; $k++) {
                 if ($checkoutIndex -lt 0 -and $block[$k] -match 'uses:\s+actions/checkout@') {
                     $checkoutIndex = $k
                 }
-                if ($actionIndex -lt 0 -and $block[$k] -match 'uses:\s+\./\.github/actions/pull-ci-images\s*$') {
-                    $actionIndex = $k
+                if ($validateIndex -lt 0 -and $block[$k] -match '^\s+- name:\s+Validate the release tag\s*$') {
+                    $validateIndex = $k
                 }
             }
 
-            $actionIndex | Should -BeGreaterOrEqual 0 -Because "$jobName must pull through the local action"
+            $validateIndex | Should -BeGreaterOrEqual 0 -Because "$jobName must validate the release tag"
             $checkoutIndex | Should -BeGreaterOrEqual 0 -Because "$jobName must check out the repository"
-            $checkoutIndex | Should -BeLessThan $actionIndex -Because "$jobName must check out before the local action resolves"
+            $checkoutIndex | Should -BeLessThan $validateIndex -Because "$jobName must check out before the validation step imports from the workspace"
         }
     }
 }

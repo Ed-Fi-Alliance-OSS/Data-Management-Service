@@ -212,3 +212,167 @@ Describe 'DMS prerelease image tag workflow wiring' {
         $script:dmsPublish | Should -Match '(?m)^      - publish-package-dms$'
     }
 }
+
+Describe 'Prerelease images build for every platform' {
+    BeforeAll {
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-prerelease.yml') -Raw
+
+        # The published image must run natively on both amd64 and arm64 hosts, and an arm64 image
+        # cannot be built on the amd64 runner without QEMU emulation registered before Buildx.
+        $script:jobSteps = @{
+            'docker-publish-dms' = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'docker-publish-dms'))
+            'docker-publish-cs'  = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'docker-publish-cs'))
+        }
+
+        function script:Get-BuildStep([string] $JobId, [string] $Name) {
+            return @($script:jobSteps[$JobId] | Where-Object { $_ -match "^      - name: $([regex]::Escape($Name))\r?\n" })
+        }
+
+        # The step's with: block, one entry per line, less any single platforms: line.
+        function script:Get-BuildInputWithoutPlatform([string] $Step) {
+            $lines = @($Step -split '\r?\n')
+            $with = [array]::IndexOf($lines, '        with:')
+            return @($lines[($with + 1)..($lines.Count - 1)] | Where-Object { $_.Trim() -ne '' -and $_ -notmatch '^\s+platforms:' })
+        }
+    }
+
+    Context 'the <Name> build step' -ForEach @(
+        @{
+            Name     = 'DMS'
+            JobId    = 'docker-publish-dms'
+            StepName = 'Build and push DMS image'
+            Expected = @(
+                '          context: "{{defaultContext}}:src/dms"'
+                '          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre'
+                '          cache-to: type=inline'
+                '          build-args: VERSION=${{ steps.prepare-tags.outputs.VERSION }}'
+                '          file: Nuget.Dockerfile'
+                '          tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}'
+                '          labels: ${{ steps.metadatamanagementservice.outputs.labels }}'
+                '          push: true'
+            )
+        }
+        @{
+            Name     = 'Configuration Service'
+            JobId    = 'docker-publish-cs'
+            StepName = 'Build and push Config image'
+            Expected = @(
+                '          context: "{{defaultContext}}:src/config"'
+                '          cache-from: type=registry,ref=${{ env.CONFIG_IMAGE_NAME }}:pre'
+                '          cache-to: type=inline'
+                '          build-args: |'
+                '            VERSION=${{ steps.prepare-tags.outputs.VERSION }}'
+                '            ASSEMBLY_VERSION=${{ needs.pack-cs.outputs.assembly-version }}'
+                '          file: Nuget.Dockerfile'
+                '          tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}'
+                '          labels: ${{ steps.metadatamanagementservice.outputs.labels }}'
+                '          push: true'
+            )
+        }
+    ) {
+        It 'declares exactly one platforms input, for amd64 and arm64' {
+            $build = @(script:Get-BuildStep $JobId $StepName)
+            $build.Count | Should -Be 1 -Because "the $Name job has one step named '$StepName'"
+
+            $platforms = @($build[0] -split '\r?\n' | Where-Object { $_ -match '^\s+platforms:' })
+            $platforms.Count | Should -Be 1 -Because "the $Name build step must declare platforms: once"
+            $platforms[0].Trim() | Should -BeExactly 'platforms: linux/amd64,linux/arm64'
+        }
+
+        It 'changes none of the other build inputs' {
+            $build = @(script:Get-BuildStep $JobId $StepName)
+            $build.Count | Should -Be 1 -Because "the $Name job has one step named '$StepName'"
+
+            (script:Get-BuildInputWithoutPlatform $build[0]) -join "`n" | Should -BeExactly ($Expected -join "`n")
+        }
+    }
+
+    Context 'the <Name> job QEMU setup' -ForEach @(
+        @{ Name = 'DMS'; JobId = 'docker-publish-dms' }
+        @{ Name = 'Configuration Service'; JobId = 'docker-publish-cs' }
+    ) {
+        It 'registers QEMU, pinned to a full commit SHA, before Buildx is set up' {
+            $steps = $script:jobSteps[$JobId]
+            $qemu = @(0..($steps.Count - 1) | Where-Object { $steps[$_] -match 'uses: docker/setup-qemu-action@[0-9a-f]{40} # v\d+\.\d+\.\d+' })
+            $buildx = @(0..($steps.Count - 1) | Where-Object { $steps[$_] -match 'uses: docker/setup-buildx-action@' })
+
+            $qemu.Count | Should -Be 1 -Because "the $Name job is missing its docker/setup-qemu-action step pinned to a SHA with a version comment"
+            $buildx.Count | Should -Be 1
+            $qemu[0] | Should -BeLessThan $buildx[0] -Because 'QEMU must be registered before Buildx creates its builder'
+        }
+    }
+}
+
+Describe 'Release image promotion keeps every platform' {
+    BeforeAll {
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-release.yml') -Raw
+
+        # docker pull fetches only the runner's own platform, so promoting by pull, tag and push would
+        # republish a multi-platform prerelease image as a single platform. The registry copies the
+        # whole image index when the release tags are created from the prerelease tag directly.
+        $script:jobSteps = @{
+            'tag-dms-image' = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'tag-dms-image'))
+            'tag-cs-image'  = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'tag-cs-image'))
+        }
+
+        $script:promoteCommand = 'docker buildx imagetools create --tag "$RELEASE_MAJOR" --tag "$RELEASE_MINOR" "$PRE_IMAGE"'
+
+        function script:Get-PromoteStep([string] $JobId) {
+            return @($script:jobSteps[$JobId] | Where-Object { (Get-WorkflowStepRun $_).Trim() -ceq $script:promoteCommand })
+        }
+
+        function script:Get-PromoteStepIndex([string] $JobId) {
+            $steps = $script:jobSteps[$JobId]
+            return @(0..($steps.Count - 1) | Where-Object { (Get-WorkflowStepRun $steps[$_]).Trim() -ceq $script:promoteCommand })
+        }
+
+        function script:Get-StepIndexByName([string] $JobId, [string] $Name) {
+            $steps = $script:jobSteps[$JobId]
+            return @(0..($steps.Count - 1) | Where-Object { $steps[$_] -cmatch "^      - name: $([regex]::Escape($Name))\r?\n" })
+        }
+    }
+
+    Context 'the <Name> job' -ForEach @(
+        @{ Name = 'DMS'; JobId = 'tag-dms-image' }
+        @{ Name = 'Configuration Service'; JobId = 'tag-cs-image' }
+    ) {
+        It 'promotes with exactly one registry-side copy that reads its values from the environment' {
+            $promote = @(script:Get-PromoteStep $JobId)
+            $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
+
+            (Get-WorkflowStepRun $promote[0]) | Should -Not -Match '\$\{\{' -Because 'the promote script must read the tags from its environment, not from expressions expanded into the script'
+        }
+
+        It 'maps the image names from the prepared tags into the promote step environment' {
+            $promote = @(script:Get-PromoteStep $JobId)
+            $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
+
+            $lines = @($promote[0] -split '\r?\n')
+            foreach ($name in 'PRE_IMAGE', 'RELEASE_MAJOR', 'RELEASE_MINOR') {
+                $lines | Should -Contain ('          {0}: ${{{{ steps.prepare-tags.outputs.{0} }}}}' -f $name) -Because "the promote step must map $name from the prepare-tags step"
+            }
+        }
+
+        It 'does not pull, tag or push the image on the runner' {
+            $steps = $script:jobSteps[$JobId]
+
+            @($steps | Where-Object { $_ -cmatch '(?m)^        uses: \./\.github/actions/pull-ci-images\s*$' }).Count |
+                Should -Be 0 -Because "the $Name job must not pull the prerelease image through the local action"
+            @($steps | Where-Object { (Get-WorkflowStepRun $_) -match '\bdocker\s+(tag|push|pull)\b' }).Count |
+                Should -Be 0 -Because "the $Name job must not run docker pull, tag or push, which keeps one platform"
+        }
+
+        It 'logs in to Docker Hub before it promotes' {
+            $login = @(script:Get-StepIndexByName $JobId 'Login to Docker hub')
+            $login.Count | Should -Be 1 -Because "the $Name job must have exactly one step named 'Login to Docker hub'"
+
+            $promote = @(script:Get-PromoteStepIndex $JobId)
+            $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
+            $login[0] | Should -BeLessThan $promote[0] -Because 'the registry rejects the copy unless the job is logged in first'
+        }
+    }
+}

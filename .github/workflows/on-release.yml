@@ -312,7 +312,7 @@ jobs:
     environment: publishing
     runs-on: ubuntu-latest
     steps:
-      # Required so the local pull action below resolves from the workspace.
+      # Required so the release-tag validation below can import the module from the workspace.
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -344,33 +344,21 @@ jobs:
             echo "RELEASE_MINOR=$RELEASE_MINOR"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Pull DMS Prerelease Image
-        uses: ./.github/actions/pull-ci-images
-        with:
-          images: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
-
-      - name: Tag DMS image
-        env:
-          PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
-          RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
-          RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
-        run: |
-          docker tag "$PRE_IMAGE" "$RELEASE_MAJOR"
-          docker tag "$PRE_IMAGE" "$RELEASE_MINOR"
-
       - name: Login to Docker hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Push DMS Image
+      # A local pull fetches only the runner's platform, so pull/tag/push would drop the others;
+      # the copy happens in the registry and keeps every platform.
+      - name: Promote DMS Image
         env:
+          PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
           RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
           RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker push "$RELEASE_MAJOR"
-          docker push "$RELEASE_MINOR"
+          docker buildx imagetools create --tag "$RELEASE_MAJOR" --tag "$RELEASE_MINOR" "$PRE_IMAGE"
 
   tag-cs-image:
     name: Release Tag Configuration Image
@@ -380,7 +368,7 @@ jobs:
     environment: publishing
     runs-on: ubuntu-latest
     steps:
-      # Required so the local pull action below resolves from the workspace.
+      # Required so the release-tag validation below can import the module from the workspace.
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -412,30 +400,18 @@ jobs:
             echo "RELEASE_MINOR=$RELEASE_MINOR"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Pull Configuration Prerelease Image
-        uses: ./.github/actions/pull-ci-images
-        with:
-          images: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
-
-      - name: Tag Configuration image
-        env:
-          PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
-          RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
-          RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
-        run: |
-          docker tag "$PRE_IMAGE" "$RELEASE_MAJOR"
-          docker tag "$PRE_IMAGE" "$RELEASE_MINOR"
-
       - name: Login to Docker hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           username: ${{ vars.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
-      - name: Push Configuration Image
+      # A local pull fetches only the runner's platform, so pull/tag/push would drop the others;
+      # the copy happens in the registry and keeps every platform.
+      - name: Promote Configuration Image
         env:
+          PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
           RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
           RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker push "$RELEASE_MAJOR"
-          docker push "$RELEASE_MINOR"
+          docker buildx imagetools create --tag "$RELEASE_MAJOR" --tag "$RELEASE_MINOR" "$PRE_IMAGE"
