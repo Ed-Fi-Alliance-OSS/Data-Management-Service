@@ -407,7 +407,16 @@ public partial class Given_data_store_namespace_reservations
         Func<Task> stalePublish = () =>
             PublicationRepository().PublishCreateAsync(old.Command, old.Execution, default);
         await stalePublish.Should().ThrowAsync<JobLeaseLostException>();
-        (await second!).Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
+        var successorResult = await second!;
+        if (successorResult is DmsDataStoreCreateResult.Failure failure)
+        {
+            await TestContext.Out.WriteLineAsync(
+                $"SuccessorFailure: Code={failure.Detail.Code}; Category={failure.Detail.Category}; "
+                    + $"Operation={failure.Detail.Diagnostic.Operation}; "
+                    + $"CleanupHasResidue={failure.Cleanup.HasResidue}; ResidueCount={failure.Cleanup.Residue.Count}"
+            );
+        }
+        successorResult.Should().BeOfType<DmsDataStoreCreateResult.Reconciled>();
         int catalogId = await PublicationRepository()
             .PublishCreateAsync(successor.Command, successor.Execution, default);
         (await PublicationRepository().PublishCreateAsync(successor.Command, successor.Execution, default))
