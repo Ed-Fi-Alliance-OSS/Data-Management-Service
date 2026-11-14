@@ -78,4 +78,6 @@ public enum DmsProvisioningFailureCode
     // OperatorInspectionRequired; Transient for temporary file contention. Operation-time only: at
     // startup a policy defect is StartupValidationFailed.
     TrustPolicyUnavailable,
+    TargetEndpointChanged,
+    TargetEndpointUnverifiable,
 }

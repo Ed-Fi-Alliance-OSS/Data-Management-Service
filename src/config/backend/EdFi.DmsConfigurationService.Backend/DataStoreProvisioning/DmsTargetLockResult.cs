@@ -3,13 +3,20 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>The outcome of <see cref="IDmsTargetEngine.AcquireTargetLockAsync"/> (D-12).</summary>
 public abstract record DmsTargetLockResult
 {
-    /// <summary>The holder session holds the target's session-level lock; disposing the holder releases it.</summary>
-    public sealed record Acquired(IDmsTargetLockHolder Holder) : DmsTargetLockResult;
+    /// <summary>
+    /// The holder session holds the target's session-level lock; disposing it releases the lock.
+    /// Endpoint is captured from the settings used to construct that private maintenance connection,
+    /// before opening it; null permits standalone use of a topology unsupported for managed operations.
+    /// </summary>
+    public sealed record Acquired(IDmsTargetLockHolder Holder, ManagedDataStoreEndpoint? Endpoint = null)
+        : DmsTargetLockResult;
 
     /// <summary>
     /// Another session held the lock for the whole <c>LockAcquireTimeout</c>. The current holder is neither

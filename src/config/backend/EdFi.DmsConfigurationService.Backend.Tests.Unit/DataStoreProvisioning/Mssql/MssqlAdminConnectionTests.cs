@@ -20,6 +20,30 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 public class MssqlAdminConnectionTests
 {
     [TestFixture]
+    public class Given_holder_connection_capture
+    {
+        [Test]
+        public void It_derives_the_descriptor_from_the_exact_connection_settings_with_one_source_read()
+        {
+            int reads = 0;
+            MssqlAdminConnection admin = new(
+                () =>
+                    ++reads == 1
+                        ? "Server=tcp:a,1433;User ID=admin;Password=secret;Encrypt=false"
+                        : "Server=tcp:b,1433;User ID=admin;Password=other;Encrypt=false",
+                TimeSpan.FromSeconds(30)
+            );
+            var captured = admin.CaptureHolderConnection("dmsprov-test");
+            using var connection = captured.Connection;
+            reads.Should().Be(1);
+            captured.Endpoint.Should().NotBeNull();
+            captured.Endpoint!.Host.Should().Be("a");
+            new SqlConnectionStringBuilder(connection.ConnectionString).DataSource.Should().Be("tcp:a,1433");
+            connection.State.Should().Be(System.Data.ConnectionState.Closed);
+        }
+    }
+
+    [TestFixture]
     public class Given_a_configured_value_with_its_own_choices
     {
         private SqlConnectionStringBuilder _built = null!;

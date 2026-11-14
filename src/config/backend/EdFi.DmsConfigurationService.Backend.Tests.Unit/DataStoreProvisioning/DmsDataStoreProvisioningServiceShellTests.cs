@@ -7,6 +7,7 @@ using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Secrets;
@@ -288,8 +289,9 @@ public class DmsDataStoreProvisioningServiceShellTests
     /// its own acquisition; the first then runs to its end while the second is still in flight. Every engine
     /// call of the first operation still connects with <c>a</c>.
     /// </summary>
-    [TestFixture]
-    public class Given_two_operations_overlap_across_a_secret_rotation
+    [TestFixture(false)]
+    [TestFixture(true)]
+    public class Given_two_operations_overlap_across_a_secret_rotation(bool guarded)
     {
         private sealed class RotatingResolver : ISecretResolver
         {
@@ -326,6 +328,10 @@ public class DmsDataStoreProvisioningServiceShellTests
                 new RotatingResolver()
             );
             Harness harness = new(adminConnection: source);
+            harness.Engine.OnParseManagedEndpoint = value =>
+                PostgresqlManagedEndpoint.TryParse(value, out var endpoint) ? endpoint : null;
+            PostgresqlManagedEndpoint.TryParse("Host=a", out var endpointA);
+            PostgresqlManagedEndpoint.TryParse("Host=b", out var endpointB);
             harness.Engine.OnCall = member =>
             {
                 string host = (string)
@@ -348,7 +354,7 @@ public class DmsDataStoreProvisioningServiceShellTests
                 {
                     firstWaits.TrySetResult();
                     await releaseFirst.Task.WaitAsync(token);
-                    return await acquire(token);
+                    return ((DmsTargetLockResult.Acquired)await acquire(token)) with { Endpoint = endpointA };
                 }
 
                 if (acquisition == 2)
@@ -362,15 +368,13 @@ public class DmsDataStoreProvisioningServiceShellTests
             harness.Engine.OnInspect = _ =>
                 Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
 
-            Task<DmsDataStoreDeleteResult> first = harness.Service.DeleteAsync(
-                DeleteRequest(),
-                CancellationToken.None
-            );
+            Task<DmsDataStoreDeleteResult> first = guarded
+                ? harness.Service.DeleteAsync(DeleteRequest(), endpointA!, CancellationToken.None)
+                : harness.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
             await firstWaits.Task.WaitAsync(TimeSpan.FromSeconds(30));
-            Task<DmsDataStoreDeleteResult> second = harness.Service.DeleteAsync(
-                DeleteRequest(),
-                CancellationToken.None
-            );
+            Task<DmsDataStoreDeleteResult> second = guarded
+                ? harness.Service.DeleteAsync(DeleteRequest(), endpointB!, CancellationToken.None)
+                : harness.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
             await secondWaits.Task.WaitAsync(TimeSpan.FromSeconds(30));
             releaseFirst.SetResult();
             _first = await first.WaitAsync(TimeSpan.FromSeconds(30));
@@ -378,7 +382,9 @@ public class DmsDataStoreProvisioningServiceShellTests
             _second = await second.WaitAsync(TimeSpan.FromSeconds(30));
 
             // A create afterwards binds its own resolution too (refused at the lock, which is enough to see it).
-            _create = await harness.Service.CreateAsync(CreateRequest(), CancellationToken.None);
+            _create = guarded
+                ? await harness.Service.CreateAsync(CreateRequest(), endpointB!, CancellationToken.None)
+                : await harness.Service.CreateAsync(CreateRequest(), CancellationToken.None);
         }
 
         [Test]

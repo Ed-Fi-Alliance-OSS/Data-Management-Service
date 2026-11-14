@@ -5,6 +5,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -134,6 +135,9 @@ public sealed partial class MssqlDmsTargetEngine : IDmsTargetEngine
         string? defaultLogPath = await StringOrNullAsync(reader, 2, cancellationToken);
         return new DmsServerFacts(majorVersion, defaultDataPath, defaultLogPath);
     }
+
+    public ManagedDataStoreEndpoint? ParseManagedEndpoint(DmsAdminConnectionString connection) =>
+        MssqlManagedEndpoint.TryParse(connection.Value, out var endpoint) ? endpoint : null;
 
     public Task<DmsTargetLockResult> AcquireTargetLockAsync(
         DmsTargetDatabaseName name,

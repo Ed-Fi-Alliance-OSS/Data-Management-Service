@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
@@ -165,6 +166,44 @@ public sealed class MssqlAdminConnection
             await connection.DisposeAsync();
             throw;
         }
+    }
+
+    /// <summary>Captures the descriptor from the exact private maintenance connection construction, before provider open can redact its settings.</summary>
+    internal (SqlConnection Connection, ManagedDataStoreEndpoint? Endpoint) CaptureHolderConnection(
+        string applicationName
+    )
+    {
+        SqlConnection connection = new(ConnectionStringFor(MaintenanceDatabaseName, applicationName));
+        MssqlManagedEndpoint.TryParse(connection.ConnectionString, out var endpoint);
+        return (connection, endpoint);
+    }
+
+    internal async Task<SqlConnection> OpenHolderAsync(
+        string applicationName,
+        Action<ManagedDataStoreEndpoint?> captureEndpoint,
+        CancellationToken cancellationToken
+    )
+    {
+        return await DmsBoundedConnectionOpen.OpenAsync(
+            async token =>
+            {
+                var captured = CaptureHolderConnection(applicationName);
+                captureEndpoint(captured.Endpoint);
+                try
+                {
+                    await captured.Connection.OpenAsync(token);
+                    return captured.Connection;
+                }
+                catch
+                {
+                    await captured.Connection.DisposeAsync();
+                    throw;
+                }
+            },
+            CommandTimeout,
+            _timeProvider,
+            cancellationToken
+        );
     }
 
     public Task<SqlConnection> OpenMaintenanceAsync(CancellationToken cancellationToken) =>

@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
@@ -17,6 +18,11 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 /// </summary>
 internal sealed class SpyDmsTargetEngine : IDmsTargetEngine
 {
+    public Func<string, ManagedDataStoreEndpoint?> OnParseManagedEndpoint { get; set; } = _ => null;
+
+    public ManagedDataStoreEndpoint? ParseManagedEndpoint(DmsAdminConnectionString connection) =>
+        OnParseManagedEndpoint(connection.Value);
+
     public const string AcquireTargetLock = "AcquireTargetLock";
     public const string ReadServerFacts = "ReadServerFacts";
     public const string Inspect = "Inspect";

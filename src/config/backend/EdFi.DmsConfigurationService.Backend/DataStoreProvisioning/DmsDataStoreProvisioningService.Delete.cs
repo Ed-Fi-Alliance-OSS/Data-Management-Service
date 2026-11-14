@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Runtime.ExceptionServices;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
@@ -34,8 +35,24 @@ public sealed partial class DmsDataStoreProvisioningService
     public const string DropTargetStep = "DropTarget";
     public const string ResolveDeletionStep = "ResolveDeletion";
 
-    public async Task<DmsDataStoreDeleteResult> DeleteAsync(
+    public Task<DmsDataStoreDeleteResult> DeleteAsync(
         DmsDataStoreDeleteRequest request,
+        CancellationToken cancellationToken
+    ) => DeleteCoreAsync(request, null, cancellationToken);
+
+    public Task<DmsDataStoreDeleteResult> DeleteAsync(
+        DmsDataStoreDeleteRequest request,
+        ManagedDataStoreEndpoint expectedEndpoint,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(expectedEndpoint);
+        return DeleteCoreAsync(request, expectedEndpoint, cancellationToken);
+    }
+
+    private async Task<DmsDataStoreDeleteResult> DeleteCoreAsync(
+        DmsDataStoreDeleteRequest request,
+        ManagedDataStoreEndpoint? expectedEndpoint,
         CancellationToken cancellationToken
     )
     {
@@ -56,15 +73,23 @@ public sealed partial class DmsDataStoreProvisioningService
         if (resolution is DmsAdminConnectionResolution.Failed unresolved)
         {
             return new DmsDataStoreDeleteResult.Failure(
-                SecretResolutionFailure(unresolved),
+                SecretResolutionFailure(unresolved, expectedEndpoint),
                 DmsCleanupReport.Clean
             );
         }
 
+        DmsAdminConnectionString snapshot = ((DmsAdminConnectionResolution.Resolved)resolution).Connection;
+        if (
+            expectedEndpoint is not null
+            && ValidateEndpoint(expectedEndpoint, engine.ParseManagedEndpoint(snapshot))
+                is { } endpointFailure
+        )
+        {
+            return new DmsDataStoreDeleteResult.Failure(endpointFailure, DmsCleanupReport.Clean);
+        }
+
         // Bound in the operation's own frame: settlement after the lock is released connects with it too.
-        using IDisposable adminBinding = adminConnection.Bind(
-            ((DmsAdminConnectionResolution.Resolved)resolution).Connection
-        );
+        using IDisposable adminBinding = adminConnection.Bind(snapshot);
 
         DmsOperationId operation = DmsOperationId.New();
         Deletion deletion = new(request.TargetName);
@@ -83,7 +108,8 @@ public sealed partial class DmsDataStoreProvisioningService
                     return DeleteUnderLockAsync(scope, request, deletion);
                 },
                 static (failure, cleanup) => new DmsDataStoreDeleteResult.Failure(failure, cleanup),
-                cancellationToken
+                cancellationToken,
+                expectedEndpoint
             );
         }
         catch (OperationCanceledException canceled)

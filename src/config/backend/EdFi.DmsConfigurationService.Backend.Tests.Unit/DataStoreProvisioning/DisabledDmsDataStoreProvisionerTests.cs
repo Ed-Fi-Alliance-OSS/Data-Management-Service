@@ -10,6 +10,43 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 public class DisabledDmsDataStoreProvisionerTests
 {
+    [TestFixture]
+    public class Given_guarded_operations_are_disabled
+    {
+        [Test]
+        public async Task It_refuses_both_guarded_overloads()
+        {
+            IDmsDataStoreProvisioner provisioner = new DisabledDmsDataStoreProvisioner(
+                Recorded(new DmsProvisionerReadiness.Disabled())
+            );
+            var endpoint =
+                new EdFi.DmsConfigurationService.Backend.ManagedDataStores.ManagedDataStoreEndpoint(
+                    "postgresql",
+                    "tcp",
+                    "a",
+                    5432,
+                    null,
+                    "postgres"
+                );
+            var create = await provisioner.CreateAsync(CreateRequest(), endpoint, CancellationToken.None);
+            var delete = await provisioner.DeleteAsync(
+                new(CreateRequest().TargetName, Guid.NewGuid()),
+                endpoint,
+                CancellationToken.None
+            );
+            create
+                .Should()
+                .BeOfType<DmsDataStoreCreateResult.Failure>()
+                .Which.Detail.Code.Should()
+                .Be(DmsProvisioningFailureCode.FeatureDisabled);
+            delete
+                .Should()
+                .BeOfType<DmsDataStoreDeleteResult.Failure>()
+                .Which.Detail.Code.Should()
+                .Be(DmsProvisioningFailureCode.FeatureDisabled);
+        }
+    }
+
     private static DmsDataStoreProvisionerReadiness Recorded(DmsProvisionerReadiness verdict)
     {
         DmsDataStoreProvisionerReadiness readiness = new();

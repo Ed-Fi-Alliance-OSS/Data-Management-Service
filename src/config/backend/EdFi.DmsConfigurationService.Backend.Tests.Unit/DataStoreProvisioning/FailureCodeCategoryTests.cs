@@ -13,7 +13,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 public class FailureCodeCategoryTests
 {
-    /// <summary>Spec section 8, pinned independently of the implementation table.</summary>
+    /// <summary>DMS-1438 spec section 8 plus the DMS-1439 section 5.7 endpoint failures, pinned independently of the implementation table.</summary>
     private static readonly IReadOnlyDictionary<
         DmsProvisioningFailureCode,
         DmsProvisioningFailureCategory[]
@@ -55,6 +55,9 @@ public class FailureCodeCategoryTests
         [SecurityStateViolation] = [OperatorInspectionRequired],
         [StagingIntegrityViolation] = [OperatorInspectionRequired],
         [IdentityAssignmentFailed] = [OperatorInspectionRequired],
+        // DMS-1439 section 5.7: a destination change or unverifiable endpoint requires inspection.
+        [TargetEndpointChanged] = [OperatorInspectionRequired],
+        [TargetEndpointUnverifiable] = [OperatorInspectionRequired],
         [TargetUnowned] = [OperatorInspectionRequired],
         [TargetUnverifiable] = [OperatorInspectionRequired],
         [TargetFenced] = [OperatorInspectionRequired],

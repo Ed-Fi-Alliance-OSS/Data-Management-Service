@@ -240,6 +240,14 @@ public sealed record DmsProvisioningFailure
                 [Inspection],
                 "The source identity marker could not be assigned."
             ),
+            [DmsProvisioningFailureCode.TargetEndpointChanged] = new(
+                [Inspection],
+                "The target endpoint differs from the recorded destination."
+            ),
+            [DmsProvisioningFailureCode.TargetEndpointUnverifiable] = new(
+                [Inspection],
+                "The target endpoint cannot be verified against the recorded destination."
+            ),
             [DmsProvisioningFailureCode.TargetUnowned] = new(
                 [Inspection],
                 "A database holds the target name but is not owned by this record."

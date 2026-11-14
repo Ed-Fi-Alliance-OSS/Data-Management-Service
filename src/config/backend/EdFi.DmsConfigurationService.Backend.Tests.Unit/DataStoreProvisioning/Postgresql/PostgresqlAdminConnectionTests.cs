@@ -25,6 +25,30 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.
 public class PostgresqlAdminConnectionTests
 {
     [TestFixture]
+    public class Given_holder_connection_capture
+    {
+        [Test]
+        public void It_derives_the_descriptor_from_the_exact_connection_settings_with_one_source_read()
+        {
+            int reads = 0;
+            PostgresqlAdminConnection admin = new(
+                () =>
+                    ++reads == 1
+                        ? "Host=a;Username=admin;Password=secret"
+                        : "Host=b;Username=admin;Password=other",
+                TimeSpan.FromSeconds(30)
+            );
+            var captured = admin.CaptureHolderConnection("dmsprov-test");
+            using var connection = captured.Connection;
+            reads.Should().Be(1);
+            captured.Endpoint.Should().NotBeNull();
+            captured.Endpoint!.Host.Should().Be("a");
+            new NpgsqlConnectionStringBuilder(connection.ConnectionString).Host.Should().Be("a");
+            connection.State.Should().Be(System.Data.ConnectionState.Closed);
+        }
+    }
+
+    [TestFixture]
     public class Given_a_source_whose_value_rotates
     {
         private NpgsqlConnectionStringBuilder _before = null!;

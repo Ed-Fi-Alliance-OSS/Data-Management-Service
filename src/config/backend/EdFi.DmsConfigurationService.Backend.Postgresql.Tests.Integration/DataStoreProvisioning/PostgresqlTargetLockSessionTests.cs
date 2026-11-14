@@ -29,6 +29,40 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Data
 [Category(Category)]
 public class PostgresqlTargetLockSessionTests
 {
+    [TestFixture]
+    public class Given_endpoint_capture_on_the_live_holder
+    {
+        [Test]
+        public async Task It_returns_only_the_descriptor_of_the_connection_it_opened()
+        {
+            RequireConfiguredOrSkip();
+            string original = AdminConnectionString!;
+            int reads = 0;
+            PostgresqlAdminConnection admin = new(
+                () => ++reads == 1 ? original : "invalid rotated connection",
+                TimeSpan.FromSeconds(30)
+            );
+            PostgresqlManagedEndpoint.TryParse(original, out var expected).Should().BeTrue();
+            expected.Should().NotBeNull();
+            DmsTargetLockResult result = await PostgresqlTargetLockSession.AcquireAsync(
+                admin,
+                TargetName("endpoint"),
+                DmsOperationId.New(),
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
+                TimeProvider.System,
+                NullLogger.Instance,
+                CancellationToken.None
+            );
+            var acquired = result.Should().BeOfType<DmsTargetLockResult.Acquired>().Subject;
+            await using var holder = acquired.Holder;
+            reads.Should().Be(1);
+            // The live PostgreSQL holder reports the descriptor captured before opening.
+            acquired.Endpoint.Should().Be(expected);
+            (await SelectOneAsync((PostgresqlTargetLockSession)holder)).Should().Be(1);
+        }
+    }
+
     private const string AdvisoryLockWait = "Lock:advisory";
 
     private static readonly TimeSpan _bound = TimeSpan.FromSeconds(20);
