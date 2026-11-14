@@ -8,6 +8,8 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// <summary>Await points the orchestrator passes through (D-23); each is the last await before the named mutation.</summary>
 internal enum DmsProvisioningHookPoint
 {
+    BeforeTargetLock,
+    AfterAdmission,
     AfterRestoreStarted,
     BeforeRename,
     BeforeMarker,

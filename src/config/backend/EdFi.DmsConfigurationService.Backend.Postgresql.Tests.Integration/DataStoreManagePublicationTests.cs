@@ -124,13 +124,14 @@ public partial class Given_data_store_namespace_reservations
     private async Task<PublicationSeed> SeedPublication(
         long? tenantId = null,
         string name = "Store",
-        string provider = "postgresql"
+        string provider = "postgresql",
+        ManagedDataStorePublishCommand? physical = null
     )
     {
         using var services = AcceptanceServices(tenantId);
         var ready = new DmsDataStoreProvisionerReadiness();
         ready.Record(new DmsProvisionerReadiness.Ready(provider, DateTimeOffset.UtcNow));
-        var identity = CreateCommand(name, provider);
+        var identity = physical?.Identity ?? CreateCommand(name, provider);
         var accepted = (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), tenantId, ready)
                 .AcceptCreateAsync(identity, default)
@@ -150,21 +151,23 @@ public partial class Given_data_store_namespace_reservations
             .BeOfType<JobClaimResult.Claimed>()
             .Subject.Job;
         claim.JobId.Should().Be(accepted.JobId);
-        DmsTrustedArtifactPin pin = new()
-        {
-            ContractVersion = 1,
-            Provider = provider,
-            PackageId = "EdFi.Dms.Minimal",
-            PackageVersion = "1.0.0",
-            PackageSha256 = new string('a', 64),
-            ArtifactSha256 = new string('b', 64),
-            TemplateKind = "Minimal",
-            DataStandardVersion = "5.2",
-            EffectiveSchemaHash = new string('c', 64),
-            InventorySha256 = new string('d', 64),
-            ApiSchemaFormatVersion = "1",
-            RelationalMappingVersion = "v3",
-        };
+        DmsTrustedArtifactPin pin =
+            physical?.PinnedArtifact
+            ?? new()
+            {
+                ContractVersion = 1,
+                Provider = provider,
+                PackageId = "EdFi.Dms.Minimal",
+                PackageVersion = "1.0.0",
+                PackageSha256 = new string('a', 64),
+                ArtifactSha256 = new string('b', 64),
+                TemplateKind = "Minimal",
+                DataStandardVersion = "5.2",
+                EffectiveSchemaHash = new string('c', 64),
+                InventorySha256 = new string('d', 64),
+                ApiSchemaFormatVersion = "1",
+                RelationalMappingVersion = "v3",
+            };
         DynamicParameters parameters = new(
             new
             {

@@ -28,10 +28,16 @@ public class DisabledDmsDataStoreProvisionerTests
                     null,
                     "postgres"
                 );
-            var create = await provisioner.CreateAsync(CreateRequest(), endpoint, CancellationToken.None);
+            var create = await provisioner.CreateAsync(
+                CreateRequest(),
+                endpoint,
+                (_, _) => throw new AssertionException("Disabled admission must never execute."),
+                CancellationToken.None
+            );
             var delete = await provisioner.DeleteAsync(
                 new(CreateRequest().TargetName, Guid.NewGuid()),
                 endpoint,
+                (_, _) => throw new AssertionException("Disabled admission must never execute."),
                 CancellationToken.None
             );
             create

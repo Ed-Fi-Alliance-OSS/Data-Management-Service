@@ -38,22 +38,25 @@ public sealed partial class DmsDataStoreProvisioningService
     public Task<DmsDataStoreDeleteResult> DeleteAsync(
         DmsDataStoreDeleteRequest request,
         CancellationToken cancellationToken
-    ) => DeleteCoreAsync(request, null, cancellationToken);
+    ) => DeleteCoreAsync(request, null, cancellationToken, null);
 
     public Task<DmsDataStoreDeleteResult> DeleteAsync(
         DmsDataStoreDeleteRequest request,
         ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(expectedEndpoint);
-        return DeleteCoreAsync(request, expectedEndpoint, cancellationToken);
+        ArgumentNullException.ThrowIfNull(authorize);
+        return DeleteCoreAsync(request, expectedEndpoint, cancellationToken, authorize);
     }
 
     private async Task<DmsDataStoreDeleteResult> DeleteCoreAsync(
         DmsDataStoreDeleteRequest request,
         ManagedDataStoreEndpoint? expectedEndpoint,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -109,7 +112,8 @@ public sealed partial class DmsDataStoreProvisioningService
                 },
                 static (failure, cleanup) => new DmsDataStoreDeleteResult.Failure(failure, cleanup),
                 cancellationToken,
-                expectedEndpoint
+                expectedEndpoint,
+                authorize
             );
         }
         catch (OperationCanceledException canceled)

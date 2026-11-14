@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
@@ -62,6 +63,194 @@ public class DmsDataStoreProvisioningEndpointTests
             return harness;
         }
 
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_admits_once_with_the_actual_holder_before_any_target_work(bool create)
+        {
+            Harness harness = Guarded();
+            ManagedDataStoreEndpoint actual = Expected with { };
+            var acquire = harness.Engine.OnAcquireTargetLock;
+            harness.Engine.OnAcquireTargetLock = async token =>
+                ((DmsTargetLockResult.Acquired)await acquire(token)) with
+                {
+                    Endpoint = actual,
+                };
+            int admissions = 0;
+            Task Authorize(ManagedDataStoreEndpoint endpoint, CancellationToken token)
+            {
+                endpoint.Should().BeSameAs(actual);
+                harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+                harness.OnlyHolder.ReleaseCount.Should().Be(0);
+                token.IsCancellationRequested.Should().BeFalse();
+                admissions++;
+                return Task.CompletedTask;
+            }
+            if (create)
+            {
+                await harness.Service.CreateAsync(CreateRequest(), Expected, Authorize, default);
+            }
+            else
+            {
+                (await harness.Service.DeleteAsync(DeleteRequest(), Expected, Authorize, default))
+                    .Should()
+                    .BeOfType<DmsDataStoreDeleteResult.AlreadyAbsent>();
+            }
+            admissions.Should().Be(1);
+            harness.OnlyHolder.ReleaseCount.Should().Be(1);
+            SharedTemplateCatalog.Workspace.OperationEntries.Should().BeEmpty();
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_preserves_admission_exceptions_and_cleans_up(bool create)
+        {
+            foreach (
+                Exception exception in new Exception[]
+                {
+                    new JobLeaseLostException(),
+                    new JobFenceUnavailableException(),
+                    new OperationCanceledException(),
+                    new InvalidOperationException("CMS unavailable"),
+                    new DmsProvisioningFailedException(
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.Unknown,
+                            DmsProvisioningDiagnostic.ForOperation("CallerAdmission")
+                        )
+                    ),
+                }
+            )
+            {
+                Harness harness = Guarded();
+                Task Authorize(ManagedDataStoreEndpoint endpoint, CancellationToken token) =>
+                    Task.FromException(exception);
+                Func<Task> action = async () =>
+                {
+                    if (create)
+                    {
+                        await harness.Service.CreateAsync(CreateRequest(), Expected, Authorize, default);
+                    }
+                    else
+                    {
+                        await harness.Service.DeleteAsync(DeleteRequest(), Expected, Authorize, default);
+                    }
+                };
+                (await action.Should().ThrowAsync<Exception>()).Which.Should().BeSameAs(exception);
+                harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+                harness.OnlyHolder.ReleaseCount.Should().Be(1);
+                SharedTemplateCatalog.Workspace.OperationEntries.Should().BeEmpty();
+            }
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_stops_after_holder_loss_during_admission_even_if_callback_ignores_cancellation(
+            bool create
+        )
+        {
+            Harness harness = Guarded();
+            Task Authorize(ManagedDataStoreEndpoint endpoint, CancellationToken token)
+            {
+                harness.OnlyHolder.Lose();
+                token.IsCancellationRequested.Should().BeTrue();
+                return Task.CompletedTask;
+            }
+            DmsProvisioningFailure failure = create
+                ? FailureOf(await harness.Service.CreateAsync(CreateRequest(), Expected, Authorize, default))
+                : FailureOf(await harness.Service.DeleteAsync(DeleteRequest(), Expected, Authorize, default));
+            failure.Code.Should().Be(DmsProvisioningFailureCode.LockLost);
+            harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            SharedTemplateCatalog.Workspace.OperationEntries.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_preserves_the_callbacks_cancellation_when_holder_loss_coincides()
+        {
+            Harness harness = Guarded();
+            OperationCanceledException exception = new();
+            Task Authorize(ManagedDataStoreEndpoint endpoint, CancellationToken token)
+            {
+                harness.OnlyHolder.Lose();
+                return Task.FromException(exception);
+            }
+            Func<Task> action = () =>
+                harness.Service.CreateAsync(CreateRequest(), Expected, Authorize, default);
+            (await action.Should().ThrowAsync<OperationCanceledException>())
+                .Which.Should()
+                .BeSameAs(exception);
+            harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            SharedTemplateCatalog.Workspace.OperationEntries.Should().BeEmpty();
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_does_not_admit_when_lock_acquisition_times_out(bool create)
+        {
+            Harness harness = Guarded();
+            harness.Engine.OnAcquireTargetLock = _ =>
+                Task.FromResult<DmsTargetLockResult>(new DmsTargetLockResult.Timeout());
+            Task Authorize(ManagedDataStoreEndpoint endpoint, CancellationToken token) =>
+                throw new AssertionException("Admission requires an acquired lock.");
+            var failure = create
+                ? FailureOf(await harness.Service.CreateAsync(CreateRequest(), Expected, Authorize, default))
+                : FailureOf(await harness.Service.DeleteAsync(DeleteRequest(), Expected, Authorize, default));
+            failure.Code.Should().Be(DmsProvisioningFailureCode.LockTimeout);
+            harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            SharedTemplateCatalog.Workspace.OperationEntries.Should().BeEmpty();
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public async Task It_stops_caller_cancellation_even_when_admission_returns_normally(bool create)
+        {
+            Harness harness = Guarded();
+            using CancellationTokenSource caller = new();
+            Task Authorize(ManagedDataStoreEndpoint endpoint, CancellationToken token)
+            {
+                caller.Cancel();
+                token.IsCancellationRequested.Should().BeTrue();
+                return Task.CompletedTask;
+            }
+            Func<Task> action = async () =>
+            {
+                if (create)
+                {
+                    await harness.Service.CreateAsync(CreateRequest(), Expected, Authorize, caller.Token);
+                }
+                else
+                {
+                    await harness.Service.DeleteAsync(DeleteRequest(), Expected, Authorize, caller.Token);
+                }
+            };
+            await action.Should().ThrowAsync<OperationCanceledException>();
+            harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
+            SharedTemplateCatalog.Workspace.OperationEntries.Should().BeEmpty();
+        }
+
+        [Test]
+        public async Task It_does_not_admit_an_unverified_holder()
+        {
+            Harness harness = Guarded();
+            var acquire = harness.Engine.OnAcquireTargetLock;
+            harness.Engine.OnAcquireTargetLock = async token =>
+                ((DmsTargetLockResult.Acquired)await acquire(token)) with
+                {
+                    Endpoint = Expected with { Host = "b" },
+                };
+            int admissions = 0;
+            var result = await harness.Service.DeleteAsync(
+                DeleteRequest(),
+                Expected,
+                (_, _) =>
+                {
+                    admissions++;
+                    return Task.CompletedTask;
+                },
+                default
+            );
+            FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.TargetEndpointChanged);
+            admissions.Should().Be(0);
+        }
+
         [TestCase("Host=b;Username=admin", DmsProvisioningFailureCode.TargetEndpointChanged)]
         [TestCase("Host=a,b;Username=admin", DmsProvisioningFailureCode.TargetEndpointUnverifiable)]
         [TestCase("not a connection", DmsProvisioningFailureCode.TargetEndpointUnverifiable)]
@@ -71,8 +260,18 @@ public class DmsDataStoreProvisioningEndpointTests
         )
         {
             Harness harness = Guarded(connection);
-            var create = await harness.Service.CreateAsync(CreateRequest(), Expected, CancellationToken.None);
-            var delete = await harness.Service.DeleteAsync(DeleteRequest(), Expected, CancellationToken.None);
+            var create = await harness.Service.CreateAsync(
+                CreateRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
+            var delete = await harness.Service.DeleteAsync(
+                DeleteRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
             FailureOf(create).Code.Should().Be(code);
             FailureOf(delete).Code.Should().Be(code);
             FailureOf(delete).Category.Should().Be(DmsProvisioningFailureCategory.OperatorInspectionRequired);
@@ -92,7 +291,12 @@ public class DmsDataStoreProvisioningEndpointTests
                 {
                     Endpoint = missing ? null : Expected with { Host = "b" },
                 };
-            var result = await harness.Service.DeleteAsync(DeleteRequest(), Expected, CancellationToken.None);
+            var result = await harness.Service.DeleteAsync(
+                DeleteRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
             FailureOf(result)
                 .Code.Should()
                 .Be(
@@ -114,7 +318,12 @@ public class DmsDataStoreProvisioningEndpointTests
                 {
                     Endpoint = Expected with { Host = "b" },
                 };
-            var result = await harness.Service.CreateAsync(CreateRequest(), Expected, CancellationToken.None);
+            var result = await harness.Service.CreateAsync(
+                CreateRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
             FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.TargetEndpointChanged);
             harness.Engine.Members.Should().Equal(SpyDmsTargetEngine.AcquireTargetLock);
             harness.OnlyHolder.ReleaseCount.Should().Be(1);
@@ -131,6 +340,7 @@ public class DmsDataStoreProvisioningEndpointTests
                 {
                     MaintenanceDatabase = "other",
                 },
+                (_, _) => Task.CompletedTask,
                 CancellationToken.None
             );
             FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.TargetEndpointUnverifiable);
@@ -141,7 +351,12 @@ public class DmsDataStoreProvisioningEndpointTests
         public async Task It_allows_credentials_to_rotate_and_resolves_only_once()
         {
             Harness harness = Guarded();
-            var result = await harness.Service.DeleteAsync(DeleteRequest(), Expected, CancellationToken.None);
+            var result = await harness.Service.DeleteAsync(
+                DeleteRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
             result.Should().BeOfType<DmsDataStoreDeleteResult.AlreadyAbsent>();
             harness.AdminConnection.Resolutions.Should().Be(1);
         }
@@ -153,8 +368,18 @@ public class DmsDataStoreProvisioningEndpointTests
             harness.AdminConnection.Result = new DmsAdminConnectionResolution.Failed(
                 DmsProvisioningDiagnostic.ForOperation(DmsAdminConnectionSource.UnusableValueStep)
             );
-            var create = await harness.Service.CreateAsync(CreateRequest(), Expected, CancellationToken.None);
-            var delete = await harness.Service.DeleteAsync(DeleteRequest(), Expected, CancellationToken.None);
+            var create = await harness.Service.CreateAsync(
+                CreateRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
+            var delete = await harness.Service.DeleteAsync(
+                DeleteRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
             FailureOf(create).Code.Should().Be(DmsProvisioningFailureCode.TargetEndpointUnverifiable);
             FailureOf(delete).Code.Should().Be(DmsProvisioningFailureCode.TargetEndpointUnverifiable);
             harness.Engine.Calls.Should().BeEmpty();
@@ -169,7 +394,12 @@ public class DmsDataStoreProvisioningEndpointTests
             harness.AdminConnection.Result = new DmsAdminConnectionResolution.Failed(
                 DmsProvisioningDiagnostic.ForOperation(DmsAdminConnectionSource.TimedOutStep)
             );
-            var result = await harness.Service.DeleteAsync(DeleteRequest(), Expected, CancellationToken.None);
+            var result = await harness.Service.DeleteAsync(
+                DeleteRequest(),
+                Expected,
+                (_, _) => Task.CompletedTask,
+                CancellationToken.None
+            );
             FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.SecretResolutionFailed);
             FailureOf(result).Category.Should().Be(DmsProvisioningFailureCategory.Transient);
             harness.Engine.Calls.Should().BeEmpty();
@@ -233,6 +463,7 @@ public class DmsDataStoreProvisioningEndpointTests
             var result = await harness.Service.CreateAsync(
                 CreateRequest(),
                 EndpointFor("postgresql"),
+                (_, _) => Task.CompletedTask,
                 CancellationToken.None
             );
             FailureOf(result).Code.Should().Be(DmsProvisioningFailureCode.RestoreFailed);

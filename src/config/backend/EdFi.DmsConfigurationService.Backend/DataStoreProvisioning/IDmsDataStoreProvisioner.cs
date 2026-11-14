@@ -44,17 +44,27 @@ public interface IDmsDataStoreProvisioner
         CancellationToken cancellationToken
     );
 
-    /// <summary>Requires the persisted endpoint to match both the resolved snapshot and actual lock connection before target work.</summary>
+    /// <summary>
+    /// Requires the persisted endpoint to match the snapshot and actual lock connection, then invokes
+    /// admission exactly once under that lock before target work (including an absent delete).
+    /// Ownership, cancellation and infrastructure exceptions from admission propagate unchanged.
+    /// </summary>
     public Task<DmsDataStoreCreateResult> CreateAsync(
         DmsDataStoreCreateRequest request,
         ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     );
 
-    /// <summary>Requires the persisted endpoint to match both the resolved snapshot and actual lock connection before target work.</summary>
+    /// <summary>
+    /// Requires the persisted endpoint to match the snapshot and actual lock connection, then invokes
+    /// admission exactly once under that lock before target work (including an absent delete).
+    /// Ownership, cancellation and infrastructure exceptions from admission propagate unchanged.
+    /// </summary>
     public Task<DmsDataStoreDeleteResult> DeleteAsync(
         DmsDataStoreDeleteRequest request,
         ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     );
 }

@@ -61,7 +61,8 @@ public sealed partial class DmsDataStoreProvisioningService
         StagingCleanup cleanup,
         Publication publication,
         ManagedDataStoreEndpoint? expectedEndpoint,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         DmsDataStoreCreateResult? result = null;
@@ -114,7 +115,8 @@ public sealed partial class DmsDataStoreProvisioningService
                 },
                 static (failure, report) => new DmsDataStoreCreateResult.Failure(failure, report),
                 cancellationToken,
-                expectedEndpoint
+                expectedEndpoint,
+                authorize
             );
         }
         catch (OperationCanceledException canceled) when (publication.State != PublicationState.None)

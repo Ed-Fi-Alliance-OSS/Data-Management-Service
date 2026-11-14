@@ -104,22 +104,25 @@ public sealed partial class DmsDataStoreProvisioningService(
     public Task<DmsDataStoreCreateResult> CreateAsync(
         DmsDataStoreCreateRequest request,
         CancellationToken cancellationToken
-    ) => CreateCoreAsync(request, null, cancellationToken);
+    ) => CreateCoreAsync(request, null, cancellationToken, null);
 
     public Task<DmsDataStoreCreateResult> CreateAsync(
         DmsDataStoreCreateRequest request,
         ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(expectedEndpoint);
-        return CreateCoreAsync(request, expectedEndpoint, cancellationToken);
+        ArgumentNullException.ThrowIfNull(authorize);
+        return CreateCoreAsync(request, expectedEndpoint, cancellationToken, authorize);
     }
 
     private async Task<DmsDataStoreCreateResult> CreateCoreAsync(
         DmsDataStoreCreateRequest request,
         ManagedDataStoreEndpoint? expectedEndpoint,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -181,43 +184,54 @@ public sealed partial class DmsDataStoreProvisioningService(
             operation.StagingDatabaseName,
             request.ExpectedSourceIdentity
         );
-        DmsDataStoreCreateResult? result;
+        DmsDataStoreCreateResult? result = null;
         OperationCanceledException? cancellation = null;
         try
         {
-            if (artifact.Pin != request.PinnedArtifact)
+            StagedArtifact? stagedArtifact = null;
+            try
             {
-                throw new DmsProvisioningFailedException(
-                    DmsProvisioningFailure.Create(
-                        DmsProvisioningFailureCode.ArtifactChangedSinceCreate,
-                        DmsProvisioningDiagnostic.ForOperation(ResolveArtifactStep)
-                    )
+                if (artifact.Pin != request.PinnedArtifact)
+                {
+                    throw new DmsProvisioningFailedException(
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.ArtifactChangedSinceCreate,
+                            DmsProvisioningDiagnostic.ForOperation(ResolveArtifactStep)
+                        )
+                    );
+                }
+
+                // The artifact is extracted while hashing; a mismatch is ArtifactTampered.
+                stagedArtifact = await artifact.ExtractArtifactAsync(cancellationToken);
+            }
+            catch (DmsProvisioningFailedException stepFailure)
+            {
+                // A refusal before the lock: nothing was created on the server.
+                result = Fail(
+                    static (failure, cleanup) => new DmsDataStoreCreateResult.Failure(failure, cleanup),
+                    operation,
+                    CreateOperationName,
+                    stepFailure.Failure,
+                    DmsCleanupReport.Clean
                 );
             }
 
-            // The artifact is extracted while hashing; a mismatch is ArtifactTampered.
-            StagedArtifact stagedArtifact = await artifact.ExtractArtifactAsync(cancellationToken);
-            (result, cancellation) = await CreateUnderLockAsync(
-                request,
-                operation,
-                artifact,
-                stagedArtifact,
-                cleanup,
-                publication,
-                expectedEndpoint,
-                cancellationToken
-            );
-        }
-        catch (DmsProvisioningFailedException stepFailure)
-        {
-            // A refusal before the lock: nothing was created on the server.
-            result = Fail(
-                static (failure, cleanup) => new DmsDataStoreCreateResult.Failure(failure, cleanup),
-                operation,
-                CreateOperationName,
-                stepFailure.Failure,
-                DmsCleanupReport.Clean
-            );
+            // Caller admission is outside the artifact-failure boundary: every exception it supplies
+            // retains its type and identity. Physical step failures are handled under the target lock.
+            if (stagedArtifact is not null)
+            {
+                (result, cancellation) = await CreateUnderLockAsync(
+                    request,
+                    operation,
+                    artifact,
+                    stagedArtifact,
+                    cleanup,
+                    publication,
+                    expectedEndpoint,
+                    cancellationToken,
+                    authorize
+                );
+            }
         }
         finally
         {
@@ -969,7 +983,8 @@ public sealed partial class DmsDataStoreProvisioningService(
         Func<LockScope, Task<TResult>> body,
         Func<DmsProvisioningFailure, DmsCleanupReport, TResult> failure,
         CancellationToken cancellationToken,
-        ManagedDataStoreEndpoint? expectedEndpoint
+        ManagedDataStoreEndpoint? expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
@@ -977,6 +992,10 @@ public sealed partial class DmsDataStoreProvisioningService(
             Fail(failure, operation, operationName, detail, priorCleanup);
 
         // Cancellation during acquisition propagates: nothing was acquired and nothing was created.
+        if (authorize is not null)
+        {
+            await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeTargetLock, operation, cancellationToken);
+        }
         DmsTargetLockResult lockResult = await engine.AcquireTargetLockAsync(
             target,
             operation,
@@ -1018,15 +1037,43 @@ public sealed partial class DmsDataStoreProvisioningService(
         LockScope scope = new(holder, operation, settings.CommandTimeout, timeProvider, cancellationToken);
         await using (holder)
         {
+            ManagedDataStoreEndpoint? actualEndpoint = ((DmsTargetLockResult.Acquired)lockResult).Endpoint;
+            if (
+                expectedEndpoint is not null
+                && ValidateEndpoint(expectedEndpoint, actualEndpoint) is { } endpointFailure
+            )
+            {
+                return Failed(endpointFailure);
+            }
+
+            if (authorize is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (holder.LostToken.IsCancellationRequested)
+                {
+                    return Failed(scope.LockLostFailure());
+                }
+                using CancellationTokenSource admissionCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, holder.LostToken);
+                // Admission belongs to the caller's job fence, not the physical provider's exception
+                // classification. Preserve its exceptions (including lease loss and cancellation) unchanged.
+                await authorize(actualEndpoint!, admissionCancellation.Token);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (holder.LostToken.IsCancellationRequested)
+                {
+                    return Failed(scope.LockLostFailure());
+                }
+            }
+
             try
             {
-                if (
-                    expectedEndpoint is not null
-                    && ValidateEndpoint(expectedEndpoint, ((DmsTargetLockResult.Acquired)lockResult).Endpoint)
-                        is { } endpointFailure
-                )
+                if (authorize is not null)
                 {
-                    return Failed(endpointFailure);
+                    await TestHooks.AtAsync(
+                        DmsProvisioningHookPoint.AfterAdmission,
+                        operation,
+                        cancellationToken
+                    );
                 }
                 return await body(scope);
             }

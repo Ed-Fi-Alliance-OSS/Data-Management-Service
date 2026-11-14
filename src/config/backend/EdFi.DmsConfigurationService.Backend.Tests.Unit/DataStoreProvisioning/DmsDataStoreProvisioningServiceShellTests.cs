@@ -369,11 +369,21 @@ public class DmsDataStoreProvisioningServiceShellTests
                 Task.FromResult<DmsLiveTargetState>(new DmsLiveTargetState.Absent());
 
             Task<DmsDataStoreDeleteResult> first = guarded
-                ? harness.Service.DeleteAsync(DeleteRequest(), endpointA!, CancellationToken.None)
+                ? harness.Service.DeleteAsync(
+                    DeleteRequest(),
+                    endpointA!,
+                    (_, _) => Task.CompletedTask,
+                    CancellationToken.None
+                )
                 : harness.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
             await firstWaits.Task.WaitAsync(TimeSpan.FromSeconds(30));
             Task<DmsDataStoreDeleteResult> second = guarded
-                ? harness.Service.DeleteAsync(DeleteRequest(), endpointB!, CancellationToken.None)
+                ? harness.Service.DeleteAsync(
+                    DeleteRequest(),
+                    endpointB!,
+                    (_, _) => Task.CompletedTask,
+                    CancellationToken.None
+                )
                 : harness.Service.DeleteAsync(DeleteRequest(), CancellationToken.None);
             await secondWaits.Task.WaitAsync(TimeSpan.FromSeconds(30));
             releaseFirst.SetResult();
@@ -383,7 +393,12 @@ public class DmsDataStoreProvisioningServiceShellTests
 
             // A create afterwards binds its own resolution too (refused at the lock, which is enough to see it).
             _create = guarded
-                ? await harness.Service.CreateAsync(CreateRequest(), endpointB!, CancellationToken.None)
+                ? await harness.Service.CreateAsync(
+                    CreateRequest(),
+                    endpointB!,
+                    (_, _) => Task.CompletedTask,
+                    CancellationToken.None
+                )
                 : await harness.Service.CreateAsync(CreateRequest(), CancellationToken.None);
         }
 

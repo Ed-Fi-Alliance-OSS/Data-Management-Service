@@ -65,6 +65,7 @@ public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerRead
     public Task<DmsDataStoreCreateResult> CreateAsync(
         DmsDataStoreCreateRequest request,
         ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     ) => CreateAsync(request, cancellationToken);
 
@@ -72,6 +73,7 @@ public sealed class DisabledDmsDataStoreProvisioner(IDmsDataStoreProvisionerRead
     public Task<DmsDataStoreDeleteResult> DeleteAsync(
         DmsDataStoreDeleteRequest request,
         ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     ) => DeleteAsync(request, cancellationToken);
 }
