@@ -31,14 +31,23 @@ internal static class DataStoreCatalog
         DbTransaction transaction,
         long? tenantId,
         CancellationToken cancellationToken
+    ) => AcquireAsync(transaction, TenantGateResource(tenantId), cancellationToken);
+
+    internal static Task AcquireTenantGatesAsync(
+        DbTransaction transaction,
+        IEnumerable<long?> tenantIds,
+        CancellationToken cancellationToken
     ) =>
-        AcquireAsync(
+        AcquireResourcesAsync(
             transaction,
-            tenantId is long id
-                ? "dmscs:datastore-catalog:tenant:" + id.ToString(CultureInfo.InvariantCulture)
-                : "dmscs:datastore-catalog:null",
+            tenantIds.Distinct().Order().Select(TenantGateResource).ToArray(),
             cancellationToken
         );
+
+    private static string TenantGateResource(long? tenantId) =>
+        tenantId is long id
+            ? "dmscs:datastore-catalog:tenant:" + id.ToString(CultureInfo.InvariantCulture)
+            : "dmscs:datastore-catalog:null";
 
     /// <summary>
     /// Ordinary rename may exclude its own linked reservation only after verifying the ordinary row
@@ -161,9 +170,15 @@ internal static class DataStoreCatalog
         );
     }
 
-    private static async Task AcquireAsync(
+    private static Task AcquireAsync(
         DbTransaction transaction,
         string resource,
+        CancellationToken cancellationToken
+    ) => AcquireResourcesAsync(transaction, [resource], cancellationToken);
+
+    private static async Task AcquireResourcesAsync(
+        DbTransaction transaction,
+        string[] resources,
         CancellationToken cancellationToken
     )
     {
@@ -192,19 +207,25 @@ internal static class DataStoreCatalog
             )
         );
         long bounded = previous == 0 ? 5000 : Math.Min(previous, 5000);
-        long key = BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(resource)));
+        long[] keys = resources
+            .Select(resource =>
+                BinaryPrimitives.ReadInt64BigEndian(SHA256.HashData(Encoding.UTF8.GetBytes(resource)))
+            )
+            .ToArray();
         await connection.ExecuteAsync(
             new CommandDefinition(
                 """
                 SELECT set_config('lock_timeout', @Timeout, true);
-                SELECT pg_advisory_xact_lock(@Key);
+                SELECT pg_advisory_xact_lock(gate.key)
+                FROM (SELECT key FROM unnest(@Keys) WITH ORDINALITY AS gates(key, position)
+                      ORDER BY position OFFSET 0) gate;
                 SELECT set_config('lock_timeout', @Previous, true);
                 """,
                 new
                 {
                     Timeout = bounded.ToString(CultureInfo.InvariantCulture) + "ms",
                     Previous = previous.ToString(CultureInfo.InvariantCulture) + "ms",
-                    Key = key,
+                    Keys = keys,
                 },
                 transaction,
                 cancellationToken: cancellationToken

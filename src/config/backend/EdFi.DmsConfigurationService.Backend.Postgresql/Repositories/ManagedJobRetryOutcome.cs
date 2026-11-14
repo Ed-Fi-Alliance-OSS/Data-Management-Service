@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
@@ -28,13 +29,14 @@ internal static class ManagedJobRetryOutcome
 
     private sealed record Aggregate(int Id, int LastAttempt);
 
+    private sealed record ExhaustedAggregate(int Id, string JobId, int LastAttempt);
+
     internal static async Task<Target?> LockAsync(
         JobDatabaseSession session,
         Job job,
         JobDeadline budget,
         CancellationToken cancellationToken,
-        bool terminal = false,
-        bool tenantGateHeld = false
+        Boolean terminal = false
     )
     {
         // Ordinary jobs also run on older schemas; never touch the managed catalog for them.
@@ -43,15 +45,12 @@ internal static class ManagedJobRetryOutcome
             return null;
         }
         bool isCreate = job.JobType == ManagedJobTypes.Create;
-        if (!tenantGateHeld)
-        {
-            await session.RunAsync(
-                "RetryTenantGate",
-                token => DataStoreCatalog.AcquireTenantGateAsync(session.Transaction!, job.TenantId, token),
-                budget,
-                cancellationToken
-            );
-        }
+        await session.RunAsync(
+            "RetryTenantGate",
+            token => DataStoreCatalog.AcquireTenantGateAsync(session.Transaction!, job.TenantId, token),
+            budget,
+            cancellationToken
+        );
         var aggregate = await session.RunAsync(
             "LockRetryAggregate",
             token =>
@@ -156,42 +155,134 @@ internal static class ManagedJobRetryOutcome
         JobDeadline budget
     )
     {
-        // Every job row is already locked. Take tenant gates in a stable order across overlapping batches,
-        // and only once per tenant, before locking that tenant's matching aggregates.
-        foreach (
-            var tenant in jobs.Where(job => job.JobType is ManagedJobTypes.Create or ManagedJobTypes.Delete)
-                .GroupBy(job => job.TenantId)
-                .OrderBy(group => group.Key)
-        )
+        var managedJobs = jobs.Where(job => job.JobType is ManagedJobTypes.Create or ManagedJobTypes.Delete)
+            .ToDictionary(job => job.JobId, StringComparer.Ordinal);
+        // Ordinary jobs also run on older schemas; do not query the managed catalog when none were selected.
+        if (managedJobs.Count == 0)
         {
+            return;
+        }
+        // Every selected job is already locked. Acquire all tenant gates in stable order in a bounded
+        // number of round trips, then lock and project the matching aggregates as sets under the same deadline.
+        await session.RunAsync(
+            "RetryTenantGate",
+            token =>
+                DataStoreCatalog.AcquireTenantGatesAsync(
+                    session.Transaction!,
+                    managedJobs.Values.Select(job => job.TenantId),
+                    token
+                ),
+            budget,
+            CancellationToken.None
+        );
+        var aggregates = (
             await session.RunAsync(
-                "RetryTenantGate",
-                token => DataStoreCatalog.AcquireTenantGateAsync(session.Transaction!, tenant.Key, token),
+                "LockRetryAggregate",
+                token =>
+                    session.Connection.QueryAsync<ExhaustedAggregate>(
+                        PostgresqlJobSession.Command(
+                            session,
+                            """
+                            WITH jobs AS (
+                                SELECT * FROM jsonb_to_recordset(CAST(@Jobs AS jsonb))
+                                    AS j("JobId" text, "TenantId" bigint, "IsCreate" boolean)
+                            )
+                            SELECT m."Id", j."JobId", m."LastAttempt"
+                            FROM jobs j JOIN dmscs."DataStoreManage" m
+                              ON (m."TenantId" = j."TenantId" OR (m."TenantId" IS NULL AND j."TenantId" IS NULL))
+                             AND ((j."IsCreate" AND m."CreateJobId" = j."JobId" COLLATE "C" AND m."DeleteJobId" IS NULL
+                                   AND m."Status" IN ('PendingCreate', 'CreateInProgress', 'CreateFailed'))
+                               OR (NOT j."IsCreate" AND m."DeleteJobId" = j."JobId" COLLATE "C"
+                                   AND m."Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed')))
+                            ORDER BY m."Id"
+                            FOR UPDATE OF m;
+                            """,
+                            new
+                            {
+                                Jobs = JsonSerializer.Serialize(
+                                    managedJobs.Values.Select(job => new
+                                    {
+                                        job.JobId,
+                                        job.TenantId,
+                                        IsCreate = job.JobType == ManagedJobTypes.Create,
+                                    })
+                                ),
+                            },
+                            budget,
+                            token
+                        )
+                    ),
                 budget,
                 CancellationToken.None
-            );
-            foreach (var job in tenant.OrderBy(job => job.JobId, StringComparer.Ordinal))
+            )
+        ).ToArray();
+        if (
+            aggregates
+                .GroupBy(aggregate => aggregate.JobId, StringComparer.Ordinal)
+                .Any(group => group.Count() != 1)
+        )
+        {
+            throw new InvalidOperationException("The managed job has multiple matching aggregates.");
+        }
+        if (
+            Array.Exists(
+                aggregates,
+                aggregate =>
+                    managedJobs[aggregate.JobId].AttemptCount <= 0
+                    || managedJobs[aggregate.JobId].AttemptCount < aggregate.LastAttempt
+            )
+        )
+        {
+            throw new InvalidOperationException("The managed job attempt is inconsistent.");
+        }
+        if (aggregates.Length == 0)
+        {
+            return;
+        }
+        var targets = aggregates.Select(aggregate =>
+        {
+            var job = managedJobs[aggregate.JobId];
+            return new
             {
-                var target = await LockAsync(
-                    session,
-                    new(job.JobId, job.TenantId, job.JobType, job.AttemptCount),
-                    budget,
-                    CancellationToken.None,
-                    terminal: true,
-                    tenantGateHeld: true
-                );
-                if (target is not null)
-                {
-                    await WriteAsync(
+                aggregate.Id,
+                Status = job.JobType == ManagedJobTypes.Create ? "CreateError" : "DeleteError",
+                Attempt = job.AttemptCount,
+                Now = job.DatabaseUtcNow,
+            };
+        });
+        var failure = ManagedDataStoreFailure.FromJob(JobErrorCode.AttemptsExhausted);
+        int updated = await session.RunAsync(
+            "WriteRetryAggregate",
+            token =>
+                session.Connection.ExecuteAsync(
+                    PostgresqlJobSession.Command(
                         session,
-                        target,
-                        job.DatabaseUtcNow,
+                        """
+                        UPDATE dmscs."DataStoreManage" m
+                        SET "Status" = t."Status", "LastAttempt" = t."Attempt",
+                            "LastFailureCategory" = @Category, "LastFailureProvisioningCode" = NULL,
+                            "LastFailureJobCode" = @JobCode,
+                            "UpdatedAt" = t."Now", "LastModifiedDate" = t."Now", "LastRefreshed" = t."Now"
+                        FROM jsonb_to_recordset(CAST(@Targets AS jsonb))
+                            AS t("Id" int, "Status" text, "Attempt" int, "Now" timestamp)
+                        WHERE m."Id" = t."Id";
+                        """,
+                        new
+                        {
+                            Targets = JsonSerializer.Serialize(targets),
+                            Category = failure.Category.ToString(),
+                            failure.JobCode,
+                        },
                         budget,
-                        CancellationToken.None,
-                        JobErrorCode.AttemptsExhausted
-                    );
-                }
-            }
+                        token
+                    )
+                ),
+            budget,
+            CancellationToken.None
+        );
+        if (updated != aggregates.Length)
+        {
+            throw new InvalidOperationException("The managed job outcomes were not saved.");
         }
     }
 }

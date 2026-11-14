@@ -8,6 +8,7 @@ using System.Data.Common;
 using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
@@ -30,14 +31,23 @@ internal static class DataStoreCatalog
         DbTransaction transaction,
         long? tenantId,
         CancellationToken cancellationToken
+    ) => AcquireAsync(transaction, TenantGateResource(tenantId), cancellationToken);
+
+    internal static Task AcquireTenantGatesAsync(
+        DbTransaction transaction,
+        IEnumerable<long?> tenantIds,
+        CancellationToken cancellationToken
     ) =>
-        AcquireAsync(
+        AcquireResourcesAsync(
             transaction,
-            tenantId is long id
-                ? "dmscs:datastore-catalog:tenant:" + id.ToString(CultureInfo.InvariantCulture)
-                : "dmscs:datastore-catalog:null",
+            tenantIds.Distinct().Order().Select(TenantGateResource).ToArray(),
             cancellationToken
         );
+
+    private static string TenantGateResource(long? tenantId) =>
+        tenantId is long id
+            ? "dmscs:datastore-catalog:tenant:" + id.ToString(CultureInfo.InvariantCulture)
+            : "dmscs:datastore-catalog:null";
 
     /// <summary>
     /// Ordinary rename may exclude its own linked reservation only after verifying the ordinary row
@@ -160,9 +170,15 @@ internal static class DataStoreCatalog
         );
     }
 
-    private static async Task AcquireAsync(
+    private static Task AcquireAsync(
         DbTransaction transaction,
         string resource,
+        CancellationToken cancellationToken
+    ) => AcquireResourcesAsync(transaction, [resource], cancellationToken);
+
+    private static async Task AcquireResourcesAsync(
+        DbTransaction transaction,
+        string[] resources,
         CancellationToken cancellationToken
     )
     {
@@ -189,12 +205,23 @@ internal static class DataStoreCatalog
                     """
                     DECLARE @Wait int = @@LOCK_TIMEOUT;
                     IF @Wait < 0 OR @Wait > 5000 SET @Wait = 5000;
-                    DECLARE @Result int;
-                    EXEC @Result = sys.sp_getapplock @Resource = @Resource, @LockMode = 'Exclusive',
-                        @LockOwner = 'Transaction', @LockTimeout = @Wait;
+                    DECLARE @Result int = 0, @Resource nvarchar(255);
+                    DECLARE gates CURSOR LOCAL FAST_FORWARD FOR
+                        SELECT value FROM OPENJSON(@Resources) ORDER BY CONVERT(int, [key]);
+                    OPEN gates;
+                    FETCH NEXT FROM gates INTO @Resource;
+                    WHILE @@FETCH_STATUS = 0
+                    BEGIN
+                        EXEC @Result = sys.sp_getapplock @Resource = @Resource, @LockMode = 'Exclusive',
+                            @LockOwner = 'Transaction', @LockTimeout = @Wait;
+                        IF @Result < 0 BREAK;
+                        FETCH NEXT FROM gates INTO @Resource;
+                    END;
+                    CLOSE gates;
+                    DEALLOCATE gates;
                     SELECT @Result;
                     """,
-                    new { Resource = resource },
+                    new { Resources = JsonSerializer.Serialize(resources) },
                     transaction,
                     cancellationToken: cancellationToken
                 )

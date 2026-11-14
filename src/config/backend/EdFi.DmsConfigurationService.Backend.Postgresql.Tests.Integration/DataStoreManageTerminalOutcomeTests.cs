@@ -717,57 +717,55 @@ public partial class Given_data_store_namespace_reservations
     }
 
     [Test, Category("DataStoreManageTerminalOutcome")]
-    public async Task It_commits_full_managed_exhaust_batches_and_honors_cancellation_between_batches(
+    public async Task It_commits_full_managed_exhaust_batches_with_latency_and_honors_cancellation_between_batches(
         [Values(false, true)] bool cancelBetweenBatches,
-        [Values(false, true)] bool multitenant
+        [Values(0, 2, 1000)] int tenantCount
     )
     {
-        long? firstTenant = multitenant ? await Tenant("batch-first") : null;
-        long? secondTenant = multitenant ? await Tenant("batch-second") : null;
         var seed = await SeedRetry(false);
         await using var connection = await Open();
         await ExpireTerminalClaim(connection, seed.Claim);
         await connection.ExecuteAsync(
             """
+            INSERT INTO dmscs."Tenant" ("Name")
+            SELECT concat('batch-tenant-', n) FROM generate_series(1, @TenantCount) AS n;
             INSERT INTO dmscs."Job" ("JobId", "TenantId", "JobType", "PayloadVersion", "Payload", "Status", "AttemptCount", "NextAttemptAt")
-            SELECT concat('batch-', n), CASE n % 3 WHEN 1 THEN @FirstTenant WHEN 2 THEN @SecondTenant ELSE NULL END, @JobType, 1, '{}', 'Pending', 1, @Now FROM generate_series(1, 1000) AS n;
+            SELECT concat('batch-', n), (SELECT "Id" FROM dmscs."Tenant" WHERE "Name" = concat('batch-tenant-', n % (@TenantCount + 1))), @JobType, 1, '{}', 'Pending', 1, @Now FROM generate_series(1, 1000) AS n;
             INSERT INTO dmscs."DataStoreManage" ("Name", "TenantId", "Template", "Status", "TargetDatabaseName", "ExpectedSourceIdentity",
                 "EndpointDescriptor", "CreateJobId", "CreatedAt", "UpdatedAt", "LastRefreshed", "LastModifiedDate")
-            SELECT concat('Batch', n), CASE n % 3 WHEN 1 THEN @FirstTenant WHEN 2 THEN @SecondTenant ELSE NULL END, 'Minimal', 'PendingCreate', concat('dms_batch_', n), "ExpectedSourceIdentity",
+            SELECT concat('Batch', n), (SELECT "Id" FROM dmscs."Tenant" WHERE "Name" = concat('batch-tenant-', n % (@TenantCount + 1))), 'Minimal', 'PendingCreate', concat('dms_batch_', n), "ExpectedSourceIdentity",
                 "EndpointDescriptor", concat('batch-', n), @Now, @Now, @Now, @Now
             FROM dmscs."DataStoreManage" CROSS JOIN generate_series(1, 1000) AS n WHERE "Id" = @Id;
             """,
             new
             {
                 seed.Id,
-                FirstTenant = firstTenant,
-                SecondTenant = secondTenant,
+                TenantCount = tenantCount,
                 JobType = ManagedJobTypes.Create,
                 Now = DateTime.SpecifyKind(DateTime.UtcNow, DateTimeKind.Unspecified),
             }
         );
         using var stopping = new CancellationTokenSource();
         List<int> batches = [];
-        List<int> gatesPerBatch = [];
-        int tenantGates = 0;
+        List<int> operationsPerBatch = [];
+        int operations = 0;
         var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
         {
             SessionHooks = new()
             {
-                BeforeOperation = (operation, _) =>
+                // Controlled per-operation latency makes a per-job/per-tenant round-trip loop exceed
+                // the unchanged five-second batch deadline, even on a local database.
+                BeforeOperation = async (_, token) =>
                 {
-                    if (operation == "RetryTenantGate")
-                    {
-                        tenantGates++;
-                    }
-                    return Task.CompletedTask;
+                    operations++;
+                    await Task.Delay(TimeSpan.FromMilliseconds(3), token);
                 },
             },
             AfterExhaustBatch = count =>
             {
                 batches.Add(count);
-                gatesPerBatch.Add(tenantGates);
-                tenantGates = 0;
+                operationsPerBatch.Add(operations);
+                operations = 0;
                 if (cancelBetweenBatches)
                 {
                     stopping.Cancel();
@@ -780,11 +778,8 @@ public partial class Given_data_store_namespace_reservations
             .Which.ExhaustedCount.Should()
             .Be(cancelBetweenBatches ? 1000 : 1001);
         batches.Should().Equal(cancelBetweenBatches ? new[] { 1000 } : new[] { 1000, 1 });
-        // The full batch contains interleaved default and named tenants; every selected partition is gated once.
-        int firstBatchGates = multitenant ? 3 : 1;
-        gatesPerBatch
-            .Should()
-            .Equal(cancelBetweenBatches ? new[] { firstBatchGates } : new[] { firstBatchGates, 1 });
+        // Includes open/begin/configure/commit. Command count must not grow with selected jobs or tenants.
+        operationsPerBatch.Should().OnlyContain(count => count <= 12);
         (
             await connection.ExecuteScalarAsync<int>(
                 """SELECT COUNT(*) FROM dmscs."DataStoreManage" WHERE "Status" = 'CreateError' AND "LastAttempt" = 1 AND "LastFailureJobCode" = 'AttemptsExhausted' AND "LastFailureCategory" = 'OperatorInspectionRequired';"""
@@ -826,5 +821,134 @@ public partial class Given_data_store_namespace_reservations
             .Which.ExhaustedCount.Should()
             .Be(0);
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_exhaustion_uses_the_existing_single_tenant_gate_and_rolls_back_on_timeout(
+        [Values(false, true)] bool multitenant
+    )
+    {
+        long? tenantId = multitenant ? await Tenant("exhaust-gate") : null;
+        var seed = await SeedRetry(false, tenantId);
+        await using var observer = await Open();
+        await ExpireTerminalClaim(observer, seed.Claim);
+        string before = await DeleteAcceptanceSnapshot();
+        await using var blocker = await Open();
+        await using var transaction = await blocker.BeginTransactionAsync();
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, tenantId, default);
+        try
+        {
+            (
+                await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
+                    1,
+                    JobErrorCode.AttemptsExhausted,
+                    default
+                )
+            )
+                .Should()
+                .BeOfType<JobExhaustResult.FailureUnknown>();
+        }
+        finally
+        {
+            await transaction.RollbackAsync();
+        }
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_rolls_back_exhaustion_for_duplicate_links_or_inconsistent_attempts(
+        [Values(false, true)] bool delete,
+        [Values("duplicate", "newer-attempt")] string corruption
+    )
+    {
+        var seed = await SeedRetry(delete);
+        await using var connection = await Open();
+        await ExpireTerminalClaim(connection, seed.Claim);
+        if (corruption == "duplicate")
+        {
+            await connection.ExecuteAsync(
+                """
+                INSERT INTO dmscs."DataStoreManage" ("Name", "TenantId", "Template", "Status", "TargetDatabaseName", "ExpectedSourceIdentity", "EndpointDescriptor", "CreateJobId", "DeleteJobId", "CreatedAt", "UpdatedAt", "LastRefreshed", "LastModifiedDate")
+                SELECT 'DuplicateLink', "TenantId", "Template", "Status", 'duplicate_link', "ExpectedSourceIdentity", "EndpointDescriptor", "CreateJobId", "DeleteJobId", "CreatedAt", "UpdatedAt", "LastRefreshed", "LastModifiedDate"
+                FROM dmscs."DataStoreManage" WHERE "Id" = @Id;
+                """,
+                new { seed.Id }
+            );
+        }
+        else
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."DataStoreManage" SET "LastAttempt" = 2 WHERE "Id" = @Id;""",
+                new { seed.Id }
+            );
+        }
+        string before = await DeleteAcceptanceSnapshot();
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
+                1,
+                JobErrorCode.AttemptsExhausted,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobExhaustResult.FailureUnknown>();
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_bulk_exhaustion_does_not_retain_aggregate_locks_for_an_unrelated_tenant()
+    {
+        long otherTenant = await Tenant("other-held-exhaust-tenant");
+        var other = await SeedPublication(otherTenant, "OtherExhaust");
+        long tenant = await Tenant("held-exhaust-tenant");
+        var first = await SeedPublication(tenant, "FirstExhaust");
+        var second = await SeedPublication(tenant, "SecondExhaust");
+        await using var connection = await Open();
+        await ExpireTerminalClaim(connection, first.Claim);
+        await ExpireTerminalClaim(connection, second.Claim);
+        var held = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var release = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                AfterOperation = async (operation, token) =>
+                {
+                    if (operation == "WriteRetryAggregate")
+                    {
+                        // Hold the completed set update and its locks while the unrelated row is renamed.
+                        held.TrySetResult();
+                        await release.Task.WaitAsync(token);
+                    }
+                },
+            },
+        };
+        Task<JobExhaustResult> exhaust = repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default);
+        try
+        {
+            await held.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+            (
+                await connection.ExecuteAsync(
+                    new CommandDefinition(
+                        """UPDATE dmscs."DataStoreManage" SET "Name" = 'OtherExhaustProbe' WHERE "Id" = @Id;""",
+                        new { other.Command.Id },
+                        commandTimeout: 2,
+                        cancellationToken: timeout.Token
+                    )
+                )
+            )
+                .Should()
+                .Be(1);
+        }
+        finally
+        {
+            release.TrySetResult();
+            await exhaust;
+        }
+        (await exhaust).Should().BeOfType<JobExhaustResult.Success>().Which.ExhaustedCount.Should().Be(2);
+        (await DeleteRow(connection, first.Command.Id))["Status"].Should().Be("CreateError");
+        (await DeleteRow(connection, second.Command.Id))["Status"].Should().Be("CreateError");
+        (await DeleteRow(connection, other.Command.Id))["Name"].Should().Be("OtherExhaustProbe");
     }
 }
