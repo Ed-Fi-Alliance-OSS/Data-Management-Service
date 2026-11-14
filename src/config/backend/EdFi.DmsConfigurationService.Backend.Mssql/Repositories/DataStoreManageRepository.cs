@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
@@ -10,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Options;
 
@@ -23,6 +25,132 @@ public sealed class DataStoreManageRepository(
     ProtectedDatabaseNames protectedNames
 ) : IDataStoreManageRepository
 {
+    public async Task<DataStoreManageGetResult> GetByIdAsync(int id, CancellationToken cancellationToken) =>
+        await QueryAsync(new DataStoreManageQuery { Id = id, Limit = 1 }, cancellationToken) switch
+        {
+            DataStoreManageQueryResult.Success { DataStores.Count: 0 } =>
+                new DataStoreManageGetResult.NotFound(),
+            DataStoreManageQueryResult.Success success => new DataStoreManageGetResult.Success(
+                success.DataStores[0]
+            ),
+            DataStoreManageQueryResult.FailureUnknown failure => new DataStoreManageGetResult.FailureUnknown(
+                failure.Diagnostic
+            ),
+            _ => throw new InvalidOperationException("The managed by-ID query must be valid."),
+        };
+
+    public async Task<DataStoreManageQueryResult> QueryAsync(
+        DataStoreManageQuery query,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!new DataStoreManageQuery.Validator().Validate(query).IsValid)
+        {
+            return new DataStoreManageQueryResult.InvalidRequest();
+        }
+        // PostgreSQL text cannot carry NUL; it cannot match any valid managed name on either provider.
+        if (query.Name?.Contains('\0') == true)
+        {
+            return new DataStoreManageQueryResult.Success([]);
+        }
+
+        // Only the nine public fields can select SQL expressions; no caller text enters the SQL.
+        string column = query.OrderBy switch
+        {
+            "id" => "Id",
+            "name" => "Name",
+            "dataStoreId" => "HistoricalDataStoreId",
+            "dataStoreName" => "HistoricalDataStoreName",
+            "status" => "Status",
+            "databaseTemplate" => "Template",
+            "databaseName" => "CASE WHEN HistoricalDataStoreId IS NULL THEN NULL ELSE TargetDatabaseName END",
+            "lastRefreshed" => "LastRefreshed",
+            "lastModifiedDate" => "LastModifiedDate",
+            _ => throw new InvalidOperationException("The managed sort field must be valid."),
+        };
+        string sort = query.OrderBy
+            is "name"
+                or "dataStoreName"
+                or "status"
+                or "databaseTemplate"
+                or "databaseName"
+            ? $"CONVERT(varbinary(max), CONVERT(varchar(max), TRANSLATE({column} COLLATE Latin1_General_100_BIN2, 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')))"
+            : column;
+        string direction = query.Direction == "Ascending" ? "ASC" : "DESC";
+        string tieBreaker = query.OrderBy == "id" ? "" : $", Id {direction}";
+        TenantContext tenant = tenantContextProvider.Context;
+        string filters = query.Id.HasValue ? " AND Id = @Id" : "";
+        if (query.Name is not null)
+        {
+            filters +=
+                " AND NameComparisonKey = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)";
+        }
+        string sql = $"""
+            SELECT Id, Name, HistoricalDataStoreId, HistoricalDataStoreName, Status, Template,
+                CASE WHEN HistoricalDataStoreId IS NULL THEN NULL ELSE TargetDatabaseName END, LastRefreshed, LastModifiedDate
+            FROM dmscs.DataStoreManage
+            WHERE {tenant.TenantWhereClause()}{filters}
+            ORDER BY CASE WHEN {column} IS NULL THEN 1 ELSE 0 END, {sort} {direction}{tieBreaker}
+            OFFSET @Offset ROWS FETCH NEXT @Limit ROWS ONLY;
+            """;
+        var parameters = new DynamicParameters(
+            new
+            {
+                query.Id,
+                query.Offset,
+                query.Limit,
+                TenantId = tenant is TenantContext.Multitenant selected ? (long?)selected.TenantId : null,
+            }
+        );
+        // Unbounded filters must never be truncated into a matching stored-name prefix.
+        parameters.Add(
+            "Name",
+            query.Name is null ? null : CatalogName.Canonicalize(query.Name),
+            DbType.String,
+            size: -1
+        );
+        try
+        {
+            await using SqlConnection connection = new(databaseOptions.Value.DatabaseConnection);
+            await connection.OpenAsync(cancellationToken);
+            var rows = await connection.QueryAsync<(
+                int Id,
+                string Name,
+                int? DataStoreId,
+                string? DataStoreName,
+                string Status,
+                string DatabaseTemplate,
+                string? DatabaseName,
+                DateTime LastRefreshed,
+                DateTime LastModifiedDate
+            )>(new CommandDefinition(sql, parameters, cancellationToken: cancellationToken));
+            // TIMESTAMP / DATETIME2 stores UTC without an offset. Never interpret it in the host time zone.
+            return new DataStoreManageQueryResult.Success(
+                rows.Select(row => new DataStoreManageResponse(
+                        row.Id,
+                        row.Name,
+                        row.DataStoreId,
+                        row.DataStoreName,
+                        row.Status,
+                        row.DatabaseTemplate,
+                        row.DatabaseName,
+                        new DateTimeOffset(DateTime.SpecifyKind(row.LastRefreshed, DateTimeKind.Utc)),
+                        new DateTimeOffset(DateTime.SpecifyKind(row.LastModifiedDate, DateTimeKind.Utc))
+                    ))
+                    .ToList()
+            );
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return new DataStoreManageQueryResult.FailureUnknown(
+                MssqlJobDiagnostics.From(exception, "QueryManagedDataStores")
+            );
+        }
+    }
+
     public async Task<DataStoreManageCreateResult> AcceptCreateAsync(
         ManagedDataStoreCreateCommand command,
         CancellationToken cancellationToken

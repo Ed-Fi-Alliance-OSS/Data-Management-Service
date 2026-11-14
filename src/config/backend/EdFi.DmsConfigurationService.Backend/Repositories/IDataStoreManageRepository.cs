@@ -12,10 +12,36 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IDataStoreManageRepository
 {
+    Task<DataStoreManageQueryResult> QueryAsync(
+        DataStoreManageQuery query,
+        CancellationToken cancellationToken
+    );
+
+    Task<DataStoreManageGetResult> GetByIdAsync(int id, CancellationToken cancellationToken);
+
     Task<DataStoreManageCreateResult> AcceptCreateAsync(
         ManagedDataStoreCreateCommand command,
         CancellationToken cancellationToken
     );
+}
+
+public abstract record DataStoreManageQueryResult
+{
+    public sealed record Success(IReadOnlyList<DataStoreManageResponse> DataStores)
+        : DataStoreManageQueryResult;
+
+    public sealed record InvalidRequest() : DataStoreManageQueryResult;
+
+    public sealed record FailureUnknown(JobFailureDiagnostic Diagnostic) : DataStoreManageQueryResult;
+}
+
+public abstract record DataStoreManageGetResult
+{
+    public sealed record Success(DataStoreManageResponse DataStore) : DataStoreManageGetResult;
+
+    public sealed record NotFound() : DataStoreManageGetResult;
+
+    public sealed record FailureUnknown(JobFailureDiagnostic Diagnostic) : DataStoreManageGetResult;
 }
 
 /// <summary>Resolved, non-secret acceptance data. The repository validates direct callers before writing.</summary>
