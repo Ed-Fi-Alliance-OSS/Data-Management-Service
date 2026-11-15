@@ -204,6 +204,8 @@ public partial class DmsDataStoreProvisioningStartupTests
                 "Host=db-${secret:suffix}.example",
                 "Host=[${secret:ipv6}]:5432",
                 "Host=/var/run/${secret:socket}",
+                "Host=@${secret:socket}",
+                "Host=@${secret:socket}:directory",
                 "Host=${secret:root}/socket",
                 "Host=${secret:socketRoot}:directory",
             ];
@@ -295,6 +297,57 @@ public partial class DmsDataStoreProvisioningStartupTests
                 .Which.Message.Should()
                 .Contain("DmsDataStoreProvisioning:AdminConnectionString")
                 .And.NotContain("${secret:admin}");
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        [TestCase(true, ""), TestCase(false, "")]
+        [TestCase(true, ":directory"), TestCase(false, ":directory")]
+        public void It_accepts_secret_bearing_abstract_sockets_in_static_startup_without_resolution(
+            bool administrative,
+            string suffix
+        )
+        {
+            const string literal = "Host=db.example;Username=test";
+            string socket = "Host=@${secret:socket}" + suffix + ";Port=5432;Username=test";
+            var resolver = A.Fake<ISecretResolver>();
+            IManagedDataStoreRuntimeConnectionProvider adapter =
+                new PostgresqlManagedRuntimeConnectionProvider();
+            using var services = new ServiceCollection()
+                .AddSingleton(new DataStoreManagementOptions())
+                .AddSingleton(
+                    Options.Create(
+                        new DmsDataStoreProvisioningOptions
+                        {
+                            Enabled = true,
+                            AdminConnectionString = administrative ? socket : literal,
+                        }
+                    )
+                )
+                .AddSingleton(
+                    Options.Create(
+                        new ManagedDataStoreRuntimeOptions
+                        {
+                            RuntimeConnectionString = administrative ? literal : socket,
+                        }
+                    )
+                )
+                .AddSingleton(ProtectedDatabaseNames.Create("cms", []))
+                .AddSingleton(adapter)
+                .AddSingleton(resolver)
+                .BuildServiceProvider();
+
+            // Establish the operation-time contract with a supplied literal; never fetch the secret.
+            adapter
+                .TryParse(
+                    socket.Replace("${secret:socket}", "CaseSensitiveSocket", StringComparison.Ordinal),
+                    out var endpoint
+                )
+                .Should()
+                .BeTrue();
+            endpoint!.Host.Should().Be("@CaseSensitiveSocket" + suffix);
+            endpoint.Transport.Should().Be("unix");
+            endpoint.Port.Should().Be(5432);
+            ManagedDataStoreStartup.Validate(services);
             Fake.GetCalls(resolver).Should().BeEmpty();
         }
 

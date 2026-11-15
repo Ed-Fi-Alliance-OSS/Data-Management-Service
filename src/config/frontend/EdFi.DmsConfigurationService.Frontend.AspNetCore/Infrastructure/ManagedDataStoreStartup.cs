@@ -178,9 +178,9 @@ public static class ManagedDataStoreStartup
             {
                 throw new ArgumentException("Unsupported literal endpoint component.");
             }
-            if (value.StartsWith('/'))
+            if (value.StartsWith('/') || value.StartsWith('@'))
             {
-                return value.Replace(Unknown, 'x'); // Case-sensitive Unix socket directory.
+                return value.Replace(Unknown, 'x'); // Case-sensitive filesystem or abstract Unix socket.
             }
             if (value.StartsWith(Unknown))
             {
