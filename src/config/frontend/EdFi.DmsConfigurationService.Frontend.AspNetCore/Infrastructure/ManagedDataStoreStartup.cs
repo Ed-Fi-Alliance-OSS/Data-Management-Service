@@ -4,6 +4,8 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Globalization;
+using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -72,20 +74,57 @@ public static class ManagedDataStoreStartup
             {
                 var configured = new DbConnectionStringBuilder { ConnectionString = value };
                 var literalFields = provider.CreateBuilder(string.Empty);
+                var defaults = provider.CreateBuilder(string.Empty);
                 foreach (string field in configured.Keys)
                 {
-                    if (SecretReferenceTokens.Find((string)configured[field]).Count == 0)
+                    // The native getter validates keyword aliases. String templates are retained.
+                    // A typed secret value uses its native default only for this static check.
+                    object? defaultValue = defaults[field];
+                    if (
+                        SecretReferenceTokens.Find((string)configured[field]).Count == 0
+                        || defaultValue is null or string
+                    )
                     {
                         literalFields[field] = configured[field];
+                        continue;
                     }
-                    else
+                    // A later alias must replace an earlier literal assignment as the driver would.
+                    literalFields[field] = defaultValue;
+                    if (
+                        provider.Provider == "postgresql"
+                        && field.Equals("Port", StringComparison.OrdinalIgnoreCase)
+                    )
                     {
-                        // Validate the keyword without asking a typed property to parse a reference.
-                        _ = literalFields[field];
+                        string port = ((string)configured[field]).Trim();
+                        _ = StaticPort(MaskReferences(port.StartsWith('+') ? port[1..] : port));
+                    }
+                    else if (provider.Provider == "mssql")
+                    {
+                        string? allowed = field
+                            .Replace(" ", string.Empty, StringComparison.Ordinal)
+                            .ToLowerInvariant() switch
+                        {
+                            "multisubnetfailover" or "userinstance" => "false",
+                            "applicationintent" => "ReadWrite",
+                            _ => null,
+                        };
+                        string template = ((string)configured[field]).Trim();
+                        if (
+                            allowed is not null
+                            && !CouldResolveTo(template, allowed)
+                            && !(allowed == "false" && CouldResolveTo(template, "no"))
+                        )
+                        {
+                            throw new ArgumentException("Unsupported literal routing option.");
+                        }
                     }
                 }
+                string routingField = provider.Provider == "postgresql" ? "Host" : "Data Source";
+                string locator = (string?)literalFields[routingField] ?? string.Empty;
+                literalFields[routingField] = StaticLocator(locator, provider.Provider == "postgresql");
+                value = literalFields.ConnectionString;
             }
-            else if (!provider.TryParse(value, out _))
+            if (!provider.TryParse(value, out _))
             {
                 Fail($"{key} must name one verifiable endpoint for the configured target provider.");
             }
@@ -96,6 +135,176 @@ public static class ManagedDataStoreStartup
             // Driver parser messages may repeat credentials; retain no exception or configured value.
             Fail($"{key} must be a valid connection string for the configured target provider.");
         }
+    }
+
+    // These representatives are used ONLY by the pure endpoint parser. They never reach a
+    // connection, readiness verdict, reservation or persisted descriptor. Literal components
+    // retain their exact values, including unsupported flags and malformed/missing endpoints.
+    private const char Unknown = '\u001f';
+
+    private static string MaskReferences(string value)
+    {
+        foreach (var token in SecretReferenceTokens.Find(value).Reverse())
+        {
+            value = value.Remove(token.Index, token.Length).Insert(token.Index, Unknown.ToString());
+        }
+        return value;
+    }
+
+    private static bool CouldResolveTo(string value, string expected) =>
+        Regex.IsMatch(
+            expected,
+            "\\A" + Regex.Escape(MaskReferences(value)).Replace(Unknown.ToString(), ".*") + "\\z",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
+        );
+
+    private static string StaticLocator(string value, bool postgresql)
+    {
+        var tokens = SecretReferenceTokens.Find(value);
+        if (tokens.Count == 0)
+        {
+            return value;
+        }
+        // A control character in the original literal cannot masquerade as our internal marker.
+        if (value.Trim().Any(char.IsControl))
+        {
+            throw new ArgumentException("Unsupported literal endpoint component.");
+        }
+        value = MaskReferences(value);
+        if (postgresql)
+        {
+            value = value.Trim();
+            if (value.Contains(','))
+            {
+                throw new ArgumentException("Unsupported literal endpoint component.");
+            }
+            if (value.StartsWith('/'))
+            {
+                return value.Replace(Unknown, 'x'); // Case-sensitive Unix socket directory.
+            }
+            if (value.StartsWith(Unknown))
+            {
+                // An unknown prefix could select a Unix socket directory, where ':' is a path
+                // character rather than a port delimiter. The separate literal Port still applies.
+                return "static-validation.invalid";
+            }
+            int closingBracket = value.StartsWith('[') ? value.IndexOf(']') : -1;
+            int port = -1;
+            if (closingBracket >= 0)
+            {
+                if (value.Length > closingBracket + 1 && value[closingBracket + 1] == ':')
+                {
+                    port = closingBracket + 1;
+                }
+            }
+            else if (value.Count(c => c == ':') == 1)
+            {
+                port = value.IndexOf(':');
+            }
+            if (port >= 0)
+            {
+                return StaticHost(value[..port], postgresql) + ":" + StaticPort(value[(port + 1)..]);
+            }
+            return StaticHost(value, postgresql);
+        }
+
+        int protocol = value.IndexOf(':');
+        if (protocol >= 0)
+        {
+            string prefix = value[..protocol];
+            if (CouldResolveTo(prefix, "tcp"))
+            {
+                value = value[(protocol + 1)..];
+            }
+            else if (!value.StartsWith(Unknown))
+            {
+                throw new ArgumentException("Unsupported literal endpoint component.");
+            }
+        }
+        else if (!"tcp:".StartsWith(value[..value.IndexOf(Unknown)], StringComparison.OrdinalIgnoreCase))
+        {
+            throw new ArgumentException("Unsupported literal endpoint component.");
+        }
+        int instance = value.IndexOf('\\');
+        int comma = value.IndexOf(',');
+        if (instance >= 0 && comma >= 0)
+        {
+            throw new ArgumentException("Unsupported literal endpoint component.");
+        }
+        if (instance >= 0)
+        {
+            string name = value[(instance + 1)..];
+            if (name.Any(c => !char.IsAsciiLetterOrDigit(c) && c is not ('_' or '-' or Unknown)))
+            {
+                throw new ArgumentException("Unsupported literal endpoint component.");
+            }
+            return "tcp:"
+                + StaticHost(value[..instance], postgresql)
+                + "\\"
+                + (name.Contains(Unknown) ? "instance" : name);
+        }
+        return "tcp:"
+            + (
+                comma >= 0
+                    ? StaticHost(value[..comma], postgresql) + "," + StaticPort(value[(comma + 1)..])
+                    : StaticHost(value, postgresql)
+            );
+    }
+
+    private static string StaticHost(string host, bool postgresql)
+    {
+        if (!host.Contains(Unknown))
+        {
+            return host;
+        }
+        // A leading unknown PostgreSQL component might resolve to an absolute socket directory.
+        // Otherwise the literal host characters must belong to DNS/IP syntax.
+        if (
+            (!postgresql || !host.StartsWith(Unknown))
+            && host.Any(c =>
+                !char.IsAsciiLetterOrDigit(c) && c is not ('.' or '-' or '[' or ']' or ':' or Unknown)
+            )
+        )
+        {
+            throw new ArgumentException("Unsupported literal endpoint component.");
+        }
+        if (
+            (host.StartsWith('[') || (!postgresql && host.Contains(':')))
+            && (
+                host.Any(c => !char.IsAsciiHexDigit(c) && c is not ('.' or '[' or ']' or ':' or Unknown))
+                || (host.Contains(']') && !host.EndsWith(']'))
+            )
+        )
+        {
+            throw new ArgumentException("Unsupported literal endpoint component.");
+        }
+        return "static-validation.invalid";
+    }
+
+    private static string StaticPort(string port)
+    {
+        if (!port.Contains(Unknown))
+        {
+            return port;
+        }
+        if (port.Any(c => !char.IsAsciiDigit(c) && c != Unknown))
+        {
+            throw new ArgumentException("Unsupported literal endpoint component.");
+        }
+        // Even empty/all-zero substitutions cannot rescue a literal prefix/suffix above the limit.
+        if (
+            !ulong.TryParse(
+                port.Replace(Unknown, '0'),
+                NumberStyles.None,
+                CultureInfo.InvariantCulture,
+                out ulong minimum
+            )
+            || minimum > 65535
+        )
+        {
+            throw new ArgumentException("Unsupported literal port range.");
+        }
+        return "5432";
     }
 
     private static void Fail(string message) =>

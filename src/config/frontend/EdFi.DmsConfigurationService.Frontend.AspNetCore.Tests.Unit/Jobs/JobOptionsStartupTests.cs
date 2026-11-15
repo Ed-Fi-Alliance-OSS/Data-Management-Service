@@ -27,7 +27,7 @@ public class JobOptionsStartupTests
     [TestFixture]
     public class Given_restart_scoped_management_enablement
     {
-        // The shipped configuration explicitly opts out; omitted/default-true startup is covered
+        // The Test environment explicitly opts out; omitted/default-true startup is covered
         // with the required provisioner dependencies in Given_managed_data_store_startup.
         [TestCase(null, true)]
         [TestCase("false", true)]

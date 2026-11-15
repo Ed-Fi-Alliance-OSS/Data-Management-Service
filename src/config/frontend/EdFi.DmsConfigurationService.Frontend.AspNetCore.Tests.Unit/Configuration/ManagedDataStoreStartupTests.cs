@@ -9,8 +9,11 @@ using System.Text;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Mssql.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Postgresql.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using EdFi.DmsConfigurationService.Secrets;
 using FakeItEasy;
@@ -47,6 +50,10 @@ public partial class DmsDataStoreProvisioningStartupTests
             settings["JobSettings:WorkerEnabled"] = "false";
             settings["JobSettings:SchedulerEnabled"] = "false";
             settings["JobSettings:RetentionEnabled"] = "false";
+            settings["DatabaseSettings:EncryptionKey"] = "TestEncryptionKey32CharactersLong1";
+            settings["IdentitySettings:ClientSecret"] = "ValidClientSecret1234567890!Abcd";
+            settings["IdentitySettings:Authority"] = "https://localhost/realms/dms";
+            settings["IdentitySettings:TokenCleanup:Enabled"] = "false";
             settings[$"{Section}:Enabled"] = provisioning.ToString();
             if (provisioning && target == "mssql")
             {
@@ -83,6 +90,8 @@ public partial class DmsDataStoreProvisioningStartupTests
             );
             return factory.WithWebHostBuilder(builder =>
             {
+                // Omitted means the normal shipped configuration, without the explicit test opt-out.
+                builder.UseEnvironment(management is null ? "Production" : "Test");
                 builder.UseDefaultServiceProvider(options =>
                 {
                     // Existing Keycloak registration includes an unused OpenIddict token manager
@@ -90,23 +99,203 @@ public partial class DmsDataStoreProvisioningStartupTests
                     options.ValidateOnBuild = identity == "self-contained";
                     options.ValidateScopes = true;
                 });
-                if (management is null)
+            });
+        }
+
+        [Test]
+        public void It_refuses_the_normal_unconfigured_host_without_an_operator_flag()
+        {
+            using var host = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+                builder.UseEnvironment("Production")
+            );
+            StartupExceptionFor(host)
+                .Should()
+                .NotBeNull()
+                .And.Subject.ToString()
+                .Should()
+                .Contain("DmsDataStoreProvisioning:Enabled=true");
+        }
+
+        private static IEnumerable<TestCaseData> InvalidSecretBearingEndpoints()
+        {
+            string[] postgresql =
+            [
+                "Username=runtime",
+                "Host=",
+                "Host=db.example,other.example",
+                "Host=bad@host",
+                "Host=db.example;Port=0",
+                "Host=db.example;Port=65536",
+                "Host=[not-ipv6]",
+                "Host=${secret:host};Port=65536",
+                "Host=db.example,${secret:host}",
+                "Host=db-${secret:host}:bad",
+                "Username=runtime;Port=${secret:port}",
+                "Host=bad@${secret:host}",
+                "Host=db.example;Port=bad${secret:port}",
+                "Host=db.example;Port=65536${secret:port}",
+            ];
+            string[] mssql =
+            [
+                "User ID=runtime",
+                "Server=",
+                "Server=db.example,1433",
+                "Server=np:db.example",
+                "Server=tcp:bad@host,1433",
+                "Server=tcp:db.example,0",
+                "Server=tcp:db.example,65536",
+                "Server=tcp:db.example,1433;MultiSubnetFailover=true",
+                "Server=tcp:db.example;Failover Partner=other.example",
+                "Server=tcp:db.example;User Instance=true",
+                "Server=tcp:db.example;Application Intent=ReadOnly",
+                "Server=tcp:db.example;AttachDBFilename=file.mdf",
+                "Server=np:${secret:host}",
+                "Server=tcp:${secret:host},bad",
+                "Server=tcp:${secret:host}\\instance,1433",
+                "Server=${secret:server};MultiSubnetFailover=true",
+                "Server=db-${secret:host}",
+                "Server=tcp:${secret:host},1433,1444",
+                "Server=${secret:scheme}np:db.example",
+                "Server=tcp:db.example;MultiSubnetFailover=tr${secret:flag}",
+                "Server=tcp:db.example;Application Intent=ReadOnly${secret:intent}",
+                "Server=tcp:db.example,65536${secret:port}",
+            ];
+            foreach (var (provider, cases) in new[] { ("postgresql", postgresql), ("mssql", mssql) })
+            {
+                for (int index = 0; index < cases.Length; index++)
                 {
-                    // Remove the shipped explicit opt-out to exercise the code default at actual startup.
-                    builder.ConfigureAppConfiguration(
-                        (_, configuration) =>
-                        {
-                            var settingsWithoutFlag = configuration
-                                .Build()
-                                .AsEnumerable()
-                                .Where(pair => pair.Key != "AppSettings:EnableDataStoreManagement")
-                                .ToArray();
-                            configuration.Sources.Clear();
-                            configuration.AddInMemoryCollection(settingsWithoutFlag);
-                        }
+                    yield return new TestCaseData(
+                        provider,
+                        cases[index] + ";Password=${secret:runtime}"
+                    ).SetName($"It_rejects_literal_routing_with_secrets_{provider}_{index}");
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(InvalidSecretBearingEndpoints))]
+        public void It_rejects_literal_routing_with_secrets(string target, string connection)
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            using var host = Host(
+                "true",
+                true,
+                target,
+                overrides: new() { ["DataStoreManagement:RuntimeConnectionString"] = connection },
+                configure: services => services.AddSingleton(resolver)
+            );
+            StartupExceptionFor(host)
+                .Should()
+                .NotBeNull()
+                .And.Subject.ToString()
+                .Should()
+                .Contain("DataStoreManagement:RuntimeConnectionString")
+                .And.NotContain("${secret:runtime}");
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        private static IEnumerable<TestCaseData> ValidSecretBearingEndpoints()
+        {
+            string[] postgresql =
+            [
+                "Host=db.example",
+                "Host=${secret:host};Port=5432",
+                "Host=db.example;Port=${secret:port}",
+                "Host=db.example;Port=+${secret:prefix}5432",
+                "Host=db-${secret:suffix}.example",
+                "Host=[${secret:ipv6}]:5432",
+                "Host=/var/run/${secret:socket}",
+                "Host=${secret:root}/socket",
+                "Host=${secret:socketRoot}:directory",
+            ];
+            string[] mssql =
+            [
+                "Server=tcp:db.example,1433",
+                "Server=${secret:server}",
+                "Server=tcp:${secret:host},1433",
+                "Server=tcp:db.example,${secret:port}",
+                "Server=tcp:db.example,${secret:prefix}1433",
+                "Server=tcp:db.example\\${secret:instance}",
+                "Server=tcp:db-${secret:suffix}.example,1433",
+                "Server=tcp:[${secret:ipv6}],1433",
+                "Server=${secret:tcpPrefix}[::1],1433",
+                "Server=${secret:scheme}:db.example,1433",
+                "Server=tcp:db.example;MultiSubnetFailover=${secret:flag};Application Intent=${secret:intent}",
+                "Server=tcp:db.example;Application Intent=ReadOnly;ApplicationIntent=${secret:intent}",
+            ];
+            foreach (var (provider, cases) in new[] { ("postgresql", postgresql), ("mssql", mssql) })
+            {
+                for (int index = 0; index < cases.Length; index++)
+                {
+                    yield return new TestCaseData(
+                        provider,
+                        cases[index] + ";Password=${secret:runtime}"
+                    ).SetName(
+                        $"It_accepts_secret_dependent_components_without_resolution_{provider}_{index}"
                     );
                 }
-            });
+            }
+        }
+
+        [TestCaseSource(nameof(ValidSecretBearingEndpoints))]
+        public void It_accepts_secret_dependent_components_without_resolution(
+            string target,
+            string connection
+        )
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            using var host = Host(
+                "true",
+                true,
+                target,
+                overrides: new() { ["DataStoreManagement:RuntimeConnectionString"] = connection },
+                configure: services => services.AddSingleton(resolver)
+            );
+            StartupExceptionFor(host).Should().BeNull();
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        [TestCase("postgresql"), TestCase("mssql")]
+        public void It_applies_static_endpoint_validation_to_admin_secrets_without_resolving_them(
+            string target
+        )
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            IManagedDataStoreRuntimeConnectionProvider adapter =
+                target == "postgresql"
+                    ? new PostgresqlManagedRuntimeConnectionProvider()
+                    : new MssqlManagedRuntimeConnectionProvider();
+            string valid =
+                target == "postgresql"
+                    ? "Host=db.example;Password=${secret:admin}"
+                    : "Server=tcp:db.example,1433;Password=${secret:admin}";
+            var provisioning = new DmsDataStoreProvisioningOptions
+            {
+                Enabled = true,
+                AdminConnectionString = valid,
+            };
+            using var services = new ServiceCollection()
+                .AddSingleton(new DataStoreManagementOptions())
+                .AddSingleton(Options.Create(provisioning))
+                .AddSingleton(
+                    Options.Create(new ManagedDataStoreRuntimeOptions { RuntimeConnectionString = valid })
+                )
+                .AddSingleton(ProtectedDatabaseNames.Create("cms", []))
+                .AddSingleton(adapter)
+                .AddSingleton(resolver)
+                .BuildServiceProvider();
+            ManagedDataStoreStartup.Validate(services);
+            provisioning.AdminConnectionString =
+                target == "postgresql"
+                    ? "Host=db.example,other.example;Password=${secret:admin}"
+                    : "Server=np:db.example;Password=${secret:admin}";
+            var validate = () => ManagedDataStoreStartup.Validate(services);
+            validate
+                .Should()
+                .Throw<OptionsValidationException>()
+                .Which.Message.Should()
+                .Contain("DmsDataStoreProvisioning:AdminConnectionString")
+                .And.NotContain("${secret:admin}");
+            Fake.GetCalls(resolver).Should().BeEmpty();
         }
 
         [TestCase("false", false), TestCase("false", true), TestCase("true", true), TestCase(null, true)]
@@ -115,6 +304,12 @@ public partial class DmsDataStoreProvisioningStartupTests
             using var host = Host(management, provisioning);
             StartupExceptionFor(host).Should().BeNull();
             var enabled = management != "false";
+            if (management is null)
+            {
+                host.Services.GetRequiredService<IConfiguration>()["AppSettings:EnableDataStoreManagement"]
+                    .Should()
+                    .BeNull();
+            }
             host.Services.GetRequiredService<JobClaimPolicy>()
                 .ExcludesManagedDataStores.Should()
                 .Be(!enabled);

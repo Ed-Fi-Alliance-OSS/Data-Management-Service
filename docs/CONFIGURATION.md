@@ -375,9 +375,10 @@ The lease must also leave room for a late renewal. Startup also requires `Renewa
 ## Managed data store lifecycle
 
 `AppSettings:EnableDataStoreManagement` has a **code default of true**, captured once at startup.
-The shipped appsettings and Compose examples explicitly set it to **false** for unconfigured
-deployments. Omitting that explicit opt-out in a custom deployment enables management and can
-prevent startup. This flag applies to both secured `/v3/dataStores/manage` routes and exactly
+The base appsettings does not override it: omitting the setting in the normal configuration stack
+enables management and an unconfigured upgrade fails startup. Compose examples and the dedicated
+Test environment explicitly set it to **false**. Other deployments must explicitly opt out if they
+are not configured for management. This flag applies to both secured `/v3/dataStores/manage` routes and exactly
 the `ManagedDataStore.Create` / `ManagedDataStore.Delete` job types; unrelated jobs and ordinary
 catalog routes remain available when it is false.
 
