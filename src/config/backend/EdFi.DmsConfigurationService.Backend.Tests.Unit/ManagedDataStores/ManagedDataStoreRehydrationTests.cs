@@ -15,6 +15,23 @@ public class Given_Persisted_Managed_Data_Store
 {
     private static readonly DateTimeOffset AcceptedAt = new(2026, 11, 12, 10, 0, 0, TimeSpan.Zero);
 
+    [TestCase(ManagedDataStoreStatus.PendingDelete)]
+    [TestCase(ManagedDataStoreStatus.DeleteInProgress)]
+    [TestCase(ManagedDataStoreStatus.DeleteFailed)]
+    [TestCase(ManagedDataStoreStatus.DeleteError)]
+    public void It_restores_deletion_history_without_inventing_a_missing_current_link(
+        ManagedDataStoreStatus status
+    )
+    {
+        var state = State(status) with { DataStoreId = null };
+        var restored = ManagedDataStore.Rehydrate(state);
+        restored.DataStoreId.Should().BeNull();
+        restored.HistoricalDataStoreId.Should().Be(state.HistoricalDataStoreId);
+        restored.PinnedArtifact.Should().Be(state.PinnedArtifact);
+        restored.DeleteJobId.Should().Be(state.DeleteJobId);
+        restored.Status.Should().Be(status);
+    }
+
     private static DmsTrustedArtifactPin Pin() =>
         new()
         {
@@ -615,7 +632,7 @@ public class Given_Persisted_Managed_Data_Store
             },
             deleting with
             {
-                DataStoreId = null,
+                DataStoreId = 102,
             },
             deleted with
             {

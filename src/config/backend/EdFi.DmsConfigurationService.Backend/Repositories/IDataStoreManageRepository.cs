@@ -12,6 +12,21 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IDataStoreManageRepository
 {
+    /// <summary>Starts the current delete under its fence, or verifies its completed tombstone.</summary>
+    Task<ManagedDataStoreDeleteOperation> StartDeleteAsync(
+        int id,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Rechecks delete identity and state under its fence while the physical target lock is held.</summary>
+    Task AdmitDeleteAsync(
+        ManagedDataStoreDeleteOperation operation,
+        ManagedDataStoreEndpoint actual,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Loads and starts the current create attempt under its fence, or verifies completed publication.</summary>
     Task<ManagedDataStoreCreateOperation> StartCreateAsync(
         int id,
@@ -75,6 +90,11 @@ public sealed record ManagedDataStoreCreateOperation(
     ManagedDataStoreCreateCommand Identity,
     DmsTrustedArtifactPin? PinnedArtifact,
     bool AlreadyCreated
+);
+
+public sealed record ManagedDataStoreDeleteOperation(
+    ManagedDataStoreDeleteCommand Command,
+    bool AlreadyDeleted
 );
 
 /// <summary>

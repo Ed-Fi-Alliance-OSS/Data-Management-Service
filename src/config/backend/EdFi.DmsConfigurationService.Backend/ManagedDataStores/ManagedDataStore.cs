@@ -258,7 +258,9 @@ public sealed class ManagedDataStore
         bool deleted = state.Status == ManagedDataStoreStatus.Deleted;
         bool invalidCurrentLink = deleted
             ? state.DataStoreId is not null
-            : state.DataStoreId != state.HistoricalDataStoreId;
+            : state.DataStoreId != state.HistoricalDataStoreId && !(delete && state.DataStoreId is null);
+        // An unfinished delete can recover a missing catalog row. The repository must verify absence
+        // by the historical ID under its fence; a null link never authorizes removal by name.
         if (
             (delete ? string.IsNullOrWhiteSpace(state.DeleteJobId) : state.DeleteJobId is not null)
             || deleted != (state.DeletedAt is not null)
