@@ -32,7 +32,9 @@ public partial class Given_data_store_namespace_reservations
     }
 
     [Test, Category("ManagedRuntimeConnection")]
-    public async Task It_encrypts_the_validated_runtime_snapshot_once_without_resolving_again()
+    public async Task It_encrypts_the_validated_runtime_snapshot_once_without_resolving_again(
+        [Values(0, 1, 2)] int passwordKind
+    )
     {
         var seed = await SeedPublication(provider: "postgresql");
         PostgresqlManagedRuntimeConnectionProvider provider = new();
@@ -41,6 +43,15 @@ public partial class Given_data_store_namespace_reservations
             RuntimeConnectionString =
                 "Host=db.example;Username=runtime;Password=runtime-private;Database=ignored",
         };
+        string password = passwordKind switch
+        {
+            1 => "runtime-${secret:}",
+            2 => "runtime-${secret:abc",
+            _ => "runtime-private",
+        };
+        var configured = provider.CreateBuilder(runtimeOptions.RuntimeConnectionString);
+        configured["Password"] = password;
+        runtimeOptions.RuntimeConnectionString = configured.ConnectionString;
         var secrets = Options.Create(new SecretsOptions());
         ManagedDataStoreRuntimeConnectionBuilder builder = new(
             Options.Create(runtimeOptions),
@@ -90,6 +101,6 @@ public partial class Given_data_store_namespace_reservations
         ((string)provider.CreateBuilder(plaintext)["Database"] == seed.Command.Identity.TargetName.Value)
             .Should()
             .BeTrue();
-        ((string)provider.CreateBuilder(plaintext)["Password"] == "runtime-private").Should().BeTrue();
+        ((string)provider.CreateBuilder(plaintext)["Password"] == password).Should().BeTrue();
     }
 }

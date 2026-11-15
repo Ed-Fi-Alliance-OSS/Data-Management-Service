@@ -83,10 +83,10 @@ public sealed class ManagedDataStoreRuntimeConnectionBuilder(
         string snapshot = ((DmsAdminConnectionResolution.Resolved)resolution).Connection.Value;
         try
         {
-            // Resolved values are not recursively expanded. Refuse any remaining reference rather
-            // than allowing a later catalog read to resolve a different routing/credential value.
+            // Resolved values are not recursively expanded. Refuse remaining well-formed references
+            // that a later catalog read could resolve; malformed fragments are literal credential text.
             if (
-                snapshot.Contains("${secret:", StringComparison.Ordinal)
+                SecretReferenceTokens.Find(snapshot).Count > 0
                 || !provider.TryParse(snapshot, out var actual)
             )
             {

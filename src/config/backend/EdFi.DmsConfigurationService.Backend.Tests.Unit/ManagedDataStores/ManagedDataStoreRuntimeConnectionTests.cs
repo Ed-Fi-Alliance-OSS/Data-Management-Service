@@ -284,9 +284,43 @@ public class Given_managed_runtime_connection_snapshots(string providerName)
     }
 
     [Test]
-    public async Task It_refuses_secret_references_returned_by_the_resolver()
+    public async Task It_preserves_passwords_with_literal_non_token_fragments(
+        [Values(0, 1)] int fragmentKind,
+        [Values(false, true)] bool fromResolver
+    )
     {
-        var resolver = new Resolver((_, _) => Task.FromResult("${secret:another}"));
+        // Keep credentials out of parameterized test names and assertion diagnostics.
+        string password =
+            "runtime-" + (fragmentKind == 0 ? "${secret:}" : "${secret:abc") + ";quoted=\"tail\"";
+        var resolver = new Resolver((_, _) => Task.FromResult(password));
+        var result = (
+            await Builder(
+                    new()
+                    {
+                        RuntimeConnectionString = Connection(
+                            password: fromResolver ? "${secret:password}" : password
+                        ),
+                    },
+                    resolver
+                )
+                .BuildAsync(Endpoint(), Target(), default)
+        )
+            .Should()
+            .BeOfType<ManagedDataStoreRuntimeConnectionResult.Success>()
+            .Subject;
+        ((string)Provider.CreateBuilder(result.ConnectionString)["Password"] == password).Should().BeTrue();
+        resolver.Calls.Should().Be(fromResolver ? 1 : 0);
+        result.ToString().Should().Be("Success");
+    }
+
+    [Test]
+    public async Task It_refuses_secret_references_returned_by_the_resolver(
+        [Values(false, true)] bool afterMalformedFragment
+    )
+    {
+        var resolver = new Resolver(
+            (_, _) => Task.FromResult((afterMalformedFragment ? "${secret:};" : "") + "${secret:another}")
+        );
         Failure(
             await Builder(
                     new() { RuntimeConnectionString = Connection(password: "${secret:password}") },
