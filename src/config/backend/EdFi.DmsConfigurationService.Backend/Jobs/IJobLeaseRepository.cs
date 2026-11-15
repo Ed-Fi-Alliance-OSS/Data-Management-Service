@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+
 namespace EdFi.DmsConfigurationService.Backend.Jobs;
 
 /// <summary>
@@ -11,6 +13,16 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 /// </summary>
 public interface IJobLeaseRepository
 {
+    /// <summary>Settles a typed managed failure atomically with its lifecycle projection; null backoff is terminal.</summary>
+    Task<JobWriteResult> FailManaged(
+        long id,
+        string owner,
+        long fencingToken,
+        ManagedDataStoreFailure failure,
+        int? backoffSeconds,
+        CancellationToken cancellationToken
+    );
+
     /// <summary>Claims the eligible job with the lowest <c>(NextAttemptAt, Id)</c>, skipping locked rows.</summary>
     Task<JobClaimResult> ClaimNext(
         string owner,

@@ -5,6 +5,7 @@
 
 using System.Collections.Concurrent;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using FluentAssertions;
 using Microsoft.Extensions.Options;
 
@@ -28,6 +29,15 @@ public sealed class SimulatedJob(long id)
 /// </summary>
 public sealed class SimulatedJobTable : IJobLeaseRepository
 {
+    public Task<JobWriteResult> FailManaged(
+        long id,
+        string owner,
+        long fencingToken,
+        ManagedDataStoreFailure failure,
+        int? backoffSeconds,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("This worker simulation has no managed lifecycle rows.");
+
     private readonly object _sync = new();
 
     public List<SimulatedJob> Rows { get; } = [];

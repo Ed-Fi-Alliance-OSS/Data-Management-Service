@@ -1,0 +1,99 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+
+namespace EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+
+public sealed class CreateManagedDataStoreHandler(
+    IDataStoreManageRepository repository,
+    IDmsDataStoreProvisioner provisioner,
+    ManagedDataStoreRuntimeConnectionBuilder runtime
+) : IJobHandler<CreateManagedDataStorePayload>
+{
+    public async Task ExecuteAsync(
+        JobExecutionContext context,
+        CreateManagedDataStorePayload payload,
+        CancellationToken cancellationToken
+    )
+    {
+        var operation = await repository.StartCreateAsync(payload.ManageId, context, cancellationToken);
+        if (operation.AlreadyCreated)
+        {
+            // Start verifies the durable ordinary link under the fence; no secrets or physical work
+            // are needed to recover a committed publication whose job completion was interrupted.
+            return;
+        }
+        if (operation.PinnedArtifact is null)
+        {
+            var resolution = await provisioner.ResolveArtifactAsync(
+                operation.Identity.Template,
+                cancellationToken
+            );
+            if (resolution is DmsArtifactResolution.Failure failed)
+            {
+                throw new ManagedDataStoreProvisioningException(failed.Detail);
+            }
+            operation = await repository.PinCreateAsync(
+                operation,
+                ((DmsArtifactResolution.Resolved)resolution).Pin,
+                context,
+                cancellationToken
+            );
+        }
+
+        var identity = operation.Identity;
+        var pin = operation.PinnedArtifact!;
+        var result = await provisioner.CreateAsync(
+            new(identity.Template, identity.TargetName, identity.ExpectedSourceIdentity, pin),
+            identity.Endpoint,
+            (actual, token) => repository.AdmitCreateAsync(operation, actual, context, token),
+            cancellationToken
+        );
+        if (result is DmsDataStoreCreateResult.Failure failure)
+        {
+            throw new ManagedDataStoreProvisioningException(failure.Detail);
+        }
+        var actualPin = result switch
+        {
+            DmsDataStoreCreateResult.Created created => created.Artifact,
+            DmsDataStoreCreateResult.Reconciled reconciled => reconciled.Artifact,
+            _ => throw new InvalidOperationException("Unknown managed create result."),
+        };
+        if (actualPin != pin)
+        {
+            throw new ManagedDataStoreProvisioningException(
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.ArtifactChangedSinceCreate,
+                    DmsProvisioningDiagnostic.ForOperation("VerifyCreateResult")
+                )
+            );
+        }
+        var connection = await runtime.BuildAsync(identity.Endpoint, identity.TargetName, cancellationToken);
+        if (connection is ManagedDataStoreRuntimeConnectionResult.Failure runtimeFailure)
+        {
+            throw new ManagedDataStoreProvisioningException(runtimeFailure.Detail);
+        }
+        await repository.PublishCreateAsync(
+            new(
+                operation.Id,
+                identity,
+                pin,
+                ((ManagedDataStoreRuntimeConnectionResult.Success)connection).ConnectionString
+            ),
+            context,
+            cancellationToken
+        );
+    }
+}
+
+/// <summary>A typed signal to the executor, which commits the job and lifecycle outcome together.</summary>
+public sealed class ManagedDataStoreProvisioningException(DmsProvisioningFailure failure)
+    : Exception("Managed data store provisioning failed.")
+{
+    public DmsProvisioningFailure Failure { get; } = failure;
+}

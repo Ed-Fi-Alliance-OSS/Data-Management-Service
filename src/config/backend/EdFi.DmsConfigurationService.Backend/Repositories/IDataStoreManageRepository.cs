@@ -12,6 +12,29 @@ namespace EdFi.DmsConfigurationService.Backend.Repositories;
 
 public interface IDataStoreManageRepository
 {
+    /// <summary>Loads and starts the current create attempt under its fence, or verifies completed publication.</summary>
+    Task<ManagedDataStoreCreateOperation> StartCreateAsync(
+        int id,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Persists the first complete artifact pin; an existing different pin is never replaced.</summary>
+    Task<ManagedDataStoreCreateOperation> PinCreateAsync(
+        ManagedDataStoreCreateOperation operation,
+        DmsTrustedArtifactPin pin,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Rechecks the persisted operation under its fence while the caller holds the physical target lock.</summary>
+    Task AdmitCreateAsync(
+        ManagedDataStoreCreateOperation operation,
+        ManagedDataStoreEndpoint actual,
+        JobExecutionContext execution,
+        CancellationToken cancellationToken
+    );
+
     Task<DataStoreManageQueryResult> QueryAsync(
         DataStoreManageQuery query,
         CancellationToken cancellationToken
@@ -47,6 +70,13 @@ public interface IDataStoreManageRepository
     );
 }
 
+public sealed record ManagedDataStoreCreateOperation(
+    int Id,
+    ManagedDataStoreCreateCommand Identity,
+    DmsTrustedArtifactPin? PinnedArtifact,
+    bool AlreadyCreated
+);
+
 /// <summary>
 /// Immutable operation identity and the already validated runtime connection snapshot. The caller must
 /// resolve that snapshot for this endpoint and target before publication; publication performs no resolution
@@ -66,25 +96,7 @@ public sealed record ManagedDataStorePublishCommand(
         && Identity is not null
         && Identity.IsValid(protectedNames)
         && !string.IsNullOrWhiteSpace(RuntimeConnectionString)
-        && PinnedArtifact is { } pin
-        && pin.ContractVersion == DmsTrustedArtifactPin.CurrentContractVersion
-        && pin.Provider == Identity.Endpoint.Provider
-        && pin.TemplateKind == Identity.Template.TemplateKind
-        && !Array.Exists(
-            new[]
-            {
-                pin.PackageId,
-                pin.PackageVersion,
-                pin.PackageSha256,
-                pin.ArtifactSha256,
-                pin.DataStandardVersion,
-                pin.EffectiveSchemaHash,
-                pin.InventorySha256,
-                pin.ApiSchemaFormatVersion,
-                pin.RelationalMappingVersion,
-            },
-            string.IsNullOrWhiteSpace
-        );
+        && Identity.AcceptsPin(PinnedArtifact);
 }
 
 public abstract record DataStoreManageQueryResult
@@ -115,6 +127,27 @@ public sealed record ManagedDataStoreCreateCommand(
     ManagedDataStoreEndpoint Endpoint
 )
 {
+    public bool AcceptsPin(DmsTrustedArtifactPin pin) =>
+        pin is not null
+        && pin.ContractVersion == DmsTrustedArtifactPin.CurrentContractVersion
+        && pin.Provider == Endpoint.Provider
+        && pin.TemplateKind == Template.TemplateKind
+        && !Array.Exists(
+            new[]
+            {
+                pin.PackageId,
+                pin.PackageVersion,
+                pin.PackageSha256,
+                pin.ArtifactSha256,
+                pin.DataStandardVersion,
+                pin.EffectiveSchemaHash,
+                pin.InventorySha256,
+                pin.ApiSchemaFormatVersion,
+                pin.RelationalMappingVersion,
+            },
+            string.IsNullOrWhiteSpace
+        );
+
     public bool IsValid(ProtectedDatabaseNames protectedNames)
     {
         if (

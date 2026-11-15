@@ -32,6 +32,29 @@ public sealed record ManagedDataStoreEndpoint(
             new object?[] { Version, Provider, Transport, Host, Port, Instance, MaintenanceDatabase }
         );
 
+    public static ManagedDataStoreEndpoint FromCanonicalEncoding(string encoding)
+    {
+        using var document = JsonDocument.Parse(encoding);
+        var value = document.RootElement;
+        if (value.ValueKind != JsonValueKind.Array || value.GetArrayLength() != 7 || value[0].GetInt32() != 1)
+        {
+            throw new ArgumentException("Invalid persisted endpoint descriptor.");
+        }
+        var endpoint = new ManagedDataStoreEndpoint(
+            value[1].GetString()!,
+            value[2].GetString()!,
+            value[3].GetString()!,
+            value[4].ValueKind == JsonValueKind.Null ? null : value[4].GetInt32(),
+            value[5].GetString(),
+            value[6].GetString()!
+        );
+        if (!endpoint.IsCanonical() || endpoint.CanonicalEncoding != encoding)
+        {
+            throw new ArgumentException("Invalid persisted endpoint descriptor.");
+        }
+        return endpoint;
+    }
+
     /// <summary>
     /// Requires the structured canonical form produced by the provider parsers. Direct repository
     /// callers must not create separate reservation keys for alternate spellings of the same locator.

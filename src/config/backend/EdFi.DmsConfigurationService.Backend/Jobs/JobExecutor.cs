@@ -232,6 +232,13 @@ public sealed class JobExecutor(
 
             return new Decision.Complete();
         }
+        catch (ManagedDataStores.ManagedDataStoreProvisioningException failed)
+        {
+            return new Decision.ManagedFailure(
+                ManagedDataStores.ManagedDataStoreFailure.FromProvisioner(failed.Failure),
+                JobDiagnostics.From(failed, "ManagedProvisioning")
+            );
+        }
         catch (JobPermanentException permanent)
         {
             JobErrorCode errorCode = errorCodes.TryGet(permanent.ErrorCode.Code, out JobErrorCode? registered)
@@ -330,6 +337,7 @@ public sealed class JobExecutor(
         long token = job.FencingToken;
         return decision switch
         {
+            Decision.ManagedFailure managed => ManagedFailure(managed),
             Decision.Complete => (
                 () => leaseRepository.Complete(job.Id, owner, token, CancellationToken.None),
                 new JobExecutionResult(JobExecutionOutcome.Completed),
@@ -364,6 +372,44 @@ public sealed class JobExecutor(
                 "The execution reached finalization without a decision."
             ),
         };
+
+        (Func<Task<JobWriteResult>>, JobExecutionResult, EventId) ManagedFailure(
+            Decision.ManagedFailure decision
+        )
+        {
+            bool transient =
+                decision.Failure.Category == DataStoreProvisioning.DmsProvisioningFailureCategory.Transient;
+            bool retry = transient && job.AttemptCount < Settings.MaxAttempts;
+            var failure =
+                transient && !retry
+                    ? ManagedDataStores.ManagedDataStoreFailure.FromJob(JobErrorCode.AttemptsExhausted)
+                    : decision.Failure;
+            int? backoff = retry
+                ? RetryBackoff.SecondsFor(
+                    job.AttemptCount,
+                    Settings.RetryBackoffBase,
+                    Settings.RetryBackoffMaximum
+                )
+                : null;
+            string errorCode = transient
+                ? JobErrorCode.AttemptsExhausted.Code
+                : JobErrorCode.HandlerFailed.Code;
+            return (
+                () =>
+                    leaseRepository.FailManaged(
+                        job.Id,
+                        owner,
+                        token,
+                        failure,
+                        backoff,
+                        CancellationToken.None
+                    ),
+                retry
+                    ? new(JobExecutionOutcome.RetryScheduled)
+                    : new(JobExecutionOutcome.Failed, ErrorCode: errorCode),
+                retry ? JobRetryScheduled : JobFailed
+            );
+        }
 
         (Func<Task<JobWriteResult>>, JobExecutionResult, EventId) Terminal(JobErrorCode errorCode) =>
             (
@@ -472,6 +518,11 @@ public sealed class JobExecutor(
     /// <summary>What the execution decided before finalization, with the diagnostic of any failure.</summary>
     private abstract record Decision(JobFailureDiagnostic? Diagnostic)
     {
+        public sealed record ManagedFailure(
+            ManagedDataStores.ManagedDataStoreFailure Failure,
+            JobFailureDiagnostic Detail
+        ) : Decision(Detail);
+
         public sealed record Run(JobHandlerRegistration Registration, object Payload, TenantContext Tenant)
             : Decision((JobFailureDiagnostic?)null);
 

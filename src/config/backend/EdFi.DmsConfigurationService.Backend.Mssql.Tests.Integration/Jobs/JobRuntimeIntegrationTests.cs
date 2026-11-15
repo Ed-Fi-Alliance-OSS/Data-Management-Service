@@ -64,6 +64,19 @@ public class JobRuntimeIntegrationTests
     /// <summary>A lease repository that counts the outcome writes passed through to the real one.</summary>
     public sealed class CountingLeaseRepository(IJobLeaseRepository inner) : IJobLeaseRepository
     {
+        public Task<JobWriteResult> FailManaged(
+            long id,
+            string owner,
+            long fencingToken,
+            EdFi.DmsConfigurationService.Backend.ManagedDataStores.ManagedDataStoreFailure failure,
+            int? backoffSeconds,
+            CancellationToken cancellationToken
+        )
+        {
+            Interlocked.Increment(ref _outcomeWrites);
+            return inner.FailManaged(id, owner, fencingToken, failure, backoffSeconds, cancellationToken);
+        }
+
         private int _outcomeWrites;
 
         public int OutcomeWrites => Volatile.Read(ref _outcomeWrites);

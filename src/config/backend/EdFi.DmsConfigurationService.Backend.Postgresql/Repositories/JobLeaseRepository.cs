@@ -406,6 +406,54 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             cancellationToken
         );
 
+    public Task<JobWriteResult> FailManaged(
+        long id,
+        string owner,
+        long fencingToken,
+        ManagedDataStoreFailure failure,
+        int? backoffSeconds,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(failure);
+        if (
+            (backoffSeconds is not null)
+                != (
+                    failure.Category
+                    == EdFi.DmsConfigurationService
+                        .Backend
+                        .DataStoreProvisioning
+                        .DmsProvisioningFailureCategory
+                        .Transient
+                )
+            || backoffSeconds is < 0
+        )
+        {
+            throw new ArgumentException("Managed failure and retry disposition disagree.");
+        }
+        var error =
+            failure.JobCode == JobErrorCode.AttemptsExhausted.Code
+                ? JobErrorCode.AttemptsExhausted
+                : JobErrorCode.HandlerFailed;
+        return OwnershipWriteAsync(
+            backoffSeconds is null ? "FailTerminal" : "FailTransient",
+            backoffSeconds is null ? FailTerminalSql : FailTransientSql,
+            new
+            {
+                Id = id,
+                Owner = owner,
+                Token = fencingToken,
+                BackoffSeconds = backoffSeconds,
+                ErrorMessage = error.Message,
+            },
+            id,
+            cancellationToken,
+            projectManagedRetry: backoffSeconds is not null,
+            terminalError: backoffSeconds is null ? error : null,
+            managedFailure: failure
+        );
+    }
+
     public Task<JobWriteResult> FailTransient(
         long id,
         string owner,
@@ -480,7 +528,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         long id,
         CancellationToken cancellationToken,
         bool projectManagedRetry = false,
-        JobErrorCode? terminalError = null
+        JobErrorCode? terminalError = null,
+        ManagedDataStoreFailure? managedFailure = null
     )
     {
         JobDeadline budget = JobDeadline.Start(timings.RenewalTimeout);
@@ -558,7 +607,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                     written.DatabaseUtcNow,
                     budget,
                     cancellationToken,
-                    terminalError
+                    terminalError,
+                    managedFailure
                 );
             }
 

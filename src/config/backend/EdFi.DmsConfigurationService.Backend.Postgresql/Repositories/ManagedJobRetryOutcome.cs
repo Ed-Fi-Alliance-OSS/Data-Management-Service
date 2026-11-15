@@ -100,15 +100,20 @@ internal static class ManagedJobRetryOutcome
         DateTime databaseUtcNow,
         JobDeadline budget,
         CancellationToken cancellationToken,
-        JobErrorCode? terminalError = null
+        JobErrorCode? terminalError = null,
+        ManagedDataStoreFailure? managedFailure = null
     )
     {
-        // Consumer codes remain on Job; retained aggregate evidence accepts only the bounded infrastructure taxonomy.
-        var failure = terminalError is null
-            ? ManagedDataStoreFailure.RetryableJobFailure()
-            : ManagedDataStoreFailure.FromJob(
-                JobErrorCode.Infrastructure.FirstOrDefault(known => known.Code == terminalError.Code)
-                    ?? JobErrorCode.HandlerFailed
+        // Retain only bounded infrastructure/provisioner taxonomy values, never provider messages.
+        var failure =
+            managedFailure
+            ?? (
+                terminalError is null
+                    ? ManagedDataStoreFailure.RetryableJobFailure()
+                    : ManagedDataStoreFailure.FromJob(
+                        JobErrorCode.Infrastructure.FirstOrDefault(known => known.Code == terminalError.Code)
+                            ?? JobErrorCode.HandlerFailed
+                    )
             );
         DynamicParameters parameters = new(
             new
@@ -118,6 +123,7 @@ internal static class ManagedJobRetryOutcome
                 target.Attempt,
                 Category = failure.Category.ToString(),
                 failure.JobCode,
+                ProvisioningCode = failure.ProvisioningCode?.ToString(),
             }
         );
         parameters.Add("Now", databaseUtcNow, DbType.DateTime2);
@@ -130,7 +136,7 @@ internal static class ManagedJobRetryOutcome
                         """
                         UPDATE dmscs."DataStoreManage"
                         SET "Status" = @Status, "LastAttempt" = @Attempt,
-                            "LastFailureCategory" = @Category, "LastFailureProvisioningCode" = NULL,
+                            "LastFailureCategory" = @Category, "LastFailureProvisioningCode" = @ProvisioningCode,
                             "LastFailureJobCode" = @JobCode,
                             "UpdatedAt" = @Now, "LastModifiedDate" = @Now, "LastRefreshed" = @Now
                         WHERE "Id" = @Id;

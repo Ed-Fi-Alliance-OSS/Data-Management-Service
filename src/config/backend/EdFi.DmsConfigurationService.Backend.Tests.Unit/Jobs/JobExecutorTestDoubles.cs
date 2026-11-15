@@ -6,6 +6,7 @@
 using System.Collections.Concurrent;
 using System.Data.Common;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Model;
@@ -101,6 +102,24 @@ public sealed class RangeCheckedHandler : IJobHandler<RangeCheckedPayload>
 /// </summary>
 public sealed class ScriptedLeaseRepository : IJobLeaseRepository
 {
+    public ManagedDataStoreFailure? LastManagedFailure { get; private set; }
+    public int? ManagedBackoff { get; private set; }
+
+    public Task<JobWriteResult> FailManaged(
+        long id,
+        string owner,
+        long fencingToken,
+        ManagedDataStoreFailure failure,
+        int? backoffSeconds,
+        CancellationToken cancellationToken
+    )
+    {
+        LastManagedFailure = failure;
+        ManagedBackoff = backoffSeconds;
+        Calls.Enqueue("FailManaged");
+        return OutcomeResult("FailManaged");
+    }
+
     public ConcurrentQueue<string> Calls { get; } = new();
 
     public TaskCompletionSource RenewCalled { get; private set; } = NewSignal();
