@@ -1,0 +1,386 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Collections.Generic;
+using System.Net;
+using System.Text;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
+using EdFi.DmsConfigurationService.Secrets;
+using FakeItEasy;
+using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using NUnit.Framework;
+
+namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configuration;
+
+public partial class DmsDataStoreProvisioningStartupTests
+{
+    [TestFixture]
+    public class Given_managed_data_store_startup
+    {
+        public static WebApplicationFactory<Program> Host(
+            string? management,
+            bool provisioning,
+            string target = "postgresql",
+            string catalog = "postgresql",
+            string identity = "keycloak",
+            Dictionary<string, string>? overrides = null,
+            bool ready = true,
+            Action<IServiceCollection>? configure = null
+        )
+        {
+            var settings = provisioning ? EnabledSettings(target, catalog) : new Dictionary<string, string>();
+            settings["AppSettings:Datastore"] = catalog;
+            settings["AppSettings:IdentityProvider"] = identity;
+            settings["AppSettings:DeployDatabaseOnStartup"] = "false";
+            settings["JobSettings:WorkerEnabled"] = "false";
+            settings["JobSettings:SchedulerEnabled"] = "false";
+            settings["JobSettings:RetentionEnabled"] = "false";
+            settings[$"{Section}:Enabled"] = provisioning.ToString();
+            if (provisioning && target == "mssql")
+            {
+                settings[$"{Section}:AdminConnectionString"] =
+                    "Server=tcp:127.0.0.1,1;User Id=none;Password=none";
+            }
+            settings["DataStoreManagement:RuntimeConnectionString"] =
+                target == "postgresql"
+                    ? "Host=127.0.0.1;Port=1;Username=runtime;Password=test-only"
+                    : "Server=tcp:127.0.0.1,1;User Id=runtime;Password=test-only";
+            if (management is not null)
+            {
+                settings["AppSettings:EnableDataStoreManagement"] = management;
+            }
+            foreach (var pair in overrides ?? [])
+            {
+                settings[pair.Key] = pair.Value;
+            }
+            var factory = CreateFactory(
+                settings,
+                configureServices: services =>
+                {
+                    services.AddTestAuthentication();
+                    var engine = ReadyEngine(provider: target);
+                    if (!ready)
+                    {
+                        A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
+                            .ThrowsAsync(new InvalidOperationException("test environment unavailable"));
+                    }
+                    services.AddSingleton(engine);
+                    services.AddSingleton(ReadyCatalog());
+                    configure?.Invoke(services);
+                }
+            );
+            return factory.WithWebHostBuilder(builder =>
+            {
+                builder.UseDefaultServiceProvider(options =>
+                {
+                    // Existing Keycloak registration includes an unused OpenIddict token manager
+                    // without its repository. Exercise whole-container validation in self-contained mode.
+                    options.ValidateOnBuild = identity == "self-contained";
+                    options.ValidateScopes = true;
+                });
+                if (management is null)
+                {
+                    // Remove the shipped explicit opt-out to exercise the code default at actual startup.
+                    builder.ConfigureAppConfiguration(
+                        (_, configuration) =>
+                        {
+                            var settingsWithoutFlag = configuration
+                                .Build()
+                                .AsEnumerable()
+                                .Where(pair => pair.Key != "AppSettings:EnableDataStoreManagement")
+                                .ToArray();
+                            configuration.Sources.Clear();
+                            configuration.AddInMemoryCollection(settingsWithoutFlag);
+                        }
+                    );
+                }
+            });
+        }
+
+        [TestCase("false", false), TestCase("false", true), TestCase("true", true), TestCase(null, true)]
+        public void It_applies_the_startup_truth_table(string? management, bool provisioning)
+        {
+            using var host = Host(management, provisioning);
+            StartupExceptionFor(host).Should().BeNull();
+            var enabled = management != "false";
+            host.Services.GetRequiredService<JobClaimPolicy>()
+                .ExcludesManagedDataStores.Should()
+                .Be(!enabled);
+            host.Services.GetRequiredService<IOptions<AppSettings>>()
+                .Value.EnableDataStoreManagement.Should()
+                .Be(enabled);
+            var registry = host.Services.GetRequiredService<IJobHandlerRegistry>();
+            registry.TryGet(ManagedJobTypes.Create, out var create).Should().BeTrue();
+            registry.TryGet(ManagedJobTypes.Delete, out var delete).Should().BeTrue();
+            create!.HandlerType.Should().Be(typeof(CreateManagedDataStoreHandler));
+            delete!.HandlerType.Should().Be(typeof(DeleteManagedDataStoreHandler));
+            create.PayloadVersions.Should().Contain(ManagedJobTypes.PayloadVersion);
+            delete.PayloadVersions.Should().Contain(ManagedJobTypes.PayloadVersion);
+            var policy = host.Services.GetRequiredService<JobClaimPolicy>();
+            policy.Allows("DataStore.RefreshEducationOrganizations").Should().BeTrue();
+            var configuration = host.Services.GetRequiredService<IConfiguration>();
+            configuration["AppSettings:EnableDataStoreManagement"] = enabled ? "false" : "true";
+            ((IConfigurationRoot)configuration).Reload();
+            host.Services.GetRequiredService<JobClaimPolicy>().Should().BeSameAs(policy);
+            policy.ExcludesManagedDataStores.Should().Be(!enabled);
+            if (enabled)
+            {
+                using var scope = host.Services.CreateScope();
+                scope
+                    .ServiceProvider.GetRequiredService<CreateManagedDataStoreHandler>()
+                    .Should()
+                    .NotBeNull();
+                scope
+                    .ServiceProvider.GetRequiredService<DeleteManagedDataStoreHandler>()
+                    .Should()
+                    .NotBeNull();
+                scope
+                    .ServiceProvider.GetRequiredService<ManagedDataStoreCreateAcceptance>()
+                    .Should()
+                    .NotBeNull();
+            }
+        }
+
+        [TestCase("true"), TestCase(null)]
+        public void It_refuses_enabled_management_without_the_provisioner(string? management)
+        {
+            using var host = Host(management, false);
+            StartupExceptionFor(host)
+                .Should()
+                .NotBeNull()
+                .And.Subject.ToString()
+                .Should()
+                .Contain("DmsDataStoreProvisioning:Enabled=true");
+        }
+
+        [TestCase("DmsDataStoreProvisioning:AdminConnectionString")]
+        [TestCase("DmsDataStoreProvisioning:ArtifactDirectory")]
+        [TestCase("DmsDataStoreProvisioning:TrustPolicyPath")]
+        [TestCase("DataStoreManagement:RuntimeConnectionString")]
+        public void It_refuses_missing_static_dependencies(string key)
+        {
+            using var host = Host("true", true, overrides: new() { [key] = "" });
+            StartupExceptionFor(host).Should().NotBeNull().And.Subject.ToString().Should().Contain(key);
+        }
+
+        [TestCase("postgresql"), TestCase("mssql")]
+        public void It_refuses_a_catalog_without_a_protected_database_name(string catalog)
+        {
+            using var host = Host(
+                "true",
+                true,
+                catalog: catalog,
+                overrides: new()
+                {
+                    ["DatabaseSettings:DatabaseConnection"] =
+                        catalog == "postgresql"
+                            ? "Host=localhost;Username=test-only"
+                            : "Server=localhost;Integrated Security=true",
+                }
+            );
+            StartupExceptionFor(host)
+                .Should()
+                .NotBeNull()
+                .And.Subject.ToString()
+                .Should()
+                .Contain("DatabaseSettings:DatabaseConnection");
+        }
+
+        [TestCase("postgresql"), TestCase("mssql")]
+        public void It_rejects_invalid_runtime_configuration_without_echoing_it(string target)
+        {
+            const string marker = "private-runtime-marker";
+            using var host = Host(
+                "true",
+                true,
+                target,
+                overrides: new()
+                {
+                    ["DataStoreManagement:RuntimeConnectionString"] = $"unrecognized={marker}",
+                }
+            );
+            var error = StartupExceptionFor(host);
+            error.Should().NotBeNull();
+            error!
+                .ToString()
+                .Should()
+                .Contain("DataStoreManagement:RuntimeConnectionString")
+                .And.NotContain(marker);
+        }
+
+        [TestCase("postgresql", "postgresql"), TestCase("postgresql", "mssql")]
+        [TestCase("mssql", "postgresql"), TestCase("mssql", "mssql")]
+        public void It_selects_target_and_catalog_providers_independently(string target, string catalog)
+        {
+            using var host = Host("true", true, target, catalog);
+            StartupExceptionFor(host).Should().BeNull();
+            using var scope = host.Services.CreateScope();
+            scope
+                .ServiceProvider.GetRequiredService<IDataStoreManageRepository>()
+                .GetType()
+                .FullName.Should()
+                .Contain(catalog == "mssql" ? ".Mssql." : ".Postgresql.");
+            host.Services.GetRequiredService<IManagedDataStoreRuntimeConnectionProvider>()
+                .Provider.Should()
+                .Be(target);
+            var parser = host.Services.GetRequiredService<ManagedDataStoreEndpointParser>();
+            parser(target == "mssql" ? "Server=tcp:DB.EXAMPLE,1433" : "Host=DB.EXAMPLE", out var endpoint)
+                .Should()
+                .BeTrue();
+            endpoint!.Provider.Should().Be(target);
+        }
+
+        [TestCase("postgresql"), TestCase("mssql")]
+        public void It_validates_keywords_even_when_a_value_is_a_secret_reference(string target)
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            using var host = Host(
+                "true",
+                true,
+                target,
+                overrides: new()
+                {
+                    ["DataStoreManagement:RuntimeConnectionString"] = "UnsupportedKeyword=${secret:runtime}",
+                },
+                configure: services => services.AddSingleton(resolver)
+            );
+            StartupExceptionFor(host)
+                .Should()
+                .NotBeNull()
+                .And.Subject.ToString()
+                .Should()
+                .Contain("DataStoreManagement:RuntimeConnectionString")
+                .And.NotContain("${secret:runtime}");
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        [TestCase("keycloak"), TestCase("self-contained")]
+        public async Task It_starts_disabled_without_managed_dependencies_and_maps_all_routes(string identity)
+        {
+            using var host = Host(
+                "false",
+                false,
+                identity: identity,
+                overrides: new()
+                {
+                    ["DataStoreManagement:RuntimeConnectionString"] = "invalid unused configuration",
+                }
+            );
+            using var client = host.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Role", "cms-client");
+            client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
+            foreach (
+                var (method, path) in new[]
+                {
+                    (HttpMethod.Get, ""),
+                    (HttpMethod.Get, "/bad"),
+                    (HttpMethod.Post, ""),
+                    (HttpMethod.Delete, "/bad"),
+                }
+            )
+            {
+                using var request = new HttpRequestMessage(method, "/v3/dataStores/manage" + path);
+                if (method == HttpMethod.Post)
+                {
+                    request.Content = new StringContent("{", Encoding.UTF8, "application/json");
+                }
+                using var response = await client.SendAsync(request);
+                response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+                (await response.Content.ReadAsStringAsync()).Should().Contain("management is disabled");
+            }
+            host.Services.GetService<IDmsAdminConnectionSource>().Should().BeNull();
+            host.Services.GetService<IManagedDataStoreRuntimeConnectionProvider>().Should().BeNull();
+        }
+
+        [TestCase("keycloak"), TestCase("self-contained")]
+        public async Task It_keeps_NotReady_latched_and_records_Ready_only_on_a_fresh_host(string identity)
+        {
+            using (var host = Host("true", true, identity: identity, ready: false))
+            {
+                using var client = host.CreateClient();
+                client.DefaultRequestHeaders.Add("X-Test-Role", "cms-client");
+                client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
+                host.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>()
+                    .Current.Should()
+                    .BeOfType<DmsProvisionerReadiness.NotReady>();
+                var engine = host.Services.GetRequiredService<IDmsTargetEngine>();
+                A.CallTo(() => engine.ValidateEnvironmentAsync(A<CancellationToken>._))
+                    .Returns(new DmsEngineEnvironment.Ready());
+                using var response = await client.PostAsync(
+                    "/v3/dataStores/manage",
+                    new StringContent(
+                        "{\"name\":\"example\",\"databaseTemplate\":\"Minimal\"}",
+                        Encoding.UTF8,
+                        "application/json"
+                    )
+                );
+                response.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable);
+                host.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>()
+                    .Current.Should()
+                    .BeOfType<DmsProvisionerReadiness.NotReady>();
+            }
+            using var restarted = Host("true", true, identity: identity);
+            StartupExceptionFor(restarted).Should().BeNull();
+            restarted
+                .Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>()
+                .Current.Should()
+                .BeOfType<DmsProvisionerReadiness.Ready>();
+        }
+
+        [TestCase("postgresql"), TestCase("mssql")]
+        public void It_preserves_literal_password_fragments_and_defers_secret_availability(string target)
+        {
+            string prefix =
+                target == "postgresql"
+                    ? "Host=db.example;Username=runtime;Password="
+                    : "Server=tcp:db.example,1433;User ID=runtime;Password=";
+            using var literal = Host(
+                "true",
+                true,
+                target,
+                overrides: new() { ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:}" }
+            );
+            StartupExceptionFor(literal).Should().BeNull();
+            using var missing = Host(
+                "true",
+                true,
+                target,
+                overrides: new()
+                {
+                    ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:runtime}",
+                }
+            );
+            StartupExceptionFor(missing)
+                .Should()
+                .NotBeNull()
+                .And.Subject.ToString()
+                .Should()
+                .Contain("ISecretResolver");
+            var resolver = A.Fake<ISecretResolver>();
+            using var configured = Host(
+                "true",
+                true,
+                target,
+                overrides: new()
+                {
+                    ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:runtime}",
+                },
+                configure: services => services.AddSingleton(resolver)
+            );
+            StartupExceptionFor(configured).Should().BeNull();
+            Fake.GetCalls(resolver).Should().BeEmpty("static validation must not resolve runtime secrets");
+        }
+    }
+}

@@ -3,7 +3,6 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
-using EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
@@ -11,7 +10,7 @@ using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 
-/// <summary>Maps the reviewed HTTP surface explicitly while production activation remains a later step.</summary>
+/// <summary>Uses production routes with isolated test dependencies and optional path-base simulation.</summary>
 public static class ManagedDataStoreApiTestHost
 {
     public static WebApplicationFactory<Program> Create(
@@ -28,6 +27,7 @@ public static class ManagedDataStoreApiTestHost
             builder.UseSetting("AppSettings:Datastore", provider);
             builder.UseSetting("AppSettings:MultiTenancy", multitenant.ToString());
             builder.UseSetting("AppSettings:DeployDatabaseOnStartup", "false");
+            builder.UseSetting("AppSettings:EnableDataStoreManagement", "false");
             builder.UseSetting("DmsDataStoreProvisioning:Enabled", "false");
             builder.UseSetting("JobSettings:WorkerEnabled", "false");
             builder.UseSetting("JobSettings:SchedulerEnabled", "false");
@@ -57,7 +57,6 @@ public static class ManagedDataStoreApiTestHost
                     }
                 );
                 next(app);
-                app.UseEndpoints(DataStoreManageModule.MapEndpoints);
             };
     }
 }

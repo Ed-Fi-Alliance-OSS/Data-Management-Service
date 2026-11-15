@@ -49,6 +49,7 @@ public static class WebApplicationExtensions
                 modules.Add(module);
             }
         }
+        DataStoreManageModule.MapEndpoints(application);
         application.UseEndpoints(endpoints =>
         {
             foreach (var routeBuilder in modules)

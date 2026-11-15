@@ -47,8 +47,10 @@ work before secret resolution or catalog writes. Registrations remain intact; re
 eligible persisted work without resetting its counters or artifact pins.
 
 Other job types, recurring schedules, polling and retention remain operational. This switch does
-not immediately cancel work already executing and does not activate managed handlers or HTTP
-routes. There are no managed recurring schedules.
+not immediately cancel work already executing. Both managed handlers remain registered and the
+secured `/v3/dataStores/manage` routes return 400 while disabled. There are no managed recurring
+schedules. See the [startup and rollout policy](./CONFIGURATION.md#managed-data-store-lifecycle)
+before enabling the feature; the shipped examples explicitly opt out.
 
 ## Job lifecycle
 

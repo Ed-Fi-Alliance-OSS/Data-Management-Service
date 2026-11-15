@@ -18,8 +18,7 @@ using Microsoft.AspNetCore.Http.Extensions;
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
 /// <summary>
-/// Explicitly mapped until the activation step supplies all production dependencies and handlers.
-/// Do not add IEndpointModule before that wiring: discovery would expose an incomplete feature.
+/// Managed-only dependencies are resolved after the feature gate, so disabled deployments need none.
 /// </summary>
 public static class DataStoreManageModule
 {
@@ -95,7 +94,7 @@ public static class DataStoreManageModule
     private static async Task<IResult> GetAll(
         HttpContext context,
         JobClaimPolicy policy,
-        IDataStoreManageRepository repository
+        IServiceProvider services
     )
     {
         if (policy.ExcludesManagedDataStores)
@@ -107,7 +106,9 @@ public static class DataStoreManageModule
         {
             return FailureResults.DataValidation(errors, context.TraceIdentifier);
         }
-        return await repository.QueryAsync(query, context.RequestAborted) switch
+        return await services
+            .GetRequiredService<IDataStoreManageRepository>()
+            .QueryAsync(query, context.RequestAborted) switch
         {
             DataStoreManageQueryResult.Success success => Results.Ok(success.DataStores),
             DataStoreManageQueryResult.InvalidRequest => Invalid(
@@ -122,7 +123,7 @@ public static class DataStoreManageModule
         string id,
         HttpContext context,
         JobClaimPolicy policy,
-        IDataStoreManageRepository repository
+        IServiceProvider services
     )
     {
         if (policy.ExcludesManagedDataStores)
@@ -133,7 +134,9 @@ public static class DataStoreManageModule
         {
             return Invalid(context, "Id must be an int32 value.", "id");
         }
-        return await repository.GetByIdAsync(manageId, context.RequestAborted) switch
+        return await services
+            .GetRequiredService<IDataStoreManageRepository>()
+            .GetByIdAsync(manageId, context.RequestAborted) switch
         {
             DataStoreManageGetResult.Success success => Results.Ok(success.DataStore),
             DataStoreManageGetResult.NotFound => FailureResults.NotFound(
@@ -147,7 +150,7 @@ public static class DataStoreManageModule
     private static async Task<IResult> Create(
         HttpContext context,
         JobClaimPolicy policy,
-        ManagedDataStoreCreateAcceptance acceptance
+        IServiceProvider services
     )
     {
         if (policy.ExcludesManagedDataStores)
@@ -180,7 +183,9 @@ public static class DataStoreManageModule
         {
             return FailureResults.DataValidation(validation.Errors, context.TraceIdentifier);
         }
-        var result = await acceptance.AcceptAsync(command, context.RequestAborted);
+        var result = await services
+            .GetRequiredService<ManagedDataStoreCreateAcceptance>()
+            .AcceptAsync(command, context.RequestAborted);
         if (result is DataStoreManageCreateResult.Success success)
         {
             string location = UriHelper.BuildAbsolute(
@@ -217,7 +222,7 @@ public static class DataStoreManageModule
         string id,
         HttpContext context,
         JobClaimPolicy policy,
-        IDataStoreManageRepository repository
+        IServiceProvider services
     )
     {
         if (policy.ExcludesManagedDataStores)
@@ -228,7 +233,9 @@ public static class DataStoreManageModule
         {
             return Invalid(context, "Id must be an int32 value.", "id");
         }
-        return await repository.AcceptDeleteAsync(manageId, context.RequestAborted) switch
+        return await services
+            .GetRequiredService<IDataStoreManageRepository>()
+            .AcceptDeleteAsync(manageId, context.RequestAborted) switch
         {
             DataStoreManageDeleteResult.Success => Results.NoContent(),
             DataStoreManageDeleteResult.ManagementDisabled => Disabled(context),

@@ -39,7 +39,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configurat
 /// ready deployment whose server is older than the templates' engine is NotReady as EngineIncompatible, and one
 /// whose server reaches it is Ready.
 /// </summary>
-public class DmsDataStoreProvisioningStartupTests
+public partial class DmsDataStoreProvisioningStartupTests
 {
     private const string Section = "DmsDataStoreProvisioning";
 

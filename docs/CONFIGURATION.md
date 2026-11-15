@@ -372,10 +372,59 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
 
+## Managed data store lifecycle
+
+`AppSettings:EnableDataStoreManagement` has a **code default of true**, captured once at startup.
+The shipped appsettings and Compose examples explicitly set it to **false** for unconfigured
+deployments. Omitting that explicit opt-out in a custom deployment enables management and can
+prevent startup. This flag applies to both secured `/v3/dataStores/manage` routes and exactly
+the `ManagedDataStore.Create` / `ManagedDataStore.Delete` job types; unrelated jobs and ordinary
+catalog routes remain available when it is false.
+
+| Management | Provisioning | Startup and requests |
+| --- | --- | --- |
+| Omitted or true | Omitted or false | Startup fails before database deployment or workers start. |
+| Omitted or true | True, invalid static settings | Startup fails with setting names, without secret values. |
+| Omitted or true | True, valid static settings, Ready | Managed acceptance, reads and workers are active. |
+| Omitted or true | True, valid static settings, NotReady | Host runs; new create/delete acceptance returns 503 without mutation; reads remain available. |
+| False | Omitted or false | No managed provisioning settings required; managed routes return 400. |
+| False | True | Standalone provisioning retains its existing validation and readiness behavior. |
+
+Enable `DmsDataStoreProvisioning:Enabled` and configure its administrative credentials, trusted
+artifact catalog, allowlist and target adapter below. Also set
+`DataStoreManagement:RuntimeConnectionString` with **separate DMS runtime credentials**, using the
+same target endpoint and only the permissions DMS requires. It is never replaced by the admin
+connection. The managed handler supplies the database name, resolves one runtime snapshot,
+verifies its endpoint, and persists it through the ordinary catalog's single encryption boundary.
+Secret references use the existing `${secret:<name>}` grammar and require a secrets plugin.
+Static validation does not contact a vault or target server. Runtime secret availability and
+permissions are not proven by static validation; qualify DMS access before rollout.
+
+The target provider comes from `DmsDataStoreProvisioning:Provider`; it is independent of
+`AppSettings:Datastore`, which selects CMS persistence. Compose exposes the management switch as
+`CONFIGURATION_SERVICE_DATA_STORE_MANAGEMENT_ENABLED` and the runtime connection as
+`CONFIGURATION_SERVICE_DATA_STORE_RUNTIME_CONNECTION_STRING`. Supply credentials privately; do
+not put them in committed examples or logs.
+
+Readiness is latched for the process. Remediate environmental failures and restart to probe again.
+Previously accepted unfinished jobs executed under a closed gate converge atomically to terminal
+job/lifecycle Error states; restart does not revive those terminal jobs. Transient failures discovered
+after Ready acceptance retain normal durable retry behavior. Disabling management suppresses new
+acceptance, enqueue, claim and exhaustion for these two exact job types; it does not cancel an
+already executing physical operation. Drain workers before coordinated changes and use the same
+flags/configuration on every replica.
+
+Before upgrading, follow the [canonical-name migration preflight and rollback qualification](../reference/design/managed-data-stores-DMS-1439/catalog-name-uniqueness-rollout.md).
+Inventory custom residual unique indexes on ordinary display `Name`: these can still reject names
+allowed by the canonical key. The ordinary name/filter/sort compatibility changes apply even with
+management disabled; do not mix old and new writers during the migration. CMS owns lifecycle
+state; DMS continues routing from the ordinary catalog and sees publications/deletions only after
+its normal cache refresh. Snapshot persistence and cleanup belong to DMS-1441, not this feature.
+
 ## DmsDataStoreProvisioning
 
 The Configuration Service can create and delete DMS data store databases from signed template packages
-(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The feature is off by default. While
+(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The provisioner is off by default. While
 `Enabled` is `false`, nothing in this section is read or validated, and every provisioning call is refused as
 `FeatureDisabled`. For topologies, server privileges, trust setup, readiness, and recovery, see
 [DMS data store provisioning](./OPERATIONS.md#configuration-service-dms-data-store-provisioning) in the
