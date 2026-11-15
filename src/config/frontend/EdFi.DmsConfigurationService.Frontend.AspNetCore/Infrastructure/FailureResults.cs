@@ -12,6 +12,13 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 internal static class FailureResults
 {
+    public static IResult ServiceUnavailable(string detail, string correlationId) =>
+        Results.Json(
+            FailureResponse.ForServiceUnavailable(detail, correlationId),
+            contentType: "application/problem+json",
+            statusCode: 503
+        );
+
     private static readonly string _errorDetail =
         "The request could not be processed. See 'errors' for details.";
     private static readonly string _errorContentType = "application/problem+json";
