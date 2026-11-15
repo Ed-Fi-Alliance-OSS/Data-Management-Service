@@ -25,9 +25,9 @@
       },
       "Microsoft.Data.SqlClient": {
         "type": "Direct",
-        "requested": "[6.1.4, )",
-        "resolved": "6.1.4",
-        "contentHash": "lQcSog5LLImg4yNEuuG6ccvdzXnCvER8Rms9Ngk9zB4Q8na4f+S7/abSoC7gnEltBg4e5xTnLAWmMLIOtLg4pg==",
+        "requested": "[6.1.5, )",
+        "resolved": "6.1.5",
+        "contentHash": "SFnZgy9RzV1gSEeihd6MXIfZOsRaH5QRwOBMuwCo17sDtobWGtwb2vxfxyr3kGPNA7vP6STUVcypK9qrDB1dsw==",
         "dependencies": {
           "Azure.Core": "1.50.0",
           "Azure.Identity": "1.17.1",
@@ -651,7 +651,7 @@
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
@@ -661,7 +661,7 @@
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
@@ -700,7 +700,7 @@
       "edfi.datamanagementservice.backend.tests.integration.common": {
         "type": "Project",
         "dependencies": {
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
           "Npgsql": "[8.0.4, )",
@@ -772,7 +772,7 @@
         "dependencies": {
           "EdFi.DataManagementService.Tests.Integration": "[1.0.0, )",
           "FluentAssertions": "[6.12.1, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.NET.Test.Sdk": "[17.11.1, )",
           "NUnit": "[4.2.2, )",
           "NUnit3TestAdapter": "[4.6.0, )",
@@ -789,7 +789,7 @@
           "FakeItEasy": "[8.3.0, )",
           "FluentAssertions": "[6.12.1, )",
           "Microsoft.AspNetCore.Mvc.Testing": "[10.0.1, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.Extensions.Configuration": "[10.0.1, )",
           "Microsoft.Extensions.Configuration.Json": "[10.0.1, )",
           "Microsoft.Extensions.DependencyInjection": "[10.0.1, )",
