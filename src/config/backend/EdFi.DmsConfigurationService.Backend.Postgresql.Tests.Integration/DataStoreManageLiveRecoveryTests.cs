@@ -159,7 +159,7 @@ public partial class Given_data_store_namespace_reservations
         string templateName
     ) => VerifyLiveRecovery(templateName, true);
 
-    private async Task VerifyLiveRecovery(string templateName, bool mixedCatalog)
+    private async Task VerifyLiveRecovery(string templateName, bool mixedCatalog, bool runtimeWrite = false)
     {
         _ = RequireAdmissionEndpoint();
         if (!RealTemplatePackage.IsConfigured)
@@ -386,6 +386,15 @@ public partial class Given_data_store_namespace_reservations
                     package.Manifest.EffectiveSchemaHash,
                     accepted.ExpectedSourceIdentity
                 );
+                if (runtimeWrite)
+                {
+                    await VerifyManagedRuntimeWrite(
+                        discovered,
+                        login,
+                        package.Manifest.EffectiveSchemaHash,
+                        package.Manifest.RelationalMappingVersion
+                    );
+                }
                 (await client.DeleteAsync($"/v3/dataStores/manage/{id}"))
                     .StatusCode.Should()
                     .Be(HttpStatusCode.NoContent);

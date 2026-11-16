@@ -22,6 +22,9 @@
     </ItemGroup>
     <ItemGroup>
         <ProjectReference Include="..\..\..\dms\core\EdFi.DataManagementService.Core\EdFi.DataManagementService.Core.csproj" />
+        <ProjectReference Include="..\..\..\dms\backend\EdFi.DataManagementService.Backend.Mssql\EdFi.DataManagementService.Backend.Mssql.csproj" />
+        <ProjectReference Include="..\..\..\dms\backend\EdFi.DataManagementService.Backend\EdFi.DataManagementService.Backend.csproj" />
+        <ProjectReference Include="..\..\..\dms\backend\EdFi.DataManagementService.Backend.Tests.Common\EdFi.DataManagementService.Backend.Tests.Common.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Mssql\EdFi.DmsConfigurationService.Backend.Mssql.csproj" />
         <ProjectReference Include="..\EdFi.DmsConfigurationService.Backend.Tests.Unit\EdFi.DmsConfigurationService.Backend.Tests.Unit.csproj" />
         <ProjectReference Include="..\..\frontend\EdFi.DmsConfigurationService.Frontend.AspNetCore\EdFi.DmsConfigurationService.Frontend.AspNetCore.csproj" />

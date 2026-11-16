@@ -750,10 +750,74 @@
       "EdFi.Api.Secrets": {
         "type": "Project"
       },
+      "edfi.datamanagementservice.backend": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Configuration.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.DependencyInjection.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Hosting.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )",
+          "Microsoft.Extensions.Resilience": "[10.1.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.ddl": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )"
+        }
+      },
       "edfi.datamanagementservice.backend.external": {
         "type": "Project",
         "dependencies": {
           "EdFi.DataManagementService.Core.External": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.plans": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Microsoft.Extensions.Options": "[10.0.1, )",
+          "System.Security.Cryptography.Pkcs": "[9.0.21, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.postgresql": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core.External": "[1.0.0, )",
+          "Microsoft.CodeAnalysis": "[4.12.0, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "Npgsql": "[8.0.4, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.relationalmodel": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )"
+        }
+      },
+      "edfi.datamanagementservice.backend.tests.common": {
+        "type": "Project",
+        "dependencies": {
+          "EdFi.DataManagementService.Backend": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.External": "[1.0.0, )",
+          "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
+          "EdFi.DataManagementService.Core": "[1.0.0, )",
+          "FluentAssertions": "[6.12.1, )",
+          "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
+          "NUnit": "[4.2.2, )"
         }
       },
       "edfi.datamanagementservice.core": {
