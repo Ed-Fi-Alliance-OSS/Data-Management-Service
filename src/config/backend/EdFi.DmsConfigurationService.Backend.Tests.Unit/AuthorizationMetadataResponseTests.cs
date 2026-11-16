@@ -199,6 +199,47 @@ public class AuthorizationMetadataResponseTests
         public override int GetHashCode() => 42;
     }
 
+    [TestFixture]
+    public class Given_AuthorizationMetadata_equality_contracts
+    {
+        [Test]
+        public void It_distinguishes_an_authorization_from_null()
+        {
+            var authorization = new Authorization(1, [new Action("Read", [new("Strategy")])]);
+
+            authorization.Equals((Authorization?)null).Should().BeFalse();
+        }
+
+        [Test]
+        public void It_recognizes_the_same_authorization_instance()
+        {
+            var authorization = new Authorization(1, [new Action("Read", [new("Strategy")])]);
+
+            authorization.Equals(authorization).Should().BeTrue();
+        }
+
+        [Test]
+        public void It_distinguishes_an_action_from_null()
+        {
+            var action = new Action("Read", [new("Strategy")]);
+
+            action.Equals((Action?)null).Should().BeFalse();
+        }
+
+        [TestCase("Create", "Strategy")]
+        [TestCase("read", "Strategy")]
+        [TestCase("Read", "Other")]
+        [TestCase("Read", "strategy")]
+        public void It_distinguishes_actions_with_different_permissions(string name, string strategy)
+        {
+            var first = new Action("Read", [new("Strategy")]);
+            var second = new Action(name, [new(strategy)]);
+
+            first.Equals(second).Should().BeFalse();
+            second.Equals(first).Should().BeFalse();
+        }
+    }
+
     [TestFixture(false)]
     [TestFixture(true)]
     public class Given_AuthorizationMetadata_model_hash_collision(bool differentStrategy)

@@ -50,8 +50,8 @@ begins; pending rows are planned targets, not qualified runs.
 | Area / target | Owning unit-test directory | Configuration | Status |
 | --- | --- | --- | --- |
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
-| 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Prepared; baseline pending |
-| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Pending |
+| 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
+| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Initial five-file baseline running |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Pending |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Pending |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Pending |
@@ -93,6 +93,11 @@ Do not change production behavior merely to improve the mutation score.
 
 ## Results
 
+CMS Backend's Release suite passed 5,375 tests before the Claims baseline. Stryker
+5.0.0 could not select the transitively referenced Claims assembly, so the test
+project now references Claims directly. Locked restore passes without package-lock
+changes. The initial project-selection failure produced no baseline.
+
 Implementation started from `dfbd0530896805cd3415b679dc62510a9871268a` on 2026-11-16.
 Tool restoration and local-manifest resolution were checked at the repository root,
 DMS Core test directory, and CMS Backend test directory: all resolve 5.0.0. Installed
@@ -105,6 +110,53 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `dms-validation` (five configured files) | 5.0.0 | 65.85% → 71.95% | 4m49s / 4m58s | `StrykerOutput/2026-11-16.16-53-30/reports/` → `StrykerOutput/2026-11-16.17-05-10/reports/` |
 | Claim-set pilot (`Security/ClaimSetResolver.cs`) | 5.0.0 | 85.00% baseline | 4m58s | `StrykerOutput/2026-11-16.17-15-38/reports/` |
 | Full `dms-request-auth` (three configured files) | 5.0.0 | 63.31% → 67.63% | 5m43s / 5m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
+| Full `cms-permission-inheritance` (two configured Claims files) | 5.0.0 | 83.33% → 91.67% | 6m25s / 6m19s | `StrykerOutput/2026-11-16.17-39-28/reports/` → `StrykerOutput/2026-11-16.17-47-25/reports/` |
+
+Runs above used `--concurrency 2`. The query-authorization target uses
+`--concurrency 4`; only one Stryker process runs in the checkout at a time.
+
+### CMS permission-inheritance triage
+
+The baseline instruments the Claims assembly and contains 40 killed, 6 survived,
+2 uncovered, 6 compile errors, and 24 ignored mutants in the declared two files,
+with no timeouts. The full rerun contains 44 killed, 4 survived, no uncovered mutants,
+the same 6 compile errors and 24 ignored, and no timeouts. Existing literal
+expectations and bounded property scenarios kill
+the executable inheritance, default/override-precedence, ordering, ID-allocation,
+and collision/deduplication changes. Expected semantic permissions are computed
+independently, and the property tests check that the input hierarchy is unchanged.
+
+Four response-model changes are now caught by stronger assertions: returning true for a null
+authorization (`AuthorizationMetadataResponse.cs:26`), returning false for the same
+instance (line 31), and two `&&` → `||` changes in action equality (line 73).
+New tests exercise null, reflexivity, unequal action names/strategies, and casing.
+All four changes are confirmed killed by source location, operator, and replacement
+in the full rerun. The focused normal run passed 211 tests, and both changed C# files
+pass CSharpier.
+
+The other four changes preserve the public contracts:
+
+- `AuthorizationMetadataResolver.cs:180`, default strategy count `> 0` → `>= 0`,
+  copies an empty default list over an already-empty strategy list. Permissions and
+  authorization references are unchanged.
+- `AuthorizationMetadataResponse.cs:61`, additive hash accumulation → subtraction,
+  remains commutative, so equal permissions retain equal hashes.
+- Line 79, ascending → descending strategy-name order during hashing, still gives
+  each equivalent strategy multiset one canonical sequence.
+- Line 80, removing strategy contributions to the action hash, increases collisions
+  but retains equality correctness. Existing forced-collision tests verify that
+  distinct permissions do not merge. Do not assert unequal hashes for unequal values;
+  the hash contract allows collisions.
+
+The resolver's six compile errors include invalid `Count` → `Sum` member access and
+definite-assignment failures around `out var defaultAction`, plus adjacent mutations
+rolled back with them. These are instrumentation limits, not successful test kills.
+
+The first run also warned about four changing test identities in the unrelated
+connection-string validator tests: randomized encrypted input appeared in their
+discovered names. Those cases now use stable argument display names while retaining
+the encrypted values and original assertions. The full rerun has no warnings or
+errors, with the full owning test suite and per-test coverage still enabled.
 
 ### Request authorization triage
 
