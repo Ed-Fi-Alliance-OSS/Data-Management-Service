@@ -4,11 +4,13 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Repositories;
@@ -227,10 +229,22 @@ public partial class Given_data_store_namespace_reservations
             .Should()
             .BeOfType<DataStoreInsertResult.Success>()
             .Subject.Id;
+        await using var connection = await Open();
+        string existingBefore = JsonSerializer.Serialize(
+            await connection.QuerySingleAsync(
+                """SELECT * FROM dmscs."DataStore" WHERE "Id" = @Id;""",
+                new { Id = existingId }
+            )
+        );
         using var services = AcceptanceServices(tenant);
         var real = services.GetRequiredService<IJobEnqueuer>();
         string ordinaryName = keyDistinct ? "café" : "Store";
         string managedName = keyDistinct ? "cafe" : "store";
+        var identity = CreateCommand(managedName, "mssql");
+        var readiness = new DmsDataStoreProvisionerReadiness();
+        readiness.Record(
+            new DmsProvisionerReadiness.Ready(identity.Endpoint.Provider, DateTimeOffset.UtcNow)
+        );
         string applicationName = "acceptance-" + Guid.NewGuid().ToString("N");
         TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
         Task<DataStoreManageCreateResult>? managed = null;
@@ -260,8 +274,8 @@ public partial class Given_data_store_namespace_reservations
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
-                managed = ManagedRepository(real, tenant, applicationName: applicationName)
-                    .AcceptCreateAsync(CreateCommand(managedName), default);
+                managed = ManagedRepository(real, tenant, readiness, applicationName: applicationName)
+                    .AcceptCreateAsync(identity, default);
                 waited = await ObserveGateWait(applicationName, managed);
             }
             finally
@@ -291,8 +305,7 @@ public partial class Given_data_store_namespace_reservations
                     return await real.EnqueueAsync(command, transaction, token);
                 }
             );
-            managed = ManagedRepository(decorator, tenant)
-                .AcceptCreateAsync(CreateCommand(managedName), default);
+            managed = ManagedRepository(decorator, tenant, readiness).AcceptCreateAsync(identity, default);
             try
             {
                 await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
@@ -321,7 +334,8 @@ public partial class Given_data_store_namespace_reservations
             }
         }
         waited.Should().BeTrue("the contender must wait for the actual writer's transaction");
-        (await managed!)
+        var managedResult = await managed!;
+        managedResult
             .Should()
             .BeOfType(
                 ordinaryFirst && !keyDistinct
@@ -336,11 +350,159 @@ public partial class Given_data_store_namespace_reservations
             (_, true) => typeof(DataStoreUpdateResult.Success),
             _ => typeof(DataStoreUpdateResult.FailureDuplicateName),
         };
-        (await ordinary!).Should().BeOfType(expectedOrdinary);
+        var ordinaryResult = await ordinary!;
+        ordinaryResult.Should().BeOfType(expectedOrdinary);
         await AssertAcceptanceCounts(
             ordinaryFirst && !keyDistinct ? 0 : 1,
             ordinaryFirst && !keyDistinct ? 0 : 1
         );
+        List<(int Id, string Name)> expectedRows =
+        [
+            (existingId, operation == "rename" && ordinarySucceeds ? ordinaryName : "existing"),
+        ];
+        if (ordinaryResult is DataStoreInsertResult.Success inserted)
+        {
+            expectedRows.Add((inserted.Id, ordinaryName));
+        }
+        if (operation != "rename" || !ordinarySucceeds)
+        {
+            string existingAfter = JsonSerializer.Serialize(
+                await connection.QuerySingleAsync(
+                    """SELECT * FROM dmscs."DataStore" WHERE "Id" = @Id;""",
+                    new { Id = existingId }
+                )
+            );
+            existingAfter.Should().Be(existingBefore);
+        }
+        // These ordinary rows contain no runtime credentials. Publication must leave them unchanged.
+        string ordinaryBefore = JsonSerializer.Serialize(
+            await connection.QueryAsync("""SELECT * FROM dmscs."DataStore" ORDER BY "Id";""")
+        );
+        if (managedResult is DataStoreManageCreateResult.Success accepted)
+        {
+            int publishedId = await PublishAcceptedRace(accepted, identity, tenant);
+            expectedRows.Add((publishedId, managedName));
+            string ordinaryAfter = JsonSerializer.Serialize(
+                await connection.QueryAsync(
+                    """SELECT * FROM dmscs."DataStore" WHERE "Id" <> @Id ORDER BY "Id";""",
+                    new { Id = publishedId }
+                )
+            );
+            ordinaryAfter.Should().Be(ordinaryBefore);
+            await AssertAcceptanceCounts(1, 1);
+        }
+        else
+        {
+            // Ordinary-wins Store/store: no managed aggregate/job exists to start or publish.
+            (
+                await new JobLeaseRepository(PublicationOptions, PublicationTimings).ClaimNext(
+                    "race-loser",
+                    300,
+                    5,
+                    default
+                )
+            )
+                .Should()
+                .BeOfType<JobClaimResult.NoneAvailable>();
+        }
+        var rows = (
+            await connection.QueryAsync<(int Id, string Name)>(
+                """SELECT "Id", "Name" FROM dmscs."DataStore";"""
+            )
+        ).ToList();
+        rows.Should().BeEquivalentTo(expectedRows);
+        foreach (var expected in expectedRows)
+        {
+            var found = (await Repository(tenant).QueryDataStore(new() { Name = expected.Name }))
+                .Should()
+                .BeOfType<DataStoreQueryResult.Success>()
+                .Subject.DataStoreResponses;
+            found.Should().ContainSingle().Which.Id.Should().Be(expected.Id);
+        }
+    }
+
+    private async Task<int> PublishAcceptedRace(
+        DataStoreManageCreateResult.Success accepted,
+        ManagedDataStoreCreateCommand identity,
+        long? tenant
+    )
+    {
+        // Continue the actual acceptance: no replacement seed, direct aggregate update or new job.
+        var leases = new JobLeaseRepository(PublicationOptions, PublicationTimings);
+        var claim = (await leases.ClaimNext("race-publication", 300, 5, default))
+            .Should()
+            .BeOfType<JobClaimResult.Claimed>()
+            .Subject.Job;
+        claim.JobId.Should().Be(accepted.JobId);
+        claim.TenantId.Should().Be(tenant);
+        claim.JobType.Should().Be(ManagedJobTypes.Create);
+        using var payload = JsonDocument.Parse(claim.PayloadJson);
+        payload.RootElement.GetProperty("manageId").GetInt32().Should().Be(accepted.Id);
+        var execution = new JobExecutionContext(
+            claim.JobId,
+            CreateTenantContext(tenant).Context,
+            claim.AttemptCount,
+            5,
+            new MssqlJobFenceFactory(PublicationOptions, PublicationTimings).Create(claim, new())
+        );
+        var repository = PublicationRepository(tenant);
+        var operation = await repository.StartCreateAsync(accepted.Id, execution, default);
+        operation.Identity.Should().Be(identity);
+        operation.AlreadyCreated.Should().BeFalse();
+        operation.PinnedArtifact.Should().BeNull();
+        // This is CMS persistence qualification; the pin is test data and no physical restore is claimed.
+        DmsTrustedArtifactPin pin = new()
+        {
+            ContractVersion = 1,
+            Provider = identity.Endpoint.Provider,
+            PackageId = "EdFi.Dms.Minimal",
+            PackageVersion = "1.0.0",
+            PackageSha256 = new string('a', 64),
+            ArtifactSha256 = new string('b', 64),
+            TemplateKind = "Minimal",
+            DataStandardVersion = "5.2",
+            EffectiveSchemaHash = new string('c', 64),
+            InventorySha256 = new string('d', 64),
+            ApiSchemaFormatVersion = "1",
+            RelationalMappingVersion = "v3",
+        };
+        operation = await repository.PinCreateAsync(operation, pin, execution, default);
+        var runtime = (
+            await CreateHandlerRuntime().BuildAsync(identity.Endpoint, identity.TargetName, default)
+        )
+            .Should()
+            .BeOfType<ManagedDataStoreRuntimeConnectionResult.Success>()
+            .Subject;
+        var command = new ManagedDataStorePublishCommand(
+            accepted.Id,
+            operation.Identity,
+            pin,
+            runtime.ConnectionString
+        );
+        int publishedId = await repository.PublishCreateAsync(command, execution, default);
+        (await repository.PublishCreateAsync(command, execution, default)).Should().Be(publishedId);
+        await using var connection = await Open();
+        var stored = await connection.QuerySingleAsync<ManagedDataStoreRow>(
+            """SELECT * FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+            new { accepted.Id }
+        );
+        stored.Status.Should().Be("Created");
+        stored.DataStoreId.Should().Be(publishedId);
+        stored.CreateJobId.Should().Be(accepted.JobId);
+        stored.ExpectedSourceIdentity.Should().Be(identity.ExpectedSourceIdentity);
+        stored.Restore(ProtectedDatabaseNames.Create("cms", [])).PinnedArtifact.Should().Be(pin);
+        (await leases.Complete(claim.Id, claim.LeaseOwner, claim.FencingToken, default))
+            .Should()
+            .BeOfType<JobWriteResult.Success>();
+        (
+            await connection.ExecuteScalarAsync<string>(
+                """SELECT "Status" FROM dmscs."Job" WHERE "JobId" = @JobId;""",
+                new { accepted.JobId }
+            )
+        )
+            .Should()
+            .Be("Completed");
+        return publishedId;
     }
 
     [TestCase("name", false), TestCase("name", true)]
