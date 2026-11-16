@@ -240,8 +240,10 @@ internal static class RelationalQueryRequestPreprocessor
     }
 
     /// <summary>
-    /// Appends a failure for every SQL Server string filter wider than the column it is compared against:
-    /// a root column's mapped length, or for a descriptor reference the longest stored descriptor URI.
+    /// Appends a failure for every SQL Server string filter wider than the root column it is compared
+    /// against, by the column's mapped length. Descriptor references are not checked here: they bind a
+    /// resolved descriptor ID, and the descriptor lookup accepts URIs wider than any stored one because the
+    /// SQL Server identity collation can equate them with a stored descriptor.
     /// Runs before the main pass for the same reason descriptor values are checked first, so a rejection
     /// does not depend on an earlier element proving the query has no matches.
     /// </summary>
@@ -270,35 +272,21 @@ internal static class RelationalQueryRequestPreprocessor
                     queryElement.QueryFieldName,
                     out var supportedField
                 )
+                || supportedField.Target is not RelationalQueryFieldTarget.RootColumn(var column)
             )
             {
                 continue;
             }
 
-            int? columnLength;
+            rootColumnsByName ??= mappingSet
+                .GetConcreteResourceModelOrThrow(requestResource)
+                .RelationalModel.Root.Columns.ToDictionary(static rootColumn => rootColumn.ColumnName);
 
-            switch (supportedField.Target)
-            {
-                case RelationalQueryFieldTarget.RootColumn(var column):
-                    rootColumnsByName ??= mappingSet
-                        .GetConcreteResourceModelOrThrow(requestResource)
-                        .RelationalModel.Root.Columns.ToDictionary(static rootColumn =>
-                            rootColumn.ColumnName
-                        );
-
-                    columnLength =
-                        rootColumnsByName.TryGetValue(column, out var rootColumn)
-                        && rootColumn.ScalarType is { Kind: ScalarKind.String } scalarType
-                            ? scalarType.MaxLength
-                            : null;
-                    break;
-                case RelationalQueryFieldTarget.DescriptorIdColumn
-                    when DescriptorText.IsWellFormedWithoutNul(queryElement.Value):
-                    columnLength = NaturalKeyLookupLimits.MaxDescriptorUriLength;
-                    break;
-                default:
-                    continue;
-            }
+            int? columnLength =
+                rootColumnsByName.TryGetValue(column, out var rootColumn)
+                && rootColumn.ScalarType is { Kind: ScalarKind.String } scalarType
+                    ? scalarType.MaxLength
+                    : null;
 
             if (QueryFilterStorageWidth.ExceedsSqlServerColumn(dialect, queryElement.Value, columnLength))
             {

@@ -236,11 +236,16 @@ code units, even if it is within the field's `maxLength`. SQL Server string
 columns count UTF-16 code units, so a character outside the Basic Multilingual
 Plane, such as an emoji, takes two. For example, three emoji pass a `maxLength`
 of 3 but do not fit a three-character SQL Server column. The width is the
-column's mapped length for a resource property, the descriptor table's column
-length for a descriptor endpoint's `namespace`, `codeValue`, `shortDescription`
-or `description`, and 306 (the longest stored `namespace#codeValue`) for a
-descriptor reference. This check applies only to SQL Server; PostgreSQL
-validation and binding are unchanged.
+column's mapped length for a resource property, and the descriptor table's
+column length for a descriptor endpoint's `namespace`, `codeValue`,
+`shortDescription` or `description`. A descriptor reference filter, such as
+`schoolTypeDescriptor` on `/schools`, is not checked against a column width:
+the query compares the resolved descriptor ID, and the descriptor lookup
+accepts URIs wider than any stored one because the SQL Server identity
+collation can treat them as aliases of a stored descriptor (see
+[natural-key resolution](../reference/design/backend-redesign/design-docs/natural-key-resolution.md)).
+This check applies only to SQL Server; PostgreSQL validation and binding are
+unchanged.
 
 > [!NOTE]
 > This differs from the Ed-Fi ODS/API, which does not reject filter values by

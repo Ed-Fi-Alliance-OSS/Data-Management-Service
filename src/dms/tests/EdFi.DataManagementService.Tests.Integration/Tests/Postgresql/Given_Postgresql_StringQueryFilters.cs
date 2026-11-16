@@ -45,4 +45,11 @@ public sealed class Given_Postgresql_StringQueryFilters : PostgresqlApiIntegrati
             Harness,
             sqlServer: false
         );
+
+    [Test]
+    public Task It_runs_a_descriptor_reference_filter_wider_than_any_stored_uri() =>
+        StringQueryFilterScenario.It_resolves_a_descriptor_reference_alias_wider_than_any_stored_uri_by_dialect(
+            Harness,
+            sqlServer: false
+        );
 }

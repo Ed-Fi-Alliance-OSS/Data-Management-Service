@@ -51,4 +51,11 @@ public sealed class Given_Mssql_StringQueryFilters : MssqlApiIntegrationTestBase
             Harness,
             sqlServer: true
         );
+
+    [Test]
+    public Task It_matches_a_descriptor_reference_alias_wider_than_any_stored_uri() =>
+        StringQueryFilterScenario.It_resolves_a_descriptor_reference_alias_wider_than_any_stored_uri_by_dialect(
+            Harness,
+            sqlServer: true
+        );
 }

@@ -25,6 +25,10 @@ internal static class StringQueryFilterScenario
 {
     private const string Endpoint = NamespaceAuthorizationProblemDetailsScenario.NamespaceResourcesEndpoint;
     private const string GradeLevelDescriptorsEndpoint = "/data/ed-fi/gradeLevelDescriptors";
+    private const string SchoolTypeDescriptorsEndpoint = "/data/ed-fi/schoolTypeDescriptors";
+    private const string SchoolsEndpoint = "/data/ed-fi/schools";
+    private const string SchoolTypeUri = "uri://ed-fi.org/SchoolTypeDescriptor#Regular";
+    private const int AliasSchoolId = 200;
     private const int NameMaxLength = 75;
     private const int CodeValueMaxLength = 50;
     private const int PageLimit = 2;
@@ -264,6 +268,94 @@ internal static class StringQueryFilterScenario
             wide.StatusCode.Should().Be(HttpStatusCode.OK, body);
             JsonNode.Parse(body)!.AsArray().Should().BeEmpty();
         }
+    }
+
+    /// <summary>
+    /// A descriptor reference filter is not bounded by the stored URI width: the query compares the resolved
+    /// descriptor ID, so a URI within the field's declared maxLength reaches the descriptor lookup even when it
+    /// is wider than any stored URI in UTF-16 code units. SQL Server's identity collation ignores the appended
+    /// emoji and matches the stored descriptor; PostgreSQL compares them and finds nothing.
+    /// </summary>
+    public static async Task It_resolves_a_descriptor_reference_alias_wider_than_any_stored_uri_by_dialect(
+        ApiIntegrationHarness harness,
+        bool sqlServer
+    )
+    {
+        await NamespaceAuthorizationProblemDetailsScenario.SeedReferenceDataAsync(harness);
+        await PostCreatedAsync(
+            harness,
+            SchoolTypeDescriptorsEndpoint,
+            new JsonObject
+            {
+                ["codeValue"] = "Regular",
+                ["description"] = "Regular",
+                ["namespace"] = "uri://ed-fi.org/SchoolTypeDescriptor",
+                ["shortDescription"] = "Regular",
+            }
+        );
+        await PostCreatedAsync(
+            harness,
+            SchoolsEndpoint,
+            new JsonObject
+            {
+                ["schoolId"] = AliasSchoolId,
+                ["nameOfInstitution"] = "Alias School",
+                ["schoolTypeDescriptor"] = SchoolTypeUri,
+                ["educationOrganizationCategories"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["educationOrganizationCategoryDescriptor"] =
+                            "uri://ed-fi.org/EducationOrganizationCategoryDescriptor#School",
+                    }
+                ),
+                ["gradeLevels"] = new JsonArray(
+                    new JsonObject
+                    {
+                        ["gradeLevelDescriptor"] = "uri://ed-fi.org/GradeLevelDescriptor#Tenth grade",
+                    }
+                ),
+            }
+        );
+
+        // 194 text elements, within the declared maxLength of 306, but 344 UTF-16 code units.
+        string wideAlias = SchoolTypeUri + string.Concat(Enumerable.Repeat(Emoji, 150));
+        wideAlias.Length.Should().BeGreaterThan(306);
+
+        int[] expectedForAlias = sqlServer ? [AliasSchoolId] : [];
+
+        (await GetSchoolIdsAsync(harness, SchoolTypeUri)).Should().Equal(AliasSchoolId);
+        (await GetSchoolIdsAsync(harness, wideAlias)).Should().Equal(expectedForAlias);
+    }
+
+    private static async Task<int[]> GetSchoolIdsAsync(
+        ApiIntegrationHarness harness,
+        string schoolTypeDescriptor
+    )
+    {
+        using HttpResponseMessage response = await GetCollectionAsync(
+            harness,
+            SchoolsEndpoint,
+            ("schoolTypeDescriptor", schoolTypeDescriptor)
+        );
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, body);
+
+        return [.. JsonNode.Parse(body)!.AsArray().Select(item => item!["schoolId"]!.GetValue<int>())];
+    }
+
+    private static async Task PostCreatedAsync(
+        ApiIntegrationHarness harness,
+        string endpoint,
+        JsonObject body
+    )
+    {
+        using HttpResponseMessage response = await NamespaceAuthorizationProblemDetailsScenario.PostJsonAsync(
+            harness,
+            endpoint,
+            body
+        );
+
+        response.StatusCode.Should().Be(HttpStatusCode.Created, await response.Content.ReadAsStringAsync());
     }
 
     private static async Task<Dictionary<(string Name, string Namespace), List<int>>> SeedCombinationsAsync(

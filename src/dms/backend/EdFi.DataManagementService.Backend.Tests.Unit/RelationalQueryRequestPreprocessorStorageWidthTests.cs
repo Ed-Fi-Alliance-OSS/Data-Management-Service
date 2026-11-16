@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Globalization;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -111,25 +112,31 @@ public partial class Given_RelationalQueryRequestPreprocessor
 
     [TestFixture]
     [Parallelizable]
-    public class Given_A_Descriptor_Reference_Filter_And_The_Stored_Uri_Width
+    public class Given_A_Descriptor_Reference_Filter_Wider_Than_Any_Stored_Uri
     {
-        // 307 UTF-16 code units: one wider than the longest stored namespace#codeValue.
-        private static readonly string _overWideUri =
-            "uri://ed-fi.org/SchoolCategoryDescriptor#"
-            + new string('x', NaturalKeyLookupLimits.MaxDescriptorUriLength + 1 - 41);
+        // 192 text elements, within the descriptor field's declared maxLength of 306, but 342 UTF-16 code units,
+        // wider than the longest stored namespace#codeValue. SQL Server's identity collation ignores the emoji,
+        // so the URI is an alias of the stored SchoolCategoryDescriptor#x and must reach the descriptor lookup.
+        private static readonly string _wideAliasUri =
+            "uri://ed-fi.org/SchoolCategoryDescriptor#x"
+            + string.Concat(Enumerable.Repeat(ThreeSupplementaryCharacters, 50));
 
         private static async Task<(
             RelationalQueryPreprocessingResult Result,
-            IReferenceResolver Resolver
+            List<ReferenceResolverRequest> Requests
         )> PreprocessAsync(SqlDialect dialect)
         {
+            List<ReferenceResolverRequest> requests = [];
             var referenceResolver = A.Fake<IReferenceResolver>();
             A.CallTo(() =>
                     referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
                 )
                 .ReturnsLazily(
                     (ReferenceResolverRequest request, CancellationToken _) =>
-                        Task.FromResult(
+                    {
+                        requests.Add(request);
+
+                        return Task.FromResult(
                             CreateResolvedReferenceSet(
                                 invalidDescriptorReferences:
                                 [
@@ -141,7 +148,8 @@ public partial class Given_RelationalQueryRequestPreprocessor
                                     ),
                                 ]
                             )
-                        )
+                        );
+                    }
                 );
 
             var result = await RelationalQueryRequestPreprocessor.PreprocessAsync(
@@ -151,7 +159,7 @@ public partial class Given_RelationalQueryRequestPreprocessor
                     CreateQueryElement(
                         "schoolCategoryDescriptor",
                         "$.schoolCategoryDescriptor",
-                        _overWideUri,
+                        _wideAliasUri,
                         "string"
                     ),
                 ],
@@ -159,42 +167,26 @@ public partial class Given_RelationalQueryRequestPreprocessor
                 referenceResolver
             );
 
-            return (result, referenceResolver);
+            return (result, requests);
         }
 
-        [Test]
-        public async Task It_rejects_a_sql_server_uri_wider_than_any_stored_uri_without_resolving()
+        [TestCase(SqlDialect.Mssql)]
+        [TestCase(SqlDialect.Pgsql)]
+        public async Task It_passes_the_uri_unchanged_to_the_descriptor_lookup(SqlDialect dialect)
         {
-            _overWideUri.Length.Should().Be(NaturalKeyLookupLimits.MaxDescriptorUriLength + 1);
+            new StringInfo(_wideAliasUri).LengthInTextElements.Should().Be(192);
+            _wideAliasUri.Length.Should().BeGreaterThan(NaturalKeyLookupLimits.MaxDescriptorUriLength);
 
-            var (result, referenceResolver) = await PreprocessAsync(SqlDialect.Mssql);
-
-            result
-                .Outcome.Should()
-                .BeOfType<RelationalQueryPreprocessingOutcome.ValidationFailure>()
-                .Which.Failures.Should()
-                .Equal(
-                    new WriteValidationFailure(
-                        new JsonPath("$.schoolCategoryDescriptor"),
-                        $"The value '{_overWideUri}' is not valid for schoolCategoryDescriptor."
-                    )
-                );
-            A.CallTo(() =>
-                    referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
-                )
-                .MustNotHaveHappened();
-        }
-
-        [Test]
-        public async Task It_resolves_the_same_uri_on_postgresql()
-        {
-            var (result, referenceResolver) = await PreprocessAsync(SqlDialect.Pgsql);
+            var (result, requests) = await PreprocessAsync(dialect);
 
             result.Outcome.Should().BeOfType<RelationalQueryPreprocessingOutcome.EmptyPage>();
-            A.CallTo(() =>
-                    referenceResolver.ResolveAsync(A<ReferenceResolverRequest>._, A<CancellationToken>._)
-                )
-                .MustHaveHappenedOnceExactly();
+            requests
+                .Should()
+                .ContainSingle()
+                .Which.DescriptorReferences.Single()
+                .DocumentIdentity.DocumentIdentityElements.Single()
+                .IdentityValue.Should()
+                .Be(_wideAliasUri);
         }
     }
 
