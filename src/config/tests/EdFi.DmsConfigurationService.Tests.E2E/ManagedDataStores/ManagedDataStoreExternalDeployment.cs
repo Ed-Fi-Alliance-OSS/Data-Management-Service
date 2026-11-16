@@ -320,17 +320,7 @@ internal sealed class ManagedDataStoreExternalDeployment : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        if (_process is not null)
-        {
-            if (!_process.HasExited)
-            {
-                // Only this Process instance, never a PID/name search or the IDE's process tree.
-                _process.Kill(entireProcessTree: true);
-                await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
-            }
-            _process.Dispose();
-            _process = null;
-        }
+        await StopAsync();
         if (_created)
         {
             await using var connection = Connection(_maintenance);
@@ -355,6 +345,21 @@ internal sealed class ManagedDataStoreExternalDeployment : IAsyncDisposable
         if (Directory.Exists(directory))
         {
             Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    public async ValueTask StopAsync()
+    {
+        if (_process is not null)
+        {
+            if (!_process.HasExited)
+            {
+                // Only this Process instance, never a PID/name search or the IDE's process tree.
+                _process.Kill(entireProcessTree: true);
+                await _process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(15));
+            }
+            _process.Dispose();
+            _process = null;
         }
     }
 }

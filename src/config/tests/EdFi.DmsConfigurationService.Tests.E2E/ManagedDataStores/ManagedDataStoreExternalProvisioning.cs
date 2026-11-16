@@ -174,6 +174,20 @@ internal sealed class ManagedDataStoreExternalProvisioning : IAsyncDisposable
     public bool OperationsAreEmpty =>
         !Directory.EnumerateFileSystemEntries(Path.Combine(_directory, "operations")).Any();
 
+    public void SetMinimalPackageAvailable(bool available)
+    {
+        string id = Configuration["DmsDataStoreProvisioning__Templates__Minimal__PackageId"];
+        string version = Configuration["DmsDataStoreProvisioning__Templates__Minimal__PackageVersion"];
+        string package = Path.GetFullPath(Path.Combine(_directory, "artifacts", $"{id}.{version}.nupkg"));
+        string root = Path.GetFullPath(_directory) + Path.DirectorySeparatorChar;
+        if (!package.StartsWith(root, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new InvalidOperationException("Unexpected fixture package path.");
+        }
+        // Rename only our signed copy; never modify the source download or another process's files.
+        File.Move(available ? package + ".withheld" : package, available ? package : package + ".withheld");
+    }
+
     public async ValueTask DisposeAsync()
     {
         // Caller disposes the CMS child first. Never drop a target by name on a failed test:
