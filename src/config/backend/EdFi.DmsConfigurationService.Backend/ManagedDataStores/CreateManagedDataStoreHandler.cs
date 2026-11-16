@@ -48,6 +48,17 @@ public sealed class CreateManagedDataStoreHandler(
 
         var identity = operation.Identity;
         var pin = operation.PinnedArtifact!;
+        // Capture and validate the runtime snapshot before physical work, so an invalid or
+        // mismatched runtime endpoint fails without restoring a target. Publication receives
+        // this same value; it is never resolved again after the physical operation.
+        var connection = await runtime.BuildAsync(identity.Endpoint, identity.TargetName, cancellationToken);
+        if (connection is ManagedDataStoreRuntimeConnectionResult.Failure runtimeFailure)
+        {
+            throw new ManagedDataStoreProvisioningException(runtimeFailure.Detail);
+        }
+        string runtimeConnectionString = (
+            (ManagedDataStoreRuntimeConnectionResult.Success)connection
+        ).ConnectionString;
         var result = await provisioner.CreateAsync(
             new(identity.Template, identity.TargetName, identity.ExpectedSourceIdentity, pin),
             identity.Endpoint,
@@ -73,18 +84,8 @@ public sealed class CreateManagedDataStoreHandler(
                 )
             );
         }
-        var connection = await runtime.BuildAsync(identity.Endpoint, identity.TargetName, cancellationToken);
-        if (connection is ManagedDataStoreRuntimeConnectionResult.Failure runtimeFailure)
-        {
-            throw new ManagedDataStoreProvisioningException(runtimeFailure.Detail);
-        }
         await repository.PublishCreateAsync(
-            new(
-                operation.Id,
-                identity,
-                pin,
-                ((ManagedDataStoreRuntimeConnectionResult.Success)connection).ConnectionString
-            ),
+            new(operation.Id, identity, pin, runtimeConnectionString),
             context,
             cancellationToken
         );

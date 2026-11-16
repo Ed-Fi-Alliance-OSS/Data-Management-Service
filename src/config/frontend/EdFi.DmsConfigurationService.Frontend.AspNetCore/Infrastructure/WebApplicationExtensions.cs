@@ -44,7 +44,7 @@ public static class WebApplicationExtensions
 
             var module =
                 ActivatorUtilities.CreateInstance(application.Services, moduleClass) as IEndpointModule;
-            if (module != null)
+            if (module is not null)
             {
                 modules.Add(module);
             }

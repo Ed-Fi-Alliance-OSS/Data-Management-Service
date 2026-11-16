@@ -337,20 +337,75 @@ public class Given_a_managed_create_handler
         _order.Should().NotContain("publish");
     }
 
-    [Test]
-    public async Task It_retains_physical_success_when_runtime_validation_fails()
+    [
+        TestCase("Host=changed.example", DmsProvisioningFailureCode.TargetEndpointChanged),
+        TestCase("Host=db.example,other.example", DmsProvisioningFailureCode.TargetEndpointUnverifiable),
+        TestCase(null, DmsProvisioningFailureCode.TargetEndpointUnverifiable)
+    ]
+    public async Task It_refuses_an_invalid_runtime_connection_before_physical_create(
+        string? runtime,
+        DmsProvisioningFailureCode code
+    )
     {
-        _runtime.RuntimeConnectionString = "Host=changed.example";
+        _runtime.RuntimeConnectionString = runtime;
         var exception = await ((Func<Task>)Run).Should().ThrowAsync<ManagedDataStoreProvisioningException>();
-        exception.Which.Failure.Code.Should().Be(DmsProvisioningFailureCode.TargetEndpointChanged);
-        _order.Should().Contain("physical").And.NotContain("publish");
+        exception.Which.Failure.Code.Should().Be(code);
+        // No target lock, admission, physical create or publication.
+        _order.Should().Equal("start", "resolve", "pin");
+    }
+
+    [Test]
+    public async Task It_publishes_the_runtime_snapshot_captured_before_physical_create()
+    {
+        string expected = new Npgsql.NpgsqlConnectionStringBuilder(_runtime.RuntimeConnectionString)
+        {
+            Database = _operation.Identity.TargetName.Value,
+        }.ConnectionString;
+        string? published = null;
+        // Rotate the runtime endpoint while the physical operation holds its admission.
+        A.CallTo(() =>
+                _repository.AdmitCreateAsync(
+                    A<ManagedDataStoreCreateOperation>._,
+                    A<ManagedDataStoreEndpoint>._,
+                    _execution,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(() =>
+            {
+                _order.Add("admit");
+                _runtime.RuntimeConnectionString =
+                    "Host=changed.example;Username=rotated;Password=test-only;Database=ignored";
+            });
+        A.CallTo(() =>
+                _repository.PublishCreateAsync(
+                    A<ManagedDataStorePublishCommand>._,
+                    _execution,
+                    A<CancellationToken>._
+                )
+            )
+            .Invokes(
+                (ManagedDataStorePublishCommand command, JobExecutionContext _, CancellationToken _) =>
+                {
+                    _order.Add("publish");
+                    published = command.RuntimeConnectionString;
+                }
+            )
+            .Returns(7);
+        await Run();
+        _order.Should().Equal("start", "resolve", "pin", "lock", "admit", "physical", "publish");
+        (published == expected)
+            .Should()
+            .BeTrue("publication must use the snapshot validated before physical work");
     }
 
     [
         TestCase(DmsProvisioningFailureCode.LockTimeout, 1, true),
         TestCase(DmsProvisioningFailureCode.LockTimeout, 5, false),
         TestCase(DmsProvisioningFailureCode.TargetUnowned, 1, false),
-        TestCase(DmsProvisioningFailureCode.StartupValidationFailed, 1, false)
+        TestCase(DmsProvisioningFailureCode.StartupValidationFailed, 1, false),
+        TestCase(DmsProvisioningFailureCode.TargetEndpointChanged, 1, false),
+        TestCase(DmsProvisioningFailureCode.SecretResolutionFailed, 1, true)
     ]
     public async Task It_routes_typed_failure_through_executor_atomic_settlement(
         DmsProvisioningFailureCode code,
