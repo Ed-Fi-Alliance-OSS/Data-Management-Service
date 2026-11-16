@@ -1531,12 +1531,15 @@ client row are unaffected.
 ## Configuration Service: DMS data store provisioning
 
 The Configuration Service can create and delete DMS data store databases from signed template packages
-(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. It is off by default and configured in the
-`DmsDataStoreProvisioning` section; see [DmsDataStoreProvisioning](./CONFIGURATION.md#dmsdatastoreprovisioning)
-for every setting. This release adds the provisioner as a service for the Configuration Service's own
-background jobs (see
+(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The standalone provisioner is off by
+default and configured in the `DmsDataStoreProvisioning` section; see
+[DmsDataStoreProvisioning](./CONFIGURATION.md#dmsdatastoreprovisioning)
+for every setting. It is a service for the Configuration Service's own background jobs (see
 [Configuration Service Background Jobs](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md#dms-data-store-provisioning)).
-It adds no endpoint and does not change `/health`.
+The provisioner itself adds no endpoint and does not change `/health`. The
+[managed lifecycle](CMS-MANAGED-DATA-STORES.md) exposes secured `/v3/dataStores/manage` routes and
+uses guarded provisioning jobs. Management defaults to **true** and requires provisioner and runtime
+configuration unless explicitly disabled; read its upgrade and credential prerequisites before deployment.
 
 How a create works, in short: the allowlisted package is copied into a private operation directory, its
 attestation is checked against the trust policy, and its manifest is checked against the `Compatibility`

@@ -1,6 +1,7 @@
 # DMS-1439 selected contract and fixture provenance
 
-This records revision 9's approved contract for step **1.1 only**. The accompanying
+The original step **1.1** record below captures revision 9's approved contract; subsequent
+qualification and operations status is appended at the end. The accompanying
 `conformance-fixtures.json` is reusable expected data, not an implementation. Its
 unit tests check fixture integrity and selected source-contract assertions. No
 HTTP route, DTO, formatter, comparer, migration, repository or worker is introduced
@@ -201,3 +202,28 @@ not an authorization boundary. Linked ordinary PUT/DELETE will return 409 with a
 absolute managed URL, including when management is disabled. Exact error mappings,
 pipeline ordering, physical effects and durable no-write guarantees are future
 production tests, not behavior simulated by these fixtures.
+
+## Qualification approval and operations submission
+
+The architectural review of `8a3cf892d`, relayed by the user after approval of the
+representative runtime-write slice `77fcfbf3d`, explicitly states:
+
+> Step 6.1 is approved complete at the reviewed qualification boundaries.
+
+That review accepted the documented G5/G6, runtime-write and endpoint dispositions
+and authorized step 6.2. The reviewer did not rerun tests. This is the architectural
+reviewer's approval, not a new product/API amendment or a claim of full validation.
+It does not authorize a push or mark the ticket complete.
+
+The [closure assessment](step-6.1-closure-review.md), [qualification matrix](step-6.1-qualification.md)
+and [17-criterion audit](step-6.1-acceptance-audit.md) preserve the tested boundaries,
+unresolved failures/skips, retained target and deployment obligations. The
+[operations guide](../../../docs/CMS-MANAGED-DATA-STORES.md) is submitted for step 6.2
+review, including default-true rollout, ordinary catalog compatibility, credential
+and permission prerequisites, recovery, retention and eventual cache visibility.
+
+No frozen fixture, pinned spec/OpenAPI hash or governing decision changes in this
+documentation step. In particular, Q4's explicit user-authorized AC9 clarification
+still assigns snapshot persistence/cleanup to DMS-1441; original Jira wording is
+unchanged. Q5's strict parity and approved ordinary catalog compatibility changes
+remain in effect, with custom-index inventory a deployment obligation.

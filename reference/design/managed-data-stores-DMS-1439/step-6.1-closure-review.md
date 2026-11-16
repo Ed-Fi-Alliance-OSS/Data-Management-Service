@@ -1,17 +1,19 @@
 # DMS-1439 step 6.1 closure review
 
-Current closure submission baseline: `77fcfbf3d1e01cb9b384b44e0a841e587c94fb4a`. **Step 6.1 closure is requested; it remains open until explicitly approved.** The architectural review approved the focused runtime-write qualification in `77fcfbf3d`, addressing the requested Q3 gap. G5 (`9b817eaf7`), G6 (`b283e37b0`) and the bounded endpoint evidence are also approved. Original assessment `5cb95acef` remains historical context. No step 6.2, release or push approval is inferred.
+**Step 6.1 is approved complete at the reviewed qualification boundaries.** The architectural review of closure assessment `8a3cf892d`, relayed by the user, explicitly accepted the G5/G6 results, representative runtime write on both providers and bounded endpoint evidence. The reviewer inspected documents and prior evidence, did not rerun tests, and authorized step 6.2 only. This is not ticket completion, full validation, release or push approval.
+
+Closure submission source baseline: `77fcfbf3d1e01cb9b384b44e0a841e587c94fb4a`. G5 (`9b817eaf7`), G6 (`b283e37b0`) and the focused runtime-write qualification (`77fcfbf3d`) were approved separately. Original assessment `5cb95acef` remains historical context. The [operations guide](../../../docs/CMS-MANAGED-DATA-STORES.md) is now supplied for step 6.2 review; the limitations below remain in force.
 
 ## Governing closure decisions
 
-The previously identified HTTP-state and explicit identity-canary gaps are addressed at their reviewed scopes. The [17-criterion audit](step-6.1-acceptance-audit.md) and [36-boundary matrix](step-6.1-qualification.md) retain the evidence and limitations. No new production defect was established by this focused review. The entire ticket is not complete: AC16 operator documentation and the rollout/operations work belong to unstarted step 6.2.
+The previously identified HTTP-state and explicit identity-canary gaps are addressed at their reviewed scopes. The [17-criterion audit](step-6.1-acceptance-audit.md) and [36-boundary matrix](step-6.1-qualification.md) retain the evidence and limitations. No new production defect was established by this focused review. The entire ticket is not complete: AC16 operator documentation and the rollout/operations work are submitted separately in step 6.2.
 
 The architectural review of `5cb95acef` selected these dispositions:
 
 1. **Runtime access — representative write qualification approved.** Reads alone were rejected for Q3. The architectural review of `77fcfbf3d` accepts one representative backend descriptor write on each target provider using the discovered runtime connection and a test-provisioned operator principal. The requested write gap is addressed. Resource HTTP, full CRUD, CDC and a production least-privilege grant recipe remain outside the claim. CMS acquires no production principal/grant responsibilities.
 2. **Endpoint rollover — bounded evidence accepted.** Controlled endpoint rotation/refusal and snapshot-binding tests, composed with separate live physical-lock/recovery tests, are sufficient for this step. The reviewer clarified that the spec does not explicitly require live two-server rollover. Live rollover itself was **not tested**; retain that limit here and in the future operations documentation. It is no longer an unresolved closure decision.
 
-**Closure recommendation:** close step 6.1 at the demonstrated and reviewed boundaries. The specifically requested G5, G6 and runtime-write gaps are addressed, and the endpoint evidence has an explicit accepted disposition. This recommendation does not mark remaining failures/skips as passing or silently accept every deployment permutation. The limitation table below remains part of the closure request. Approval must be explicit before changing 6.1's status; step 6.2 and push remain separately gated.
+**Approved closure boundary:** the specifically requested G5, G6 and runtime-write gaps are addressed, and the endpoint evidence has an explicit accepted disposition. The approval does not mark remaining failures/skips as passing or accept every deployment permutation. The limitation table below remains part of the approved assessment. Step 6.2 review and push remain separate gates.
 
 ## Runtime-access sufficiency assessment
 
@@ -26,7 +28,7 @@ The inspected [PostgreSQL live fixture](../../../src/config/backend/EdFi.DmsConf
 
 **Assessment after review:** the original evidence establishes credential handoff, endpoint/database selection, single encryption/decryption, discovery and reads, but was insufficient for Q3's write-access boundary. The earlier recommendation to accept reads alone was rejected. The now-approved follow-up supplies a production DMS descriptor insert through the discovered runtime credential on both targets and addresses that requested gap. It does not establish a full DMS resource workload or CDC.
 
-The production [runtime builder](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/ManagedDataStores/ManagedDataStoreRuntimeConnectionBuilder.cs) validates a snapshot and constructs the connection; it does not connect or grant access. A Created state therefore cannot be advertised as a runtime permission probe. Step 6.2 must explain the operator's access prerequisite; a passing qualification test does not add a production permission probe.
+The production [runtime builder](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/ManagedDataStores/ManagedDataStoreRuntimeConnectionBuilder.cs) validates a snapshot and constructs the connection; it does not connect or grant access. A Created state therefore cannot be advertised as a runtime permission probe. The operations guide explains the operator's access prerequisite; a passing qualification test does not add a production permission probe.
 
 ## Focused runtime-write follow-up — approved in 77fcfbf3d
 
@@ -93,4 +95,4 @@ AC9 continues under the explicit user clarification recorded in [provenance](con
 | `step-6.1-g6/Postgresql/results.trx` | `932eec766cd9f1885638fc91f15fb06bbbdd1f8e20950a433a0d27f87993aaf4` |
 | `step-6.1-g6/Mssql/results.trx` | `fba7b1a97dce96dc94398022aa586ecfd3fa11ca8f0bcf58bb051aeb932729ed` |
 
-No tests, builds, application hosts or database queries ran for the original documentation-only assessment; its results above were retained executions. The subsequent focused write execution is recorded separately in the follow-up section. Documentation links, 17/36 table-row counts and Git whitespace are checked for the follow-up commit. No existing container, Rider process, unexplained database or private test configuration was changed. Await explicit review; do not start 6.2 or push.
+No tests, builds, application hosts or database queries ran for the original documentation-only assessment; its results above were retained executions. The subsequent focused write execution is recorded separately in the follow-up section. Documentation links, 17/36 table-row counts and Git whitespace were checked for the closure submission. No existing container, Rider process, unexplained database or private test configuration was changed. The subsequent approval of `8a3cf892d` permits step 6.2; it does not authorize a push.

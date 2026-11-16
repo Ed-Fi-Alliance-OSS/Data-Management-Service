@@ -50,7 +50,9 @@ Other job types, recurring schedules, polling and retention remain operational. 
 not immediately cancel work already executing. Both managed handlers remain registered and the
 secured `/v3/dataStores/manage` routes return 400 while disabled. There are no managed recurring
 schedules. See the [startup and rollout policy](./CONFIGURATION.md#managed-data-store-lifecycle)
-before enabling the feature; the shipped examples explicitly opt out.
+before enabling the feature; the shipped examples explicitly opt out. The
+[managed lifecycle operations guide](CMS-MANAGED-DATA-STORES.md) explains physical admission,
+atomic lifecycle/job outcomes, recovery, tombstones and eventual DMS visibility.
 
 ## Job lifecycle
 
