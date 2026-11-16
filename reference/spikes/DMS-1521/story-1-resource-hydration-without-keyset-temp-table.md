@@ -273,6 +273,12 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
 - Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and 500 (the default
   `MaximumPageSize`); the
   fast-path command's parameters are unchanged; SQL Server binding is unchanged.
+- Keyset names reserved from query fields, modeled on
+  `Given_RelationalQueryPageKeysetPlanner.It_should_assign_collision_free_parameter_names_for_reserved_and_sanitized_query_field_collisions`
+  (`RelationalQueryPageKeysetPlannerTests.cs` ≈462): on PostgreSQL a query field whose sanitized
+  name is the keyset parameter's name gets the suffixed name (`page_document_ids_2`), on SQL Server
+  a field named `page_keyset` gets `page_keyset_2`, and the built query-keyset and candidate
+  commands carry each name exactly once.
 - SQL Server P1 and P3: the existing pins and the goldens' `mssql` blocks stay unchanged. They are
   the byte-identity guard.
 - Guarded single-document keyset without the fast path, PostgreSQL: the batch contains no
@@ -486,7 +492,19 @@ It is a starting point:
   (`src/dms/backend/EdFi.DataManagementService.Backend/Composite/RelationalCompositeCommandDialect.cs`,
   DMS-1332). Follow their conventions: a `dms.<purpose>` setting set with `set_config(…, true)`,
   and SQL Server batch-local names reserved from the bound parameters, because SqlClient rejects a
-  batch-local that shares a bound parameter's name.
+  batch-local that shares a bound parameter's name. Unlike the composite carrier, the PostgreSQL
+  keyset also has a **bound parameter** (`page_document_ids` in the prototype) on the query-keyset
+  and candidate commands. `PgsqlCompositeTargetCarrier.ReservedNames` is empty ("a setting name is
+  not a parameter"), so copying the composite convention reserves nothing on PostgreSQL. Reserve
+  both keyset names, PostgreSQL's array parameter and SQL Server's `page_keyset` (which P2
+  declares), in the query allocator: `RelationalQueryPageKeysetPlanner.DeriveParameterNames`
+  (≈516–523) already reserves the paging, change-version, and authorization names there, and the
+  planner already receives the dialect. Npgsql binds the first parameter with a given name, so
+  under the prototype a query field whose sanitized name is `page_document_ids` makes the
+  hydration selection bind the keyset's NULL (GET-many returns 200 with an empty page and no
+  error) and the candidate batch's readers bind the filter value (`22P02`, UnknownFailure). A
+  camelCase field (`pageDocumentIds`) does not collide; only a name with separators does. Only a
+  schema with such a field changes SQL Server P1 text, and no fixture has one, so E5 holds.
 - **Do not keep** `Dms1521KeysetVariant`, the environment switch, or the `pg-analyze` variant.
 
 ## Dependencies

@@ -845,9 +845,21 @@ against the actual count):
   25-row page, so the estimate stays 25, even for an empty page. A connection whose third descriptor
   page held 1 row keeps estimating 1.
 - The **descriptor boundary statement**, which now holds the page selection, is parameterized: under
-  `auto` it took 5 custom plans, then generic ones (9 of 14). On `main` the descriptor
-  `INSERT … SELECT` was re-planned on nearly every call; the resource selecting statement stays
-  custom (6 of 6).
+  `auto` it took 5 custom plans, then generic ones (9 of 14). The resource selecting statement
+  stayed custom (6 of 6). Neither outcome comes from `inline`. Both variants run the same compiled
+  `PageDocumentIdSql`, and `auto` picks the plan type by the same rule on both: `main`'s
+  `INSERT … SELECT` is auto-prepared too, and re-planning it after each temp-table re-creation
+  keeps PostgreSQL's custom/generic accounting. What decides is the connection's page history. The
+  descriptor probe alternates first pages with past-the-end pages (offset 1,000,000), which raise the
+  average custom-plan cost; the resource probe repeats `25 @0`. The review round 8 probe
+  ([`experiments/plan-type-probe.ps1`](experiments/plan-type-probe.ps1)) shows it: a filtered
+  selection on 500,000 rows, through Npgsql with DMS's auto-prepare settings, one connection per
+  sequence:
+
+  | Sequence | `main` (temp table recreated every call) | `inline` |
+  |---|---|---|
+  | 16 × `25 @0` | 0 generic, 14 custom | 0 generic, 14 custom |
+  | 8 × (`25 @0`, `25 @1,000,000`) | 9 generic, 5 custom | 9 generic, 5 custom |
 
 Both fixed estimates (10, or the size of the page that auto-prepared the readers on their third
 use) are far closer to small pages than `baseline`'s
@@ -1340,6 +1352,7 @@ variable (`memtablevar`)**, passes every SQL Server screening criterion. It is a
 | Table variables (plain or memory-optimized) | SQL Server only |
 | Session temp table (`ON COMMIT DELETE ROWS`) | Still a catalog object per session, with no statistics until something analyzes it (the task 3 hypothesis), and session state that a transaction-mode pooler (PgBouncer) can hand to another client. `inline` has neither problem |
 | Two-phase (select ids, then hydrate) | An extra round trip, against `partitioned-cursor-paging.md` invariant 3 ("No extra roundtrip"); `inline` keeps one round trip |
+| Single-statement candidate query, CTE or derived table (both engines; not screened on SQL Server) | Not needed. A CTE or derived table names a result only inside its own statement, so it cannot share one selection across the batch's independent `SELECT`s (P1, P3, P4). Repeating the page selection in each statement would redo filtering and authorization, and each statement takes its own snapshot under `READ COMMITTED`, so concurrent changes could select different ids and break the fixed authorized document set. Over a supplied id list it reduces to the `VALUES` row above or the selected page's `bigint[]`. On P2, `inline` already selects the page once, with no catalog object and in one round trip, on both engines, and keeps the three result sets `ReadDocumentCandidatePageAsync` reads (deviation 2 under [Design](#design)); a single statement would merge them and change that reader |
 
 ### SQL Server: screening
 
@@ -1655,9 +1668,9 @@ at 500 rows (the default `MaximumPageSize`) instead of 1,000. The batch text is 
 | Statements | Class | Custom plan | Generic plan | What `plan_cache_mode = auto` chose |
 |---|---|---|---|---|
 | Resource and selected-page keyset readers | Parameterized (`@page_document_ids`) | Estimate exact: `current_setting` is stable and folded at planning, and each statement in the pipelined batch is planned after the carrier is set | Fixed estimate of 10 rows | 5 custom plans per statement, then generic (probe: 50 custom, then 20 generic, all query-keyset executions). A query keyset (untyped NULL) and a selected page (`bigint[]`) do not share the prepared statement on one connection: the kind that prepares it first owns it, and the other re-plans every call |
-| Query-keyset selecting statement | Parameterized (`limit`, `offset`, filters) | as in `main` | as in `main` | custom |
+| Query-keyset selecting statement | Parameterized (`limit`, `offset`, filters) | as in `main` | as in `main` | the same rule as `main`, which auto-prepares its `INSERT … SELECT` too and keeps the custom/generic accounting across each temp-table re-creation; both embed the same compiled `PageDocumentIdSql`, filters and authorization predicates included. The probe's uniform `25 @0` sequence stayed custom (6 of 6); a sequence with past-the-end pages turns both variants generic at the same execution (see [Checks](#checks), carrier probes) |
 | Descriptor keyset readers | Carrier-only (no parameters) | never used | Always generic once prepared; estimate frozen at the carrier's size on the third use, which auto-prepares it (`AutoPrepareMinUsages = 3`) | generic (42 of 42) |
-| Descriptor selecting (boundary) statement | Parameterized (`resourceKeyId`, `limit`, `offset`, filters) | exact, as in `main` | – | generic after five executions (probe: 5 custom, then 9 generic); `main` re-planned it on nearly every call |
+| Descriptor selecting (boundary) statement | Parameterized (`resourceKeyId`, `limit`, `offset`, filters) | exact, as in `main` | – | generic after five executions (probe: 5 custom, then 9 generic), driven by the probe's alternating past-the-end pages; `main`'s descriptor `INSERT … SELECT` follows the same rule and flips at the same execution |
 
 - **Both fixed estimates are cheap on `primary-500k`.** In the fallback window on one physical
   connection, child cost per request was 0.30 ms under the first 5 replays' custom plans and
@@ -2056,8 +2069,9 @@ read-only `git apply --check -R` and never applies or removes the patch itself.
 | 7 | `experiments/t7-lanes.ps1` (reads the two `t7-filter-*.txt` beside it) and `experiments/t7-rerun.ps1` (patch applied, `$env:DMS1521_KEYSET_VARIANT = 'inline'`) | `t7-unit-inline`, `t7-pg-inline`, `t7-mssql-inline`, `t7-rerun-*` | `*.trx.failures.txt` |
 | 8 | `… -Engine mssql -Sequence B0 -Fixtures forms -Forms <list>` (no patch) | `t8-*`, `t8mem-*` | `experiments/t8_analyze.py` → `t8_report.md`, `t8mem_report.md` |
 | 9, read-only probe | `psql -U postgres -f reference/spikes/DMS-1521/experiments/readonly-probe.sql` against `dms-1521-postgresql`: a throwaway database with `default_transaction_read_only = on`, then `main`'s `DROP TABLE IF EXISTS "page"` and `inline`'s three statement shapes | (console output, quoted under [Recommendation](#postgresql-inline-on-all-four-paths)) | – |
+| Review round 8, plan-type probe | `pwsh -File reference/spikes/DMS-1521/experiments/plan-type-probe.ps1`: a throwaway container from the pinned PostgreSQL image on `127.0.0.1:15522`, then `main`'s and `inline`'s filtered page selection through Npgsql 8.0.4 with DMS's auto-prepare settings, under a uniform and an alternating page sequence | (console output, quoted under [Checks](#checks)) | – |
 
-The analysis scripts, lane scripts, and both probes are in `experiments/`. The Python scripts read
+The analysis scripts, lane scripts, and the three probes are in `experiments/`. The Python scripts read
 `C:\perf\dms-1521\`, the run script's default `-ResultsDirectory`; the lane scripts write there
 too. The reports stay beside the runs and are attached with them.
 

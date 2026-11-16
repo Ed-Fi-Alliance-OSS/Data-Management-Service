@@ -317,8 +317,11 @@ carrier. On one physical connection, read a 1-row page three times, confirm in
 `pg_prepared_statements` that the readers' `generic_plans` is above 0, then read a 500-row page.
 Report its time against a connection whose first three pages held 500 rows. Also report the plan
 the boundary statement uses: it now carries the page selection, and under `plan_cache_mode = auto`
-it went generic after five executions in the spike's probe (`main` re-planned it on nearly every
-call). This is reported evidence, not a CI test; the spike did not measure the sequence.
+it went generic after five executions in the spike's probe. That came from the probe's alternating
+past-the-end pages, not from the carrier: `main`'s descriptor `INSERT … SELECT` follows the same
+rule and flips at the same execution (findings, [Checks](keyset-temp-table-findings.md#checks);
+`experiments/plan-type-probe.ps1`). This is reported evidence, not a CI test; the spike did not
+measure the sequence.
 
 ## Implementation guidance (non-binding)
 
