@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -16,9 +17,9 @@ public class MetadataModule : IEndpointModule
     /// <param name="endpoints">The endpoint route builder.</param>
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet(
+        endpoints.MapPublicGet(
             "/metadata/specifications",
-            async context =>
+            async (HttpContext context) =>
             {
                 // PathBase is required: the OpenAPI document is served relative to it, so omitting
                 // it requests a path that does not exist on any deployment that sets

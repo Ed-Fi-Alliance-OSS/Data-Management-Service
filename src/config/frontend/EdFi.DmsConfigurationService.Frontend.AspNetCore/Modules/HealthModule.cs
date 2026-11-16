@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -11,6 +12,9 @@ public class HealthModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/health", () => Results.Text(DateTime.Now.ToString(CultureInfo.InvariantCulture)));
+        endpoints.MapPublicGet(
+            "/health",
+            () => Results.Text(DateTime.Now.ToString(CultureInfo.InvariantCulture))
+        );
     }
 }

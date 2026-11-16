@@ -231,6 +231,7 @@ public class OpenApiSecurityDocumentTests
                         "GET /.well-known/openid-configuration",
                         "GET /.well-known/openiddict-status",
                         "GET /health",
+                        "GET /metadata/specifications",
                         "GET /tenancy",
                         "POST /connect/register/{contextPath}",
                         "POST /connect/token/{contextPath}",

@@ -82,12 +82,39 @@ public static class EndpointBuilderExtensions
             );
     }
 
-    public static RouteHandlerBuilder MapPublic(
+    /// <summary>
+    /// Explicitly permits anonymous GET requests instead of the authentication-only fallback policy.
+    /// Handler-owned authentication and other chained metadata still apply.
+    /// </summary>
+    public static RouteHandlerBuilder MapPublicGet(
         this IEndpointRouteBuilder endpoints,
         string pattern,
         Delegate handler
     )
     {
         return endpoints.MapGet(pattern, handler).AllowAnonymous();
+    }
+
+    /// <summary>
+    /// Explicitly permits anonymous POST requests instead of the authentication-only fallback policy.
+    /// Handler-owned client authentication and other chained metadata still apply.
+    /// </summary>
+    public static RouteHandlerBuilder MapPublicPost(
+        this IEndpointRouteBuilder endpoints,
+        string pattern,
+        Delegate handler
+    )
+    {
+        return endpoints.MapPost(pattern, handler).AllowAnonymous();
+    }
+
+    /// <summary>Compatibility alias for the explicit public GET helper.</summary>
+    public static RouteHandlerBuilder MapPublic(
+        this IEndpointRouteBuilder endpoints,
+        string pattern,
+        Delegate handler
+    )
+    {
+        return endpoints.MapPublicGet(pattern, handler);
     }
 }

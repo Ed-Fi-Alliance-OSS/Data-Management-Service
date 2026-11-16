@@ -17,8 +17,8 @@ public class InformationModule(IOptions<AppSettings> appSettings) : IEndpointMod
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("", GetInformation);
-        endpoints.MapPublic("/tenancy", GetTenancy).Produces<ApiTenancy>(200);
+        endpoints.MapPublicGet("", GetInformation);
+        endpoints.MapPublicGet("/tenancy", GetTenancy).Produces<ApiTenancy>(200);
     }
 
     /// <summary>

@@ -1644,12 +1644,15 @@ Scope requirements are applied per HTTP method via extension helpers:
 
 | Helper | Allowed scopes | Used for |
 | --- | --- | --- |
-| `MapSecuredGet` | `full_access` or `readonly_access` | All other GET endpoints |
-| `MapSecuredPost` | `full_access` only | All POST endpoints |
-| `MapSecuredPut` | `full_access` only | All PUT endpoints |
-| `MapSecuredDelete` | `full_access` only | All DELETE endpoints |
+| `MapSecuredGet` | `full_access` or `readonly_access` | Protected GET endpoints other than the limited-access routes |
+| `MapSecuredPost` | `full_access` only | Protected POST endpoints |
+| `MapSecuredPut` | `full_access` only | Protected PUT endpoints |
+| `MapSecuredDelete` | `full_access` only | Protected DELETE endpoints |
 | `MapLimitedAccess` | Any of the three scopes | Exactly these GET routes: `/v3/authorizationMetadata`, `/v3/claimSets/`, `/v3/apiClients/`, `/v3/apiClients/{id}`, `/v3/dataStores/`, `/v3/dataStores/{id}`, `/v3/dataStoreContexts/`, `/v3/dataStoreContexts/{id}`, `/v3/dataStoreDerivatives/`, `/v3/dataStoreDerivatives/{id}`, `/v3/applications/{id}`, `/v3/profiles/`, `/v3/profiles/{id}` |
-| `MapPublic` | Anonymous | Tenancy |
+| `MapPublicGet` | Anonymous | `/`, `/health`, `/tenancy`, `/metadata/specifications`, `/.well-known/openiddict-status`; self-contained only: `/.well-known/jwks.json`, `/.well-known/openid-configuration` |
+| `MapPublicPost` | Anonymous to framework authorization | `/connect/register/{**contextPath}`, `/connect/token/{**contextPath}`, `/connect/introspect/{**contextPath}`, `/connect/revoke/{**contextPath}`; handler client authentication is preserved |
+
+`MapPublic` remains a forwarding alias for `MapPublicGet`. The framework-owned `GET /openapi/{documentName}.json` mapping uses `MapOpenApi().AllowAnonymous()` explicitly. Public helpers retain chained OAuth, client-credential, bearer-exemption and rate-limit metadata.
 
 ## Roles
 

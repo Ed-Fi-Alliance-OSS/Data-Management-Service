@@ -5,6 +5,7 @@
 
 using EdFi.DmsConfigurationService.Backend.OpenIddict.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -13,7 +14,7 @@ public class OpenIdConfigurationModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/.well-known/openid-configuration", GetOpenIdConfiguration);
+        endpoints.MapPublicGet("/.well-known/openid-configuration", GetOpenIdConfiguration);
     }
 
     private async Task<IResult> GetOpenIdConfiguration(

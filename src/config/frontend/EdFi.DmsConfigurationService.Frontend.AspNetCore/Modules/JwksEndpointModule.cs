@@ -5,6 +5,7 @@
 
 using System.Security.Cryptography;
 using EdFi.DmsConfigurationService.Backend.OpenIddict.SigningKeys;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using OpenIddictIdentityOptions = EdFi.DmsConfigurationService.Backend.OpenIddict.Models.IdentityOptions;
@@ -15,7 +16,7 @@ public class JwksEndpointModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/.well-known/jwks.json", GetJwksConfiguration);
+        endpoints.MapPublicGet("/.well-known/jwks.json", GetJwksConfiguration);
     }
 
     /// <summary>
