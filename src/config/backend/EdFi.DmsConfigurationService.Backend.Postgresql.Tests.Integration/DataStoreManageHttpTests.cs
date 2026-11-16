@@ -158,23 +158,39 @@ public partial class Given_data_store_namespace_reservations
         await AssertAcceptanceCounts(4, 4);
     }
 
-    [TestCase("Created", true, HttpStatusCode.NoContent)]
-    [TestCase("Created", false, HttpStatusCode.ServiceUnavailable)]
-    [TestCase("PendingDelete", false, HttpStatusCode.BadRequest)]
-    [TestCase("Deleted", false, HttpStatusCode.NotFound)]
-    [Category("DataStoreManageHttp")]
+    [Test, Category("DataStoreManageHttp")]
     public async Task It_preserves_HTTP_delete_state_precedence_and_atomic_acceptance(
-        string status,
-        bool ready,
-        HttpStatusCode expected
+        [Values(
+            "PendingCreate",
+            "CreateInProgress",
+            "CreateFailed",
+            "CreateError",
+            "Created",
+            "PendingDelete",
+            "DeleteInProgress",
+            "DeleteFailed",
+            "DeleteError",
+            "Deleted",
+            "Absent"
+        )]
+            string status,
+        [Values(false, true)] bool ready
     )
     {
         var seed = await SeedDeleteAcceptance();
         await using var connection = await Open();
-        await connection.ExecuteAsync(
-            """UPDATE dmscs."DataStoreManage" SET "Status" = @Status, "DataStoreId" = CASE WHEN @Status = 'Deleted' THEN NULL ELSE "DataStoreId" END WHERE "Id" = @Id;""",
-            new { seed.Id, Status = status }
-        );
+        int requestedId = seed.Id;
+        if (status == "Absent")
+        {
+            requestedId++;
+        }
+        else
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."DataStoreManage" SET "Status" = @Status, "DataStoreId" = CASE WHEN @Status = 'Deleted' THEN NULL ELSE "DataStoreId" END WHERE "Id" = @Id;""",
+                new { seed.Id, Status = status }
+            );
+        }
         using var services = AcceptanceServices();
         await using var host = ManagedHttpHost(
             _ => services.GetRequiredService<IJobEnqueuer>(),
@@ -182,12 +198,28 @@ public partial class Given_data_store_namespace_reservations
         );
         using var client = ManagedClient(host);
         string before = await DeleteAcceptanceSnapshot();
-        using var response = await client.DeleteAsync($"/v3/dataStores/manage/{seed.Id}");
-        response.StatusCode.Should().Be(expected, await response.Content.ReadAsStringAsync());
+        var expected = status switch
+        {
+            "Absent" or "Deleted" => HttpStatusCode.NotFound,
+            "Created" when ready => HttpStatusCode.NoContent,
+            "Created" => HttpStatusCode.ServiceUnavailable,
+            _ => HttpStatusCode.BadRequest,
+        };
+        string? expectedMessage = status switch
+        {
+            "PendingCreate" or "CreateInProgress" => "The data store is still being created.",
+            "CreateFailed" or "CreateError" => "Data store creation has failed.",
+            "PendingDelete" or "DeleteInProgress" => "The data store is already being deleted.",
+            "DeleteFailed" or "DeleteError" => "Data store deletion has failed.",
+            _ => null,
+        };
+        using var response = await client.DeleteAsync($"/v3/dataStores/manage/{requestedId}");
+        string body = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(expected, body);
         response.Headers.Location.Should().BeNull();
         if (expected == HttpStatusCode.NoContent)
         {
-            (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+            body.Should().BeEmpty();
             (await DeleteRow(connection, seed.Id))["Status"].Should().Be("PendingDelete");
             (await connection.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."Job";"""))
                 .Should()
@@ -199,9 +231,20 @@ public partial class Given_data_store_namespace_reservations
         else
         {
             (await DeleteAcceptanceSnapshot()).Should().Be(before);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            var problem = JsonNode.Parse(body)!;
+            problem["status"]!.GetValue<int>().Should().Be((int)expected);
+            if (expectedMessage is not null)
+            {
+                problem["validationErrors"]!["dataStore"]!
+                    .AsArray()
+                    .Select(value => value!.GetValue<string>())
+                    .Should()
+                    .Equal(expectedMessage);
+            }
         }
-        using var get = await client.GetAsync($"/v3/dataStores/manage/{seed.Id}");
-        get.StatusCode.Should().Be(HttpStatusCode.OK);
+        using var get = await client.GetAsync($"/v3/dataStores/manage/{requestedId}");
+        get.StatusCode.Should().Be(status == "Absent" ? HttpStatusCode.NotFound : HttpStatusCode.OK);
     }
 
     [Test, Category("DataStoreManageHttp")]

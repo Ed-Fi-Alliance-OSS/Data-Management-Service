@@ -366,27 +366,30 @@ public class Given_managed_data_store_HTTP
         using var delete = await client.DeleteAsync("/v3/dataStores/manage/99");
         get.StatusCode.Should().Be(HttpStatusCode.NotFound);
         delete.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        var details = new HashSet<string>();
         foreach (
-            var status in new[]
+            var (status, expectedMessage) in new[]
             {
-                ManagedDataStoreStatus.PendingCreate,
-                ManagedDataStoreStatus.CreateFailed,
-                ManagedDataStoreStatus.PendingDelete,
-                ManagedDataStoreStatus.DeleteError,
+                (ManagedDataStoreStatus.PendingCreate, "The data store is still being created."),
+                (ManagedDataStoreStatus.CreateInProgress, "The data store is still being created."),
+                (ManagedDataStoreStatus.CreateFailed, "Data store creation has failed."),
+                (ManagedDataStoreStatus.CreateError, "Data store creation has failed."),
+                (ManagedDataStoreStatus.PendingDelete, "The data store is already being deleted."),
+                (ManagedDataStoreStatus.DeleteInProgress, "The data store is already being deleted."),
+                (ManagedDataStoreStatus.DeleteFailed, "Data store deletion has failed."),
+                (ManagedDataStoreStatus.DeleteError, "Data store deletion has failed."),
             }
         )
         {
             _delete = new DataStoreManageDeleteResult.InvalidState(status);
             using var response = await client.DeleteAsync("/v3/dataStores/manage/17");
             response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            details.Add(
-                JsonNode.Parse(await response.Content.ReadAsStringAsync())!["validationErrors"]![
-                    "dataStore"
-                ]![0]!.GetValue<string>()
-            );
+            response.Headers.Location.Should().BeNull();
+            JsonNode.Parse(await response.Content.ReadAsStringAsync())!["validationErrors"]!["dataStore"]!
+                .AsArray()
+                .Select(value => value!.GetValue<string>())
+                .Should()
+                .Equal(expectedMessage);
         }
-        details.Should().HaveCount(4);
         _create = new DataStoreManageCreateResult.NameReserved();
         using var duplicate = await Post(client);
         duplicate.StatusCode.Should().Be(HttpStatusCode.BadRequest);
