@@ -177,11 +177,14 @@ bash "$CLASSIFIER"
         $job = Get-JobBlock 'run-dms-provisioning-integration-tests'
         $job | Should -Match '--filter "Category=DmsProvisioning"'
         foreach ($variable in @(
-            'ConnectionStrings__PostgresqlDmsAdmin', 'ConnectionStrings__MssqlDmsAdmin', 'DMS_PROVISIONING_PSQL_PATH',
+            'ConnectionStrings__PostgresqlDmsAdmin', 'ConnectionStrings__MssqlDmsAdmin', 'ConnectionStrings__MssqlAdmin', 'DMS_PROVISIONING_PSQL_PATH',
             'DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH', 'DMS_EXPECTED_EFFECTIVE_SCHEMA_HASH'
         )) {
             $job | Should -Match "(?m)^      ${variable}: "
         }
+        $cmsAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlAdmin: (.+)$').Groups[1].Value
+        $targetAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlDmsAdmin: (.+)$').Groups[1].Value
+        ($cmsAdmin -ceq $targetAdmin) | Should -BeTrue -Because 'CMS fixtures must use the same isolated SQL test server'
         $job | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
         $job | Should -Match '"DMS_TEMPLATE_PACKAGE_DIRECTORY=\$directory" \| Out-File -FilePath \$env:GITHUB_ENV'
         (Get-JobBlock 'event_file') | Should -Match 'needs: \[.*run-dms-provisioning-integration-tests'

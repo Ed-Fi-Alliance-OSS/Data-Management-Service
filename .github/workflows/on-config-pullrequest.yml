@@ -414,6 +414,7 @@ jobs:
       MSSQL_SA_PASSWORD: "DmsProvisioning1!"
       ConnectionStrings__PostgresqlDmsAdmin: "Host=127.0.0.1;Port=5432;Username=postgres;Database=postgres"
       ConnectionStrings__MssqlDmsAdmin: "Server=127.0.0.1,1433;User Id=sa;Password=DmsProvisioning1!;TrustServerCertificate=true"
+      ConnectionStrings__MssqlAdmin: "Server=127.0.0.1,1433;User Id=sa;Password=DmsProvisioning1!;TrustServerCertificate=true"
       DMS_PROVISIONING_PSQL_PATH: /usr/lib/postgresql/18/bin/psql
       DMS_PROVISIONING_MSSQL_STAGING_SERVER_PATH: /var/opt/dms-template-staging
       # The released template packages and the effective schema hash their manifests declare.
