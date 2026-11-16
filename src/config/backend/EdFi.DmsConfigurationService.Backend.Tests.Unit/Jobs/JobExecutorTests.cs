@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -1329,6 +1331,94 @@ public class JobExecutorTests
                 .Logger.Entries.Select(entry => (string?)entry.Field("JobId"))
                 .Should()
                 .OnlyContain(jobId => jobId == "job-11FORGED log line");
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_a_managed_provisioning_failure_with_a_safe_diagnostic(bool retryable)
+    {
+        private const string SecretMessage = "Server=db;Password=hunter2";
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private DmsProvisioningFailure _failure = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness();
+            _failure = retryable
+                ? DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.SecretResolutionFailed,
+                    DmsProvisioningDiagnostic.From(
+                        new InvalidOperationException(SecretMessage, new FormatException(SecretMessage)),
+                        ManagedDataStoreRuntimeConnectionBuilder.ResolveStep
+                    )
+                )
+                : DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.RestoreFailed,
+                    DmsProvisioningFailureCategory.Permanent,
+                    DmsProvisioningDiagnostic.From(
+                        new InvalidOperationException(SecretMessage),
+                        "RestoreTemplate",
+                        "3013"
+                    )
+                );
+            _harness.Script.Run = (_, _, _) => throw new ManagedDataStoreProvisioningException(_failure);
+            _result = await _harness.Executor.ExecuteAsync(ExecutorHarness.Job(), CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_keeps_the_retry_or_terminal_disposition()
+        {
+            _result
+                .Should()
+                .Be(
+                    retryable
+                        ? new JobExecutionResult(JobExecutionOutcome.RetryScheduled)
+                        : new JobExecutionResult(
+                            JobExecutionOutcome.Failed,
+                            ErrorCode: JobErrorCode.HandlerFailed.Code
+                        )
+                );
+            _harness.Leases.OutcomeWrites.Should().Equal("FailManaged");
+            _harness.Leases.LastManagedFailure.Should().Be(ManagedDataStoreFailure.FromProvisioner(_failure));
+            (_harness.Leases.ManagedBackoff is not null).Should().Be(retryable);
+        }
+
+        [Test]
+        public void It_logs_the_settlement_with_the_provisioning_diagnostic()
+        {
+            LogEntry settled = _harness.Logger.Entries.Single(entry =>
+                entry.EventId.Name == (retryable ? "JobRetryScheduled" : "JobFailed")
+            );
+            ((string?)settled.Field("ExceptionTypeChain"))
+                .Should()
+                .Be(
+                    retryable
+                        ? "System.InvalidOperationException/System.FormatException"
+                        : "System.InvalidOperationException"
+                );
+            ((string?)settled.Field("ProviderErrorCode")).Should().Be(retryable ? null : "3013");
+            ((string?)settled.Field("Operation"))
+                .Should()
+                .Be(retryable ? ManagedDataStoreRuntimeConnectionBuilder.ResolveStep : "RestoreTemplate");
+        }
+
+        [Test]
+        public void It_logs_no_source_exception_text()
+        {
+            foreach (LogEntry entry in _harness.Logger.Entries)
+            {
+                entry.Message.Should().NotContain("hunter2");
+                entry
+                    .Fields.Select(field => field.Value?.ToString() ?? "")
+                    .Should()
+                    .NotContain(value => value.Contains("hunter2"));
+            }
+        }
     }
 
     [TestFixture]

@@ -234,9 +234,15 @@ public sealed class JobExecutor(
         }
         catch (ManagedDataStores.ManagedDataStoreProvisioningException failed)
         {
+            // The wrapper has no inner exception; the provisioning diagnostic already holds only safe fields.
+            DataStoreProvisioning.DmsProvisioningDiagnostic diagnostic = failed.Failure.Diagnostic;
             return new Decision.ManagedFailure(
                 ManagedDataStores.ManagedDataStoreFailure.FromProvisioner(failed.Failure),
-                JobDiagnostics.From(failed, "ManagedProvisioning")
+                new JobFailureDiagnostic(
+                    diagnostic.ExceptionTypeChain,
+                    diagnostic.ProviderErrorCode,
+                    diagnostic.Operation
+                )
             );
         }
         catch (JobPermanentException permanent)
