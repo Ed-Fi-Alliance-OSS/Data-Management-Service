@@ -185,6 +185,7 @@ bash "$CLASSIFIER"
         $cmsAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlAdmin: (.+)$').Groups[1].Value
         $targetAdmin = [regex]::Match($job, '(?m)^      ConnectionStrings__MssqlDmsAdmin: (.+)$').Groups[1].Value
         ($cmsAdmin -ceq $targetAdmin) | Should -BeTrue -Because 'CMS fixtures must use the same isolated SQL test server'
+        ($targetAdmin -match '^"Server=tcp:127\.0\.0\.1,1433;') | Should -BeTrue -Because 'managed physical admission requires an explicit TCP endpoint'
         $job | Should -Match 'DMS_PROVISIONING_MSSQL_STAGING_PATH=\$staging" >> "\$GITHUB_ENV"'
         $job | Should -Match '"DMS_TEMPLATE_PACKAGE_DIRECTORY=\$directory" \| Out-File -FilePath \$env:GITHUB_ENV'
         (Get-JobBlock 'event_file') | Should -Match 'needs: \[.*run-dms-provisioning-integration-tests'

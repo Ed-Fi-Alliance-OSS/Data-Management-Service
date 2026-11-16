@@ -47,6 +47,7 @@ public class OpenApiTagTests
         "Connect",
         "DataStoreContexts",
         "DataStoreDerivatives",
+        "DataStoreManagement",
         "DataStores",
         "Discovery",
         "Health",

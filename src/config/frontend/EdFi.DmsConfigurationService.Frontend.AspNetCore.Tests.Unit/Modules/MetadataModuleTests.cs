@@ -53,6 +53,8 @@ public class MetadataModuleTests
     /// </summary>
     private static readonly string[] ExpectedIdPathParameters =
     [
+        "GET /v3/dataStores/manage/{id} int32",
+        "DELETE /v3/dataStores/manage/{id} int32",
         "GET /v3/vendors/{id} int32",
         "PUT /v3/vendors/{id} int32",
         "DELETE /v3/vendors/{id} int32",
@@ -148,6 +150,8 @@ public class MetadataModuleTests
         "DataStoreDerivativeUpdateCommand.id int32",
         "DataStoreDerivativeUpdateCommand.dataStoreId int32",
         "DataStoreUpdateCommand.id int32",
+        "DataStoreManageResponse.id int32",
+        "DataStoreManageResponse.dataStoreId int32",
         "EditResourceClaimActionsOnClaimSetRequest.claimSetId int32",
         "EditResourceClaimActionsOnClaimSetRequest.resourceClaimId int32",
         "OverrideAuthStategyOnClaimSetRequest.authStrategyIds int32",
