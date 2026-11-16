@@ -317,6 +317,7 @@ public class JobModuleTests
             FailureLog.State["ExceptionTypeChain"].Should().Be(_diagnostic.ExceptionTypeChain);
             FailureLog.State["ProviderErrorCode"].Should().Be("57014");
             FailureLog.State["Operation"].Should().Be("GetJobStatus");
+            FailureLog.Message.Should().Contain("GetJobStatus").And.Contain("JobStatusReadFailed");
         }
 
         [Test]
@@ -410,7 +411,10 @@ public sealed record CapturedLog(
     EventId EventId,
     IReadOnlyDictionary<string, object?> State,
     Exception? Exception
-);
+)
+{
+    public string Message { get; init; } = string.Empty;
+}
 
 /// <summary>Captures every log record the host writes, with its structured state.</summary>
 public sealed class CapturingLoggerProvider : ILoggerProvider
@@ -446,7 +450,12 @@ public sealed class CapturingLoggerProvider : ILoggerProvider
                     values[key] = value;
                 }
             }
-            entries.Enqueue(new CapturedLog(category, logLevel, eventId, values, exception));
+            entries.Enqueue(
+                new CapturedLog(category, logLevel, eventId, values, exception)
+                {
+                    Message = formatter(state, exception),
+                }
+            );
         }
     }
 }
