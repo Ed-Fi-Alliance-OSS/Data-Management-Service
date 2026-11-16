@@ -255,7 +255,7 @@ public partial class Given_data_store_namespace_reservations
             seed.Command.PinnedArtifact
         );
 
-    [Test, Category("DataStoreManageAdmission")]
+    [Test, Category("DataStoreManageAdmission"), Category("DmsProvisioning")]
     public async Task It_refuses_delayed_create_after_a_successor_creates_and_deletes_the_target()
     {
         var endpoint = RequireAdmissionEndpoint();
@@ -332,7 +332,7 @@ public partial class Given_data_store_namespace_reservations
         lane.OperationEntries.Should().BeEmpty();
     }
 
-    [Test, Category("DataStoreManageAdmission")]
+    [Test, Category("DataStoreManageAdmission"), Category("DmsProvisioning")]
     public async Task It_keeps_the_physical_lock_after_admission_when_the_job_is_reclaimed()
     {
         var endpoint = RequireAdmissionEndpoint();
@@ -420,7 +420,7 @@ public partial class Given_data_store_namespace_reservations
         lane.OperationEntries.Should().BeEmpty();
     }
 
-    [Test, Category("DataStoreManageAdmission")]
+    [Test, Category("DataStoreManageAdmission"), Category("DmsProvisioning")]
     public async Task It_refuses_delayed_delete_after_a_new_identity_reuses_the_name()
     {
         var endpoint = RequireAdmissionEndpoint();
@@ -733,7 +733,7 @@ public partial class Given_data_store_namespace_reservations
         A.CallTo(() => holder.DisposeAsync()).MustHaveHappenedOnceExactly();
     }
 
-    [Test, Category("DataStoreManageAdmission")]
+    [Test, Category("DataStoreManageAdmission"), Category("DmsProvisioning")]
     public async Task It_aborts_when_the_actual_holder_is_lost_during_admission_or_before_drop(
         [Values(false, true)] bool duringAdmission
     )
@@ -858,7 +858,7 @@ public partial class Given_data_store_namespace_reservations
             .BeTrue();
     }
 
-    [Test, Category("DataStoreManageAdmission")]
+    [Test, Category("DataStoreManageAdmission"), Category("DmsProvisioning")]
     public async Task It_keeps_a_reclaimed_delete_waiting_until_holder_loss_then_preserves_reused_target()
     {
         var endpoint = RequireAdmissionEndpoint();
@@ -1007,7 +1007,7 @@ public partial class Given_data_store_namespace_reservations
         lane.OperationEntries.Should().BeEmpty();
     }
 
-    [Test, Category("DataStoreManageAdmission")]
+    [Test, Category("DataStoreManageAdmission"), Category("DmsProvisioning")]
     public async Task It_cannot_mark_an_external_replacement_after_losing_the_holder_with_a_marker_session_open()
     {
         var endpoint = RequireAdmissionEndpoint();
