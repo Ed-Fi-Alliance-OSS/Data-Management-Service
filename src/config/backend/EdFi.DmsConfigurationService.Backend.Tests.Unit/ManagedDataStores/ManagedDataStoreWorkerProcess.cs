@@ -40,6 +40,7 @@ public sealed class ManagedDataStoreWorkerProcess : IAsyncDisposable
         public required bool Delete { get; init; }
         public required int MaxAttempts { get; init; }
         public required StopPoint StopAt { get; init; }
+        public bool ContinueAfterRetry { get; init; }
     }
 
     public enum StopPoint
@@ -249,13 +250,19 @@ public sealed class ManagedDataStoreWorkerProcess : IAsyncDisposable
     }
 
     /// <summary>Observes the production worker's completed sweep/executor writes without polling or replacing them.</summary>
-    public sealed class SettlementObserver(string jobId) : ILogger<JobExecutor>, ILogger<JobWorkerService>
+    public sealed class SettlementObserver(string jobId, bool continueAfterRetry = false)
+        : ILogger<JobExecutor>,
+            ILogger<JobWorkerService>
     {
+        private readonly TaskCompletionSource<Signal> _retried = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         private readonly TaskCompletionSource<Signal> _settled = new(
             TaskCreationOptions.RunContinuationsAsynchronously
         );
         private int _claims;
         public Task<Signal> Settled => _settled.Task;
+        public Task<Signal> Retried => _retried.Task;
 
         public IDisposable? BeginScope<TState>(TState state)
             where TState : notnull => null;
@@ -272,7 +279,9 @@ public sealed class ManagedDataStoreWorkerProcess : IAsyncDisposable
         {
             if (eventId.Name == "JobsExhausted")
             {
-                _settled.TrySetResult(new("JobsExhausted", Environment.ProcessId, Claims: _claims));
+                var exhausted = new Signal("JobsExhausted", Environment.ProcessId, Claims: _claims);
+                _retried.TrySetResult(exhausted);
+                _settled.TrySetResult(exhausted);
                 return;
             }
             if (state is not IEnumerable<KeyValuePair<string, object?>> fields)
@@ -296,14 +305,23 @@ public sealed class ManagedDataStoreWorkerProcess : IAsyncDisposable
                     or "OwnershipUncertainExit"
             )
             {
-                _settled.TrySetResult(
-                    new(
-                        eventId.Name,
-                        Environment.ProcessId,
-                        Convert.ToInt32(values.GetValueOrDefault("Attempt")),
-                        Claims: _claims
-                    )
+                var signal = new Signal(
+                    eventId.Name,
+                    Environment.ProcessId,
+                    Convert.ToInt32(values.GetValueOrDefault("Attempt")),
+                    Claims: _claims
                 );
+                if (
+                    continueAfterRetry
+                    && eventId.Name == "JobRetryScheduled"
+                    && _retried.TrySetResult(signal)
+                )
+                {
+                    return;
+                }
+                // Unexpected completion/failure before a retry must also wake the controller.
+                _retried.TrySetResult(signal);
+                _settled.TrySetResult(signal);
             }
         }
     }

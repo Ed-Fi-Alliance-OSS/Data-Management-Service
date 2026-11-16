@@ -262,12 +262,16 @@ public partial class Given_data_store_namespace_reservations
         {
             await using var channel = await Worker.Channel.ConnectAsync();
             var settings = channel.Configuration;
-            var observer = new Worker.SettlementObserver(settings.JobId);
+            var observer = new Worker.SettlementObserver(settings.JobId, settings.ContinueAfterRetry);
             try
             {
                 await using (var host = ProcessWorkerHost(channel, observer))
                 using (var client = host.CreateClient())
                 {
+                    if (settings.ContinueAfterRetry)
+                    {
+                        await channel.SendAsync(await observer.Retried.WaitAsync(TimeSpan.FromMinutes(6)));
+                    }
                     var settled = await observer.Settled.WaitAsync(TimeSpan.FromMinutes(6));
                     await channel.SendAsync(settled);
                 }
