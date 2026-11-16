@@ -1,6 +1,6 @@
 # DMS-1439 step 6.1 closure review
 
-Original assessment baseline: `b283e37b0888af046c7139b0113f01dd740808d3`; assessment commit `5cb95acef` is approved as an assessment only. **Step 6.1 remains open.** G5 (`9b817eaf7`) and G6 (`b283e37b0`) are approved. The subsequent architectural decision rejects read-only runtime qualification and accepts the bounded endpoint evidence. The focused write follow-up below is submitted for review; no step 6.2, release or push approval is inferred.
+Current closure submission baseline: `77fcfbf3d1e01cb9b384b44e0a841e587c94fb4a`. **Step 6.1 closure is requested; it remains open until explicitly approved.** The architectural review approved the focused runtime-write qualification in `77fcfbf3d`, addressing the requested Q3 gap. G5 (`9b817eaf7`), G6 (`b283e37b0`) and the bounded endpoint evidence are also approved. Original assessment `5cb95acef` remains historical context. No step 6.2, release or push approval is inferred.
 
 ## Governing closure decisions
 
@@ -8,10 +8,10 @@ The previously identified HTTP-state and explicit identity-canary gaps are addre
 
 The architectural review of `5cb95acef` selected these dispositions:
 
-1. **Runtime access — read-only disposition rejected.** Q3 requires one representative DMS resource write on each target provider using the published runtime connection and a test-provisioned operator principal. Full CRUD and CDC remain outside the claim. CMS must not acquire production principal/grant responsibilities. The follow-up below implements this focused qualification and awaits review.
+1. **Runtime access — representative write qualification approved.** Reads alone were rejected for Q3. The architectural review of `77fcfbf3d` accepts one representative backend descriptor write on each target provider using the discovered runtime connection and a test-provisioned operator principal. The requested write gap is addressed. Resource HTTP, full CRUD, CDC and a production least-privilege grant recipe remain outside the claim. CMS acquires no production principal/grant responsibilities.
 2. **Endpoint rollover — bounded evidence accepted.** Controlled endpoint rotation/refusal and snapshot-binding tests, composed with separate live physical-lock/recovery tests, are sufficient for this step. The reviewer clarified that the spec does not explicitly require live two-server rollover. Live rollover itself was **not tested**; retain that limit here and in the future operations documentation. It is no longer an unresolved closure decision.
 
-The focused write authorization does not authorize additional qualification slices, closure, step 6.2 or a push. Stop after its local commit for review.
+**Closure recommendation:** close step 6.1 at the demonstrated and reviewed boundaries. The specifically requested G5, G6 and runtime-write gaps are addressed, and the endpoint evidence has an explicit accepted disposition. This recommendation does not mark remaining failures/skips as passing or silently accept every deployment permutation. The limitation table below remains part of the closure request. Approval must be explicit before changing 6.1's status; step 6.2 and push remain separately gated.
 
 ## Runtime-access sufficiency assessment
 
@@ -22,13 +22,13 @@ The inspected [PostgreSQL live fixture](../../../src/config/backend/EdFi.DmsConf
 - `VerifyLiveRecovery` constructs the real DMS `ConfigurationServiceDataStoreProvider`, CMS API client and connection decryptor, initially sees no registration, then observes the published row only after an expiry-triggered refresh. It also observes deletion on a subsequent refresh. Authentication and time are controlled; a full DMS web host/resource pipeline is not launched.
 - The discovered provider token is checked, including `mssql` artifact/aggregate to `sqlserver` ordinary routing. `VerifyLiveRuntime` opens the **discovered, decrypted** connection, verifies the configured principal is not superuser/sysadmin, and reads the expected `dms.EffectiveSchema` hash and `dms.DataStoreIdentity` value.
 - Genuine Minimal and Sample packages and both mixed CMS/target pairings have retained passing evidence. The [external lifecycle fixture](../../../src/config/tests/EdFi.DmsConfigurationService.Tests.E2E/ManagedDataStores/ManagedDataStoreExternalLifecycleTests.cs) independently checks runtime principal/schema/identity with genuine Minimal, real CMS authentication/startup and worker execution. That external case decrypts the CMS response directly; it is not another DMS cache test.
-- The test principal is intentionally read-capable: PostgreSQL grants `pg_read_all_data`; SQL Server grants `CONNECT ANY DATABASE` and `SELECT ALL USER SECURABLES`. Those are broad test-server read grants, not a production least-privilege recipe. No successful write, update, delete, resource authorization/validation path, CDC capture or CDC permission assertion is present.
+- In the original read-only selections the principal receives PostgreSQL `pg_read_all_data` or SQL Server `CONNECT ANY DATABASE` and `SELECT ALL USER SECURABLES`. Those are broad test-server read grants, not a production least-privilege recipe. Those selections contain no successful write, update, delete, resource authorization/validation path or CDC assertion; the approved write follow-up adds a separate descriptor insert with additional test-only grants.
 
-**Assessment after review:** the original evidence establishes credential handoff, endpoint/database selection, single encryption/decryption, discovery and reads, but is insufficient for Q3's write-access boundary. The earlier recommendation to accept reads alone was rejected. The follow-up below adds a production DMS descriptor insert through the discovered runtime credential on both targets. It still does not establish a full DMS resource workload or CDC.
+**Assessment after review:** the original evidence establishes credential handoff, endpoint/database selection, single encryption/decryption, discovery and reads, but was insufficient for Q3's write-access boundary. The earlier recommendation to accept reads alone was rejected. The now-approved follow-up supplies a production DMS descriptor insert through the discovered runtime credential on both targets and addresses that requested gap. It does not establish a full DMS resource workload or CDC.
 
 The production [runtime builder](../../../src/config/backend/EdFi.DmsConfigurationService.Backend/ManagedDataStores/ManagedDataStoreRuntimeConnectionBuilder.cs) validates a snapshot and constructs the connection; it does not connect or grant access. A Created state therefore cannot be advertised as a runtime permission probe. Step 6.2 must explain the operator's access prerequisite; a passing qualification test does not add a production permission probe.
 
-## Focused runtime-write follow-up — submitted for review
+## Focused runtime-write follow-up — approved in 77fcfbf3d
 
 Mirrored `DataStoreManageRuntimeWriteTests.It_writes_a_descriptor_with_the_discovered_managed_runtime_principal` cases extend the genuine Minimal live recovery scenario on PostgreSQL and SQL Server. The existing read-only and Sample/mixed cases keep their default behavior. After real managed acceptance, physical provisioning, injected publication rollback and successful replay, the actual DMS catalog consumer discovers/decrypts the connection. The existing runtime assertions establish the intended non-superuser/non-sysadmin identity and correct target hash/source identity.
 
@@ -47,7 +47,7 @@ Local evidence under `evidence/step-6.1-runtime-write/` in the spec directory:
 | `Postgresql-runtime-write-f8a1ab3570f8420985c239f0cc5e3b59` | `1dc89439fdaa8b7e8ed2492caaad5dc69879bd3a52ea541450d5c2cb004ac011` |
 | `Mssql-runtime-write-06ad20b187a64accbc743ca11c33a930` | `36bb7f392044a6b97e42eed18221fedc3bd2e0a16ca87e50c433418be513f335` |
 
-These passing results are submitted for review, not self-approval of Q3 or step 6.1 closure. All remaining limitations below retain their recorded status.
+The architectural review approved these results and source in `77fcfbf3d`, while explicitly stating that the reviewer did not rerun the tests. That approval closes the requested write-qualification gap, not step 6.1 itself. All remaining limitations below retain their recorded status.
 
 ## Remaining limitations and their closure impact
 
@@ -67,7 +67,11 @@ These limits are not newly invented defects or automatic scope additions. Review
 
 ## Acceptance-criteria boundary
 
-The [existing audit](step-6.1-acceptance-audit.md#acceptance-criteria-disposition) still maps every AC. AC1–5, 7–11 and 13–15 have their recorded implementation/provider/API evidence; G5 now supplies the full HTTP DELETE composition for AC8. AC6 has real publication/recovery evidence with the runtime-access interpretation above. AC12 now includes the approved G6 sentinel assertions at its stated scope. AC16 has real cache-refresh evidence but its required operator documentation is pending 6.2. AC17 retains strict parity; all mirrored results apply to the tested configurations and do not waive custom-catalog qualification or the endpoint decision.
+The [existing audit](step-6.1-acceptance-audit.md#acceptance-criteria-disposition) still maps every AC. AC1–5, 7–11 and 13–15 have their recorded implementation/provider/API evidence; G5 supplies the full HTTP DELETE composition for AC8. AC6 has real publication/recovery evidence and the approved representative runtime write. AC12 includes the approved G6 sentinel assertions at its stated scope. AC16 has real cache-refresh evidence but its required operator documentation is pending 6.2. AC17 retains strict parity; mirrored results apply to the tested configurations, the endpoint composition is accepted with its stated limit, and customized-catalog qualification remains a deployment obligation.
+
+## Checks for this closure resubmission
+
+This documentation-only resubmission records the architectural approval and reconciles the audit/matrix. The two final runtime-write TRX hashes and summary counts were rechecked against the evidence above: one pass per provider, zero failures/skips. The revision-9 spec and OpenAPI hashes still match the original assessment. All 17 criteria and 36 matrix rows remain, and local documentation links and Git whitespace are checked. No test, build, database query, inventory probe or application host ran for this resubmission. Earlier failed executions, unsuccessful independent PostgreSQL cleanup probing and retained residue are not recast as passing or clean.
 
 AC9 continues under the explicit user clarification recorded in [provenance](contract-provenance.md#q4--authorized-ac9-clarification): DMS-1439 owns physical deletion, atomic ordinary/dependent removal and the tombstone; DMS-1441 owns snapshot persistence/cleanup. Live Jira still contains the original wording. No Jira edit or reverse snapshot dependency is introduced.
 
