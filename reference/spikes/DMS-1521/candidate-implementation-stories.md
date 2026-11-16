@@ -11,15 +11,16 @@ stories:
 
 | ID | Candidate story | Paths and engines | Estimate |
 | --- | --- | --- | --- |
-| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. Owns the shared keyset-contract work | 3 |
-| [Story 2](story-2-descriptor-get-many-without-keyset-temp-table.md) | Descriptor GET-many without `descriptor_page` | P4 on PostgreSQL and SQL Server | 2 |
+| [Story 1, DMS-1694](DMS-1694-resource-hydration-without-keyset-temp-table.md) | Resource multi-document hydration without a keyset temp table | PostgreSQL P1, P2, P3; SQL Server P2. Owns the shared keyset-contract work | 3 |
+| [Story 2, DMS-1695](DMS-1695-descriptor-get-many-without-keyset-temp-table.md) | Descriptor GET-many without `descriptor_page` | P4 on PostgreSQL and SQL Server | 2 |
 
 Paths, as numbered in the findings: P1 resource GET-many (query keyset), P2 read-acceleration
 candidate metadata, P3 read-acceleration selected-page fallback, P4 descriptor GET-many.
 
 Each story is filed with type Story, no parent, fix version `Ed-Fi API v8.2`, label `no-blockers`,
 priority Medium, and no sprint. It is linked `relates to` DMS-1521, DMS-848, and DMS-1687, which stories 1 and 2 resolve together. Each file in this
-folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.md` once filed.
+folder is its story's Jira description, named after its key: story 1 is [DMS-1694](https://edfi.atlassian.net/browse/DMS-1694) and
+story 2 is [DMS-1695](https://edfi.atlassian.net/browse/DMS-1695).
 
 ### Conditional stories (not drafted)
 
@@ -38,7 +39,7 @@ folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.m
 - Story 2 is blocked by story 1. It reuses the carrier name and rules on PostgreSQL, and the JSON
   carrier on SQL Server. The descriptor batch does not go through `AppendRelation`, so story 2
   changes `DescriptorReadHandler` itself.
-- Jira links: story 1 **blocks** story 2. Both **relate to** DMS-1521, DMS-848, and DMS-1687.
+- Jira links: story 1 (DMS-1694) **blocks** story 2 (DMS-1695). Both **relate to** DMS-1521, DMS-848, and DMS-1687.
 - Story 1 fixes [DMS-1687](https://edfi.atlassian.net/browse/DMS-1687) (GET-many fails on a PostgreSQL read replica; cloned from
   [EDFI-2956](https://edfi.atlassian.net/browse/EDFI-2956)) for resource GET-many (P1). P2 and P3 never reach a replica: read
   acceleration falls back to P1 on a derivative target. The fix is complete only when story 2 also
@@ -49,8 +50,8 @@ folder becomes its story's Jira description and is renamed to `DMS-NNNN-<slug>.m
 ```mermaid
 graph TD
   DMS1521["DMS-1521<br/>Spike: keyset temp tables"]
-  S1["Story 1<br/>Resource hydration without<br/>a keyset temp table<br/>PG P1-P3, MSSQL P2"]
-  S2["Story 2<br/>Descriptor GET-many without<br/>descriptor_page<br/>PG + MSSQL P4"]
+  S1["Story 1, DMS-1694<br/>Resource hydration without<br/>a keyset temp table<br/>PG P1-P3, MSSQL P2"]
+  S2["Story 2, DMS-1695<br/>Descriptor GET-many without<br/>descriptor_page<br/>PG + MSSQL P4"]
   DMS1687["DMS-1687 (from EDFI-2956)<br/>GET-many on a read replica"]
 
   DMS1521 -. relates .- S1
@@ -105,15 +106,15 @@ No story adds a project, and neither changes `RelationalMappingVersion` or the D
 
 | Story | Start condition |
 | --- | --- |
-| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Ready. The PostgreSQL transaction-local carrier was accepted for production ([Disposition](keyset-temp-table-findings.md#disposition)). Its conditions, the in-transaction carrier tests and the generic-plan gates (P3, P4), are story 1's acceptance criteria. |
-| [Story 2](story-2-descriptor-get-many-without-keyset-temp-table.md) | Design may start now. Implementation starts once story 1's keyset contract (carrier name, set-before-read rule, SQL Server JSON carrier) is merged. |
+| [Story 1, DMS-1694](DMS-1694-resource-hydration-without-keyset-temp-table.md) | Ready. The PostgreSQL transaction-local carrier was accepted for production ([Disposition](keyset-temp-table-findings.md#disposition)). Its conditions, the in-transaction carrier tests and the generic-plan gates (P3, P4), are story 1's acceptance criteria. |
+| [Story 2, DMS-1695](DMS-1695-descriptor-get-many-without-keyset-temp-table.md) | Design may start now. Implementation starts once story 1's keyset contract (carrier name, set-before-read rule, SQL Server JSON carrier) is merged. |
 
 ## Story files
 
 | Ticket | Story |
 | --- | --- |
-| [Story 1](story-1-resource-hydration-without-keyset-temp-table.md) | Resource multi-document hydration without a keyset temp table |
-| [Story 2](story-2-descriptor-get-many-without-keyset-temp-table.md) | Descriptor GET-many without `descriptor_page` |
+| [DMS-1694](https://edfi.atlassian.net/browse/DMS-1694) | [Story 1: Resource multi-document hydration without a keyset temp table](DMS-1694-resource-hydration-without-keyset-temp-table.md) |
+| [DMS-1695](https://edfi.atlassian.net/browse/DMS-1695) | [Story 2: Descriptor GET-many without `descriptor_page`](DMS-1695-descriptor-get-many-without-keyset-temp-table.md) |
 
 ## Why two stories
 

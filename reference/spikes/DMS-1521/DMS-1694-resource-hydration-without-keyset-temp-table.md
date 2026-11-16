@@ -1,4 +1,4 @@
-# Story 1: Resource multi-document hydration without a keyset temp table
+# Story 1 (DMS-1694): Resource multi-document hydration without a keyset temp table
 
 [Back to DMS-1521 story index](candidate-implementation-stories.md)
 
@@ -261,250 +261,133 @@ example, memory-grant or parallelism waits on the `OPENJSON` statements).
 
 ## Test requirements
 
-**Unit** (`Backend.Plans.Tests.Unit`, `Backend.Tests.Unit`):
+Each new test must fail if the change is reverted.
 
-- Each batch kind in scope keeps its result-set sequence: query keyset, selected page, and
-  candidate metadata. Cover non-empty, empty, zero-size, zero-limit, and `ContentVersion`-anchored
-  pages on each engine in scope. These are behavior tests of positions and shapes, not tests that
-  a name is absent.
-- Pin the order of operations (AGENTS.md):
-  - the PostgreSQL carrier is set in the selecting statement, before any statement that reads it;
-  - the selected keys come from selection, not from hydration.
-- Binding: the PostgreSQL selected page binds one `bigint[]` at 1, 25, and 500 (the default
-  `MaximumPageSize`); the
-  fast-path command's parameters are unchanged; SQL Server binding is unchanged.
-- Keyset names reserved from query fields, modeled on
+**Unit** (`Backend.Plans.Tests.Unit`, `Backend.Tests.Unit`, `Performance.Harness.Tests.Unit`):
+
+- Result-set positions and shapes for each batch kind in scope (query keyset, selected page,
+  candidate metadata): non-empty, empty, zero-size, zero-limit, and `ContentVersion`-anchored
+  pages, on each engine in scope.
+- Order of operations (AGENTS.md): the PostgreSQL carrier is set in the selecting statement,
+  before any statement that reads it, and the selected keys come from selection, not hydration.
+- Binding: a PostgreSQL selected page binds one `bigint[]` at 1, 25, and 500 (the default
+  `MaximumPageSize`); the fast-path command's parameters are unchanged; SQL Server binding is
+  unchanged.
+- Reserved keyset names, modeled on
   `Given_RelationalQueryPageKeysetPlanner.It_should_assign_collision_free_parameter_names_for_reserved_and_sanitized_query_field_collisions`
-  (`RelationalQueryPageKeysetPlannerTests.cs` ≈462): on PostgreSQL a query field whose sanitized
-  name is the keyset parameter's name gets the suffixed name (`page_document_ids_2`), on SQL Server
-  a field named `page_keyset` gets `page_keyset_2`, and the built query-keyset and candidate
-  commands carry each name exactly once.
-- SQL Server P1 and P3: the existing pins and the goldens' `mssql` blocks stay unchanged. They are
-  the byte-identity guard.
-- Guarded single-document keyset without the fast path, PostgreSQL: the batch contains no
-  `set_config`, binds no keyset parameter, reads `@DocumentId` under the guard predicate, and
-  `GetResultSetCount` is unchanged. The existing
-  `It_does_not_return_selected_ids_from_the_guarded_materialization` checks only that `RETURNING`
-  and `OUTPUT INSERTED` are absent, so a `set_config` statement would pass it. The SQL Server
-  guarded test (`It_should_emit_the_sql_server_guarded_keyset_batch_when_the_feature_flag_is_disabled`)
-  stays green unchanged.
-- Performance harness (`Performance.Harness.Tests.Unit`): add a `PgsqlPlanCaptureTests` case that
-  splits this story's PostgreSQL resource batch shape (literals included) and binds its keyset
-  parameter. The existing cases split hand-written text with no literals, so they cannot catch this,
-  and the harness pipelines refuse to run in CI unless `PERF_ALLOW_CI` is set.
-- Update the pins of the old PostgreSQL text and parameter lists, and the candidate pins on both
-  engines. Task 7 counted 112 failing unit tests for the whole prototype. About 60–70 of them are
-  in this story, in `Given_HydrationBatchBuilder_*`, `Given_ReadPlanCompiler`,
+  (≈462): a query field that collides gets `page_document_ids_2` (PostgreSQL) or `page_keyset_2`
+  (SQL Server), and each built query-keyset and candidate command carries each name once.
+- Guarded single-document keyset without the fast path, PostgreSQL: no `set_config`, no keyset
+  parameter, `@DocumentId` read under the guard predicate, and `GetResultSetCount` unchanged. The
+  SQL Server guarded test stays unchanged.
+- `PgsqlPlanCaptureTests`: split this story's PostgreSQL resource batch (literals included) and
+  bind its keyset parameter. The existing cases use literal-free text, and the harness pipelines
+  do not run in CI unless `PERF_ALLOW_CI` is set.
+- Update the old PostgreSQL text and parameter pins and the candidate pins on both engines: about
+  60–70 of task 7's 112 failures, in `Given_HydrationBatchBuilder_*`, `Given_ReadPlanCompiler`,
   `Given_PgsqlPlanDialect`, `Given_PlanSqlWriterExtensions`, `Given_A_Keyset_That_Carries_No_Anchor`,
-  and `Given_RelationalQueryRequestPreprocessor+Given_CompactDescriptorFilters`. Regenerate the
-  8 manifest goldens, and check that no hunk falls in an `mssql` block; about half of the 2,494 changed lines the prototype produced are
-  PostgreSQL's.
+  and `Given_RelationalQueryRequestPreprocessor+Given_CompactDescriptorFilters`. Regenerate the 8
+  manifest goldens with no hunk in an `mssql` block. The SQL Server P1 and P3 pins stay unchanged
+  as the byte-identity guard.
 
 **Integration** (`Backend.Postgresql.Tests.Integration`, `Backend.Mssql.Tests.Integration`):
 
-- **No temp tables** (E1, E2). A GET-many request through the production executor creates no
-  temp table. The CI tests use deterministic, per-session signals. The calibrated counter protocol
-  stays in the R1 and R2 evidence only, for two reasons. It waits for statistics to flush, and its
-  SQL Server counter is server-wide, while `Backend.Mssql.Tests.Integration` runs fixtures in
-  parallel and P1 and P3 keep `#page`.
-  - PostgreSQL: run the hydration inside a test-owned transaction, as
-    `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction` does. Before commit, read
-    `n_tup_ins` for the seven catalog tables (`pg_class`, `pg_attribute`, `pg_type`, `pg_depend`,
-    `pg_index`, `pg_constraint`, `pg_statistic`) from `pg_stat_xact_sys_tables`, and expect 0. As
-    the positive control, `main`'s keyset prelude, run the same way, reads more than 0.
-  - SQL Server, candidate batch: the batch text names no `#` temp table (no `#`-prefixed
-    identifier, which also covers `SELECT … INTO #`) and contains no `DECLARE … TABLE`. Only the
-    server-wide counter sees a table variable, and a shared CI server cannot isolate it.
-
-  Each test must fail if the change is reverted.
-- **Carrier.** The setting is transaction-local, so a commit or rollback discards it, and a batch
-  can read another batch's ids only inside one transaction. The leak tests therefore share one
-  test-owned transaction:
-  - `Given_Postgresql_Query_Keysets_In_One_Transaction`: a 25-id query keyset, then a zero-size
-    page (`limit = 0`), then a 1-id page, then a page whose offset is past the end. Each empty
-    page directly follows a non-empty one, so a skipped `set_config` would return the previous
-    page's documents. Each page returns exactly its own documents and selected keys, and the two
-    empty pages return none. It fails if the empty or zero-size path skips `set_config`, for
-    example by copying `main`'s zero-page shortcut (`AppendEmptyKeysetMaterialization`) or by
-    evaluating `set_config` per selected row instead of in a one-row aggregate.
-  - `Given_A_Query_Keyset_Then_An_Empty_Selected_Page_In_One_Transaction`: a 25-id query keyset,
-    then an empty selected page. The second hydration returns no documents. A `NULL` parameter
-    makes the relation read the carrier, so an empty selected page bound as `NULL` would return
-    the first page's documents.
-
-  Outside a shared transaction, on one pooled physical connection: a non-empty page, a failed
-  batch (`SELECT 1 / 0` after the carrier is set), then an empty page. The carrier reads `''`
-  after each commit or rollback, which catches a session-level (`is_local = false`) carrier.
-- **Read-only** (E4). Resource GET-many, candidate selection, and a selected page in a transaction
-  with `default_transaction_read_only = on`. `main`'s DDL prelude, run as a positive control,
-  fails with SQLSTATE 25006. Resource GET-many is the DMS-1687 case. Candidate selection and the
-  selected page run only on the primary (read acceleration falls back to P1 on a replica), so
-  their cases are hardening for a read-only primary.
-- **Selected-page order.** Keep `Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentIds`
-  green.
-- **Type (d) adaptation.** `Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids`, both
-  deleted-before-hydration tests. The test splices `DELETE`s after the temp-table
-  `INSERT … RETURNING`. Move the splice to after the statement that selects the page and sets the
-  carrier, which is still between selection and hydration. Its SQL Server twin stays unchanged.
-- **Type (a) pin.** Delete
-  `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls`.
-  `Given_Postgresql_Query_Keysets_In_One_Transaction` (above) replaces it. The fixture's
-  behavioral sibling stays, but it is not carrier coverage: it hydrates `PageKeysetSpec.Single`
-  with the fast path off, which binds the `bigint[]` and never sets or reads the carrier.
-- **Hand-written keyset readers.** Five classes in `PostgresqlDescriptorProjectionTests`
-  (`Given_Required_Descriptor_FK_Resolves_To_URI`,
-  `Given_Null_Descriptor_FK_Omits_Property_From_Reconstituted_Document`,
-  `Given_Page_With_Multiple_Documents_And_Distinct_Descriptors`,
-  `Given_Descriptor_FK_Cleared_To_Null_Omits_Property_From_Reconstituted_Document`, and
-  `Given_Multi_Document_Page_Created_Via_Query_Keyset_Returns_All_Descriptor_URIs`; 13 tests)
-  hydrate a read plan from one shared fixture, `DescriptorProjectionFixture`. Its two SQL strings
-  (`BuildDescriptorProjectionPlan` ≈61–77, `BuildReadPlan` ≈154–164) join the literal `"page"`.
-  The classes hydrate `PageKeysetSpec.Single` with the fast path off (the five-argument
-  `HydrationExecutor.ExecuteAsync` default) or `PageKeysetSpec.Query`, so once `"page"` is gone
-  they fail with `42P01`. Rewrite the fixture's two SQL strings, for example by compiling the plan
-  with `ReadPlanCompiler`, as `MssqlDescriptorProjectionTests` and the PostgreSQL
-  `…CollectionDescriptorProjectionTests`, `…DescriptorProjectionAliasTests`, and
-  `…DescriptorProjectionPipelineTests` already do. The task 7 filter did not run these classes.
-  `Backend.Tests.Common/DocumentCacheMaterializerLinkBearingMappingSet.cs` also joins `"page"`
-  (≈273, ≈323) but needs no change: only `DocumentCacheMaterializer` uses it, always on the fast
-  path, which reads only `SelectBySingleDocumentSql`.
-- **C5.** `RelationalWriteSmokeTests`, the `DocumentCacheMaterializer*Tests` classes, the
-  `*Single_Document_Fast_Path*` classes, and `MssqlWriteSessionCommandStreamTests` pass unchanged,
-  except the two PostgreSQL negative checks this story empties. After this story the PostgreSQL
-  keyset batch has no `"page"`, `CREATE TEMP TABLE`, or `DROP TABLE` either, so neither check
-  would fail if the fast path fell back to the keyset path:
+- **No temp tables** (E1, E2), with deterministic per-session signals (the calibrated counters
+  stay in R1 and R2).
+  - PostgreSQL, in a test-owned transaction: before commit, `n_tup_ins` in
+    `pg_stat_xact_sys_tables` for `pg_class`, `pg_attribute`, `pg_type`, `pg_depend`, `pg_index`,
+    `pg_constraint`, and `pg_statistic` is 0. `main`'s keyset prelude, as the positive control,
+    reads more than 0.
+  - SQL Server candidate batch: the text has no `#`-prefixed identifier and no `DECLARE … TABLE`.
+- **Carrier.** The setting is transaction-local, so the leak tests share one test-owned
+  transaction:
+  - `Given_Postgresql_Query_Keysets_In_One_Transaction`: a 25-id page, a zero-size page, a 1-id
+    page, then an offset past the end. Each page returns exactly its own documents and keys. It
+    catches an empty path that skips `set_config` (for example, a copy of
+    `AppendEmptyKeysetMaterialization`) and a `set_config` evaluated per row.
+  - `Given_A_Query_Keyset_Then_An_Empty_Selected_Page_In_One_Transaction`: the empty selected page
+    returns no documents (bound as `NULL`, it would read the first page's carrier).
+  - On one pooled connection, outside a shared transaction: a non-empty page, a failed batch
+    (`SELECT 1 / 0` after the carrier is set), then an empty page. The carrier reads `''` after
+    each commit or rollback, which catches `is_local = false`.
+- **Read-only** (E4): resource GET-many, candidate selection, and a selected page under
+  `default_transaction_read_only = on`. `main`'s prelude fails with `25006` as the control.
+- Keep `Given_A_Postgresql_Selected_Page_Keyset_With_Nonascending_DocumentIds` green.
+- **Adapt** `Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids` (both deleted-before-hydration
+  tests): splice the `DELETE`s after the statement that selects the page and sets the carrier. Its
+  SQL Server twin is unchanged.
+- **Delete**
+  `Given_Two_Postgresql_Hydration_Batches_On_The_Same_Transaction.It_keeps_the_pgsql_temp_table_alive_until_commit_between_hydration_calls`;
+  the first carrier test replaces it.
+- **Rewrite** `DescriptorProjectionFixture` (`PostgresqlDescriptorProjectionTests`, 5 classes, 13
+  tests, not run by task 7). Its two SQL strings (≈61–77, ≈154–164) join the literal `"page"` and
+  would fail with `42P01`. Compile the plan with `ReadPlanCompiler`, as the other descriptor
+  projection tests do.
+- **C5.** `RelationalWriteSmokeTests`, `DocumentCacheMaterializer*Tests`,
+  `*Single_Document_Fast_Path*`, and `MssqlWriteSessionCommandStreamTests` pass unchanged, except
+  two PostgreSQL negative checks that this story makes vacuous:
   - `Given_HydrationExecutor_Single_Document_Fast_Path_With_DescriptorProjection_And_DocumentReferenceLookup.It_generates_a_batch_without_the_page_temp_table`
-    (`Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs` ≈725–730). Its plan comes
-    from `ReadPlanCompiler`, so its keyset readers render the new relation. Replace the three
-    `NotContain` checks with one positive check: the batch starts with the direct
-    document-metadata select that reads `WHERE d."DocumentId" = @DocumentId`, as the unit pin
-    `Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path.It_should_start_with_direct_document_metadata_select`
-    does. Do not anchor on `set_config`: a `Single` keyset with the fast path off binds the
-    `bigint[]` and never emits it.
-  - `Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path.It_should_not_emit_pgsql_page_temp_table_work`
-    (unit). Delete it: its fixture's `StartWith` and reader-order tests already fail on a fallback.
+    (`HydrationExecutorTests.cs` ≈725–730): replace its three `NotContain` checks with a positive
+    check that the batch starts with the direct metadata select on
+    `WHERE d."DocumentId" = @DocumentId`. Do not anchor on `set_config`.
+  - `Given_HydrationBatchBuilder_With_Pgsql_Single_Document_Fast_Path.It_should_not_emit_pgsql_page_temp_table_work`:
+    delete it; its fixture's `StartWith` and reader-order tests already catch a fallback.
 
-  The SQL Server twin (`Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs` ≈956) stays,
-  because SQL Server keeps `#page`.
+  The SQL Server twin (≈956) stays, because SQL Server keeps `#page`.
 
-**API integration** (`Tests.Integration`, both engines, full suites). These scenarios must pass:
+**API integration** (`Tests.Integration`, both engines, full suites). These pass:
 `CursorPagingExecutionScenario`, `CursorPartitionAuthorizationMatrixScenario`,
 `CursorPartitionConcurrencyScenario`, `CursorEmptyHydrationScenario`,
 `WindowedCursorAnchoringScenario`, `CursorPublicContractScenario`, `LimitZeroCountReadScenario`
-(including `Given_*_LimitZeroCountReads_DocumentCache`),
-`AuthoritativeTimestampReadConsistencyScenario`, and `Given_*_DocumentCacheReadAcceleration`. The
-PostgreSQL resource split site in `AuthoritativeTimestampReadConsistencyScenario` needs no change:
-its two commands share one transaction, so the carrier survives. The SQL Server resource site
-needs no change either, because P1 keeps `#page`.
+(with `Given_*_LimitZeroCountReads_DocumentCache`), `AuthoritativeTimestampReadConsistencyScenario`
+(its split sites need no change), and `Given_*_DocumentCacheReadAcceleration`.
 
-- **Read-only replica (DMS-1687, E4).** E4's backend tests run only the batches, as the admin
-  login, and story 2's interop run uses a writable restored snapshot. Neither shows that a whole
-  GET-many request succeeds on a read-only replica, which is the DMS-1687 path (an Aurora reader
-  that forces `default_transaction_read_only`). Add a PostgreSQL class in
-  `Tests.Integration/Tests/Postgresql/`, a read-only variant of `Given_Postgresql_DerivativeRouting`
-  (for example `Given_Postgresql_DerivativeRouting_With_A_ReadOnly_Replica`) that leases a
-  `ReadReplica`:
-  1. Seed the distinguishable Students as `DerivativeRoutingSupport.SeedDistinguishableStudentsAsync`
-     does. Seeding posts through the API with the replica published as the parent, so the replica
-     must still be writable then.
-  2. Run `ALTER DATABASE <replica> SET default_transaction_read_only = on` from `postgres`, and
-     terminate the replica's existing sessions: a database setting reaches only new sessions.
-     `PostgresqlTargetReachability.SetAllowConnectionsAsync` does the same for `ALLOW_CONNECTIONS`.
-     DMS holds none between requests: the in-process host never publishes data-store ownership,
-     so `NpgsqlDataSourceCache` disposes each request's data source, closing its connections, when
-     the request ends. The GET opens a new session.
-  3. GET `/data/ed-fi/students?totalCount=true` with no snapshot header. Assert 200, the replica's
-     marker Student, and the replica's count (2).
+- **Read-only replica (DMS-1687, E4).** Add
+  `Given_Postgresql_DerivativeRouting_With_A_ReadOnly_Replica` in
+  `Tests.Integration/Tests/Postgresql/`, leasing a `ReadReplica`:
+  1. Seed as `DerivativeRoutingSupport.SeedDistinguishableStudentsAsync` does, while the replica
+     is still writable.
+  2. From `postgres`, run `ALTER DATABASE <replica> SET default_transaction_read_only = on` and
+     terminate the replica's sessions, as `PostgresqlTargetReachability.SetAllowConnectionsAsync`
+     does.
+  3. GET `/data/ed-fi/students?totalCount=true` with no snapshot header: 200, the replica's marker
+     Student, and the replica's count (2).
 
-  No reset is needed: each lease is an isolated database, dropped from `postgres` at teardown. As
-  the positive control, the same request on `main` returns 500 with the generic
-  unexpected-condition body. DMS's error log (`RequestResponseLoggingMiddleware`) shows the
-  `PostgresException` `25006: cannot execute DROP TABLE in a read-only transaction`, and the PR
-  quotes that log line. Story 2 adds its descriptor test to this class.
+  On `main` the same request returns 500, and the PR quotes the logged
+  `25006: cannot execute DROP TABLE in a read-only transaction`. Story 2 adds its descriptor test
+  to this class.
 
-**Performance evidence.** Attach R1 and R2 artifacts (see
-[Thresholds](keyset-temp-table-findings.md#thresholds)), from three interleaved sessions on one
-machine, run from a clean tree. That is about 2.5 h of machine time for PostgreSQL. On SQL Server,
-the read-acceleration and resource fixtures take about 1.7 h per session pair (task 6: 49–60 min
-per `main` run). Budget a second SQL Server session set: the spike's `main` CV at concurrency 8
-(22–24%) predicts that N9's c = 8 cells trip the noisy-cell rerun.
+**Performance evidence.** Attach the R1 and R2 artifacts (see
+[Thresholds](keyset-temp-table-findings.md#thresholds)) from three interleaved sessions on one
+machine and a clean tree: about 2.5 h for PostgreSQL and 1.7 h per SQL Server session pair.
+Budget a second SQL Server set, because `main`'s CV at concurrency 8 (22–24%) predicts an N9
+rerun.
 
 ## Implementation guidance (non-binding)
 
 `experiments/prototype.patch` (`DMS1521_KEYSET_VARIANT=inline`) passed every check for these paths.
-It is a starting point:
+It is a starting point; a production design may differ if it meets the criteria.
 
 - **The seam.** Every P1–P3 keyset join renders through `PlanSqlWriterExtensions.AppendRelation`.
-  The prototype's PostgreSQL relation is:
-
-  ```sql
-  (SELECT u."DocumentId",
-          CASE WHEN CAST(@page_document_ids AS bigint[]) IS NULL THEN NULL
-               ELSE CAST(u."Ordinal" - 1 AS int) END AS "Ordinal"
-   FROM unnest(COALESCE(CAST(@page_document_ids AS bigint[]),
-                        CAST(string_to_array(current_setting('dms.page_keyset', true), ',') AS bigint[])))
-        WITH ORDINALITY AS u("DocumentId", "Ordinal"))
-  ```
-
-  The `COALESCE` exists because PostgreSQL has no statement that takes bind parameters, sets a
-  value, and returns no result set. A selected page has no result set that could carry
-  `set_config`, so the relation reads the parameter when it is bound and the carrier when it is
-  NULL. The NULL is bound untyped, and the SQL's `CAST` types it, so `Backend.Plans` needs no
-  Npgsql reference. An empty selected page binds an empty array, never `NULL`; the prototype binds
-  `selected.DocumentIds.ToArray()`. A production design may use a different shape, for example a
-  separate relation per keyset kind, if it meets the criteria.
-- **The query keyset statement** (PostgreSQL):
-
-  ```sql
-  WITH page_ids AS (/* existing page selection */)
-  SELECT u."DocumentId"
-  FROM (SELECT set_config('dms.page_keyset',
-               COALESCE(string_agg(CAST(p."DocumentId" AS text), ',' ORDER BY p."DocumentId"), ''),
-               true) AS keyset
-        FROM page_ids p) c
-  CROSS JOIN LATERAL unnest(CAST(string_to_array(c.keyset, ',') AS bigint[])) AS u("DocumentId");
-  ```
-
-  The aggregate always yields one row, so `set_config` runs and clears the carrier even for an
-  empty page. An anchored keyset also carries the anchor.
-- **SQL Server P2.** The prototype rendered the candidate batch through the same `AppendRelation`
-  as every hydration batch. That would change P1 and P3 too, which this story must not do. Give
-  the candidate batch its own relation, for example by passing the keyset relation to
-  `DocumentMetadataColumns.AppendDocumentMetadataSelectBody`. Keep the dialect-wide compiled
-  `SelectByKeysetSql` on `[#page]`. The prototype's candidate SQL is
-  `DECLARE @page_keyset nvarchar(max); WITH page_ids AS (…) SELECT @page_keyset = (SELECT [DocumentId] FROM page_ids FOR JSON PATH);`,
-  and its readers use
-  `OPENJSON(@page_keyset) WITH ([DocumentId] bigint '$.DocumentId', [Ordinal] int '$.Ordinal')`.
-- **Prepared plans.** Under `plan_cache_mode = auto`, the parameterized readers take five custom
-  plans with an exact estimate, then a generic plan that estimates 10 rows. Both were measured as
-  cheap on `primary-500k`. Do not force a plan mode. In the prototype, a query keyset binds
-  `@page_document_ids` as an untyped NULL and a selected page as `bigint[]`, against the same reader
-  text. Npgsql keys auto-prepared statements by SQL text and runs an execution whose parameter
-  types differ unprepared, so on one connection only the kind that prepares the readers first gets
-  their prepared plans; the other re-plans every call, as `main` does (spike probe: 7 prepared
-  executions of 16 alternating uses per reader). Either bind the query keyset's NULL as a typed
-  `bigint[]`, so both kinds share one prepared statement per reader, or keep the untyped NULL and
-  state the trade-off in the PR.
-- **Byte-identity check.** Before the PR, compare the SHA-256 of each captured batch (`cells.json`
-  in R1 and R2) between `main` and the branch. SQL Server P1 and P3 must match exactly (E5).
-- **Existing carrier.** The write path already uses this mechanism: `PgsqlCompositeTargetCarrier`
-  and `MssqlCompositeTargetCarrier`
-  (`src/dms/backend/EdFi.DataManagementService.Backend/Composite/RelationalCompositeCommandDialect.cs`,
-  DMS-1332). Follow their conventions: a `dms.<purpose>` setting set with `set_config(…, true)`,
-  and SQL Server batch-local names reserved from the bound parameters, because SqlClient rejects a
-  batch-local that shares a bound parameter's name. Unlike the composite carrier, the PostgreSQL
-  keyset also has a **bound parameter** (`page_document_ids` in the prototype) on the query-keyset
-  and candidate commands. `PgsqlCompositeTargetCarrier.ReservedNames` is empty ("a setting name is
-  not a parameter"), so copying the composite convention reserves nothing on PostgreSQL. Reserve
-  both keyset names, PostgreSQL's array parameter and SQL Server's `page_keyset` (which P2
-  declares), in the query allocator: `RelationalQueryPageKeysetPlanner.DeriveParameterNames`
-  (≈516–523) already reserves the paging, change-version, and authorization names there, and the
-  planner already receives the dialect. Npgsql binds the first parameter with a given name, so
-  under the prototype a query field whose sanitized name is `page_document_ids` makes the
-  hydration selection bind the keyset's NULL (GET-many returns 200 with an empty page and no
-  error) and the candidate batch's readers bind the filter value (`22P02`, UnknownFailure). A
-  camelCase field (`pageDocumentIds`) does not collide; only a name with separators does. Only a
-  schema with such a field changes SQL Server P1 text, and no fixture has one, so E5 holds.
+  The prototype's PostgreSQL relation unnests
+  `COALESCE(CAST(@page_document_ids AS bigint[]), <the carrier split into bigint[]>) WITH ORDINALITY`.
+  A selected page binds the array (an empty page binds an empty array, never `NULL`); a query
+  keyset binds an untyped NULL and reads the carrier.
+- **The query keyset statement** selects `page_ids` as today, calls
+  `set_config('dms.page_keyset', …, true)` in a one-row `string_agg` aggregate, so it sets or
+  clears the carrier even for an empty page, and unnests the result as the first result set.
+- **SQL Server P2.** Give the candidate batch its own relation, for example by passing it to
+  `DocumentMetadataColumns.AppendDocumentMetadataSelectBody`: the prototype's shared
+  `AppendRelation` would change P1 and P3. Its carrier is
+  `SELECT @page_keyset = (SELECT [DocumentId] FROM page_ids FOR JSON PATH)`, read with
+  `OPENJSON … WITH`.
+- **Prepared plans.** Do not force a plan mode. An untyped NULL and a `bigint[]` against the same
+  reader text share no Npgsql prepared statement: bind the NULL as a typed `bigint[]`, or state the
+  trade-off in the PR.
+- **Reserved names.** Follow the `PgsqlCompositeTargetCarrier` and `MssqlCompositeTargetCarrier`
+  conventions (DMS-1332), but reserve both keyset names, PostgreSQL's array parameter and SQL
+  Server's `page_keyset`, in `RelationalQueryPageKeysetPlanner.DeriveParameterNames` (≈516–523):
+  under the prototype, a colliding query field binds the wrong value.
 - **Do not keep** `Dms1521KeysetVariant`, the environment switch, or the `pg-analyze` variant.
 
 ## Dependencies

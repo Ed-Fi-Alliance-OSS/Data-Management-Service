@@ -42,10 +42,12 @@ the four paths can drop theirs now. The other two keep `#page` until a replaceme
 - **`ANALYZE` works as an interim PostgreSQL mitigation** (resource API 0.31–0.48×). It keeps the
   temp table, adds catalog writes, and does not fix EDFI-2956. It qualifies for a story only if
   story 1 cannot ship in 8.2.
-- **Stories:** (1) resource multi-document hydration without a keyset temp table: PostgreSQL P1–P3
-  and SQL Server P2, owning the shared keyset-contract work. (2) descriptor GET-many without
-  `descriptor_page`, on both engines. No provisioning story is needed: nothing recommended adds
-  DDL. Thresholds are under [Thresholds](#thresholds).
+- **Stories:** (1) [DMS-1694](DMS-1694-resource-hydration-without-keyset-temp-table.md), resource
+  multi-document hydration without a keyset temp table: PostgreSQL P1–P3 and SQL Server P2, owning
+  the shared keyset-contract work. (2)
+  [DMS-1695](DMS-1695-descriptor-get-many-without-keyset-temp-table.md), descriptor GET-many
+  without `descriptor_page`, on both engines. No provisioning story is needed: nothing recommended
+  adds DDL. Thresholds are under [Thresholds](#thresholds).
 
 ## Scope and paths
 
@@ -243,7 +245,8 @@ to state the hypothesis.
 Written by task 2. Every experiment runs through the spike runner in
 [`experiments/KeysetSpike`](experiments/KeysetSpike) and the run script
 [`experiments/Invoke-KeysetSpike.ps1`](experiments/Invoke-KeysetSpike.ps1). Raw evidence goes to
-`C:\perf\dms-1521\<run id>\`, outside the repository, and is attached to DMS-1521 by task 12.
+`C:\perf\dms-1521\<run id>\`, outside the repository, and is attached to DMS-1521
+(`dms-1521-evidence.zip`, indexed by `dms-1521-evidence-index.md`).
 
 ### Runner
 
@@ -1153,7 +1156,7 @@ Every batch kept one SHA-256 across the three sessions of its variant, every rep
 both). The tables read as in [PostgreSQL results](#postgresql-results): mean ± SD across the three
 sessions of each run's statistic, run-to-run CV in brackets, ratios `I / B`, and
 `m = max(2 × CV(B), 5%)`. Analysis script: `experiments/t6_analyze.py`; its report `t6_report.md` stays
-beside the runs in `C:\perf\dms-1521\` and is attached by task 12.
+beside the runs in `C:\perf\dms-1521\` and is attached to DMS-1521 with them.
 
 **Gate counter.** Task 4 found the server-wide `Temp Tables Creation Rate` too noisy to gate a zero,
 so task 6 gates on a session-filtered Extended Events count (`object_created`, user table, in
@@ -2040,6 +2043,10 @@ Task 11 decisions, answered in the PR #1455 review (Adam, round 6, commit `24331
 - **Release:** story 1 in 8.2 is the team's planning call; the evidence does not argue against it.
   The conditional `ANALYZE` story is filed only if story 1 slips.
 
+**Approved** by Adam Hopkins on 2026-11-16 (Slack): the remaining review items are low enough to
+handle during ticket execution, so the stories can be filed in Jira and the placeholder file names
+replaced with their keys.
+
 ## Appendix: reproduction
 
 Everything runs from the repository root, one engine at a time. The recorded subject commit
@@ -2049,8 +2056,8 @@ dirty path. To reproduce, run the `experiments/` folder from the DMS-1521 branch
 spike's merge commit, against that backend. The runner received the review-round fixes after the
 runs (exact batch-text writes, the dirty-path allow-list, binding capture with the batch text, the
 enforced calibration verdict); none of them changes a measurement. Raw evidence lands in
-`C:\perf\dms-1521\<run id>\` and is attached to DMS-1521 with a checksum
-index (task 12).
+`C:\perf\dms-1521\<run id>\` and is attached to DMS-1521 as `dms-1521-evidence.zip`, with
+`dms-1521-evidence-index.md` listing every run directory, file, and SHA-256 checksum.
 
 **Patch procedure** (variants `A`, `B`, `I`): record `git status --porcelain` and the SHA-256 of
 each file the patch touches, and refuse to continue if any of them has local changes. Apply with

@@ -1,4 +1,4 @@
-# Story 2: Descriptor GET-many without `descriptor_page`
+# Story 2 (DMS-1695): Descriptor GET-many without `descriptor_page`
 
 [Back to DMS-1521 story index](candidate-implementation-stories.md)
 
