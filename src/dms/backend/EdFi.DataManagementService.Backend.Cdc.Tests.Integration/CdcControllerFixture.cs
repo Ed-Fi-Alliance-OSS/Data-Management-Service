@@ -115,38 +115,53 @@ internal sealed class CdcControllerFixture : IAsyncDisposable
     {
         var settings = CdcConnectorTemplateSmokeSettings.FromEnvironment(provider);
         ValidatePrerequisites(settings, provider);
+        return await StartAsync(
+            provider,
+            settings,
+            async initialize =>
+            {
+                var resources = await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                    provider,
+                    token,
+                    async (resources, ct) =>
+                    {
+                        var fixture = initialize(resources);
+                        await resources.AssertControllerProviderPrerequisiteAsync(ct);
+                        if (beforeWorker is not null)
+                        {
+                            await beforeWorker(fixture, ct);
+                        }
+                    },
+                    exposeBroker: true,
+                    composeKafka: composeKafka,
+                    offlineKafka: offlineKafka
+                );
+                if (!offlineKafka)
+                {
+                    await resources.AssertControllerMetricsPrerequisiteAsync(token);
+                }
+            }
+        );
+    }
+
+    // Keep startup failure handling testable with real fixture ownership and simulated infrastructure.
+    internal static async Task<CdcControllerFixture> StartAsync(
+        CdcProvider provider,
+        CdcConnectorTemplateSmokeSettings settings,
+        Func<Func<CdcConnectorTemplatePinnedImageFixture, CdcControllerFixture>, Task> start
+    )
+    {
         CdcControllerFixture fixture = null!;
         try
         {
-            var resources = await CdcConnectorTemplatePinnedImageFixture.StartAsync(
-                provider,
-                token,
-                async (resources, ct) =>
-                {
-                    // The same durable root/hooks are available for CREATE receipts and broker
-                    // preflight before the worker starts, and survive every controller invocation.
-                    fixture = new(resources, settings.KeepContainers);
-                    await resources.AssertControllerProviderPrerequisiteAsync(ct);
-                    if (beforeWorker is not null)
-                    {
-                        await beforeWorker(fixture, ct);
-                    }
-                },
-                exposeBroker: true,
-                composeKafka: composeKafka,
-                offlineKafka: offlineKafka
-            );
-            if (!offlineKafka)
-            {
-                await resources.AssertControllerMetricsPrerequisiteAsync(token);
-            }
+            await start(resources => fixture = new(resources, settings.KeepContainers));
             return fixture;
         }
         catch (Exception exception)
         {
             if (fixture is not null)
             {
-                await fixture.DisposeAsync();
+                await CdcFixtureStartupCleanup.DisposeAsync(fixture);
             }
             if (exception is OperationCanceledException or AssertionException or IgnoreException)
             {

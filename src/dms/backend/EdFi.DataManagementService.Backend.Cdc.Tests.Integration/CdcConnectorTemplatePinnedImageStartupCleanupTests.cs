@@ -626,6 +626,109 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         AssertCleanupCommandsWereRun(docker);
     }
 
+    [TestCase(false, false, "failure")]
+    [TestCase(false, true, "failure")]
+    [TestCase(true, false, "failure")]
+    [TestCase(true, true, "failure")]
+    [TestCase(false, true, "cancellation")]
+    [TestCase(true, true, "cancellation")]
+    [TestCase(false, true, "assertion")]
+    [TestCase(true, true, "assertion")]
+    [TestCase(false, false, "ignore")]
+    [TestCase(true, false, "ignore")]
+    public async Task It_preserves_nested_startup_failure_when_outer_cleanup_replays_a_failure(
+        bool admission,
+        bool required,
+        string scenario
+    )
+    {
+        using var caller = new CancellationTokenSource();
+        Exception original = scenario switch
+        {
+            "cancellation" => new OperationCanceledException("private-startup", caller.Token),
+            "assertion" => new AssertionException("private-startup"),
+            "ignore" => new IgnoreException("private-startup"),
+            _ => new IOException("private-startup"),
+        };
+        var settings = BuildSettings() with { FailFast = required };
+        var docker = new RecordingDockerCli(_ => null, failFirstCleanup: true);
+        CdcControllerFixture controller = null!;
+        CdcProviderAdmissionFixture suite = null!;
+        Task<CdcControllerFixture> StartControllerAsync() =>
+            CdcControllerFixture.StartAsync(
+                CdcProvider.Postgresql,
+                settings,
+                initialize =>
+                    CdcConnectorTemplatePinnedImageFixture.StartAsync(
+                        CdcProvider.Postgresql,
+                        settings,
+                        docker,
+                        ResourcePrefix,
+                        caller.Token,
+                        applyPrerequisitePolicy: false,
+                        beforeWorker: (resources, _) =>
+                        {
+                            controller = initialize(resources);
+                            if (suite is not null)
+                            {
+                                suite.Infrastructure = controller;
+                            }
+                            if (scenario == "cancellation")
+                            {
+                                caller.Cancel();
+                            }
+                            return Task.FromException(original);
+                        },
+                        writeStartupFailureEvidence: (_, _) => Task.CompletedTask
+                    )
+            );
+        Exception actual;
+        using (new NUnit.Framework.Internal.TestExecutionContext.IsolatedContext())
+        {
+            actual = Assert.CatchAsync(async () =>
+            {
+                if (admission)
+                {
+                    await CdcProviderAdmissionFixture.StartAsync(
+                        CdcProvider.Postgresql,
+                        async fixture =>
+                        {
+                            suite = fixture;
+                            await StartControllerAsync();
+                        }
+                    );
+                }
+                else
+                {
+                    await StartControllerAsync();
+                }
+            })!;
+        }
+        if (scenario == "failure")
+        {
+            actual.Should().BeOfType(required ? typeof(AssertionException) : typeof(IgnoreException));
+            actual
+                .Message.Should()
+                .Contain("Controller fixture prerequisite failed")
+                .And.NotContain("private-");
+        }
+        else
+        {
+            actual.Should().BeSameAs(original);
+        }
+        AssertCleanupCommandsWereRun(docker);
+        foreach (string command in ExpectedCleanupCommands())
+        {
+            docker.Commands.Should().ContainSingle(actualCommand => actualCommand == command);
+        }
+        Directory.Exists(controller.StateRoot).Should().BeFalse();
+        int commands = docker.Commands.Count;
+        Func<Task> dispose = () =>
+            admission ? suite.DisposeAsync().AsTask() : controller.DisposeAsync().AsTask();
+        await dispose.Should().ThrowAsync<InvalidOperationException>();
+        docker.Commands.Should().HaveCount(commands, "cached failure must not repeat resource cleanup");
+    }
+
     private static void AssertCancellationCleanup<TException>(TException startupException)
         where TException : OperationCanceledException
     {

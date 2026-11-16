@@ -144,6 +144,185 @@ public partial class Given_CdcProjectionGate
         await _gate.WaitUntilIdleAsync(CancellationToken.None);
     }
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_allows_normal_progress_beyond_the_shutdown_drain_budget(bool resume)
+    {
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _writer.BeforeWriteAsync = async _ =>
+        {
+            entered.TrySetResult();
+            await exit.Task;
+        };
+        Task idle;
+        if (resume)
+        {
+            idle = _gate.ResumeHeldProcessingAsync(CancellationToken.None);
+        }
+        else
+        {
+            _gate.Release();
+            idle = _gate.WaitUntilIdleAsync(CancellationToken.None);
+        }
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            _clock.Advance(TimeSpan.FromSeconds(31));
+            idle.IsCompleted.Should().BeFalse("normal progress retains the five-minute budget");
+            exit.SetResult();
+            await idle.WaitAsync(TimeSpan.FromSeconds(30));
+            await _processing;
+        }
+        finally
+        {
+            exit.TrySetResult();
+            await idle.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
+    }
+
+    [Test]
+    public async Task It_bounds_normal_idle_waiting_at_five_minutes()
+    {
+        Task idle = _gate.WaitUntilIdleAsync(CancellationToken.None);
+        _clock.Advance(TimeSpan.FromSeconds(31));
+        idle.IsCompleted.Should().BeFalse();
+        _clock.Advance(TimeSpan.FromMinutes(5) - TimeSpan.FromSeconds(31));
+        Func<Task> finish = () => idle;
+        await finish.Should().ThrowAsync<TimeoutException>();
+        _processing.IsCompleted.Should().BeFalse("an idle timeout must not release held work");
+    }
+
+    [TestCase("success")]
+    [TestCase("failure")]
+    [TestCase("cancellation")]
+    [TestCase("cancel-during-idle")]
+    [TestCase("cancel-during-idle-completes")]
+    public async Task It_uses_the_progress_budget_only_for_a_successful_phase(string outcome)
+    {
+        var clock = new IdleWaitClock();
+        var gate = new CdcProjectionGate(Target, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30), clock);
+        var runtime = A.Fake<ICdcProjectionRuntime>();
+        var owner = new CdcRuntimeOwner(_ => Task.FromResult((runtime, gate)));
+        using var caller = new CancellationTokenSource();
+        var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Task processing = Task.CompletedTask;
+        var original = new InvalidOperationException("phase failed");
+        Task phase = owner.InPhaseAsync(
+            async token =>
+            {
+                await owner.OpenAsync(token);
+                processing = gate.ProcessAsync(
+                    new PendingProcessor(async _ =>
+                    {
+                        await exit.Task;
+                        return DocumentCacheProjectionItemProcessResult.AcknowledgedOrRemoved;
+                    }),
+                    Request(_context, 102),
+                    CancellationToken.None
+                );
+                if (outcome == "failure")
+                {
+                    throw original;
+                }
+                if (outcome == "cancellation")
+                {
+                    await caller.CancelAsync();
+                }
+                return true;
+            },
+            caller.Token
+        );
+        try
+        {
+            await clock.WaitStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            if (outcome.StartsWith("cancel-during-idle", StringComparison.Ordinal))
+            {
+                await caller.CancelAsync();
+                await clock.DrainStarted.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            }
+            if (outcome == "cancel-during-idle-completes")
+            {
+                exit.SetResult();
+                Func<Task> finish = () => phase;
+                await finish.Should().ThrowAsync<OperationCanceledException>();
+                (await owner.InPhaseAsync(_ => Task.FromResult(true), CancellationToken.None))
+                    .Should()
+                    .BeTrue();
+                return;
+            }
+            clock.Advance(TimeSpan.FromSeconds(31));
+            if (outcome == "success")
+            {
+                exit.SetResult();
+                await phase.WaitAsync(TimeSpan.FromSeconds(30));
+                (await owner.InPhaseAsync(_ => Task.FromResult(true), CancellationToken.None))
+                    .Should()
+                    .BeTrue();
+            }
+            else
+            {
+                Func<Task> finish = () => phase;
+                if (outcome is "failure" or "cancel-during-idle")
+                {
+                    var failure = (await finish.Should().ThrowAsync<AggregateException>()).Which;
+                    failure.InnerExceptions.Should().ContainSingle(e => e is TimeoutException);
+                    if (outcome == "failure")
+                    {
+                        failure.InnerExceptions.Should().Contain(original);
+                    }
+                    else
+                    {
+                        failure.InnerExceptions.Should().ContainSingle(e => e is OperationCanceledException);
+                    }
+                }
+                else
+                {
+                    await finish.Should().ThrowAsync<TimeoutException>();
+                }
+                Func<Task> next = () =>
+                    owner.InPhaseAsync(_ => Task.FromResult(true), CancellationToken.None);
+                await next.Should()
+                    .ThrowAsync<InvalidOperationException>()
+                    .WithMessage("CDC_API_PHASE_DRAIN_FAILED");
+                processing.IsCompleted.Should().BeFalse();
+                A.CallTo(() => runtime.DisposeAsync()).MustNotHaveHappened();
+            }
+        }
+        finally
+        {
+            exit.TrySetResult();
+            await processing;
+            await phase.ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            await owner.DisposeAsync();
+        }
+    }
+
+    private sealed class IdleWaitClock : FakeTimeProvider
+    {
+        internal TaskCompletionSource WaitStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        internal TaskCompletionSource DrainStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        )
+        {
+            var timer = base.CreateTimer(callback, state, dueTime, period);
+            if (dueTime == TimeSpan.FromSeconds(30))
+            {
+                DrainStarted.TrySetResult();
+            }
+            WaitStarted.TrySetResult();
+            return timer;
+        }
+    }
+
     [Test]
     public async Task It_cancels_an_idle_wait_without_releasing_held_processing()
     {

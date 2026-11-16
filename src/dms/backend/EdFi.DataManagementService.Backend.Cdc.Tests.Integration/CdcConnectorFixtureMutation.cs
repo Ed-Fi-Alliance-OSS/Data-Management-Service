@@ -30,7 +30,8 @@ internal static class CdcConnectorFixtureMutation
         Func<HttpRequestMessage> createRequest,
         CdcFixtureMutation operation,
         CancellationToken token,
-        TimeProvider clock = null!
+        TimeProvider clock = null!,
+        Func<string, string, Task> publishEvidence = null!
     )
     {
         var evidence = new Evidence(operation);
@@ -64,14 +65,26 @@ internal static class CdcConnectorFixtureMutation
         }
         finally
         {
-            // No request URI, configuration, response body, or raw exception enters this evidence.
-            // Persist without the operation token so cancellation cannot suppress the attachment.
-            string path = Path.Combine(
-                TestContext.CurrentContext.WorkDirectory,
-                "cdc-controller-mutation-" + Guid.NewGuid().ToString("N") + ".json"
-            );
-            await File.WriteAllTextAsync(path, JsonSerializer.Serialize(evidence));
-            TestContext.AddTestAttachment(path, "Connector mutation HTTP status and attempt evidence");
+            try
+            {
+                // No request URI, configuration, response body, or raw exception enters this evidence.
+                // Persist without the operation token so cancellation cannot suppress the attachment.
+                string path = Path.Combine(
+                    TestContext.CurrentContext.WorkDirectory,
+                    "cdc-controller-mutation-" + Guid.NewGuid().ToString("N") + ".json"
+                );
+                await (publishEvidence ?? PublishEvidenceAsync)(path, JsonSerializer.Serialize(evidence));
+            }
+            catch (Exception)
+            {
+                // Evidence is best effort; preserve the mutation status or original failure.
+            }
         }
+    }
+
+    private static async Task PublishEvidenceAsync(string path, string json)
+    {
+        await File.WriteAllTextAsync(path, json);
+        TestContext.AddTestAttachment(path, "Connector mutation HTTP status and attempt evidence");
     }
 }

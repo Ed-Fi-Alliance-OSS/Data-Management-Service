@@ -324,7 +324,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
             }
             finally
             {
-                await fixture.DisposeAfterStartupFailureAsync();
+                await CdcFixtureStartupCleanup.DisposeAsync(fixture);
             }
             if (ex is OperationCanceledException or AssertionException)
             {
@@ -1128,20 +1128,6 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture : IAsyncDis
         {
             throw new InvalidOperationException(
                 $"CDC fixture cleanup failed for {failures} isolated resources. Details redacted."
-            );
-        }
-    }
-
-    private async ValueTask DisposeAfterStartupFailureAsync()
-    {
-        try
-        {
-            await DisposeAsync();
-        }
-        catch (Exception)
-        {
-            await TestContext.Error.WriteLineAsync(
-                "Pinned-image fixture cleanup failed after startup failure. Details redacted."
             );
         }
     }

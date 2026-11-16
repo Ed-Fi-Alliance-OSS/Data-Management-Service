@@ -232,16 +232,16 @@ internal sealed class CdcProjectionGate(
         }
     }
 
-    public Task WaitUntilIdleAsync(CancellationToken token)
+    public Task WaitUntilIdleAsync(CancellationToken token) => WaitUntilIdleAsync(_timeout, token);
+
+    internal Task DrainAsync() => WaitUntilIdleAsync(_drainTimeout, CancellationToken.None);
+
+    private Task WaitUntilIdleAsync(TimeSpan timeout, CancellationToken token)
     {
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            return (_active == 0 ? Task.CompletedTask : _drained.Task).WaitAsync(
-                _drainTimeout,
-                _clock,
-                token
-            );
+            return (_active == 0 ? Task.CompletedTask : _drained.Task).WaitAsync(timeout, _clock, token);
         }
     }
 

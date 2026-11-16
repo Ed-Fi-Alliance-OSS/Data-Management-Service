@@ -206,6 +206,139 @@ public sealed class Given_CdcConnectorFixtureMutation
         evidence.RootElement.GetProperty("Attempts").EnumerateArray().Should().BeEmpty();
     }
 
+    [TestCase("accepted", false)]
+    [TestCase("rejected", false)]
+    [TestCase("transport", false)]
+    [TestCase("caller", false)]
+    [TestCase("deadline", false)]
+    [TestCase("accepted", true)]
+    [TestCase("rejected", true)]
+    [TestCase("transport", true)]
+    [TestCase("caller", true)]
+    [TestCase("deadline", true)]
+    public async Task It_preserves_the_mutation_result_when_evidence_publication_fails(
+        string outcome,
+        bool attachmentFails
+    )
+    {
+        var clock = new FakeTimeProvider();
+        using var caller = new CancellationTokenSource();
+        var original = new HttpRequestException("private-transport-failure");
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        Exception mutationFailure = null!;
+        using var client = new HttpClient(
+            new Handler(
+                async (_, token) =>
+                {
+                    try
+                    {
+                        if (outcome == "transport")
+                        {
+                            throw original;
+                        }
+                        if (outcome is "caller" or "deadline")
+                        {
+                            entered.SetResult();
+                            await Task.Delay(Timeout.InfiniteTimeSpan, token);
+                        }
+                        return new HttpResponseMessage(
+                            outcome == "rejected" ? HttpStatusCode.BadRequest : HttpStatusCode.Accepted
+                        );
+                    }
+                    catch (Exception exception)
+                    {
+                        mutationFailure = exception;
+                        throw;
+                    }
+                }
+            )
+        )
+        {
+            BaseAddress = new Uri("http://localhost"),
+            Timeout = Timeout.InfiniteTimeSpan,
+        };
+        string published = "";
+        string evidencePath = Path.Combine(
+            Path.GetTempPath(),
+            "cdc-mutation-test-" + Guid.NewGuid().ToString("N")
+        );
+        Task<HttpStatusCode> operation = CdcConnectorFixtureMutation.RunAsync(
+            client,
+            () => new HttpRequestMessage(HttpMethod.Put, "/connectors/private-name/stop"),
+            CdcFixtureMutation.Stop,
+            caller.Token,
+            clock,
+            async (_, json) =>
+            {
+                published = json;
+                if (!attachmentFails)
+                {
+                    // A unique nonexistent parent is independent of user privileges and NUnit state.
+                    await File.WriteAllTextAsync(Path.Combine(evidencePath, "evidence.json"), json);
+                }
+                await File.WriteAllTextAsync(evidencePath, json);
+                throw new InvalidOperationException("private-attachment-failure");
+            }
+        );
+        try
+        {
+            if (outcome is "caller" or "deadline")
+            {
+                await entered.Task.WaitAsync(TimeSpan.FromSeconds(30));
+                if (outcome == "caller")
+                {
+                    await caller.CancelAsync();
+                }
+                else
+                {
+                    clock.Advance(TimeSpan.FromSeconds(30));
+                }
+            }
+            Func<Task> finish = () => operation;
+            if (outcome == "transport")
+            {
+                (await finish.Should().ThrowAsync<HttpRequestException>()).Which.Should().BeSameAs(original);
+            }
+            else if (outcome is "caller" or "deadline")
+            {
+                var failure = (await finish.Should().ThrowAsync<OperationCanceledException>()).Which;
+                // HttpClient may wrap handler cancellation, but evidence must never replace it.
+                (failure == mutationFailure || failure.InnerException == mutationFailure)
+                    .Should()
+                    .BeTrue();
+            }
+            else
+            {
+                (await operation)
+                    .Should()
+                    .Be(outcome == "accepted" ? HttpStatusCode.Accepted : HttpStatusCode.BadRequest);
+            }
+            using var evidence = JsonDocument.Parse(published);
+            evidence
+                .RootElement.GetProperty("Outcome")
+                .GetString()
+                .Should()
+                .Be(
+                    outcome switch
+                    {
+                        "accepted" => "Accepted",
+                        "rejected" => "Rejected",
+                        "transport" => "TransportFailure",
+                        "caller" => "CallerCancelled",
+                        _ => "DeadlineExpired",
+                    }
+                );
+            evidence.RootElement.GetProperty("TotalAttempts").GetInt32().Should().Be(1);
+            published.Should().NotContain("private-");
+        }
+        finally
+        {
+            await caller.CancelAsync();
+            await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+            File.Delete(evidencePath);
+        }
+    }
+
     private sealed class Handler(Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>> send)
         : HttpMessageHandler
     {

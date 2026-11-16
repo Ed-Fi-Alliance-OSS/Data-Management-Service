@@ -604,6 +604,87 @@ public sealed class Given_CdcFixtureProbes
         owner.DrainFailed.Should().BeFalse();
     }
 
+    [TestCase("private", "ProbeCancellation")]
+    [TestCase("observation", "ObservationTimeout")]
+    [TestCase("caller", "CallerCancellation")]
+    [TestCase("both", "CallerCancellation")]
+    public async Task It_classifies_cancellation_by_its_owner(string source, string category)
+    {
+        var clock = new FakeTimeProvider();
+        using var caller = new CancellationTokenSource();
+        List<CdcProbeFailureEvidence> evidence = [];
+        var owner = new CdcFixtureProbes(
+            clock,
+            publish: item =>
+            {
+                evidence.Add(item);
+                return Task.CompletedTask;
+            }
+        );
+        var original = new OperationCanceledException("private-http-timeout");
+        int calls = 0;
+        Func<Task> operation = () =>
+            owner.WaitAsync(
+                _ =>
+                {
+                    calls++;
+                    if (source is "caller" or "both")
+                    {
+                        caller.Cancel();
+                    }
+                    if (source is "observation" or "both")
+                    {
+                        clock.Advance(ObservationBudget);
+                    }
+                    throw original;
+                },
+                ObservationBudget,
+                TimeSpan.FromSeconds(1),
+                caller.Token
+            );
+        if (source is "caller" or "both")
+        {
+            await operation.Should().ThrowAsync<OperationCanceledException>();
+        }
+        else
+        {
+            var failure = (await operation.Should().ThrowAsync<TimeoutException>()).Which;
+            failure.InnerException.Should().BeSameAs(original);
+        }
+        calls.Should().Be(1);
+        evidence.Should().Equal(new CdcProbeFailureEvidence(category, "None", "Cancelled"));
+        owner.DrainFailed.Should().BeFalse();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_applies_prerequisite_policy_to_a_probe_private_cancellation(bool required)
+    {
+        var owner = new CdcFixtureProbes(publish: _ => Task.CompletedTask);
+        var settings = CdcConnectorTemplateSmokeSettings.Offline with { FailFast = required };
+        Exception actual;
+        using (new NUnit.Framework.Internal.TestExecutionContext.IsolatedContext())
+        {
+            actual = Assert.CatchAsync(async () =>
+                await settings.StopOnPrerequisiteFailureAsync(
+                    EdFi.DataManagementService.Backend.Ddl.CdcProvider.Postgresql,
+                    owner.WaitAsync(
+                        _ => throw new OperationCanceledException("private-http-timeout"),
+                        ObservationBudget,
+                        TimeSpan.FromSeconds(1),
+                        CancellationToken.None
+                    ),
+                    "Metrics prerequisite unavailable."
+                )
+            )!;
+        }
+        actual.Should().BeOfType(required ? typeof(AssertionException) : typeof(IgnoreException));
+        actual
+            .Message.Should()
+            .Contain("Metrics prerequisite unavailable")
+            .And.NotContain("private-http-timeout");
+    }
+
     [Test]
     public async Task It_preserves_a_probe_failure_and_stops_polling()
     {

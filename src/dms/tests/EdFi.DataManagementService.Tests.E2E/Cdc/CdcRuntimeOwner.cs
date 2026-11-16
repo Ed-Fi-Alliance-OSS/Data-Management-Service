@@ -59,7 +59,24 @@ internal sealed class CdcRuntimeOwner(
                 await phase.CancelAsync();
                 if (_gate is not null)
                 {
-                    await _gate.WaitUntilIdleAsync(CancellationToken.None);
+                    if (failure is not null || token.IsCancellationRequested)
+                    {
+                        await _gate.DrainAsync();
+                    }
+                    else
+                    {
+                        try
+                        {
+                            await _gate.WaitUntilIdleAsync(token);
+                        }
+                        catch (OperationCanceledException exception) when (token.IsCancellationRequested)
+                        {
+                            // Cancellation during a progress wait switches to bounded cleanup.
+                            // Only an actual drain failure prevents a later phase from running.
+                            failure = exception;
+                            await _gate.DrainAsync();
+                        }
+                    }
                 }
             }
             catch (Exception cleanupFailure)

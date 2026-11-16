@@ -100,10 +100,16 @@ internal sealed class CdcFixtureProbes(
                 original is OperationCanceledException
                     ? CancellationCategory(token, timer.Token)
                     : "ProbeFailure";
-            failure =
-                primary == "ObservationTimeout"
-                    ? new TimeoutException("Controller fixture observation deadline expired.")
-                    : original;
+            failure = original;
+            if (original is OperationCanceledException && primary != "CallerCancellation")
+            {
+                failure = new TimeoutException(
+                    primary == "ObservationTimeout"
+                        ? "Controller fixture observation deadline expired."
+                        : "Controller fixture probe cancelled before observation completed.",
+                    original
+                );
+            }
         }
         Task cancellation = failure is not null ? deadline.CancelAsync() : Task.CompletedTask;
         Task<string> drain = ObserveExitAsync(active, cancellation, deadline, timer);

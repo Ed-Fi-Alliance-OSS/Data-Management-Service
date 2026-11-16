@@ -35,7 +35,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 /// <summary>Owns an actual new database; only schema-file and CMS delivery are fixture substitutes.</summary>
 internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
 {
-    public CdcControllerFixture Infrastructure { get; private set; } = null!;
+    public CdcControllerFixture Infrastructure { get; internal set; } = null!;
     public CdcControllerFixtureHooks Hooks => Infrastructure.Hooks;
     public CdcDeploymentRequest Request { get; private set; } = null!;
     public ICdcProjectionRuntime Runtime { get; private set; } = null!;
@@ -183,6 +183,53 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         IReadOnlyList<string> schemaFiles = null!
     )
     {
+        return await StartAsync(
+            provider,
+            async suite =>
+            {
+                suite.Infrastructure = await CdcControllerFixture.StartAsync(
+                    provider,
+                    cancellationToken,
+                    async (infrastructure, ct) =>
+                    {
+                        suite.Infrastructure = infrastructure;
+                        try
+                        {
+                            await suite.PrepareAsync(ct, offlineKafka);
+                        }
+                        catch (AssertionException)
+                        {
+                            throw;
+                        }
+                        catch (Exception exception)
+                        {
+                            throw new AssertionException(
+                                $"Owned admission preparation failed ({exception.GetType().Name}).",
+                                exception
+                            );
+                        }
+                    },
+                    composeKafka: composeKafka,
+                    offlineKafka: offlineKafka
+                );
+                // Preparation owns the database and policy gate before worker launch. Initial bind
+                // recovery may replace worker endpoints; publish the final request before admission.
+                suite.Request = CdcFixtureRequests.WithWorkerEndpoints(
+                    suite.Request,
+                    suite.Infrastructure.ConnectEndpoint,
+                    await suite.Infrastructure.MetricsEndpointAsync(cancellationToken)
+                );
+            },
+            schemaFiles
+        );
+    }
+
+    internal static async Task<CdcProviderAdmissionFixture> StartAsync(
+        CdcProvider provider,
+        Func<CdcProviderAdmissionFixture, Task> start,
+        IReadOnlyList<string> schemaFiles = null!
+    )
+    {
         var suite = new CdcProviderAdmissionFixture(provider);
         if (schemaFiles is not null)
         {
@@ -190,43 +237,12 @@ internal sealed class CdcProviderAdmissionFixture : IAsyncDisposable
         }
         try
         {
-            suite.Infrastructure = await CdcControllerFixture.StartAsync(
-                provider,
-                cancellationToken,
-                async (infrastructure, ct) =>
-                {
-                    suite.Infrastructure = infrastructure;
-                    try
-                    {
-                        await suite.PrepareAsync(ct, offlineKafka);
-                    }
-                    catch (AssertionException)
-                    {
-                        throw;
-                    }
-                    catch (Exception exception)
-                    {
-                        throw new AssertionException(
-                            $"Owned admission preparation failed ({exception.GetType().Name}).",
-                            exception
-                        );
-                    }
-                },
-                composeKafka: composeKafka,
-                offlineKafka: offlineKafka
-            );
-            // Preparation owns the database and policy gate before worker launch. Initial bind
-            // recovery may replace worker endpoints; publish the final request before admission.
-            suite.Request = CdcFixtureRequests.WithWorkerEndpoints(
-                suite.Request,
-                suite.Infrastructure.ConnectEndpoint,
-                await suite.Infrastructure.MetricsEndpointAsync(cancellationToken)
-            );
+            await start(suite);
             return suite;
         }
         catch
         {
-            await suite.DisposeAsync();
+            await CdcFixtureStartupCleanup.DisposeAsync(suite);
             throw;
         }
     }
