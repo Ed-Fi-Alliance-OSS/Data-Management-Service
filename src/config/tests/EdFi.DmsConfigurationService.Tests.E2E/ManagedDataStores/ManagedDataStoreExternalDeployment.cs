@@ -12,7 +12,10 @@ using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.Services;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Tests.E2E.ManagedDataStores;
@@ -36,9 +39,22 @@ internal sealed class ManagedDataStoreExternalDeployment : IAsyncDisposable
     private TaskCompletionSource _listening = new(TaskCreationOptions.RunContinuationsAsynchronously);
     private Process? _process;
     private bool _created;
+    private IReadOnlyDictionary<string, string> _provisioning = new Dictionary<string, string>();
     public Uri BaseAddress { get; }
     public string ClientSecret { get; }
     public string Output => string.Join('\n', _output);
+
+    public void ConfigureProvisioning(IReadOnlyDictionary<string, string> configuration)
+    {
+        _provisioning = configuration;
+    }
+
+    public string? DecryptConnection(byte[] encrypted) =>
+        new ConnectionStringEncryptionService(
+            Options.Create(
+                new DatabaseOptions { DatabaseConnection = _connectionString, EncryptionKey = _encryptionKey }
+            )
+        ).Decrypt(encrypted);
 
     private ManagedDataStoreExternalDeployment(bool mssql, string admin, string application)
     {
@@ -189,6 +205,10 @@ internal sealed class ManagedDataStoreExternalDeployment : IAsyncDisposable
             ["Serilog__WriteTo__0__Args__path"] = Path.Combine(_directory, "cms.log"),
         };
         foreach (var pair in configuration)
+        {
+            start.Environment[pair.Key] = pair.Value;
+        }
+        foreach (var pair in _provisioning)
         {
             start.Environment[pair.Key] = pair.Value;
         }
