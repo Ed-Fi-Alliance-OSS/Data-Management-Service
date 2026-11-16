@@ -15,9 +15,12 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 public class Given_PlanWriteBatchingConventions
 {
     [TestCase(SqlDialect.Mssql, 1, 1000, 2098)]
+    [TestCase(SqlDialect.Mssql, 2, 1000, 2098)]
     [TestCase(SqlDialect.Mssql, 3, 699, 2098)]
     [TestCase(SqlDialect.Mssql, 2098, 1, 2098)]
     [TestCase(SqlDialect.Pgsql, 1, 1000, 65535)]
+    [TestCase(SqlDialect.Pgsql, 65, 1000, 65535)]
+    [TestCase(SqlDialect.Pgsql, 66, 992, 65535)]
     [TestCase(SqlDialect.Pgsql, 100, 655, 65535)]
     [TestCase(SqlDialect.Pgsql, 65535, 1, 65535)]
     public void It_should_compute_dialect_aware_batching_info(
@@ -38,6 +41,8 @@ public class Given_PlanWriteBatchingConventions
     }
 
     [TestCase(SqlDialect.Mssql, 0)]
+    [TestCase(SqlDialect.Mssql, -1)]
+    [TestCase(SqlDialect.Pgsql, 0)]
     [TestCase(SqlDialect.Pgsql, -1)]
     public void It_should_fail_fast_when_parameters_per_row_is_less_than_one(
         SqlDialect dialect,

@@ -135,6 +135,7 @@ public class ValidateEqualityConstraintMiddlewareTests
     public class Given_An_Invalid_Body_With_Not_Equal_School_Ids : ValidateEqualityConstraintMiddlewareTests
     {
         private RequestInfo _requestInfo = No.RequestInfo();
+        private int _nextCalls;
 
         [SetUp]
         public async Task Setup()
@@ -186,13 +187,44 @@ public class ValidateEqualityConstraintMiddlewareTests
                 }
             }
 
-            await Middleware().Execute(_requestInfo, Next());
+            _nextCalls = 0;
+            await Middleware()
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
         }
 
         [Test]
         public void It_returns_status_400()
         {
             _requestInfo?.FrontendResponse.StatusCode.Should().Be(400);
+        }
+
+        [Test]
+        public void It_does_not_continue_the_pipeline()
+        {
+            _nextCalls.Should().Be(0);
+        }
+
+        [Test]
+        public void It_preserves_the_failure_response_contract()
+        {
+            var body = _requestInfo.FrontendResponse.Body!;
+            body["detail"]!
+                .GetValue<string>()
+                .Should()
+                .Be("Data validation failed. See 'validationErrors' for details.");
+            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:api:bad-request:data-validation-failed");
+            body["title"]!.GetValue<string>().Should().Be("Data Validation Failed");
+            body["status"]!.GetValue<int>().Should().Be(400);
+            body["correlationId"]!.GetValue<string>().Should().Be("traceId");
+            body["errors"]!.AsArray().Should().BeEmpty();
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
         }
 
         [Test]
