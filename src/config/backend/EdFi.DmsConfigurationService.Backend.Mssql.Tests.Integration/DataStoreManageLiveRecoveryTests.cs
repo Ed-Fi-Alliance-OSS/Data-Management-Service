@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Net;
 using System.Net.Http.Json;
 using Dapper;
@@ -15,14 +16,17 @@ using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.Tests.Unit.ManagedDataStores;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configuration;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Time.Testing;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 
@@ -142,6 +146,21 @@ public partial class Given_data_store_namespace_reservations
         string templateName
     )
     {
+        await VerifyLiveRecovery(templateName, false);
+    }
+
+    [
+        TestCase("Minimal"),
+        TestCase("Sample"),
+        Category("DataStoreManageMixedRecovery"),
+        Category("DmsProvisioning")
+    ]
+    public Task It_recovers_mixed_catalog_and_target_and_reads_with_published_runtime_credentials(
+        string templateName
+    ) => VerifyLiveRecovery(templateName, true);
+
+    private async Task VerifyLiveRecovery(string templateName, bool mixedCatalog)
+    {
         _ = RequireAdmissionEndpoint();
         if (!RealTemplatePackage.IsConfigured)
         {
@@ -149,6 +168,9 @@ public partial class Given_data_store_namespace_reservations
                 "DMS_TEMPLATE_PACKAGE_DIRECTORY is required for live managed recovery."
             );
         }
+        await using var alternate = mixedCatalog
+            ? await ManagedDataStoreMixedCatalog.CreateAsync(false)
+            : null;
         DmsDatabaseTemplate.TryFromWireValue(templateName, out var template).Should().BeTrue();
         var package = RealTemplatePackage.Find(
             "mssql",
@@ -159,14 +181,82 @@ public partial class Given_data_store_namespace_reservations
         await using var lane = await Lane.BuildAsync(package, template!, new LaneHooks());
         string login = await CreateLiveRuntimeLogin();
         string runtime = LiveRuntimeConnection(login);
+        async Task<DbConnection> OpenCatalog() =>
+            alternate is null ? await Open() : await alternate.OpenAsync();
+        async Task<ManagedDataStoreRow> ReadRow(int id)
+        {
+            await using var connection = await OpenCatalog();
+            return await connection.QuerySingleAsync<ManagedDataStoreRow>(
+                """SELECT * FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+                new { Id = id }
+            );
+        }
+        async Task RetryDue(string jobId)
+        {
+            if (alternate is null)
+            {
+                await MakeLiveRetryDue(jobId);
+                return;
+            }
+            await using var connection = await alternate.OpenAsync();
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."Job" SET "NextAttemptAt" = CURRENT_TIMESTAMP - INTERVAL '1 second' WHERE "JobId" = @JobId;""",
+                new { JobId = jobId }
+            );
+        }
+        WebApplicationFactory<Program> Host(int? failFinalizationOf = null, bool delete = false)
+        {
+            if (alternate is null)
+            {
+                return LiveRecoveryHost(lane, runtime, failFinalizationOf, delete);
+            }
+            return LiveRecoveryHost(lane, runtime)
+                .WithWebHostBuilder(builder =>
+                {
+                    builder.UseSetting("AppSettings:Datastore", alternate.Provider);
+                    builder.UseSetting("DatabaseSettings:DatabaseConnection", alternate.ConnectionString);
+                    if (failFinalizationOf is { } id)
+                    {
+                        builder.ConfigureServices(services =>
+                            services.AddSingleton<IJobFenceFactory>(
+                                new LiveFinalizationFault(
+                                    new Backend.Postgresql.Jobs.PostgresqlJobFenceFactory(
+                                        Options.Create(
+                                            new DatabaseOptions
+                                            {
+                                                DatabaseConnection = alternate.ConnectionString,
+                                                EncryptionKey = PublicationOptions.Value.EncryptionKey,
+                                            }
+                                        ),
+                                        PublicationTimings
+                                    ),
+                                    id,
+                                    delete ? "Deleted" : "Created"
+                                )
+                            )
+                        );
+                    }
+                });
+        }
         TestDatabase? targetCleanup = null;
         try
         {
             int id;
             // Acceptance uses the real HTTP route, administrative snapshot and aggregate/job transaction.
-            using (var host = LiveRecoveryHost(lane, runtime))
+            using (var host = Host())
             using (var client = ManagedClient(host))
             {
+                if (alternate is not null)
+                {
+                    using var scope = host.Services.CreateScope();
+                    scope
+                        .ServiceProvider.GetRequiredService<Backend.Repositories.IDataStoreManageRepository>()
+                        .Should()
+                        .BeOfType<Backend.Postgresql.Repositories.DataStoreManageRepository>();
+                    host.Services.GetRequiredService<IJobFenceFactory>()
+                        .Should()
+                        .BeOfType<Backend.Postgresql.Jobs.PostgresqlJobFenceFactory>();
+                }
                 var response = await client.PostAsJsonAsync(
                     "/v3/dataStores/manage",
                     new
@@ -178,8 +268,8 @@ public partial class Given_data_store_namespace_reservations
                 response.StatusCode.Should().Be(HttpStatusCode.Accepted);
                 id = int.Parse(response.Headers.Location!.Segments[^1]);
             }
-            var accepted = await LiveRow(id);
-            using var cacheHost = LiveRecoveryHost(lane, runtime);
+            var accepted = await ReadRow(id);
+            using var cacheHost = Host();
             using var cacheClient = ManagedClient(cacheHost);
             var clock = new FakeTimeProvider();
             var tokens = A.Fake<IConfigurationServiceTokenHandler>();
@@ -201,11 +291,12 @@ public partial class Given_data_store_namespace_reservations
             );
             (await discovery.LoadDataStores()).Count.Should().Be(0);
             var aggregate = accepted.Restore(ProtectedDatabaseNames.Create("cms", []));
+            aggregate.Endpoint.Provider.Should().Be("mssql");
             var target = aggregate.TargetName;
             targetCleanup = new TestDatabase(target.Value);
             DmsInstanceIdentity createdInstance;
 
-            using (var host = LiveRecoveryHost(lane, runtime, id))
+            using (var host = Host(id))
             using (var client = ManagedClient(host))
             {
                 var claim = await LiveClaim(host, accepted.CreateJobId, 1);
@@ -216,14 +307,14 @@ public partial class Given_data_store_namespace_reservations
                 ((LiveFinalizationFault)host.Services.GetRequiredService<IJobFenceFactory>())
                     .Fired.Should()
                     .BeTrue();
-                var failed = await LiveRow(id);
+                var failed = await ReadRow(id);
                 failed.Status.Should().Be("CreateFailed");
                 failed.DataStoreId.Should().BeNull();
                 failed
                     .Restore(ProtectedDatabaseNames.Create("cms", []))
                     .PinnedArtifact.Should()
                     .Be(lane.Request.PinnedArtifact);
-                await using var catalog = await Open();
+                await using var catalog = await OpenCatalog();
                 (await catalog.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
                     .Should()
                     .Be(0);
@@ -234,9 +325,9 @@ public partial class Given_data_store_namespace_reservations
             }
 
             // A new host and executor load the persisted pin and identity; no state is replayed in memory.
-            await MakeLiveRetryDue(accepted.CreateJobId);
+            await RetryDue(accepted.CreateJobId);
             int catalogId;
-            using (var host = LiveRecoveryHost(lane, runtime))
+            using (var host = Host())
             using (var client = ManagedClient(host))
             {
                 var claim = await LiveClaim(host, accepted.CreateJobId, 2);
@@ -244,8 +335,20 @@ public partial class Given_data_store_namespace_reservations
                     .Services.GetRequiredService<JobExecutor>()
                     .ExecuteAsync(claim, default);
                 result.Outcome.Should().Be(JobExecutionOutcome.Completed);
-                var created = await LiveRow(id);
+                var created = await ReadRow(id);
                 created.Status.Should().Be("Created");
+                created.PinnedProvider.Should().Be("mssql");
+                if (alternate is not null)
+                {
+                    await using var unusedCatalog = await Open();
+                    (
+                        await unusedCatalog.ExecuteScalarAsync<int>(
+                            """SELECT COUNT(*) FROM dmscs."DataStore";"""
+                        )
+                    )
+                        .Should()
+                        .Be(0);
+                }
                 catalogId = created.DataStoreId!.Value;
                 created.ExpectedSourceIdentity.Should().Be(accepted.ExpectedSourceIdentity);
                 created
@@ -257,7 +360,7 @@ public partial class Given_data_store_namespace_reservations
                     .BeOfType<DmsLiveTargetState.Present>()
                     .Subject.Instance.Should()
                     .Be(createdInstance);
-                await using var catalog = await Open();
+                await using var catalog = await OpenCatalog();
                 (await catalog.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
                     .Should()
                     .Be(1);
@@ -288,8 +391,8 @@ public partial class Given_data_store_namespace_reservations
                     .Be(HttpStatusCode.NoContent);
             }
 
-            var deleting = await LiveRow(id);
-            using (var host = LiveRecoveryHost(lane, runtime, id, delete: true))
+            var deleting = await ReadRow(id);
+            using (var host = Host(id, delete: true))
             using (var client = ManagedClient(host))
             {
                 var claim = await LiveClaim(host, deleting.DeleteJobId!, 1);
@@ -300,20 +403,20 @@ public partial class Given_data_store_namespace_reservations
                 ((LiveFinalizationFault)host.Services.GetRequiredService<IJobFenceFactory>())
                     .Fired.Should()
                     .BeTrue();
-                var failed = await LiveRow(id);
+                var failed = await ReadRow(id);
                 failed.Status.Should().Be("DeleteFailed");
                 failed.DataStoreId.Should().Be(catalogId);
                 (await lane.Engine.InspectAsync(target, default))
                     .Should()
                     .BeOfType<DmsLiveTargetState.Absent>();
-                await using var catalog = await Open();
+                await using var catalog = await OpenCatalog();
                 (await catalog.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
                     .Should()
                     .Be(1);
             }
 
-            await MakeLiveRetryDue(deleting.DeleteJobId!);
-            using (var host = LiveRecoveryHost(lane, runtime))
+            await RetryDue(deleting.DeleteJobId!);
+            using (var host = Host())
             using (var client = ManagedClient(host))
             {
                 var claim = await LiveClaim(host, deleting.DeleteJobId!, 2);
@@ -321,7 +424,7 @@ public partial class Given_data_store_namespace_reservations
                     .Services.GetRequiredService<JobExecutor>()
                     .ExecuteAsync(claim, default);
                 result.Outcome.Should().Be(JobExecutionOutcome.Completed);
-                var deleted = await LiveRow(id);
+                var deleted = await ReadRow(id);
                 deleted.Status.Should().Be("Deleted");
                 deleted.DataStoreId.Should().BeNull();
                 deleted.HistoricalDataStoreId.Should().Be(catalogId);
@@ -329,7 +432,7 @@ public partial class Given_data_store_namespace_reservations
                 (await lane.Engine.InspectAsync(target, default))
                     .Should()
                     .BeOfType<DmsLiveTargetState.Absent>();
-                await using var catalog = await Open();
+                await using var catalog = await OpenCatalog();
                 (await catalog.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
                     .Should()
                     .Be(0);
