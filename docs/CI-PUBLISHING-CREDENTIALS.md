@@ -38,10 +38,6 @@ token unless a read actually fails without one.
   image tagging; and the release's own `dms-pre-*` or `cs-pre-*` tag for prerelease publishing.
 - The `EdFi.Api.DocumentCacheAdmin` tool is published by `on-prerelease.yml` on the release's own
   `dms-pre-*` tag and promoted by `on-release.yml` on a `v*` tag, in the same `publishing` jobs.
-  `backfill-document-cache-admin.yml` is a one-time, dispatch-only workflow whose `publish` and
-  `promote` jobs run in `publishing` only from the `backfill/document-cache-admin-8.1.0` branch with
-  `publish_package=true`. It is removed after the 8.1.0 backfill; see
-  [The one-time DocumentCacheAdmin backfill](#the-one-time-documentcacheadmin-backfill).
 - Inside those jobs, only the step that pushes, promotes or logs in reads the token. No workflow
   puts a publishing token in workflow-wide or job-wide `env`.
 - `EDFI_BUILD_AGENT_PAT` creates the prerelease tags, and the tag ruleset will let its identity
@@ -98,12 +94,9 @@ In **Settings → Environments**, open or create each environment.
 1. **Required reviewers.** Add the release maintainers' team and turn on **Prevent self-review**,
    so the person who started a run cannot approve it. Before approving, a reviewer checks that the
    run's commit is on `main`, or that its tag points at a commit that was reviewed and merged.
-   The one-time DocumentCacheAdmin backfill run is the exception, with its own check in
-   [its section](#the-one-time-documentcacheadmin-backfill).
    Once this is on, a merge to `main` that publishes a template package waits for this approval.
 2. **Deployment branches and tags: Selected branches and tags.** Add a branch rule for `main` and
    tag rules for `v*`, `dms-pre-*` and `cs-pre-*`.
-   The backfill adds a temporary branch rule for its own branch, and removes it afterwards.
 3. Turn off **Allow administrators to bypass configured protection rules**.
 
 `release-automation`:
@@ -220,103 +213,6 @@ keeps the original commit. What to do depends on whether that commit includes th
     change.
 - **A run waiting for approval.** A reviewer approves it under **Deployments**, or rejects it.
 
-## The one-time DocumentCacheAdmin backfill
-
-`EdFi.Api.DocumentCacheAdmin` 8.1.0 was released before the tool's release jobs existed.
-`backfill-document-cache-admin.yml` publishes it once.
-It builds the commit it is dispatched from at version 8.1.0, and refuses unless that commit's build
-inputs equal those of `v8.1.0`, the tool README excepted.
-Main's build inputs have changed since `v8.1.0`, so the workflow publishes only from the
-`backfill/document-cache-admin-8.1.0` branch: main plus one commit that restores the inputs of
-`v8.1.0`.
-That branch is neither `main` nor a release tag, so it gets its own protection for the backfill,
-which the last step removes.
-A release maintainer runs it:
-
-1. Before creating the branch, protect it and let it deploy to `publishing`:
-   - In **Settings → Rules → Rulesets**, add a branch ruleset that targets exactly
-     `backfill/document-cache-admin-8.1.0`.
-     Turn on **Restrict creations**, **Restrict updates** and **Restrict deletions**, and put only
-     the release maintainers on its bypass list, so only they can create, move or delete the branch.
-   - If the `publishing` environment's **Deployment branches and tags** setting is **Selected
-     branches and tags**, as setup step 1 makes it, add a branch rule for exactly
-     `backfill/document-cache-admin-8.1.0`.
-     Without it GitHub fails the `publish` and `promote` jobs at their deployment, and an approval
-     cannot override that.
-     While the setting is **No restriction**, add nothing.
-2. Create the branch from a clean checkout of the main commit that includes the workflow:
-
-   ```shell
-   git fetch origin main --tags
-   git switch -c backfill/document-cache-admin-8.1.0 origin/main
-   pwsh -NoProfile -Command "Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1; Restore-DocumentCacheAdminBackfillSource -ReleaseTag v8.1.0 -InformationAction Continue"
-   git -c core.hooksPath=/dev/null commit --no-verify -m "Restore the v8.1.0 build inputs for the DocumentCacheAdmin backfill"
-   git push origin backfill/document-cache-admin-8.1.0
-   ```
-
-   `Restore-DocumentCacheAdminBackfillSource` stages the `v8.1.0` version of every build input that
-   differs, removes inputs added since, and leaves the workflows and the tool README as main has them.
-   It refuses, restoring nothing, when an untracked or ignored file is in the way.
-   The commit runs no hooks, because the repository's pre-commit hook reformats staged C# files and
-   the commit must hold the tag's files exactly.
-   Check that each run below names the commit you pushed.
-3. Start a dry run first:
-
-   ```shell
-   gh workflow run backfill-document-cache-admin.yml --ref backfill/document-cache-admin-8.1.0 -f release_tag=v8.1.0 -f publish_package=false
-   ```
-
-   The build, SBOM and provenance jobs must pass. The build job's `Require the build inputs of the
-   release tag` step must log that the build inputs equal those of `v8.1.0` and name no differing
-   input; when inputs differ, it names each one and the run stops there. The `publish`, `promote`,
-   `attach` and `verify` jobs are skipped.
-4. Start the publishing run:
-
-   ```shell
-   gh workflow run backfill-document-cache-admin.yml --ref backfill/document-cache-admin-8.1.0 -f release_tag=v8.1.0 -f publish_package=true
-   ```
-
-   The `publish` and `promote` jobs run in the `publishing` environment and wait for its approval
-   if the environment requires one.
-   The run's commit is neither on `main` nor tagged, so a reviewer approves it only when it is the
-   branch's commit, its parent is on `main`, and it is exactly that parent with the restore applied.
-   From a clone of the repository, with `<run-id>` taken from the run's URL:
-
-   ```shell
-   git fetch origin main backfill/document-cache-admin-8.1.0 --tags
-   test "$(gh run view <run-id> -R Ed-Fi-Alliance-OSS/Data-Management-Service --json headSha --jq .headSha)" = "$(git rev-parse origin/backfill/document-cache-admin-8.1.0)" && echo "The run's commit is the branch's."
-   git merge-base --is-ancestor origin/backfill/document-cache-admin-8.1.0~1 origin/main && echo "Its parent is on main."
-   git worktree add --detach ../backfill-check origin/backfill/document-cache-admin-8.1.0~1
-   cd ../backfill-check
-   pwsh -NoProfile -Command "Import-Module ./eng/ci/DocumentCacheAdminBackfill.psm1; Restore-DocumentCacheAdminBackfillSource -ReleaseTag v8.1.0"
-   git diff --cached --quiet origin/backfill/document-cache-admin-8.1.0 && echo "It is exactly the restore."
-   cd - && git worktree remove --force ../backfill-check
-   ```
-
-   Reject the run unless all three lines print.
-   `attach` then adds the SBOM and provenance to the `v8.1.0` release, and `verify` installs 8.1.0
-   from the Release view, as the tool README documents, and runs its help.
-5. If a job fails, use **Re-run failed jobs** in the same run while GitHub still retains its
-   artifacts. A new dispatch builds new package bytes, so it refuses once the version is on the
-   feed.
-6. Once the publishing run passes, delete the workflow, `eng/ci/DocumentCacheAdminBackfill.psm1`,
-   `eng/ci/tests/DocumentCacheAdminBackfill.Tests.ps1`, the backfill `Describe` in
-   `eng/ci/tests/ReleasePublishingCredentials.Tests.ps1`, the test file's entry in the Pester
-   allowlist in `on-dms-pullrequest.yml`, the backfill lines elsewhere on this page, and this
-   section. Keep `eng/ci/release-assets.psm1`, which the release workflows also use.
-   The provenance names the branch's commit, so replace the branch with a tag on that commit instead
-   of only deleting it.
-   The tag name must not start with `v`, because every tag trigger matches `v*.*.*`:
-
-   ```shell
-   git tag document-cache-admin-backfill-8.1.0 origin/backfill/document-cache-admin-8.1.0
-   git push origin document-cache-admin-backfill-8.1.0
-   git push origin --delete backfill/document-cache-admin-8.1.0
-   ```
-
-   Then delete the branch ruleset from step 1 and, if you added it, the `publishing` branch rule for
-   `backfill/document-cache-admin-8.1.0`.
-
 ## Read-only inspection
 
 These commands only read settings, and none of them print a secret value:
@@ -333,7 +229,7 @@ gh secret list --env publishing -R Ed-Fi-Alliance-OSS/Data-Management-Service
 gh secret list --env release-automation -R Ed-Fi-Alliance-OSS/Data-Management-Service
 gh api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/actions/organization-secrets --jq '.secrets[].name'
 
-# Rulesets, for tags and for the backfill branch
+# Tag rulesets
 gh api repos/Ed-Fi-Alliance-OSS/Data-Management-Service/rulesets
 
 # Variables
@@ -366,7 +262,6 @@ Each check starts a workflow, so run it only once you are authorized to.
    gh workflow run on-prerelease.yml --ref <scratch-branch>
    gh workflow run "Pkg EdFi.Api.SecurityMetadataTools.yml" --ref <scratch-branch> -f publish_package=true
    gh workflow run "Pkg EdFi.Api.Sdk.yml" --ref <scratch-branch> -f publish_package=true
-   gh workflow run backfill-document-cache-admin.yml --ref <scratch-branch> -f release_tag=v8.1.0 -f publish_package=true
    gh workflow run EdFi.Api.Minimal.Template.PostgreSQL.yml --ref <scratch-branch> -f publish_package=true
    gh workflow run scheduled-merge-queue-enqueue.yml --ref <scratch-branch>
    ```
