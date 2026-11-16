@@ -816,6 +816,7 @@ public class ResourceActionAuthorizationMiddlewareTests
     public class Given_Claim_Set_Provider_Throws : ResourceActionAuthorizationMiddlewareTests
     {
         private FrontendResponse _response = null!;
+        private int _nextCalls;
 
         [SetUp]
         public async Task Setup()
@@ -845,7 +846,15 @@ public class ResourceActionAuthorizationMiddlewareTests
                 },
             };
 
-            await middleware.Execute(_requestInfo, NullNext);
+            _nextCalls = 0;
+            await middleware.Execute(
+                _requestInfo,
+                () =>
+                {
+                    _nextCalls++;
+                    return Task.CompletedTask;
+                }
+            );
 
             _response = (FrontendResponse)_requestInfo.FrontendResponse;
         }
@@ -854,6 +863,12 @@ public class ResourceActionAuthorizationMiddlewareTests
         public void It_returns_the_expected_500_body()
         {
             AssertExpectedServerErrorResponse(_response, "Error while authorizing the request.", "traceId");
+        }
+
+        [Test]
+        public void It_does_not_continue_after_the_provider_failure()
+        {
+            _nextCalls.Should().Be(0);
         }
     }
 
@@ -1473,6 +1488,46 @@ public class ResourceActionAuthorizationMiddlewareTests
 
     [TestFixture]
     [Parallelizable]
+    public class Given_Case_Variants_Of_A_Matched_Claim_Without_Strategies
+        : ResourceActionAuthorizationMiddlewareTests
+    {
+        [Test]
+        public async Task It_reports_distinct_claim_uris_in_ordinal_order()
+        {
+            string lowerUri = $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/school";
+            string upperUri = $"{Conventions.EdFiOdsResourceClaimBaseUri}/ed-fi/SCHOOL";
+            var requestInfo = CreateRequestInfo(RequestMethod.GET, "ed-fi/schools");
+            int nextCalls = 0;
+
+            await MiddlewareWithClaimSets(
+                    new ClaimSet(
+                        "SIS-Vendor",
+                        [
+                            new ResourceClaim(lowerUri, "Read", []),
+                            new ResourceClaim(upperUri, "Read", []),
+                            new ResourceClaim(lowerUri, "Read", []),
+                        ]
+                    )
+                )
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            nextCalls.Should().Be(0);
+            AssertExpectedSecurityConfigurationResponse(
+                requestInfo.FrontendResponse,
+                $"No authorization strategies were defined for the requested action 'Read' against resource URIs ['{upperUri}', '{lowerUri}'] matched by the caller's claim '{upperUri}'."
+            );
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
     public class Given_Relational_Get_Many_With_No_Authorization_Strategies
         : ResourceActionAuthorizationMiddlewareTests
     {
@@ -1553,6 +1608,7 @@ public class ResourceActionAuthorizationMiddlewareTests
         : ResourceActionAuthorizationMiddlewareTests
     {
         [TestCase("GET", "Read", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
+        [TestCase("PUT", "Update", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
         [TestCase("DELETE", "Delete", "ed-fi/schools/11111111-1111-1111-1111-111111111111")]
         public async Task It_returns_security_configuration_problem_details(
             string requestMethodName,
@@ -1566,9 +1622,20 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Create()
                 .CreateSupportedMappingSet(SqlDialect.Pgsql);
 
-            await NoAuthStrategyMiddleware(action).Execute(_requestInfo, NullNext);
+            int nextCalls = 0;
+            await NoAuthStrategyMiddleware(action)
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
 
+            nextCalls.Should().Be(0);
             _requestInfo.FrontendResponse.StatusCode.Should().Be(500);
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
             _requestInfo
                 .FrontendResponse.Body?["type"]?.GetValue<string>()
@@ -1652,6 +1719,8 @@ public class ResourceActionAuthorizationMiddlewareTests
     [Parallelizable]
     public class Given_Relational_Get_Many_With_No_Matching_Claim : ResourceActionAuthorizationMiddlewareTests
     {
+        private int _nextCalls;
+
         [SetUp]
         public async Task Setup()
         {
@@ -1665,8 +1734,16 @@ public class ResourceActionAuthorizationMiddlewareTests
                 .Create()
                 .CreateSupportedMappingSet(SqlDialect.Pgsql);
 
+            _nextCalls = 0;
             await Middleware("Read", AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)
-                .Execute(_requestInfo, NullNext);
+                .Execute(
+                    _requestInfo,
+                    () =>
+                    {
+                        _nextCalls++;
+                        return Task.CompletedTask;
+                    }
+                );
         }
 
         [Test]
@@ -1674,6 +1751,14 @@ public class ResourceActionAuthorizationMiddlewareTests
         {
             _requestInfo.FrontendResponse.StatusCode.Should().Be(403);
             _requestInfo.FrontendResponse.ContentType.Should().Be("application/problem+json");
+            _requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+            _requestInfo
+                .FrontendResponse.Body!.ToJsonString()
+                .Should()
+                .Be(FailureResponse.ForForbidden(new TraceId("traceId"), errors: []).ToJsonString());
+            _requestInfo.ResourceActionAuthStrategies.Should().BeEmpty();
+            _requestInfo.UpsertActionPolicies.Should().BeNull();
+            _nextCalls.Should().Be(0);
         }
     }
 

@@ -4,6 +4,10 @@ Run Stryker.NET directly from the owning unit-test directory. Named configuratio
 select one production assembly and a behavior-focused source scope. The five existing
 `stryker-config.json` files remain available for exploratory runs and are unchanged.
 
+These configurations run manually. PR CI runs the ordinary NUnit tests, including
+the regression tests added through this work; it does not invoke Stryker or enforce
+a mutation-score gate.
+
 ## Prerequisites and commands
 
 - .NET 10 SDK and access to the repository's configured NuGet feeds.
@@ -45,8 +49,8 @@ begins; pending rows are planned targets, not qualified runs.
 
 | Area / target | Owning unit-test directory | Configuration | Status |
 | --- | --- | --- | --- |
-| 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Prepared; full target pending |
-| 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Pending |
+| 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
+| 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Prepared; baseline pending |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Pending |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Pending |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Pending |
@@ -99,6 +103,76 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Decimal pilot (`Validation/DecimalValidator.cs`) | 5.0.0 | 100.00% → same 3 killed in full-target rerun; **31 compile errors** | 4m56s / included in full target | `StrykerOutput/2026-11-16.16-47-59/reports/` (pilot); `StrykerOutput/2026-11-16.17-05-10/reports/` (full rerun) |
 | Batching pilot (`PlanWriteBatchingConventions.cs`) | 5.0.0 | 93.33% → 93.33% | 4m31s / 4m36s | `StrykerOutput/2026-11-16.16-58-30/reports/` → `StrykerOutput/2026-11-16.17-10-23/reports/` |
 | Full `dms-validation` (five configured files) | 5.0.0 | 65.85% → 71.95% | 4m49s / 4m58s | `StrykerOutput/2026-11-16.16-53-30/reports/` → `StrykerOutput/2026-11-16.17-05-10/reports/` |
+| Claim-set pilot (`Security/ClaimSetResolver.cs`) | 5.0.0 | 85.00% baseline | 4m58s | `StrykerOutput/2026-11-16.17-15-38/reports/` |
+| Full `dms-request-auth` (three configured files) | 5.0.0 | 63.31% → 67.63% | 5m43s / 5m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
+
+### Request authorization triage
+
+The full baseline contains 88 killed, 38 survived, 13 uncovered, 16 compile errors,
+and 41 ignored mutants in the three declared files. The full rerun has 94 killed,
+32 survived, 13 uncovered, the same 16 compile errors and 41 ignored, with no timeouts.
+All six actionable survivors below are confirmed killed by matching file, location,
+operator, and replacement. The focused
+authorization tests passed 154 cases after strengthening the assertions, and the
+complete Core suite passed 10,027 tests before the mutation rerun.
+
+Verified changes in `ResourceActionAuthorizationMiddleware.cs`:
+
+- Lines 148, 271, and 461: removing the exception-handler return or changing a
+  no-strategies failure to success can continue the pipeline while retaining a 500
+  response. Provider-failure and GET/PUT/DELETE strategy-metadata tests now assert no
+  continuation, in addition to their response contracts.
+- Lines 113 and 246: bypassing the no-matching-claim rejection changes the response
+  to an action-specific denial. The unmatched-claim test now pins the generic error
+  body, empty policy output, headers, and zero continuations.
+- Line 468: reversing the ordinal claim-URI sort survived. A case-variant matching
+  catalog now verifies the complete error, distinct URI order, and chosen claim name.
+
+Policy conversion also has explicit Create-only, Update-only, and both-permitted
+cases, with distinct complete evaluator arrays. Existing tests cover both denied
+(the first middleware refuses before conversion), missing strategy metadata,
+cancellation propagation, and preservation of the shared authenticated record.
+
+The 45 remaining survived/uncovered mutations retain these dispositions:
+
+- Ordinary entry/retrieval/debug logging and `Debug.Assert` behavior are diagnostic;
+  the latter's argument mutations are not executed in Release.
+- The POST entry in `_methodToActionNameMapping` is used only for missing-metadata
+  diagnostics. POST authorization selects its two action constants directly.
+- Removing the early empty-resource-claims return (line 104), or changing its helper
+  result to true (line 214), still reaches the empty matching-claims rejection and
+  the identical generic 403 without continuation. These are equivalent for callers.
+- The resolver's three survivors have the dispositions described below.
+- The filter-conversion catch body requires malformed internal strategy evidence
+  (for example, a null non-nullable strategy collection). Valid evidence only creates
+  evaluator records. Its four uncovered mutations are outside the input contract.
+- The resolver result switch is exhaustive over its closed variants; matched-claim
+  URIs cannot all be null after matching the non-null resource URI. Their defensive
+  throw mutations are unreachable for supported inputs. `UNSUPPORTED` HTTP methods
+  terminate in MethodNotAllowedMiddleware before reaching resource authorization.
+
+### Claim-set pilot triage
+
+The focused resolver run has 17 killed, 3 survived, 6 compile errors, 2 ignored, and
+no uncovered or timed-out mutants. Existing tests detect changes to ambiguity,
+matching duplicate metadata, unrelated duplicates, scope precedence, literal legacy
+names, and case-independent resolution. The remaining changes are equivalent for
+supported metadata and current consumers:
+
+- `ClaimSetResolver.cs:65`, removing the empty-candidate early return, still reaches
+  `NoMatch` after matching zero records. Enumerating the already-loaded catalog is
+  unnecessary work but does not alter authorization.
+- Both changes at line 126 (`condition` → `true`, `Length > 0` → `Length >= 0`) return
+  `[""]` instead of `[]` when both scope values and the legacy name are absent.
+  CMS's `ClaimSetCommandValidator` and copy validator prohibit empty metadata names,
+  so either candidate list matches no supported claim set. Every other consumer of
+  `GetCandidates` joins the values for diagnostics, producing the same empty text.
+  Do not invent an empty-name metadata record or assert a private collection shape
+  just to kill these mutants.
+
+The six compile errors include invalid `Count` → `Sum` access and comparisons rolled
+back with it. This is a single-file baseline, not a result for the authorization
+middleware or the full target.
 
 ### Decimal pilot instrumentation limitation
 
