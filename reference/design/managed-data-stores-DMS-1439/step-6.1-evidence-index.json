@@ -1,0 +1,210 @@
+{
+  "sourceCommit": "919872aae1293beff20a412cb5323317f37be7c1",
+  "auditDate": "2026-11-15",
+  "meaning": "Retained local TRX evidence inspected during the audit; no new test execution. Runs overlap and counts must not be summed as unique coverage. Raw artifacts are local, not CI evidence.",
+  "specSha256": "0deda56ca66aecffb4e184cb7acc1c4d770ee7dfc3248e07ab47bfb2792098ac",
+  "openApiSha256": "f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b",
+  "jiraAcTextMatches": 17,
+  "runs": [
+    {
+      "id": "E01",
+      "artifact": "step-6.1/postgresql-live",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "cd61ebbed3b0649e563946a5a31f1b2743c74df51e89b999db6a8769da5af74e"
+    },
+    {
+      "id": "E02",
+      "artifact": "step-6.1/Mssql-sql2025-live-1f02b1808316437bb5dbacc77d72f0fc",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "93bef6dfb6aef0e598ef0b098fb3cdb184fcf5c3eff4da271d3409039edc55f3"
+    },
+    {
+      "id": "E03",
+      "artifact": "step-6.1-process/Postgresql-43a394fe21ed406d91612323619059bb",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "b78ea9af374531dce42f061cc8d9f74e0db92002525e0665aefb0c6fe0f1bc4b"
+    },
+    {
+      "id": "E04",
+      "artifact": "step-6.1/Mssql-sql2025-live-258e6ea2e989423c92b6acc9bb75b0d1",
+      "passed": 8,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "833214fd70c8aaca58e532aab4f482402544eec0d3a41d00e51c30482cfd2d71"
+    },
+    {
+      "id": "E05",
+      "artifact": "step-6.1-process/Postgresql-487a5b2105b04385a12f786fed4186e9",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "c50619d5d32856b3f3618075269bbb36d328fabb683780fb34ecbe827dd62593"
+    },
+    {
+      "id": "E06",
+      "artifact": "step-6.1/Mssql-sql2025-live-45722cd3519f4a1f9a447b491c0865fc",
+      "passed": 16,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "bfb69c640322a2a24c1a65d85a1ff49eda4ac745036f28e53f1a0a37efb396e6"
+    },
+    {
+      "id": "E07",
+      "artifact": "step-6.1-process/Postgresql-f1559c298c404550aa3870fe8149aca0",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "f6923681b11871ec631e05e8a7c90ae4a829d2b13a3e9595073d67b5d247b815"
+    },
+    {
+      "id": "E08",
+      "artifact": "step-6.1/Mssql-sql2025-live-cb9e9d7b292e47c3aed37ef7705a4a5f",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "6ae47ebd86317e52e62dd13f5033e77e3c7b86c2c149a442be3302679e61ab7a"
+    },
+    {
+      "id": "E09",
+      "artifact": "step-6.1/Postgresql-g4-ea720c4d3bbf4f35b731ece29ff9fcb5",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "f25b6333e33e467aed0f4369cd7b194baa3a8a85743bde2d5d8a7fe700d2a375"
+    },
+    {
+      "id": "E10",
+      "artifact": "step-6.1/Mssql-g4-966c1b9f54c14a9d852acb0f713f4ef7",
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "48b4d00b47f4e660fafe4f285b87ae1c1b1f21ac50b4b1dd406f2715535d8efa"
+    },
+    {
+      "id": "E11",
+      "artifact": "step-6.1/ExternalHttp-g1a-8bd1878da38c44138166b81b4e612146",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "e22736e906f2ca46d1dec7838ff07a8874062f9a3e949ca3e4202698e25f8fed"
+    },
+    {
+      "id": "E12",
+      "artifact": "step-6.1/ExternalHttp-g1b-e5dbc17f99e9483a89d19043d1bf42e0",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "4e8da35940b8a7cf5b4756d3b582aa0c0afcb0d176569f56d9f72a5632698ff4"
+    },
+    {
+      "id": "E13",
+      "artifact": "step-6.1/ExternalHttp-g1c-d1a5e3e72319434fbd9a6c755bfd35b4",
+      "passed": 4,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "bbf6405501a5e61ee9bc9229dcca4e6aee78f16a972ed695535deac33f429503"
+    },
+    {
+      "id": "E14",
+      "artifact": "step-6.1/ExternalHttp-g1d-7340f15209504203b82cacbda4c87fc7",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "441c9fc56a925036ed71da5ce39564ce38c9299d3a698666795bf0535ea15826"
+    },
+    {
+      "id": "E15",
+      "artifact": "step-6.1/ExternalHttp-g1e-76dfdf0a96e748a0a4b0027d84adff75",
+      "passed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "20530a3d29e2758d8716b1e098b8453daeef35f009bde70137e7bf95dca85a3b"
+    },
+    {
+      "id": "E16",
+      "artifact": "step-5.1/Unit",
+      "passed": 92,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "2cc520d0f62612201f749589865a21e841b1b489797b27e787f34f5567526412"
+    },
+    {
+      "id": "E17",
+      "artifact": "step-5.1/Unit-openapi",
+      "passed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "f55a8e4e33867aad9bfb5803d337e3fe8b99e7a34858d8198cff1de5dae5ee91"
+    },
+    {
+      "id": "E18",
+      "artifact": "step-5.1/Postgresql",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "b0b4fb505a9b5fa372dcec95ad9be6839a810f181304c7f588c0a72e5497a81c"
+    },
+    {
+      "id": "E19",
+      "artifact": "step-5.1/Mssql",
+      "passed": 9,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "e43fed3ffaa799c7b0d9314c7e654580f31cee03fb37454cd5e1895b58ca7ce3"
+    },
+    {
+      "id": "E20",
+      "artifact": "step-5.2-correction/Unit",
+      "passed": 124,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "908d955188443205cbebcb4537a37bce2c4d350d015880158ecb8ef6d2242eb6"
+    },
+    {
+      "id": "E21",
+      "artifact": "step-5.2-correction/Postgresql",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "c8e4ce23fd678d51eb3bd0d5d1a8da50a90cd553b3ae5dae25a01b3587b73491"
+    },
+    {
+      "id": "E22",
+      "artifact": "step-5.2-correction/Mssql",
+      "passed": 5,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "929c7049898406b247d39afadff3485140e2dd71c38d808da5c580bfd46d28f6"
+    },
+    {
+      "id": "E23",
+      "artifact": "step-5.2-abstract-socket/green",
+      "passed": 65,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "e94a951eed04e5e5f7247ccfef966a3dcbec5bbca2861e6350691af8a12ec91c"
+    },
+    {
+      "id": "E24",
+      "artifact": "step-4.0b-retry-fix/sql-seven-physical",
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "c724108d9436a24de1d4e0af382d663dc2e0c58bc9c50af0af7c418b0518a59f"
+    },
+    {
+      "id": "E25",
+      "artifact": "step-4.0b-retry-fix/sql-regression",
+      "passed": 129,
+      "failed": 0,
+      "skipped": 0,
+      "trxSha256": "170ff3ede4e8347bbe6e74e24ed6cb2dd8259c61231579c90819bc7a9569152f"
+    }
+  ]
+}
