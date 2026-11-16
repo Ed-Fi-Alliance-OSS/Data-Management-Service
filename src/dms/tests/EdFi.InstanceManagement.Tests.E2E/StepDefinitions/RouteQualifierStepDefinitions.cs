@@ -389,7 +389,8 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
     {
         using var response = await client.GetByLocationAsync(uri.ToString());
         response.StatusCode.Should().Be(HttpStatusCode.OK, $"{what} should resolve");
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json", $"{what} media type");
+        response.Content.Headers.ContentType.Should().NotBeNull($"{what} must send Content-Type");
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json", $"{what} media type");
         var body = await response.Content.ReadAsStringAsync();
         return JsonDocument.Parse(body);
     }
@@ -493,7 +494,8 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
         var fileUri = DiscoveryUrlAssertions.AssertConcreteContextUrl(fileUrl, discoveryUri);
         using var xsdResponse = await client.GetByLocationAsync(fileUri.ToString());
         xsdResponse.StatusCode.Should().Be(HttpStatusCode.OK, "the advertised core XSD should download");
-        xsdResponse.Content.Headers.ContentType?.MediaType.Should().Be("application/xml");
+        xsdResponse.Content.Headers.ContentType.Should().NotBeNull("the core XSD must send Content-Type");
+        xsdResponse.Content.Headers.ContentType!.MediaType.Should().Be("application/xml");
         var xml = await xsdResponse.Content.ReadAsStringAsync();
         XDocument.Parse(xml).Root!.Name.Should().Be(XName.Get("schema", "http://www.w3.org/2001/XMLSchema"));
     }
@@ -670,6 +672,9 @@ public class RouteQualifierStepDefinitions(InstanceManagementContext context)
     public void ThenTheResponseContentTypeShouldBe(string expectedMediaType)
     {
         context.LastResponse.Should().NotBeNull();
-        context.LastResponse!.Content.Headers.ContentType?.MediaType.Should().Be(expectedMediaType);
+        context
+            .LastResponse!.Content.Headers.ContentType.Should()
+            .NotBeNull("the response must send Content-Type");
+        context.LastResponse.Content.Headers.ContentType!.MediaType.Should().Be(expectedMediaType);
     }
 }
