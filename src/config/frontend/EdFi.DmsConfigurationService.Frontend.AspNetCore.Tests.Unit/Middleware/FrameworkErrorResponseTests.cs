@@ -224,7 +224,7 @@ public class FrameworkErrorResponseTests
             );
     }
 
-    /// <summary>An unmatched, health-lookalike route proves there are no route/health exclusions.</summary>
+    /// <summary>An anonymous health-lookalike route is challenged by the production fallback.</summary>
     [TestFixture]
     public class Given_an_unknown_health_lookalike_route
     {
@@ -250,18 +250,18 @@ public class FrameworkErrorResponseTests
         }
 
         [Test]
-        public void It_returns_the_shaped_not_found_contract() =>
+        public void It_returns_the_shaped_authentication_contract() =>
             AssertShapedContract(
                 _response,
                 _body,
-                HttpStatusCode.NotFound,
-                "urn:ed-fi:management-api:not-found",
-                "Not Found",
-                "The requested resource could not be found."
+                HttpStatusCode.Unauthorized,
+                "urn:ed-fi:management-api:security:authentication",
+                "Authentication Failed",
+                "Authentication is required to access this resource."
             );
     }
 
-    /// <summary>A GET-only route hit with DELETE → routing 405 with an Allow header.</summary>
+    /// <summary>An authenticated DELETE on a GET-only route → routing 405 with an Allow header.</summary>
     [TestFixture]
     public class Given_a_wrong_http_method
     {
@@ -273,8 +273,9 @@ public class FrameworkErrorResponseTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(addTestAuthentication: false);
+            _factory = CreateFactory(addTestAuthentication: true);
             _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
             _response = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/health"));
             _body = await ReadBodyAsync(_response);
         }

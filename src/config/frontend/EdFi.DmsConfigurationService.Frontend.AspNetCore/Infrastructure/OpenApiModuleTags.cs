@@ -9,7 +9,7 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 
 /// <summary>
 /// The single place that names the OpenAPI tag of each endpoint module, in the Ed-Fi Management API
-/// style. MetadataModule maps a RequestDelegate that is not in the document, so it has no entry.
+/// style. MetadataModule explicitly excludes its discovery response from the document, so it has no entry.
 /// </summary>
 public static class OpenApiModuleTags
 {

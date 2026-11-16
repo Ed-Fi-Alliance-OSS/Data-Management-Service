@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Net;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
@@ -56,7 +57,8 @@ public class Given_The_Cms_Pipeline
         string baseAddress,
         string path,
         string? forwardedFromIp = null,
-        string environment = "Test"
+        string environment = "Test",
+        bool authenticated = false
     )
     {
         await using var factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -67,13 +69,22 @@ public class Given_The_Cms_Pipeline
                 UseTestSettings(builder);
             }
             builder.ConfigureServices(collection =>
-                collection.AddSingleton<IStartupFilter, RemoteIpStartupFilter>()
-            );
+            {
+                collection.AddSingleton<IStartupFilter, RemoteIpStartupFilter>();
+                if (authenticated)
+                {
+                    collection.AddTestAuthentication();
+                }
+            });
         });
         using var client = factory.CreateClient(
             new WebApplicationFactoryClientOptions { BaseAddress = new Uri(baseAddress) }
         );
         using var request = new HttpRequestMessage(HttpMethod.Get, path);
+        if (authenticated)
+        {
+            request.Headers.Add("X-Test-Scope", "edfi_admin_api/full_access");
+        }
         if (forwardedFromIp is not null)
         {
             request.Headers.Add("X-Forwarded-Proto", "https");
@@ -185,9 +196,9 @@ public class Given_The_Cms_Pipeline
     }
 
     [Test]
-    public async Task It_marks_an_unmapped_route_404_no_store()
+    public async Task It_marks_an_authenticated_unmapped_route_404_no_store()
     {
-        using var response = await SendAsync("https://cms.example", "/no-such-route");
+        using var response = await SendAsync("https://cms.example", "/no-such-route", authenticated: true);
 
         response.StatusCode.Should().Be(HttpStatusCode.NotFound);
         response.Headers.GetValues("Cache-Control").Should().Equal("no-store");

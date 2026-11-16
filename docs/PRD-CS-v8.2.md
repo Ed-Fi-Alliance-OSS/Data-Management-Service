@@ -34,6 +34,8 @@ Early draft of potential 8.2 requirements.
   controllable so it can be disabled in production deployments that do not
   want to expose API metadata. (Supersedes v8.0 NFR-SEC-4)
 
+- **NFR-SEC-10**: CMS SHALL require authentication on every endpoint by default; anonymous access SHALL be granted only by explicit per-endpoint opt-in, enforced by an automated test of the anonymous route set.
+
 ### 3.2 Reliability and Operations
 
 - **NFR-REL-7**: CS SHOULD expose a health endpoint reflecting the status of
@@ -58,3 +60,11 @@ Early draft of potential 8.2 requirements.
   `secret_expires_on` tracking and rotation tooling, or leave rotation as a
   fully manual, host-driven operation. (Carried over from v8.1; still
   unresolved as of this writing.)
+
+## 5. Known compatibility changes
+
+- Unknown CMS paths return 401 for anonymous callers and 404 for authenticated callers after
+  successful tenant resolution where required. Missing/invalid required tenants retain 400.
+- Wrong-method requests reaching authorization return 401 without Allow for anonymous callers;
+  authenticated callers retain 405 with Allow. Permitted CORS preflight and matched-handler errors
+  remain unchanged. Existing public routes and handler-owned OAuth client authentication are preserved.

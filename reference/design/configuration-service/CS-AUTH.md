@@ -109,7 +109,7 @@ A stock Swagger UI can therefore authorize against the Configuration Service in 
 `/connect/token` answers every failure in the OAuth error format of RFC 6749 section 5.2.
 The body is `application/json` with exactly the root members `error` and `error_description`, written by the same writer as `/connect/revoke` and `/connect/introspect`.
 It covers every error the handler produces and every exception that escapes it.
-Responses produced before the endpoint is selected, such as the `405` for another HTTP method, keep their framework form.
+Requests rejected before a matching handler use the framework Ed-Fi error shaping rather than the handler OAuth contract. After tenant resolution where required, anonymous wrong-method callers receive `401` without `Allow`; authenticated wrong-method callers retain `405` with `Allow`.
 
 | Condition | Status | `error` |
 | --- | --- | --- |
@@ -1653,6 +1653,25 @@ Scope requirements are applied per HTTP method via extension helpers:
 | `MapPublicPost` | Anonymous to framework authorization | `/connect/register/{**contextPath}`, `/connect/token/{**contextPath}`, `/connect/introspect/{**contextPath}`, `/connect/revoke/{**contextPath}`; handler client authentication is preserved |
 
 `MapPublic` remains a forwarding alias for `MapPublicGet`. The framework-owned `GET /openapi/{documentName}.json` mapping uses `MapOpenApi().AllowAnonymous()` explicitly. Public helpers retain chained OAuth, client-credential, bearer-exemption and rate-limit metadata.
+
+### Default policy
+
+Both identity providers configure an authentication-only fallback policy. Endpoints with no
+authorization metadata require an authenticated user, without an additional role or scope requirement.
+Protected endpoints still use the named service-role and scope policies in the helpers above.
+Use `MapPublicGet` or `MapPublicPost` for anonymous mappings, and update the independent anonymous
+method/template allow-list when adding one. Keep the explicit `MapOpenApi().AllowAnonymous()` exception.
+The inventory tests require exactly one authorization metadata kind on every production endpoint and
+the exact public method/template set across both providers and tenancy modes. Policy and real-pipeline
+behavior tests detect missing fallback. Named-helper usage is checked in review: equivalent raw mappings
+that preserve authorization metadata are outside the automated provenance guarantee.
+
+Tenant validation retains its earlier position: missing/invalid required tenants return `400` before
+authorization. With successful tenant resolution where required, an unknown path returns `401` for
+anonymous callers and `404` for authenticated callers. Wrong-method requests reaching authorization
+return `401` without `Allow` for anonymous callers and retain `405` with `Allow` for authenticated callers.
+Permitted CORS preflight and matched-handler errors, including feature-gate and missing-document `404`s,
+retain their contracts. No routing workaround or new tenant exemption is added.
 
 ## Roles
 

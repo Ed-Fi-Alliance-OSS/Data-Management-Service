@@ -863,6 +863,10 @@ public class MetadataModuleTests
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            if (identityProvider is not null)
+            {
+                builder.UseSetting("AppSettings:IdentityProvider", identityProvider);
+            }
             builder.ConfigureAppConfiguration(configuration =>
             {
                 var settings = new Dictionary<string, string?>
