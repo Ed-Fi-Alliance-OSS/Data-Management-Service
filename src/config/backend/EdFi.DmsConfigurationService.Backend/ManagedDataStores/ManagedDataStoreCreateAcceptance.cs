@@ -62,14 +62,31 @@ public sealed class ManagedDataStoreCreateAcceptance(
         {
             // Resolve exactly once, before the repository can open a CMS transaction. The snapshot and
             // its credentials never cross the persistence boundary; only the canonical descriptor does.
+            var resolution = await adminConnections.ResolveAsync(cancellationToken);
+            if (resolution is DmsAdminConnectionResolution.Failed failed)
+            {
+                return new DataStoreManageCreateResult.ConnectionResolutionFailed(
+                    new(
+                        failed.Diagnostic.ExceptionTypeChain,
+                        failed.Diagnostic.ProviderErrorCode,
+                        failed.Diagnostic.Operation
+                    )
+                );
+            }
             if (
-                await adminConnections.ResolveAsync(cancellationToken)
-                    is not DmsAdminConnectionResolution.Resolved resolved
+                resolution is not DmsAdminConnectionResolution.Resolved resolved
                 || !parseEndpoint(resolved.Connection.Value, out var endpoint)
-                || endpoint.Provider != ready.Provider
             )
             {
-                return new DataStoreManageCreateResult.ConnectionResolutionFailed();
+                return new DataStoreManageCreateResult.ConnectionResolutionFailed(
+                    new(string.Empty, null, "ParseManagedDataStoreEndpoint")
+                );
+            }
+            if (endpoint.Provider != ready.Provider)
+            {
+                return new DataStoreManageCreateResult.ConnectionResolutionFailed(
+                    new(string.Empty, null, "MatchManagedDataStoreProvider")
+                );
             }
             return await repository.AcceptCreateAsync(
                 new(command.Name!, template, target, Guid.NewGuid(), endpoint),

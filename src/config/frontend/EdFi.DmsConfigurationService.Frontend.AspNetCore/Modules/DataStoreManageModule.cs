@@ -24,6 +24,8 @@ public static class DataStoreManageModule
 {
     private const string Route = "/v3/dataStores/manage";
 
+    internal static readonly EventId ManagedRequestFailed = new(1439_40, nameof(ManagedRequestFailed));
+
     private static IResult Invalid(HttpContext context, string message, string field = "dataStore") =>
         FailureResults.DataValidation([new ValidationFailure(field, message)], context.TraceIdentifier);
 
@@ -35,6 +37,35 @@ public static class DataStoreManageModule
             "Managed data store provisioning is unavailable.",
             context.TraceIdentifier
         );
+
+    /// <summary>Logs the diagnostic's fixed fields only, never an exception message, request value or connection string.</summary>
+    private static IResult Failed(
+        HttpContext context,
+        IServiceProvider services,
+        string request,
+        JobFailureDiagnostic diagnostic
+    )
+    {
+        services
+            .GetRequiredService<ILoggerFactory>()
+            .CreateLogger(typeof(DataStoreManageModule))
+            .LogError(
+                ManagedRequestFailed,
+                "{Event} Request={Request} ExceptionTypeChain={ExceptionTypeChain} ProviderErrorCode={ProviderErrorCode} Operation={Operation} TraceId={TraceId}",
+                nameof(ManagedRequestFailed),
+                request,
+                diagnostic.ExceptionTypeChain,
+                diagnostic.ProviderErrorCode,
+                diagnostic.Operation,
+                JobDiagnostics.SafeIdentifier(context.TraceIdentifier)
+            );
+        return FailureResults.Unknown(context.TraceIdentifier);
+    }
+
+    private static JobFailureDiagnostic EnqueueDiagnostic(JobEnqueueResult failure) =>
+        failure is JobEnqueueResult.FailureUnknown unknown
+            ? unknown.Diagnostic
+            : new(string.Empty, null, "Enqueue" + failure.GetType().Name);
 
     public static void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
@@ -115,6 +146,12 @@ public static class DataStoreManageModule
                 context,
                 "Invalid managed data store query."
             ),
+            DataStoreManageQueryResult.FailureUnknown failure => Failed(
+                context,
+                services,
+                "QueryManagedDataStores",
+                failure.Diagnostic
+            ),
             _ => FailureResults.Unknown(context.TraceIdentifier),
         };
     }
@@ -142,6 +179,12 @@ public static class DataStoreManageModule
             DataStoreManageGetResult.NotFound => FailureResults.NotFound(
                 "Managed data store not found.",
                 context.TraceIdentifier
+            ),
+            DataStoreManageGetResult.FailureUnknown failure => Failed(
+                context,
+                services,
+                "GetManagedDataStore",
+                failure.Diagnostic
             ),
             _ => FailureResults.Unknown(context.TraceIdentifier),
         };
@@ -214,6 +257,24 @@ public static class DataStoreManageModule
                 context,
                 "Invalid managed data store name or template."
             ),
+            DataStoreManageCreateResult.ConnectionResolutionFailed failure => Failed(
+                context,
+                services,
+                "CreateManagedDataStore",
+                failure.Diagnostic
+            ),
+            DataStoreManageCreateResult.FailureUnknown failure => Failed(
+                context,
+                services,
+                "CreateManagedDataStore",
+                failure.Diagnostic
+            ),
+            DataStoreManageCreateResult.EnqueueFailed failure => Failed(
+                context,
+                services,
+                "CreateManagedDataStore",
+                EnqueueDiagnostic(failure.Failure)
+            ),
             _ => FailureResults.Unknown(context.TraceIdentifier),
         };
     }
@@ -258,6 +319,18 @@ public static class DataStoreManageModule
                         "Data store deletion has failed.",
                     _ => "The data store cannot be deleted in its current state.",
                 }
+            ),
+            DataStoreManageDeleteResult.FailureUnknown failure => Failed(
+                context,
+                services,
+                "DeleteManagedDataStore",
+                failure.Diagnostic
+            ),
+            DataStoreManageDeleteResult.EnqueueFailed failure => Failed(
+                context,
+                services,
+                "DeleteManagedDataStore",
+                EnqueueDiagnostic(failure.Failure)
             ),
             _ => FailureResults.Unknown(context.TraceIdentifier),
         };

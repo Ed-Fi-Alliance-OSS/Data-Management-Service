@@ -10,6 +10,7 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.ManagedDataStores;
 using FluentAssertions;
@@ -585,6 +586,69 @@ public class Given_the_managed_DataStore_migration
         (await _database.JournalAsync()).Except(journal).Should().Equal(ScriptName);
     }
 
+    [TestCase("public")]
+    [TestCase("crypto_extensions")]
+    public async Task It_upgrades_and_reserves_targets_wherever_pgcrypto_is_installed(string schema)
+    {
+        _database.DeployThrough(19);
+        await using NpgsqlConnection connection = new(_database.ConnectionString);
+        await connection.OpenAsync();
+        if (schema != "public")
+        {
+            // An operator-installed extension: the pgcrypto migration then finds it and does nothing.
+            await connection.ExecuteAsync(
+                $"""CREATE SCHEMA {schema}; CREATE EXTENSION pgcrypto SCHEMA {schema};"""
+            );
+        }
+        string[] before = await _database.JournalAsync();
+
+        _database.DeployThrough(41);
+
+        (await _database.JournalAsync()).Except(before).Should().Contain(ScriptName);
+        (
+            await connection.ExecuteScalarAsync<string>(
+                "SELECT extnamespace::regnamespace::text FROM pg_extension WHERE extname = 'pgcrypto';"
+            )
+        )
+            .Should()
+            .Be(schema);
+        // A backslash in the descriptor exercises the literal bytea conversion.
+        ManagedDataStoreEndpoint endpoint = Endpoint with
+        {
+            Host = "db\\instance",
+        };
+        endpoint.CanonicalEncoding.Should().Contain("\\");
+        await InsertAsync(
+            connection,
+            "digest",
+            values: new()
+            {
+                ["TargetDatabaseName"] = "Target_Digest",
+                ["EndpointDescriptor"] = endpoint.CanonicalEncoding,
+            }
+        );
+        (
+            await connection.ExecuteScalarAsync<bool>(
+                $"""
+                SELECT "EndpointDigest" = {schema}.digest("EndpointDescriptor", 'sha256')
+                FROM dmscs."DataStoreManage";
+                """
+            )
+        ).Should().BeTrue("the built-in digest must match pgcrypto's");
+        DmsTargetDatabaseName
+            .TryCreate("TARGET_DIGEST", ProtectedDatabaseNames.Create("cms", []), out var target)
+            .Should()
+            .Be(DmsTargetNameValidation.Valid);
+        await using var transaction = await connection.BeginTransactionAsync();
+        (await DataStoreCatalog.HasTargetReservationAsync(transaction, null, endpoint, target, default))
+            .Should()
+            .BeTrue();
+        (await DataStoreCatalog.HasTargetReservationAsync(transaction, null, Endpoint, target, default))
+            .Should()
+            .BeFalse();
+        await transaction.RollbackAsync();
+    }
+
     [TestCase("nonunique_target")]
     [TestCase("wrong_target_filter")]
     [TestCase("wrong_name_key")]
@@ -791,9 +855,11 @@ public class Given_the_managed_DataStore_migration
             )!;
         using StreamReader reader = new(stream);
         string script = await reader.ReadToEndAsync();
-        script.Should().Contain("'sha256'");
+        script.Should().Contain("pg_catalog.sha256(");
         // Construct a drifted table with identical column positions/types, changing only the digest expression.
-        await connection.ExecuteAsync(script.Replace("'sha256'", "'sha512'", StringComparison.Ordinal));
+        await connection.ExecuteAsync(
+            script.Replace("pg_catalog.sha256(", "pg_catalog.sha512(", StringComparison.Ordinal)
+        );
         await InsertAsync(connection, "retained");
         string[] journal = await _database.JournalAsync();
         string[] snapshot = await SchemaAndDataSnapshotAsync(connection);

@@ -14,6 +14,9 @@
 -- see catalog-name-uniqueness-rollout.md. Large Unicode values are bounded by UTF-8 bytes.
 -- Replay builds an empty sibling from this one canonical DDL definition. It never repairs
 -- an existing table or index by name; incompatible objects require explicit operator repair.
+-- The endpoint digest uses only built-in functions, so it does not depend on the schema that
+-- holds pgcrypto. Doubling backslashes makes the bytea cast read the text's bytes literally,
+-- which yields the same SHA-256 as pgcrypto's digest(text, 'sha256').
 
 BEGIN;
 DO $migration$
@@ -47,7 +50,8 @@ CREATE TABLE dmscs."DataStoreManage" (
         (translate("TargetDatabaseName", 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz')) STORED,
     "ExpectedSourceIdentity" UUID NOT NULL,
     "EndpointDescriptor" TEXT NOT NULL,
-    "EndpointDigest" BYTEA GENERATED ALWAYS AS (public.digest("EndpointDescriptor", 'sha256')) STORED,
+    "EndpointDigest" BYTEA GENERATED ALWAYS AS (pg_catalog.sha256(
+        replace("EndpointDescriptor", chr(92), chr(92) || chr(92))::bytea)) STORED,
     "CreateJobId" VARCHAR(150) NOT NULL,
     "DeleteJobId" VARCHAR(150) NULL,
     "LastAttempt" INT NOT NULL DEFAULT 0,

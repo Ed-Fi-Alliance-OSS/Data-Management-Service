@@ -153,4 +153,4 @@ Both final SQL inventory comparisons show no added/removed databases. Post-run c
 
 After those slices, update this matrix against their actual results and review any remaining section-7 gaps. Overlapping exhaustion sweeps, actual abstract-socket connectivity, custom-catalog residual unique-index qualification, earlier bootstrap skips, the fake-psql failure and SQL error 3980 retain their prior unresolved/unverified status. This audit does not establish that those concerns were caused by DMS-1439 or silently waive them. Full runtime resource CRUD/CDC permissions are not established by the successful runtime reads.
 
-Phase 6.2 operations/acceptance closure has not started. A complete matrix and external E2E evidence must be reviewed before step 6.1 is called complete; a push requires separate explicit authorization.
+Current status, as in the header: step 6.1 is approved complete at the reviewed qualification boundaries (review of `8a3cf892d`), and the operations guide is submitted for step 6.2 review. Neither is acceptance of the ticket; the limitations recorded above remain open, and a push requires separate explicit authorization.

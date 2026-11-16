@@ -160,7 +160,7 @@ internal static class DataStoreCatalog
                 """
                 SELECT EXISTS (SELECT 1 FROM dmscs."DataStoreManage"
                     WHERE "Status" <> 'Deleted'
-                      AND "EndpointDigest" = public.digest(@Endpoint, 'sha256')
+                      AND "EndpointDigest" = pg_catalog.sha256(replace(@Endpoint, chr(92), chr(92) || chr(92))::bytea)
                       AND "TargetDatabaseNameKey" = @Target COLLATE "C");
                 """,
                 parameters,

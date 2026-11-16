@@ -13,10 +13,12 @@ using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
@@ -28,6 +30,7 @@ public class Given_managed_data_store_HTTP
     private readonly IDmsAdminConnectionSource _admin = A.Fake<IDmsAdminConnectionSource>();
     private readonly IDmsDataStoreProvisionerReadiness _readiness =
         A.Fake<IDmsDataStoreProvisionerReadiness>();
+    private readonly CapturingLoggerProvider _logs = new();
     private WebApplicationFactory<Program> _factory = null!;
     private DataStoreManageCreateResult _create = null!;
     private DataStoreManageDeleteResult _delete = null!;
@@ -42,6 +45,7 @@ public class Given_managed_data_store_HTTP
             {
                 var policy = enabled ? JobClaimPolicy.All : JobClaimPolicy.ExcludeManagedDataStores;
                 services.AddSingleton(policy);
+                services.AddSingleton<ILoggerProvider>(_logs);
                 services.AddSingleton(_repository);
                 services.AddSingleton(
                     new ManagedDataStoreCreateAcceptance(
@@ -402,6 +406,100 @@ public class Given_managed_data_store_HTTP
         using var unknown = await Post(client);
         unknown.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
         (await unknown.Content.ReadAsStringAsync()).Should().NotContain("private-test-value");
+    }
+
+    [Test]
+    public async Task It_logs_safe_failure_diagnostics_correlated_with_the_unchanged_500()
+    {
+        using var client = Client();
+        A.CallTo(() => _admin.ResolveAsync(A<CancellationToken>._))
+            .Returns(
+                new DmsAdminConnectionResolution.Failed(
+                    DmsProvisioningDiagnostic.From(
+                        new InvalidOperationException("private-test-value"),
+                        "ResolveAdminConnection"
+                    )
+                )
+            );
+        await AssertLogged(
+            await Post(client),
+            "CreateManagedDataStore",
+            "System.InvalidOperationException",
+            null,
+            "ResolveAdminConnection"
+        );
+        A.CallTo(() => _admin.ResolveAsync(A<CancellationToken>._))
+            .Returns(
+                new DmsAdminConnectionResolution.Resolved(
+                    new DmsAdminConnectionString("Host=db.example;Username=admin;Password=private-test-value")
+                )
+            );
+        var unknown = JobDiagnostics.From(new IOException("private-test-value"), "Read", "40001");
+        _create = new DataStoreManageCreateResult.FailureUnknown(unknown);
+        await AssertLogged(
+            await Post(client),
+            "CreateManagedDataStore",
+            "System.IO.IOException",
+            "40001",
+            "Read"
+        );
+        _query = new DataStoreManageQueryResult.FailureUnknown(unknown);
+        await AssertLogged(
+            await client.GetAsync("/v3/dataStores/manage"),
+            "QueryManagedDataStores",
+            "System.IO.IOException",
+            "40001",
+            "Read"
+        );
+        _get = new DataStoreManageGetResult.FailureUnknown(unknown);
+        await AssertLogged(
+            await client.GetAsync("/v3/dataStores/manage/17"),
+            "GetManagedDataStore",
+            "System.IO.IOException",
+            "40001",
+            "Read"
+        );
+        _delete = new DataStoreManageDeleteResult.EnqueueFailed(new JobEnqueueResult.FailureUnknown(unknown));
+        await AssertLogged(
+            await client.DeleteAsync("/v3/dataStores/manage/17"),
+            "DeleteManagedDataStore",
+            "System.IO.IOException",
+            "40001",
+            "Read"
+        );
+    }
+
+    private async Task AssertLogged(
+        HttpResponseMessage response,
+        string request,
+        string exceptionTypeChain,
+        string? providerErrorCode,
+        string operation
+    )
+    {
+        using (response)
+        {
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            string body = await response.Content.ReadAsStringAsync();
+            body.Should().NotContain("private-test-value");
+            string correlationId = JsonNode.Parse(body)!["correlationId"]!.GetValue<string>();
+            var entry = _logs
+                .Entries.Where(log => log.EventId.Name == "ManagedRequestFailed")
+                .Should()
+                .ContainSingle(log => (string?)log.State["TraceId"] == correlationId)
+                .Subject;
+            entry.Level.Should().Be(LogLevel.Error);
+            entry.Exception.Should().BeNull();
+            entry.State["Request"].Should().Be(request);
+            entry.State["ExceptionTypeChain"].Should().Be(exceptionTypeChain);
+            entry.State["ProviderErrorCode"].Should().Be(providerErrorCode);
+            entry.State["Operation"].Should().Be(operation);
+            entry
+                .Message.Should()
+                .NotContain("private-test-value")
+                .And.NotContain("Password")
+                .And.NotContain("db.example");
+        }
     }
 
     [Test]

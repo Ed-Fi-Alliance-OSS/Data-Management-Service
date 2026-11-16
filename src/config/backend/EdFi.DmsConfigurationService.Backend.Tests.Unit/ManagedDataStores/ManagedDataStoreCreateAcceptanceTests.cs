@@ -155,11 +155,12 @@ public class Given_managed_data_store_create_acceptance
         captured.Endpoint.Host.Should().Be("db.example");
     }
 
-    [TestCase("resolution")]
-    [TestCase("endpoint")]
-    [TestCase("provider")]
+    [TestCase("resolution", "ResolveAdminConnection")]
+    [TestCase("endpoint", "ParseManagedDataStoreEndpoint")]
+    [TestCase("provider", "MatchManagedDataStoreProvider")]
     public async Task It_refuses_failed_resolution_or_invalid_endpoint_without_repository_access(
-        string failure
+        string failure,
+        string operation
     )
     {
         var source = A.Fake<IDmsAdminConnectionSource>();
@@ -167,10 +168,15 @@ public class Given_managed_data_store_create_acceptance
         string connection = failure == "endpoint" ? "Host=a,b" : "Host=db.example";
         DmsAdminConnectionResolution resolution =
             failure == "resolution"
-                ? new DmsAdminConnectionResolution.Failed(DmsProvisioningDiagnostic.ForOperation("Resolve"))
+                ? new DmsAdminConnectionResolution.Failed(
+                    DmsProvisioningDiagnostic.From(
+                        new InvalidOperationException("sensitive resolver message"),
+                        "ResolveAdminConnection"
+                    )
+                )
                 : new DmsAdminConnectionResolution.Resolved(new(connection));
         A.CallTo(() => source.ResolveAsync(A<CancellationToken>._)).Returns(resolution);
-        (
+        var refused = (
             await Acceptance(
                     Readiness("Ready", failure == "provider" ? "mssql" : "postgresql"),
                     source,
@@ -179,7 +185,23 @@ public class Given_managed_data_store_create_acceptance
                 .AcceptAsync(Request(), default)
         )
             .Should()
-            .BeOfType<DataStoreManageCreateResult.ConnectionResolutionFailed>();
+            .BeOfType<DataStoreManageCreateResult.ConnectionResolutionFailed>()
+            .Subject;
+        refused
+            .Diagnostic.Should()
+            .Be(
+                new JobFailureDiagnostic(
+                    failure == "resolution" ? "System.InvalidOperationException" : string.Empty,
+                    null,
+                    operation
+                )
+            );
+        refused
+            .Diagnostic.ToString()
+            .Should()
+            .NotContain("sensitive resolver message")
+            .And.NotContain("db.example")
+            .And.NotContain("Host=");
         A.CallTo(() =>
                 repository.AcceptCreateAsync(A<ManagedDataStoreCreateCommand>._, A<CancellationToken>._)
             )

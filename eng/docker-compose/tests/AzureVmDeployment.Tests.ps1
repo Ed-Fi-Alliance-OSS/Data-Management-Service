@@ -682,6 +682,19 @@ Describe "Azure VM Data Standard selection" {
         Get-Content -LiteralPath (Join-Path $script:composeRoot ".env.example") -Raw |
             Should -Match '(?m)^CONFIGURATION_SERVICE_DATA_STANDARD_VERSION=5\.2\r?$'
     }
+
+    It "disables data store management in both config services, because provisioning is not configured" {
+        $compose = Get-Content -LiteralPath (Join-Path $script:composeRoot "docker-compose.yml") -Raw
+
+        $compose | Should -Not -Match 'DmsDataStoreProvisioning__'
+        $sharedEnvironment = [regex]::Match($compose, '(?ms)^x-cms-common-env: &cms-common-env\s*\n(.*?)(?=^\S)').Groups[1].Value
+        $sharedEnvironment | Should -Match '(?m)^\s*AppSettings__EnableDataStoreManagement:\s*"false"\r?$'
+        foreach ($service in @("st-config", "mt-config")) {
+            $serviceBlock = [regex]::Match($compose, "(?ms)^  ${service}:\s*\n(.*?)(?=^  \S)").Groups[1].Value
+            $serviceBlock | Should -Match '<<: \*cms-common-env' -Because "$service must inherit the shared management setting"
+            $serviceBlock | Should -Not -Match 'EnableDataStoreManagement' -Because "$service must not override the shared setting"
+        }
+    }
 }
 
 Describe "Azure VM review variant applications" {

@@ -205,7 +205,8 @@ public abstract record DataStoreManageCreateResult
 
     public sealed record ProvisioningUnavailable() : DataStoreManageCreateResult;
 
-    public sealed record ConnectionResolutionFailed() : DataStoreManageCreateResult;
+    public sealed record ConnectionResolutionFailed(JobFailureDiagnostic Diagnostic)
+        : DataStoreManageCreateResult;
 
     public sealed record FailureUnknown(JobFailureDiagnostic Diagnostic) : DataStoreManageCreateResult;
 

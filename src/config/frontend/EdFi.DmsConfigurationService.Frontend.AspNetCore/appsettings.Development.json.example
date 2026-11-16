@@ -3,6 +3,11 @@
     // locally. The shipped appsettings.json leaves every secret below blank on purpose, so the
     // service cannot run until they are supplied here. A blank DatabaseSettings:EncryptionKey stops
     // startup; the others fail later, at request or token time.
+    "AppSettings": {
+        // Managed data stores default to enabled, and startup then requires DmsDataStoreProvisioning,
+        // which this example does not configure. See docs/CMS-MANAGED-DATA-STORES.md to enable it.
+        "EnableDataStoreManagement": false
+    },
     "DatabaseSettings": {
         // Must match the PostgreSQL instance started for local development.
         "DatabaseConnection": "host=localhost;port=5432;username=postgres;database=edfi_configurationservice;",
