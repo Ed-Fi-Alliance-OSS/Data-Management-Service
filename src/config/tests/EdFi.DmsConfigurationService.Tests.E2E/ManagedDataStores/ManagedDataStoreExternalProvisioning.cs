@@ -6,10 +6,19 @@
 using System.Data.Common;
 using System.Security.Cryptography;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Trust;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Tests.E2E.ManagedDataStores;
@@ -186,6 +195,98 @@ internal sealed class ManagedDataStoreExternalProvisioning : IAsyncDisposable
         }
         // Rename only our signed copy; never modify the source download or another process's files.
         File.Move(available ? package + ".withheld" : package, available ? package : package + ".withheld");
+    }
+
+    /// <summary>Explicit post-assertion cleanup of an expected retained target, after the CMS child stops.</summary>
+    public async Task RemoveVerifiedTargetAsync(string name, Guid identity, string endpoint)
+    {
+        var protectedNames = ProtectedDatabaseNames.Create("dms1439_http_cleanup", []);
+        if (
+            !name.StartsWith("EdFi_Ods_Http", StringComparison.Ordinal)
+            || DmsTargetDatabaseName.TryCreate(name, protectedNames, out var target)
+                != DmsTargetNameValidation.Valid
+        )
+        {
+            throw new InvalidOperationException("Unexpected cleanup target name.");
+        }
+        var settings = new DmsDataStoreProvisioningOptions
+        {
+            Enabled = true,
+            Provider = _mssql ? "mssql" : "postgresql",
+            AdminConnectionString = _admin,
+            OperationDirectory = Configuration["DmsDataStoreProvisioning__OperationDirectory"],
+        };
+        var options = Options.Create(settings);
+        IDmsTargetEngine engine = _mssql
+            ? new MssqlDmsTargetEngine(
+                new MssqlAdminConnection(_admin, settings.CommandTimeout),
+                new MssqlDmsEngineSettings(
+                    settings.LockAcquireTimeout,
+                    settings.LockHeartbeatInterval,
+                    settings.SessionTerminationTimeout,
+                    settings.RestoreTimeout,
+                    new MssqlStagingSettings(
+                        Configuration["DmsDataStoreProvisioning__Mssql__StagingPath"],
+                        Configuration["DmsDataStoreProvisioning__Mssql__StagingServerPath"],
+                        UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.GroupRead,
+                        settings.CleanupAttempts,
+                        settings.CommandTimeout
+                    )
+                ),
+                TimeProvider.System,
+                NullLogger.Instance
+            )
+            : new PostgresqlDmsTargetEngine(
+                new PostgresqlAdminConnection(_admin, settings.CommandTimeout),
+                new PostgresqlDmsEngineSettings(
+                    settings.LockAcquireTimeout,
+                    settings.LockHeartbeatInterval,
+                    settings.SessionTerminationTimeout,
+                    settings.RestoreTimeout,
+                    Configuration["DmsDataStoreProvisioning__Postgresql__PsqlPath"]
+                ),
+                TimeProvider.System,
+                NullLogger.Instance
+            );
+        using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        if (await engine.ValidateEnvironmentAsync(deadline.Token) is not DmsEngineEnvironment.Ready)
+        {
+            throw new InvalidOperationException(
+                "Cleanup engine is not ready; retained target requires inspection."
+            );
+        }
+        var readiness = new DmsDataStoreProvisionerReadiness();
+        readiness.Record(new DmsProvisionerReadiness.Ready(settings.Provider, DateTimeOffset.UtcNow));
+        var secrets = Options.Create(new SecretsOptions());
+        var provisioner = new DmsDataStoreProvisioningService(
+            readiness,
+            engine,
+            new TemplateArtifactCatalog(options, NullLogger<TemplateArtifactCatalog>.Instance),
+            options,
+            protectedNames,
+            new DmsAdminConnectionSource(
+                options,
+                new SecretValueCache(secrets),
+                secrets,
+                TimeProvider.System
+            ),
+            TimeProvider.System,
+            NullLogger<DmsDataStoreProvisioningService>.Instance
+        );
+        // The actual provisioner holds its target lock, verifies the persisted endpoint/source identity
+        // and instance, fences other sessions and drops only that verified target. No CMS state is reset.
+        var result = await provisioner.DeleteAsync(
+            new(target!, identity),
+            ManagedDataStoreEndpoint.FromCanonicalEncoding(endpoint),
+            (_, _) => Task.CompletedTask,
+            deadline.Token
+        );
+        if (result is not DmsDataStoreDeleteResult.Dropped)
+        {
+            throw new InvalidOperationException(
+                "Verified cleanup did not drop the retained target; inspect residue."
+            );
+        }
     }
 
     public async ValueTask DisposeAsync()
