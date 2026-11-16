@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+    <!-- DMS-1521 spike runner. Not part of any solution or CI lane. Run it through
+       ../Invoke-KeysetSpike.ps1, or directly with
+       `dotnet test reference/spikes/DMS-1521/experiments/KeysetSpike` with a Given_ class filter.
+       It composes the performance harness (fixtures, loaders, scenario executor) with its own
+       command capture, plan capture, replay, and server counters. Package versions are pinned
+       to the versions src/Directory.Packages.props pins. -->
+
+    <PropertyGroup>
+        <TargetFramework>net10.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <IsPackable>false</IsPackable>
+        <IsTestProject>true</IsTestProject>
+        <!-- Standalone: pins its own versions instead of inheriting a central package file. -->
+        <ManagePackageVersionsCentrally>false</ManagePackageVersionsCentrally>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="FluentAssertions" Version="6.12.1" />
+        <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+        <PackageReference Include="NUnit" Version="4.2.2" />
+        <PackageReference Include="NUnit3TestAdapter" Version="4.6.0" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="..\..\..\..\..\src\dms\tests\EdFi.DataManagementService.Performance.Harness\EdFi.DataManagementService.Performance.Harness.csproj" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <Using Include="NUnit.Framework" />
+    </ItemGroup>
+</Project>
