@@ -170,7 +170,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             context._owner = new(cancellation =>
             {
                 cancellation.ThrowIfCancellationRequested();
-                CdcProjectionGate gate = new(target, TimeSpan.FromMinutes(5));
+                CdcProjectionGate gate = new(target, TimeSpan.FromMinutes(5), TimeSpan.FromSeconds(30));
                 CdcProjectionRuntime projection = null!;
                 CdcRebuildObservations rebuild = new(target);
                 var restart = context._restartObservations;
@@ -339,6 +339,7 @@ internal sealed class CdcAttachedContext : IAsyncDisposable
             }
         }
         public CdcProjectionGate Gate => Current._owner.Gate;
+        public CancellationToken HoldToken => Current._owner.HoldToken;
         public ICdcProjectionRuntime Runtime => Current._owner.Runtime;
 
         public void ReopenControllers() => Current._reopenControllers();

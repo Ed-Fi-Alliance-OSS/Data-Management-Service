@@ -9,6 +9,7 @@ namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 /// Scenarios must honor cancellation. No selection, retry, reset, or resume path.</summary>
 internal sealed class CdcScenarioRunner
 {
+    private readonly TimeProvider _clock;
     private readonly TimeSpan _executionTimeout;
     private readonly TimeSpan _finalizationTimeout;
     private readonly TimeSpan _shutdownTimeout;
@@ -19,12 +20,14 @@ internal sealed class CdcScenarioRunner
     internal CdcScenarioRunner(
         TimeSpan executionTimeout,
         TimeSpan finalizationTimeout,
-        TimeSpan shutdownTimeout
+        TimeSpan shutdownTimeout,
+        TimeProvider clock = null!
     )
     {
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(executionTimeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(finalizationTimeout, TimeSpan.Zero);
         ArgumentOutOfRangeException.ThrowIfLessThanOrEqual(shutdownTimeout, TimeSpan.Zero);
+        _clock = clock ?? TimeProvider.System;
         _executionTimeout = executionTimeout;
         _finalizationTimeout = finalizationTimeout;
         _shutdownTimeout = shutdownTimeout;
@@ -40,7 +43,7 @@ internal sealed class CdcScenarioRunner
         var writer = new CdcScenarioReportWriter(path, invocationId);
         var report = new CdcScenarioReport(invocationId);
         // Initialize even if execution was already cancelled. Never attach without a fresh report.
-        using (var initialization = new CancellationTokenSource(_finalizationTimeout))
+        using (var initialization = new CancellationTokenSource(_finalizationTimeout, _clock))
         {
             try
             {
@@ -52,8 +55,8 @@ internal sealed class CdcScenarioRunner
             }
         }
 
-        using var execution = CancellationTokenSource.CreateLinkedTokenSource(token);
-        execution.CancelAfter(_executionTimeout);
+        using var deadline = new CancellationTokenSource(_executionTimeout, _clock);
+        using var execution = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         var ct = execution.Token;
         CdcScenarioResult current = report.Attachment;
         string primaryFailure = "";
@@ -108,9 +111,9 @@ internal sealed class CdcScenarioRunner
             await PersistFinalizationAsync();
             // Cancellation of work must not cancel report persistence or local resource disposal.
             // Share one shutdown reserve across callbacks, phase drain and disposal. It allows the
-            // five-minute gate and two-minute pager drains plus runtime/transport cleanup, while
+            // bounded gate and pager drains plus runtime/transport cleanup, while
             // still bounding a stuck phase holding the runtime owner's lock or a stuck runtime stop.
-            using var shutdown = new CancellationTokenSource(_shutdownTimeout);
+            using var shutdown = new CancellationTokenSource(_shutdownTimeout, _clock);
             CdcScenarioFailure shutdownFailure = CdcScenarioFailure.None;
             try
             {
@@ -191,7 +194,7 @@ internal sealed class CdcScenarioRunner
 
         async Task PersistFinalizationAsync()
         {
-            using var reserve = new CancellationTokenSource(_finalizationTimeout);
+            using var reserve = new CancellationTokenSource(_finalizationTimeout, _clock);
             try
             {
                 await writer.WriteAsync(report, reserve.Token);
@@ -204,7 +207,7 @@ internal sealed class CdcScenarioRunner
 
         async Task RecordFailureAsync(string stage, Exception exception)
         {
-            using var reserve = new CancellationTokenSource(_finalizationTimeout);
+            using var reserve = new CancellationTokenSource(_finalizationTimeout, _clock);
             try
             {
                 await CdcScenarioDiagnostics.WriteFailureAsync(

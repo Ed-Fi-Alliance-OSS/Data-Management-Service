@@ -11,6 +11,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DataManagementService.Backend;
+using EdFi.DataManagementService.Backend.Cdc;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.DocumentCache;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,6 +35,7 @@ internal static class DocumentCacheAdminCommandExecutor
         ArgumentNullException.ThrowIfNull(serviceProvider);
         ArgumentNullException.ThrowIfNull(standardOutput);
 
+        using var lockDiagnostics = CdcControllerLockDiagnostics.ReportTo(standardError ?? TextWriter.Null);
         string commandName = parseResult.CommandResult.Command.Name;
         bool jsonOutput = parseResult.GetValue<bool>(DocumentCacheAdminCommandSurface.JsonOptionName);
         IDocumentCacheAdminCliTelemetry telemetry =

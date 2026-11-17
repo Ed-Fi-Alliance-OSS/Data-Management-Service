@@ -58,8 +58,11 @@ public sealed class CdcInitialEnablement
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new OperationBoundary();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var operationTimer = new CancellationTokenSource(request.Timing.WaitTimeout, _timeProvider);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationTimer.Token
+        );
         CancellationToken token = timeout.Token;
         try
         {
@@ -122,9 +125,9 @@ public sealed class CdcInitialEnablement
             boundary.Component = CdcDeploymentComponent.Projection;
             InitialCdcEligibilityObservation eligibility;
             DocumentCacheTargetKey runtimeTarget;
-            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token))
+            using (var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider))
+            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token))
             {
-                call.CancelAfter(request.Timing.CallTimeout);
                 (eligibility, runtimeTarget) = await ObserveAsync(
                         runtime,
                         binding,
@@ -136,16 +139,16 @@ public sealed class CdcInitialEnablement
                 call.Token.ThrowIfCancellationRequested();
             }
             boundary.Component = CdcDeploymentComponent.WorkflowState;
-            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token))
+            using (var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider))
+            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token))
             {
-                call.CancelAfter(request.Timing.CallTimeout);
                 await ValidateSourceInventoryAsync(binding, call.Token).WaitAsync(call.Token);
                 call.Token.ThrowIfCancellationRequested();
             }
             CdcBindingLifecycleResult exact;
-            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token))
+            using (var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider))
+            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token))
             {
-                call.CancelAfter(request.Timing.CallTimeout);
                 exact = await _bindings.ExactMatchBindingAsync(binding, call.Token).WaitAsync(call.Token);
                 call.Token.ThrowIfCancellationRequested();
             }
@@ -204,8 +207,8 @@ public sealed class CdcInitialEnablement
             var reservation = journal.Operations.Single(o => o.Effect == CdcWorkflowEffect.ReserveBinding);
             if (missing)
             {
-                using var call = CancellationTokenSource.CreateLinkedTokenSource(token);
-                call.CancelAfter(request.Timing.CallTimeout);
+                using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider);
+                using var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
                 exact = await _bindings.CreateBindingIfAbsentAsync(binding, call.Token).WaitAsync(call.Token);
                 call.Token.ThrowIfCancellationRequested();
                 Require(exact.Status == CdcControlPlaneOperationStatus.Succeeded);
@@ -216,8 +219,11 @@ public sealed class CdcInitialEnablement
                 reservation.OperationId,
                 async (_, ct) =>
                 {
-                    using var call = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                    call.CancelAfter(request.Timing.CallTimeout);
+                    using var deadline = new CancellationTokenSource(
+                        request.Timing.CallTimeout,
+                        _timeProvider
+                    );
+                    using var call = CancellationTokenSource.CreateLinkedTokenSource(ct, deadline.Token);
                     var read = await _bindings
                         .ExactMatchBindingAsync(binding, call.Token)
                         .WaitAsync(call.Token);
@@ -262,8 +268,8 @@ public sealed class CdcInitialEnablement
                     );
                 }
                 boundary.Component = CdcDeploymentComponent.Projection;
-                using var call = CancellationTokenSource.CreateLinkedTokenSource(token);
-                call.CancelAfter(request.Timing.CallTimeout);
+                using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider);
+                using var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
                 var result = await runtime
                     .ActivateAsync(
                         new(
@@ -282,9 +288,9 @@ public sealed class CdcInitialEnablement
             }
             boundary.Component = CdcDeploymentComponent.Projection;
             // A successful response or old completion is never sufficient: re-read the actual commit.
-            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token))
+            using (var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider))
+            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token))
             {
-                call.CancelAfter(request.Timing.CallTimeout);
                 var afterActivation = await ObserveAsync(
                         runtime,
                         binding,
@@ -298,9 +304,9 @@ public sealed class CdcInitialEnablement
                 eligibility = afterActivation.Eligibility;
             }
             boundary.Component = CdcDeploymentComponent.WorkflowState;
-            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token))
+            using (var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _timeProvider))
+            using (var call = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token))
             {
-                call.CancelAfter(request.Timing.CallTimeout);
                 exact = await _bindings.ExactMatchBindingAsync(binding, call.Token).WaitAsync(call.Token);
                 call.Token.ThrowIfCancellationRequested();
             }

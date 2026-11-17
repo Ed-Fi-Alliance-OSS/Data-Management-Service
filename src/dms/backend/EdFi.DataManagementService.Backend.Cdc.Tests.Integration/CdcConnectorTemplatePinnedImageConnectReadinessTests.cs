@@ -249,6 +249,22 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
         public Task<DockerCommandResult> RunAsync(
             IReadOnlyList<string> arguments,
             CancellationToken cancellationToken
+        ) => ExecuteAsync(arguments, cancellationToken);
+
+        public Task<DockerCommandResult> RunAllowingFailureAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken
+        ) =>
+            // Startup now inspects Compose exit codes. Final best-effort teardown remains separate
+            // from the readiness-recovery removals recorded by RunAsync.
+            arguments[0] == "compose"
+            && arguments.Contains("up")
+                ? ExecuteAsync(arguments, cancellationToken)
+                : ResultAsync(arguments, cancellationToken);
+
+        private Task<DockerCommandResult> ExecuteAsync(
+            IReadOnlyList<string> arguments,
+            CancellationToken cancellationToken
         )
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -301,10 +317,10 @@ public sealed class Given_PinnedImageFixtureConnectReadiness(string scenario, bo
                     throw Unrelated;
                 }
             }
-            return RunAllowingFailureAsync(arguments, cancellationToken);
+            return ResultAsync(arguments, cancellationToken);
         }
 
-        public Task<DockerCommandResult> RunAllowingFailureAsync(
+        private Task<DockerCommandResult> ResultAsync(
             IReadOnlyList<string> arguments,
             CancellationToken cancellationToken
         )

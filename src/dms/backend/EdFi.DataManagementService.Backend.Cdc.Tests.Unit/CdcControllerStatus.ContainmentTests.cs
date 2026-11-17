@@ -48,17 +48,28 @@ internal partial class Given_CdcControllerStatus
         _identity = new('b', 64);
         AssertContained(await TargetStatusAsync());
         _stopped = false;
-        ShortTiming(40);
+        bool providerEntered = false;
+        bool stopEntered = false;
         _onCall = name =>
         {
             if (name == "provider")
             {
+                providerEntered = true;
                 throw new IOException("private-observation");
             }
         };
         A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Invokes(() => stopEntered = true)
             .Throws(new IOException("private-stop"));
+        A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
+            .Returns(
+                new CdcTransportResult<CdcConnectStatus>.Unavailable(
+                    new(CdcDeploymentComponent.Connect, CdcDeploymentFailure.Unavailable)
+                )
+            );
         var result = await TargetStatusAsync();
+        providerEntered.Should().BeTrue();
+        stopEntered.Should().BeTrue();
         result.Status.SourceHistory.Continuity.Should().Be(CdcSourceHistoryContinuity.Lost);
         result.Status.SourceHistory.IncidentLatched.Should().BeTrue();
         result.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Persisted);
@@ -236,35 +247,85 @@ internal partial class Given_CdcControllerStatus
     [Test]
     public async Task It_bounds_an_unresponsive_latch_and_still_stops()
     {
+        ShortTiming(50);
+        var clock = UseStatusClock();
         var real = _bindings;
+        int bindingReads = 0;
+        bool latchEntered = false;
+        var pendingLatch = new TaskCompletionSource<CdcBindingLifecycleResult>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
         _bindings = A.Fake<ICdcBindingLifecycleService>();
         A.CallTo(() => _bindings.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
-            .ReturnsLazily((CdcBinding b, CancellationToken ct) => real.ExactMatchBindingAsync(b, ct));
+            .ReturnsLazily(
+                (CdcBinding b, CancellationToken ct) =>
+                {
+                    bindingReads++;
+                    return real.ExactMatchBindingAsync(b, ct);
+                }
+            );
         A.CallTo(() => _bindings.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
-            .Returns(new TaskCompletionSource<CdcBindingLifecycleResult>().Task);
-        ShortTiming(50);
+            .ReturnsLazily(() =>
+            {
+                latchEntered = true;
+                clock.Advance(_request.Timing.CallTimeout);
+                return pendingLatch.Task;
+            });
         ResetStatus();
         _identity = new('b', 64);
-        var target = await TargetStatusAsync();
-        target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Failed);
-        target.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
-        target
-            .Diagnostics.Should()
-            .Contain(d =>
-                d.Component == CdcDeploymentComponent.WorkflowState
-                && d.Failure == CdcDeploymentFailure.Timeout
-            );
+        try
+        {
+            var target = await TargetStatusAsync();
+            bindingReads.Should().BeGreaterThan(0);
+            latchEntered.Should().BeTrue();
+            _stops.Should().Be(1);
+            _trace.Should().Contain("status");
+            target.IncidentPersistence.Should().Be(CdcIncidentPersistenceState.Failed);
+            target.Containment.Should().Be(CdcConnectorContainmentState.Stopped);
+            target
+                .Diagnostics.Should()
+                .Contain(d =>
+                    d.Component == CdcDeploymentComponent.WorkflowState
+                    && d.Failure == CdcDeploymentFailure.Timeout
+                );
+        }
+        finally
+        {
+            pendingLatch.TrySetResult(await real.ExactMatchBindingAsync(_request.Binding));
+            await pendingLatch.Task;
+        }
     }
 
     [Test]
     public async Task It_bounds_an_unresponsive_stop_then_reconciles_from_fresh_status()
     {
         ShortTiming(50);
+        var clock = UseStatusClock();
         _identity = new('b', 64);
+        var pendingStop = new TaskCompletionSource<CdcTransportResult<CdcTransportAcknowledgement>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        bool stopEntered = false;
         A.CallTo(() => _connect.StopAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-            .Invokes(() => _stopped = true)
-            .Returns(new TaskCompletionSource<CdcTransportResult<CdcTransportAcknowledgement>>().Task);
-        AssertContained(await TargetStatusAsync());
+            .ReturnsLazily(() =>
+            {
+                stopEntered = true;
+                _stopped = true;
+                _trace.Add("stop");
+                clock.Advance(_request.Timing.CallTimeout);
+                return pendingStop.Task;
+            });
+        try
+        {
+            AssertContained(await TargetStatusAsync());
+            stopEntered.Should().BeTrue();
+            _trace.SkipWhile(stage => stage != "stop").Should().Contain("status");
+        }
+        finally
+        {
+            pendingStop.TrySetResult(Observed(new CdcTransportAcknowledgement()));
+            await pendingStop.Task;
+        }
     }
 
     [TestCase(CdcSqlServerSchemaHistoryState.Missing)]

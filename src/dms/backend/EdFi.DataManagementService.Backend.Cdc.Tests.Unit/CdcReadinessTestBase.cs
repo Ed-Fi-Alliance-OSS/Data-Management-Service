@@ -29,6 +29,31 @@ internal abstract class CdcReadinessTestBase(Ddl.CdcProvider provider) : CdcRegi
     protected long _lag;
     protected TelemetryClock _telemetryClock = null!;
 
+    protected void ReplaceObservationTime(TimeProvider clock)
+    {
+        ObservationTime = clock;
+        _services.Dispose();
+        var controlPlane = new ServiceCollection()
+            .AddSingleton(clock)
+            .AddCdcConnectorTemplates()
+            .AddDmsCdcControlPlane();
+        controlPlane.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
+        _services = controlPlane.BuildServiceProvider();
+        _positionServices.Dispose();
+        var positions = new ServiceCollection().AddSingleton(clock).AddLogging();
+        if (Provider == Ddl.CdcProvider.Postgresql)
+        {
+            positions.AddPostgresqlDmsCdcControlPlane();
+        }
+        else
+        {
+            positions.AddMssqlDmsCdcControlPlane();
+        }
+        _positionServices = positions.BuildServiceProvider();
+        _positions = _positionServices.GetRequiredService<ICdcProviderSourcePositionAdapter>();
+        _telemetryClock = new(clock);
+    }
+
     [SetUp]
     public async Task SetupReadiness()
     {
