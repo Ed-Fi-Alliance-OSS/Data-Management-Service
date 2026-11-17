@@ -13,6 +13,157 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 public abstract class CreatabilityAnalyzerTests
 {
     [TestFixture]
+    public class Given_A_Creatable_Child_Before_A_Blocked_Sibling : CreatabilityAnalyzerTests
+    {
+        [Test]
+        public void It_demotes_the_parent_regardless_of_child_order(
+            [Values(false, true)] bool collectionParent,
+            [Values(false, true)] bool blockedFirst,
+            [Values(false, true)] bool hideRequired
+        )
+        {
+            string parentScope = collectionParent ? "$.groups[*]" : "$";
+            string childSuffix = collectionParent ? "[*]" : "";
+            string goodScope = parentScope + ".good" + childSuffix;
+            string badScope = parentScope + ".bad" + childSuffix;
+            string[] childNames = blockedFirst ? ["bad", "good"] : ["good", "bad"];
+            List<CompiledScopeDescriptor> scopes = [new("$", ScopeKind.Root, null, [], [], ["rootId"])];
+            if (collectionParent)
+            {
+                scopes.Add(new(parentScope, ScopeKind.Collection, "$", [], ["id"], ["id"]));
+            }
+            foreach (string name in childNames)
+            {
+                scopes.Add(
+                    new(
+                        parentScope + "." + name + childSuffix,
+                        collectionParent ? ScopeKind.Collection : ScopeKind.NonCollection,
+                        parentScope,
+                        collectionParent ? [parentScope] : [],
+                        collectionParent ? ["id"] : [],
+                        name == "bad" ? ["id", "required"] : ["id"]
+                    )
+                );
+            }
+            MemberSelection badSelection = hideRequired
+                ? MemberSelection.IncludeOnly
+                : MemberSelection.IncludeAll;
+            ObjectRule[] objectRules = collectionParent
+                ? []
+                :
+                [
+                    new("good", MemberSelection.IncludeAll, null, null, null, null, null),
+                    new("bad", badSelection, null, [new("id")], null, null, null),
+                ];
+            CollectionRule[] collectionRules = collectionParent
+                ?
+                [
+                    new(
+                        "groups",
+                        MemberSelection.IncludeAll,
+                        null,
+                        null,
+                        null,
+                        [
+                            new("good", MemberSelection.IncludeAll, null, null, null, null, null, null),
+                            new("bad", badSelection, null, [new("id")], null, null, null, null),
+                        ],
+                        null,
+                        null
+                    ),
+                ]
+                : [];
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                objectRules,
+                collectionRules,
+                []
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                new ProfileVisibilityClassifier(profile, scopes),
+                "TestProfile",
+                "Resource",
+                "POST",
+                "write"
+            );
+            var parent = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress(parentScope, "id", "parent"),
+                false,
+                "$.groups[0]"
+            );
+            var good = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress(goodScope, "id", "good") with
+                {
+                    ParentAddress = new ScopeInstanceAddress(
+                        parentScope,
+                        [new AncestorCollectionInstance(parentScope, parent.Address.SemanticIdentityInOrder)]
+                    ),
+                },
+                false,
+                "$.groups[0].good[0]"
+            );
+            var bad = good with
+            {
+                Address = good.Address with { JsonScope = badScope },
+                RequestJsonPath = "$.groups[0].bad[0]",
+            };
+            ImmutableArray<RequestScopeState> states = collectionParent
+                ? [new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, false)]
+                :
+                [
+                    new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, false),
+                    new(MakeAddress(goodScope), ProfileVisibilityKind.VisiblePresent, false),
+                    new(MakeAddress(badScope), ProfileVisibilityKind.VisiblePresent, false),
+                ];
+            ImmutableArray<VisibleRequestCollectionItem> items = collectionParent ? [parent, good, bad] : [];
+            var required = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["rootId"],
+                [goodScope] = ["id"],
+                [badScope] = ["id", "required"],
+            };
+            if (collectionParent)
+            {
+                required[parentScope] = ["id"];
+            }
+
+            var result = analyzer.Analyze(
+                states,
+                items,
+                new TestExistenceLookup(
+                    existingScopes: collectionParent ? ScopeAddressSet(MakeAddress("$")) : null
+                ),
+                isCreate: !collectionParent,
+                required
+            );
+
+            result.RootResourceCreatable.Should().Be(!collectionParent && !hideRequired);
+            result
+                .EnrichedScopeStates.Select(state => (state.Address.JsonScope, state.Creatable))
+                .Should()
+                .BeEquivalentTo(
+                    collectionParent
+                        ? new[] { ("$", false) }
+                        : [("$", !hideRequired), (goodScope, true), (badScope, !hideRequired)]
+                );
+            result
+                .EnrichedCollectionItems.Select(item => (item.Address.JsonScope, item.Creatable))
+                .Should()
+                .BeEquivalentTo(
+                    collectionParent
+                        ? new[] { (parentScope, !hideRequired), (goodScope, true), (badScope, !hideRequired) }
+                        : []
+                );
+            int rejectionCount = collectionParent ? 2 : 1;
+            result.Failures.Should().HaveCount(hideRequired ? rejectionCount : 0);
+            states.Should().OnlyContain(state => !state.Creatable);
+            items.Select(item => item.Creatable).Should().Equal(Enumerable.Repeat(false, items.Length));
+        }
+    }
+
+    [TestFixture]
     public class Given_Nested_Collection_Creatability_Under_Distinct_Parents : CreatabilityAnalyzerTests
     {
         [TestCase(false, false)]
