@@ -22,8 +22,9 @@ namespace EdFi.DataManagementService.Backend.Mssql;
 /// <remarks>
 /// Serializable holds shared and range locks on the four tables until the transaction ends, so it can
 /// block concurrent writers for the statement and commit, and the read can be chosen as a deadlock
-/// victim. Both are transient. DMS provisioning does not enable snapshot isolation, and the read does
-/// not use it.
+/// victim. Both are transient. DMS provisioning enables snapshot isolation on newly created databases,
+/// but it is not guaranteed on every existing target. This reader therefore deliberately uses
+/// <c>SERIALIZABLE</c> for all targets.
 /// </remarks>
 internal sealed class MssqlEducationOrganizationProjectionSetReader
     : IEducationOrganizationProjectionSetReader
