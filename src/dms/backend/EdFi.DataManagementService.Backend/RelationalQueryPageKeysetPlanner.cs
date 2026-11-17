@@ -353,7 +353,12 @@ internal sealed class RelationalQueryPageKeysetPlanner(SqlDialect dialect)
         }
 
         return new PlannedPredicate(
-            new QueryValuePredicate(column, comparisonOperator, parameterName),
+            new QueryValuePredicate(
+                column,
+                comparisonOperator,
+                parameterName,
+                scalarType.Kind is ScalarKind.String ? new QuerySqlStringContract(scalarType.MaxLength) : null
+            ),
             convertedValue!
         );
     }

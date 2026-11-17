@@ -1,0 +1,704 @@
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs b/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs
+index 7aa9da4aa..ea38afc3f 100644
+--- a/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs
++++ b/src/dms/backend/EdFi.DataManagementService.Backend.Plans/HydrationBatchBuilder.cs
+@@ -159,13 +159,19 @@ public static class HydrationBatchBuilder
+         var planDialect = PlanSqlDialectFactory.Create(dialect);
+         var writer = new SqlWriter(sqlDialect);
+ 
+-        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable, CarriesSelectedAnchor(keyset));
+-        writer.AppendLine();
+-
+         // The selected keys are returned even though this batch's candidates come from the metadata
+         // rows: the page's continuation boundary describes what selection chose, and a row deleted
+         // between materialization and the metadata select below would otherwise lower or erase it.
+-        AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset);
++        if (Dms1521KeysetVariant.Inline)
++        {
++            AppendDms1521InlineMaterialization(writer, keyset);
++        }
++        else
++        {
++            planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable, CarriesSelectedAnchor(keyset));
++            writer.AppendLine();
++            AppendKeysetMaterialization(writer, planDialect, plan.KeysetTable, keyset);
++        }
+         writer.AppendLine();
+ 
+         if (keyset.Plan.TotalCountSql is not null)
+@@ -289,19 +295,27 @@ public static class HydrationBatchBuilder
+         bool includeVersionFences = false
+     )
+     {
+-        // 1. Create keyset temp table
+-        planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable, CarriesSelectedAnchor(keyset));
+-        writer.AppendLine();
++        if (Dms1521KeysetVariant.Inline)
++        {
++            // DMS-1521 inline: carry the keyset inside the batch; no temp table.
++            AppendDms1521InlineMaterialization(writer, keyset, singleRowGuardPredicateSql);
++        }
++        else
++        {
++            // 1. Create keyset temp table
++            planDialect.AppendCreateKeysetTempTable(writer, plan.KeysetTable, CarriesSelectedAnchor(keyset));
++            writer.AppendLine();
+ 
+-        // 2. Materialize keyset. A query keyset also returns the keys it inserted as the batch's first
+-        //    result set, which is what carries the selected-keyset boundary out of hydration.
+-        AppendKeysetMaterialization(
+-            writer,
+-            planDialect,
+-            plan.KeysetTable,
+-            keyset,
+-            singleRowGuardPredicateSql
+-        );
++            // 2. Materialize keyset. A query keyset also returns the keys it inserted as the batch's first
++            //    result set, which is what carries the selected-keyset boundary out of hydration.
++            AppendKeysetMaterialization(
++                writer,
++                planDialect,
++                plan.KeysetTable,
++                keyset,
++                singleRowGuardPredicateSql
++            );
++        }
+         writer.AppendLine();
+ 
+         // 3. Optional total count
+@@ -508,6 +522,34 @@ public static class HydrationBatchBuilder
+         ArgumentNullException.ThrowIfNull(command);
+         ArgumentNullException.ThrowIfNull(keyset);
+ 
++        // DMS-1521 inline: a single document binds the array only when its batch reads the keyset, that is
++        // with the fast path disabled. The single-document fast path reads no keyset, so it is unchanged.
++        if (
++            Dms1521KeysetVariant.Inline
++            && command is not SqlCommand
++            && (
++                keyset is not PageKeysetSpec.Single
++                || command.CommandText.Contains(
++                    $"@{Dms1521KeysetVariant.PgsqlDocumentIdsParameterName}",
++                    StringComparison.Ordinal
++                )
++            )
++        )
++        {
++            // DMS-1521 inline (PostgreSQL): every keyset relation reads one bigint[] parameter; NULL
++            // makes it read the query keyset's carrier instead.
++            AddScalarParameter(
++                command,
++                Dms1521KeysetVariant.PgsqlDocumentIdsParameterName,
++                keyset switch
++                {
++                    PageKeysetSpec.SelectedPage selected => selected.DocumentIds.ToArray(),
++                    PageKeysetSpec.Single single => new[] { single.DocumentId },
++                    _ => null,
++                }
++            );
++        }
++
+         switch (keyset)
+         {
+             case PageKeysetSpec.Single single:
+@@ -518,6 +560,10 @@ public static class HydrationBatchBuilder
+                 );
+                 break;
+ 
++            case PageKeysetSpec.SelectedPage when Dms1521KeysetVariant.Inline && command is not SqlCommand:
++                // The ids travel in the bigint[] parameter above, not two parameters per id.
++                break;
++
+             case PageKeysetSpec.SelectedPage selectedPage:
+                 AddSelectedPageParameters(command, selectedPage);
+                 break;
+@@ -632,6 +678,16 @@ public static class HydrationBatchBuilder
+                     "Unexpected PageKeysetSpec variant."
+                 );
+         }
++
++        // DMS-1521 pg-analyze: query, selected-page, and candidate-metadata keysets (never Single).
++        if (
++            Dms1521KeysetVariant.AnalyzePostgresqlKeyset
++            && planDialect.Dialect == SqlDialect.Pgsql
++            && spec is not PageKeysetSpec.Single
++        )
++        {
++            writer.Append("ANALYZE ").AppendRelation(keyset.Table).AppendLine(";");
++        }
+     }
+ 
+     /// <summary>
+@@ -782,6 +838,113 @@ public static class HydrationBatchBuilder
+             .AppendLine(") selected_document_ids;");
+     }
+ 
++    /// <summary>
++    /// DMS-1521 inline keyset materialization. A query keyset selects the page once and returns its
++    /// selected keys as the batch's first result set (same position and shape as the temp-table
++    /// materialization), while storing them in the in-batch carrier: a transaction-local setting on
++    /// PostgreSQL, set through a one-row aggregate so it is set (or cleared, for an empty page) before
++    /// any later statement reads it; a JSON batch variable on SQL Server. A selected page or single
++    /// document emits nothing on PostgreSQL (its ids are the bound <c>bigint[]</c>) and declares the
++    /// carrier from its existing JSON parameter on SQL Server.
++    /// </summary>
++    private static void AppendDms1521InlineMaterialization(
++        SqlWriter writer,
++        PageKeysetSpec spec,
++        string? singleRowGuardPredicateSql = null
++    )
++    {
++        bool mssql = writer.Dialect.Rules.Dialect is SqlDialect.Mssql;
++        string id = writer.Dialect.QuoteIdentifier("DocumentId");
++        string anchor = writer.Dialect.QuoteIdentifier(HydrationSqlConventions.SelectedAnchorColumnName);
++        string carrier = Dms1521KeysetVariant.MssqlCarrierVariable;
++
++        switch (spec)
++        {
++            case PageKeysetSpec.Single when singleRowGuardPredicateSql is not null:
++                throw new NotSupportedException(
++                    "DMS-1521 inline prototype: a guarded single-document keyset needs the single-document fast path."
++                );
++
++            case PageKeysetSpec.Single:
++                if (mssql)
++                {
++                    writer
++                        .Append($"DECLARE {carrier} nvarchar(max) = (SELECT CAST(")
++                        .AppendParameter(HydrationSqlConventions.SingleDocumentIdParameterName)
++                        .AppendLine($" AS bigint) AS {id} FOR JSON PATH);");
++                }
++                return;
++
++            case PageKeysetSpec.SelectedPage selectedPage:
++                if (mssql)
++                {
++                    writer.Append($"DECLARE {carrier} nvarchar(max) = ");
++                    if (selectedPage.DocumentIds.Count == 0)
++                    {
++                        writer.Append("NULL");
++                    }
++                    else
++                    {
++                        writer.AppendParameter(
++                            HydrationSqlConventions.SelectedPageDocumentIdsJsonParameterName
++                        );
++                    }
++                    writer.AppendLine(";");
++                }
++                return;
++
++            case PageKeysetSpec.Query query:
++                bool carriesAnchor = CarriesSelectedAnchor(query);
++                string columns = carriesAnchor ? $"{id}, {anchor}" : id;
++                string nullAnchor = carriesAnchor ? $", CAST(NULL AS bigint) AS {anchor}" : "";
++                string pageSql = HasZeroPageSelectionSize(query)
++                    ? $"SELECT CAST(NULL AS bigint) AS {id}{nullAnchor} WHERE 1 = 0"
++                    : PlanSqlStatementText.AsEmbeddableBody(query.Plan.PageDocumentIdSql);
++
++                if (mssql)
++                {
++                    writer
++                        .AppendLine($"DECLARE {carrier} nvarchar(max);")
++                        .AppendLine("WITH page_ids AS (")
++                        .AppendLine(pageSql)
++                        .AppendLine(")")
++                        .AppendLine($"SELECT {carrier} = (SELECT {columns} FROM page_ids FOR JSON PATH);")
++                        .Append($"SELECT k.{id}")
++                        .Append(carriesAnchor ? $", k.{anchor}" : "")
++                        .Append($" FROM OPENJSON({carrier}) WITH ({id} bigint '$.DocumentId'")
++                        .Append(carriesAnchor ? $", {anchor} bigint '$.ContentVersion'" : "")
++                        .AppendLine(") k;");
++                    return;
++                }
++
++                writer
++                    .AppendLine("WITH page_ids AS (")
++                    .AppendLine(pageSql)
++                    .AppendLine(")")
++                    .Append($"SELECT u.{id}")
++                    .AppendLine(carriesAnchor ? $", u.{anchor}" : "")
++                    .Append(
++                        $"FROM (SELECT set_config('{Dms1521KeysetVariant.PgsqlCarrierSetting}', "
++                            + $"COALESCE(string_agg(CAST(p.{id} AS text), ',' ORDER BY p.{id}), ''), true) AS keyset"
++                    )
++                    .Append(carriesAnchor ? $", array_agg(p.{anchor} ORDER BY p.{id}) AS anchors" : "")
++                    .AppendLine(" FROM page_ids p) c")
++                    .Append("CROSS JOIN LATERAL unnest(CAST(string_to_array(c.keyset, ',') AS bigint[])")
++                    .Append(carriesAnchor ? ", c.anchors" : "")
++                    .Append($") AS u({id}")
++                    .Append(carriesAnchor ? $", {anchor}" : "")
++                    .AppendLine(");");
++                return;
++
++            default:
++                throw new ArgumentOutOfRangeException(
++                    nameof(spec),
++                    spec,
++                    "Unexpected PageKeysetSpec variant."
++                );
++        }
++    }
++
+     /// <summary>
+     /// Whether the planned page selection can select nothing because its size is zero. Traditional
+     /// paging carries that size as a limit and cursor paging as a page size; both mean the same thing
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs b/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs
+index 3e6546d4c..9c3042e7a 100644
+--- a/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs
++++ b/src/dms/backend/EdFi.DataManagementService.Backend.Plans/PlanSqlWriterExtensions.cs
+@@ -5,6 +5,7 @@
+ 
+ using System.Text.RegularExpressions;
+ using EdFi.DataManagementService.Backend.Ddl;
++using EdFi.DataManagementService.Backend.External;
+ using EdFi.DataManagementService.Backend.External.Plans;
+ 
+ namespace EdFi.DataManagementService.Backend.Plans;
+@@ -44,6 +45,7 @@ public static partial class PlanSqlWriterExtensions
+         return relation switch
+         {
+             SqlRelationRef.PhysicalTable physicalTable => writer.AppendTable(physicalTable.Table),
++            SqlRelationRef.TempTable when Dms1521KeysetVariant.Inline => AppendDms1521InlineKeyset(writer),
+             SqlRelationRef.TempTable tempTable => writer.AppendQuoted(tempTable.Name),
+             _ => throw new ArgumentOutOfRangeException(
+                 nameof(relation),
+@@ -53,6 +55,36 @@ public static partial class PlanSqlWriterExtensions
+         };
+     }
+ 
++    /// <summary>
++    /// DMS-1521 inline keyset: the keyset relation as a derived table over the in-batch carrier, with the
++    /// keyset table's columns (<c>DocumentId</c>, <c>Ordinal</c>). PostgreSQL reads the bound
++    /// <c>bigint[]</c> of a selected page, or, when it is NULL (a query keyset), the transaction-local
++    /// carrier setting; a query keyset keeps a NULL ordinal. SQL Server reads the <c>@page_keyset</c>
++    /// JSON batch variable, whose objects omit <c>Ordinal</c> for a query keyset.
++    /// </summary>
++    private static SqlWriter AppendDms1521InlineKeyset(SqlWriter writer)
++    {
++        string documentId = writer.Dialect.QuoteIdentifier("DocumentId");
++        string ordinal = writer.Dialect.QuoteIdentifier(
++            HydrationSqlConventions.SelectedPageOrdinalColumnName
++        );
++
++        if (writer.Dialect.Rules.Dialect is SqlDialect.Mssql)
++        {
++            return writer.Append(
++                $"(SELECT kj.{documentId}, kj.{ordinal} FROM OPENJSON({Dms1521KeysetVariant.MssqlCarrierVariable}) "
++                    + $"WITH ({documentId} bigint '$.DocumentId', {ordinal} int '$.Ordinal') kj)"
++            );
++        }
++
++        string ids = $"CAST(@{Dms1521KeysetVariant.PgsqlDocumentIdsParameterName} AS bigint[])";
++        return writer.Append(
++            $"(SELECT u.{documentId}, CASE WHEN {ids} IS NULL THEN NULL ELSE CAST(u.{ordinal} - 1 AS int) END AS {ordinal} "
++                + $"FROM unnest(COALESCE({ids}, CAST(string_to_array(current_setting('{Dms1521KeysetVariant.PgsqlCarrierSetting}', true), ',') AS bigint[]))) "
++                + $"WITH ORDINALITY AS u({documentId}, {ordinal}))"
++        );
++    }
++
+     /// <summary>
+     /// Appends a multi-line <c>WHERE</c> clause using canonical uppercase keywords and indentation.
+     /// </summary>
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs b/src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs
+index 373d7fd8e..58c317375 100644
+--- a/src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs
++++ b/src/dms/backend/EdFi.DataManagementService.Backend/DescriptorReadHandler.cs
+@@ -2030,6 +2030,11 @@ internal sealed class DescriptorReadHandler(
+     {
+         ArgumentNullException.ThrowIfNull(plannedQuery);
+ 
++        if (Dms1521KeysetVariant.Inline)
++        {
++            return BuildDms1521InlineQueryCommand(dialect, plannedQuery, projection);
++        }
++
+         bool anchor = plannedQuery.OrderingMode is PageOrderingMode.ContentVersion;
+         string table = dialect == SqlDialect.Pgsql ? "descriptor_page" : "#descriptor_page";
+         string quotedTable = QuoteIdentifier(dialect, table);
+@@ -2055,6 +2060,11 @@ internal sealed class DescriptorReadHandler(
+ 
+                 """;
+         }
++        // DMS-1521 pg-analyze: analyze the materialized descriptor keyset (PostgreSQL only).
++        if (Dms1521KeysetVariant.AnalyzePostgresqlKeyset && dialect == SqlDialect.Pgsql)
++        {
++            prelude += $"ANALYZE {quotedTable};\n";
++        }
+         string pageSql = $"SELECT * FROM {quotedTable}";
+         string versionSql = BuildPageRowsSql(dialect, pageSql, DescriptorRowProjection.DocumentVersions);
+         string pageRowsSql = BuildPageRowsSql(dialect, pageSql, projection);
+@@ -2071,6 +2081,74 @@ internal sealed class DescriptorReadHandler(
+         );
+     }
+ 
++    /// <summary>
++    /// DMS-1521 inline: the descriptor batch without <c>descriptor_page</c>. The page is selected once,
++    /// into the same carrier the resource keyset uses, so both version fences and the owner rows read
++    /// one selection. PostgreSQL selects the page inside the boundary statement (a one-row aggregate
++    /// that sets the transaction-local carrier and returns the boundary), so the batch gains no result
++    /// set; that moves selection after the count statement. SQL Server fills the JSON batch variable
++    /// where the temp table was filled. The rows read the carrier with no bound parameter.
++    /// </summary>
++    private static RelationalCommand BuildDms1521InlineQueryCommand(
++        SqlDialect dialect,
++        PageKeysetSpec.Query plannedQuery,
++        DescriptorRowProjection projection
++    )
++    {
++        bool anchor = plannedQuery.OrderingMode is PageOrderingMode.ContentVersion;
++        string id = QuoteIdentifier(dialect, "DocumentId");
++        string version = QuoteIdentifier(dialect, "ContentVersion");
++        string boundaryColumn = anchor ? version : id;
++        string highest = QuoteIdentifier(dialect, "HighestSelectedAnchor");
++        string anchorColumn = anchor ? $", {version}" : "";
++        string nullAnchor = anchor ? $", CAST(NULL AS bigint) AS {version}" : "";
++        string selectionSql = HasZeroLimit(plannedQuery)
++            ? $"SELECT CAST(NULL AS bigint) AS {id}{nullAnchor} WHERE 1 = 0"
++            : PlanSqlStatementText.AsEmbeddableBody(plannedQuery.Plan.PageDocumentIdSql);
++        string countSql = plannedQuery.Plan.TotalCountSql is null
++            ? ""
++            : PlanSqlStatementText.AsTerminatedStatement(plannedQuery.Plan.TotalCountSql)
++                + Environment.NewLine;
++
++        string prelude;
++        string pageSql;
++        string boundarySql;
++        if (dialect == SqlDialect.Pgsql)
++        {
++            string carrier = $"current_setting('{Dms1521KeysetVariant.PgsqlCarrierSetting}', true)";
++            prelude = "";
++            pageSql =
++                $"SELECT u.{id} FROM unnest(CAST(string_to_array({carrier}, ',') AS bigint[])) AS u({id})";
++            boundarySql =
++                "-- Descriptor page selection boundary\n"
++                + $"WITH page_ids AS (\n{selectionSql}\n)\n"
++                + $"SELECT c.{highest} FROM (SELECT set_config('{Dms1521KeysetVariant.PgsqlCarrierSetting}', "
++                + $"COALESCE(string_agg(CAST(p.{id} AS text), ',' ORDER BY p.{id}), ''), true) AS keyset, "
++                + $"MAX(p.{boundaryColumn}) AS {highest} FROM page_ids p) c WHERE c.keyset IS NOT NULL;\n";
++        }
++        else
++        {
++            string carrier = Dms1521KeysetVariant.MssqlCarrierVariable;
++            string anchorJson = anchor ? $", {version} bigint '$.ContentVersion'" : "";
++            string openJson = $"OPENJSON({carrier}) WITH ({id} bigint '$.DocumentId'{anchorJson}) kj";
++            string fill = HasZeroLimit(plannedQuery)
++                ? ""
++                : $"WITH page_ids AS (\n{selectionSql}\n)\n"
++                    + $"SELECT {carrier} = (SELECT {id}{anchorColumn} FROM page_ids FOR JSON PATH);\n";
++            prelude = $"DECLARE {carrier} nvarchar(max);\n" + fill;
++            pageSql = $"SELECT kj.{id} FROM {openJson}";
++            boundarySql =
++                $"-- Descriptor page selection boundary\nSELECT MAX(kj.{boundaryColumn}) AS {highest} FROM {openJson};\n";
++        }
++
++        string versionSql = BuildPageRowsSql(dialect, pageSql, DescriptorRowProjection.DocumentVersions);
++        string pageRowsSql = BuildPageRowsSql(dialect, pageSql, projection);
++        return new RelationalCommand(
++            prelude + countSql + boundarySql + BuildAcquisitionSql(versionSql, pageRowsSql),
++            BuildQueryParameters(plannedQuery)
++        );
++    }
++
+     private static bool HasZeroLimit(PageKeysetSpec.Query plannedQuery)
+     {
+         foreach (var parameter in plannedQuery.Plan.PageParametersInOrder)
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs b/src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs
+index 444c76e7e..eaafbfc2d 100644
+--- a/src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs
++++ b/src/dms/backend/EdFi.DataManagementService.Backend/RelationalDocumentStoreRepository.cs
+@@ -2107,7 +2107,18 @@ public sealed class RelationalDocumentStoreRepository(
+             mappingSet.Key.Dialect
+         );
+ 
+-        return new RelationalCommand(commandText, BuildQueryCandidateSelectionParameters(plannedQuery));
++        IReadOnlyList<RelationalParameter> parameters = BuildQueryCandidateSelectionParameters(plannedQuery);
++        if (Dms1521KeysetVariant.Inline && mappingSet.Key.Dialect is SqlDialect.Pgsql)
++        {
++            // DMS-1521 inline: the keyset relation reads this bigint[]; NULL selects the query carrier.
++            parameters =
++            [
++                .. parameters,
++                new RelationalParameter($"@{Dms1521KeysetVariant.PgsqlDocumentIdsParameterName}", null),
++            ];
++        }
++
++        return new RelationalCommand(commandText, parameters);
+     }
+ 
+     private static IReadOnlyList<RelationalParameter> BuildQueryCandidateSelectionParameters(
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs b/src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs
+index 259b51317..0ec1d7dae 100644
+--- a/src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs
++++ b/src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/HydrationExecutorTests.cs
+@@ -1492,7 +1492,7 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
+         var result = await HydrationExecutor.ExecuteAsync(
+             batchSql =>
+             {
+-                CountOccurrences(batchSql, SpliceAfter)
++                CountOccurrences(batchSql, SplicePointFor(batchSql, SpliceAfter))
+                     .Should()
+                     .Be(
+                         1,
+@@ -1500,8 +1500,8 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
+                     );
+ 
+                 var splicedBatch = batchSql.Replace(
+-                    SpliceAfter,
+-                    SpliceAfter + DeleteEverySelectedRow,
++                    SplicePointFor(batchSql, SpliceAfter),
++                    SplicePointFor(batchSql, SpliceAfter) + DeleteEverySelectedRow,
+                     StringComparison.Ordinal
+                 );
+                 splicedBatches.Add(splicedBatch);
+@@ -1581,7 +1581,7 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
+         var result = await HydrationExecutor.ExecuteAsync(
+             batchSql =>
+             {
+-                CountOccurrences(batchSql, SpliceAfter)
++                CountOccurrences(batchSql, SplicePointFor(batchSql, SpliceAfter))
+                     .Should()
+                     .Be(
+                         1,
+@@ -1589,8 +1589,8 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
+                     );
+ 
+                 var splicedBatch = batchSql.Replace(
+-                    SpliceAfter,
+-                    SpliceAfter + DeleteEverySelectedRow,
++                    SplicePointFor(batchSql, SpliceAfter),
++                    SplicePointFor(batchSql, SpliceAfter) + DeleteEverySelectedRow,
+                     StringComparison.Ordinal
+                 );
+                 splicedBatches.Add(splicedBatch);
+@@ -1681,6 +1681,22 @@ public class Given_A_Mssql_Query_Keyset_That_Returns_Its_Selected_Ids
+             PageOrderingMode.DocumentId
+         );
+ 
++    // DMS-1521 inline (test adaptation): inline has no #page INSERT. The batch fills the carrier and
++    // then returns the selected keys from OPENJSON in a statement ending ") k;", so the delete is
++    // spliced after that statement, still between selection and the hydration selects.
++    private static string SplicePointFor(string batchSql, string temporaryTableSplicePoint)
++    {
++        if (!Dms1521KeysetVariant.Inline)
++        {
++            return temporaryTableSplicePoint;
++        }
++
++        const string SelectedKeysEnd = ") k;";
++        return batchSql[
++            ..(batchSql.IndexOf(SelectedKeysEnd, StringComparison.Ordinal) + SelectedKeysEnd.Length)
++        ];
++    }
++
+     private static int CountOccurrences(string text, string value)
+     {
+         var occurrences = 0;
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs b/src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs
+index 228dbd7d9..ecb240566 100644
+--- a/src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs
++++ b/src/dms/backend/EdFi.DataManagementService.Backend.Postgresql.Tests.Integration/HydrationExecutorTests.cs
+@@ -1761,7 +1761,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
+         var result = await HydrationExecutor.ExecuteAsync(
+             batchSql =>
+             {
+-                CountOccurrences(batchSql, SpliceAfter)
++                CountOccurrences(batchSql, SplicePointFor(batchSql, SpliceAfter))
+                     .Should()
+                     .Be(
+                         1,
+@@ -1769,8 +1769,8 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
+                     );
+ 
+                 var splicedBatch = batchSql.Replace(
+-                    SpliceAfter,
+-                    SpliceAfter + DeleteEverySelectedRow,
++                    SplicePointFor(batchSql, SpliceAfter),
++                    SplicePointFor(batchSql, SpliceAfter) + DeleteEverySelectedRow,
+                     StringComparison.Ordinal
+                 );
+                 splicedBatches.Add(splicedBatch);
+@@ -1849,7 +1849,7 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
+         var result = await HydrationExecutor.ExecuteAsync(
+             batchSql =>
+             {
+-                CountOccurrences(batchSql, SpliceAfter)
++                CountOccurrences(batchSql, SplicePointFor(batchSql, SpliceAfter))
+                     .Should()
+                     .Be(
+                         1,
+@@ -1857,8 +1857,8 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
+                     );
+ 
+                 var splicedBatch = batchSql.Replace(
+-                    SpliceAfter,
+-                    SpliceAfter + DeleteEverySelectedRow,
++                    SplicePointFor(batchSql, SpliceAfter),
++                    SplicePointFor(batchSql, SpliceAfter) + DeleteEverySelectedRow,
+                     StringComparison.Ordinal
+                 );
+                 splicedBatches.Add(splicedBatch);
+@@ -1951,6 +1951,14 @@ public class Given_A_Pgsql_Query_Keyset_That_Returns_Its_Selected_Ids
+             PageOrderingMode.DocumentId
+         );
+ 
++    // DMS-1521 inline (test adaptation): inline has no temp-table INSERT ... RETURNING. Its first
++    // statement selects the page and sets the carrier, so the delete is spliced after that statement,
++    // still between selection and the hydration selects.
++    private static string SplicePointFor(string batchSql, string temporaryTableSplicePoint) =>
++        Dms1521KeysetVariant.Inline
++            ? batchSql[..(batchSql.IndexOf(';', StringComparison.Ordinal) + 1)]
++            : temporaryTableSplicePoint;
++
+     private static int CountOccurrences(string text, string value)
+     {
+         var occurrences = 0;
+diff --git a/src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/AuthoritativeTimestampReadConsistencyScenario.cs b/src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/AuthoritativeTimestampReadConsistencyScenario.cs
+index f6d8a438c..cf68eeb90 100644
+--- a/src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/AuthoritativeTimestampReadConsistencyScenario.cs
++++ b/src/dms/tests/EdFi.DataManagementService.Tests.Integration/Scenarios/AuthoritativeTimestampReadConsistencyScenario.cs
+@@ -339,6 +339,39 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
+             .Be(LastModifiedDateFormatter.Format(stamp.ModifiedAt));
+     }
+ 
++    // ---- DMS-1521 inline (test adaptation; story scope, not production behavior) ----------------------
++    // The inline SQL Server keyset lives in the batch variable @page_keyset, which does not survive this
++    // double's split into two commands. The first command also returns the complete JSON carrier under a
++    // sentinel column; that result set is removed before the production reader sees the buffered tables,
++    // and the second command re-declares the variable from it as a bound parameter. Selection is not
++    // repeated and the production batch text is unchanged. A PostgreSQL split shares one transaction, so
++    // its transaction-local carrier survives without help.
++    private const string Dms1521CarrierColumn = "dms1521_carrier";
++
++    private const string Dms1521CarrierSelect = "\nSELECT @page_keyset AS [" + Dms1521CarrierColumn + "];";
++
++    private static bool Dms1521CarriesMssqlKeyset(string sql, bool postgresql) =>
++        !postgresql && sql.Contains("DECLARE @page_keyset", StringComparison.Ordinal);
++
++    private static object Dms1521TakeCarrier(List<DataTable> tables)
++    {
++        DataTable carrier = tables[^1];
++        carrier.Columns.Count.Should().Be(1);
++        carrier.Columns[0].ColumnName.Should().Be(Dms1521CarrierColumn);
++        tables.RemoveAt(tables.Count - 1);
++        return carrier.Rows[0][0];
++    }
++
++    private static string Dms1521RestoreCarrier(DbCommand command, object carrier)
++    {
++        command.Parameters.Add(
++            new SqlParameter("@dms1521_carrier", SqlDbType.NVarChar, -1) { Value = carrier }
++        );
++        return "DECLARE @page_keyset nvarchar(max) = @dms1521_carrier;\n";
++    }
++
++    // ---- end DMS-1521 test adaptation ----------------------------------------------------------------
++
+     private sealed class ReadBoundary(string connectionString, bool postgresql)
+     {
+         public string ConnectionString { get; } = connectionString;
+@@ -483,9 +516,23 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
+                             await prelude.ExecuteNonQueryAsync(ct);
+                             command.CommandText = command.CommandText[preludeEnd..];
+                         }
++                        // DMS-1521 inline (test adaptation): carry the SQL Server keyset across the split.
++                        bool dms1521Carrier = Dms1521CarriesMssqlKeyset(
++                            command.CommandText,
++                            boundary.Postgresql
++                        );
++                        if (dms1521Carrier)
++                        {
++                            command.CommandText += Dms1521CarrierSelect;
++                        }
+                         List<DataTable> tables = await BufferAsync(command, ct);
++                        object dms1521CarrierValue = dms1521Carrier
++                            ? Dms1521TakeCarrier(tables)
++                            : DBNull.Value;
+                         await boundary.Gate.WaitIfArmedAsync();
+-                        command.CommandText = sql[split..];
++                        command.CommandText =
++                            (dms1521Carrier ? Dms1521RestoreCarrier(command, dms1521CarrierValue) : "")
++                            + sql[split..];
+                         tables.AddRange(await BufferAsync(command, ct));
+                         await transaction.CommitAsync(ct);
+                         return new DataTableReader(tables.ToArray());
+@@ -691,9 +738,21 @@ internal static class AuthoritativeTimestampReadConsistencyScenario
+                         await prelude.ExecuteNonQueryAsync(cancellationToken);
+                         dbCommand.CommandText = dbCommand.CommandText[preludeEnd..];
+                     }
++                    // DMS-1521 inline (test adaptation): carry the SQL Server keyset across the split.
++                    bool dms1521Carrier = Dms1521CarriesMssqlKeyset(
++                        dbCommand.CommandText,
++                        boundary.Postgresql
++                    );
++                    if (dms1521Carrier)
++                    {
++                        dbCommand.CommandText += Dms1521CarrierSelect;
++                    }
+                     List<DataTable> tables = await BoundaryHydrator.BufferAsync(dbCommand, cancellationToken);
++                    object dms1521CarrierValue = dms1521Carrier ? Dms1521TakeCarrier(tables) : DBNull.Value;
+                     await boundary.Gate.WaitIfArmedAsync();
+-                    dbCommand.CommandText = command.CommandText[split..];
++                    dbCommand.CommandText =
++                        (dms1521Carrier ? Dms1521RestoreCarrier(dbCommand, dms1521CarrierValue) : "")
++                        + command.CommandText[split..];
+                     tables.AddRange(await BoundaryHydrator.BufferAsync(dbCommand, cancellationToken));
+                     await transaction.CommitAsync(cancellationToken);
+                     await using var reader = new DbRelationalCommandReader(
+diff --git a/src/dms/backend/EdFi.DataManagementService.Backend.Plans/Dms1521KeysetVariant.cs b/src/dms/backend/EdFi.DataManagementService.Backend.Plans/Dms1521KeysetVariant.cs
+new file mode 100644
+index 000000000..c0cf866cf
+--- /dev/null
++++ b/src/dms/backend/EdFi.DataManagementService.Backend.Plans/Dms1521KeysetVariant.cs
+@@ -0,0 +1,51 @@
++// SPDX-License-Identifier: Apache-2.0
++// Licensed to the Ed-Fi Alliance under one or more agreements.
++// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
++// See the LICENSE and NOTICES files in the project root for more information.
++
++namespace EdFi.DataManagementService.Backend.Plans;
++
++/// <summary>
++/// DMS-1521 spike only (reference/spikes/DMS-1521/experiments/prototype.patch). Selects the keyset
++/// variant from <c>DMS1521_KEYSET_VARIANT</c>, read once per process; unset means <c>baseline</c>,
++/// which leaves every batch byte-identical to main.
++/// </summary>
++public static class Dms1521KeysetVariant
++{
++    public const string Baseline = "baseline";
++    public const string PgAnalyze = "pg-analyze";
++    public const string InlineValue = "inline";
++
++    /// <summary>PostgreSQL transaction-local setting that carries a query keyset's selected ids.</summary>
++    public const string PgsqlCarrierSetting = "dms.page_keyset";
++
++    /// <summary>
++    /// PostgreSQL <c>bigint[]</c> parameter every keyset relation reads. A selected page (or single
++    /// document) binds its ids; a query keyset binds NULL and the relation reads the carrier instead.
++    /// </summary>
++    public const string PgsqlDocumentIdsParameterName = "page_document_ids";
++
++    /// <summary>SQL Server batch variable that carries the keyset as JSON.</summary>
++    public const string MssqlCarrierVariable = "@page_keyset";
++
++    public static string Value { get; } = Read();
++
++    /// <summary>
++    /// PostgreSQL only: analyze the keyset temp table right after it is materialized, so the statements
++    /// that join it are planned with its real row count.
++    /// </summary>
++    public static bool AnalyzePostgresqlKeyset => Value == PgAnalyze;
++
++    /// <summary>Carry the keyset inside the batch instead of a temp table (no catalog object).</summary>
++    public static bool Inline => Value == InlineValue;
++
++    private static string Read()
++    {
++        string value = Environment.GetEnvironmentVariable("DMS1521_KEYSET_VARIANT") is { Length: > 0 } raw
++            ? raw.Trim()
++            : Baseline;
++        return value is Baseline or PgAnalyze or InlineValue
++            ? value
++            : throw new InvalidOperationException($"Unknown DMS1521_KEYSET_VARIANT '{value}'.");
++    }
++}

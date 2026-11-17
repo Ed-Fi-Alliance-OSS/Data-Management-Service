@@ -88,7 +88,11 @@ internal static class PlannedQueryParameterBinder
         {
             QuerySqlParameterBindingKind.Scalar => new PlannedQueryParameterBinding(
                 $"@{parameter.ParameterName}",
-                value
+                value,
+                parameter.Binding.StringContract is { } stringContract
+                    ? dbParameter =>
+                        ConfigureMssqlStringParameter(dbParameter, parameter, stringContract, value)
+                    : null
             ),
             QuerySqlParameterBindingKind.PgsqlArray => new PlannedQueryParameterBinding(
                 $"@{parameter.ParameterName}",
@@ -245,6 +249,52 @@ internal static class PlannedQueryParameterBinder
         }
 
         return structuredTable;
+    }
+
+    /// <summary>
+    /// The longest <c>nvarchar(n)</c> SQL Server declares without <c>max</c>.
+    /// </summary>
+    internal const int MaxBoundedMssqlNVarCharLength = 4000;
+
+    /// <summary>
+    /// Declares a SQL Server string parameter from its plan contract rather than from its value, so the
+    /// declaration does not vary with the value across executions of one statement. A contract of up to
+    /// 4,000 characters declares exactly that length; a longer or unbounded one declares <c>max</c>. A null
+    /// value takes the same declaration. Other providers keep their own inference.
+    /// </summary>
+    /// <remarks>
+    /// <c>SqlParameter</c> silently truncates a value longer than its declared size, and a truncated filter
+    /// can match a different row, so a value wider than its declared contract is refused rather than bound.
+    /// Public filter input is already rejected before planning when it is too wide, so reaching this throw
+    /// means a caller built a plan around an invalid value. A <c>max</c> declaration cannot truncate, but a
+    /// bounded contract is still enforced, so declaring <c>max</c> does not discard it.
+    /// </remarks>
+    private static void ConfigureMssqlStringParameter(
+        DbParameter dbParameter,
+        QuerySqlParameter querySqlParameter,
+        QuerySqlStringContract stringContract,
+        object? value
+    )
+    {
+        if (dbParameter is not SqlParameter sqlParameter)
+        {
+            return;
+        }
+
+        if (value is string stringValue && stringValue.Length > stringContract.MaxLength)
+        {
+            throw new InvalidOperationException(
+                $"SQL Server string parameter '{querySqlParameter.ParameterName}' carries a value of "
+                    + $"{stringValue.Length} UTF-16 code units, wider than its declared length of "
+                    + $"{stringContract.MaxLength}. It is not bound, because the parameter would truncate it."
+            );
+        }
+
+        sqlParameter.SqlDbType = SqlDbType.NVarChar;
+        sqlParameter.Size =
+            stringContract.MaxLength is { } maxLength && maxLength <= MaxBoundedMssqlNVarCharLength
+                ? maxLength
+                : -1;
     }
 
     private static void ConfigureMssqlStructuredParameter(

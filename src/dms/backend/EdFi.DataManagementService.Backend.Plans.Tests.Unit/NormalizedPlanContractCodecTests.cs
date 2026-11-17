@@ -747,6 +747,46 @@ public class Given_NormalizedPlanContractCodec : WritePlanCompilerTestBase
     }
 
     [Test]
+    public void It_should_roundtrip_string_contract_binding_metadata_and_keep_a_plain_scalar_unencoded()
+    {
+        var queryPlan = new PageDocumentIdSqlPlan(
+            PageDocumentIdSql: "SELECT 1",
+            TotalCountSql: null,
+            PageParametersInOrder:
+            [
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "studentUniqueId",
+                    QuerySqlParameterBinding.CreateString(32)
+                ),
+                new QuerySqlParameter(
+                    QuerySqlParameterRole.Filter,
+                    "namespacePrefixes_0",
+                    QuerySqlParameterBinding.CreateString(null)
+                ),
+                new QuerySqlParameter(QuerySqlParameterRole.Filter, "schoolId"),
+                new QuerySqlParameter(QuerySqlParameterRole.Offset, "offset"),
+                new QuerySqlParameter(QuerySqlParameterRole.Limit, "limit"),
+            ],
+            TotalCountParametersInOrder: null
+        );
+
+        var encoded = NormalizedPlanContractCodec.Encode(queryPlan);
+        var decoded = NormalizedPlanContractCodec.Decode(encoded);
+
+        encoded.PageParametersInOrder[2].Binding.Should().BeNull();
+        decoded
+            .PageParametersInOrder.Take(3)
+            .Select(parameter => parameter.Binding)
+            .Should()
+            .Equal(
+                QuerySqlParameterBinding.CreateString(32),
+                QuerySqlParameterBinding.CreateString(null),
+                QuerySqlParameterBinding.Scalar
+            );
+    }
+
+    [Test]
     public void It_should_fail_fast_when_model_document_reference_binding_order_is_permuted_relative_to_the_encoded_read_plan()
     {
         var encoded = NormalizedPlanContractCodec.Encode(_readPlan);

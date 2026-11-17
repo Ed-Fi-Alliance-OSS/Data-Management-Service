@@ -696,8 +696,11 @@ internal sealed record QuerySqlParameterDto(
 internal sealed record QuerySqlParameterBindingDto(
     QuerySqlParameterBindingKindDto Kind,
     string? StructuredTypeName = null,
-    string? StructuredColumnName = null
+    string? StructuredColumnName = null,
+    QuerySqlStringContractDto? StringContract = null
 );
+
+internal sealed record QuerySqlStringContractDto(int? MaxLength);
 
 internal enum QuerySqlParameterBindingKindDto
 {
