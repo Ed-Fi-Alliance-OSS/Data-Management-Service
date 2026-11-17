@@ -100,6 +100,11 @@ internal interface IEducationOrganizationProjectionReadObserver
 /// indeterminate outcome there is transient and the rows are discarded, never returned.
 /// </para>
 /// <para>
+/// In Prepare and Execute, an <see cref="InvalidOperationException"/> raised once the connection is
+/// closed or broken is the target becoming unavailable for that stage. The same exception on a
+/// connection that is still open is a programming error and propagates as a defect.
+/// </para>
+/// <para>
 /// Caller cancellation always propagates as <see cref="OperationCanceledException"/>, whatever the
 /// provider raised for it; an exception the stage does not classify propagates as a defect. On every
 /// path that does not commit, the transaction is rolled back and the connection released.
@@ -222,6 +227,10 @@ internal static class EducationOrganizationProjectionStagedRead
             {
                 return Unavailable(logger, Stage.Prepare, provider.Describe(exception));
             }
+            catch (InvalidOperationException exception) when (IsConnectionLost(exception, connection))
+            {
+                return Unavailable(logger, Stage.Prepare, provider.Describe(exception));
+            }
 
             // Execute and Materialize
             List<EducationOrganizationProjectionRow> rows;
@@ -264,6 +273,10 @@ internal static class EducationOrganizationProjectionStagedRead
                 var classified = provider.ClassifyExecutionFailure(exception, provider.Describe(exception));
                 LogFailure(logger, classified);
                 return classified;
+            }
+            catch (InvalidOperationException exception) when (IsConnectionLost(exception, connection))
+            {
+                return Unavailable(logger, Stage.Execute, provider.Describe(exception));
             }
             catch (Exception exception)
                 when (EducationOrganizationProjectionExecutionClassifier.IsMaterializationFailure(exception))
@@ -486,6 +499,24 @@ internal static class EducationOrganizationProjectionStagedRead
         Exception exception,
         CancellationToken cancellationToken
     ) => new("The education organization projection read was cancelled.", exception, cancellationToken);
+
+    /// <summary>
+    /// Whether an <see cref="InvalidOperationException"/> reports the connection lost underneath the
+    /// read. ADO.NET providers raise that type for a command on a connection that is not open, but also
+    /// for programming errors, so the type alone does not decide it: the connection must be closed or
+    /// broken. <see cref="ObjectDisposedException"/> is shutdown, not an unavailable database, as in
+    /// the Acquire stage. The message is never inspected.
+    /// </summary>
+    private static bool IsConnectionLost(InvalidOperationException exception, DbConnection connection)
+    {
+        if (exception is ObjectDisposedException)
+        {
+            return false;
+        }
+
+        ConnectionState state = connection.State;
+        return state == ConnectionState.Closed || state.HasFlag(ConnectionState.Broken);
+    }
 
     private static EducationOrganizationProjectionSetResult Unavailable(
         ILogger logger,

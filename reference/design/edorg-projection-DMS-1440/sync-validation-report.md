@@ -193,3 +193,25 @@ This would turn the source-derived recovery claim into a cross-component test. A
 | Proven on PostgreSQL, SQL Server Keycloak pending | 2 and 3 | Proven in both identity modes; their SQL Server Keycloak evidence is CI-only |
 
 Every SQL Server lane in the §10 gate table still needs its CI evidence on the tested head before completion or merge approval.
+
+## 7. Addendum, 2026-11-17: broken connection in Prepare or Execute (AC 11)
+
+The PR review found a gap in the AC 11 failure taxonomy. Commit already treated an `InvalidOperationException` from a broken connection as transient, but Prepare and Execute did not. A connection lost during either stage escaped `EducationOrganizationProjectionStagedRead` as a defect and answered 500 instead of 503 `target-unavailable`.
+
+**Fix.** In Prepare and Execute, an `InvalidOperationException` now becomes `TargetUnavailable` for that stage, but only when the connection is `Closed` or `Broken`. The same exception on an open connection still propagates as a defect, and so does `ObjectDisposedException`, which the Acquire stage also treats as shutdown. The exception message is never inspected, and only the provider's `Describe` output is logged. Commit, cancellation precedence, `DbException` and materialization classification, and cleanup are unchanged.
+
+**Focused evidence** (x64 host, SDK 10.0.203; `Backend.Plans.Tests.Unit`, filter `Education_Organization_Projection_Staged_Read`):
+
+| Check | Result |
+| --- | --- |
+| Staged-read fixtures: 10 new connection-loss cases, 6 cancellation tests, 8 cleanup tests | 24 passed, 0 failed |
+| The same 10 new cases against the pre-fix source | The 4 `TargetUnavailable` cases (Prepare and Execute, `Closed` and `Broken`) fail; the other 6 pass |
+| Mutant: every `InvalidOperationException` treated as an outage | Only the 2 open-connection defect cases fail |
+| Mutant: `ObjectDisposedException` not excluded | Only the 2 disposal cases fail |
+| Existing handler mapping `It_answers_target_unavailable_for_TargetUnavailable` (Core unit) | 1 passed; `TargetUnavailable` from any stage answers 503 `target-unavailable` |
+
+The new cases also cover AC 12. Caller cancellation still wins over a lost connection in both stages, and no log record carries the exception object or its message.
+
+**AC evidence.** For ACs 1–10 and 13–15, the §2 and §6 rows, the SQL Server records in §3.2, and the later bounded x64 pass (API SQL Server full lane recorded as incomplete, one backend shard 4 failure not reproduced and cause unproven) stand as recorded. This pass reran none of them. AC 11 adds the evidence above, and AC 12 keeps its §2 evidence plus the new cancellation and redaction cases.
+
+**CI.** CI has not run on this commit. A dispatched CI run on the previous head, `37aa84f93` (On DMS Pull Request, run 44111068909), passed 49 of 50 jobs, including the DMS API SQL Server integration and backend SQL Server shard 4 jobs. Its one failure, the dispatch-only CDC connector-template smoke job, comes from `main` and is outside this branch. That run does not cover this commit, so every §10 CI gate still needs a run on the new head.

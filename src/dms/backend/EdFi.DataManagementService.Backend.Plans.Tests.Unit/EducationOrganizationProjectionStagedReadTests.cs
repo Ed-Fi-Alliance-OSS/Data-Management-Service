@@ -169,7 +169,7 @@ public class Given_The_Education_Organization_Projection_Staged_Read_With_A_Prov
             .Throws(new TestProviderException());
     }
 
-    private static DbCommand FakeCommand()
+    internal static DbCommand FakeCommand()
     {
         var command = A.Fake<DbCommand>();
         A.CallTo(command)
@@ -184,7 +184,7 @@ public class Given_The_Education_Organization_Projection_Staged_Read_With_A_Prov
         return command;
     }
 
-    private static DbDataReader EmptyResult()
+    internal static DbDataReader EmptyResult()
     {
         var columns = EducationOrganizationProjectionResultColumns.Default;
         var table = new DataTable();
@@ -201,4 +201,173 @@ public class Given_The_Education_Organization_Projection_Staged_Read_With_A_Prov
 
     /// <summary>A provider exception, as a driver might raise for a cancelled command.</summary>
     private sealed class TestProviderException() : DbException("Provider-reported failure.");
+}
+
+/// <summary>
+/// A connection lost underneath the Prepare or Execute stage: the provider raises
+/// <see cref="InvalidOperationException"/> and the connection is no longer open. That is the target
+/// becoming unavailable in that stage, with no rows returned; the same exception on a connection that
+/// is still open is a defect and propagates.
+/// </summary>
+[TestFixture]
+public class Given_The_Education_Organization_Projection_Staged_Read_When_The_Connection_Is_Lost
+{
+    private const string Hostile = "Hostile-Secret-5d1e";
+
+    private static readonly EducationOrganizationProjectionProvider _provider = new(
+        SqlDialect.Pgsql,
+        IsolationLevel.RepeatableRead,
+        static _ => false,
+        static exception => exception.GetType().Name,
+        static (_, describe) =>
+            EducationOrganizationProjectionExecutionClassifier.ClassifyPostgresql(null, describe),
+        static seconds => $"SET LOCAL lock_timeout = '{seconds}s'",
+        SessionRestoreStatement: null,
+        DiscardConnectionAsync: static _ => Task.CompletedTask
+    );
+
+    private CancellationTokenSource _cancellation = null!;
+    private ConnectionState _state;
+    private DbConnection _connection = null!;
+    private DbCommand _lockTimeout = null!;
+    private DbCommand _select = null!;
+    private RecordingLogger<Given_The_Education_Organization_Projection_Staged_Read_When_The_Connection_Is_Lost> _logger =
+        null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        _cancellation = new CancellationTokenSource();
+        _state = ConnectionState.Open;
+        _logger = new();
+        _lockTimeout =
+            Given_The_Education_Organization_Projection_Staged_Read_With_A_Provider_That_Reports_Cancellation_As_Its_Own_Failure.FakeCommand();
+        _select =
+            Given_The_Education_Organization_Projection_Staged_Read_With_A_Provider_That_Reports_Cancellation_As_Its_Own_Failure.FakeCommand();
+        A.CallTo(_select)
+            .Where(static call => call.Method.Name == "ExecuteDbDataReaderAsync")
+            .WithReturnType<Task<DbDataReader>>()
+            .ReturnsLazily(static () =>
+                Task.FromResult(
+                    Given_The_Education_Organization_Projection_Staged_Read_With_A_Provider_That_Reports_Cancellation_As_Its_Own_Failure.EmptyResult()
+                )
+            );
+
+        _connection = A.Fake<DbConnection>();
+        A.CallTo(() => _connection.State).ReturnsLazily(() => _state);
+        A.CallTo(_connection)
+            .Where(static call => call.Method.Name == "BeginDbTransactionAsync")
+            .WithReturnType<ValueTask<DbTransaction>>()
+            .Returns(new ValueTask<DbTransaction>(A.Fake<DbTransaction>()));
+        A.CallTo(_connection)
+            .Where(static call => call.Method.Name == "CreateDbCommand")
+            .WithReturnType<DbCommand>()
+            .ReturnsNextFromSequence(_lockTimeout, _select);
+    }
+
+    [TearDown]
+    public void TearDown() => _cancellation.Dispose();
+
+    [TestCase(Stage.Prepare, ConnectionState.Closed)]
+    [TestCase(Stage.Prepare, ConnectionState.Broken)]
+    [TestCase(Stage.Execute, ConnectionState.Closed)]
+    [TestCase(Stage.Execute, ConnectionState.Broken)]
+    public async Task It_answers_target_unavailable_in_the_stage_that_lost_the_connection(
+        Stage stage,
+        ConnectionState lostState
+    )
+    {
+        Fail(stage, lostState, new InvalidOperationException(Hostile));
+
+        var result = await ReadAsync();
+
+        result.Should().Be(new Result.TargetUnavailable(stage, nameof(InvalidOperationException)));
+        foreach (var record in _logger.Records)
+        {
+            record.Exception.Should().BeNull();
+            record.Message.Should().NotContain(Hostile);
+        }
+    }
+
+    [TestCase(Stage.Prepare)]
+    [TestCase(Stage.Execute)]
+    public async Task It_propagates_an_invalid_operation_on_a_connection_that_is_still_open(Stage stage)
+    {
+        Fail(stage, ConnectionState.Open, new InvalidOperationException("defect"));
+
+        var act = ReadAsync;
+
+        await act.Should().ThrowExactlyAsync<InvalidOperationException>().WithMessage("defect");
+    }
+
+    [TestCase(Stage.Prepare)]
+    [TestCase(Stage.Execute)]
+    public async Task It_propagates_disposal_even_when_the_connection_is_closed(Stage stage)
+    {
+        Fail(stage, ConnectionState.Closed, new ObjectDisposedException("connection"));
+
+        var act = ReadAsync;
+
+        await act.Should().ThrowExactlyAsync<ObjectDisposedException>();
+    }
+
+    [TestCase(Stage.Prepare)]
+    [TestCase(Stage.Execute)]
+    public async Task It_propagates_the_callers_cancellation_over_a_lost_connection(Stage stage)
+    {
+        Fail(stage, ConnectionState.Closed, new InvalidOperationException(Hostile), cancelFirst: true);
+
+        var act = ReadAsync;
+
+        await act.Should()
+            .ThrowAsync<OperationCanceledException>()
+            .WithInnerException(typeof(InvalidOperationException));
+    }
+
+    private void Fail(
+        Stage stage,
+        ConnectionState stateAfterFailure,
+        Exception exception,
+        bool cancelFirst = false
+    )
+    {
+        void Lose()
+        {
+            if (cancelFirst)
+            {
+                _cancellation.Cancel();
+            }
+            _state = stateAfterFailure;
+        }
+
+        if (stage == Stage.Prepare)
+        {
+            A.CallTo(() => _lockTimeout.ExecuteNonQueryAsync(A<CancellationToken>._))
+                .Invokes(Lose)
+                .Throws(exception);
+        }
+        else
+        {
+            A.CallTo(_select)
+                .Where(static call => call.Method.Name == "ExecuteDbDataReaderAsync")
+                .WithReturnType<Task<DbDataReader>>()
+                .Invokes(Lose)
+                .Throws(exception);
+        }
+    }
+
+    private Task<Result> ReadAsync() =>
+        EducationOrganizationProjectionStagedRead.ReadAsync(
+            _provider,
+            _ => Task.FromResult(new EducationOrganizationProjectionConnection(_connection, _connection)),
+            new EducationOrganizationProjectionSetReadRequest(
+                EducationOrganizationProjectionDs52MappingSets.For(SqlDialect.Pgsql),
+                MaxProjectionRows: 50_000,
+                ReadLockTimeoutSeconds: 5,
+                ReadCommandTimeoutSeconds: 60
+            ),
+            _logger,
+            observer: null,
+            _cancellation.Token
+        );
 }
