@@ -38,11 +38,71 @@ internal sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
         );
     }
 
-    public string EmitUpdateBatch(TableWritePlan tableWritePlan, int rowCount)
+    /// <summary>
+    /// Emits the single-row update for a table whose bindings at <paramref name="omittedBindingIndexes"/>
+    /// are left out of the SET list. Parameter names are the compiled, unsuffixed ones, matching how a
+    /// single row is bound.
+    /// </summary>
+    public string EmitUpdate(TableWritePlan tableWritePlan, IReadOnlyCollection<int> omittedBindingIndexes)
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(omittedBindingIndexes);
+
+        var shape = ResolveUpdateShape(tableWritePlan, omittedBindingIndexes);
+
+        return EmitUpdateSql(
+            tableWritePlan.TableModel.Table,
+            shape.SetColumns,
+            shape.SetParameterNames,
+            shape.KeyColumns,
+            shape.KeyParameterNames
+        );
+    }
+
+    public string EmitUpdateBatch(TableWritePlan tableWritePlan, int rowCount) =>
+        EmitUpdateBatch(tableWritePlan, rowCount, []);
+
+    /// <summary>
+    /// Emits <paramref name="rowCount"/> repeated updates, each leaving the bindings at
+    /// <paramref name="omittedBindingIndexes"/> out of its SET list.
+    /// </summary>
+    public string EmitUpdateBatch(
+        TableWritePlan tableWritePlan,
+        int rowCount,
+        IReadOnlyCollection<int> omittedBindingIndexes
+    )
+    {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+        ArgumentNullException.ThrowIfNull(omittedBindingIndexes);
         WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
+        var shape = ResolveUpdateShape(tableWritePlan, omittedBindingIndexes);
+
+        return EmitStatementBatch(
+            rowCount,
+            rowIndex =>
+                EmitUpdateSql(
+                    tableWritePlan.TableModel.Table,
+                    shape.SetColumns,
+                    WriteBatchSqlSupport.SuffixParameterNames(shape.SetParameterNames, rowIndex),
+                    shape.KeyColumns,
+                    WriteBatchSqlSupport.SuffixParameterNames(shape.KeyParameterNames, rowIndex)
+                )
+        );
+    }
+
+    private readonly record struct UpdateShape(
+        DbColumnName[] SetColumns,
+        string[] SetParameterNames,
+        DbColumnName[] KeyColumns,
+        string[] KeyParameterNames
+    );
+
+    private static UpdateShape ResolveUpdateShape(
+        TableWritePlan tableWritePlan,
+        IReadOnlyCollection<int> omittedBindingIndexes
+    )
+    {
         if (tableWritePlan.UpdateSql is null)
         {
             throw new InvalidOperationException(
@@ -55,7 +115,11 @@ internal sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
             .ToArray();
         var keyColumnNames = keyColumnsInKeyOrder.ToHashSet();
         var writableNonKeyBindingsInOrder = tableWritePlan
-            .ColumnBindings.Where(binding => !keyColumnNames.Contains(binding.Column.ColumnName))
+            .ColumnBindings.Where(
+                (binding, bindingIndex) =>
+                    !keyColumnNames.Contains(binding.Column.ColumnName)
+                    && !omittedBindingIndexes.Contains(bindingIndex)
+            )
             .ToArray();
 
         if (writableNonKeyBindingsInOrder.Length == 0)
@@ -66,29 +130,17 @@ internal sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
         }
 
         var parameterNameByColumn = BuildParameterNameByColumnMap(tableWritePlan);
-        var orderedSetColumns = writableNonKeyBindingsInOrder
-            .Select(static binding => binding.Column.ColumnName)
-            .ToArray();
-        var orderedSetParameterNames = writableNonKeyBindingsInOrder
-            .Select(static binding => binding.ParameterName)
-            .ToArray();
-        var orderedKeyParameterNames = ResolveRequiredParameterNamesInOrder(
-            tableWritePlan,
-            keyColumnsInKeyOrder,
-            parameterNameByColumn,
-            sqlOperation: "update batch"
-        );
 
-        return EmitStatementBatch(
-            rowCount,
-            rowIndex =>
-                EmitUpdateSql(
-                    tableWritePlan.TableModel.Table,
-                    orderedSetColumns,
-                    WriteBatchSqlSupport.SuffixParameterNames(orderedSetParameterNames, rowIndex),
-                    keyColumnsInKeyOrder,
-                    WriteBatchSqlSupport.SuffixParameterNames(orderedKeyParameterNames, rowIndex)
-                )
+        return new UpdateShape(
+            writableNonKeyBindingsInOrder.Select(static binding => binding.Column.ColumnName).ToArray(),
+            writableNonKeyBindingsInOrder.Select(static binding => binding.ParameterName).ToArray(),
+            keyColumnsInKeyOrder,
+            ResolveRequiredParameterNamesInOrder(
+                tableWritePlan,
+                keyColumnsInKeyOrder,
+                parameterNameByColumn,
+                sqlOperation: "update batch"
+            )
         );
     }
 

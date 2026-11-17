@@ -16,6 +16,10 @@ namespace EdFi.DataManagementService.Backend;
 /// stored value is copied back into the merged root row, per column, so proposed authorization,
 /// guarded no-op detection and writer DML all see stored casing. Any other difference is a
 /// genuine identity change and fails closed unless the resource allows identity updates.
+/// When no genuine identity change remains, the root's identity-projection bindings are marked as
+/// omitted from its in-place update: their stored values already match, and leaving them out of the
+/// SET list keeps the database from evaluating cascades on foreign keys that reference them. An
+/// allowed identity change keeps the full SET list so those cascades propagate it.
 /// </summary>
 internal static class RelationalWriteIdentityStability
 {
@@ -117,22 +121,38 @@ internal static class RelationalWriteIdentityStability
             );
         }
 
-        if (reboundValues is null)
+        if (hasIdentityChange && reboundValues is null)
         {
             return (mergeResult, null);
         }
 
-        var reboundRootTableState = rootTableState with
+        var finalizedRootTableState = rootTableState;
+
+        if (reboundValues is not null)
         {
-            MergedRows = [RelationalWriteRowHelpers.CreateMergedTableRow(rootTableWritePlan, reboundValues)],
-        };
+            finalizedRootTableState = finalizedRootTableState with
+            {
+                MergedRows =
+                [
+                    RelationalWriteRowHelpers.CreateMergedTableRow(rootTableWritePlan, reboundValues),
+                ],
+            };
+        }
+
+        if (!hasIdentityChange)
+        {
+            finalizedRootTableState = finalizedRootTableState with
+            {
+                UpdateOmittedBindingIndexes = [.. identityProjectionBindingIndexes],
+            };
+        }
 
         return (
             mergeResult with
             {
                 TablesInDependencyOrder = mergeResult.TablesInDependencyOrder.SetItem(
                     rootTableIndex,
-                    reboundRootTableState
+                    finalizedRootTableState
                 ),
             },
             null

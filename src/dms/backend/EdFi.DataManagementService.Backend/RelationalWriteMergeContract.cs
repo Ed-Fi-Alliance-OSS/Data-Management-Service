@@ -46,6 +46,13 @@ internal sealed record RelationalWriteMergedTableState
     public ImmutableArray<RelationalWriteMergedTableRow> CurrentRows { get; init; }
 
     public ImmutableArray<RelationalWriteMergedTableRow> MergedRows { get; init; }
+
+    /// <summary>
+    /// Binding indexes an in-place update of this table's row leaves out of its SET list because the
+    /// write has established that their merged values equal the stored ones. Empty, the default, assigns
+    /// every writable non-key binding through the compiled <see cref="TableWritePlan.UpdateSql"/>.
+    /// </summary>
+    public ImmutableArray<int> UpdateOmittedBindingIndexes { get; init; } = [];
 }
 
 internal sealed record RelationalWriteMergeResult

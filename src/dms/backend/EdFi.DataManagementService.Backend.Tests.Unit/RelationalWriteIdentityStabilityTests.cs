@@ -299,6 +299,12 @@ public class Given_RelationalWriteIdentityStability_With_A_Flagged_Identity_Diff
     }
 
     [Test]
+    public void It_omits_the_identity_bindings_from_the_root_update()
+    {
+        _resultMergeResult.TablesInDependencyOrder[0].UpdateOmittedBindingIndexes.Should().Equal(1, 2);
+    }
+
+    [Test]
     public void It_leaves_the_input_merge_result_unchanged()
     {
         RelationalWriteIdentityStabilityTestSupport
@@ -306,6 +312,7 @@ public class Given_RelationalWriteIdentityStability_With_A_Flagged_Identity_Diff
             .Values[2]
             .Should()
             .Be(new FlattenedWriteValue.Literal("LINCOLN HIGH"));
+        _mergeResult.TablesInDependencyOrder[0].UpdateOmittedBindingIndexes.Should().BeEmpty();
     }
 }
 
@@ -353,29 +360,62 @@ public class Given_RelationalWriteIdentityStability_With_An_Unflagged_Identity_D
 
         failure.Should().BeNull();
         resultMergeResult.Should().BeSameAs(mergeResult);
+        resultMergeResult.TablesInDependencyOrder[0].UpdateOmittedBindingIndexes.Should().BeEmpty();
     }
 }
 
+/// <summary>
+/// An unchanged identity marks every identity-projection binding as omitted from the root update, and
+/// changes nothing else about the merge result.
+/// </summary>
 [TestFixture]
 [Parallelizable]
 public class Given_RelationalWriteIdentityStability_With_No_Identity_Difference
 {
-    [Test]
-    public void It_returns_the_same_merge_result_instance()
+    private RelationalWriteMergeResult _mergeResult = null!;
+    private RelationalWriteMergeResult _resultMergeResult = null!;
+    private RelationalWriteExecutorResult? _failure;
+
+    [SetUp]
+    public void Setup()
     {
         var request = RelationalWriteIdentityStabilityTestSupport.CreateRequest(
             nameUsesSqlServerIdentityCollation: true
         );
-        var mergeResult = RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
+        _mergeResult = RelationalWriteIdentityStabilityTestSupport.CreateMergeResult(
             request,
             current: (255901, "Lincoln High", "LHS"),
             merged: (255901, "Lincoln High", "Lincoln")
         );
 
-        var (resultMergeResult, failure) = RelationalWriteIdentityStability.Apply(request, mergeResult);
+        (_resultMergeResult, _failure) = RelationalWriteIdentityStability.Apply(request, _mergeResult);
+    }
 
-        failure.Should().BeNull();
-        resultMergeResult.Should().BeSameAs(mergeResult);
+    [Test]
+    public void It_does_not_fail()
+    {
+        _failure.Should().BeNull();
+    }
+
+    [Test]
+    public void It_omits_every_identity_binding_from_the_root_update()
+    {
+        _resultMergeResult.TablesInDependencyOrder[0].UpdateOmittedBindingIndexes.Should().Equal(1, 2);
+    }
+
+    [Test]
+    public void It_keeps_the_merged_root_row()
+    {
+        RelationalWriteIdentityStabilityTestSupport
+            .MergedRootRow(_resultMergeResult)
+            .Should()
+            .BeSameAs(RelationalWriteIdentityStabilityTestSupport.MergedRootRow(_mergeResult));
+    }
+
+    [Test]
+    public void It_leaves_the_input_merge_result_unmarked()
+    {
+        _mergeResult.TablesInDependencyOrder[0].UpdateOmittedBindingIndexes.Should().BeEmpty();
     }
 }
 
@@ -427,6 +467,7 @@ public class Given_RelationalWriteIdentityStability_With_A_Case_Only_And_A_Genui
         var mergedRootRow = RelationalWriteIdentityStabilityTestSupport.MergedRootRow(resultMergeResult);
         mergedRootRow.Values[1].Should().Be(new FlattenedWriteValue.Literal(255902));
         mergedRootRow.Values[2].Should().Be(new FlattenedWriteValue.Literal("Lincoln High"));
+        resultMergeResult.TablesInDependencyOrder[0].UpdateOmittedBindingIndexes.Should().BeEmpty();
     }
 }
 

@@ -383,16 +383,37 @@ internal static class RelationalWriteDmlStatementPlanner
             return;
         }
 
+        var updateSql =
+            tableWritePlan.UpdateSql
+            ?? throw new InvalidOperationException(
+                $"Table '{RelationalWriteFlattener.FormatTable(tableWritePlan)}' requires UpdateSql to "
+                    + "persist a changed non-collection row."
+            );
+        var omittedBindingIndexes = tableState.UpdateOmittedBindingIndexes;
+
+        // A table has at most two update shapes: the compiled full SET list, or the one that leaves out the
+        // bindings the write established as unchanged. Which bindings those are is a property of the
+        // table, never of which non-key values happened to change, so the reduced text is stable too.
+        if (omittedBindingIndexes.IsEmpty)
+        {
+            AddStatement(
+                statements,
+                "update-scope",
+                tableWritePlan,
+                updateSql,
+                rowCount => batchSqlEmitter.EmitUpdateBatch(tableWritePlan, rowCount),
+                [mergedRow]
+            );
+
+            return;
+        }
+
         AddStatement(
             statements,
             "update-scope",
             tableWritePlan,
-            tableWritePlan.UpdateSql
-                ?? throw new InvalidOperationException(
-                    $"Table '{RelationalWriteFlattener.FormatTable(tableWritePlan)}' requires UpdateSql to "
-                        + "persist a changed non-collection row."
-                ),
-            rowCount => batchSqlEmitter.EmitUpdateBatch(tableWritePlan, rowCount),
+            batchSqlEmitter.EmitUpdate(tableWritePlan, omittedBindingIndexes),
+            rowCount => batchSqlEmitter.EmitUpdateBatch(tableWritePlan, rowCount, omittedBindingIndexes),
             [mergedRow]
         );
     }

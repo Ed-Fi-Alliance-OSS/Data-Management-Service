@@ -53,6 +53,50 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     }
 
     /// <summary>
+    /// The co-batched command carries the same reduced root update as the per-statement path when the
+    /// identity bindings were marked unchanged, and drops the omitted identity column's parameter rather
+    /// than declaring one the SQL never references.
+    /// </summary>
+    [TestCase(false, new[] { "SchoolId", "Name" })]
+    [TestCase(true, new[] { "Name" })]
+    public async Task It_co_batches_the_root_update_shape_the_identity_state_selects(
+        bool schoolIdUnchanged,
+        string[] expectedAssignedColumns
+    )
+    {
+        var request = CreateExistingTargetRequest();
+        var rootPlan = request.WritePlan.TablePlansInDependencyOrder[0];
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRootRow(255901, "Lincoln High")],
+                    [CreateRootRow(255901, "Lincoln High Updated")]
+                )
+                {
+                    UpdateOmittedBindingIndexes = schoolIdUnchanged ? [1] : [],
+                },
+            ],
+            supportsGuardedNoOp: true
+        );
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), PersistObservation(77L)));
+
+        await CreateSut().ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
+
+        var command = session.Commands.Should().ContainSingle().Subject;
+        var assignedColumns = RelationalWriteRootUpdateShapeTestSupport.AssignedColumns(command.CommandText);
+        assignedColumns.Should().Equal(expectedAssignedColumns);
+        command
+            .Parameters.Select(static parameter => parameter.Value)
+            .Should()
+            .Contain("Lincoln High Updated");
+        if (schoolIdUnchanged)
+        {
+            command.Parameters.Select(static parameter => parameter.Value).Should().NotContain(255901);
+        }
+    }
+
+    /// <summary>
     /// The co-batched create stamps <c>CreatedByOwnershipTokenId</c> from the client's creator token, the same
     /// value the ordered-segment path binds. The composite statement rewriter renames parameters, so the
     /// assertion matches on the allocator-stamped name rather than the builder's.
