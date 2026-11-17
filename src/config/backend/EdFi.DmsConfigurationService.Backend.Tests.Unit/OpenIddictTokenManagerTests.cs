@@ -4402,7 +4402,13 @@ public class OpenIddictTokenManagerTests
         }
 
         [Test]
-        public void It_returns_a_success_result() => Result.Should().BeOfType<TokenResult.Success>();
+        public void It_returns_a_success_result()
+        {
+            using var response = System.Text.Json.JsonDocument.Parse(
+                Result.Should().BeOfType<TokenResult.Success>().Which.Token
+            );
+            response.RootElement.GetProperty("token_type").GetString().Should().Be("Bearer");
+        }
 
         [Test]
         public void It_reports_the_granted_scopes_space_delimited_in_the_response() =>
@@ -5333,6 +5339,40 @@ public class OpenIddictTokenManagerTests
                     ),
                     options => options.ComparingByMembers<IntrospectedToken>().WithStrictOrdering()
                 );
+    }
+
+    [TestFixture]
+    public class Given_IntrospectTokenAsync_WithMultipleScopeClaims : OpenIddictTokenManagerTests
+    {
+        [Test]
+        public async Task It_reports_each_scope_separated_by_a_space()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            StubAuthenticatedCaller(OwnerClientId);
+            var jti = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(jti, _callerApplicationId))
+                .Returns("valid");
+            string token = CreateSignedToken(
+                signingKey,
+                [
+                    new Claim(JwtRegisteredClaimNames.Jti, jti.ToString()),
+                    new Claim("client_id", OwnerClientId),
+                    new Claim("scope", FullAccessScope),
+                    new Claim("scope", ReadOnlyScope),
+                    new Claim(JwtRegisteredClaimNames.Iat, "1700000000"),
+                ]
+            );
+
+            var result = await CreateConfiguredTokenManager()
+                .IntrospectTokenAsync(IntrospectionRequestFor(OwnerClientId, token), CancellationToken.None);
+
+            result
+                .Should()
+                .BeOfType<TokenIntrospectionResult.Active>()
+                .Which.Token.Scope.Should()
+                .Be($"{FullAccessScope} {ReadOnlyScope}");
+        }
     }
 
     [TestFixture]
