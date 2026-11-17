@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Composite;
@@ -32,6 +33,59 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     private static readonly DocumentUuid CreatedDocumentUuid = new(
         Guid.Parse("dddddddd-4444-5555-6666-eeeeeeeeeeee")
     );
+
+    [Test]
+    public async Task It_authorizes_structured_claims_before_emitting_dml_on_the_same_session()
+    {
+        long[] claimIds = [.. Enumerable.Range(1, 2000).Select(id => (long)id)];
+        var input = CreateInput(
+            new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),
+            dialect: SqlDialect.Mssql
+        );
+        input = input with
+        {
+            ProposedRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateProposedSchoolIdRelationshipAuthorization(
+                    input,
+                    claimIds
+                ),
+        };
+        var request = input.Resolve(
+            new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L)
+        );
+        var session = new ScriptedWriteSession(
+            CreateReader(Authorized()),
+            CreateReader(Sentinel(0), PersistObservation(77L))
+        )
+        {
+            Dialect = SqlDialect.Mssql,
+        };
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateChangedRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.ContentVersion.Should().Be(77L);
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("UPDATE ");
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("INSERT ");
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("DELETE ");
+        var claimTable = (DataTable)
+            session.Commands[0].Parameters.Single(parameter => parameter.Value is DataTable).Value!;
+        claimTable
+            .Columns.Cast<DataColumn>()
+            .Select(column => (column.ColumnName, column.DataType))
+            .Should()
+            .Equal(("Id", typeof(long)));
+        claimTable.Rows.Cast<DataRow>().Select(row => (long)row[0]).Should().Equal(claimIds);
+        session.Commands[1].CommandText.Should().ContainEquivalentOf("UPDATE ");
+        session.Commands[1].Parameters.Should().NotContain(parameter => parameter.Value is DataTable);
+    }
 
     [TestCase(null)]
     [TestCaseSource(nameof(MissingDocumentIdValues))]
@@ -1245,7 +1299,8 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
 
     private static RelationalWriteExecutorInput CreateInput(
         RelationalWriteTargetRequest targetRequest,
-        bool withProposedAuthorization = false
+        bool withProposedAuthorization = false,
+        SqlDialect dialect = SqlDialect.Pgsql
     )
     {
         var rootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
@@ -1256,7 +1311,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         var mappingSet = Given_Default_Relational_Write_Executor.CreateMappingSet(
             resourceModel,
             [rootPlan],
-            SqlDialect.Pgsql
+            dialect
         );
         var input = new RelationalWriteExecutorInput(
             mappingSet,
@@ -1265,7 +1320,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                 : RelationalWriteOperationKind.Put,
             targetRequest,
             writePlan,
-            Given_Default_Relational_Write_Executor.CreateReadPlan(resourceModel, SqlDialect.Pgsql),
+            Given_Default_Relational_Write_Executor.CreateReadPlan(resourceModel, dialect),
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             allowIdentityUpdates: false,
             new TraceId("composite-dml-test"),
@@ -1290,11 +1345,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                         new DbColumnName("Name")
                     ),
                 ],
-                NamespacePrefixParameterizationFactory.Create(
-                    SqlDialect.Pgsql,
-                    ["Lincoln"],
-                    "namespacePrefixes"
-                )
+                NamespacePrefixParameterizationFactory.Create(dialect, ["Lincoln"], "namespacePrefixes")
             ),
         };
 

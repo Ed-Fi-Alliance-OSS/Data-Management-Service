@@ -52,10 +52,10 @@ begins; pending rows are planned targets, not qualified runs.
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Thirty-three mutations killed; final denial-path follow-up pending |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Thirty-four mutations killed; structured-claim DML follow-up pending |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred thirty-six mutations killed; nested-member triage continues |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Seventeen mutations killed; hidden aligned-child follow-up pending |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred forty-two mutations killed; sibling creatability follow-up pending |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Twenty-two mutations killed; sibling owner-scope follow-up pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Verified; twelve intended mutations killed; instrumentation and collision limits documented |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
@@ -119,9 +119,9 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
-| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 73.60%; final denial-path follow-up pending | 4m17s / 7m46s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.21-58-47/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 82.21%; nested-member follow-up pending | 6m29s / 8m39s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-02-21/reports/` |
-| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.38%; hidden-child follow-up pending | 5m01s / 10m28s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.21-44-50/reports/` |
+| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 73.80%; structured-claim follow-up pending | 4m17s / 10m12s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.22-18-55/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 82.91%; sibling creatability follow-up pending | 6m29s / 13m17s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-18-53/reports/` |
+| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.75%; owner-scope follow-up pending | 5m01s / 12m40s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.22-19-01/reports/` |
 | Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
 | Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% → 55.84% | 26m52s / 26m31s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-27-42/reports/` |
 | Full `dms-ddl` (four configured files) | 5.0.0 | 85.32% baseline | 76m54s | `StrykerOutput/2026-11-16.20-34-14/reports/` |
@@ -511,8 +511,49 @@ collection item's complete immediate-parent dependency and validation of selecte
 members inside known nested extensions. All 10,091 Core tests pass (29 seconds). The full rerun confirms six more kills:
 creatability 857/858/859 and definition validation 1060/1280/1299. It contains 707 killed,
 112 survived, 41 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills:
-136 intended improvements. Missing member validation in other nested containers remains
-under review.
+136 intended improvements. Thirty-six further cases cover unknown properties, objects, and collections inside
+objects, collections, and extensions, under read/write and IncludeAll/IncludeOnly
+parents. All 10,127 Core tests pass. The next full rerun confirms six more kills in
+`ProfileDataValidator.cs:1137/1142/1143/1188/1193/1194`: 713 killed, 114 survived,
+33 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills. The
+intended total is 142. IncludeAll early returns at 1017/1229/1294 are repeated by the
+calling traversal; these are not missing property-validation assertions.
+
+### Core profile survivor dispositions
+
+The remaining counts include the following distinct groups; they are not all test
+failures, and a lower uncovered count does not remove instrumentation limitations.
+
+- `ProfileVisibilityClassifier.cs:214/245`: `IsHidden` is constructed as `Node is null`,
+  so changing OR to AND compares equivalent predicates. Calling item-filter resolution
+  for non-collections returns null because their canonical paths lack `[*]`; hidden
+  scopes have no navigable parent rule. Invalid filter enums and malformed scope paths
+  are outside compiled profile metadata.
+- `WritableRequestShaper.cs:175/198/417/440`: the schema traversal and classifier use
+  the same scope catalog; a known object cannot be a collection and vice versa. The
+  final missing-scope sweep at 78/634 is a fallback after recursive emission already
+  visits supported non-collection scopes. Collection descendants without concrete
+  parent items have no address and are intentionally skipped. Deep identity leaves
+  with more than one relative segment in `TryCopyIdentityLeaf` remain an explicit
+  coverage limitation; the current reference-identity regressions use direct leaves.
+- `CreatabilityAnalyzer.cs:198/264/419/1052/1067/1074`: missing roots, missing catalog
+  children, and inconsistent ancestor shapes require incomplete intermediate metadata.
+  Identity paths come from root-anchored schema JSON paths, so the non-`$.` fallback
+  at line 70 is not exercised by schema-derived input.
+- Removing the already-demoted guards at 247/249/403/405 or the breaks after rejection
+  at 326/332/388/483/489/546 repeats failed decisions or collects further diagnostics;
+  those paths cannot restore a demoted flag. Exhaustive multiplicity/order of redundant
+  failure diagnostics is not qualified. Negating the still-creatable checks at 391/487
+  is different: it can stop before a blocked sibling, and requires behavioral coverage.
+- Creatability's non-collection/collection `ScopeKind` fallbacks at 368/464/527 agree
+  with the enclosing branch. The root update OR mutation at 553 only performs an
+  extra scan when a create is already non-creatable; it cannot change false to true.
+  Empty dependency-list versus null changes are normalized by the failure factory.
+- Validator log levels/counts and message templates are diagnostic. Removing early
+  exits after reporting an invalid member can add more errors but does not accept the
+  profile. Extension resolution runs independently before member validation; IncludeAll
+  child validation returns an empty list, explaining the repeated guards at 941/969.
+  Invalid-schema fallbacks remain separate from valid profile input coverage.
 
 ### DMS Backend profile baseline
 
@@ -574,13 +615,19 @@ phase 1146/1457/1530/1536/2378. The report contains 354 killed, 99 survived, 28 
 389 compile-error, 109 ignored, and no timeouts or prior kills lost. This establishes
 33 intended improvements since baseline. One further paired case verifies that a
 relationship denial needs no custom-view probe when no custom view was emitted.
-Both cases pass in the 4,890-test Backend suite (13 seconds); native verification is pending.
+Both cases pass in the 4,890-test Backend suite (13 seconds). The full rerun confirms
+second phase 2398 is killed: 355 killed, 98 survived, 28 uncovered, 389 compile-error,
+109 ignored, and no timeouts or lost kills. The intended total is 34.
 
 Four existing merge fixtures now compare the full matched row, including its stable
 identity, parent key, ordinal, resolved document/descriptor identifiers, and natural-key
 values. All 4,886 Backend tests pass with those stronger assertions. A paired inlined-scope
 case additionally distinguishes updating an existing non-creatable scope from creating
-one. Both cases pass in the 4,890-test Backend suite; native verification is pending.
+one. Both cases pass in the 4,890-test Backend suite. The full rerun kills merge
+199/203/424/455 and the walker's forced-normal mode at 893: 805 killed, 353 survived,
+213 uncovered, 358 compile-error, 368 ignored, and one loop timeout. No prior kills
+are lost; the intended Backend profile total is 22. The four stronger matched-row
+assertions do not change the canonicalization helpers' mutation statuses.
 
 The second phase's uncovered non-null `standaloneDenial` branch at 667–668 is not a
 missing grant/deny scenario: `ExecuteStandaloneRelationshipAsync` returns null after
