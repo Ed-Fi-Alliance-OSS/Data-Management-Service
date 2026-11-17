@@ -33,6 +33,8 @@ public partial class Given_data_store_namespace_reservations
             {
                 ["DatabaseSettings:DatabaseConnection"] = _database.ConnectionString,
                 ["DatabaseSettings:EncryptionKey"] = PublicationOptions.Value.EncryptionKey.PadRight(32, '0'),
+                ["DmsDataStoreProvisioning:AdminConnectionString"] =
+                    "Host=db.example;Username=admin;Password=test-only",
                 ["DataStoreManagement:RuntimeConnectionString"] =
                     "Host=db.example;Username=runtime;Password=test-only",
             },

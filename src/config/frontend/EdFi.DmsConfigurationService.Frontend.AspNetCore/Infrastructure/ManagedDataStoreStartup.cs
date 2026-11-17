@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Diagnostics.CodeAnalysis;
 using System.Globalization;
 using System.Text.RegularExpressions;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
@@ -33,13 +34,13 @@ public static class ManagedDataStoreStartup
         // Also validates that the ordinary CMS catalog names a database we can protect.
         _ = services.GetRequiredService<ProtectedDatabaseNames>();
         var provider = services.GetRequiredService<IManagedDataStoreRuntimeConnectionProvider>();
-        ValidateConnection(
+        var admin = ValidateConnection(
             provisioning.AdminConnectionString,
             "DmsDataStoreProvisioning:AdminConnectionString",
             provider,
             services
         );
-        ValidateConnection(
+        var runtime = ValidateConnection(
             services
                 .GetRequiredService<IOptions<ManagedDataStoreRuntimeOptions>>()
                 .Value.RuntimeConnectionString,
@@ -47,9 +48,18 @@ public static class ManagedDataStoreStartup
             provider,
             services
         );
+        // Only literal destinations are compared; secret-dependent routing is left to the operation-time
+        // guard, which compares the resolved runtime snapshot with the persisted administrative endpoint.
+        if (admin is not null && runtime is not null && admin != runtime)
+        {
+            Fail(
+                "DmsDataStoreProvisioning:AdminConnectionString and DataStoreManagement:RuntimeConnectionString must name the same canonical target endpoint (host and port, or named instance). Credentials and database names may differ."
+            );
+        }
     }
 
-    private static void ValidateConnection(
+    /// <returns>The canonical endpoint, or null when the effective routing depends on a secret.</returns>
+    private static ManagedDataStoreEndpoint? ValidateConnection(
         string? value,
         string key,
         IManagedDataStoreRuntimeConnectionProvider provider,
@@ -59,7 +69,6 @@ public static class ManagedDataStoreStartup
         if (string.IsNullOrWhiteSpace(value))
         {
             Fail($"{key} is required when managed data stores are enabled.");
-            return;
         }
         bool hasReferences = SecretReferenceTokens.Find(value).Count != 0;
         if (hasReferences && services.GetService<ISecretResolver>() is null)
@@ -68,6 +77,8 @@ public static class ManagedDataStoreStartup
         }
         try
         {
+            bool routingUnknown = false;
+            bool portUnknown = false;
             // References occur in individual values. Do not resolve them at this static boundary or
             // parse a token in a typed field (e.g. Port) with a driver before substitution.
             if (hasReferences)
@@ -80,20 +91,23 @@ public static class ManagedDataStoreStartup
                     // The native getter validates keyword aliases. String templates are retained.
                     // A typed secret value uses its native default only for this static check.
                     object? defaultValue = defaults[field];
-                    if (
-                        SecretReferenceTokens.Find((string)configured[field]).Count == 0
-                        || defaultValue is null or string
-                    )
+                    bool secret = SecretReferenceTokens.Find((string)configured[field]).Count != 0;
+                    bool portField =
+                        provider.Provider == "postgresql"
+                        && field.Equals("Port", StringComparison.OrdinalIgnoreCase);
+                    if (portField)
+                    {
+                        // The last assignment decides whether the effective Port is known.
+                        portUnknown = secret;
+                    }
+                    if (!secret || defaultValue is null or string)
                     {
                         literalFields[field] = configured[field];
                         continue;
                     }
                     // A later alias must replace an earlier literal assignment as the driver would.
                     literalFields[field] = defaultValue;
-                    if (
-                        provider.Provider == "postgresql"
-                        && field.Equals("Port", StringComparison.OrdinalIgnoreCase)
-                    )
+                    if (portField)
                     {
                         string port = ((string)configured[field]).Trim();
                         _ = StaticPort(MaskReferences(port.StartsWith('+') ? port[1..] : port));
@@ -121,19 +135,36 @@ public static class ManagedDataStoreStartup
                 }
                 string routingField = provider.Provider == "postgresql" ? "Host" : "Data Source";
                 string locator = (string?)literalFields[routingField] ?? string.Empty;
+                // The native builder has applied aliases and last-assignment precedence to this template.
+                routingUnknown = SecretReferenceTokens.Find(locator).Count != 0;
                 literalFields[routingField] = StaticLocator(locator, provider.Provider == "postgresql");
                 value = literalFields.ConnectionString;
             }
-            if (!provider.TryParse(value, out _))
+            if (!provider.TryParse(value, out var endpoint))
             {
                 Fail($"{key} must name one verifiable endpoint for the configured target provider.");
             }
+            if (routingUnknown)
+            {
+                return null;
+            }
+            if (portUnknown)
+            {
+                // A literal inline host port overrides Port; otherwise the representative port decided it.
+                var alternative = provider.CreateBuilder(value);
+                alternative["Port"] = endpoint.Port == 1 ? 2 : 1;
+                return provider.TryParse(alternative.ConnectionString, out var other) && other == endpoint
+                    ? endpoint
+                    : null;
+            }
+            return endpoint;
         }
         catch (Exception exception)
             when (exception is ArgumentException or FormatException or OverflowException)
         {
             // Driver parser messages may repeat credentials; retain no exception or configured value.
             Fail($"{key} must be a valid connection string for the configured target provider.");
+            return null;
         }
     }
 
@@ -307,6 +338,7 @@ public static class ManagedDataStoreStartup
         return "5432";
     }
 
+    [DoesNotReturn]
     private static void Fail(string message) =>
         throw new OptionsValidationException(
             nameof(DataStoreManagementOptions),

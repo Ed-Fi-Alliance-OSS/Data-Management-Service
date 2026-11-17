@@ -24,7 +24,7 @@ Use consistent settings on every replica; the management policy and readiness ar
 | `DmsDataStoreProvisioning:Enabled` | Set true when management is enabled. The standalone provisioner defaults to false. |
 | `DmsDataStoreProvisioning:Provider` | Select `postgresql` or `mssql` for the target. SQL ordinary registrations use the DMS routing token `sqlserver`. |
 | Provisioner administrative connection, artifact catalog, trust and compatibility settings | Supply the administrative endpoint/permissions and genuine compatible Minimal/Sample packages. Follow the [provisioner configuration](CONFIGURATION.md#dmsdatastoreprovisioning) and [platform setup](OPERATIONS.md#configuration-service-dms-data-store-provisioning), including PostgreSQL tools or SQL Server shared staging. |
-| `DataStoreManagement:RuntimeConnectionString` | Supply a separate operator-managed runtime credential for the same canonical target endpoint. CMS never substitutes the administrative connection. |
+| `DataStoreManagement:RuntimeConnectionString` | Supply a separate operator-managed runtime credential for the same canonical target endpoint; startup rejects literal endpoints that differ, and secret-dependent endpoints are checked when each operation runs. CMS never substitutes the administrative connection. |
 | Runtime principal and access | Arrange authentication and permissions for newly provisioned databases before enabling submissions. Qualify the intended DMS workload using the published runtime connection. CMS creates no production principal or grant. |
 | CMS connection encryption and DMS decryption | Preserve the existing ordinary catalog encryption configuration and DMS access to its corresponding key. Publication uses that boundary once. |
 

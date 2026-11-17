@@ -180,7 +180,11 @@ public partial class DmsDataStoreProvisioningStartupTests
                 "true",
                 true,
                 target,
-                overrides: new() { ["DataStoreManagement:RuntimeConnectionString"] = connection },
+                overrides: new()
+                {
+                    [$"{Section}:AdminConnectionString"] = MatchingAdmin(target),
+                    ["DataStoreManagement:RuntimeConnectionString"] = connection,
+                },
                 configure: services => services.AddSingleton(resolver)
             );
             StartupExceptionFor(host)
@@ -249,11 +253,246 @@ public partial class DmsDataStoreProvisioningStartupTests
                 "true",
                 true,
                 target,
-                overrides: new() { ["DataStoreManagement:RuntimeConnectionString"] = connection },
+                overrides: new()
+                {
+                    [$"{Section}:AdminConnectionString"] = MatchingAdmin(target),
+                    ["DataStoreManagement:RuntimeConnectionString"] = connection,
+                },
                 configure: services => services.AddSingleton(resolver)
             );
             StartupExceptionFor(host).Should().BeNull();
             Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        private const string EndpointMismatch =
+            "DmsDataStoreProvisioning:AdminConnectionString and DataStoreManagement:RuntimeConnectionString must name the same canonical target endpoint (host and port, or named instance). Credentials and database names may differ.";
+
+        /// <summary>A literal destination the fixture's runtime vectors share; credentials differ.</summary>
+        private static string MatchingAdmin(string target) =>
+            target == "postgresql"
+                ? "Host=db.example;Username=admin;Password=test-only"
+                : "Server=tcp:db.example,1433;User ID=admin;Password=test-only";
+
+        private static ServiceProvider StaticServices(
+            string target,
+            string admin,
+            string runtime,
+            ISecretResolver resolver
+        ) =>
+            new ServiceCollection()
+                .AddSingleton(new DataStoreManagementOptions())
+                .AddSingleton(
+                    Options.Create(
+                        new DmsDataStoreProvisioningOptions { Enabled = true, AdminConnectionString = admin }
+                    )
+                )
+                .AddSingleton(
+                    Options.Create(new ManagedDataStoreRuntimeOptions { RuntimeConnectionString = runtime })
+                )
+                .AddSingleton(ProtectedDatabaseNames.Create("cms", []))
+                .AddSingleton<IManagedDataStoreRuntimeConnectionProvider>(
+                    target == "postgresql"
+                        ? new PostgresqlManagedRuntimeConnectionProvider()
+                        : new MssqlManagedRuntimeConnectionProvider()
+                )
+                .AddSingleton(resolver)
+                .BuildServiceProvider();
+
+        private static IEnumerable<TestCaseData> MismatchedEndpoints()
+        {
+            (string Target, string Admin, string Runtime)[] cases =
+            [
+                (
+                    "postgresql",
+                    "Host=admin-db.example;Username=admin;Password=admin-only",
+                    "Host=runtime-db.example;Username=runtime;Password=runtime-only"
+                ),
+                ("postgresql", "Host=db.example;Port=5432", "Host=db.example;Port=5433"),
+                ("postgresql", "Host=db.example", "Host=db.example:5433"),
+                // Credential-only references leave literal routing comparable, in either setting.
+                (
+                    "postgresql",
+                    "Host=db.example;Password=${secret:admin}",
+                    "Host=other.example;Password=runtime-only"
+                ),
+                (
+                    "postgresql",
+                    "Host=db.example;Port=5433;Password=admin-only",
+                    "Host=db.example;Password=${secret:runtime}"
+                ),
+                // A later literal alias replaces an earlier secret host.
+                (
+                    "postgresql",
+                    "Host=db.example",
+                    "Server=${secret:host};Host=other.example;Password=${secret:runtime}"
+                ),
+                // An inline port overrides a secret Port, so the effective port is literal.
+                (
+                    "postgresql",
+                    "Host=db.example:5433",
+                    "Host=db.example:5434;Port=${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:admin-db.example,1433;User ID=admin;Password=admin-only",
+                    "Server=tcp:runtime-db.example,1433;User ID=runtime;Password=runtime-only"
+                ),
+                ("mssql", "Server=tcp:db.example,1433", "Server=tcp:db.example,1434"),
+                ("mssql", "Server=tcp:db.example", "Server=tcp:db.example,1434"),
+                ("mssql", "Server=tcp:db.example\\one", "Server=tcp:db.example\\two"),
+                ("mssql", "Server=tcp:db.example\\one", "Server=tcp:db.example,1433"),
+                (
+                    "mssql",
+                    "Server=tcp:db.example,1433;Password=${secret:admin}",
+                    "Server=tcp:other.example,1433;Password=runtime-only"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db.example,1434;Password=admin-only",
+                    "Server=tcp:db.example;Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db.example,1433",
+                    "Server=${secret:server};Data Source=tcp:other.example,1433;Password=${secret:runtime}"
+                ),
+            ];
+            for (int index = 0; index < cases.Length; index++)
+            {
+                yield return new TestCaseData(
+                    cases[index].Target,
+                    cases[index].Admin,
+                    cases[index].Runtime
+                ).SetName($"It_rejects_a_known_endpoint_mismatch_{cases[index].Target}_{index}");
+            }
+        }
+
+        [TestCaseSource(nameof(MismatchedEndpoints))]
+        public void It_rejects_a_known_endpoint_mismatch(string target, string admin, string runtime)
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            using var services = StaticServices(target, admin, runtime, resolver);
+            var validate = () => ManagedDataStoreStartup.Validate(services);
+            var failure = validate.Should().Throw<OptionsValidationException>().Which;
+            failure.Failures.Should().Equal(EndpointMismatch);
+            failure.Message.Should().NotContain(admin).And.NotContain(runtime).And.NotContain("${secret");
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        private static IEnumerable<TestCaseData> ComparableOrDeferredEndpoints()
+        {
+            (string Target, string Admin, string Runtime)[] equivalent =
+            [
+                (
+                    "postgresql",
+                    "Host=DB.Example;Username=admin;Password=admin-only;Database=postgres",
+                    "Server=db.example;Port=5432;Username=runtime;Password=runtime-only;Database=other"
+                ),
+                ("postgresql", "Host=db.example:5433", "Host=db.example;Port=5433"),
+                (
+                    "postgresql",
+                    "Host=db.example;Password=${secret:admin}",
+                    "Host=DB.EXAMPLE;Port=5432;Password=${secret:runtime}"
+                ),
+                (
+                    "postgresql",
+                    "Host=db.example:5433",
+                    "Host=db.example:5433;Port=${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:DB.Example;User ID=admin;Password=admin-only;Initial Catalog=master",
+                    "Data Source=TCP:db.example,1433;User ID=runtime;Password=runtime-only;Initial Catalog=other"
+                ),
+                ("mssql", "Server=tcp:db.example\\School", "Address=tcp:DB.EXAMPLE\\school"),
+                (
+                    "mssql",
+                    "Server=tcp:db.example,1433;Password=${secret:admin}",
+                    "Server=tcp:DB.example;Password=${secret:runtime}"
+                ),
+            ];
+            // Secret-dependent routing keeps static syntax checks but defers equality to the operation-time
+            // guard. Each admin value differs from the static representative its runtime partner parses to.
+            (string Target, string Admin, string Runtime)[] deferred =
+            [
+                ("postgresql", "Host=db.example", "Host=${secret:host};Password=${secret:runtime}"),
+                (
+                    "postgresql",
+                    "Host=db.example;Port=5433",
+                    "Host=db.example;Port=${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "postgresql",
+                    "Host=other.example",
+                    "Host=db.example;Server=${secret:host};Password=${secret:runtime}"
+                ),
+                ("postgresql", "Host=${secret:host};Password=${secret:admin}", "Host=db.example;Port=5433"),
+                (
+                    "mssql",
+                    "Server=tcp:db.example,1434",
+                    "Server=tcp:db.example,${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db.example\\one",
+                    "Server=tcp:db.example\\${secret:instance};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:other.example,1433",
+                    "Data Source=tcp:db.example,1433;Server=${secret:server};Password=${secret:runtime}"
+                ),
+                ("mssql", "Server=${secret:server};Password=${secret:admin}", "Server=tcp:db.example,1433"),
+            ];
+            foreach (var (kind, cases) in new[] { ("equivalent", equivalent), ("deferred", deferred) })
+            {
+                for (int index = 0; index < cases.Length; index++)
+                {
+                    yield return new TestCaseData(
+                        cases[index].Target,
+                        cases[index].Admin,
+                        cases[index].Runtime
+                    ).SetName($"It_accepts_{kind}_endpoints_{cases[index].Target}_{index}");
+                }
+            }
+        }
+
+        [TestCaseSource(nameof(ComparableOrDeferredEndpoints))]
+        public void It_accepts_equivalent_or_secret_dependent_endpoints(
+            string target,
+            string admin,
+            string runtime
+        )
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            using var services = StaticServices(target, admin, runtime, resolver);
+            ManagedDataStoreStartup.Validate(services);
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        [TestCase("postgresql"), TestCase("mssql")]
+        public void It_refuses_to_start_with_a_known_endpoint_mismatch(string target)
+        {
+            using var host = Host(
+                "true",
+                true,
+                target,
+                overrides: new()
+                {
+                    ["DataStoreManagement:RuntimeConnectionString"] =
+                        target == "postgresql"
+                            ? "Host=runtime-db.example;Port=1;Username=runtime;Password=test-only"
+                            : "Server=tcp:runtime-db.example,1;User ID=runtime;Password=test-only",
+                }
+            );
+            var error = StartupExceptionFor(host);
+            error.Should().NotBeNull();
+            error!
+                .ToString()
+                .Should()
+                .Contain(EndpointMismatch)
+                .And.NotContain("runtime-db.example")
+                .And.NotContain("test-only");
         }
 
         [TestCase("postgresql"), TestCase("mssql")]
@@ -594,11 +833,16 @@ public partial class DmsDataStoreProvisioningStartupTests
                 target == "postgresql"
                     ? "Host=db.example;Username=runtime;Password="
                     : "Server=tcp:db.example,1433;User ID=runtime;Password=";
+            string admin = MatchingAdmin(target);
             using var literal = Host(
                 "true",
                 true,
                 target,
-                overrides: new() { ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:}" }
+                overrides: new()
+                {
+                    [$"{Section}:AdminConnectionString"] = admin,
+                    ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:}",
+                }
             );
             StartupExceptionFor(literal).Should().BeNull();
             using var missing = Host(
@@ -607,6 +851,7 @@ public partial class DmsDataStoreProvisioningStartupTests
                 target,
                 overrides: new()
                 {
+                    [$"{Section}:AdminConnectionString"] = admin,
                     ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:runtime}",
                 }
             );
@@ -623,6 +868,7 @@ public partial class DmsDataStoreProvisioningStartupTests
                 target,
                 overrides: new()
                 {
+                    [$"{Section}:AdminConnectionString"] = admin,
                     ["DataStoreManagement:RuntimeConnectionString"] = prefix + "${secret:runtime}",
                 },
                 configure: services => services.AddSingleton(resolver)
