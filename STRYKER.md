@@ -52,14 +52,14 @@ begins; pending rows are planned targets, not qualified runs.
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-seven mutations killed; remaining composite-path triage in progress |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Thirty-three mutations killed; final denial-path follow-up pending |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred twenty-two mutations killed; remaining triage in progress |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred thirty-six mutations killed; nested-member triage continues |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Seventeen mutations killed; hidden aligned-child follow-up pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
-| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Eleven intended mutations killed; three-column unification verification pending |
+| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Verified; twelve intended mutations killed; instrumentation and collision limits documented |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
-| 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Configuration prepared; baseline pending |
+| 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Baseline complete; dialect and nullable-join regressions in progress |
 
 ## Reading and recording results
 
@@ -119,11 +119,12 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
-| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 72.35%; further triage in progress | 4m17s / 6m34s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.21-18-10/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 80.58%; further triage in progress | 6m29s / 12m20s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.21-28-20/reports/` |
-| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
+| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 73.60%; final denial-path follow-up pending | 4m17s / 7m46s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.21-58-47/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 82.21%; nested-member follow-up pending | 6m29s / 8m39s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-02-21/reports/` |
+| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.38%; hidden-child follow-up pending | 5m01s / 10m28s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.21-44-50/reports/` |
 | Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
-| Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% → 55.68%; three-column follow-up pending | 26m52s / 25m57s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-16-23/reports/` |
+| Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% → 55.84% | 26m52s / 26m31s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-27-42/reports/` |
+| Full `dms-ddl` (four configured files) | 5.0.0 | 85.32% baseline | 76m54s | `StrykerOutput/2026-11-16.20-34-14/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -502,7 +503,16 @@ worktree (based on `06aa883c8`); its native report and log were copied to the PR
 Four additional nested-collection cases compare allowed and blocked new children under
 distinct parents, in both the base resource and an extension. They assert the complete
 creatability decisions, required-member failures, dependency, and extension target kind.
-All 10,083 Core tests pass; native verification of these four cases is pending.
+All 10,083 Core tests pass. The full rerun confirms eight further kills in
+`CreatabilityAnalyzer.cs`: 433/447/450/1070/1084/1123 (two)/1124. It contains 701 killed,
+118 survived, 41 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills.
+The total is 130 intended improvements. Additional assertions now cover a blocked
+collection item's complete immediate-parent dependency and validation of selected
+members inside known nested extensions. All 10,091 Core tests pass (29 seconds). The full rerun confirms six more kills:
+creatability 857/858/859 and definition validation 1060/1280/1299. It contains 707 killed,
+112 survived, 41 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills:
+136 intended improvements. Missing member validation in other nested containers remains
+under review.
 
 ### DMS Backend profile baseline
 
@@ -550,7 +560,27 @@ the same session and every command remains within budget. The aligned-extension 
 collection fixture now compares complete current and merged rows, including ordinal
 recalculation; row count and parent-key checks alone allowed an incorrect preserve
 mode to pass. All 4,878 Backend tests pass. These follow-ups await their respective
-write-execution and Backend-profile native reruns.
+write-execution and Backend-profile native reruns. The first complete-row rerun now
+confirms `ProfileCollectionWalker.cs:893` forced preserve is killed: 800 killed,
+357 survived, 214 uncovered, 358 compile-error, 368 ignored, and one loop timeout.
+This is 17 intended improvements, with no prior kills lost. A second variant now hides
+one aligned parent and checks its children's stored ordinals survive while the other
+parent's visible children are reordered. New create-command UUID-budget cases and
+malformed namespace-payload precedence cases also pass; the full Backend suite passes
+4,886 tests (11 seconds). These latest variants await their full native reruns.
+
+The next full write-execution rerun confirms six more kills: first phase 393 and second
+phase 1146/1457/1530/1536/2378. The report contains 354 killed, 99 survived, 28 uncovered,
+389 compile-error, 109 ignored, and no timeouts or prior kills lost. This establishes
+33 intended improvements since baseline. One further paired case verifies that a
+relationship denial needs no custom-view probe when no custom view was emitted.
+Both cases pass in the 4,890-test Backend suite (13 seconds); native verification is pending.
+
+Four existing merge fixtures now compare the full matched row, including its stable
+identity, parent key, ordinal, resolved document/descriptor identifiers, and natural-key
+values. All 4,886 Backend tests pass with those stronger assertions. A paired inlined-scope
+case additionally distinguishes updating an existing non-creatable scope from creating
+one. Both cases pass in the 4,890-test Backend suite; native verification is pending.
 
 The second phase's uncovered non-null `standaloneDenial` branch at 667–668 is not a
 missing grant/deny scenario: `ExecuteStandaloneRelationshipAsync` returns null after
@@ -771,7 +801,7 @@ The raw score includes instrumentation and run-status limitations; the confirmed
 improvement is preservation of the two required locator binding groups. No mutation
 types or source scope were removed.
 
-### Relational-model baseline
+### Relational-model verification
 
 The five-file target contains 328 killed, 109 survived, 180 uncovered, 217 compile-error,
 184 ignored, and eight timed-out mutations. The native report was produced in the
@@ -797,8 +827,14 @@ cases extend implicit same-site unification from two physical identity columns t
 three, for both dialects. They assert every alias shares the stored canonical column
 and reference presence gate, remains non-writable, and retains its source path.
 The 1,048-test Model suite passes (28 seconds); these cases target the surviving
-`memberBindings.Length < 2` → `> 2` mutation at `KeyUnificationPass.cs:564` and await
-the subsequent full rerun.
+`memberBindings.Length < 2` → `> 2` mutation at `KeyUnificationPass.cs:564`. The subsequent
+full rerun confirms it is killed, bringing the intended total to twelve: 340 killed,
+101 survived, 175 uncovered, 217 compile-error, 184 ignored, and nine timeouts. The
+unrelated line-898 ordering mutation returns to survived, as in the original baseline.
+The additional timeout removes the target-identity cache fast path at
+`ReferenceConstraintPass.cs:724`; it recomputes unchanged identity metadata and is a
+performance/run-status limitation, separate from the eight nonterminating-loop mutations.
+The final native score includes all nine timeout detections; they are not assertion kills.
 
 Tool limitations remain separate from test gaps. Stryker rolls back the requiredness
 helper's `GetRequiredProperties` and `IsXNullable` methods after generated-code
@@ -836,6 +872,19 @@ Additional source-based dispositions for the Model baseline:
   source paths require inconsistent intermediate models. Canonical/presence-name
   suffix fallback after a second name collision remains an explicit unexercised
   collision path; ordinary deterministic naming and first-collision tests remain.
+
+### DDL baseline and regressions
+
+The four-file baseline contains 744 killed, 82 survived, 46 uncovered, 73 compile-error,
+and 211 ignored mutations, with no timeouts. All 335 executable authorization-trigger
+mutations are killed by existing tests. The isolated DDL run took 76m54s at concurrency
+4 under concurrent host load; its native reports and log were copied to this checkout.
+
+The observed gaps are catalog-literal escaping in dialect helpers, empty key/index
+column inventories, nonpositive binary lengths, unnamed/default-free SQL Server column
+rendering, and non-nullable joins beside a nullable join of a different kind. New tests
+check those contracts, including complete sequence/index SQL and ordered composite
+foreign-key columns. All 1,502 DDL tests pass with one existing skip (35 seconds), including 33 new cases. The full-target rerun uses concurrency 8; native verification is in progress.
 
 ### Validation baseline triage
 

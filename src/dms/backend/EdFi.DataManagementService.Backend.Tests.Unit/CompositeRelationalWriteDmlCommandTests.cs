@@ -310,6 +310,61 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         boundNames.Distinct(StringComparer.Ordinal).Should().ContainSingle();
     }
 
+    [TestCase(5)]
+    [TestCase(6)]
+    public async Task It_reserves_space_for_the_created_document_uuid_when_splitting_commands(int budget)
+    {
+        var request = CreateCreatedTargetRequest();
+        var session =
+            budget == 5
+                ? new ScriptedWriteSession(
+                    CreateReader(Scalar(900L)),
+                    CreateReader(Sentinel(0), PersistObservation(81L))
+                )
+                : new ScriptedWriteSession(
+                    CreateReader(Scalar(900L), Sentinel(1)),
+                    CreateReader(PersistObservation(81L))
+                );
+
+        var resolution = await CreateSut(new RelationalCommandBudget(budget, 1000))
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.DocumentId.Should().Be(900L);
+        resolution.PersistResult.ContentVersion.Should().Be(81L);
+        session.Commands.Should().HaveCount(2);
+        session.Commands.Should().OnlyContain(command => command.Parameters.Count <= budget);
+        session
+            .Commands.Select(command => command.Parameters.Count)
+            .Should()
+            .Equal(budget == 5 ? [3, 5] : [6, 3]);
+
+        // Each command that derives the new id needs its own UUID binding. Within that
+        // command, the root insert and version read must share the same binding.
+        foreach (
+            var command in session.Commands.Where(command =>
+                command.CommandText.Contains(CreatedDocumentIdSubqueryPrefix, StringComparison.Ordinal)
+            )
+        )
+        {
+            var parameterName = SubqueryParameterNames(command.CommandText)
+                .Distinct(StringComparer.Ordinal)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            command
+                .Parameters.Should()
+                .ContainSingle(parameter => parameter.Name == parameterName)
+                .Which.Value.Should()
+                .Be(CreatedDocumentUuid.Value);
+        }
+    }
+
     [Test]
     public async Task It_emits_the_proposed_authorization_statements_before_the_document_insert()
     {

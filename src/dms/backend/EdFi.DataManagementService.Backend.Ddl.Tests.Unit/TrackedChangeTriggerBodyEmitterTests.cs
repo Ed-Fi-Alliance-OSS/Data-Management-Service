@@ -493,6 +493,16 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
             .Contain(
                 "LEFT JOIN [dms].[Descriptor] newDj0 ON newDj0.[DescriptorId] = i.[GradeTypeDescriptor_DescriptorId]"
             );
+        // Nullability belongs to the selected join. A nullable descriptor must not
+        // turn the unrelated, required person lookup into an outer join.
+        pgsql
+            .Should()
+            .Contain("INNER JOIN \"edfi\".\"Student\" oldPj0")
+            .And.Contain("INNER JOIN \"edfi\".\"Student\" newPj0");
+        mssql
+            .Should()
+            .Contain("INNER JOIN [edfi].[Student] oldPj0")
+            .And.Contain("INNER JOIN [edfi].[Student] newPj0");
     }
 
     [Test]
@@ -530,6 +540,14 @@ public class Given_TrackedChangeTriggerBodyEmitter_Rendering_Nullable_Joins
             );
         pgsql.Should().NotContain("Pj0s");
         mssql.Should().NotContain("Pj0s");
+        pgsql
+            .Should()
+            .Contain("INNER JOIN \"dms\".\"Descriptor\" oldDj0")
+            .And.Contain("INNER JOIN \"dms\".\"Descriptor\" newDj0");
+        mssql
+            .Should()
+            .Contain("INNER JOIN [dms].[Descriptor] oldDj0")
+            .And.Contain("INNER JOIN [dms].[Descriptor] newDj0");
     }
 
     private static string RenderPgsqlKeyChange(ISqlDialect dialect, TrackedChangeInsertPlan plan)

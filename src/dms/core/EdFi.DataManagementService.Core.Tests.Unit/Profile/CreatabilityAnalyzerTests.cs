@@ -2720,10 +2720,24 @@ public abstract class CreatabilityAnalyzerTests
         public void It_should_emit_failure_for_beta_collection_item()
         {
             // Beta collection item fails parent gate
-            _result
+            var failure = _result
                 .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
                 .Should()
-                .Contain(f => f.JsonScope == "$.parent.items[*]");
+                .ContainSingle(f => f.JsonScope == "$.parent.items[*]")
+                .Subject;
+            failure.TargetKind.Should().Be(ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem);
+            failure
+                .Dependencies.Should()
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.ImmediateVisibleParent,
+                        ProfileCreatabilityTargetKind.OneToOneScope,
+                        "$.parent",
+                        ScopeKind.NonCollection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
+                    )
+                );
         }
     }
 

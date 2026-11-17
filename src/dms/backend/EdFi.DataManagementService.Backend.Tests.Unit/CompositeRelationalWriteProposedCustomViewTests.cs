@@ -775,8 +775,14 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             .And.NotContain("SchoolWithALateTag");
     }
 
-    [Test]
-    public async Task It_reports_an_invalid_view_configured_before_the_namespace_check_that_denied()
+    [TestCase(0, false)]
+    [TestCase(7, false)]
+    [TestCase(0, true)]
+    [TestCase(7, true)]
+    public async Task It_reports_an_invalid_view_configured_before_the_namespace_check_that_denied(
+        int payloadIndex,
+        bool dmlMode
+    )
     {
         // The namespace denial is a recognized answer from another family, but the view configured before it
         // already ran: a table masquerading as auth.{StrategyName} satisfies the membership SQL and lets the
@@ -789,11 +795,13 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         );
 
         var act = async () =>
-            await CreateSut(NamespaceFailureExtractor(), validationExecutor)
+            await CreateSut(NamespaceFailureExtractor(payloadIndex), validationExecutor)
                 .ResolveAsync(
                     request,
                     CreateMergeResult(request),
-                    RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    dmlMode
+                        ? RelationalWriteSecondCommandMode.Dml
+                        : RelationalWriteSecondCommandMode.AuthorizationOnly,
                     session
                 );
 
@@ -805,8 +813,11 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             .Contain("SchoolWithAnEarlyTag");
     }
 
-    [Test]
-    public async Task It_still_reports_the_namespace_denial_when_the_view_configured_before_it_conforms()
+    [TestCase(0)]
+    [TestCase(7)]
+    public async Task It_retains_the_namespace_result_when_the_view_configured_before_it_conforms(
+        int payloadIndex
+    )
     {
         // The probe that precedes the namespace answer only reclassifies a broken object. A conforming view
         // leaves the namespace payload's own denial intact.
@@ -814,7 +825,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         var session = new ScriptedWriteSession(CreateAuth1Failure());
         var validationExecutor = new StubValidationCommandExecutor();
 
-        var resolution = await CreateSut(NamespaceFailureExtractor(), validationExecutor)
+        var resolution = await CreateSut(NamespaceFailureExtractor(payloadIndex), validationExecutor)
             .ResolveAsync(
                 request,
                 CreateMergeResult(request),
@@ -822,11 +833,19 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
                 session
             );
 
-        resolution
+        var result = resolution
             .ImmediateResult.Should()
             .BeOfType<RelationalWriteExecutorResult.Update>()
-            .Which.Result.Should()
-            .BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>();
+            .Which.Result;
+        if (payloadIndex == 0)
+        {
+            result.Should().BeOfType<UpdateResult.UpdateFailureNamespaceNotAuthorized>();
+        }
+        else
+        {
+            result.Should().BeOfType<UpdateResult.UpdateFailureSecurityConfiguration>();
+        }
+        resolution.PersistResult.Should().BeNull();
         validationExecutor
             .ExecutedCommands.Should()
             .ContainSingle()
@@ -913,6 +932,30 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             .ContainSingle()
             .Subject.CommandText.Should()
             .Contain("SchoolWithATag");
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_retains_a_relationship_denial_when_no_custom_view_was_emitted(bool dmlMode)
+    {
+        var request = CreateRequest(CreateProposedOnlyPlan(), withRelationship: true);
+        var session = new ScriptedWriteSession(new FakeDbException("AUTH1", "AUTH1"));
+        var validationExecutor = new StubValidationCommandExecutor();
+
+        var act = async () =>
+            await CreateSut(RelationshipFailureExtractor(), validationExecutor)
+                .ResolveAsync(
+                    request,
+                    CreateMergeResult(request),
+                    dmlMode
+                        ? RelationalWriteSecondCommandMode.Dml
+                        : RelationalWriteSecondCommandMode.AuthorizationOnly,
+                    session
+                );
+
+        await act.Should().ThrowAsync<RelationalWriteRelationshipAuthorizationNotAuthorizedException>();
+        validationExecutor.ExecutedCommands.Should().BeEmpty();
+        session.Commands.Should().ContainSingle();
     }
 
     [Test]
@@ -1394,12 +1437,12 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             )
         );
 
-    private static StubProviderFailureExtractor NamespaceFailureExtractor() =>
+    private static StubProviderFailureExtractor NamespaceFailureExtractor(int index = 0) =>
         new(
             NamespaceAuthorizationAuth1FailurePayloadCodec.ProviderFailureCode,
             NamespaceAuthorizationAuth1FailurePayloadCodec.Encode(
                 new NamespaceAuthorizationAuth1FailurePayload(
-                    0,
+                    index,
                     NamespaceAuthorizationAuth1FailureKind.ProposedNamespaceMissing
                 )
             )

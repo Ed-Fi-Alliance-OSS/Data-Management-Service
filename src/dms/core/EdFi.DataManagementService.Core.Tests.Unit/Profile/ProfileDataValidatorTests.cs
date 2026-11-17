@@ -2083,6 +2083,110 @@ public class ProfileDataValidatorTests
                 );
         }
 
+        [TestCase(true, false, MemberSelection.IncludeAll)]
+        [TestCase(false, false, MemberSelection.IncludeAll)]
+        [TestCase(true, true, MemberSelection.IncludeAll)]
+        [TestCase(false, true, MemberSelection.IncludeAll)]
+        [TestCase(true, false, MemberSelection.IncludeOnly)]
+        [TestCase(false, false, MemberSelection.IncludeOnly)]
+        [TestCase(true, true, MemberSelection.IncludeOnly)]
+        [TestCase(false, true, MemberSelection.IncludeOnly)]
+        public void It_validates_members_of_a_known_extension_inside_a_selected_child(
+            bool readable,
+            bool collection,
+            MemberSelection parentSelection
+        )
+        {
+            _apiSchemaDocuments = collection
+                ? CreateSchemaWithCollection("Student", "children", "childId")
+                : CreateSchemaWithReferenceObject("Student", "children", "childId");
+            var resource = _apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new("Student"))!;
+            var childSchema = resource["jsonSchemaForInsert"]!["properties"]!["children"]!;
+            var childProperties = (collection ? childSchema["items"] : childSchema)![
+                "properties"
+            ]!.AsObject();
+            childProperties["_ext"] = JsonNode.Parse(
+                """
+                {"type":"object","properties":{"sample":{"type":"object","properties":{"known":{"type":"string"}}}}}
+                """
+            );
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extension = new ExtensionRule(
+                "sample",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("missing")],
+                null,
+                null
+            );
+            var contentType = new ContentTypeDefinition(
+                parentSelection,
+                [],
+                collection
+                    ? []
+                    :
+                    [
+                        new ObjectRule(
+                            "children",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            null,
+                            null,
+                            null,
+                            [extension]
+                        ),
+                    ],
+                collection
+                    ?
+                    [
+                        new CollectionRule(
+                            Name: "children",
+                            MemberSelection: MemberSelection.IncludeOnly,
+                            LogicalSchema: null,
+                            Properties: null,
+                            NestedObjects: null,
+                            NestedCollections: null,
+                            Extensions: [extension],
+                            ItemFilter: null
+                        ),
+                    ]
+                    : [],
+                []
+            );
+            var profile = new ProfileDefinition(
+                "NestedExtension",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        readable ? contentType : null,
+                        readable ? null : contentType
+                    ),
+                ]
+            );
+
+            var result = new ProfileDataValidator(_logger).Validate(profile, _effectiveApiSchemaProvider);
+
+            result.IsValid.Should().BeFalse();
+            result.HasWarnings.Should().BeFalse();
+            var path = collection ? "children[]._ext.sample.missing" : "children._ext.sample.missing";
+            var contentName = readable ? "read" : "write";
+            result
+                .Failures.Should()
+                .Equal(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        "NestedExtension",
+                        "Student",
+                        path,
+                        $"Property 'missing' in extension 'sample' ({contentName} content type) does not exist."
+                    )
+                );
+        }
+
         [Test]
         public void Validate_should_warn_for_unknown_extension_under_include_all_parent()
         {
