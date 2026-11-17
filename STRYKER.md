@@ -51,15 +51,15 @@ begins; pending rows are planned targets, not qualified runs.
 | --- | --- | --- | --- |
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
-| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Seven-file baseline recorded; relationship regressions awaiting rerun |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Release suite passed; mutation pilot pending |
+| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Executor pilot recorded; full composite baseline running |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Full baseline recorded; token-manager regressions in progress |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Pending |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Pending |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
-| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Pending |
+| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
-| 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Pending |
+| 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Configuration prepared; baseline pending |
 
 ## Reading and recording results
 
@@ -115,9 +115,10 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `dms-request-auth` (three configured files) | 5.0.0 | 63.31% → 67.63% | 5m43s / 5m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
 | Full `cms-permission-inheritance` (two configured Claims files) | 5.0.0 | 83.33% → 91.67% | 6m25s / 6m19s | `StrykerOutput/2026-11-16.17-39-28/reports/` → `StrykerOutput/2026-11-16.17-47-25/reports/` |
 | Initial query-authorization cluster (five files, before relationship expansion) | 5.0.0 | 82.50% baseline | 7m11s | `StrykerOutput/2026-11-16.17-53-57/reports/` |
-| Full `dms-query-auth` (seven configured files) | 5.0.0 | 82.20% baseline; rerun pending | 8m09s | `StrykerOutput/2026-11-16.18-11-59/reports/` |
+| Full `dms-query-auth` (seven configured files) | 5.0.0 | 82.20% → 83.01% | 8m09s / 8m58s | `StrykerOutput/2026-11-16.18-11-59/reports/` → `StrykerOutput/2026-11-16.18-35-24/reports/` |
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% baseline; rerun pending | 11m46s | `StrykerOutput/2026-11-16.18-21-43/reports/` |
+| Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -166,7 +167,9 @@ seven-file score have different denominators and are not a before/after comparis
 The expanded report also changes the status of the duplicate-parameter secondary
 sort (page compiler line 303) to killed by an existing golden test, although that sort
 cannot change a valid result. Do not attribute this change to the new tests; verify
-its status in the final rerun. A third page-loop mutation (line 157) and the relationship
+its status in the final rerun. That rerun reports line 303 as survived again and
+line 139's redundant secondary sort as killed; both retain the same source-based
+equivalence analysis and neither is credited to the added tests. A third page-loop mutation (line 157) and the relationship
 compiler's parameter-suffix loop (line 768) time out in this run.
 
 Relationship regressions now cover a mixed invalid-strategy/subject-planning failure,
@@ -176,7 +179,12 @@ when required people views are missing. Cached SQL tests cover zero AUTH1 indice
 both overloads and dialects, rejection of negative indices, and reuse with equivalent
 reserved names supplied as separate arrays or lists. The complete Plans suite passed
 2,738 tests before the last five added cases; those five subsequently passed focused
-runs. Final full-scope mutation verification is pending.
+runs. The final seven-file rerun passed its initial test run and reports 1,437 killed,
+186 survived, 109 uncovered, 4 timed-out, 461 compile-error, and 345 ignored mutants.
+Fourteen intended relationship mutations changed to killed: planner lines 458, 522,
+1281 (two), 1842, and 1843; compiler lines 131, 136, 2044, 2045, 2084 (two), 2086,
+and 2092. The 49 initial-cluster fixes remain killed. No source filters or mutation
+types were suppressed to obtain these results.
 
 Initial-cluster exceptions retained after reviewing the expanded report:
 
@@ -259,6 +267,63 @@ Executable mutations and coverage in this assembly establish that its assembly-l
 coverage-setting change is needed. This pilot does not establish a token-manager or
 full-target result; run the named configuration without the `--mutate` override for
 that scope.
+
+
+
+### Transactional-write executor pilot
+
+The executor-only pilot produced 24 killed, 7 survived, 148 compile-error, and 7
+ignored mutants. The normal Backend suite passed 4,827 tests before the pilot.
+Stryker rolled back **all mutations in `ExecuteAsyncInternal`** after generated-code
+assignment errors involving `createdSession`, `secondCommand`, and exception-mapping
+locals. The 77.42% score does **not** qualify commit/rollback or authorization ordering
+inside that method. Existing regression tests for those contracts remain available;
+no production refactor was made to inflate the instrumented score.
+
+The executable survivors are the optional writer-wait telemetry dependency and its
+recording call (57, 680), logger-factory fallback (93), synchronization-context capture
+on the outer await (129), two non-nullable argument guards (629–630), and the enqueue
+success guard (700–701). The last is equivalent for executor-produced outcomes:
+only an applied write has a non-null persisted result; other successful outcomes have
+none. Removing wait telemetry is a remaining observability coverage gap, not a write
+correctness kill. The full configuration includes the composite first/second commands,
+guarded no-op comparison, and all seven behavior-bearing ETag files; its separate
+baseline is running. A helper-library discovery warning concerns `Backend.Tests.Common`,
+which is not the owning test suite.
+
+### Token-manager baseline and regressions
+
+The full OpenIddict baseline contains 209 killed, 63 survived, 46 uncovered, 87
+compile-error, and 47 ignored mutants across the admission policy and token manager.
+The policy retains its pilot result. Fifty of the manager's 85 compile errors are
+block removals; others include impossible type/enum intersections and pattern-variable
+assignment failures. These are not detected behavioral regressions. The warnings about
+`SigningKeyBearerEvents` concern a file outside this target.
+
+The new manager cases address these concrete gaps (production source lines):
+
+- 196 and 390: independently missing/whitespace client ID or secret; grant responses
+  distinguish missing credentials, and rejected requests do not query credentials,
+  mint, or store a token. Revocation fixtures cover each missing component.
+- 256: tabs around comma-separated scope names, asserting the exact granted scopes
+  in both response and token through the existing `ScopeGrant` fixtures.
+- 526 and 573: introspection preserves a verifier outage as temporarily unavailable,
+  and a signed token without a JWT ID is inactive without querying token status.
+- 1244: configured namespace, education-organization, and claim-set mappings reach
+  the issued JWT rather than being silently replaced by an empty mapper list.
+- 118–166 and 834–852: production-certificate signing and revocation use the configured
+  password/key, public-certificate revocation takes the unencrypted loading path, and
+  a wrong password cannot store a token. Missing encryption configuration or a missing
+  database private key also prevents storage. Revocation assertions require the
+  repository call for the authenticated application and exact JWT ID; a generic
+  completed response would not establish successful verification.
+
+All 28 cases in the changed fixtures pass normally. After merging `main`, the full
+CMS Backend suite passed 7,326 tests with 16 existing environment-dependent skips
+in 3m46s. Mutation verification is pending. Repository and hasher fakes preserve deterministic state transitions;
+certificate tests use isolated temporary directories, dispose their keys, and use
+broad validity windows without sleeps. The manager reads `UtcNow` directly, so this
+work does not claim a newly injectable production clock.
 
 ### CMS permission-inheritance triage
 

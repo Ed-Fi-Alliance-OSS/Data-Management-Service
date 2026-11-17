@@ -523,8 +523,13 @@ public class OpenIddictTokenManagerTests
             A.CallTo(() => _tokenRepository.RevokeTokenAsync(A<Guid>._, A<Guid>._)).MustNotHaveHappened();
     }
 
-    [TestFixture]
-    public class Given_RevokeTokenAsync_WithMissingCredentials : OpenIddictTokenManagerTests
+    [TestFixture("", "")]
+    [TestFixture("", "secret")]
+    [TestFixture(" ", "secret")]
+    [TestFixture("client", "")]
+    [TestFixture("client", "\t")]
+    public class Given_RevokeTokenAsync_WithMissingCredentials(string clientId, string clientSecret)
+        : OpenIddictTokenManagerTests
     {
         private TokenRevocationResult _result = null!;
 
@@ -532,7 +537,7 @@ public class OpenIddictTokenManagerTests
         public async Task Act() =>
             _result = await CreateConfiguredTokenManager()
                 .RevokeTokenAsync(
-                    new TokenRevocationRequest(string.Empty, string.Empty, "any-token", TokenTypeHint.None),
+                    new TokenRevocationRequest(clientId, clientSecret, "any-token", TokenTypeHint.None),
                     CancellationToken.None
                 );
 
@@ -543,6 +548,31 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_query_the_repository() =>
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture("", "")]
+    [TestFixture("", "secret")]
+    [TestFixture(" ", "secret")]
+    [TestFixture("client", "")]
+    [TestFixture("client", "\t")]
+    public class Given_GetAccessTokenAsync_WithMissingCredentials(string clientId, string clientSecret)
+        : OpenIddictTokenManagerTests
+    {
+        [Test]
+        public async Task It_rejects_the_request_before_authentication_or_minting()
+        {
+            var result = await _tokenManager.GetAccessTokenAsync([
+                new("client_id", clientId),
+                new("client_secret", clientSecret),
+            ]);
+
+            result
+                .Should()
+                .BeEquivalentTo(new TokenResult.FailureUnknown("Missing client_id or client_secret"));
+            A.CallTo(() => _tokenRepository.GetClientCredentialAsync(A<string>._)).MustNotHaveHappened();
+            SigningKeyMustNotHaveBeenRead();
+            StoreMustNotHaveHappened();
+        }
     }
 
     // The case that motivated the canonical client id (DMS-1478): SQL Server's default collation
@@ -3373,6 +3403,104 @@ public class OpenIddictTokenManagerTests
             DevCertificatePassword = DevCertificatePassword,
         };
 
+    [TestFixture]
+    public class Given_TokenManager_WithAProductionCertificate : OpenIddictTokenManagerTests
+    {
+        private string _directory = null!;
+        private string _certificatePath = null!;
+        private RsaSecurityKey _signingKey = null!;
+
+        [SetUp]
+        public void ArrangeCertificate()
+        {
+            _directory = NewScratchDirectory();
+            _certificatePath = Path.Combine(_directory, "production.pfx");
+            _signingKey = WriteDevelopmentCertificate(_certificatePath);
+        }
+
+        [TearDown]
+        public void RemoveCertificate()
+        {
+            _signingKey.Rsa.Dispose();
+            Directory.Delete(_directory, recursive: true);
+        }
+
+        private IdentityOptions OptionsFor(string path, string password) =>
+            new()
+            {
+                Authority = TestIssuer,
+                Audience = TestAudience,
+                UseCertificates = true,
+                UseDevelopmentCertificates = false,
+                CertificatePath = path,
+                CertificatePassword = password,
+                DevCertificatePassword = "different-development-password",
+            };
+
+        [Test]
+        public async Task It_issues_and_revokes_with_the_production_password_and_key()
+        {
+            var applicationId = ArrangeGrantableClient(scopes: FullAccessScope);
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+            var manager = NewTokenManager(OptionsFor(_certificatePath, DevCertificatePassword));
+
+            var token = AccessTokenOf(await manager.GetAccessTokenAsync(GrantCredentials()));
+            KeyIdOf(token).Should().Be(_signingKey.KeyId);
+            var tokenId = Guid.Parse(new JwtSecurityTokenHandler().ReadJwtToken(token).Id);
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(tokenId, applicationId)).Returns(true);
+            var result = await manager.RevokeTokenAsync(
+                new TokenRevocationRequest(GrantClientId, GrantClientSecret, token, TokenTypeHint.None),
+                CancellationToken.None
+            );
+
+            result.Should().BeOfType<TokenRevocationResult.Completed>();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(tokenId, applicationId))
+                .MustHaveHappenedOnceExactly();
+            StoreMustHaveHappenedOnce();
+            A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._)).MustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_revokes_with_an_unencrypted_public_certificate()
+        {
+            var publicPath = Path.Combine(_directory, "production.cer");
+            using var certificate = X509CertificateLoader.LoadPkcs12FromFile(
+                _certificatePath,
+                DevCertificatePassword
+            );
+            await File.WriteAllBytesAsync(publicPath, certificate.Export(X509ContentType.Cert));
+            StubAuthenticatedCaller(OwnerClientId);
+            var tokenId = Guid.NewGuid();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(tokenId, _callerApplicationId)).Returns(true);
+            var token = CreateSignedToken(
+                _signingKey,
+                [
+                    new Claim(JwtRegisteredClaimNames.Jti, tokenId.ToString()),
+                    new Claim("client_id", OwnerClientId),
+                ]
+            );
+
+            var result = await NewTokenManager(OptionsFor(publicPath, string.Empty))
+                .RevokeTokenAsync(RevocationRequestFor(OwnerClientId, token), CancellationToken.None);
+
+            result.Should().BeOfType<TokenRevocationResult.Completed>();
+            A.CallTo(() => _tokenRepository.RevokeTokenAsync(tokenId, _callerApplicationId))
+                .MustHaveHappenedOnceExactly();
+        }
+
+        [Test]
+        public async Task It_does_not_store_a_token_when_the_production_certificate_cannot_be_decrypted()
+        {
+            ArrangeGrantableClient(scopes: FullAccessScope);
+
+            var result = await NewTokenManager(OptionsFor(_certificatePath, "incorrect-password"))
+                .GetAccessTokenAsync(GrantCredentials());
+
+            result.Should().BeOfType<TokenResult.FailureUnknown>();
+            StoreMustNotHaveHappened();
+        }
+    }
+
     // The JWKS helper would create a replacement development certificate here. A replacement holds
     // an unrelated key, the owner's token would fail verification against it, and revocation would
     // answer an empty 200 while revoking nothing. Revocation must refuse instead and leave the
@@ -3649,6 +3777,82 @@ public class OpenIddictTokenManagerTests
 
     private const string GrantClientId = "grant-client";
     private const string GrantClientSecret = "plain-secret";
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithProtocolMappers : OpenIddictTokenManagerTests
+    {
+        [Test]
+        public async Task It_preserves_the_applications_authorization_claims_in_the_issued_token()
+        {
+            ArrangeGrantableClient(scopes: FullAccessScope);
+            var application = (await _tokenRepository.GetApplicationByClientIdAsync(GrantClientId))!;
+            application.ProtocolMappers = """
+                [
+                  {"claim.name":"namespacePrefixes","claim.value":"uri://district.example"},
+                  {"claim.name":"educationOrganizationIds","claim.value":"42,43"},
+                  {"claim.name":"claimSetName","claim.value":"DistrictReadOnly"}
+                ]
+                """;
+            ArrangeStoreOutcome(TokenStoreOutcome.Stored, _ => { });
+
+            var result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+            var token = new JwtSecurityTokenHandler().ReadJwtToken(AccessTokenOf(result));
+
+            token
+                .Claims.Where(claim => claim.Type == "namespacePrefixes")
+                .Select(claim => claim.Value)
+                .Should()
+                .Equal("uri://district.example");
+            token
+                .Claims.Where(claim => claim.Type == "educationOrganizationIds")
+                .Select(claim => claim.Value)
+                .Should()
+                .Equal("42,43");
+            token
+                .Claims.Where(claim => claim.Type == "claimSetName")
+                .Select(claim => claim.Value)
+                .Should()
+                .Equal("DistrictReadOnly");
+            StoreMustHaveHappenedOnce();
+        }
+    }
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithoutUsableDatabaseSigningKeys : OpenIddictTokenManagerTests
+    {
+        [Test]
+        public async Task It_rejects_missing_encryption_configuration_before_reading_a_private_key()
+        {
+            ArrangeGrantableClient(scopes: FullAccessScope);
+            var manager = NewTokenManager(
+                new IdentityOptions
+                {
+                    Authority = TestIssuer,
+                    Audience = TestAudience,
+                    EncryptionKey = string.Empty,
+                }
+            );
+
+            var result = await manager.GetAccessTokenAsync(GrantCredentials());
+
+            result.Should().BeOfType<TokenResult.FailureUnknown>();
+            A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._)).MustNotHaveHappened();
+            StoreMustNotHaveHappened();
+        }
+
+        [Test]
+        public async Task It_does_not_store_a_token_when_no_private_key_exists()
+        {
+            ArrangeGrantableClient(scopes: FullAccessScope);
+            A.CallTo(() => _tokenRepository.GetActivePrivateKeyAsync(A<string>._))
+                .Returns((PrivateKeyInfo?)null);
+
+            var result = await CreateTokenManagerWithTokenLimit(3).GetAccessTokenAsync(GrantCredentials());
+
+            result.Should().BeOfType<TokenResult.FailureUnknown>();
+            StoreMustNotHaveHappened();
+        }
+    }
 
     // The limit reaching the repository is the whole of the enforcement wiring, and nothing else
     // in this file asserts the StoreTokenAsync call at all - so without this fixture, dropping the
@@ -4299,6 +4503,14 @@ public class OpenIddictTokenManagerTests
         : ScopeGrant(
             [FullAccessScope, ReadOnlyScope],
             () => GrantCredentialsWithScope($"{FullAccessScope},{ReadOnlyScope}"),
+            [FullAccessScope, ReadOnlyScope]
+        );
+
+    [TestFixture]
+    public class Given_GetAccessTokenAsync_WithWhitespaceAroundScopeNames()
+        : ScopeGrant(
+            [FullAccessScope, ReadOnlyScope],
+            () => GrantCredentialsWithScope($"\t{FullAccessScope}\t,\t{ReadOnlyScope}\t"),
             [FullAccessScope, ReadOnlyScope]
         );
 
@@ -5392,6 +5604,63 @@ public class OpenIddictTokenManagerTests
         [Test]
         public void It_does_not_look_up_an_application() =>
             A.CallTo(() => _tokenRepository.GetApplicationByClientIdAsync(A<string>._)).MustNotHaveHappened();
+    }
+
+    [TestFixture]
+    public class Given_IntrospectTokenAsync_WithoutAJti : OpenIddictTokenManagerTests
+    {
+        [Test]
+        public async Task It_reports_inactive_without_reading_token_status()
+        {
+            var (keyId, publicKeySpki, signingKey) = CreateSigningKey();
+            StubActivePublicKey(keyId, publicKeySpki);
+            StubAuthenticatedCaller(OwnerClientId);
+            var token = CreateSignedToken(signingKey, [new Claim("client_id", OwnerClientId)]);
+
+            var result = await CreateConfiguredTokenManager()
+                .IntrospectTokenAsync(IntrospectionRequestFor(OwnerClientId, token), CancellationToken.None);
+
+            result.Should().BeOfType<TokenIntrospectionResult.Inactive>();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+        }
+    }
+
+    [TestFixture]
+    public class Given_IntrospectTokenAsync_WhenFailurePreservingVerificationFails
+        : OpenIddictTokenManagerTests
+    {
+        [Test]
+        public async Task It_distinguishes_a_verification_outage_from_invalid_credentials()
+        {
+            _secretHasher = A.Fake<IClientSecretHasher>(options =>
+                options.Implements<IFailurePreservingSecretVerifier>()
+            );
+            StubAuthenticatedCaller(OwnerClientId);
+            A.CallTo(() =>
+                    ((IFailurePreservingSecretVerifier)_secretHasher).VerifySecretPreservingFailuresAsync(
+                        CallerSecret,
+                        "hashed-secret"
+                    )
+                )
+                .Throws(new TimeoutException("verification dependency unavailable"));
+
+            var result = await CreateConfiguredTokenManager()
+                .IntrospectTokenAsync(
+                    IntrospectionRequestFor(OwnerClientId, "any-token"),
+                    CancellationToken.None
+                );
+
+            result
+                .Should()
+                .BeOfType<TokenIntrospectionResult.TemporarilyUnavailable>()
+                .Which.Reason.Should()
+                .Be("client-authentication");
+            A.CallTo(() => _secretHasher.VerifySecretAsync(A<string>._, A<string>._)).MustNotHaveHappened();
+            A.CallTo(() => _tokenRepository.GetTokenStatusForApplicationAsync(A<Guid>._, A<Guid>._))
+                .MustNotHaveHappened();
+            SigningKeyMustNotHaveBeenRead();
+        }
     }
 
     [TestFixture]
