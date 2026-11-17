@@ -2188,6 +2188,120 @@ public class ProfileDataValidatorTests
         }
 
         [Test]
+        public void It_reports_unknown_members_inside_each_selected_container(
+            [Values("object", "collection", "extension")] string container,
+            [Values("property", "object", "collection")] string missingKind,
+            [Values(false, true)] bool readable,
+            [Values(MemberSelection.IncludeAll, MemberSelection.IncludeOnly)] MemberSelection parentSelection
+        )
+        {
+            _apiSchemaDocuments = container switch
+            {
+                "object" => CreateSchemaWithReferenceObject("Student", "children", "childId"),
+                "collection" => CreateSchemaWithCollection("Student", "children", "childId"),
+                "extension" => CreateSchemaWithExtension("Student", "sample", "childId"),
+                _ => throw new ArgumentOutOfRangeException(nameof(container)),
+            };
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+            PropertyRule[] properties = missingKind == "property" ? [new("missing")] : [];
+            ObjectRule[] objects =
+                missingKind == "object"
+                    ? [new("missing", MemberSelection.IncludeOnly, null, null, null, null, null)]
+                    : [];
+            CollectionRule[] collections =
+                missingKind == "collection"
+                    ? [new("missing", MemberSelection.IncludeOnly, null, null, null, null, null, null)]
+                    : [];
+            var contentType = new ContentTypeDefinition(
+                parentSelection,
+                [],
+                container == "object"
+                    ?
+                    [
+                        new ObjectRule(
+                            "children",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            properties,
+                            objects,
+                            collections,
+                            null
+                        ),
+                    ]
+                    : [],
+                container == "collection"
+                    ?
+                    [
+                        new CollectionRule(
+                            "children",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            properties,
+                            objects,
+                            collections,
+                            null,
+                            null
+                        ),
+                    ]
+                    : [],
+                container == "extension"
+                    ?
+                    [
+                        new ExtensionRule(
+                            "sample",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            properties,
+                            objects,
+                            collections
+                        ),
+                    ]
+                    : []
+            );
+            var profile = new ProfileDefinition(
+                "NestedMembers",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        readable ? contentType : null,
+                        readable ? null : contentType
+                    ),
+                ]
+            );
+
+            var result = new ProfileDataValidator(_logger).Validate(profile, _effectiveApiSchemaProvider);
+
+            string prefix = container switch
+            {
+                "object" => "children.",
+                "collection" => "children[].",
+                _ => "_ext.sample.",
+            };
+            string memberLabel = missingKind switch
+            {
+                "property" => "Property",
+                "object" => "Nested object",
+                _ => "Collection",
+            };
+            var containerName = container == "extension" ? "sample" : "children";
+            var contentName = readable ? "read" : "write";
+            result.IsValid.Should().BeFalse();
+            result.HasWarnings.Should().BeFalse();
+            result
+                .Failures.Should()
+                .Equal(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        "NestedMembers",
+                        "Student",
+                        prefix + "missing",
+                        $"{memberLabel} 'missing' in {container} '{containerName}' ({contentName} content type) does not exist."
+                    )
+                );
+        }
+
+        [Test]
         public void Validate_should_warn_for_unknown_extension_under_include_all_parent()
         {
             // Arrange — an IncludeAll extension under an IncludeAll parent must still be
