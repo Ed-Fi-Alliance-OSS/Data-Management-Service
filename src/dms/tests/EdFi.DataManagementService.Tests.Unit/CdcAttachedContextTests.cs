@@ -50,6 +50,39 @@ public class Given_CdcRuntimeOwnership
     [Test]
     public void It_does_not_start_the_executor_when_attached() => _runtimes[0].Starts.Should().Be(0);
 
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_ends_hold_lifetimes_without_cancelling_the_background_runtime(bool failPhase)
+    {
+        using var execution = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        CancellationToken hold = default;
+        Func<Task> phase = () =>
+            _owner.InPhaseAsync(
+                token =>
+                {
+                    token.Should().Be(execution.Token);
+                    hold = _owner.HoldToken;
+                    hold.CanBeCanceled.Should().BeTrue();
+                    hold.IsCancellationRequested.Should().BeFalse();
+                    return failPhase
+                        ? Task.FromException<bool>(new InvalidOperationException("phase failed"))
+                        : Task.FromResult(true);
+                },
+                execution.Token
+            );
+        if (failPhase)
+        {
+            await phase.Should().ThrowAsync<InvalidOperationException>().WithMessage("phase failed");
+        }
+        else
+        {
+            await phase();
+        }
+        hold.IsCancellationRequested.Should().BeTrue();
+        execution.IsCancellationRequested.Should().BeFalse();
+        _owner.HoldToken.CanBeCanceled.Should().BeFalse();
+    }
+
     [Test]
     public async Task It_disposes_before_creating_and_retargets_every_subsequent_operation()
     {
@@ -140,7 +173,7 @@ public class Given_CdcRuntimeOwnership
             {
                 Func<Task> stop = _owner.StopAsync;
                 await stop.Should().ThrowAsync<InvalidOperationException>().WithMessage("stop failed");
-                Action pause = () => gate.Pause();
+                Action pause = () => gate.Pause(token);
                 pause.Should().Throw<ObjectDisposedException>();
                 Func<Task> open = () => _owner.OpenAsync(token);
                 await open.Should().ThrowAsync<InvalidOperationException>().WithMessage("*STOP_FAILED");
@@ -332,6 +365,51 @@ public class Given_CdcAttachmentCleanup
     private sealed class Cleanup(Action action) : IDisposable
     {
         public void Dispose() => action();
+    }
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_retains_dependent_resources_until_late_cleanup_finishes_and_keeps_the_failure(
+        bool lateFault
+    )
+    {
+        var exit = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        _resources.Add(new PendingCleanup(exit.Task));
+        try
+        {
+            Func<Task> dispose = () => _resources.DisposeAsync().AsTask();
+            await dispose
+                .Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("CDC_API_ATTACHMENT_DISPOSAL");
+            _disposed.Should().BeEmpty();
+            _resources.CleanupCompletion.IsCompleted.Should().BeFalse();
+            if (lateFault)
+            {
+                exit.SetException(new InvalidOperationException("private late failure"));
+            }
+            else
+            {
+                exit.SetResult();
+            }
+            await _resources.CleanupCompletion.WaitAsync(TimeSpan.FromSeconds(30));
+            _disposed.Should().Equal(3, 2, 1);
+            await dispose
+                .Should()
+                .ThrowAsync<InvalidOperationException>()
+                .WithMessage("CDC_API_ATTACHMENT_DISPOSAL");
+        }
+        finally
+        {
+            exit.TrySetResult();
+            await _resources.CleanupCompletion;
+        }
+    }
+
+    private sealed class PendingCleanup(Task completion) : IAsyncDisposable
+    {
+        public ValueTask DisposeAsync() =>
+            ValueTask.FromException(new CdcPendingCleanupException(completion));
     }
 }
 

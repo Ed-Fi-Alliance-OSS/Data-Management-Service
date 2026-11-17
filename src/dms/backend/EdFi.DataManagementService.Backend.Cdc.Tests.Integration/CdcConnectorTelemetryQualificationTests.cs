@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
@@ -103,6 +104,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         {
             await CreateKafkaTopicAsync(topic, 1, [], token);
         }
+        // POST /connectors also uses 409 for an existing name. Do not retry that ambiguous conflict.
         using var created = await _httpClient.PostAsJsonAsync(
             "/connectors",
             new CdcKafkaConnectRegistrationPayload(new(peerName), peerConfig),
@@ -129,12 +131,17 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         start.Should().BeGreaterThan(0);
         CdcTelemetryQualification.Scalar(initial, "edfi_cdc_worker_heap_max_bytes").Should().BeGreaterThan(0);
 
-        using var stopped = await _httpClient.PutAsync(
-            $"/connectors/{request.ConnectorName.Value}/stop",
-            null,
+        var stopped = await CdcConnectorFixtureMutation.RunAsync(
+            _httpClient,
+            () =>
+                new HttpRequestMessage(
+                    HttpMethod.Put,
+                    $"/connectors/{Uri.EscapeDataString(request.ConnectorName.Value)}/stop"
+                ),
+            CdcFixtureMutation.Stop,
             token
         );
-        stopped.EnsureSuccessStatusCode();
+        stopped.Should().Be(HttpStatusCode.NoContent);
         await WaitForTelemetryAsync(
             metrics,
             text => !CdcTelemetryQualification.HasConnector(text, request.ConnectorName.Value),
@@ -146,6 +153,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             Provider,
             peerName
         );
+        // Resume is an immediate local target-state update, without the rebalance forwarding path.
         using var resumed = await _httpClient.PutAsync(
             $"/connectors/{request.ConnectorName.Value}/resume",
             null,

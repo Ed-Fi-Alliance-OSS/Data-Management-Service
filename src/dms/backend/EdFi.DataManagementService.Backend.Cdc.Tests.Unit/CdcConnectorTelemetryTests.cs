@@ -9,6 +9,7 @@ using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
@@ -494,22 +495,67 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
         ReplaceTiming(
             new(TimeSpan.FromMilliseconds(30), TimeSpan.FromMilliseconds(100), TimeSpan.FromMilliseconds(1))
         );
+        var worker = new TaskCompletionSource<CdcTransportResult<CdcWorkerInspection>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var status = new TaskCompletionSource<CdcTransportResult<CdcConnectStatus>>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        bool entered = false;
+        void EnterCall()
+        {
+            entered = true;
+        }
         if (component == "worker")
         {
             A.CallTo(() => _worker.InspectAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-                .Returns(new TaskCompletionSource<CdcTransportResult<CdcWorkerInspection>>().Task);
+                .ReturnsLazily(() =>
+                {
+                    EnterCall();
+                    return worker.Task;
+                });
         }
         if (component == "status")
         {
             A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-                .Returns(new TaskCompletionSource<CdcTransportResult<CdcConnectStatus>>().Task);
+                .ReturnsLazily(() =>
+                {
+                    EnterCall();
+                    return status.Task;
+                });
         }
         if (component == "http")
         {
             _handler.Pending = true;
+            _handler.BeforeResponse = EnterCall;
         }
-        var result = await AssertUnavailable();
-        result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        try
+        {
+            using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            var pending = _adapter.CollectAsync(_request, _pass, watchdog.Token);
+            entered.Should().BeTrue();
+            pending.IsCompleted.Should().BeFalse();
+            _clock.Advance(_request.Timing.CallTimeout);
+            var result = await pending;
+            watchdog.IsCancellationRequested.Should().BeFalse();
+            result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
+            result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.Timeout);
+        }
+        finally
+        {
+            worker.TrySetResult(new CdcTransportResult<CdcWorkerInspection>.Observed(Worker()));
+            status.TrySetResult(new CdcTransportResult<CdcConnectStatus>.Observed(Status()));
+            _handler.PendingResponse.TrySetCanceled();
+            await Task.WhenAll(worker.Task, status.Task);
+            try
+            {
+                await _handler.PendingResponse.Task;
+            }
+            catch (OperationCanceledException)
+            {
+                // Observe the test-owned noncooperative response after releasing it.
+            }
+        }
     }
 
     [Test]
@@ -598,17 +644,32 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
             new(TimeSpan.FromMilliseconds(100), TimeSpan.FromSeconds(1), TimeSpan.FromMilliseconds(1))
         );
         using var cancellation = new CancellationTokenSource();
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellation.Token,
+            watchdog.Token
+        );
+        bool entered = false;
         _handler.Response = () =>
         {
-            var content = new StreamContent(new HangingStream());
+            var content = new StreamContent(
+                new HangingStream(() =>
+                {
+                    entered = true;
+                    if (cancelCaller)
+                    {
+                        cancellation.Cancel();
+                    }
+                    else
+                    {
+                        _clock.Advance(_request.Timing.CallTimeout);
+                    }
+                })
+            );
             content.Headers.ContentType = new("text/plain");
             return new(HttpStatusCode.OK) { Content = content };
         };
-        if (cancelCaller)
-        {
-            cancellation.CancelAfter(TimeSpan.FromMilliseconds(30));
-        }
-        var pending = _adapter.CollectAsync(_request, _pass, cancellation.Token);
+        var pending = _adapter.CollectAsync(_request, _pass, caller.Token);
         if (cancelCaller)
         {
             Func<Task> act = async () => await pending;
@@ -620,6 +681,8 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
             result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
             result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.Timeout);
         }
+        entered.Should().BeTrue();
+        watchdog.IsCancellationRequested.Should().BeFalse();
     }
 
     [Test]
@@ -629,18 +692,33 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
             new(TimeSpan.FromMilliseconds(200), TimeSpan.FromMilliseconds(210), TimeSpan.FromMilliseconds(1))
         );
         A.CallTo(() => _worker.InspectAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-            .ReturnsLazily(async _ =>
-            {
-                await Task.Delay(80);
-                return new CdcTransportResult<CdcWorkerInspection>.Observed(Worker());
-            });
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, CancellationToken token) =>
+                {
+                    _trace.Add("worker");
+                    _clock.Advance(TimeSpan.FromMilliseconds(80));
+                    token.ThrowIfCancellationRequested();
+                    return new CdcTransportResult<CdcWorkerInspection>.Observed(Worker());
+                }
+            );
         A.CallTo(() => _connect.ReadStatusAsync(A<CdcDeploymentRequest>._, A<CancellationToken>._))
-            .ReturnsLazily(async _ =>
-            {
-                await Task.Delay(80);
-                return new CdcTransportResult<CdcConnectStatus>.Observed(Status());
-            });
+            .ReturnsLazily(
+                (CdcDeploymentRequest _, CancellationToken token) =>
+                {
+                    _trace.Add("status");
+                    _clock.Advance(TimeSpan.FromMilliseconds(80));
+                    token.ThrowIfCancellationRequested();
+                    return new CdcTransportResult<CdcConnectStatus>.Observed(Status());
+                }
+            );
+        _handler.BeforeResponse = () =>
+        {
+            _trace.Add("scrape-entered");
+            // The first two calls completed in 80 ms each. Scrape has used only 50 of its 200 ms.
+            _clock.Advance(TimeSpan.FromMilliseconds(50));
+        };
         var result = await AssertUnavailable();
+        _trace.Should().Equal("worker", "status", "scrape-entered");
         result.Diagnostics.Single().Failure.Should().Be(CdcDeploymentFailure.Timeout);
     }
 
@@ -681,13 +759,14 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
         act.Should().Throw<ArgumentException>();
     }
 
-    private sealed class HangingStream : MemoryStream
+    private sealed class HangingStream(Action onRead) : MemoryStream
     {
         public override async ValueTask<int> ReadAsync(
             Memory<byte> buffer,
             CancellationToken cancellationToken = default
         )
         {
+            onRead();
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
             return 0;
         }
@@ -788,7 +867,9 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
 
     private async Task<CdcTransportResult<CdcConnectorTelemetryObservation>> AssertUnavailable()
     {
-        var result = await _adapter.CollectAsync(_request, _pass, CancellationToken.None);
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var result = await _adapter.CollectAsync(_request, _pass, watchdog.Token);
+        watchdog.IsCancellationRequested.Should().BeFalse();
         result.State.Should().Be(CdcTransportEvidenceState.Unavailable);
         JsonSerializer.Serialize(result).Should().NotContain("private-secret-host");
         return result;
@@ -814,16 +895,24 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
 
     private sealed class TestClock : TimeProvider
     {
-        private long _ticks;
+        private readonly FakeTimeProvider _time = new(
+            new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero)
+        );
         public TimeSpan WallOffset { get; set; }
-        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long TimestampFrequency => _time.TimestampFrequency;
 
-        public override long GetTimestamp() => _ticks;
+        public override long GetTimestamp() => _time.GetTimestamp();
 
-        public override DateTimeOffset GetUtcNow() =>
-            new DateTimeOffset(2026, 9, 8, 12, 0, 0, TimeSpan.Zero).AddTicks(_ticks).Add(WallOffset);
+        public override DateTimeOffset GetUtcNow() => _time.GetUtcNow().Add(WallOffset);
 
-        public void Advance(TimeSpan time) => _ticks += time.Ticks;
+        public void Advance(TimeSpan time) => _time.Advance(time);
+
+        public override ITimer CreateTimer(
+            TimerCallback callback,
+            object? state,
+            TimeSpan dueTime,
+            TimeSpan period
+        ) => _time.CreateTimer(callback, state, dueTime, period);
     }
 
     private sealed class Handler(Func<HttpResponseMessage> response) : HttpMessageHandler
@@ -833,6 +922,8 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
         public Uri RequestUri { get; private set; } = new("http://unset");
         public bool NoCache { get; private set; }
         public bool Pending { get; set; }
+        public TaskCompletionSource<HttpResponseMessage> PendingResponse { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         protected override Task<HttpResponseMessage> SendAsync(
             HttpRequestMessage request,
@@ -843,9 +934,7 @@ public sealed class Given_CdcConnectorTelemetry(CdcProvider provider)
             NoCache = request.Headers.CacheControl is { NoCache: true, NoStore: true };
             BeforeResponse();
             cancellationToken.ThrowIfCancellationRequested();
-            return Pending
-                ? new TaskCompletionSource<HttpResponseMessage>().Task
-                : Task.FromResult(Response());
+            return Pending ? PendingResponse.Task : Task.FromResult(Response());
         }
     }
 }

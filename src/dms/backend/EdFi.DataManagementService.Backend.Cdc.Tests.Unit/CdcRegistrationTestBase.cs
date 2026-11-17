@@ -49,7 +49,7 @@ internal abstract class CdcRegistrationTestBase(Ddl.CdcProvider provider)
     protected string _identity = null!;
     protected Func<Ddl.CdcProviderSetupResult, Ddl.CdcProviderSetupResult> _change = null!;
     protected CdcTargetIdentity Target => _request.TargetIdentity;
-    protected TimeProvider ObservationTime { get; private set; } = TimeProvider.System;
+    protected TimeProvider ObservationTime { get; set; } = TimeProvider.System;
 
     protected virtual TimeProvider CreateObservationTime() => TimeProvider.System;
 

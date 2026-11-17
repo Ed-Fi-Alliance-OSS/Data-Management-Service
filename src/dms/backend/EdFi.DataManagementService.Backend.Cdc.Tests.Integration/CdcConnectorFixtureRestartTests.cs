@@ -5,6 +5,7 @@
 
 using System.Net;
 using FluentAssertions;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
@@ -76,50 +77,47 @@ public sealed class Given_CdcConnectorFixtureRestart
         _attempts.Should().BeEmpty();
     }
 
-    [Test]
-    public void It_bounds_persistent_conflicts_including_the_retry_delay()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_bounds_the_request_and_retry_delay_at_an_observed_boundary(bool inFlight)
     {
-        using var client = CreateClient(_ =>
-            Task.FromResult(new HttpResponseMessage(HttpStatusCode.Conflict))
-        );
-
-        Assert.CatchAsync<OperationCanceledException>(async () =>
-            await CdcConnectorFixtureRestart.RunAsync(
-                client,
-                "fixture connector",
-                _attempts.Add,
-                CancellationToken.None,
-                TimeSpan.FromMilliseconds(100),
-                TimeSpan.FromSeconds(10)
-            )
-        );
-
-        _attempts.Should().Equal(new CdcConnectorRestartAttempt(1, 409));
-        _requests.Should().HaveCount(1);
-    }
-
-    [Test]
-    public void It_bounds_an_in_flight_request()
-    {
+        var clock = new FakeTimeProvider();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        var entered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         using var client = CreateClient(async token =>
         {
-            await Task.Delay(Timeout.InfiniteTimeSpan, token);
-            throw new AssertionException("The request must be cancelled.");
+            entered.TrySetResult();
+            if (inFlight)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+            return new HttpResponseMessage(HttpStatusCode.Conflict);
         });
-
-        Assert.CatchAsync<OperationCanceledException>(async () =>
-            await CdcConnectorFixtureRestart.RunAsync(
-                client,
-                "fixture connector",
-                _attempts.Add,
-                CancellationToken.None,
-                TimeSpan.FromMilliseconds(100),
-                TimeSpan.Zero
-            )
+        Task<HttpStatusCode> operation = CdcConnectorFixtureRestart.RunAsync(
+            client,
+            () => new HttpRequestMessage(HttpMethod.Post, "/connectors/fixture/restart"),
+            _attempts.Add,
+            cancellation.Token,
+            TimeSpan.FromSeconds(10),
+            TimeSpan.FromMinutes(1),
+            clock
         );
-
-        _requests.Should().HaveCount(1);
-        _attempts.Should().BeEmpty();
+        try
+        {
+            await entered.Task.WaitAsync(cancellation.Token);
+            _requests.Should().HaveCount(1);
+            operation.IsCompleted.Should().BeFalse();
+            clock.Advance(TimeSpan.FromSeconds(10));
+            Func<Task> finish = () => operation;
+            await finish.Should().ThrowAsync<OperationCanceledException>();
+            _attempts.Should().HaveCount(inFlight ? 0 : 1);
+            _requests.Should().HaveCount(1);
+        }
+        finally
+        {
+            await cancellation.CancelAsync();
+            await ((Task)operation).ConfigureAwait(ConfigureAwaitOptions.SuppressThrowing);
+        }
     }
 
     [Test]

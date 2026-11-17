@@ -14,6 +14,7 @@ using EdFi.DataManagementService.SchemaTools.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
 namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
@@ -22,6 +23,10 @@ namespace EdFi.DataManagementService.SchemaTools.Tests.Unit;
 [TestFixture(Ddl.CdcProvider.SqlServer)]
 internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcReadinessTestBase(provider)
 {
+    private TimeProvider _commandClock = TimeProvider.System;
+    private TimeProvider _workflowClock = TimeProvider.System;
+    private CancellationToken _commandToken;
+    private CancellationToken _workflowToken;
     private ICdcBindingLifecycleService _bindings = null!;
     private string _settingsPath = null!;
     private bool _failRuntimePreparation;
@@ -32,6 +37,8 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
     [SetUp]
     public void SetupCommand()
     {
+        _commandClock = _workflowClock = TimeProvider.System;
+        _commandToken = _workflowToken = default;
         _failRuntimePreparation = false;
         _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
         // Reuse the qualified synthetic transport inventory, starting before provider intent.
@@ -99,7 +106,12 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
             new(A.Fake<IEffectiveSchemaHashProvider>(), A.Fake<IResourceKeySeedProvider>())
         )
         {
-            CreateRequest = (_, _, _, _, _, _, _, _) => Task.FromResult(_request),
+            Clock = _commandClock,
+            CreateRequest = (_, _, _, _, _, ct, _, _) =>
+            {
+                _commandToken = ct;
+                return Task.FromResult(_request);
+            },
             CreateProjectionRuntime = (_, _, _, _) =>
             {
                 Trace("prepare-runtime");
@@ -123,6 +135,8 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
                 )
                 {
                     Bindings = _bindings,
+                    Clock = _workflowClock,
+                    OnDeadlineStarted = token => _workflowToken = token,
                 },
         };
         return runner.RunAsync(
@@ -410,19 +424,11 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
     )
     {
         await InterruptAfterEstablishmentAsync();
-        ShortTiming(250);
-        // Observe loss before holding persistence across the selected enclosing deadline.
-        // The no-loss controls retain their original short command/workflow bounds.
-        var (enclosingWait, commandWaitMilliseconds) = (observeLoss, deadline) switch
-        {
-            (true, "command") => (TimeSpan.FromSeconds(2), "2000"),
-            (true, _) => (TimeSpan.FromSeconds(5), "15000"),
-            (false, "command") => (TimeSpan.FromMilliseconds(900), "900"),
-            _ => (TimeSpan.FromMilliseconds(1250), "5000"),
-        };
-        var enclosingStarted = new System.Diagnostics.Stopwatch();
-        bool barrierCaptured = false;
-        bool crossedDeadlineDuringPersistence = false;
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        _commandClock = _workflowClock = clock;
+        ReplaceObservationTime(clock);
+        _bindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        var enclosingWait = deadline == "command" ? TimeSpan.FromSeconds(2) : TimeSpan.FromSeconds(5);
         _request = new(
             _request.Binding,
             _request.DmsSettings,
@@ -433,70 +439,72 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
             _request.WorkerPolicy,
             _request.ProviderConnectionProperties,
             _request.KafkaClientSecurityProperties,
-            new(
-                observeLoss ? TimeSpan.FromSeconds(5) : TimeSpan.FromMilliseconds(750),
-                observeLoss ? TimeSpan.FromSeconds(5) : _request.Timing.WaitTimeout,
-                _request.Timing.PollInterval
-            )
+            new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(5), TimeSpan.FromMilliseconds(5))
         );
         var settings = JsonNode.Parse(await File.ReadAllTextAsync(_settingsPath))!;
-        settings["Cdc:Timing:WaitMilliseconds"] = commandWaitMilliseconds;
+        settings["Cdc:Timing:WaitMilliseconds"] = deadline == "command" ? "2000" : "15000";
         settings["Cdc:Timing:CallMilliseconds"] = "750";
         settings["Cdc:Timing:PollMilliseconds"] = "5";
         await File.WriteAllTextAsync(_settingsPath, settings.ToJsonString());
-        var elapsed = System.Diagnostics.Stopwatch.StartNew();
         var real = _bindings;
         var delayed = A.Fake<ICdcBindingLifecycleService>();
+        bool firstBinding = true;
         A.CallTo(() => delayed.ExactMatchBindingAsync(A<CdcBinding>._, A<CancellationToken>._))
             .ReturnsLazily(
-                async (CdcBinding binding, CancellationToken ct) =>
+                (CdcBinding binding, CancellationToken ct) =>
                 {
-                    if (!enclosingStarted.IsRunning)
+                    if (firstBinding)
                     {
-                        // Both enclosing timers already exist when the workflow reads its binding.
-                        enclosingStarted.Start();
-                        if (observeLoss && deadline == "workflow")
+                        firstBinding = false;
+                        if (deadline == "workflow")
                         {
-                            // Leave room within a fresh persistence-call budget to cross the older
-                            // workflow deadline and still finish the real durable state-store write.
-                            await Task.Delay(TimeSpan.FromSeconds(2), ct);
+                            // The workflow already owns its timer. Persistence later gets a fresh call budget.
+                            clock.Advance(TimeSpan.FromSeconds(2));
                         }
                     }
-                    return await real.ExactMatchBindingAsync(binding, ct);
+                    return real.ExactMatchBindingAsync(binding, ct);
                 }
             );
         using var caller = new CancellationTokenSource();
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var lifetime = CancellationTokenSource.CreateLinkedTokenSource(caller.Token, watchdog.Token);
+        var persistenceEntered = new TaskCompletionSource<CancellationToken>(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var releasePersistence = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        bool lockContended = false;
         A.CallTo(() => delayed.LatchSourceHistoryLossAsync(A<CdcIncident>._, A<CancellationToken>._))
             .ReturnsLazily(
                 async (CdcIncident incident, CancellationToken ct) =>
                 {
                     Trace("persist");
+                    using var contention = new CancellationTokenSource();
+                    var contender = new LocalCdcWorkflowJournalStore(_root)
+                    {
+                        OnLockContention = () =>
+                        {
+                            lockContended = true;
+                            contention.Cancel();
+                        },
+                    };
                     Func<Task> contend = async () =>
                     {
-                        await using var other = await _store.AcquireAsync(
-                            TimeSpan.FromMilliseconds(15),
+                        await using var other = await contender.AcquireAsync(
+                            TimeSpan.FromSeconds(10),
                             TimeSpan.FromMilliseconds(1),
-                            default
+                            contention.Token
                         );
                     };
-                    await contend.Should().ThrowAsync<CdcWorkflowStateException>();
-                    if (cancelCaller)
-                    {
-                        await caller.CancelAsync();
-                    }
-                    TimeSpan remaining =
-                        enclosingWait + TimeSpan.FromMilliseconds(100) - enclosingStarted.Elapsed;
-                    if (remaining > TimeSpan.Zero)
-                    {
-                        await Task.Delay(remaining, ct);
-                    }
-                    crossedDeadlineDuringPersistence = enclosingStarted.Elapsed > enclosingWait;
+                    await contend.Should().ThrowAsync<OperationCanceledException>();
+                    persistenceEntered.TrySetResult(ct);
+                    await releasePersistence.Task.WaitAsync(ct);
                     return await real.LatchSourceHistoryLossAsync(incident, ct);
                 }
             );
         _bindings = delayed;
         ConfigureInitialStop();
-        // Expose real lost offsets immediately after the barrier, before either deadline expires.
+        bool barrierCaptured = false;
+        bool deadlineReached = false;
         A.CallTo(() =>
                 _runtime.CaptureBarrierAsync(
                     A<CdcDeploymentRequest>._,
@@ -508,55 +516,98 @@ internal class Given_Cdc_command_enable_retry(Ddl.CdcProvider provider) : CdcRea
             {
                 barrierCaptured = true;
                 return Provider == Ddl.CdcProvider.Postgresql
-                    ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/20", DateTimeOffset.UtcNow)
+                    ? CdcProviderBarrierCaptureResult.PostgresqlSuccess("0/20", clock.GetUtcNow())
                     : CdcProviderBarrierCaptureResult.SqlServerSuccess(
                         "00000001:00000002:0004",
                         "00000001:00000002:0004",
-                        DateTimeOffset.UtcNow
+                        clock.GetUtcNow()
                     );
             });
+        CancellationToken EnclosingToken() => deadline == "command" ? _commandToken : _workflowToken;
+        void ExpireEnclosingDeadline()
+        {
+            clock.Advance(enclosingWait - (clock.GetUtcNow() - clock.Start));
+            deadlineReached = EnclosingToken().IsCancellationRequested;
+        }
         _onCall = name =>
         {
-            if (observeLoss && barrierCaptured && name == "offset")
+            if (barrierCaptured && name == "offset")
             {
-                _offsetState = CdcConnectOffsetState.Missing;
+                if (observeLoss)
+                {
+                    _offsetState = CdcConnectOffsetState.Missing;
+                }
+                else if (!deadlineReached)
+                {
+                    ExpireEnclosingDeadline();
+                }
             }
         };
-        elapsed.Restart();
-        if (cancelCaller)
+        var command = CommandAsync(lifetime.Token);
+        try
         {
-            await FluentActions
-                .Awaiting(() => CommandAsync(caller.Token))
-                .Should()
-                .ThrowAsync<OperationCanceledException>();
-        }
-        else
-        {
-            var result = await CommandAsync(caller.Token);
-            elapsed.Stop();
-            result.Succeeded.Should().BeFalse();
-            if (!observeLoss)
+            if (observeLoss)
             {
-                result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
-                (await real.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
-                _trace.Should().NotContain("persist").And.NotContain("stop");
-                var expectedWait =
-                    deadline == "command" ? TimeSpan.FromMilliseconds(900) : _request.Timing.WaitTimeout;
-                // Allow scheduling and durable file I/O overhead on shared CI runners.
-                // Measure only the command, excluding the verification reads above.
-                elapsed.Elapsed.Should().BeLessThan(expectedWait + TimeSpan.FromSeconds(2));
-                ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
-                return;
+                var persistenceToken = await persistenceEntered.Task.WaitAsync(watchdog.Token);
+                lockContended.Should().BeTrue();
+                EnclosingToken().IsCancellationRequested.Should().BeFalse();
+                if (cancelCaller)
+                {
+                    await caller.CancelAsync();
+                    persistenceToken.IsCancellationRequested.Should().BeTrue();
+                }
+                else
+                {
+                    ExpireEnclosingDeadline();
+                    deadlineReached.Should().BeTrue("the selected enclosing timer must actually cancel");
+                    persistenceToken
+                        .IsCancellationRequested.Should()
+                        .BeFalse("terminal persistence retains its independent call budget");
+                }
+                releasePersistence.TrySetResult();
             }
-            _trace.Should().Contain("persist");
-            crossedDeadlineDuringPersistence.Should().BeTrue();
-            (await real.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().NotBeNull();
-            _trace.Should().Contain("stopped-readback");
-            _trace.IndexOf("persist").Should().BeLessThan(_trace.IndexOf("stop"));
-            _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+            if (cancelCaller)
+            {
+                await FluentActions.Awaiting(() => command).Should().ThrowAsync<OperationCanceledException>();
+            }
+            else
+            {
+                var result = await command;
+                result.Succeeded.Should().BeFalse();
+                deadlineReached.Should().BeTrue();
+                if (!observeLoss)
+                {
+                    result.Diagnostics.Should().Contain(d => d.Failure == CdcDeploymentFailure.Timeout);
+                    (await real.ExactMatchBindingAsync(_request.Binding)).State!.Incident.Should().BeNull();
+                    _trace.Should().NotContain("persist").And.NotContain("stop");
+                }
+                else
+                {
+                    (await real.ExactMatchBindingAsync(_request.Binding))
+                        .State!.Incident.Should()
+                        .NotBeNull();
+                    _trace.Should().Contain("stopped-readback");
+                    _trace.IndexOf("persist").Should().BeLessThan(_trace.IndexOf("stop"));
+                    _trace.IndexOf("stopped-readback").Should().BeLessThan(_trace.IndexOf("dispose"));
+                }
+            }
+            barrierCaptured.Should().BeTrue();
+            watchdog.IsCancellationRequested.Should().BeFalse();
+            ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
         }
-        _trace.Should().Contain("persist");
-        ReadJournal().WriterPublicationAuthorized.Should().BeFalse();
+        finally
+        {
+            releasePersistence.TrySetResult();
+            await caller.CancelAsync();
+            try
+            {
+                await command;
+            }
+            catch (OperationCanceledException)
+            {
+                // Always join the command before fixture resources are disposed.
+            }
+        }
         await using var released = await _store.AcquireAsync(
             TimeSpan.FromSeconds(1),
             TimeSpan.FromMilliseconds(1),

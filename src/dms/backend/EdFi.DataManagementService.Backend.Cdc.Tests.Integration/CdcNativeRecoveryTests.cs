@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
+using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
 using Confluent.Kafka;
@@ -23,6 +25,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 [Category("DatabaseIntegration")]
 [Category("CdcAuthorizationDisabledLocal")]
 [NonParallelizable]
+[FixtureLifeCycle(LifeCycle.InstancePerTestCase)]
 public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
 {
     private CdcProviderAdmissionFixture _fixture = null!;
@@ -42,7 +45,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             )
         );
 
-    private readonly List<object> _evidence = [];
+    private readonly ConcurrentQueue<object> _evidence = new();
     private string _settingsPath = null!;
     private DocumentCacheAdminCliProcessHarness _commandRuntime = null!;
 
@@ -99,7 +102,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             image.Should().MatchRegex("^sha256:[a-f0-9]{64}$");
             images[role] = image;
         }
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 Provider = provider.ToString(),
@@ -119,7 +122,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         await File.WriteAllTextAsync(
             path,
             JsonSerializer.Serialize(
-                new { Test = TestContext.CurrentContext.Test.Name, Evidence = _evidence }
+                new { Test = TestContext.CurrentContext.Test.Name, Evidence = _evidence.ToArray() }
             )
         );
         TestContext.AddTestAttachment(
@@ -172,7 +175,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         await WriteHeartbeatAsync();
         await WaitForPublicationAsync(before, high);
         // No controller observation or guarded lifecycle call has run since SIGKILL.
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -249,10 +252,10 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             await SetSqlLoginPasswordAsync(false);
             await RestartTaskAsync();
         }
-        await CdcControllerFixture.WaitAsync(
-            async _ =>
+        await _fixture.Probes.WaitAsync(
+            async ct =>
             {
-                var status = await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, Token);
+                var status = await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, ct);
                 return status is CdcTransportResult<CdcConnectStatus>.Observed value
                     && value.Value.Tasks.Any(t => t.State == CoreCdc.CdcConnectorRuntimeState.Failed);
             },
@@ -292,7 +295,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         unchanged.Should().BeTrue();
         RequireNoResume(calls);
         await ObserveSnippetAsync("cdc-native-recovery-watch", "same-worker-task-recovered");
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -341,7 +344,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             Token
         );
         _fixture.Infrastructure.BeforeConnectCall = _ => { };
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -436,11 +439,11 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             await RequireReadyAsync();
             // Erasing committed offsets is an actual authoritative history loss. The external stop is
             // deliberately unjournaled; neither its acknowledgement nor this test authorizes startup.
-            await RawLifecycleAsync("stop");
-            await CdcControllerFixture.WaitAsync(
-                async _ =>
+            await RawStopAsync();
+            await _fixture.Probes.WaitAsync(
+                async ct =>
                     Observed(
-                        await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, Token)
+                        await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, ct)
                     ).IsStopped,
                 TimeSpan.FromSeconds(30),
                 TimeSpan.FromMilliseconds(250),
@@ -537,7 +540,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             );
         _fixture.Lag.Should().Contain(l => l.ObservedAt >= recoveredAt);
         (await _fixture.JournalAsync(Token)).WriterPublicationAuthorized.Should().BeTrue();
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -626,7 +629,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             diagnostic.GetProperty("component").GetString().Should().Be("Request");
             diagnostic.GetProperty("failure").GetString().Should().Be("InvalidInput");
         }
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -646,7 +649,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         await _fixture.Infrastructure.RecoverWorkerAsync(true, Token);
         var recovered = Observed(await _fixture.Infrastructure.Worker.InspectAsync(_fixture.Request, Token));
         (recovered.ProcessIdentity != worker.ProcessIdentity).Should().BeTrue();
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 StartedAt = started,
@@ -665,9 +668,9 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
     }
 
     private Task WaitRunningAsync() =>
-        CdcControllerFixture.WaitAsync(
-            async _ =>
-                (await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, Token))
+        _fixture.Probes.WaitAsync(
+            async ct =>
+                (await _fixture.Infrastructure.Connect.ReadStatusAsync(_fixture.Request, ct))
                     is CdcTransportResult<CdcConnectStatus>.Observed value
                 && value.Value.IsRunning,
             _fixture.Request.Timing.WaitTimeout,
@@ -675,21 +678,23 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
             Token
         );
 
-    private async Task<CdcControllerTargetStatus> ObserveAsync()
+    private Task<CdcControllerTargetStatus> ObserveAsync() => ObserveAsync(Token);
+
+    private async Task<CdcControllerTargetStatus> ObserveAsync(CancellationToken token)
     {
-        var result = (await _fixture.Controllers.Status.StatusAsync([Target], Token)).Targets.Single();
+        var result = (await _fixture.Controllers.Status.StatusAsync([Target], token)).Targets.Single();
         JsonSerializer.Serialize(result).Should().NotContain("t33-private-sentinel");
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, Status = result });
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, Status = result });
         return result;
     }
 
     private async Task<CdcControllerTargetStatus> RequireReadyAsync()
     {
         CdcControllerTargetStatus result = null!;
-        await CdcControllerFixture.WaitAsync(
-            async _ =>
+        await _fixture.Probes.WaitAsync(
+            async ct =>
             {
-                result = await ObserveAsync();
+                result = await ObserveAsync(ct);
                 result
                     .Details.IncidentFailureCategory.Should()
                     .BeNull("healthy fixtures must not retry terminal loss");
@@ -722,7 +727,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         )
         {
             var result = await _fixture.Controllers.Lifecycle.ExecuteAsync(Target, operation, Token);
-            _evidence.Add(
+            _evidence.Enqueue(
                 new
                 {
                     At = DateTimeOffset.UtcNow,
@@ -757,60 +762,78 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
     private async Task PutConfigurationAsync(IReadOnlyDictionary<string, string> configuration)
     {
         using var client = CdcConnectRestAdapter.CreateHttpClient();
-        using var response = await client.PutAsJsonAsync(
-            new Uri(
-                _fixture.Infrastructure.ConnectEndpoint,
-                "connectors/" + Uri.EscapeDataString(_fixture.Request.Binding.ConnectorName) + "/config"
-            ),
-            configuration,
+        var status = await CdcConnectorFixtureMutation.RunAsync(
+            client,
+            () =>
+                new HttpRequestMessage(
+                    HttpMethod.Put,
+                    new Uri(
+                        _fixture.Infrastructure.ConnectEndpoint,
+                        "connectors/"
+                            + Uri.EscapeDataString(_fixture.Request.Binding.ConnectorName)
+                            + "/config"
+                    )
+                )
+                {
+                    Content = JsonContent.Create(configuration),
+                },
+            CdcFixtureMutation.ConfigurationUpdate,
             Token
         );
-        response
-            .IsSuccessStatusCode.Should()
-            .BeTrue("the external task fault configuration must be accepted");
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, ExternalTaskConfigurationAccepted = true });
+        status.Should().Be(HttpStatusCode.OK, "the external task fault configuration must be accepted");
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, ExternalTaskConfigurationAccepted = true });
     }
 
     private async Task RestartTaskAsync()
     {
         using var client = CdcConnectRestAdapter.CreateHttpClient();
-        using var response = await client.PostAsync(
-            new Uri(
-                _fixture.Infrastructure.ConnectEndpoint,
-                "connectors/"
-                    + Uri.EscapeDataString(_fixture.Request.Binding.ConnectorName)
-                    + "/tasks/0/restart"
-            ),
-            null,
+        var status = await CdcConnectorFixtureMutation.RunAsync(
+            client,
+            () =>
+                new HttpRequestMessage(
+                    HttpMethod.Post,
+                    new Uri(
+                        _fixture.Infrastructure.ConnectEndpoint,
+                        "connectors/"
+                            + Uri.EscapeDataString(_fixture.Request.Binding.ConnectorName)
+                            + "/tasks/0/restart"
+                    )
+                ),
+            CdcFixtureMutation.TaskRestart,
             Token
         );
-        response.IsSuccessStatusCode.Should().BeTrue("the external task restart must be accepted");
-        _evidence.Add(new { At = DateTimeOffset.UtcNow, ExternalTaskRestartAccepted = true });
+        status.Should().Be(HttpStatusCode.NoContent, "the external task restart must be accepted");
+        _evidence.Enqueue(new { At = DateTimeOffset.UtcNow, ExternalTaskRestartAccepted = true });
     }
 
-    private async Task RawLifecycleAsync(string action)
+    private async Task RawStopAsync()
     {
         using var client = CdcConnectRestAdapter.CreateHttpClient();
-        using var response = await client.PutAsync(
-            new Uri(
-                _fixture.Infrastructure.ConnectEndpoint,
-                "connectors/" + Uri.EscapeDataString(_fixture.Request.Binding.ConnectorName) + "/" + action
-            ),
-            null,
+        var status = await CdcConnectorFixtureMutation.RunAsync(
+            client,
+            () =>
+                new HttpRequestMessage(
+                    HttpMethod.Put,
+                    new Uri(
+                        _fixture.Infrastructure.ConnectEndpoint,
+                        "connectors/" + Uri.EscapeDataString(_fixture.Request.Binding.ConnectorName) + "/stop"
+                    )
+                ),
+            CdcFixtureMutation.Stop,
             Token
         );
-        response.IsSuccessStatusCode.Should().BeTrue();
+        status.Should().Be(HttpStatusCode.NoContent);
     }
 
     private async Task WaitForPublicationAsync(object before, long high)
     {
-        await CdcControllerFixture.WaitAsync(
-            async _ => !Equals(await OffsetAsync(), before) && ProgressHighWatermark() > high,
+        await _fixture.Probes.WaitAsync(
+            async ct => !Equals(await OffsetAsync(ct), before) && ProgressHighWatermark() > high,
             _fixture.Request.Timing.WaitTimeout,
             TimeSpan.FromMilliseconds(250),
             Token
         );
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -848,7 +871,7 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         (await _fixture.Infrastructure.Bindings.LatchSourceHistoryLossAsync(incident, Token))
             .Status.Should()
             .Be(CoreCdc.CdcControlPlaneOperationStatus.Succeeded);
-        _evidence.Add(
+        _evidence.Enqueue(
             new
             {
                 At = DateTimeOffset.UtcNow,
@@ -875,10 +898,12 @@ public sealed class Given_Cdc_Controller_Native_Recovery(CdcProvider provider)
         return consumer.QueryWatermarkOffsets(new(topic, 0), TimeSpan.FromSeconds(10)).High.Value;
     }
 
-    private async Task<object> OffsetAsync()
+    private Task<object> OffsetAsync() => OffsetAsync(Token);
+
+    private async Task<object> OffsetAsync(CancellationToken token)
     {
         var offset = Observed(
-            await _fixture.Infrastructure.Connect.ReadOffsetEvidenceAsync(_fixture.Request, Token)
+            await _fixture.Infrastructure.Connect.ReadOffsetEvidenceAsync(_fixture.Request, token)
         );
         offset.State.Should().Be(CdcConnectOffsetState.Streaming);
         return provider == CdcProvider.Postgresql ? offset.Postgresql : offset.SqlServer;

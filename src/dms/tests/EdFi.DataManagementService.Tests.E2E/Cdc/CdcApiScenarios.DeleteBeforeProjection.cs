@@ -23,7 +23,7 @@ internal sealed partial class CdcApiScenarios
                 var consumer = new MessageContractConsumer(DateTimeOffset.UtcNow);
                 consumer.Assign(await scanner.InitializeAsync(ct));
                 await phase.Gate.WaitUntilIdleAsync(ct);
-                phase.Gate.Pause();
+                phase.Gate.Pause(phase.HoldToken);
                 try
                 {
                     await phase.Runtime.StartProcessingAsync(ct);

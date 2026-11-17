@@ -109,6 +109,7 @@ function Enter-CdcDeploymentLock {
     Assert-CdcPrivatePath $directory -Directory
     $path = Join-Path $directory "$Project.lock"
     $deadline = [DateTimeOffset]::UtcNow.AddSeconds(30)
+    $reportedContention = $false
     do {
         if (Test-Path -LiteralPath $path) { Assert-CdcPrivatePath $path }
         $options = [IO.FileStreamOptions]::new()
@@ -118,6 +119,10 @@ function Enter-CdcDeploymentLock {
         $options.UnixCreateMode = [IO.UnixFileMode]384
         try { return [IO.FileStream]::new($path, $options) }
         catch [IO.IOException] {
+            if (-not $reportedContention) {
+                [Console]::Error.WriteLine('CDC_DEPLOYMENT_LOCK_CONTENDED')
+                $reportedContention = $true
+            }
             if ([DateTimeOffset]::UtcNow -ge $deadline) { throw 'CDC deployment controller lock timed out.' }
             Start-Sleep -Milliseconds 100
         }

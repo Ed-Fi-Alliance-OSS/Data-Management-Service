@@ -4,7 +4,6 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Immutable;
-using System.Diagnostics;
 using System.Globalization;
 using System.Text.Json;
 using EdFi.DataManagementService.Core.Configuration;
@@ -13,6 +12,7 @@ using EdFi.DataManagementService.Core.DocumentCache.Cdc;
 using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Time.Testing;
 using NUnit.Framework;
 using Ddl = EdFi.DataManagementService.Backend.Ddl;
 
@@ -23,6 +23,7 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Platform(Exclude = "Win", Reason = "Local CDC state requires Unix owner-only permissions.")]
 public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
 {
+    private TimeProvider _clock = null!;
     private string _root = null!;
     private CdcDeploymentRequest _request = null!;
     private LocalCdcWorkflowJournalStore _store = null!;
@@ -48,6 +49,7 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     [SetUp]
     public async Task Setup()
     {
+        _clock = TimeProvider.System;
         _root = Path.Combine(Path.GetTempPath(), "cdc-initial-" + Guid.NewGuid().ToString("N"));
         _request = CdcDeploymentRequestTestData.Request(provider);
         _store = new(_root);
@@ -162,7 +164,7 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
                 ? RelationalProviderToken.Postgresql
                 : RelationalProviderToken.SqlServer,
             _request.Binding.PhysicalSourceFingerprint,
-            DateTimeOffset.UtcNow,
+            _clock.GetUtcNow(),
             new(_lifecycle, _latch),
             _tables,
             Guid.NewGuid().ToString("D")
@@ -203,8 +205,28 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             }
         )!;
 
-    private Task<CdcTransportResult<CdcInitialEnablementEvidence>> RunAsync() =>
-        _controller.ActivateAsync(_request, _runtime);
+    private async Task<CdcTransportResult<CdcInitialEnablementEvidence>> RunAsync()
+    {
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        return await _controller.ActivateAsync(_request, _runtime, watchdog.Token);
+    }
+
+    private FakeTimeProvider UseClock(Action onLockContention = null!)
+    {
+        var clock = new FakeTimeProvider(DateTimeOffset.UtcNow);
+        _clock = clock;
+        _services.Dispose();
+        var services = new ServiceCollection()
+            .AddSingleton<TimeProvider>(clock)
+            .AddCdcConnectorTemplates()
+            .AddDmsCdcControlPlane();
+        services.Configure<CdcBindingStateStoreOptions>(options => options.RootPath = _root);
+        _services = services.BuildServiceProvider();
+        _realBindings = _services.GetRequiredService<ICdcBindingLifecycleService>();
+        _store = new(_root, clock, _ => { }) { OnLockContention = onLockContention ?? (() => { }) };
+        _controller = new(_store, _bindings, clock);
+        return clock;
+    }
 
     private async Task IntentAsync(CdcWorkflowEffect effect, bool complete = false)
     {
@@ -711,12 +733,17 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     public async Task It_allows_individually_bounded_calls_to_exceed_one_call_budget_in_total()
     {
         SetTiming(TimeSpan.FromMilliseconds(500), TimeSpan.FromSeconds(5));
-        _beforeCall = (_, token) => Task.Delay(TimeSpan.FromMilliseconds(100), token);
-        var elapsed = Stopwatch.StartNew();
+        var clock = UseClock();
+        _beforeCall = (_, token) =>
+        {
+            clock.Advance(TimeSpan.FromMilliseconds(100));
+            token.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        };
 
         (await RunAsync()).State.Should().Be(CdcTransportEvidenceState.Observed);
 
-        elapsed.Elapsed.Should().BeGreaterThan(_request.Timing.CallTimeout);
+        clock.GetUtcNow().Subtract(clock.Start).Should().BeGreaterThan(_request.Timing.CallTimeout);
         _calls
             .Should()
             .Equal("observe-1", "list", "exact-1", "create", "exact-2", "activate", "observe-2", "exact-3");
@@ -744,23 +771,22 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     )
     {
         SetTiming(TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(5));
+        var clock = UseClock();
         CancellationToken observedCallToken = CancellationToken.None;
         _beforeCall = async (current, token) =>
         {
             if (current == stage)
             {
                 observedCallToken = token;
+                clock.Advance(_request.Timing.CallTimeout);
                 await Task.Delay(Timeout.InfiniteTimeSpan, token);
             }
         };
-        var elapsed = Stopwatch.StartNew();
-
         var result = (await RunAsync())
             .Should()
             .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
             .Subject;
 
-        elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
         result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
         result.Diagnostic.Component.Should().Be(component);
         observedCallToken.IsCancellationRequested.Should().BeTrue();
@@ -780,12 +806,15 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     public async Task It_preserves_an_earlier_enclosing_deadline_or_actual_caller_cancellation(bool deadline)
     {
         SetTiming(TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(5));
-        using var cancellation = new CancellationTokenSource();
+        var clock = UseClock();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(100), clock);
+        bool entered = false;
         _beforeCall = async (_, token) =>
         {
+            entered = true;
             if (deadline)
             {
-                cancellation.CancelAfter(TimeSpan.FromMilliseconds(100));
+                clock.Advance(TimeSpan.FromMilliseconds(100));
             }
             else
             {
@@ -793,12 +822,17 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             }
             await Task.Delay(Timeout.InfiniteTimeSpan, token);
         };
-        var elapsed = Stopwatch.StartNew();
-
-        Func<Task> run = () => _controller.ActivateAsync(_request, _runtime, cancellation.Token);
+        using var watchdog = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        using var caller = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellation.Token,
+            watchdog.Token
+        );
+        Func<Task> run = () => _controller.ActivateAsync(_request, _runtime, caller.Token);
         await run.Should().ThrowAsync<OperationCanceledException>();
 
-        elapsed.Elapsed.Should().BeLessThan(_request.Timing.CallTimeout);
+        entered.Should().BeTrue();
+        cancellation.IsCancellationRequested.Should().BeTrue();
+        watchdog.IsCancellationRequested.Should().BeFalse();
         _calls.Should().Equal("observe-1");
         await AssertUnpublishedAndLockReleasedAsync();
     }
@@ -807,18 +841,29 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     public async Task It_bounds_the_complete_workflow_even_when_each_call_fits_its_budget()
     {
         SetTiming(TimeSpan.FromMilliseconds(500), TimeSpan.FromMilliseconds(750));
-        _beforeCall = (_, token) => Task.Delay(TimeSpan.FromMilliseconds(200), token);
-        var elapsed = Stopwatch.StartNew();
-
+        var clock = UseClock();
+        CancellationToken activeCall = CancellationToken.None;
+        _beforeCall = async (stage, token) =>
+        {
+            token.IsCancellationRequested.Should().BeFalse();
+            if (stage == "create")
+            {
+                activeCall = token;
+                // Three successful 200 ms calls leave 150 ms of the workflow's budget.
+                // The new call still has 350 ms remaining when the workflow expires.
+                clock.Advance(TimeSpan.FromMilliseconds(150));
+                await Task.Delay(Timeout.InfiniteTimeSpan, token);
+            }
+            clock.Advance(TimeSpan.FromMilliseconds(200));
+            token.ThrowIfCancellationRequested();
+        };
         var result = (await RunAsync())
             .Should()
             .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
             .Subject;
 
-        elapsed
-            .Elapsed.Should()
-            .BeGreaterThan(_request.Timing.CallTimeout)
-            .And.BeLessThan(TimeSpan.FromSeconds(2));
+        activeCall.IsCancellationRequested.Should().BeTrue();
+        clock.GetUtcNow().Subtract(clock.Start).Should().Be(_request.Timing.WaitTimeout);
         result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
         result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.WorkflowState);
         _calls.Should().Equal("observe-1", "list", "exact-1", "create");
@@ -829,6 +874,13 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
     public async Task It_bounds_lock_acquisition_by_the_call_budget()
     {
         SetTiming(TimeSpan.FromMilliseconds(250), TimeSpan.FromSeconds(5));
+        FakeTimeProvider clock = null!;
+        bool contended = false;
+        clock = UseClock(() =>
+        {
+            contended = true;
+            clock.Advance(_request.Timing.CallTimeout);
+        });
         await using (
             var held = await _store.AcquireAsync(
                 TimeSpan.FromSeconds(1),
@@ -837,12 +889,11 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             )
         )
         {
-            var elapsed = Stopwatch.StartNew();
             var result = (await RunAsync())
                 .Should()
                 .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
                 .Subject;
-            elapsed.Elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2));
+            contended.Should().BeTrue();
             result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
             result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.WorkflowState);
             _calls.Should().BeEmpty();
@@ -896,10 +947,14 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             _request.KafkaClientSecurityProperties,
             new(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(2), TimeSpan.FromMilliseconds(10))
         );
+        var clock = UseClock();
+        bool entered = false;
         A.CallTo(() => _runtime.ObserveInitialDatabaseAsync(A<CancellationToken>._))
             .ReturnsLazily(
                 async (CancellationToken token) =>
                 {
+                    entered = true;
+                    clock.Advance(_request.Timing.CallTimeout);
                     await Task.Delay(Timeout.InfiniteTimeSpan, token);
                     return Observation();
                 }
@@ -908,6 +963,7 @@ public class Given_CdcInitialEnablement(Ddl.CdcProvider provider)
             .Should()
             .BeOfType<CdcTransportResult<CdcInitialEnablementEvidence>.Unavailable>()
             .Subject;
+        entered.Should().BeTrue();
         result.Diagnostic.Failure.Should().Be(CdcDeploymentFailure.Timeout);
         result.Diagnostic.Component.Should().Be(CdcDeploymentComponent.Projection);
         await using var session = await _store.AcquireAsync(

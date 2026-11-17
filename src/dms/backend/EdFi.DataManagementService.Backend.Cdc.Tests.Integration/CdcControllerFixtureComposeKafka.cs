@@ -134,21 +134,28 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             );
     }
 
-    private Task<DockerCommandResult> RunControllerComposeAsync(string[] command, CancellationToken token) =>
-        _docker.RunAsync(
-            [
-                "compose",
-                "-f",
-                ControllerComposeFile,
-                "--env-file",
-                ControllerComposeEnvironment,
-                "-p",
-                ControllerProject,
-                .. (File.Exists(ControllerSizeOverride) ? new[] { "-f", ControllerSizeOverride } : []),
-                .. command,
-            ],
-            token
-        );
+    private Task<DockerCommandResult> RunControllerComposeAsync(
+        string[] command,
+        CancellationToken token,
+        bool allowingFailure = false
+    )
+    {
+        string[] arguments =
+        [
+            "compose",
+            "-f",
+            ControllerComposeFile,
+            "--env-file",
+            ControllerComposeEnvironment,
+            "-p",
+            ControllerProject,
+            .. (File.Exists(ControllerSizeOverride) ? new[] { "-f", ControllerSizeOverride } : []),
+            .. command,
+        ];
+        return allowingFailure
+            ? _docker.RunAllowingFailureAsync(arguments, token)
+            : _docker.RunAsync(arguments, token);
+    }
 
     internal async Task RecreateControllerComposeAsync(
         CdcDeploymentRequest request,

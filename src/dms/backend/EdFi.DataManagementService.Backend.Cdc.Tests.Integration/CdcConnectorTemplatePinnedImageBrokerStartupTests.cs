@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using FluentAssertions;
 using FluentAssertions.Execution;
@@ -12,20 +13,37 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Cdc.Tests.Integration;
 
-[TestFixture(0, "", "success")]
-[TestFixture(1, "Bind for 127.0.0.1 failed: port is already allocated", "success")]
-[TestFixture(2, "bind: address already in use", "success")]
-[TestFixture(1, "failed to bind host port for 127.0.0.1", "success")]
-[TestFixture(1, "BIND: ADDRESS ALREADY IN USE", "success")]
-[TestFixture(3, "bind: address already in use", "exhausted")]
-[TestFixture(3, "bind: address already in use", "prerequisite")]
-[TestFixture(3, "invalid mount config for type bind", "unrelated")]
-[TestFixture(3, "pull access denied for broker", "unrelated")]
-[TestFixture(3, "failed to create endpoint: network unavailable", "unrelated")]
-[TestFixture(3, "bind: address already in use", "cancel")]
-[TestFixture(3, "bind: address already in use", "cleanup-failure")]
-[Parallelizable]
-public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string error, string scenario)
+[TestFixture(0, "", "success", "native")]
+[TestFixture(0, "", "success", "compose")]
+[TestFixture(1, "Bind for 127.0.0.1 failed: port is already allocated", "success", "native")]
+[TestFixture(1, "Bind for 127.0.0.1 failed: port is already allocated", "success", "compose")]
+[TestFixture(2, "bind: address already in use", "success", "native")]
+[TestFixture(2, "bind: address already in use", "success", "compose")]
+[TestFixture(1, "failed to bind host port for 127.0.0.1", "success", "native")]
+[TestFixture(1, "failed to bind host port for 127.0.0.1", "success", "compose")]
+[TestFixture(1, "BIND: ADDRESS ALREADY IN USE", "success", "native")]
+[TestFixture(1, "BIND: ADDRESS ALREADY IN USE", "success", "compose")]
+[TestFixture(3, "bind: address already in use", "exhausted", "native")]
+[TestFixture(3, "bind: address already in use", "exhausted", "compose")]
+[TestFixture(3, "bind: address already in use", "prerequisite", "native")]
+[TestFixture(3, "bind: address already in use", "prerequisite", "compose")]
+[TestFixture(3, "invalid mount config for type bind", "unrelated", "native")]
+[TestFixture(3, "invalid mount config for type bind", "unrelated", "compose")]
+[TestFixture(3, "pull access denied for broker", "unrelated", "native")]
+[TestFixture(3, "pull access denied for broker", "unrelated", "compose")]
+[TestFixture(3, "failed to create endpoint: network unavailable", "unrelated", "native")]
+[TestFixture(3, "failed to create endpoint: network unavailable", "unrelated", "compose")]
+[TestFixture(3, "bind: address already in use", "cancel", "native")]
+[TestFixture(3, "bind: address already in use", "cancel", "compose")]
+[TestFixture(3, "bind: address already in use", "cleanup-failure", "native")]
+[TestFixture(3, "bind: address already in use", "cleanup-failure", "compose")]
+[NonParallelizable]
+public sealed class Given_PinnedImageFixtureBrokerStartup(
+    int failures,
+    string error,
+    string scenario,
+    string mode
+)
 {
     private const string ResourcePrefix = "dms-cdc-broker-startup-test";
     private RecordingDockerCli _docker = null!;
@@ -52,7 +70,9 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
                 docker,
                 ResourcePrefix,
                 cancellation.Token,
-                applyPrerequisitePolicy: scenario == "prerequisite"
+                applyPrerequisitePolicy: scenario == "prerequisite",
+                exposeBroker: true,
+                composeKafka: mode == "compose"
             )
         )!;
     }
@@ -95,23 +115,26 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
     public void It_advertises_the_same_fresh_loopback_port_that_docker_maps_on_every_attempt()
     {
         List<int> ports = [];
-        foreach (string[] arguments in _docker.BrokerRuns)
+        foreach (var binding in _docker.Bindings)
         {
-            string mapping = arguments[Array.IndexOf(arguments, "-p") + 1];
-            int port = int.Parse(mapping.Split(':')[1]);
-            ports.Add(port);
+            ports.Add(binding.Port);
             using var _ = new AssertionScope();
-            mapping.Should().Be($"127.0.0.1:{port}:29092");
-            arguments
-                .Should()
-                .Contain(
-                    $"KAFKA_ADVERTISED_LISTENERS=INTERNAL://{ResourcePrefix}-broker:9092,EXTERNAL://127.0.0.1:{port}"
-                );
-            arguments[^1].Should().Be(CdcComposeBrokerSizeDeployment.BrokerImage);
-            arguments.Should().Contain("KAFKA_PROCESS_ROLES=broker,controller");
-            arguments.Should().Contain($"KAFKA_CONTROLLER_QUORUM_VOTERS=1@{ResourcePrefix}-broker:9093");
+            binding.ContainerPort.Should().Be(mode == "compose" ? 19092 : 29092);
+            binding
+                .Advertised.Should()
+                .Be($"INTERNAL://{ResourcePrefix}-broker:9092,EXTERNAL://127.0.0.1:{binding.Port}");
         }
         ports.Should().OnlyHaveUniqueItems();
+        if (mode == "native")
+        {
+            foreach (string[] arguments in _docker.BrokerRuns)
+            {
+                using var _ = new AssertionScope();
+                arguments[^1].Should().Be(CdcComposeBrokerSizeDeployment.BrokerImage);
+                arguments.Should().Contain("KAFKA_PROCESS_ROLES=broker,controller");
+                arguments.Should().Contain($"KAFKA_CONTROLLER_QUORUM_VOTERS=1@{ResourcePrefix}-broker:9093");
+            }
+        }
     }
 
     [Test]
@@ -132,7 +155,7 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
         using var _ = new AssertionScope();
         brokerCommands.Should().Equal(expected);
         _docker
-            .Commands.TakeLast(4)
+            .Commands.Where(command => command.StartsWith("rm -f -v ") || command.StartsWith("network rm "))
             .Should()
             .Equal(
                 $"rm -f -v {ResourcePrefix}-connect",
@@ -152,6 +175,7 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
     {
         private readonly List<TcpListener> _competingListeners = [];
         public List<string[]> BrokerRuns { get; } = [];
+        public List<(int Port, int ContainerPort, string Advertised)> Bindings { get; } = [];
         public List<string> Commands { get; } = [];
         public bool RetryCleanupHadUsableToken { get; private set; } = true;
         public Exception ProviderReached { get; } = new InvalidOperationException("provider reached");
@@ -165,6 +189,16 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
             CancellationToken cancellationToken
         )
         {
+            if (arguments[0] == "compose" && arguments.Contains("config"))
+            {
+                return Task.FromResult(
+                    new DockerCommandResult(
+                        0,
+                        """{"services":{"kafka":{"volumes":[{"source":"kafka-data","target":"/tmp/kraft-combined-logs"}]}}}""",
+                        ""
+                    )
+                );
+            }
             if (arguments[0] == "run" && arguments.Contains($"{ResourcePrefix}-provider"))
             {
                 throw ProviderReached;
@@ -187,7 +221,9 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
             CancellationToken cancellationToken
         )
         {
-            if (arguments[0] != "run")
+            bool composeStart =
+                arguments[0] == "compose" && arguments.Contains("up") && arguments[^1] == "kafka";
+            if (arguments[0] != "run" && !composeStart)
             {
                 Commands.Add(string.Join(" ", arguments));
                 return Task.FromResult(new DockerCommandResult(0, "", ""));
@@ -196,12 +232,33 @@ public sealed class Given_PinnedImageFixtureBrokerStartup(int failures, string e
             Commands.Add("broker-run");
             string[] run = arguments.ToArray();
             BrokerRuns.Add(run);
+            string mapping;
+            string advertised;
+            if (composeStart)
+            {
+                using var compose = JsonDocument.Parse(File.ReadAllText(run[Array.IndexOf(run, "-f") + 1]));
+                var broker = compose.RootElement.GetProperty("services").GetProperty("kafka");
+                mapping = broker.GetProperty("ports")[0].GetString()!;
+                advertised = broker
+                    .GetProperty("environment")
+                    .GetProperty("KAFKA_ADVERTISED_LISTENERS")
+                    .GetString()!;
+                string environment = File.ReadAllText(run[Array.IndexOf(run, "--env-file") + 1]);
+                environment.Should().Contain("KAFKA_PORT=" + mapping.Split(':')[1]);
+            }
+            else
+            {
+                mapping = run[Array.IndexOf(run, "-p") + 1];
+                advertised = run.Single(value => value.StartsWith("KAFKA_ADVERTISED_LISTENERS="))
+                    .Split('=', 2)[1];
+            }
+            int port = int.Parse(mapping.Split(':')[1]);
+            Bindings.Add((port, int.Parse(mapping.Split(':')[2]), advertised));
             if (BrokerRuns.Count > failures)
             {
                 return Task.FromResult(new DockerCommandResult(0, "broker-id", ""));
             }
             // Occupy the released reservation, reproducing the race with another local process.
-            int port = int.Parse(run[Array.IndexOf(run, "-p") + 1].Split(':')[1]);
             var listener = new TcpListener(IPAddress.Loopback, port);
             listener.Start();
             _competingListeners.Add(listener);

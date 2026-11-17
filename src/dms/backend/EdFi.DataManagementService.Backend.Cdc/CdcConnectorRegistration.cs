@@ -38,6 +38,7 @@ public sealed class CdcConnectorRegistration
     private readonly ICdcConnectTransport _connect;
     private readonly ICdcWorkerInspectionTransport _worker;
     private readonly TimeProvider _time;
+    internal Func<TimeSpan, TimeProvider, CancellationToken, Task> PollDelayAsync { get; init; } = Task.Delay;
 
     public CdcConnectorRegistration(
         string stateRoot,
@@ -91,8 +92,11 @@ public sealed class CdcConnectorRegistration
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(runtime);
         var boundary = new Boundary();
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeout.CancelAfter(request.Timing.WaitTimeout);
+        using var operationTimer = new CancellationTokenSource(request.Timing.WaitTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            operationTimer.Token
+        );
         var token = timeout.Token;
         try
         {
@@ -305,13 +309,13 @@ public sealed class CdcConnectorRegistration
                 {
                     // The config store can acknowledge creation before the asynchronous status store
                     // publishes its first record. Absence never supplies readiness or permits recreation.
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 var status = Observed(statusEvidence);
                 if (!IsRunningOrAwaitingAssignment(request, worker, status))
                 {
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 var offset = Observed(
@@ -325,7 +329,7 @@ public sealed class CdcConnectorRegistration
                 )
                 {
                     Require(!offsetPreviouslySeen);
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 Require(offset.State == CdcConnectOffsetState.Streaming);
@@ -371,7 +375,7 @@ public sealed class CdcConnectorRegistration
                 {
                     // The config store can acknowledge creation before the asynchronous status store
                     // publishes its first record. Absence never supplies readiness or permits recreation.
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 var afterStatus = Observed(afterStatusEvidence);
@@ -379,7 +383,7 @@ public sealed class CdcConnectorRegistration
                 {
                     // Assignment can change after the first RUNNING response. Discard the earlier
                     // offset/configuration observations and collect an entirely new startup pass.
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 boundary.Component = CdcDeploymentComponent.Kafka;
@@ -414,7 +418,7 @@ public sealed class CdcConnectorRegistration
                 if (!IsFresh(request, observationStartedAt, _time.GetUtcNow()))
                 {
                     // Expiry discards this pass, never registration or the original wait deadline.
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 boundary.Component = CdcDeploymentComponent.Connect;
@@ -430,13 +434,13 @@ public sealed class CdcConnectorRegistration
                 {
                     // The config store can acknowledge creation before the asynchronous status store
                     // publishes its first record. Absence never supplies readiness or permits recreation.
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 var finalStatus = Observed(finalStatusEvidence);
                 if (!IsRunningOrAwaitingAssignment(request, afterWorker, finalStatus))
                 {
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 boundary.Component = CdcDeploymentComponent.Worker;
@@ -447,7 +451,7 @@ public sealed class CdcConnectorRegistration
                 if (!IsFresh(request, observationStartedAt, _time.GetUtcNow()))
                 {
                     // Expiry discards this pass, never registration or the original wait deadline.
-                    await Task.Delay(request.Timing.PollInterval, _time, token);
+                    await PollDelayAsync(request.Timing.PollInterval, _time, token);
                     continue;
                 }
                 boundary.Component = CdcDeploymentComponent.WorkflowState;
@@ -529,7 +533,7 @@ public sealed class CdcConnectorRegistration
             {
                 // A single read's call budget can expire while the registration budget remains.
             }
-            await Task.Delay(request.Timing.PollInterval, _time, token);
+            await PollDelayAsync(request.Timing.PollInterval, _time, token);
         }
     }
 
@@ -731,14 +735,14 @@ public sealed class CdcConnectorRegistration
             _ => throw new CdcWorkflowStateException(CdcWorkflowStateFailure.Contradictory),
         };
 
-    private static async Task<T> CallAsync<T>(
+    private async Task<T> CallAsync<T>(
         CdcDeploymentRequest request,
         Func<CancellationToken, Task<T>> action,
         CancellationToken token
     )
     {
-        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
-        timeout.CancelAfter(request.Timing.CallTimeout);
+        using var deadline = new CancellationTokenSource(request.Timing.CallTimeout, _time);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token, deadline.Token);
         try
         {
             return await action(timeout.Token).WaitAsync(timeout.Token);

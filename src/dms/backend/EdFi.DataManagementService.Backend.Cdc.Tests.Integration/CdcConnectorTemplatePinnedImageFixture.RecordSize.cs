@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Globalization;
+using System.Net;
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
@@ -189,15 +190,23 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         {
             config[key] = key == "transforms" ? $"contractObserver,{value}" : value;
         }
-        using var content = new StringContent(
-            JsonSerializer.Serialize(config),
-            Encoding.UTF8,
-            "application/json"
+        var status = await CdcConnectorFixtureMutation.RunAsync(
+            _httpClient,
+            () =>
+                new HttpRequestMessage(HttpMethod.Put, path)
+                {
+                    Content = new StringContent(
+                        JsonSerializer.Serialize(config),
+                        Encoding.UTF8,
+                        "application/json"
+                    ),
+                },
+            CdcFixtureMutation.ConfigurationUpdate,
+            token
         );
-        using var updated = await _httpClient.PutAsync(path, content, token);
-        updated
-            .IsSuccessStatusCode.Should()
-            .BeTrue("retained connector config update must succeed (response redacted)");
+        status
+            .Should()
+            .Be(HttpStatusCode.OK, "retained connector config update must succeed (response redacted)");
     }
 }
 
