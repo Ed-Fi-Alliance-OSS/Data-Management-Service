@@ -82,6 +82,23 @@ internal sealed class EducationOrganizationProjectionEngine
 
     public string Q(string identifier) => Quote == "\"" ? $"\"{identifier}\"" : $"[{identifier}]";
 
+    /// <summary>
+    /// Widens a School name column beyond its mapped 75 characters, as physical drift that leaves the
+    /// stored fingerprint unchanged.
+    /// </summary>
+    public string WidenSchoolNameSql(string column, bool required)
+    {
+        string alter = $"ALTER TABLE {Table("edfi", "School")} ALTER COLUMN {Q(column)}";
+
+        if (Quote == "\"")
+        {
+            return $"{alter} TYPE varchar(200);";
+        }
+
+        string nullability = required ? "NOT NULL" : "NULL";
+        return $"{alter} nvarchar(200) {nullability};";
+    }
+
     /// <summary>The same database under a different connection string, so a fingerprint verdict is cached apart.</summary>
     public string WithApplicationName(string connectionString, string applicationName) =>
         _withApplicationName(connectionString, applicationName);

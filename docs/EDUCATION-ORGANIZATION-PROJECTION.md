@@ -155,7 +155,10 @@ Neither the envelope nor an item has any other member. Every response carries
 
 An item serializes to at most 2,048 bytes and the envelope to at most 512, so a
 page is at most `limit` × 2,048 + 512 bytes: about 3.9 MiB at the default
-`MaximumPageSize` of 2,000.
+`MaximumPageSize` of 2,000. The item bound rests on names of at most 75 Unicode
+scalar values, which [validation](#validation-and-parent-selection) enforces
+before a page is built. It bounds the response DMS sends, not what the database
+driver transfers or allocates while reading the set before validation.
 
 ## Reading the whole set
 
@@ -458,7 +461,14 @@ The set is rejected with `409 projection-data-invalid` when:
 - the parent local education agency links form a cycle, including a local
   education agency that names itself;
 - a `nameOfInstitution` or `shortNameOfInstitution` is not well-formed text
-  (it contains an unpaired UTF-16 surrogate).
+  (it contains an unpaired UTF-16 surrogate);
+- a `nameOfInstitution` is the empty string (an empty `shortNameOfInstitution`
+  is served as stored);
+- a `nameOfInstitution` or `shortNameOfInstitution` has more than 75 Unicode
+  scalar values. Every value a mapped column can hold fits: PostgreSQL
+  `varchar(75)` holds at most 75 code points and SQL Server `nvarchar(75)` at
+  most 75 UTF-16 code units. A longer name can come only from a physical column
+  wider than the mapped one. Names are never trimmed or truncated.
 
 `parentId` is then chosen as follows. It is never the item's own id and, when
 not `null`, is always the id of another item in the set.

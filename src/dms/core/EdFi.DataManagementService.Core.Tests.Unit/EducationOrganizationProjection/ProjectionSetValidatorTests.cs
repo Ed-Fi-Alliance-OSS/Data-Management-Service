@@ -251,6 +251,37 @@ public abstract class ProjectionSetValidatorTests
                 ProjectionDataInvalidReason.MalformedName,
                 ProjectionRows.Sea(1, name: "End\uD83D")
             );
+            yield return Case(
+                "an_empty_full_name",
+                ProjectionDataInvalidReason.EmptyName,
+                ProjectionRows.Sea(1),
+                ProjectionRows.School(1000, name: "", shortName: "Short")
+            );
+            yield return Case(
+                "a_full_name_of_76_ascii_characters",
+                ProjectionDataInvalidReason.OversizedName,
+                ProjectionRows.Sea(1, name: new string('a', 76))
+            );
+            yield return Case(
+                "a_full_name_of_76_supplementary_characters",
+                ProjectionDataInvalidReason.OversizedName,
+                ProjectionRows.Sea(1, name: Supplementary(76))
+            );
+            yield return Case(
+                "a_full_name_of_5000_ascii_characters",
+                ProjectionDataInvalidReason.OversizedName,
+                ProjectionRows.Sea(1, name: new string('a', 5000))
+            );
+            yield return Case(
+                "a_short_name_of_76_ascii_characters",
+                ProjectionDataInvalidReason.OversizedName,
+                ProjectionRows.Sea(1, shortName: new string('a', 76))
+            );
+            yield return Case(
+                "a_short_name_of_76_supplementary_characters",
+                ProjectionDataInvalidReason.OversizedName,
+                ProjectionRows.Sea(1, shortName: Supplementary(76))
+            );
         }
 
         [TestCaseSource(nameof(Cases))]
@@ -272,6 +303,49 @@ public abstract class ProjectionSetValidatorTests
             Validate(ProjectionRows.Sea(1, name: string.Concat(Enumerable.Repeat("\U0001F600", 75))))
                 .Should()
                 .BeOfType<ProjectionSetValidation.Valid>();
+    }
+
+    internal static string Supplementary(int count) => string.Concat(Enumerable.Repeat("\U0001F600", count));
+
+    /// <summary>
+    /// Every value a provider column can validly hold is served exactly as stored: PostgreSQL's
+    /// <c>varchar(75)</c> boundary of 75 code points, SQL Server's <c>nvarchar(75)</c> boundary of 75
+    /// UTF-16 code units, whitespace-only full names, and empty or absent short names.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_Names_At_The_Serving_Boundaries : ProjectionSetValidatorTests
+    {
+        private static IEnumerable<TestCaseData> Cases()
+        {
+            TestCaseData Case(string name, string fullName, string? shortName) =>
+                new TestCaseData(fullName, shortName).SetName($"It_serves_{name}");
+
+            yield return Case(
+                "75_supplementary_characters_in_each_name",
+                Supplementary(75),
+                Supplementary(75)
+            );
+            yield return Case("75_ascii_characters_in_each_name", new string('a', 75), new string('b', 75));
+            yield return Case(
+                "75_utf16_units_of_37_supplementary_characters_and_one_bmp_character",
+                Supplementary(37) + "é",
+                Supplementary(37) + "é"
+            );
+            yield return Case("75_control_characters", new string('\u0001', 75), new string('\u0001', 75));
+            yield return Case("a_full_name_of_one_space", " ", null);
+            yield return Case("a_full_name_of_whitespace_with_an_empty_short_name", " \t ", "");
+            yield return Case("a_one_character_full_name_with_an_absent_short_name", "a", null);
+        }
+
+        [TestCaseSource(nameof(Cases))]
+        public void It_serves_the_names_unchanged(string fullName, string? shortName)
+        {
+            ProjectionItem item = Items(ProjectionRows.Sea(1, name: fullName, shortName: shortName)).Single();
+
+            item.NameOfInstitution.Should().Be(fullName);
+            item.ShortNameOfInstitution.Should().Be(shortName);
+        }
     }
 
     [TestFixture]

@@ -95,6 +95,10 @@ public sealed class Given_Mssql_EducationOrganizationProjection : MssqlEducation
         EducationOrganizationProjectionScenario.It_serves_stored_names_unchanged(Context);
 
     [Test]
+    public Task It_refuses_an_empty_or_oversized_name() =>
+        EducationOrganizationProjectionScenario.It_refuses_an_empty_or_oversized_name(Context);
+
+    [Test]
     public Task It_bounds_the_response_body_with_the_longest_names() =>
         EducationOrganizationProjectionScenario.It_bounds_the_response_body(
             Context,

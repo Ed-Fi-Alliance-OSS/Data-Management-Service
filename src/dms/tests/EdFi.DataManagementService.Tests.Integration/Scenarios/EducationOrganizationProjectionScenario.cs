@@ -1046,6 +1046,88 @@ internal static class EducationOrganizationProjectionScenario
     }
 
     /// <summary>
+    /// An empty full name, and a full or short name of 76 characters held by a column widened beyond
+    /// its mapped 75 while the stored fingerprint is unchanged, each refuse the whole set as invalid
+    /// data from a row outside the requested page: the fixed problem with no partial page and no
+    /// cursor, never the name, a column name or a schema incompatibility. Restoring the name serves
+    /// the set again.
+    /// </summary>
+    public static async Task It_refuses_an_empty_or_oversized_name(
+        EducationOrganizationProjectionContext context
+    )
+    {
+        ApiIntegrationHarness harness = Prepare(context);
+        EducationOrganizationProjectionEngine engine = context.Engine;
+        Seeder seeder = await Seeder.CreateAsync(harness, TenantA, RouteA);
+        await seeder.StateAgencyAsync(1, "Projection State");
+        await seeder.SchoolAsync(100001, "School 100001", "S100001");
+
+        // The first page holds the state agency alone; the school sits on the second.
+        ProjectionResponse firstPage = await GetPageAsync(cursor: null);
+        ShouldBeSuccess(firstPage, PrimaryStoreId);
+        ItemsOf(firstPage).Select(item => item.Id).Should().Equal(1);
+        string cursor = NextCursorOf(firstPage)!;
+
+        const string Marker = "OversizedNameMarker";
+        string oversized = Marker + new string('x', 76 - Marker.Length);
+        string school = engine.Table("edfi", "School");
+
+        foreach (
+            (string column, string stored, string restored, bool widen) in new[]
+            {
+                ("NameOfInstitution", "", "School 100001", false),
+                ("NameOfInstitution", oversized, "School 100001", true),
+                ("ShortNameOfInstitution", oversized, "S100001", true),
+            }
+        )
+        {
+            if (widen)
+            {
+                await engine.ExecuteAsync(
+                    context.PrimaryConnectionString,
+                    engine.WidenSchoolNameSql(column, required: column == "NameOfInstitution")
+                );
+            }
+
+            await SetSchoolNameAsync(column, stored);
+            context.Logs.Clear();
+
+            foreach (
+                ProjectionResponse refused in new[]
+                {
+                    await GetPageAsync(cursor: null),
+                    await GetPageAsync(cursor),
+                }
+            )
+            {
+                ShouldBeProjectionProblem(refused, Problem.ProjectionDataInvalid);
+                JsonObject problem = refused.Json.AsObject();
+                problem.Should().NotContainKey("items", $"{column} = '{stored}'");
+                problem.Should().NotContainKey("nextCursor", $"{column} = '{stored}'");
+                ShouldNotDisclose(context, refused, Marker, "School 100001", column, "varchar", "ALTER");
+            }
+
+            await SetSchoolNameAsync(column, restored);
+            ShouldBeSuccess(await GetPageAsync(cursor: null), PrimaryStoreId);
+        }
+
+        Task SetSchoolNameAsync(string column, string value) =>
+            engine.ExecuteAsync(
+                context.PrimaryConnectionString,
+                $"UPDATE {school} SET {engine.Q(column)} = @value WHERE {engine.Q("SchoolId")} = @id;",
+                ("value", value),
+                ("id", 100001L)
+            );
+
+        Task<ProjectionResponse> GetPageAsync(string? cursor) =>
+            GetAsync(
+                harness,
+                Credentials.Projection,
+                ProjectionPath(TenantA, RouteA, Query(PrimaryStoreId, 1, cursor))
+            );
+    }
+
+    /// <summary>
     /// Stored names are served exactly as stored, on each engine: a supplementary character, a literal
     /// U+FFFD, an empty short name and a null one. These are the controls for the malformed-name
     /// refusal, which must not catch well-formed text.

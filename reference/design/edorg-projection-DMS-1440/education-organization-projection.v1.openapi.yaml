@@ -24,7 +24,7 @@ info:
     store's context values for them. `urls.oauth` is the existing Discovery member and
     is unaffected by this feature. `urls.educationOrganizationProjection` and the
     top-level `educationOrganizationProjection` object are present only when the
-    deployment enables the endpoint (`AppSettings:EnableEducationOrganizationProjection`,
+    deployment enables the endpoint (`DataManagement:EducationOrganizationProjection:Enabled`,
     default `true`); disabling it removes exactly those two members. The route forms are:
 
     | Mode | Path |
@@ -88,8 +88,10 @@ info:
     the page is sliced. A set with a duplicate identifier, a populated reference that does
     not resolve to an education organization of the expected type (including references
     that do not become the parent), a cycle through parent local education agencies
-    (including a self-reference), or a name that is not well-formed text (an unpaired
-    UTF-16 surrogate) is rejected with `409 projection-data-invalid`. The
+    (including a self-reference), a name that is not well-formed text (an unpaired
+    UTF-16 surrogate), an empty `nameOfInstitution`, or a `nameOfInstitution` or
+    `shortNameOfInstitution` of more than 75 Unicode scalar values is rejected with
+    `409 projection-data-invalid`. Names are never trimmed or truncated. The
     parent is chosen as follows:
 
     | Type | `parentId` |

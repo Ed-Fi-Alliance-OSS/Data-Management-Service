@@ -589,6 +589,57 @@ public abstract class EducationOrganizationProjectionHandlerTests
         }
     }
 
+    /// <summary>
+    /// An empty full name, or a name past the 75-scalar-value ceiling, on the last row refuses the
+    /// first page of one item: the whole set fails before hashing, with no item and no cursor.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Unservable_Name_Outside_The_Requested_Page
+        : EducationOrganizationProjectionHandlerTests
+    {
+        private const string Marker = "UnservableNameMarker";
+
+        private static IEnumerable<TestCaseData> Cases()
+        {
+            yield return new TestCaseData("", null, "EmptyName").SetName("It_refuses_an_empty_full_name");
+            yield return new TestCaseData(
+                Marker + new string('x', 76 - Marker.Length),
+                null,
+                "OversizedName"
+            ).SetName("It_refuses_a_full_name_of_76_characters");
+            yield return new TestCaseData(
+                "Independent",
+                Marker + string.Concat(Enumerable.Repeat("\U0001F600", 76 - Marker.Length)),
+                "OversizedName"
+            ).SetName("It_refuses_a_short_name_of_76_scalar_values");
+        }
+
+        [TestCaseSource(nameof(Cases))]
+        public async Task It_refuses_the_whole_set_before_hashing(
+            string name,
+            string? shortName,
+            string reason
+        )
+        {
+            EducationOrganizationProjectionRow[] rows = ProjectionRows.WorkedExample();
+            rows[6] = ProjectionRows.School(900001, name: name, shortName: shortName);
+            Answer(rows);
+
+            await Execute(limit: 1);
+
+            ShouldAnswerProblem(409, $"{ProblemPrefix}:projection-data-invalid");
+            Body.Should().NotContainKey("items").And.NotContainKey("nextCursor");
+            Body.ToJsonString().Should().NotContain(Marker);
+            Observer.Stages.Should().Equal(ProjectionProcessingStage.Validation);
+            Logger
+                .Records.Should()
+                .Contain(record => record.Message.Contains(reason))
+                .And.NotContain(record => record.Message.Contains(Marker))
+                .And.NotContain(record => record.Message.Contains("900001"));
+        }
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_A_Stored_Discriminator_Outside_The_Allowlist

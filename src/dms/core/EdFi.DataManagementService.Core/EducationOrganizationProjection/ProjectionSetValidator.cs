@@ -21,6 +21,12 @@ internal enum ProjectionDataInvalidReason
     /// <summary>A name is not well-formed UTF-16 (it holds an unpaired surrogate).</summary>
     MalformedName,
 
+    /// <summary>A full name is the empty string.</summary>
+    EmptyName,
+
+    /// <summary>A name has more Unicode scalar values than the projection serves.</summary>
+    OversizedName,
+
     /// <summary>A populated reference does not resolve to a row of its expected type.</summary>
     UnresolvedReference,
 
@@ -85,6 +91,15 @@ internal sealed class ValidatedProjectionSet
 /// </remarks>
 internal static class ProjectionSetValidator
 {
+    /// <summary>
+    /// The most Unicode scalar values a full or short name may have. Every valid stored name fits: a
+    /// PostgreSQL <c>varchar(75)</c> holds at most 75 code points and a SQL Server
+    /// <c>nvarchar(75)</c> at most 75 UTF-16 code units, so neither exceeds 75 scalar values. The
+    /// documented per-item size bound is derived from this ceiling, so a name above it, which only a
+    /// physical column wider than the mapped one can hold, refuses the set instead of being served.
+    /// </summary>
+    internal const int MaximumNameScalarValues = 75;
+
     /// <summary>
     /// The stored discriminator literal of each core type. Nothing else is accepted, and the literal is
     /// never exposed: the response carries <see cref="WireDiscriminator"/> instead.
@@ -175,9 +190,15 @@ internal static class ProjectionSetValidator
                 );
             }
 
-            if (!IsWellFormed(row.NameOfInstitution) || !IsWellFormed(row.ShortNameOfInstitution))
+            if (
+                (
+                    NameProblem(row.NameOfInstitution, emptyAllowed: false)
+                    ?? NameProblem(row.ShortNameOfInstitution, emptyAllowed: true)
+                )
+                is ProjectionDataInvalidReason nameProblem
+            )
             {
-                return new ProjectionSetValidation.DataInvalid(ProjectionDataInvalidReason.MalformedName);
+                return new ProjectionSetValidation.DataInvalid(nameProblem);
             }
         }
 
@@ -393,27 +414,42 @@ internal static class ProjectionSetValidator
     }
 
     /// <summary>
-    /// Whether every surrogate is part of a high-low pair. A null value is well formed.
+    /// Why a name cannot be served, or null when it can. A null value can be served. The empty string
+    /// can be served only where <paramref name="emptyAllowed"/>. Otherwise every surrogate must be
+    /// part of a high-low pair and the name must have at most <see cref="MaximumNameScalarValues"/>
+    /// scalar values; decoding stops at the first scalar value past that ceiling. Nothing is trimmed
+    /// or replaced.
     /// </summary>
-    private static bool IsWellFormed(string? value)
+    private static ProjectionDataInvalidReason? NameProblem(string? value, bool emptyAllowed)
     {
         if (value is null)
         {
-            return true;
+            return null;
+        }
+
+        if (value.Length == 0)
+        {
+            return emptyAllowed ? null : ProjectionDataInvalidReason.EmptyName;
         }
 
         ReadOnlySpan<char> remaining = value;
+        int scalarValues = 0;
 
         while (!remaining.IsEmpty)
         {
             if (Rune.DecodeFromUtf16(remaining, out _, out int consumed) != OperationStatus.Done)
             {
-                return false;
+                return ProjectionDataInvalidReason.MalformedName;
+            }
+
+            if (++scalarValues > MaximumNameScalarValues)
+            {
+                return ProjectionDataInvalidReason.OversizedName;
             }
 
             remaining = remaining[consumed..];
         }
 
-        return true;
+        return null;
     }
 }
