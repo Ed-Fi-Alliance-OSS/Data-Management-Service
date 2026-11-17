@@ -54,7 +54,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-five mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred ten mutations killed; remaining triage in progress |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred twenty-one mutations killed; remaining triage in progress |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Full baseline complete; mutability and storage-validation regressions in progress |
@@ -120,7 +120,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.93%; further triage in progress | 4m17s / 4m35s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.20-05-20/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 79.19%; further triage in progress | 6m29s / 6m04s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.20-10-50/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 80.47%; further triage in progress | 6m29s / 10m12s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.21-05-31/reports/` |
 | Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
 | Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
 | Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% baseline; regression work in progress | 26m52s | `StrykerOutput/2026-11-16.20-34-18/reports/` |
@@ -325,9 +325,9 @@ relationship-denial type, stored value source, empty claim IDs, and failed strat
 The additional full rerun confirms that return mutation is now killed, taking the
 total to 343 killed, 107 survived, 31 uncovered, 389 compile-error, and 109 ignored,
 with no timeouts (71.31%). Other composite-path survivors still need triage.
-The Model
-and DDL suites also passed their baseline normal runs: 1,035 and 1,469 tests respectively,
-with one existing DDL skip. Their mutation baselines remain pending.
+The Model and DDL suites also passed their baseline normal runs: 1,035 and 1,469 tests
+respectively, with one existing DDL skip. The full Model baseline and subsequent
+normal regressions are recorded below; the DDL mutation baseline remains in progress.
 
 ### Token-manager baseline and regressions
 
@@ -473,18 +473,22 @@ pass. The full follow-up report confirms another 18 kills: 10 in definition
 validation (including the recursive name walk at line 398), 3 in read projection,
 and 5 in write shaping. It contains 681 killed, 134 survived, 45 uncovered,
 176 compile-error, and 292 ignored mutations, with no timeouts or loss of a previous
-kill. The target now has 110 intended kills since baseline. Remaining behavioral
-triage includes unknown nested extensions (line 864), absent descendant states,
-and additional creatability ancestor/dependency paths.
+kill. That report establishes 110 intended kills since baseline.
 
 Eight further Core cases now pass in the full 10,074-test suite. They cover missing
 extension namespaces under nested objects/collections (including extension parents),
 read/write error paths and warning severity, and a nested required member sharing a
 root identity member's name. The latter verifies that implicit identity visibility
-remains root-scoped. These eight cases still require a fresh Core mutation rerun;
-they are not credited among the 110 verified kills. Two more parent-context cases
-now pass in the full 10,076-test suite: a blocked new child demotes only its own
-collection parent, in either input order. Their mutation verification is also pending.
+remains root-scoped. Two more parent-context cases pass in the full 10,076-test suite:
+a blocked new child demotes only its own collection parent, in either input order.
+
+The full rerun in the isolated model worktree confirms eleven additional kills:
+`CreatabilityAnalyzer.cs:87/88/513` and `ProfileDataValidator.cs:816/818/820/822/862/864/866/868`.
+It contains 692 killed, 123 survived, 45 uncovered, 176 compile-error, and 292 ignored
+mutations, with no timeouts or loss of previous kills. The total is now 121 intended
+kills. Remaining behavioral triage includes absent descendant states and additional
+creatability ancestor/dependency paths. The report and run log were copied into the
+owning Core test directory in the PR checkout.
 
 ### DMS Backend profile baseline
 
