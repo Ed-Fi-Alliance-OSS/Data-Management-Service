@@ -359,6 +359,16 @@ certificate tests use isolated temporary directories, dispose their keys, and us
 broad validity windows without sleeps. The manager reads `UtcNow` directly, so this
 work does not claim a newly injectable production clock.
 
+The next full token run (`2026-11-16.19-14-24`) stopped in its initial normal test
+run, before mutation, because `Given_a_cancellation_callback_that_waits_for_a_fence`
+observed no callback. The fixture awaited a delay canceled by the same token as its
+callback; the delay continuation could dispose the callback registration before
+cancellation invoked it. It now waits for an explicit callback-finished signal before
+disposing the registration, preserving the deadlock/fence assertions without increasing
+delays or excluding the test. All 94 job-executor cases pass, and the repaired callback
+fixture passed ten consecutive runs (two tests each). The full CMS suite and a fresh
+token mutation run are being rerun; the failed invocation establishes no baseline.
+
 Token-manager dispositions retained without suppressing mutation types:
 
 - Ordinary logging statements/templates, logging-only conditional text, and diagnostic
