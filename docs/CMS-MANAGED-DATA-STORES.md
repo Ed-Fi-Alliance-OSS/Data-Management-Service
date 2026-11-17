@@ -6,10 +6,10 @@ database and publishes an encrypted ordinary registration; a managed delete drop
 removes its registration and retains a managed tombstone. It does not create application/client
 assignments, grant runtime permissions or refresh education organizations.
 
-This guide describes DMS-1439's approved contract. The [acceptance audit](../reference/design/managed-data-stores-DMS-1439/step-6.1-acceptance-audit.md)
-maps all 17 criteria to implementation evidence. Step 6.1 was approved at the
-[recorded qualification boundaries](../reference/design/managed-data-stores-DMS-1439/step-6.1-closure-review.md);
-that approval is not full-suite success, release approval or permission to push.
+The selected API, query and catalog-compatibility decisions, with their primary sources, are
+recorded in the [contract provenance](../reference/design/managed-data-stores-DMS-1439/contract-provenance.md).
+Configurations that have not been qualified are listed under
+[DMS visibility and qualification limits](#dms-visibility-and-qualification-limits).
 
 ## Configure before enabling
 
@@ -229,10 +229,9 @@ representative production DMS descriptor insert through the published non-admin 
 on each provider, with operator test grants and independently observed committed data. This is not
 resource HTTP, full CRUD, CDC or a production least-privilege recipe.
 
-The [closure assessment](../reference/design/managed-data-stores-DMS-1439/step-6.1-closure-review.md#remaining-limitations-and-their-closure-impact)
+The [historical qualification record](../reference/design/managed-data-stores-DMS-1439/step-6.1-closure-review.md#remaining-limitations-and-their-closure-impact)
 retains untested deployment permutations (including external Sample, Keycloak/TLS and abstract-socket
 connectivity), overlapping exhaustion sweeps, unresolved fake-psql/SQL error 3980 and broader suite
 failures/skips. Earlier retained database residue remains untouched and requires independently
 established ownership and cleanup authority. These are not passing results. Custom-catalog inventory,
-runtime permissions and coordinated rollout remain operator/release obligations; final validation,
-ticket completion and push require their separate review gates.
+runtime permissions and coordinated rollout remain operator/release obligations.

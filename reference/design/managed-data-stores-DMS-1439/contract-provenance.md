@@ -1,11 +1,16 @@
 # DMS-1439 selected contract and fixture provenance
 
-The original step **1.1** record below captures revision 9's approved contract; subsequent
-qualification and operations status is appended at the end. The accompanying
-`conformance-fixtures.json` is reusable expected data, not an implementation. Its
-unit tests check fixture integrity and selected source-contract assertions. No
-HTTP route, DTO, formatter, comparer, migration, repository or worker is introduced
-by this step. Passing these tests does not establish product conformance, provider
+This record states the selected DMS-1439 API, query, lifecycle and catalog-compatibility
+decisions and the accessible sources they rest on; applying them does not require any
+document outside this repository and the linked Jira issue. It was first written with the
+conformance fixtures (step 1.1). Later decisions are dated where they supersede earlier
+ones, and sentences that describe tests or implementation as future work date from step
+1.1; the [acceptance audit](step-6.1-acceptance-audit.md) maps the implemented behavior to
+its recorded evidence.
+
+The accompanying `conformance-fixtures.json` is reusable expected data, not an
+implementation. Its unit tests check fixture integrity and selected source-contract
+assertions. Passing these tests does not establish product conformance, provider
 parity or completion of any lifecycle acceptance criterion.
 
 The JSON `models` are independent state snapshots, not a sequential transition
@@ -15,24 +20,22 @@ DeleteError to Deleted. `timestampEvents` records event rules separately. Query
 canonical-name vectors are expected outputs for future production tests; no
 formatter, normalizer or query evaluator is recreated in fixture tests.
 
-## Approval and source pins
+## Sources and pins
 
-The architectural reviewer's revision-9 approval, relayed into the implementation session, was:
-
-> Revision 9 is approved as an implementation spec, including the proposed ordinary catalog compatibility changes. Proceed one step at a time and stop after each local commit for review, as the spec requires.
-
-That relayed architectural approval supersedes the external document's retained preapproval
-status. The user limited the next work to step 1.1; it does not authorize automatic
-progression through later steps or a push.
-
-* Approved document: `C:/dev/simpat/specs/DMS-1439/spec.md`, revision 9, active
-  sections 1–10; SHA-256
-  `0deda56ca66aecffb4e184cb7acc1c4d770ee7dfc3248e07ab47bfb2792098ac`.
-  Earlier historical proposals are not governing contracts.
-* Inspected DMS baseline: `cc5704e004068251ed03483de8c76adc86513688`.
-* [DMS-1439](https://edfi.atlassian.net/browse/DMS-1439) and its checked-in
+* Requirements: [DMS-1439](https://edfi.atlassian.net/browse/DMS-1439) (description, 17
+  acceptance criteria and comment 99313, see [Q1](#q1--acceptance-responses)) and its checked-in
   [original story](../../spikes/DMS-1334/DMS-1439-managed-data-store-lifecycle.md).
-  The original issue and story are unchanged, including their original AC9 wording.
+  The original issue and story are unchanged, including their original AC9 wording;
+  [Q4](#q4--authorized-ac9-clarification) records the decision that governs AC9 here.
+* Historical design provenance: these decisions were first recorded from revision 9 of
+  the DMS-1439 implementation specification (active sections 1–10; SHA-256
+  `0deda56ca66aecffb4e184cb7acc1c4d770ee7dfc3248e07ab47bfb2792098ac`), which the
+  architectural reviewer approved, including the ordinary catalog compatibility changes
+  in [Q5](#q5--strict-parity-and-approved-compatibility-impact). That specification is a
+  locally retained working document, not distributed with this repository; the hash
+  identifies the revision but does not make it retrievable. This record carries the
+  decisions needed to apply the contract. Earlier proposals are not governing contracts.
+* Inspected DMS baseline: `cc5704e004068251ed03483de8c76adc86513688`.
 * [Pinned OpenAPI](../jobs-DMS-1437/admin-api-v3-ed115fd8.yaml) and
   [generation provenance](../jobs-DMS-1437/admin-api-v3-provenance.md): upstream
   `Ed-Fi-Alliance-OSS/ODS-Admin-API` commit
@@ -42,8 +45,8 @@ progression through later steps or a push.
   `addDataStoreManageRequest` (3612), `dataStoreManageModel` (3982).
   This existing evidence is reused without editing or regenerating it.
 
-The approved spec records inspection of the following upstream source at that
-same pin. These links preserve its evidence trail; the generated YAML alone does
+The following upstream source at that same pin was inspected when the contract was
+selected. These links preserve that evidence trail; the generated YAML alone does
 not prove runtime timestamps, sorting or tombstone behavior:
 
 | Evidence | Pinned source under `Application/EdFi.Ods.AdminApi.V3` |
@@ -98,9 +101,11 @@ sorting governs. Real provider/pipeline tests remain future work.
 
 ## Q4 — authorized AC9 clarification
 
-The user's explicit instruction after revision 6 was:
+This assignment rests on an explicit instruction from the person directing the DMS-1439
+implementation, given after design revision 6 and carried into the approved revision 9.
+It is not a Jira change and has no separate public approval record:
 
-> ok, keep snapshot persistence and cleanup in DMS-1441. update the spec to remove that dependency from 1439 and make the AC9 clarification explicit, then send it back for review. don't implement yet.
+> ok, keep snapshot persistence and cleanup in DMS-1441. update the spec to remove that dependency from 1439 and make the AC9 clarification explicit […]
 
 The selected wording is:
 
@@ -117,12 +122,12 @@ assigns G13 to DMS-1441 and G22 to DMS-1441 integrated with DMS-1439.
 DMS-1441 owns real snapshot persistence and integration tests for atomic cleanup,
 rollback and refresh/deletion races. Its schema, owner, delivery or tests are not a
 DMS-1439 prerequisite. Add no speculative snapshot table, cleanup interface or no-op
-hook. No snapshot criterion is claimed implemented or tested by this step.
+hook. No snapshot criterion is claimed implemented or tested by DMS-1439.
 
 ## Q5 — strict parity and approved compatibility impact
 
 AC17 remains strict: PostgreSQL and SQL Server must exhibit identical observable
-API/state behavior. The user selected “Keep strict parity; revise the design.”
+API/state behavior. Strict parity was kept and the design revised accordingly.
 The architectural reviewer's revision-9 approval explicitly includes the following compatibility changes;
 they are **recorded here, not implemented in step 1.1**.
 
@@ -215,27 +220,23 @@ absolute managed URL, including when management is disabled. Exact error mapping
 pipeline ordering, physical effects and durable no-write guarantees are future
 production tests, not behavior simulated by these fixtures.
 
-## Qualification approval and operations submission
+## Qualification records
 
-The architectural review of `8a3cf892d`, relayed by the user after approval of the
-representative runtime-write slice `77fcfbf3d`, explicitly states:
+The [closure review](step-6.1-closure-review.md), [qualification matrix](step-6.1-qualification.md)
+and [17-criterion audit](step-6.1-acceptance-audit.md) are historical records of the
+2026-11-15 qualification, with later corrections noted in the audit. They preserve the
+tested boundaries, unresolved failures/skips, retained target and deployment obligations.
+The architectural review of closure assessment `8a3cf892d` accepted them at the reviewed
+qualification boundaries without rerunning tests; that is not a product/API amendment or
+a claim of full validation. Their raw run artifacts were retained locally and are not
+distributed with this repository, so the recorded counts and hashes identify those runs
+but cannot be independently verified from a checkout. The
+[operations guide](../../../docs/CMS-MANAGED-DATA-STORES.md) covers default-true rollout,
+ordinary catalog compatibility, credential and permission prerequisites, recovery,
+retention and eventual cache visibility.
 
-> Step 6.1 is approved complete at the reviewed qualification boundaries.
-
-That review accepted the documented G5/G6, runtime-write and endpoint dispositions
-and authorized step 6.2. The reviewer did not rerun tests. This is the architectural
-reviewer's approval, not a new product/API amendment or a claim of full validation.
-It does not authorize a push or mark the ticket complete.
-
-The [closure assessment](step-6.1-closure-review.md), [qualification matrix](step-6.1-qualification.md)
-and [17-criterion audit](step-6.1-acceptance-audit.md) preserve the tested boundaries,
-unresolved failures/skips, retained target and deployment obligations. The
-[operations guide](../../../docs/CMS-MANAGED-DATA-STORES.md) is submitted for step 6.2
-review, including default-true rollout, ordinary catalog compatibility, credential
-and permission prerequisites, recovery, retention and eventual cache visibility.
-
-No frozen fixture, pinned spec/OpenAPI hash or governing decision changes in this
-documentation step. In particular, Q4's explicit user-authorized AC9 clarification
-still assigns snapshot persistence/cleanup to DMS-1441; original Jira wording is
-unchanged. Q5's strict parity and approved ordinary catalog compatibility changes
-remain in effect, with custom-index inventory a deployment obligation.
+Those records change no frozen fixture, pinned spec/OpenAPI hash or governing decision.
+In particular, Q4's explicit user-authorized AC9 clarification still assigns snapshot
+persistence/cleanup to DMS-1441; original Jira wording is unchanged. Q5's strict parity
+and approved ordinary catalog compatibility changes remain in effect, with custom-index
+inventory a deployment obligation.
