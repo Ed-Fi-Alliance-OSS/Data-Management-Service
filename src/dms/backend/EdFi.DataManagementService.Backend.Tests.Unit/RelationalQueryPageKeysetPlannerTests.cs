@@ -130,6 +130,72 @@ public class Given_RelationalQueryPageKeysetPlanner
     }
 
     [Test]
+    public void It_should_declare_a_root_string_filter_with_its_mapped_column_length_and_leave_other_filters_untyped()
+    {
+        var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Mssql);
+        var keyset = planner.Plan(
+            CreateRootTable(),
+            new RelationalQueryPreprocessingResult(
+                new RelationalQueryPreprocessingOutcome.Continue(),
+                [
+                    CreateElement(
+                        "nameOfInstitution",
+                        "$.nameOfInstitution",
+                        "string",
+                        new RelationalQueryFieldTarget.RootColumn(new DbColumnName("NameOfInstitution")),
+                        "Lincoln High",
+                        new PreprocessedRelationalQueryValue.Raw("Lincoln High")
+                    ),
+                    CreateElement(
+                        "schoolId",
+                        "$.schoolId",
+                        "number",
+                        new RelationalQueryFieldTarget.RootColumn(new DbColumnName("SchoolId")),
+                        "456",
+                        new PreprocessedRelationalQueryValue.Raw("456")
+                    ),
+                    CreateElement(
+                        "schoolCategoryDescriptor",
+                        "$.schoolCategoryDescriptor",
+                        "string",
+                        new RelationalQueryFieldTarget.DescriptorIdColumn(
+                            new DbColumnName("SchoolCategoryDescriptorId"),
+                            new QualifiedResourceName("Ed-Fi", "SchoolCategoryDescriptor")
+                        ),
+                        "uri://schoolCategoryDescriptor",
+                        new PreprocessedRelationalQueryValue.DescriptorId(17)
+                    ),
+                ]
+            ),
+            new CollectionPaging.Traditional(
+                new PaginationParameters(Limit: null, Offset: null, TotalCount: true, MaximumPageSize: 500)
+            )
+        );
+
+        foreach (
+            var inventory in new[]
+            {
+                keyset.Plan.PageParametersInOrder,
+                keyset.Plan.TotalCountParametersInOrder!.Value,
+            }
+        )
+        {
+            inventory
+                .Single(parameter => parameter.ParameterName == "nameOfInstitution")
+                .Binding.Should()
+                .Be(QuerySqlParameterBinding.CreateString(75));
+            inventory
+                .Single(parameter => parameter.ParameterName == "schoolId")
+                .Binding.Should()
+                .Be(QuerySqlParameterBinding.Scalar);
+            inventory
+                .Single(parameter => parameter.ParameterName == "schoolCategoryDescriptor")
+                .Binding.Should()
+                .Be(QuerySqlParameterBinding.Scalar);
+        }
+    }
+
+    [Test]
     public void It_should_plan_reference_alias_predicates_against_local_root_binding_columns()
     {
         var planner = new RelationalQueryPageKeysetPlanner(SqlDialect.Pgsql);

@@ -200,7 +200,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 new DbColumnName(DocumentUuidColumnName),
                 null,
                 predicate.Operator,
-                predicate.ParameterName
+                predicate.ParameterName,
+                predicate.StringContract
             );
         }
 
@@ -219,7 +220,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
                 originalColumn,
                 null,
                 predicate.Operator,
-                predicate.ParameterName
+                predicate.ParameterName,
+                predicate.StringContract
             );
         }
 
@@ -229,7 +231,8 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
             mapping.CanonicalColumn,
             mapping.PresenceColumn,
             predicate.Operator,
-            predicate.ParameterName
+            predicate.ParameterName,
+            predicate.StringContract
         );
     }
 
@@ -336,14 +339,29 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
         [
             .. predicates.Select(static predicate => new QuerySqlParameter(
                 QuerySqlParameterRole.Filter,
-                predicate.ParameterName
+                predicate.ParameterName,
+                predicate.StringContract is { } stringContract
+                    ? QuerySqlParameterBinding.CreateString(stringContract.MaxLength)
+                    : null
             )),
         ];
 
         if (namespacePrefixParameterization is not null)
         {
+            // SQL Server binds each escaped prefix pattern as its own scalar. A pattern is claim data,
+            // lengthened by escaping and the appended wildcard, so it has no bounded contract; it is
+            // declared unbounded rather than sized by its value. PostgreSQL binds one array instead.
             filterParametersInOrder.AddRange(
-                NamespacePrefixSqlHelper.BuildFilterParametersInOrder(namespacePrefixParameterization)
+                NamespacePrefixSqlHelper
+                    .BuildFilterParametersInOrder(namespacePrefixParameterization)
+                    .Select(static parameter =>
+                        parameter.Binding.Kind is QuerySqlParameterBindingKind.Scalar
+                            ? parameter with
+                            {
+                                Binding = QuerySqlParameterBinding.CreateString(maxLength: null),
+                            }
+                            : parameter
+                    )
             );
         }
 
@@ -1880,12 +1898,14 @@ public sealed class PageDocumentIdSqlCompiler(SqlDialect dialect)
     /// <param name="PresenceColumn">An optional presence gate column that must be <c>IS NOT NULL</c>.</param>
     /// <param name="Operator">The comparison operator.</param>
     /// <param name="ParameterName">The bare SQL parameter name that supplies the value.</param>
+    /// <param name="StringContract">The declared string contract carried from the predicate.</param>
     private readonly record struct RewrittenPredicate(
         QueryPredicateTarget Target,
         DbColumnName OriginalColumn,
         DbColumnName CanonicalColumn,
         DbColumnName? PresenceColumn,
         QueryComparisonOperator Operator,
-        string ParameterName
+        string ParameterName,
+        QuerySqlStringContract? StringContract
     );
 }
