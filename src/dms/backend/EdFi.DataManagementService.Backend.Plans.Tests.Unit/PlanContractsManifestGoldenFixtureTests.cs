@@ -35,8 +35,9 @@ public class Given_A_PlanContracts_Manifest_GoldenFixture
             "expected",
             "plan-contracts.manifest.json"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "plan-contracts-manifest",
             "minimal",
             "actual",

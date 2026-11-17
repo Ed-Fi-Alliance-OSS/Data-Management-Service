@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DataManagementService.Backend.Tests.Common;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -15,6 +16,7 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 /// </summary>
 public abstract class DdlGoldenFixtureTestBase
 {
+    private GoldenFixtureOutputDirectory? _output;
     private string _fixtureDirectory = default!;
     private string _actualDir = default!;
     private FixtureConfig _config = default!;
@@ -54,10 +56,14 @@ public abstract class DdlGoldenFixtureTestBase
         _fixtureDirectory = Path.GetFullPath(ResolveFixtureDirectory(projectRoot));
 
         _config = FixtureConfigReader.Read(_fixtureDirectory);
-        _actualDir = FixtureRunner.Run(_fixtureDirectory, Strict);
+        _output = new GoldenFixtureOutputDirectory();
+        _actualDir = FixtureRunner.Run(_fixtureDirectory, Strict, outputDirectory: _output.DirectoryPath);
         NormalizeActualOutput(_actualDir);
-        _result = FixtureComparer.Compare(_fixtureDirectory);
+        _result = FixtureComparer.Compare(_fixtureDirectory, actualDirectory: _actualDir);
     }
+
+    [OneTimeTearDown]
+    public void CleanupOutput() => _output?.Dispose();
 
     [Test]
     public void It_should_produce_actual_output_files()

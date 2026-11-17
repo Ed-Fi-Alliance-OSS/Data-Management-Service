@@ -26,11 +26,12 @@ public static class FixtureRunner
     /// <param name="strict">Forwarded to <see cref="DdlPipelineHelpers.BuildDdlForDialect"/>; defaults to
     /// <see langword="true"/> so authoritative fixtures use the production-strict pass set, and synthetic
     /// fixtures opt out via the test base.</param>
+    /// <param name="outputDirectory">Optional isolated output directory; defaults to the fixture's actual/ directory.</param>
     /// <returns>The absolute path to the actual/ output directory.</returns>
-    public static string Run(string fixtureDirectory, bool strict = true)
+    public static string Run(string fixtureDirectory, bool strict = true, string? outputDirectory = null)
     {
         var config = FixtureConfigReader.Read(fixtureDirectory);
-        var actualDir = Path.Combine(fixtureDirectory, "actual");
+        var actualDir = outputDirectory ?? Path.Combine(fixtureDirectory, "actual");
 
         // Clean and recreate actual/ to avoid stale artifacts
         if (Directory.Exists(actualDir))

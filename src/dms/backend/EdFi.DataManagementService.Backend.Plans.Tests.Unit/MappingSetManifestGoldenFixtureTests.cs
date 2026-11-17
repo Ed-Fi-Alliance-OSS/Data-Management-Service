@@ -33,8 +33,9 @@ public class Given_MappingSetManifest_GoldenFixture
             "expected",
             "mappingset.manifest.json"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "runtime-plan-compilation",
             "minimal",
             "actual",

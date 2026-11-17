@@ -38,8 +38,9 @@ public class Given_A_Focused_Stable_Key_Positive_Fixture_Golden
             "extension-child-collections"
         );
         var expectedPath = Path.Combine(fixtureRoot, "expected", ExpectedFileName);
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "focused-stable-key",
             "positive",
             "extension-child-collections",

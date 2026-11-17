@@ -31,8 +31,9 @@ public class Given_A_Small_EffectiveSchemaInfo
         );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema.manifest.json");
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "effective-schema",
             "effective-schema.manifest.json"
         );
@@ -91,8 +92,9 @@ public class Given_A_Small_EffectiveSchemaInfo_Without_ResourceKeys
         );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema-no-keys.manifest.json");
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "effective-schema",
             "effective-schema-no-keys.manifest.json"
         );
@@ -151,8 +153,9 @@ public class Given_A_Small_EffectiveSchemaInfo_With_Default_Parameters
         );
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "effective-schema");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "effective-schema-no-keys.manifest.json");
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "effective-schema",
             "effective-schema-default.manifest.json"
         );
@@ -220,8 +223,9 @@ public class Given_An_Authoritative_Core_EffectiveSchemaManifest
             "expected",
             "authoritative-effective-schema.manifest.json"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "authoritative",
             "ds-5.2",
             "authoritative-effective-schema.manifest.json"
@@ -312,8 +316,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaManifest
             "expected",
             "authoritative-effective-schema.manifest.json"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "authoritative",
             "sample",
             "authoritative-effective-schema.manifest.json"

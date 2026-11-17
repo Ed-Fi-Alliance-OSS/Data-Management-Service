@@ -60,8 +60,9 @@ public class Given_An_Authoritative_Core_And_Extension_EffectiveSchemaSet
             "expected",
             "authoritative-derived-relational-model-set.json"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "authoritative",
             "sample",
             "authoritative-derived-relational-model-set.json"

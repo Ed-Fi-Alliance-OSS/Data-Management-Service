@@ -26,11 +26,17 @@ public static class FixtureComparer
     /// If UPDATE_GOLDENS is set, copies actual/ to expected/ first and reports success.
     /// </summary>
     /// <param name="fixtureDirectory">Absolute path to the fixture directory.</param>
+    /// <param name="updateGoldens">Overrides the UPDATE_GOLDENS setting when supplied.</param>
+    /// <param name="actualDirectory">Optional isolated output directory to compare.</param>
     /// <returns>A result indicating pass/fail with diff details on failure.</returns>
-    public static FixtureCompareResult Compare(string fixtureDirectory, bool? updateGoldens = null)
+    public static FixtureCompareResult Compare(
+        string fixtureDirectory,
+        bool? updateGoldens = null,
+        string? actualDirectory = null
+    )
     {
         var expectedDir = Path.Combine(fixtureDirectory, "expected");
-        var actualDir = Path.Combine(fixtureDirectory, "actual");
+        var actualDir = actualDirectory ?? Path.Combine(fixtureDirectory, "actual");
 
         if (!Directory.Exists(actualDir))
         {

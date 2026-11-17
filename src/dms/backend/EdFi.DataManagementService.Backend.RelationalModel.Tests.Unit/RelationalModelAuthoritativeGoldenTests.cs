@@ -48,8 +48,9 @@ public class Given_An_Authoritative_ApiSchema_For_Ed_Fi
             "expected",
             "authoritative-relational-model.manifest.json"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "authoritative",
             "ds-5.2",
             "authoritative-relational-model.manifest.json"

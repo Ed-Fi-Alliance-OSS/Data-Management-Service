@@ -52,10 +52,10 @@ begins; pending rows are planned targets, not qualified runs.
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Thirty-four mutations killed; structured-claim DML follow-up pending |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Verified; thirty-six intended mutations killed; instrumentation limits documented |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred forty-two mutations killed; sibling creatability follow-up pending |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Twenty-two mutations killed; sibling owner-scope follow-up pending |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Verified; one hundred forty-four intended mutations killed; limitations documented |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Twenty-three mutations killed; two-descriptor identity follow-up pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Verified; twelve intended mutations killed; instrumentation and collision limits documented |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
@@ -91,6 +91,29 @@ After changing tests, run the relevant normal tests, format changed C# with
 full named configuration. Refresh baselines after changing the tool or source scope.
 Do not change production behavior merely to improve the mutation score.
 
+## Golden-output isolation and requalification
+
+The first DDL after-run exposed shared golden-output directories: parallel Stryker
+workers could delete or overwrite another worker's `actual/` files. Plans and Model
+fixtures also used shared paths. The earlier scores/status changes for those assemblies
+are provisional, including unexplained null-guard kills and golden-test regressions.
+Do not use those observations as evidence that a new assertion killed a mutation.
+
+Golden fixtures now use unique temporary output directories, retain their original
+read-only inputs/expected files, and clean up their owned output after comparison.
+DDL output remains available through the fixture's tests and is removed in
+OneTimeTearDown. Runner/comparer defaults retain the existing explicit `actual/`
+workflow; automated golden fixtures supply an isolated directory. A regression
+checks that a second run cannot overwrite a first run's deliberately different SQL,
+and that each comparison sees only its own output.
+
+Release validation with isolation passes DDL 1,503 tests plus one existing skip,
+Model 1,048, and Plans 2,745. Fresh before/after mutation runs are in progress for
+query authorization, write plans, Model constraints, and DDL. Both sides receive
+identical isolation support; baseline behavioral tests are restored from `origin/main`
+(`6a7a262d8`, with no production C# difference from the PR's merged base).
+Earlier native reports remain available for diagnosis and are not silently discarded.
+
 ## Results
 
 CMS Backend's Release suite passed 5,375 tests before the Claims baseline. Stryker
@@ -115,16 +138,16 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `dms-request-auth` (three configured files) | 5.0.0 | 63.31% → 67.63% | 5m43s / 5m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
 | Full `cms-permission-inheritance` (two configured Claims files) | 5.0.0 | 83.33% → 91.67% | 6m25s / 6m19s | `StrykerOutput/2026-11-16.17-39-28/reports/` → `StrykerOutput/2026-11-16.17-47-25/reports/` |
 | Initial query-authorization cluster (five files, before relationship expansion) | 5.0.0 | 82.50% baseline | 7m11s | `StrykerOutput/2026-11-16.17-53-57/reports/` |
-| Full `dms-query-auth` (seven configured files) | 5.0.0 | 82.20% → 83.01% | 8m09s / 8m58s | `StrykerOutput/2026-11-16.18-11-59/reports/` → `StrykerOutput/2026-11-16.18-35-24/reports/` |
+| Full `dms-query-auth` (seven configured files) | 5.0.0 | Provisional before output isolation; 82.20% → 83.01% | 8m09s / 8m58s | `StrykerOutput/2026-11-16.18-11-59/reports/` → `StrykerOutput/2026-11-16.18-35-24/reports/` |
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
-| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 73.80%; structured-claim follow-up pending | 4m17s / 10m12s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.22-18-55/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 82.91%; sibling creatability follow-up pending | 6m29s / 13m17s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-18-53/reports/` |
-| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.75%; owner-scope follow-up pending | 5m01s / 12m40s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.22-19-01/reports/` |
-| Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
-| Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% → 55.84% | 26m52s / 26m31s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-27-42/reports/` |
-| Full `dms-ddl` (four configured files) | 5.0.0 | 85.32% baseline | 76m54s | `StrykerOutput/2026-11-16.20-34-14/reports/` |
+| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 74.22% | 4m17s / 11m09s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.22-36-19/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 83.14% | 6m29s / 12m26s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-38-23/reports/` |
+| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.82%; two-descriptor follow-up pending | 5m01s / 12m45s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.22-36-25/reports/` |
+| Full `dms-write-plans` (six configured files) | 5.0.0 | Provisional before output isolation; 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
+| Full `dms-model-constraints` (five configured files) | 5.0.0 | Provisional before output isolation; 53.76% → 55.84% | 26m52s / 26m31s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-27-42/reports/` |
+| Full `dms-ddl` (four configured files) | 5.0.0 | Provisional before output isolation; 85.32% baseline | 76m54s | `StrykerOutput/2026-11-16.20-34-14/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -981,3 +1004,24 @@ Concrete non-actionable groups retained without suppressing mutation types:
 - [Stryker.NET configuration](https://stryker-mutator.io/docs/stryker-net/configuration/)
 - [Stryker.NET mutations](https://stryker-mutator.io/docs/stryker-net/mutations/)
 - [Repository conventions](AGENTS.md) and [CMS conventions](src/config/AGENTS.md)
+
+### Latest Core and transactional-write verification
+
+Eight sibling-order Core cases pass in the 10,135-test suite. They confirm
+`CreatabilityAnalyzer.cs:391/487` negations are killed: 715 killed, 112 survived,
+33 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills. This
+establishes 144 intended improvements. Four owner-scope Backend cases and a structured
+claim DML case pass in the 4,895-test suite. The profile rerun kills
+`ProfileBindingClassificationCore.cs:711`: 806 killed, 352 survived, 213 uncovered,
+358 compile-error, 368 ignored, and the same loop timeout (23 intended improvements).
+
+The write rerun kills second-phase 1612 (structured claims cannot co-batch with DML)
+and 667 (inverting the successful standalone result check must not skip persistence):
+357 killed, 99 survived, 25 uncovered, 389 compile-error, 109 ignored, and no timeouts
+or lost kills. The write total is 36. The original non-null standalone denial body
+at 668 remains unreachable; the inverted condition is now tested through success.
+
+Two further profile cases pass in the 4,897-test Backend suite. They match an existing
+row using two descriptor identity parts and remove an omitted stored row via the
+cache-miss fallback, asserting the complete five-value current/merged rows. Their
+full profile mutation verification is running.

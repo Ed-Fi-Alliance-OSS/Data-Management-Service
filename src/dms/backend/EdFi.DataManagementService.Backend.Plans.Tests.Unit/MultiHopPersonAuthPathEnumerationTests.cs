@@ -157,8 +157,9 @@ public class Given_MultiHop_Person_Auth_Path_Enumeration(SqlDialect dialect)
             GoldenFileName
         );
 
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "authoritative",
             "ds-5.2",
             "actual",
