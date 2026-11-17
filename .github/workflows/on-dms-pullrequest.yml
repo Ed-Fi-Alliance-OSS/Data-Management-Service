@@ -290,6 +290,7 @@ jobs:
             "eng/ci/tests/ReleaseAssets.Tests.ps1",
             "eng/ci/tests/ScheduledMergeQueueEnqueue.Tests.ps1",
             "eng/ci/tests/KeycloakNightlyNotifications.Tests.ps1",
+            "eng/ci/tests/MutationReport.Tests.ps1",
             "eng/ci/tests/TemplateWorkflowAttestation.Tests.ps1",
             "eng/ci/tests/IdentityContractPublication.Tests.ps1",
             "eng/ci/tests/DockerAnalysisWorkflowCredentials.Tests.ps1",

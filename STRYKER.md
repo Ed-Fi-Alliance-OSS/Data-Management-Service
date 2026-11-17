@@ -4,13 +4,56 @@ Run Stryker.NET directly from the owning unit-test directory. Named configuratio
 select one production assembly and a behavior-focused source scope. The five existing
 `stryker-config.json` files remain available for exploratory runs and are unchanged.
 
-These configurations run manually. PR CI runs the ordinary NUnit tests, including
-the regression tests added through this work; it does not invoke Stryker or enforce
-a mutation-score gate.
+All eleven named configurations run in the **DMS and CMS Weekend Mutation Tests**
+workflow every Saturday at 08:00 UTC, alongside the other weekend tests. Scheduled
+runs use the default branch after the workflow is merged. PR CI runs the ordinary
+NUnit regression tests; it does not invoke Stryker.
 
 The DDL configuration allows an additional 100 seconds and a timeout ratio of 3.0
 for its expensive golden fixtures. This budget was verified with the full target;
 other targets retain their existing timing settings.
+
+## Weekend automation and failure investigation
+
+The [weekend workflow](.github/workflows/weekend-mutation-tests.yml) runs all eleven
+full targets, each in its own checkout on an Ubuntu runner, with at most four jobs
+at once and two Stryker workers per job. A failed target does not cancel the others.
+Each mutation step has a 210-minute limit inside a 240-minute job, leaving time to
+collect diagnostics. Stryker builds and runs the initial unmutated test suite and
+stops if an initial test fails. No databases or Docker services are required.
+
+The CI gate counts native JSON results directly: **any `Survived` or `NoCoverage`
+mutant fails the job**, regardless of the rounded mutation score. A nonzero Stryker
+exit, missing/invalid/ambiguous report, pending mutants, or no executable mutants
+also fails. `Timeout`, `CompileError`, and `Ignored` counts are shown separately;
+they are not treated as assertion kills. Existing reports contain survivors, so
+the initial weekend runs are expected to fail. Equivalent or defensive survivors
+are not silently exempted. Local configurations retain their 80/60/0 thresholds;
+the strict weekend gate is implemented by [Test-MutationReport.ps1](eng/ci/Test-MutationReport.ps1).
+
+Scheduled Alliance runs send one short success/failure message to the existing
+`SLACK_WEBHOOK_URL`; failure messages link to the workflow run. As with the other
+weekend tests, manual runs do not send Slack notifications and fork schedules are
+disabled. Use **Actions → DMS and CMS Weekend Mutation Tests → Run workflow** to
+run all targets on a selected branch without waiting for Saturday.
+
+To investigate a failure, open its matrix job and the job summary, then download
+the `mutation-<target>` artifact (retained for 30 days, including failed runs):
+
+- `summary.md` lists status counts and the gate failure reason.
+- `mutant-details.txt` and the job log list surviving/uncovered/timed-out/pending
+  mutants with source file, line, column, ID, mutation, replacement, reason, and
+  covering test IDs. The native JSON includes source and test details for follow-up.
+- `stryker/reports/mutation-report.html` is the interactive report;
+  the adjacent JSON preserves the full native results. Stryker's trace log is
+  also retained under `stryker/` using `--log-to-file`.
+- `console.log`, `tool-restore.log`, `run-config.json`, `run-info.txt`,
+  `dotnet-info.txt`, and `tools.txt` preserve build/test failures and run context.
+
+If setup or the initial tests fail, native reports may not exist; the missing-report
+summary and available logs are still uploaded. A forcibly terminated runner may
+not reach the upload step. For a local reproduction, use the artifact's commit,
+configuration, and two-worker setting, then narrow the scope as described below.
 
 ## Prerequisites and commands
 
@@ -183,8 +226,8 @@ performance benchmarks.
 
 Release suite validation: Core 10,135 passed; Backend 4,897; Plans 2,745; Model 1,048;
 DDL 1,504 with one existing skip; CMS Backend 7,327 with 16 existing environment skips.
-All 58 changed C# files pass CSharpier. No production behavior, mapping version, or
-CI workflows changed.
+All 58 changed C# files pass CSharpier. No production behavior or mapping version
+changed. Weekend automation and its strict failure gate are described above.
 
 Plans reports 2,745 local test executions but 2,718 distinct test IDs: existing numeric
 argument cases and named authorization cases reuse IDs. A normal TRX report contains
