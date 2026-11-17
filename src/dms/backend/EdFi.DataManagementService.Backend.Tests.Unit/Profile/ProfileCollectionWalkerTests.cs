@@ -3143,11 +3143,14 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
 /// (raw URI parent + raw "C1" child in its ancestor chain) and contributes hidden member
 /// path <c>endDate</c>. After the walker constructs its visible-stored index, the C1
 /// row in the canonical bucket must carry <c>period.endDate</c> in
-/// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>; C2 must not.
+/// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>; C2 must not. The second
+/// case also hides C2's <c>period.startDate</c> to verify that expanding a later row
+/// retains the earlier row's hidden paths.
 /// </para>
 /// </summary>
-[TestFixture]
-public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_member
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_member(bool multipleRows)
 {
     private const long DocumentId = 345L;
     private const long ParentItemId = 100L;
@@ -3236,10 +3239,33 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
             HiddenMemberPaths: ["endDate"]
         );
 
+        var siblingDescendantState = inlinedDescendantState with
+        {
+            Address = inlinedDescendantState.Address with
+            {
+                AncestorCollectionInstances =
+                [
+                    inlinedDescendantState.Address.AncestorCollectionInstances[0],
+                    new AncestorCollectionInstance(
+                        DescriptorBackedNestedTopologyBuilders.ChildrenScope,
+                        [
+                            new SemanticIdentityPart(
+                                "$.identityField0",
+                                JsonValue.Create("C2"),
+                                IsPresent: true
+                            ),
+                        ]
+                    ),
+                ],
+            },
+            HiddenMemberPaths = ["startDate"],
+        };
         var context = new ProfileAppliedWriteContext(
             request,
             new JsonObject(),
-            ImmutableArray.Create(inlinedDescendantState),
+            multipleRows
+                ? ImmutableArray.Create(inlinedDescendantState, siblingDescendantState)
+                : ImmutableArray.Create(inlinedDescendantState),
             storedRows
         );
 
@@ -3318,8 +3344,8 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
         );
         c1Row
             .HiddenMemberPaths.Should()
-            .Contain(
-                "period.endDate",
+            .Equal(
+                ["period.endDate"],
                 "the inlined descendant scope state targeting C1 must fold its hidden member path "
                     + "onto C1's canonical row in the index. The expander reconstructs C1's address "
                     + "from the descendant state's raw URI ancestor chain, so the expansion must run "
@@ -3360,6 +3386,7 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
                 "the descendant state targets C1's identity only — the full structural address "
                     + "match must still discriminate C1 from its sibling C2"
             );
+        c2Row.HiddenMemberPaths.Should().Equal(multipleRows ? ["period.startDate"] : Array.Empty<string>());
     }
 }
 
