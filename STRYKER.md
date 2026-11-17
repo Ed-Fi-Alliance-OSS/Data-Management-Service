@@ -696,7 +696,7 @@ assertion kills; recheck them in the full rerun before interpreting the score ch
 Initial dispositions supported by source inspection:
 
 - Emitter and batching null guards receive non-null lists from the compiler. The
-  insert emitter's empty-row `continue` is outside accepted nonempty batched row shapes.
+  insert emitter's null-row `continue` is outside the non-null row-list contract.
 - `KeyUnificationWritePlanCompiler.cs:377` repeats the nullable-boolean condition
   already required by `KeyUnificationPresenceConventions.IsSyntheticPresenceColumn`
   before entering that validation. Public compilation rejects non-nullable boolean
