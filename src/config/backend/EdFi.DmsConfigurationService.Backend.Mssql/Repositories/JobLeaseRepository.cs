@@ -154,7 +154,9 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
         """;
 
     // D-6 (A4): one batch of at most @BatchSize rows, skipping locked rows, so a live lease or a row another
-    // transaction holds is never touched. The Status IN conjunct matches the filtered claim index.
+    // transaction holds is never touched. The Status IN conjunct matches the filtered claim index. A managed
+    // job whose CMS success already committed is completed instead, before the batch commits
+    // (ManagedJobRetryOutcome.WriteExhaustedAsync).
     private const string ExhaustBatchSql = """
         UPDATE TOP (@BatchSize) dmscs.Job WITH (READPAST, ROWLOCK)
         SET Status = N'Error',
@@ -290,6 +292,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
     )
     {
         int exhausted = 0;
+        int settled = 0;
         JobDeadline budget = JobDeadline.Start(JobLeaseTimings.ClaimCommandTimeout);
         JobDatabaseSession session = NewSession();
         bool sessionClean = true;
@@ -333,7 +336,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                     CancellationToken.None
                 );
 
-                await ManagedJobRetryOutcome.WriteExhaustedAsync(session, jobs, batch);
+                int batchSettled = await ManagedJobRetryOutcome.WriteExhaustedAsync(session, jobs, batch);
                 int rows = jobs.Count();
 
                 if (BeforeExhaustBatchCommit is { } beforeCommit)
@@ -350,22 +353,24 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 );
                 sessionClean = true;
 
-                exhausted += rows;
+                exhausted += rows - batchSettled;
+                settled += batchSettled;
                 AfterExhaustBatch?.Invoke(rows);
 
+                // Every selected row counts toward a full batch, whether it was failed or completed.
                 if (rows < JobLeaseTimings.ExhaustBatchSize)
                 {
                     break;
                 }
             }
 
-            return new JobExhaustResult.Success(exhausted);
+            return new JobExhaustResult.Success(exhausted, settled);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested && sessionClean)
         {
             // Only connection acquisition observes the stopping token, so no batch was running: the sweep
             // stopped before its next batch.
-            return new JobExhaustResult.Success(exhausted);
+            return new JobExhaustResult.Success(exhausted, settled);
         }
         catch (Exception exception)
         {

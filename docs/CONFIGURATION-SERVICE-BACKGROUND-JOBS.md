@@ -330,6 +330,7 @@ Identifiers are sanitized before logging.
 | `LateWriteRejected`                 | Warning  | Another instance owned the job by the time of the write   |
 | `WriteOutcomeUnknown`               | Warning  | An outcome write's result is unknown                      |
 | `JobsExhausted`                     | Warning  | The sweep failed jobs that were out of attempts           |
+| `ManagedJobsSettled`                | Info     | The sweep completed out-of-attempts managed data store jobs whose CMS success had already committed |
 | `WorkerPollFailed`                  | Warning / Error | A worker poll failed (Warning for a database failure result, Error for an exception); retried next poll |
 | `ScheduleOccurrenceEnqueued`        | Info     | A schedule occurrence became a job                        |
 | `ScheduleOccurrenceAlreadyEnqueued` | Warning  | The occurrence already existed (defensive recovery)       |

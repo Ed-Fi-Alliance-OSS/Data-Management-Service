@@ -132,7 +132,13 @@ education-organization refresh. Deleted records retain historical linked fields.
 | Delete | `Created` → `PendingDelete` → `DeleteInProgress` → `Deleted`. Retryable failures become `DeleteFailed`; terminal/exhausted work becomes `DeleteError`. |
 
 The durable job and matching lifecycle retry/terminal outcome commit together, including failures
-before handler execution. A transient physical outage after acceptance uses the existing job backoff
+before handler execution. When `Created` or `Deleted` committed but the worker stopped before
+acknowledging the job, recovery completes that job (on its last attempt, the exhaustion sweep does)
+without repeating physical work, so the job and the record report the same success; a later accepted
+DELETE does not change this. If attempts are exhausted before the CMS success transaction commits,
+physical success alone does not establish completion: the job ends in `Error` and the managed record
+in `CreateError`/`DeleteError`. Earlier attempts remain eligible for reconciliation. A transient
+physical outage after acceptance uses the existing job backoff
 and maximum attempts; it does not close the startup readiness latch. While a host's startup readiness
 is `NotReady`, its worker neither claims nor exhausts `ManagedDataStore.Create` and
 `ManagedDataStore.Delete` jobs; other jobs keep running. Previously accepted, nonterminal managed work

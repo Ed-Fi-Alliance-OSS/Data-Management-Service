@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
@@ -211,7 +212,14 @@ public partial class Given_data_store_namespace_reservations
             )
             {
                 settled = await restarted.ReadAsync();
-                settled.Kind.Should().Be(exhaust ? "JobsExhausted" : "JobCompleted");
+                // On its last attempt, a committed success is completed by the sweep, never exhausted.
+                string expectedKind = (exhaust, afterCommit) switch
+                {
+                    (false, _) => "JobCompleted",
+                    (true, true) => "ManagedJobsSettled",
+                    (true, false) => "JobsExhausted",
+                };
+                settled.Kind.Should().Be(expectedKind);
                 settled.Claims.Should().Be(exhaust ? 0 : 1);
                 if (!exhaust)
                 {
@@ -272,13 +280,33 @@ public partial class Given_data_store_namespace_reservations
                 """SELECT "Status", "AttemptCount", "FencingToken", "ErrorMessage", "FinishedAt" FROM dmscs."Job" WHERE "JobId" = @JobId;""",
                 new { JobId = jobId }
             );
-            finishedJob.Status.Should().Be(exhaust ? "Error" : "Completed");
+            bool failed = exhaust && !afterCommit;
+            finishedJob.Status.Should().Be(failed ? "Error" : "Completed");
             finishedJob.AttemptCount.Should().Be(exhaust ? 1 : 2);
-            finishedJob.ErrorMessage.Should().Be(exhaust ? JobErrorCode.AttemptsExhausted.Message : null);
+            finishedJob.ErrorMessage.Should().Be(failed ? JobErrorCode.AttemptsExhausted.Message : null);
             finishedJob.FinishedAt.Should().NotBeNull();
             // Both reclamation and exhaustion invalidate the dead owner's fence.
             finishedJob.FencingToken.Should().Be(checkpoint.Fence + 1);
             lane.OperationEntries.Should().BeEmpty();
+
+            // The returned job ID and the managed resource report the same public outcome.
+            using (var polled = await client.GetAsync($"/v3/jobs/{jobId}"))
+            {
+                polled.StatusCode.Should().Be(HttpStatusCode.OK);
+                var job = JsonNode.Parse(await polled.Content.ReadAsStringAsync())!;
+                job["status"]!.GetValue<string>().Should().Be(failed ? "Error" : "Completed");
+                (job["errorMessage"]?.GetValue<string>())
+                    .Should()
+                    .Be(failed ? JobErrorCode.AttemptsExhausted.Message : null);
+            }
+            using (var managed = await client.GetAsync($"/v3/dataStores/manage/{id}"))
+            {
+                managed.StatusCode.Should().Be(HttpStatusCode.OK);
+                JsonNode.Parse(await managed.Content.ReadAsStringAsync())!["status"]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be(final.Status);
+            }
 
             async Task<string> ManagedSnapshot() =>
                 JsonSerializer.Serialize(

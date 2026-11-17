@@ -8,6 +8,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.Jobs;
@@ -53,6 +54,9 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
 
     /// <summary>The next this many sweeps return <c>FailureUnknown</c>, as a repository that caught an error does.</summary>
     public int SweepsThatFail { get; set; }
+
+    /// <summary>Committed managed successes the next sweep reports as completed rather than exhausted.</summary>
+    public int SettledOnNextSweep { get; set; }
 
     public SimulatedJob Add(int attemptCount = 0)
     {
@@ -174,7 +178,9 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
                 row.FencingToken++;
                 exhausted++;
             }
-            return Task.FromResult<JobExhaustResult>(new JobExhaustResult.Success(exhausted));
+            int settled = SettledOnNextSweep;
+            SettledOnNextSweep = 0;
+            return Task.FromResult<JobExhaustResult>(new JobExhaustResult.Success(exhausted, settled));
         }
     }
 
@@ -652,6 +658,44 @@ public class JobWorkerServiceTests
             _statusAfterTheFailedSweep.Should().Be(JobStatuses.Pending);
             _stranded.ErrorCode.Should().Be(JobErrorCode.AttemptsExhausted.Code);
             _harness.Worker.ExecuteTask!.IsFaulted.Should().BeFalse();
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_sweep_that_completes_committed_managed_jobs
+    {
+        private WorkerHarness _harness = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new WorkerHarness(maxAttempts: 3);
+            _harness.Table.SettledOnNextSweep = 2;
+
+            await _harness.Worker.StartAsync(CancellationToken.None);
+            await WorkerHarness.Until(
+                () => _harness.Logger.Entries.Any(entry => entry.EventId.Name == "ManagedJobsSettled"),
+                "the completed managed jobs were logged"
+            );
+        }
+
+        [TearDown]
+        public async Task TearDown()
+        {
+            await _harness.StopAsync();
+            _harness.Dispose();
+        }
+
+        [Test]
+        public void It_reports_them_as_completed_not_exhausted()
+        {
+            _harness
+                .Logger.Entries.Single(entry => entry.EventId.Name == "ManagedJobsSettled")
+                .Should()
+                .Match<LogEntry>(entry =>
+                    entry.Level == LogLevel.Information && Equals(entry.Field("Count"), 2)
+                );
+            _harness.Logger.Entries.Should().NotContain(entry => entry.EventId.Name == "JobsExhausted");
         }
     }
 

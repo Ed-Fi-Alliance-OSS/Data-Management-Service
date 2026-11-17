@@ -286,16 +286,23 @@ public partial class Given_data_store_namespace_reservations
     }
 
     [Test, Category("DataStoreManageCreateHandler")]
-    public async Task It_rejects_an_obsolete_create_job_after_delete_acceptance()
+    public async Task It_completes_a_published_create_job_after_delete_acceptance_without_changes()
     {
         var seed = await SeedPublication(provider: "mssql");
         await PublicationRepository().PublishCreateAsync(seed.Command, seed.Execution, default);
         await using var services = AcceptanceServices();
-        await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
-            .AcceptDeleteAsync(seed.Command.Id, default);
+        (
+            await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
+                .AcceptDeleteAsync(seed.Command.Id, default)
+        )
+            .Should()
+            .BeOfType<DataStoreManageDeleteResult.Success>();
         string before = await DeleteAcceptanceSnapshot();
-        var action = () => PublicationRepository().StartCreateAsync(seed.Command.Id, seed.Execution, default);
-        await action.Should().ThrowAsync<JobPermanentException>();
+        // DELETE admits only Created, so the create's publication committed; its job completes without
+        // physical work and without touching the newer delete operation.
+        (await PublicationRepository().StartCreateAsync(seed.Command.Id, seed.Execution, default))
+            .AlreadyCreated.Should()
+            .BeTrue();
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
     }
 

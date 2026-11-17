@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using System.Text.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
@@ -420,11 +421,189 @@ public partial class Given_data_store_namespace_reservations
             """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE "Id" = @Id;""",
             new { claim.Id }
         );
+        string otherJobs = await OtherJobs(connection, claim.Id);
+        // The operation's CMS success already committed, so its last attempt completes instead of failing.
         (await repository.Exhaust(claim.AttemptCount, JobErrorCode.AttemptsExhausted, default))
             .Should()
-            .BeOfType<JobExhaustResult.Success>()
-            .Which.ExhaustedCount.Should()
-            .Be(1);
+            .Be(new JobExhaustResult.Success(0, 1));
+        await AssertSettled(connection, claim);
+        (await OtherJobs(connection, claim.Id)).Should().Be(otherJobs);
+    }
+
+    private async Task AssertSettled(DbConnection connection, ClaimedJob claim)
+    {
+        var job = await connection.QuerySingleAsync<(
+            string Status,
+            string? ErrorMessage,
+            int AttemptCount,
+            long FencingToken,
+            string? LeaseOwner,
+            DateTime? FinishedAt
+        )>(
+            """SELECT "Status", "ErrorMessage", "AttemptCount", "FencingToken", "LeaseOwner", "FinishedAt" FROM dmscs."Job" WHERE "Id" = @Id;""",
+            new { claim.Id }
+        );
+        job.Status.Should().Be("Completed");
+        job.ErrorMessage.Should().BeNull();
+        job.AttemptCount.Should().Be(claim.AttemptCount);
+        job.FencingToken.Should().Be(claim.FencingToken + 1);
+        job.LeaseOwner.Should().BeNull();
+        job.FinishedAt.Should().NotBeNull();
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Complete(
+                claim.Id,
+                claim.LeaseOwner,
+                claim.FencingToken,
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobWriteResult.OwnershipLost>();
+    }
+
+    private static async Task<string> OtherJobs(DbConnection connection, long id) =>
+        JsonSerializer.Serialize(
+            (
+                await connection.QueryAsync(
+                    """SELECT * FROM dmscs."Job" WHERE "Id" <> @Id ORDER BY "Id";""",
+                    new { Id = id }
+                )
+            )
+                .Select(row => ((IDictionary<string, object>)row).ToDictionary())
+                .ToArray()
+        );
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_exhaustion_completes_only_the_exact_committed_operation(
+        [Values("tenant", "job-case", "type", "unlinked")] string mismatch
+    )
+    {
+        var creation = await SeedPublication();
+        await PublicationRepository().PublishCreateAsync(creation.Command, creation.Execution, default);
+        await using var connection = await Open();
+        await ExpireTerminalClaim(connection, creation.Claim);
+        switch (mismatch)
+        {
+            case "tenant":
+                await connection.ExecuteAsync(
+                    """UPDATE dmscs."Job" SET "TenantId" = @TenantId WHERE "Id" = @Id;""",
+                    new { creation.Claim.Id, TenantId = await Tenant("other-settle-tenant") }
+                );
+                break;
+            case "job-case":
+                await connection.ExecuteAsync(
+                    """UPDATE dmscs."Job" SET "JobId" = 'SettleOperation' WHERE "Id" = @Id;""",
+                    new { creation.Claim.Id }
+                );
+                await connection.ExecuteAsync(
+                    """UPDATE dmscs."DataStoreManage" SET "CreateJobId" = 'settleoperation' WHERE "Id" = @Id;""",
+                    new { creation.Command.Id }
+                );
+                break;
+            case "type":
+                await connection.ExecuteAsync(
+                    """UPDATE dmscs."Job" SET "JobType" = @Type WHERE "Id" = @Id;""",
+                    new { creation.Claim.Id, Type = ManagedJobTypes.Delete }
+                );
+                break;
+            default:
+                // Created without its publication link is not proof of a committed publication.
+                await connection.ExecuteAsync(
+                    """UPDATE dmscs."DataStoreManage" SET "HistoricalDataStoreId" = NULL WHERE "Id" = @Id;""",
+                    new { creation.Command.Id }
+                );
+                break;
+        }
+        var before = await DeleteRow(connection, creation.Command.Id);
+        (
+            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
+                1,
+                JobErrorCode.AttemptsExhausted,
+                default
+            )
+        )
+            .Should()
+            .Be(new JobExhaustResult.Success(1, 0));
+        (
+            await connection.QuerySingleAsync<(string Status, string? ErrorMessage)>(
+                """SELECT "Status", "ErrorMessage" FROM dmscs."Job" WHERE "Id" = @Id;""",
+                new { creation.Claim.Id }
+            )
+        )
+            .Should()
+            .Be(("Error", JobErrorCode.AttemptsExhausted.Message));
+        (await DeleteRow(connection, creation.Command.Id)).Should().BeEquivalentTo(before);
+    }
+
+    [Test, Category("DataStoreManageTerminalOutcome")]
+    public async Task It_exhaustion_completes_committed_success_beside_failed_ordinary_unfinished_and_live_jobs(
+        [Values(null, "SettleCommittedJobs", "WriteRetryAggregate")] string? interruptedAfter
+    )
+    {
+        var committed = await SeedPublication(name: "SettledMixed");
+        await PublicationRepository().PublishCreateAsync(committed.Command, committed.Execution, default);
+        var unfinished = await SeedRetry(false);
+        var live = await SeedPublication(name: "LiveMixed");
+        await PublicationRepository().PublishCreateAsync(live.Command, live.Execution, default);
+        await using var connection = await Open();
+        await ExpireTerminalClaim(connection, committed.Claim);
+        await ExpireTerminalClaim(connection, unfinished.Claim);
+        string ordinary = Guid.NewGuid().ToString("N");
+        await connection.ExecuteAsync(
+            """
+            INSERT INTO dmscs."Job" ("JobId", "JobType", "PayloadVersion", "Payload", "Status", "CreatedAt", "NextAttemptAt", "AttemptCount")
+            VALUES (@Id, 'Unrelated.Unknown', 1, '{}', 'Pending', clock_timestamp() AT TIME ZONE 'UTC', clock_timestamp() AT TIME ZONE 'UTC', 1);
+            """,
+            new { Id = ordinary }
+        );
+        string before = await DeleteAcceptanceSnapshot();
+        var liveJob = await connection.QuerySingleAsync<(string Status, long FencingToken)>(
+            """SELECT "Status", "FencingToken" FROM dmscs."Job" WHERE "Id" = @Id;""",
+            new { live.Claim.Id }
+        );
+        var committedRow = await DeleteRow(connection, committed.Command.Id);
+        var liveRow = await DeleteRow(connection, live.Command.Id);
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings)
+        {
+            SessionHooks = new()
+            {
+                AfterOperation = (operation, _) =>
+                    operation == interruptedAfter
+                        ? Task.FromException(new InvalidOperationException("Injected exhaust interruption."))
+                        : Task.CompletedTask,
+            },
+        };
+
+        var result = await repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default);
+
+        if (interruptedAfter is not null)
+        {
+            // Nothing in the batch commits, the completion included.
+            result.Should().BeOfType<JobExhaustResult.FailureUnknown>();
+            (await DeleteAcceptanceSnapshot()).Should().Be(before);
+            return;
+        }
+        result.Should().Be(new JobExhaustResult.Success(2, 1));
+        await AssertSettled(connection, committed.Claim);
+        (await DeleteRow(connection, committed.Command.Id)).Should().BeEquivalentTo(committedRow);
+        (await DeleteRow(connection, unfinished.Id))["Status"].Should().Be("CreateError");
+        (
+            await connection.QueryAsync<string>(
+                """SELECT "Status" FROM dmscs."Job" WHERE "Id" = @Id OR "JobId" = @Ordinary;""",
+                new { unfinished.Claim.Id, Ordinary = ordinary }
+            )
+        )
+            .Should()
+            .Equal("Error", "Error");
+        (
+            await connection.QuerySingleAsync<(string Status, long FencingToken)>(
+                """SELECT "Status", "FencingToken" FROM dmscs."Job" WHERE "Id" = @Id;""",
+                new { live.Claim.Id }
+            )
+        )
+            .Should()
+            .Be(liveJob);
+        (await DeleteRow(connection, live.Command.Id)).Should().BeEquivalentTo(liveRow);
     }
 
     [Test, Category("DataStoreManageTerminalOutcome")]

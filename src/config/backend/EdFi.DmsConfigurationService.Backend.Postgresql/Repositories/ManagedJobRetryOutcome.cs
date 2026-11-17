@@ -29,7 +29,7 @@ internal static class ManagedJobRetryOutcome
 
     private sealed record Aggregate(int Id, int LastAttempt);
 
-    private sealed record ExhaustedAggregate(int Id, string JobId, int LastAttempt);
+    private sealed record ExhaustedAggregate(int Id, string JobId, int LastAttempt, string Status);
 
     internal static async Task<Target?> LockAsync(
         JobDatabaseSession session,
@@ -155,7 +155,11 @@ internal static class ManagedJobRetryOutcome
         }
     }
 
-    internal static async Task WriteExhaustedAsync(
+    /// <summary>
+    /// Projects exhaustion onto each selected job's unfinished aggregate, and completes instead each selected
+    /// job whose exact CMS success already committed. Returns the number of jobs completed.
+    /// </summary>
+    internal static async Task<int> WriteExhaustedAsync(
         JobDatabaseSession session,
         IEnumerable<ExhaustedJob> jobs,
         JobDeadline budget
@@ -166,7 +170,7 @@ internal static class ManagedJobRetryOutcome
         // Ordinary jobs also run on older schemas; do not query the managed catalog when none were selected.
         if (managedJobs.Count == 0)
         {
-            return;
+            return 0;
         }
         // Every selected job is already locked. Acquire all tenant gates in stable order in a bounded
         // number of round trips, then lock and project the matching aggregates as sets under the same deadline.
@@ -193,13 +197,25 @@ internal static class ManagedJobRetryOutcome
                                 SELECT * FROM jsonb_to_recordset(CAST(@Jobs AS jsonb))
                                     AS j("JobId" text, "TenantId" bigint, "IsCreate" boolean)
                             )
-                            SELECT m."Id", j."JobId", m."LastAttempt"
+                            -- A create's success is its publication (Created with links); DELETE admits only
+                            -- Created, so every later delete state of the same create also proves it. A
+                            -- delete's success is its finalized tombstone.
+                            SELECT m."Id", j."JobId", m."LastAttempt", m."Status"
                             FROM jobs j JOIN dmscs."DataStoreManage" m
                               ON (m."TenantId" = j."TenantId" OR (m."TenantId" IS NULL AND j."TenantId" IS NULL))
-                             AND ((j."IsCreate" AND m."CreateJobId" = j."JobId" COLLATE "C" AND m."DeleteJobId" IS NULL
-                                   AND m."Status" IN ('PendingCreate', 'CreateInProgress', 'CreateFailed'))
+                             AND ((j."IsCreate" AND m."CreateJobId" = j."JobId" COLLATE "C"
+                                   AND ((m."DeleteJobId" IS NULL
+                                         AND m."Status" IN ('PendingCreate', 'CreateInProgress', 'CreateFailed'))
+                                     OR (m."HistoricalDataStoreId" IS NOT NULL
+                                         AND ((m."DeleteJobId" IS NULL AND m."Status" = 'Created'
+                                               AND m."DataStoreId" IS NOT NULL)
+                                           OR (m."DeleteJobId" IS NOT NULL
+                                               AND m."Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed',
+                                                   'DeleteError', 'Deleted'))))))
                                OR (NOT j."IsCreate" AND m."DeleteJobId" = j."JobId" COLLATE "C"
-                                   AND m."Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed')))
+                                   AND (m."Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed')
+                                     OR (m."Status" = 'Deleted' AND m."DeletedAt" IS NOT NULL
+                                         AND m."DataStoreId" IS NULL))))
                             ORDER BY m."Id"
                             FOR UPDATE OF m;
                             """,
@@ -235,17 +251,54 @@ internal static class ManagedJobRetryOutcome
                 aggregates,
                 aggregate =>
                     managedJobs[aggregate.JobId].AttemptCount <= 0
-                    || managedJobs[aggregate.JobId].AttemptCount < aggregate.LastAttempt
+                    || (
+                        IsOwnPhase(managedJobs[aggregate.JobId], aggregate.Status)
+                        && managedJobs[aggregate.JobId].AttemptCount < aggregate.LastAttempt
+                    )
             )
         )
         {
             throw new InvalidOperationException("The managed job attempt is inconsistent.");
         }
-        if (aggregates.Length == 0)
+        var settled = aggregates
+            .Where(aggregate => IsCommittedSuccess(managedJobs[aggregate.JobId], aggregate.Status))
+            .Select(aggregate => aggregate.JobId)
+            .ToArray();
+        var unfinished = aggregates
+            .Where(aggregate => !IsCommittedSuccess(managedJobs[aggregate.JobId], aggregate.Status))
+            .ToArray();
+        if (settled.Length > 0)
         {
-            return;
+            // Same transaction as the exhaustion UPDATE: no Error is ever committed for these jobs. The
+            // aggregate is left exactly as its successful operation, or a newer delete, committed it.
+            int completed = await session.RunAsync(
+                "SettleCommittedJobs",
+                token =>
+                    session.Connection.ExecuteAsync(
+                        PostgresqlJobSession.Command(
+                            session,
+                            """
+                            UPDATE dmscs."Job" SET "Status" = 'Completed', "ErrorMessage" = NULL
+                            WHERE "JobId" COLLATE "C" = ANY(@JobIds) AND "Status" = 'Error';
+                            """,
+                            new { JobIds = settled },
+                            budget,
+                            token
+                        )
+                    ),
+                budget,
+                CancellationToken.None
+            );
+            if (completed != settled.Length)
+            {
+                throw new InvalidOperationException("The committed managed jobs were not completed.");
+            }
         }
-        var targets = aggregates.Select(aggregate =>
+        if (unfinished.Length == 0)
+        {
+            return settled.Length;
+        }
+        var targets = unfinished.Select(aggregate =>
         {
             var job = managedJobs[aggregate.JobId];
             return new
@@ -286,9 +339,20 @@ internal static class ManagedJobRetryOutcome
             budget,
             CancellationToken.None
         );
-        if (updated != aggregates.Length)
+        if (updated != unfinished.Length)
         {
             throw new InvalidOperationException("The managed job outcomes were not saved.");
         }
+        return settled.Length;
     }
+
+    private static bool IsCommittedSuccess(ExhaustedJob job, string status) =>
+        job.JobType == ManagedJobTypes.Create
+            ? status is not ("PendingCreate" or "CreateInProgress" or "CreateFailed")
+            : status == "Deleted";
+
+    // A create's attempt history is replaced when a delete is accepted.
+    private static bool IsOwnPhase(ExhaustedJob job, string status) =>
+        job.JobType != ManagedJobTypes.Create
+        || status is "PendingCreate" or "CreateInProgress" or "CreateFailed" or "Created";
 }

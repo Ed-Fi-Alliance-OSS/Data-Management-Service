@@ -280,9 +280,9 @@ public sealed class ManagedDataStoreWorkerProcess : IAsyncDisposable
             Func<TState, Exception?, string> formatter
         )
         {
-            if (eventId.Name == "JobsExhausted")
+            if (eventId.Name is "JobsExhausted" or "ManagedJobsSettled")
             {
-                var exhausted = new Signal("JobsExhausted", Environment.ProcessId, Claims: _claims);
+                var exhausted = new Signal(eventId.Name, Environment.ProcessId, Claims: _claims);
                 _retried.TrySetResult(exhausted);
                 _settled.TrySetResult(exhausted);
                 return;

@@ -25,14 +25,24 @@ internal static class ManagedJobRetryOutcome
                 AND Status IN (N'PendingDelete', N'DeleteInProgress', N'DeleteFailed')))
         """;
 
+    // Unfinished work, or the exact operation's committed success: a create's success is its publication
+    // (Created with links), and DELETE admits only Created, so every later delete state of the same create
+    // also proves it; a delete's success is its finalized tombstone.
     private const string MatchingExhaustedAggregate = """
         (m.TenantId = j.TenantId OR (m.TenantId IS NULL AND j.TenantId IS NULL))
           AND ((j.IsCreate = 1 AND m.CreateJobId COLLATE Latin1_General_100_BIN2 = j.JobId
-                AND DATALENGTH(m.CreateJobId) = DATALENGTH(j.JobId) AND m.DeleteJobId IS NULL
-                AND m.Status IN (N'PendingCreate', N'CreateInProgress', N'CreateFailed'))
+                AND DATALENGTH(m.CreateJobId) = DATALENGTH(j.JobId)
+                AND ((m.DeleteJobId IS NULL
+                      AND m.Status IN (N'PendingCreate', N'CreateInProgress', N'CreateFailed'))
+                  OR (m.HistoricalDataStoreId IS NOT NULL
+                      AND ((m.DeleteJobId IS NULL AND m.Status = N'Created' AND m.DataStoreId IS NOT NULL)
+                        OR (m.DeleteJobId IS NOT NULL
+                            AND m.Status IN (N'PendingDelete', N'DeleteInProgress', N'DeleteFailed',
+                                N'DeleteError', N'Deleted'))))))
             OR (j.IsCreate = 0 AND m.DeleteJobId COLLATE Latin1_General_100_BIN2 = j.JobId
                 AND DATALENGTH(m.DeleteJobId) = DATALENGTH(j.JobId)
-                AND m.Status IN (N'PendingDelete', N'DeleteInProgress', N'DeleteFailed')))
+                AND (m.Status IN (N'PendingDelete', N'DeleteInProgress', N'DeleteFailed')
+                  OR (m.Status = N'Deleted' AND m.DeletedAt IS NOT NULL AND m.DataStoreId IS NULL))))
         """;
 
     internal sealed record Job(string JobId, long? TenantId, string JobType, int AttemptCount);
@@ -49,7 +59,7 @@ internal static class ManagedJobRetryOutcome
 
     private sealed record Aggregate(int Id, int LastAttempt);
 
-    private sealed record ExhaustedAggregate(int Id, string JobId, int LastAttempt);
+    private sealed record ExhaustedAggregate(int Id, string JobId, int LastAttempt, string Status);
 
     internal static async Task<Target?> LockAsync(
         JobDatabaseSession session,
@@ -193,7 +203,11 @@ internal static class ManagedJobRetryOutcome
         }
     }
 
-    internal static async Task WriteExhaustedAsync(
+    /// <summary>
+    /// Projects exhaustion onto each selected job's unfinished aggregate, and completes instead each selected
+    /// job whose exact CMS success already committed. Returns the number of jobs completed.
+    /// </summary>
+    internal static async Task<int> WriteExhaustedAsync(
         JobDatabaseSession session,
         IEnumerable<ExhaustedJob> jobs,
         JobDeadline budget
@@ -204,7 +218,7 @@ internal static class ManagedJobRetryOutcome
         // Ordinary jobs also run on older schemas; do not query the managed catalog when none were selected.
         if (managedJobs.Count == 0)
         {
-            return;
+            return 0;
         }
         // Every selected job is already locked. Acquire all tenant gates in stable order in a bounded
         // number of round trips, then lock and project the matching aggregates as sets under the same deadline.
@@ -249,7 +263,7 @@ internal static class ManagedJobRetryOutcome
                             JOIN dmscs.DataStoreManage m ON {MatchingExhaustedAggregate};
                             -- Discover without update locks, then seek only candidate primary keys and recheck
                             -- identity/state under the aggregate locks. Rejected scan rows retain no update locks.
-                            SELECT m.Id, j.JobId, m.LastAttempt
+                            SELECT m.Id, j.JobId, m.LastAttempt, m.Status
                             FROM @Candidates j
                             INNER LOOP JOIN dmscs.DataStoreManage m WITH (UPDLOCK, ROWLOCK, FORCESEEK (PK_DataStoreManage (Id)))
                                 ON m.Id = j.Id
@@ -279,15 +293,68 @@ internal static class ManagedJobRetryOutcome
                 aggregates,
                 aggregate =>
                     managedJobs[aggregate.JobId].AttemptCount <= 0
-                    || managedJobs[aggregate.JobId].AttemptCount < aggregate.LastAttempt
+                    || (
+                        IsOwnPhase(managedJobs[aggregate.JobId], aggregate.Status)
+                        && managedJobs[aggregate.JobId].AttemptCount < aggregate.LastAttempt
+                    )
             )
         )
         {
             throw new InvalidOperationException("The managed job attempt is inconsistent.");
         }
-        if (aggregates.Length == 0)
+        var settled = aggregates
+            .Where(aggregate => IsCommittedSuccess(managedJobs[aggregate.JobId], aggregate.Status))
+            .Select(aggregate => aggregate.JobId)
+            .ToArray();
+        var unfinished = aggregates
+            .Where(aggregate => !IsCommittedSuccess(managedJobs[aggregate.JobId], aggregate.Status))
+            .ToArray();
+        if (settled.Length > 0)
         {
-            return;
+            // Same transaction as the exhaustion UPDATE: no Error is ever committed for these jobs. The
+            // aggregate is left exactly as its successful operation, or a newer delete, committed it.
+            DynamicParameters settledParameters = new();
+            string settledRows = string.Join(
+                ",",
+                settled.Select(
+                    (jobId, index) =>
+                    {
+                        string ordinal = index.ToString(CultureInfo.InvariantCulture);
+                        settledParameters.Add("Settled" + ordinal, jobId, DbType.String, size: -1);
+                        return $"(@Settled{ordinal})";
+                    }
+                )
+            );
+            int completed = await session.RunAsync(
+                "SettleCommittedJobs",
+                token =>
+                    session.Connection.ExecuteAsync(
+                        MssqlJobSession.Command(
+                            session,
+                            $"""
+                            UPDATE job SET Status = N'Completed', ErrorMessage = NULL
+                            FROM (VALUES {settledRows}) s(JobId)
+                            JOIN dmscs.Job job WITH (ROWLOCK)
+                              ON job.JobId COLLATE Latin1_General_100_BIN2 = s.JobId
+                                AND DATALENGTH(job.JobId) = DATALENGTH(s.JobId)
+                            WHERE job.Status = N'Error';
+                            """,
+                            settledParameters,
+                            budget,
+                            token
+                        )
+                    ),
+                budget,
+                CancellationToken.None
+            );
+            if (completed != settled.Length)
+            {
+                throw new InvalidOperationException("The committed managed jobs were not completed.");
+            }
+        }
+        if (unfinished.Length == 0)
+        {
+            return settled.Length;
         }
         var failure = ManagedDataStoreFailure.FromJob(JobErrorCode.AttemptsExhausted);
         DynamicParameters targetParameters = new(
@@ -295,7 +362,7 @@ internal static class ManagedJobRetryOutcome
         );
         string targetRows = string.Join(
             ",",
-            aggregates.Select(
+            unfinished.Select(
                 (aggregate, index) =>
                 {
                     var job = managedJobs[aggregate.JobId];
@@ -331,9 +398,20 @@ internal static class ManagedJobRetryOutcome
             budget,
             CancellationToken.None
         );
-        if (updated != aggregates.Length)
+        if (updated != unfinished.Length)
         {
             throw new InvalidOperationException("The managed job outcomes were not saved.");
         }
+        return settled.Length;
     }
+
+    private static bool IsCommittedSuccess(ExhaustedJob job, string status) =>
+        job.JobType == ManagedJobTypes.Create
+            ? status is not ("PendingCreate" or "CreateInProgress" or "CreateFailed")
+            : status == "Deleted";
+
+    // A create's attempt history is replaced when a delete is accepted.
+    private static bool IsOwnPhase(ExhaustedJob job, string status) =>
+        job.JobType != ManagedJobTypes.Create
+        || status is "PendingCreate" or "CreateInProgress" or "CreateFailed" or "Created";
 }

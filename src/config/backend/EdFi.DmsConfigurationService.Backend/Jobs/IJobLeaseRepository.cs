@@ -43,6 +43,8 @@ public interface IJobLeaseRepository
     /// <summary>
     /// Terminates jobs at or over <paramref name="maxAttempts"/> with <paramref name="errorCode"/>, in
     /// committed batches of at most 1 000 rows, checking <paramref name="cancellationToken"/> between batches.
+    /// A managed data store job whose exact CMS success already committed is completed in the same batch
+    /// instead of failed.
     /// </summary>
     Task<JobExhaustResult> Exhaust(
         int maxAttempts,
@@ -103,7 +105,9 @@ public interface IJobLeaseRepository
 
 public record JobExhaustResult
 {
-    public record Success(int ExhaustedCount) : JobExhaustResult;
+    /// <param name="ExhaustedCount">Jobs failed with the exhaustion error.</param>
+    /// <param name="SettledCount">Managed jobs completed because their CMS success had already committed.</param>
+    public record Success(int ExhaustedCount, int SettledCount = 0) : JobExhaustResult;
 
     public record FailureUnknown(JobFailureDiagnostic Diagnostic) : JobExhaustResult;
 }

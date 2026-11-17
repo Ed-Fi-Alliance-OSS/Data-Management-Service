@@ -84,7 +84,8 @@ public sealed partial class DataStoreManageRepository
                     )
                 );
             },
-            cancellationToken
+            cancellationToken,
+            start: true
         );
 
     public Task<ManagedDataStoreCreateOperation> PinCreateAsync(
@@ -203,7 +204,8 @@ public sealed partial class DataStoreManageRepository
         int id,
         JobExecutionContext execution,
         Func<ManagedDataStore, DbTransaction, CancellationToken, Task> work,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        bool start = false
     )
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -238,13 +240,31 @@ public sealed partial class DataStoreManageRepository
                         cancellationToken: token
                     )
                 );
+                // DELETE admits only Created, so a delete of this exact create proves its publication committed
+                // before its job completion was acknowledged. Starting again completes the create without
+                // physical work or any write; the newer delete keeps its own state and attempts.
+                bool publishedThenDeleteAccepted =
+                    start
+                    && stored is not null
+                    && stored.CreateJobId == execution.JobId
+                    && stored.DeleteJobId is not null
+                    && stored.HistoricalDataStoreId is not null
+                    && stored.Status
+                        is "PendingDelete"
+                            or "DeleteInProgress"
+                            or "DeleteFailed"
+                            or "DeleteError"
+                            or "Deleted";
                 if (
-                    stored is null
-                    || stored.CreateJobId != execution.JobId
-                    || stored.DeleteJobId is not null
-                    || stored.LastAttempt > execution.Attempt
-                    || stored.Status
-                        is not ("PendingCreate" or "CreateInProgress" or "CreateFailed" or "Created")
+                    !publishedThenDeleteAccepted
+                    && (
+                        stored is null
+                        || stored.CreateJobId != execution.JobId
+                        || stored.DeleteJobId is not null
+                        || stored.LastAttempt > execution.Attempt
+                        || stored.Status
+                            is not ("PendingCreate" or "CreateInProgress" or "CreateFailed" or "Created")
+                    )
                 )
                 {
                     throw new JobPermanentException(JobErrorCode.HandlerFailed);
@@ -252,7 +272,7 @@ public sealed partial class DataStoreManageRepository
                 ManagedDataStore row;
                 try
                 {
-                    row = stored.Restore(protectedNames);
+                    row = stored!.Restore(protectedNames);
                     if (!CreateOperation(row).Identity.IsValid(protectedNames))
                     {
                         throw new ArgumentException("Invalid stored managed identity.");
@@ -267,6 +287,11 @@ public sealed partial class DataStoreManageRepository
                     )
                 {
                     throw new JobPermanentException(JobErrorCode.HandlerFailed);
+                }
+                if (publishedThenDeleteAccepted)
+                {
+                    result = CreateOperation(row) with { AlreadyCreated = true };
+                    return;
                 }
                 await work(row, transaction, token);
                 result = CreateOperation(row);

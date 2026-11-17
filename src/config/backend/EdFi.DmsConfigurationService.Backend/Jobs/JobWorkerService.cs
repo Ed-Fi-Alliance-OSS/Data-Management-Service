@@ -36,6 +36,7 @@ public sealed class JobWorkerService(
 {
     internal static readonly EventId JobsExhausted = new(1437_10, nameof(JobsExhausted));
     internal static readonly EventId WorkerPollFailed = new(1437_11, nameof(WorkerPollFailed));
+    internal static readonly EventId ManagedJobsSettled = new(1437_12, nameof(ManagedJobsSettled));
 
     private readonly Dictionary<long, Task> _running = [];
     private long _nextExecution;
@@ -106,14 +107,26 @@ public sealed class JobWorkerService(
             )
         )
         {
-            case JobExhaustResult.Success { ExhaustedCount: > 0 } exhausted:
-                logger.LogWarning(
-                    JobsExhausted,
-                    "{Event} Count={Count} MaxAttempts={MaxAttempts}",
-                    nameof(JobsExhausted),
-                    exhausted.ExhaustedCount,
-                    settings.MaxAttempts
-                );
+            case JobExhaustResult.Success swept:
+                if (swept.ExhaustedCount > 0)
+                {
+                    logger.LogWarning(
+                        JobsExhausted,
+                        "{Event} Count={Count} MaxAttempts={MaxAttempts}",
+                        nameof(JobsExhausted),
+                        swept.ExhaustedCount,
+                        settings.MaxAttempts
+                    );
+                }
+                if (swept.SettledCount > 0)
+                {
+                    logger.LogInformation(
+                        ManagedJobsSettled,
+                        "{Event} Count={Count}",
+                        nameof(ManagedJobsSettled),
+                        swept.SettledCount
+                    );
+                }
                 break;
             case JobExhaustResult.FailureUnknown failure:
                 // Rows over the limit stay where they are until a sweep succeeds; the next poll retries it. Claims
