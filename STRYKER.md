@@ -117,7 +117,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Initial query-authorization cluster (five files, before relationship expansion) | 5.0.0 | 82.50% baseline | 7m11s | `StrykerOutput/2026-11-16.17-53-57/reports/` |
 | Full `dms-query-auth` (seven configured files) | 5.0.0 | 82.20% → 83.01% | 8m09s / 8m58s | `StrykerOutput/2026-11-16.18-11-59/reports/` → `StrykerOutput/2026-11-16.18-35-24/reports/` |
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
-| Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.33%; final response-contract rerun pending | 11m46s / 13m59s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.18-55-14/reports/` |
+| Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.31%; further triage in progress | 4m17s / 4m33s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.19-19-30/reports/` |
 | Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% baseline; regression rerun pending | 6m29s | `StrykerOutput/2026-11-16.19-24-29/reports/` |
@@ -356,7 +356,9 @@ lines 118 (three), 124 (three), 129, 144, 196, 199, 256, 390, 526, 573,
 834, 850 (five), and 1244. It contains 230 killed, 61 survived, 27 uncovered,
 87 compile-error, and 47 ignored mutations, with no timeouts. Two response-contract
 survivors at 349 and 606 now have stronger assertions for `token_type: Bearer` and
-space-delimited introspection scope claims; their verification is pending.
+space-delimited introspection scope claims. The final full rerun confirms both are
+killed, bringing the total to 23 intended kills since baseline: 232 killed, 59 survived,
+27 uncovered, 87 compile-error, and 47 ignored mutations, with no timeouts.
 Repository and hasher fakes preserve deterministic state transitions;
 certificate tests use isolated temporary directories, dispose their keys, and use
 broad validity windows without sleeps. The manager reads `UtcNow` directly, so this
@@ -370,8 +372,9 @@ cancellation invoked it. It now waits for an explicit callback-finished signal b
 disposing the registration, preserving the deadlock/fence assertions without increasing
 delays or excluding the test. All 94 job-executor cases pass, and the repaired callback
 fixture passed ten consecutive runs (two tests each). The full CMS suite then passed
-7,327 tests with 16 existing skips in 3m51s. A fresh token mutation run is pending;
-the failed invocation establishes no baseline.
+7,327 tests with 16 existing skips in 3m51s. The fresh full run
+`2026-11-16.19-33-56` then passed its initial tests and completed in 14m47s at
+72.96%. The failed invocation establishes no baseline.
 
 Token-manager dispositions retained without suppressing mutation types:
 
@@ -393,6 +396,14 @@ Token-manager dispositions retained without suppressing mutation types:
 - The import catch (811–813) follows `DetectFormat`, which already imports the same
   unchanged bytes using the same format. Malformed keys take the earlier unknown-format
   rejection. Resource failures between those imports remain unforced coverage limits.
+- Successful verification-key results never consume their empty error message, and
+  successful JWT validation requires an audience before its diagnostic `FirstOrDefault`
+  call. Key-record initializer strings are replaced by supplied repository/JSON values.
+  A null protocol-mapper fallback changing from `[]` to an empty string still adds no
+  mapped claims. These mutations do not broaden a grant.
+- The missing-certificate-path throw/message (120–121) are uncovered defensive
+  configuration branches; the later file loader still rejects that absent path before
+  storage. No claim is made that the diagnostic wording is protected.
 - `ReadKeyId`'s defensive catch/empty-header returns (1362–1373) precede full JWT
   validation; malformed input is still rejected by that validation. No private parsing
   shape is asserted solely to raise the score.
