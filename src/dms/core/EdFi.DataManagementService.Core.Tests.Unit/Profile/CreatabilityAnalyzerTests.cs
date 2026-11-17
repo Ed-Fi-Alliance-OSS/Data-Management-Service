@@ -13,6 +13,183 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 public abstract class CreatabilityAnalyzerTests
 {
     [TestFixture]
+    public class Given_Nested_Collection_Creatability_Under_Distinct_Parents : CreatabilityAnalyzerTests
+    {
+        [TestCase(false, false)]
+        [TestCase(true, false)]
+        [TestCase(false, true)]
+        [TestCase(true, true)]
+        public void It_demotes_only_the_owning_parent_of_a_blocked_new_child(
+            bool hideRequired,
+            bool extension
+        )
+        {
+            string containerScope = extension ? "$._ext.sample" : "$";
+            string groupScope = containerScope + ".groups[*]";
+            string rowScope = groupScope + ".rows[*]";
+            List<CompiledScopeDescriptor> scopes = [new("$", ScopeKind.Root, null, [], [], ["rootId"])];
+            if (extension)
+            {
+                scopes.Add(new(containerScope, ScopeKind.NonCollection, "$", [], [], []));
+            }
+            scopes.Add(new(groupScope, ScopeKind.Collection, containerScope, [], ["id"], ["id"]));
+            scopes.Add(
+                new(rowScope, ScopeKind.Collection, groupScope, [groupScope], ["id"], ["id", "required"])
+            );
+            var groupRule = new CollectionRule(
+                "groups",
+                MemberSelection.IncludeAll,
+                null,
+                null,
+                null,
+                [
+                    new CollectionRule(
+                        "rows",
+                        hideRequired ? MemberSelection.IncludeOnly : MemberSelection.IncludeAll,
+                        null,
+                        [new PropertyRule("id")],
+                        null,
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                null,
+                null
+            );
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                extension ? [] : [groupRule],
+                extension
+                    ? [new ExtensionRule("sample", MemberSelection.IncludeAll, null, null, null, [groupRule])]
+                    : []
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                new ProfileVisibilityClassifier(profile, scopes),
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "write"
+            );
+            var parentA = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress(groupScope, "id", "A") with
+                {
+                    ParentAddress = MakeAddress(containerScope),
+                },
+                false,
+                containerScope + ".groups[0]"
+            );
+            var parentB = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress(groupScope, "id", "B") with
+                {
+                    ParentAddress = MakeAddress(containerScope),
+                },
+                false,
+                containerScope + ".groups[1]"
+            );
+            var child = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress(rowScope, "id", "child") with
+                {
+                    ParentAddress = new ScopeInstanceAddress(
+                        groupScope,
+                        [new AncestorCollectionInstance(groupScope, parentA.Address.SemanticIdentityInOrder)]
+                    ),
+                },
+                false,
+                containerScope + ".groups[0].rows[0]"
+            );
+            List<RequestScopeState> states =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, false),
+            ];
+            var required = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["rootId"],
+                [groupScope] = ["id"],
+                [rowScope] = ["id", "required"],
+            };
+            if (extension)
+            {
+                states.Add(new(MakeAddress(containerScope), ProfileVisibilityKind.VisiblePresent, false));
+                required[containerScope] = [];
+            }
+            ImmutableArray<VisibleRequestCollectionItem> items = [parentB, child, parentA];
+
+            var result = analyzer.Analyze(
+                [.. states],
+                items,
+                new TestExistenceLookup(
+                    existingScopes: ScopeAddressSet(MakeAddress("$"), MakeAddress(containerScope))
+                ),
+                isCreate: false,
+                required
+            );
+
+            result
+                .EnrichedCollectionItems.Select(item =>
+                    (
+                        item.Address.JsonScope,
+                        Identity: item.Address.SemanticIdentityInOrder.Single().Value!.GetValue<string>(),
+                        item.Creatable
+                    )
+                )
+                .Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        (groupScope, "A", !hideRequired),
+                        (groupScope, "B", true),
+                        (rowScope, "child", !hideRequired),
+                    }
+                );
+            if (hideRequired)
+            {
+                result.Failures.Should().HaveCount(2);
+                var failures = result
+                    .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                    .ToArray();
+                failures.Should().HaveCount(2);
+                failures
+                    .Should()
+                    .OnlyContain(failure =>
+                        failure.TargetKind
+                        == (
+                            extension
+                                ? ProfileCreatabilityTargetKind.ExtensionCollectionItem
+                                : ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem
+                        )
+                    );
+                failures
+                    .Single(failure => failure.JsonScope == rowScope)
+                    .HiddenCreationRequiredMemberPaths.Should()
+                    .Equal("required");
+                failures
+                    .Single(failure => failure.JsonScope == groupScope)
+                    .Dependencies.Should()
+                    .Equal(
+                        new ProfileFailureDiagnostic.CreatabilityDependency(
+                            ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                            ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem,
+                            rowScope,
+                            ScopeKind.Collection,
+                            ExistsInStoredState: false,
+                            CreatableInRequest: false
+                        )
+                    );
+            }
+            else
+            {
+                result.Failures.Should().BeEmpty();
+            }
+            items.Should().OnlyContain(item => !item.Creatable);
+            states.Should().OnlyContain(state => !state.Creatable);
+        }
+    }
+
+    [TestFixture]
     public class Given_A_Blocked_Child_Under_Only_One_Collection_Parent : CreatabilityAnalyzerTests
     {
         [TestCase(false)]

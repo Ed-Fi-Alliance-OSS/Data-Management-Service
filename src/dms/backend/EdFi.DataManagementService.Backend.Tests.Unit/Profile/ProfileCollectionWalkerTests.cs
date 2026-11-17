@@ -7039,6 +7039,40 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
             .BeTrue("the recursion must visit the children scope under the aligned parent");
         var state = builder.Build();
         state.MergedRows.Length.Should().Be(4);
+        state
+            .CurrentRows.Select(row =>
+                row.Values.Select(value => value.Should().BeOfType<FlattenedWriteValue.Literal>().Which.Value)
+                    .ToArray()
+            )
+            .Should()
+            .BeEquivalentTo(
+                new object?[][]
+                {
+                    [ChildA1ItemId, ParentAItemId, 1, "A1"],
+                    [ChildA2ItemId, ParentAItemId, 2, "A2"],
+                    [ChildB1ItemId, ParentBItemId, 1, "B1"],
+                    [ChildB2ItemId, ParentBItemId, 2, "B2"],
+                },
+                options => options.WithStrictOrdering()
+            );
+        // Visible children are merged in request order. Preserving the stored rows instead
+        // would keep the same row count and parent keys but retain the wrong ordinals.
+        state
+            .MergedRows.Select(row =>
+                row.Values.Select(value => value.Should().BeOfType<FlattenedWriteValue.Literal>().Which.Value)
+                    .ToArray()
+            )
+            .Should()
+            .BeEquivalentTo(
+                new object?[][]
+                {
+                    [ChildA1ItemId, ParentAItemId, 0, "A1"],
+                    [ChildA2ItemId, ParentAItemId, 1, "A2"],
+                    [ChildB1ItemId, ParentBItemId, 0, "B1"],
+                    [ChildB2ItemId, ParentBItemId, 1, "B2"],
+                },
+                options => options.WithStrictOrdering()
+            );
     }
 
     [Test]

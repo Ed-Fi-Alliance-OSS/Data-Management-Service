@@ -1128,6 +1128,69 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Equal(DescriptorReferenceFailureReason.Missing);
     }
 
+    [TestCase(SqlDialect.Pgsql, 3, true)]
+    [TestCase(SqlDialect.Pgsql, 2, false)]
+    [TestCase(SqlDialect.Mssql, 3, true)]
+    [TestCase(SqlDialect.Mssql, 2, false)]
+    public async Task It_runs_stored_relationship_authorization_when_capture_consumes_the_remaining_budget(
+        SqlDialect dialect,
+        int parameterBudget,
+        bool expectComposite
+    )
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: true, dialect: dialect);
+        input = input with
+        {
+            StoredRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
+                    input,
+                    [255901L]
+                ),
+        };
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        object[] scripts = expectComposite
+            ?
+            [
+                CreateReader(
+                    CreateCaptureTable(target),
+                    CreateStoredRelationshipAuthorizationTable(target),
+                    CreateDocumentMetadataTable(target, 44L),
+                    CreateRootTable(target)
+                ),
+            ]
+            :
+            [
+                CreateCaptureReader(target),
+                CreateReader(CreateStoredRelationshipAuthorizationTable(target)),
+                CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target)),
+            ];
+        var session = new ScriptedWriteSession(scripts);
+
+        var resolution = await CreateSut(
+                commandBudget: new RelationalCommandBudget(parameterBudget, MaxRowsPerStatement: 1000)
+            )
+            .ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.Outcome!.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
+        resolution.Outcome.LockedTarget!.IsHeldBy(session).Should().BeTrue();
+        session.Commands.Should().HaveCount(expectComposite ? 1 : 3);
+        session.Commands.Should().OnlyContain(command => command.Parameters.Count <= parameterBudget);
+        session.Commands[expectComposite ? 0 : 1].CommandText.Should().Contain("AUTH1");
+        if (!expectComposite)
+        {
+            // Authorization runs against the captured document on the same session before hydration.
+            session
+                .Commands[1]
+                .Parameters.Single(parameter =>
+                    parameter.Name.Equals("@DocumentId", StringComparison.OrdinalIgnoreCase)
+                )
+                .Value.Should()
+                .Be(target.DocumentId);
+            session.Commands[1].CommandText.Should().NotContain("@dms_composite_target_documentid");
+        }
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public async Task It_resolves_unequal_descriptor_and_document_ids_from_one_composite_command(

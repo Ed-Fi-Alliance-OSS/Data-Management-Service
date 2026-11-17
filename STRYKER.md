@@ -54,10 +54,10 @@ begins; pending rows are planned targets, not qualified runs.
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-seven mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred twenty-one mutations killed; remaining triage in progress |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred twenty-two mutations killed; remaining triage in progress |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
-| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Full baseline complete; mutability and storage-validation regressions in progress |
+| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Eleven intended mutations killed; three-column unification verification pending |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
 | 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Configuration prepared; baseline pending |
 
@@ -120,10 +120,10 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 72.35%; further triage in progress | 4m17s / 6m34s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.21-18-10/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 80.47%; further triage in progress | 6m29s / 10m12s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.21-05-31/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 80.58%; further triage in progress | 6m29s / 12m20s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.21-28-20/reports/` |
 | Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
 | Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
-| Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% baseline; regression work in progress | 26m52s | `StrykerOutput/2026-11-16.20-34-18/reports/` |
+| Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% → 55.68%; three-column follow-up pending | 26m52s / 25m57s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-16-23/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -493,7 +493,16 @@ owning Core test directory in the PR checkout.
 Three further cases assert the complete per-parent scope-state inventory when a
 collection item's nested object is null, omitted, or hidden, including its own absent
 descendant. They check the shaped document, parent identities, failure list, and input
-immutability. All 10,079 Core tests pass; the new cases await native verification.
+immutability. All 10,079 Core tests pass. The full rerun confirms the descendant-state
+emission removal at `WritableRequestShaper.cs:290` is killed: 693 killed, 122 survived,
+45 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills. This brings
+the total to 122 intended improvements. The run used the isolated `mutation-test-spike-check`
+worktree (based on `06aa883c8`); its native report and log were copied to the PR checkout.
+
+Four additional nested-collection cases compare allowed and blocked new children under
+distinct parents, in both the base resource and an extension. They assert the complete
+creatability decisions, required-member failures, dependency, and extension target kind.
+All 10,083 Core tests pass; native verification of these four cases is pending.
 
 ### DMS Backend profile baseline
 
@@ -533,6 +542,15 @@ fallback substitutions are killed (`RelationalWriteFirstPhase.cs:196` and
 31 uncovered, 389 compile-error, and 109 ignored mutations, with no timeouts or lost
 kills: 27 intended improvements since baseline. Its report and log were copied from
 the isolated model worktree into the PR checkout.
+
+Four further first-phase cases exercise a stored relationship statement at the exact
+combined capture/authorization budget and one parameter over it, in both dialects.
+They assert the fallback still authorizes the captured document before hydration on
+the same session and every command remains within budget. The aligned-extension child
+collection fixture now compares complete current and merged rows, including ordinal
+recalculation; row count and parent-key checks alone allowed an incorrect preserve
+mode to pass. All 4,878 Backend tests pass. These follow-ups await their respective
+write-execution and Backend-profile native reruns.
 
 The second phase's uncovered non-null `standaloneDenial` branch at 667–668 is not a
 missing grant/deny scenario: `ExecuteStandaloneRelationshipAsync` returns null after
@@ -767,7 +785,14 @@ and immutable origins and ordinary-reference/disconnected controls in both diale
 Pass-level storage-validator cases also exercise the calls that validate local and
 target endpoints of the externally defined `dms.Document` table, exact schema/name
 matching, and compact descriptor storage. All eleven new cases pass in the full
-1,046-test Model suite (25 seconds); full mutation verification is pending. Two more
+1,046-test Model suite (25 seconds). The first full rerun confirms eleven intended
+kills: fixed-point continuation at `TransitiveIdentityMutabilityPass.cs:92`, plus
+storage checks and their errors at `ValidateForeignKeyStorageInvariantPass.cs:38/54/58/62/71/72/73/124/125/140`.
+It contains 340 killed, 102 survived, 175 uncovered, 217 compile-error, 184 ignored,
+and the same eight loop timeouts. An additional endpoint-ordering mutation at
+`KeyUnificationPass.cs:898` changes from survived to killed by a pre-existing
+authoritative-manifest test; this is recorded as run variation rather than credited
+to the new cases. No prior killed mutation regressed. Two more
 cases extend implicit same-site unification from two physical identity columns to
 three, for both dialects. They assert every alias shares the stored canonical column
 and reference presence gate, remains non-writable, and retains its source path.
@@ -786,6 +811,31 @@ All eight baseline timeouts introduce nonterminating loops: four union-find muta
 at `KeyUnificationPass.cs:1300–1309`, and four fixed-point mutations at
 `TransitiveIdentityMutabilityPass.cs:63/66/68/91`. Keep them separate from assertion kills.
 No production mapping changes or `RelationalMappingVersion` bump are part of this work.
+
+Additional source-based dispositions for the Model baseline:
+
+- Key-unification early-return removals at 63/196/406/1643 perform extra empty work
+  but retain the same model. Single versus SingleOrDefault at 410/596 sees an existing
+  root/member supplied by the model inventory. Unsupported endpoint kinds are checked
+  both before edge construction and again by `ValidateUnificationMembers`.
+- Union-find root selection at 1331 changes the internal representative, not the
+  connected members. Members are independently sorted by source path and column name
+  before canonical-column allocation. The first-element shortcut in the component
+  comparer is repeated by its final full-sequence comparison; empty components cannot
+  arise from the nonempty union-find groups.
+- Ordering/deduplication of diagnostic records and the skipped-endpoint wording do not
+  change stored columns, aliases, presence gates, or constraints. The final model
+  canonicalizer also orders emitted constraints. These are retained without assertions
+  on incidental traversal order.
+- Reference identity lists are nonempty in schema-derived bindings: the extractor
+  rejects an empty `referenceJsonPaths` array. The zero-identity count/name fallbacks
+  at `ReferenceConstraintPass.cs:156/249` therefore do not describe accepted schema
+  input. In the fresh production pipeline, all-or-none and reference-FK additions mark
+  the same receiver table; removing either individual mark leaves the other in place.
+- Unknown/ambiguous binding inventories, out-of-range table indices, and missing
+  source paths require inconsistent intermediate models. Canonical/presence-name
+  suffix fallback after a second name collision remains an explicit unexercised
+  collision path; ordinary deterministic naming and first-collision tests remain.
 
 ### Validation baseline triage
 
