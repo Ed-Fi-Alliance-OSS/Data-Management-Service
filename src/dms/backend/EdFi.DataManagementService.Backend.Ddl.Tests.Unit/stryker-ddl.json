@@ -7,6 +7,8 @@
     "test-runner": "vstest",
     "mutation-level": "Standard",
     "coverage-analysis": "perTest",
+    "additional-timeout": 100000,
+    "timeout-ratio": 3.0,
     "reporters": [
       "html",
       "json",

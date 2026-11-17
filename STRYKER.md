@@ -8,6 +8,10 @@ These configurations run manually. PR CI runs the ordinary NUnit tests, includin
 the regression tests added through this work; it does not invoke Stryker or enforce
 a mutation-score gate.
 
+The DDL configuration allows an additional 100 seconds and a timeout ratio of 3.0
+for its expensive golden fixtures. This budget was verified with the full target;
+other targets retain their existing timing settings.
+
 ## Prerequisites and commands
 
 - .NET 10 SDK and access to the repository's configured NuGet feeds.
@@ -15,6 +19,7 @@ a mutation-score gate.
   `dotnet-stryker` 5.0.0. Verify with `dotnet tool list --local` in the directory used
   for the run; `--version` is a dashboard option, not a tool-version query.
 - Run the owning test project normally in Release before interpreting mutation results.
+- Leave `UPDATE_GOLDENS` unset during mutation runs; expected fixtures are read-only inputs.
 - Run one Stryker process at a time in this checkout. `--concurrency 2` limits the
   workers inside that process; adjust for available resources.
 
@@ -44,22 +49,23 @@ investigation, then rerun without the override to establish a full-target result
 
 ## Targets
 
-Paths are relative to the repository root. Configurations are introduced as each area
-begins; pending rows are planned targets, not qualified runs.
+Paths are relative to the repository root. Area 6 has two targets because its behavior
+spans Core and Backend assemblies. The results below separate verified improvements
+from instrumentation and remaining coverage limits.
 
 | Area / target | Owning unit-test directory | Configuration | Status |
 | --- | --- | --- | --- |
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
-| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
+| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; sixty-three intended improvements; cache limitations documented |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Verified; thirty-six intended mutations killed; instrumentation limits documented |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Verified; one hundred forty-four intended mutations killed; limitations documented |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Twenty-three mutations killed; two-descriptor identity follow-up pending |
-| 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
-| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Verified; twelve intended mutations killed; instrumentation and collision limits documented |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Verified; twenty-six intended mutations killed; limitations documented |
+| 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; three required-locator mutations killed |
+| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Verified; twelve intended assertion improvements; timeout variation documented |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
-| 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Baseline complete; dialect and nullable-join regressions in progress |
+| 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Verified; forty-two intended assertion improvements; timing controls complete |
 
 ## Reading and recording results
 
@@ -91,13 +97,18 @@ After changing tests, run the relevant normal tests, format changed C# with
 full named configuration. Refresh baselines after changing the tool or source scope.
 Do not change production behavior merely to improve the mutation score.
 
+For comparable timeout results, run before/after pairs sequentially on a lightly loaded
+host. If a non-loop mutation times out, inspect a focused rerun before calling it a
+detection. Stryker exposes `additional-timeout` and `timeout-ratio` as configuration-file
+options; record any override alongside the result. See the [timeout configuration](https://stryker-mutator.io/docs/stryker-net/configuration/#additional-timeout-number).
+
 ## Golden-output isolation and requalification
 
 The first DDL after-run exposed shared golden-output directories: parallel Stryker
 workers could delete or overwrite another worker's `actual/` files. Plans and Model
-fixtures also used shared paths. The earlier scores/status changes for those assemblies
-are provisional, including unexplained null-guard kills and golden-test regressions.
-Do not use those observations as evidence that a new assertion killed a mutation.
+fixtures also used shared paths. The results below replace their earlier provisional
+reports, including unexplained null-guard kills and golden-test regressions. Those
+earlier observations are not evidence of assertion improvements.
 
 Golden fixtures now use unique temporary output directories, retain their original
 read-only inputs/expected files, and clean up their owned output after comparison.
@@ -107,119 +118,215 @@ workflow; automated golden fixtures supply an isolated directory. A regression
 checks that a second run cannot overwrite a first run's deliberately different SQL,
 and that each comparison sees only its own output.
 
-Release validation with isolation passes DDL 1,503 tests plus one existing skip,
-Model 1,048, and Plans 2,745. Fresh before/after mutation runs are in progress for
-query authorization, write plans, Model constraints, and DDL. Both sides receive
-identical isolation support; baseline behavioral tests are restored from `origin/main`
+Release validation with isolation passes DDL 1,504 tests plus one existing skip,
+Model 1,048, and Plans 2,745. Fresh full-target comparisons and DDL timing controls
+are complete. Both sides receive identical isolation support; baseline behavioral
+tests are restored from `origin/main`
 (`6a7a262d8`, with no production C# difference from the PR's merged base).
 Earlier native reports remain available for diagnosis and are not silently discarded.
 
+The fresh Model pair confirms 328 → 340 assertion-based kills, with all twelve intended
+improvements and no lost kills. Its native score is 61.76% → 55.68% because baseline
+timeouts fell from 58 to eight: 46 became survivors and four became kills from the new
+cases. All four pass-entry null-guard removals now survive in the full after-run.
+The remaining eight timeouts introduce nonterminating loops. A reduction in timeouts
+alone is not a test improvement; inspect assertion kills and timeout counts alongside
+the native score.
+
 ## Results
 
-CMS Backend's Release suite passed 5,375 tests before the Claims baseline. Stryker
-5.0.0 could not select the transitively referenced Claims assembly, so the test
-project now references Claims directly. After merging `main` at `b127848d2`, the
-PostgreSQL and SQL Server integration-test lock files also record that reference:
-`main` added references from those suites to the Backend unit-test project. A forced
-locked restore of the complete CMS solution now passes. No package versions changed.
-The initial project-selection failure produced no baseline.
+CMS Backend's test project references Claims directly because Stryker 5.0.0 could not
+select it through a transitive reference. The corresponding PostgreSQL and SQL Server
+integration lock files record that project reference. A forced locked restore of the
+complete CMS solution passes; no package versions changed. The original project-selection
+failure produced no baseline.
 
 Implementation started from `dfbd0530896805cd3415b679dc62510a9871268a` on 2026-11-16.
 Tool restoration and local-manifest resolution were checked at the repository root,
 DMS Core test directory, and CMS Backend test directory: all resolve 5.0.0. Installed
-SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
+SDK: 10.0.102; runtime: 10.0.2. All eleven full targets are qualified, with the
+limitations below. Together they confirm 364 additional assertion-based kills.
 
-| Scope | Stryker | Before → after native score | Runtime before / after | Report locations, relative to owning test directory |
+| Area | Native score before → after | Confirmed new assertion kills | Runtime before / after | Reports, relative to owning test directory |
 | --- | --- | --- | --- | --- |
-| Decimal pilot (`Validation/DecimalValidator.cs`) | 5.0.0 | 100.00% → same 3 killed in full-target rerun; **31 compile errors** | 4m56s / included in full target | `StrykerOutput/2026-11-16.16-47-59/reports/` (pilot); `StrykerOutput/2026-11-16.17-05-10/reports/` (full rerun) |
-| Batching pilot (`PlanWriteBatchingConventions.cs`) | 5.0.0 | 93.33% → 93.33% | 4m31s / 4m36s | `StrykerOutput/2026-11-16.16-58-30/reports/` → `StrykerOutput/2026-11-16.17-10-23/reports/` |
-| Full `dms-validation` (five configured files) | 5.0.0 | 65.85% → 71.95% | 4m49s / 4m58s | `StrykerOutput/2026-11-16.16-53-30/reports/` → `StrykerOutput/2026-11-16.17-05-10/reports/` |
-| Claim-set pilot (`Security/ClaimSetResolver.cs`) | 5.0.0 | 85.00% baseline | 4m58s | `StrykerOutput/2026-11-16.17-15-38/reports/` |
-| Full `dms-request-auth` (three configured files) | 5.0.0 | 63.31% → 67.63% | 5m43s / 5m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
-| Full `cms-permission-inheritance` (two configured Claims files) | 5.0.0 | 83.33% → 91.67% | 6m25s / 6m19s | `StrykerOutput/2026-11-16.17-39-28/reports/` → `StrykerOutput/2026-11-16.17-47-25/reports/` |
-| Initial query-authorization cluster (five files, before relationship expansion) | 5.0.0 | 82.50% baseline | 7m11s | `StrykerOutput/2026-11-16.17-53-57/reports/` |
-| Full `dms-query-auth` (seven configured files) | 5.0.0 | Provisional before output isolation; 82.20% → 83.01% | 8m09s / 8m58s | `StrykerOutput/2026-11-16.18-11-59/reports/` → `StrykerOutput/2026-11-16.18-35-24/reports/` |
-| Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
-| Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
-| Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
-| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 74.22% | 4m17s / 11m09s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.22-36-19/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 83.14% | 6m29s / 12m26s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-38-23/reports/` |
-| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.82%; two-descriptor follow-up pending | 5m01s / 12m45s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.22-36-25/reports/` |
-| Full `dms-write-plans` (six configured files) | 5.0.0 | Provisional before output isolation; 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
-| Full `dms-model-constraints` (five configured files) | 5.0.0 | Provisional before output isolation; 53.76% → 55.84% | 26m52s / 26m31s | `StrykerOutput/2026-11-16.20-34-18/reports/` → `StrykerOutput/2026-11-16.21-27-42/reports/` |
-| Full `dms-ddl` (four configured files) | 5.0.0 | Provisional before output isolation; 85.32% baseline | 76m54s | `StrykerOutput/2026-11-16.20-34-14/reports/` |
+| 1. Request authorization | 63.31% → 67.63% | 6 | 05m43s / 05m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
+| 2. CMS permission inheritance | 83.33% → 91.67% | 4 | 06m25s / 06m20s | `StrykerOutput/2026-11-16.17-39-28/reports/` → `StrykerOutput/2026-11-16.17-47-25/reports/` |
+| 3. Query authorization | 79.32% → 82.95% | 63 | 29m15s / 23m48s | `StrykerOutput/2026-11-16.23-35-01/reports/` → `StrykerOutput/2026-11-16.23-49-50/reports/` |
+| 4. Transactional writes | 66.74% → 74.22% | 36 | 04m17s / 11m09s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.22-36-19/reports/` |
+| 5. CMS token admission | 65.72% → 72.96% | 23 | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
+| 6a. Core profiles | 66.40% → 83.14% | 144 | 06m29s / 12m26s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-38-23/reports/` |
+| 6b. Backend profiles | 57.14% → 59.04% | 26 | 05m01s / 08m55s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.22-46-36/reports/` |
+| 7. Write plans | 68.60% → 69.48% | 3 | 27m36s / 28m24s | `StrykerOutput/2026-11-17.00-02-08/reports/` → `StrykerOutput/2026-11-16.23-59-38/reports/` |
+| 8. Relational model | 61.76% → 55.68%; timeouts 58 → 8 | 12 | 35m54s / 40m57s | `StrykerOutput/2026-11-16.22-57-24/reports/` → `StrykerOutput/2026-11-16.23-01-24/reports/` |
+| 9. Validation | 65.85% → 71.95% | 5 | 04m49s / 04m58s | `StrykerOutput/2026-11-16.16-53-30/reports/` → `StrykerOutput/2026-11-16.17-05-10/reports/` |
+| 10. DDL | 87.27% → 89.22%; timeouts 30 → 0 | 42 | 1h03m51s / 54m52s | `StrykerOutput/2026-11-16.22-57-23/reports/` → `StrykerOutput/2026-11-17.00-44-05/reports/` |
 
-Request authorization, Claims, validation, and batching used `--concurrency 2`.
-The initial query-authorization cluster and admission pilot used `--concurrency 4`.
-The expanded query-authorization and full OpenIddict runs use `--concurrency 8` on the 24-core local
-host. Only one Stryker process runs in each checkout at a time. Model and DDL
-baselines use separate sibling worktrees, `mutation-test-spike-model` and
-`mutation-test-spike-ddl`, created from PR commit `ea98de68a`, with concurrency 4.
-Their normal suites passed 1,035 and 1,469 tests respectively (one existing DDL skip).
-Runtime observations include concurrent host load; they are not performance benchmarks.
+**Tooling pilots (separate source scopes)**
 
-### Query-authorization initial cluster
+| Pilot | Observation | Runtime | Native reports, relative to owning test directory |
+| --- | --- | --- | --- |
+| Core `DecimalValidator.cs` | 3 executable mutants killed; **31 compile errors roll back `Validate`**. The reported 100% does not qualify decimal comparisons. | 4m56s | `StrykerOutput/2026-11-16.16-47-59/reports/`; confirmed in full validation rerun `2026-11-16.17-05-10` |
+| Plans `PlanWriteBatchingConventions.cs` | 93.33% in both pilot runs: 14 killed, one defensive survivor, one compile error, five ignored. Full write-plan results remain separate. | 4m31s / 4m36s | `StrykerOutput/2026-11-16.16-58-30/reports/` → `StrykerOutput/2026-11-16.17-10-23/reports/` |
 
-The initial five-file scope contains 559 killed, 79 survived, 40 uncovered, 2 timed-out,
-163 compile-error, and 128 ignored mutants. The namespace SQL helper's 41 executable
-mutants and parameter-budget helper's 6 executable mutants were all killed. Their
-remaining compile errors include invalid `Count` → `Sum` access and adjacent changes
-rolled back by Stryker; the results do not prove every boundary was instrumented.
+The batching pilots predate golden-output isolation; the fresh full write-plan pair
+confirms the same 14 kills and remaining statuses. The pilots established .NET 10,
+NUnit/VSTest, Release builds, and native HTML/JSON generation using Stryker 5.0.0.
 
-The main test gaps are in `PageDocumentIdSqlCompiler.cs`:
+Request authorization, Claims, validation, and the batching pilot used concurrency 2.
+The initial isolated DDL pair used concurrency 8. Its final full rerun uses concurrency
+4, `DOTNET_PROCESSOR_COUNT=8`, `additional-timeout: 100000`, and `timeout-ratio: 3.0`;
+the focused timing controls use concurrency 2 and `DOTNET_PROCESSOR_COUNT=4`. Model,
+query authorization, and write plans use concurrency 4 and `DOTNET_PROCESSOR_COUNT=4`.
+Other full runs used concurrency 4 or 8. Only one Stryker process runs in each checkout
+at a time. Runtime observations include concurrent load on a 24-core host and are not
+performance benchmarks.
 
-- Lines 1045–1129: removing direct-path returns, subquery projections, joins, view
-  membership, aliases, or closing delimiters can survive fragment-only assertions.
-  New direct/transitive cases assert complete page and count SQL for both dialects,
-  along with the exact paging parameters and absence of count parameters.
-- Lines 1015–1040, 1077, and 1082: malformed custom-view root, empty path, direct
-  source, or intermediate join targets need explicit rejection cases.
-- Line 470: treating an empty custom-view list as active can retain unused namespace
-  parameters when all checks are empty. Line 514's `Any` → `All` rejects an empty
-  custom-view list alongside a real ownership filter. Both empty-list contracts are
-  now tested.
-- Line 1275: removing self-person anchor validation can authorize through a different
-  column from the selected subject. New table/column mismatch cases cover both dialects.
-- `RelationalAuthorizationPlanner.cs:647`: `Min` → `Max` can select a later
-  configuration failure, incorrectly letting an intervening namespace terminal win.
-  A request with failures on both sides of the namespace strategy now checks precedence.
+Release suite validation: Core 10,135 passed; Backend 4,897; Plans 2,745; Model 1,048;
+DDL 1,504 with one existing skip; CMS Backend 7,327 with 16 existing environment skips.
+All 58 changed C# files pass CSharpier. No production behavior, mapping version, or
+CI workflows changed.
 
-The two timeouts correspond to nonterminating loops: negating the outer collision
-scan at line 152 loops forever for an empty predicate list; removing the inner index
-increment at line 164 loops forever for duplicate semantic predicates. These are
-timeout detections, not assertion-based kills. No increased test delays are needed.
+Plans reports 2,745 local test executions but 2,718 distinct test IDs: existing numeric
+argument cases and named authorization cases reuse IDs. A normal TRX report contains
+the same 2,718 IDs as both Stryker after-reports; all new cases are present.
 
-All 2,730 Plans tests passed in Release after the first cluster's changes. The
-configuration also includes `RelationshipAuthorizationPlanner.cs` and
-`SingleRecordRelationshipAuthorizationSqlCompiler.cs`. The expanded baseline contains
-1,423 killed, 187 survived, 122 uncovered, 4 timed-out, 461 compile-error, and 345 ignored
-mutants in those seven files. Matching source location/operator/replacement verifies
-49 intended first-cluster mutations are now killed. The old five-file score and new
-seven-file score have different denominators and are not a before/after comparison.
+### 1. Request authorization
 
-The expanded report also changes the status of the duplicate-parameter secondary
-sort (page compiler line 303) to killed by an existing golden test, although that sort
-cannot change a valid result. Do not attribute this change to the new tests; verify
-its status in the final rerun. That rerun reports line 303 as survived again and
-line 139's redundant secondary sort as killed; both retain the same source-based
-equivalence analysis and neither is credited to the added tests. A third page-loop mutation (line 157) and the relationship
-compiler's parameter-suffix loop (line 768) time out in this run.
+The full baseline contains 88 killed, 38 survived, 13 uncovered, 16 compile errors,
+and 41 ignored mutants in the three declared files. The full rerun has 94 killed,
+32 survived, 13 uncovered, the same 16 compile errors and 41 ignored, with no timeouts.
+All six actionable survivors below are confirmed killed by matching file, location,
+operator, and replacement. The focused
+authorization tests passed 154 cases after strengthening the assertions, and the
+complete Core suite passed 10,027 tests before the mutation rerun.
 
-Relationship regressions now cover a mixed invalid-strategy/subject-planning failure,
-a missing transitive first-hop binding with the correct root-table location, retained
-person metadata for ineligible create-new subjects, and one shared update failure
-when required people views are missing. Cached SQL tests cover zero AUTH1 indices in
-both overloads and dialects, rejection of negative indices, and reuse with equivalent
-reserved names supplied as separate arrays or lists. The complete Plans suite passed
-2,738 tests before the last five added cases; those five subsequently passed focused
-runs. The final seven-file rerun passed its initial test run and reports 1,437 killed,
-186 survived, 109 uncovered, 4 timed-out, 461 compile-error, and 345 ignored mutants.
-Fourteen intended relationship mutations changed to killed: planner lines 458, 522,
-1281 (two), 1842, and 1843; compiler lines 131, 136, 2044, 2045, 2084 (two), 2086,
-and 2092. The 49 initial-cluster fixes remain killed. No source filters or mutation
-types were suppressed to obtain these results.
+Verified changes in `ResourceActionAuthorizationMiddleware.cs`:
 
-Initial-cluster exceptions retained after reviewing the expanded report:
+- Lines 148, 271, and 461: removing the exception-handler return or changing a
+  no-strategies failure to success can continue the pipeline while retaining a 500
+  response. Provider-failure and GET/PUT/DELETE strategy-metadata tests now assert no
+  continuation, in addition to their response contracts.
+- Lines 113 and 246: bypassing the no-matching-claim rejection changes the response
+  to an action-specific denial. The unmatched-claim test now pins the generic error
+  body, empty policy output, headers, and zero continuations.
+- Line 468: reversing the ordinal claim-URI sort survived. A case-variant matching
+  catalog now verifies the complete error, distinct URI order, and chosen claim name.
+
+Policy conversion also has explicit Create-only, Update-only, and both-permitted
+cases, with distinct complete evaluator arrays. Existing tests cover both denied
+(the first middleware refuses before conversion), missing strategy metadata,
+cancellation propagation, and preservation of the shared authenticated record.
+
+The 45 remaining survived/uncovered mutations retain these dispositions:
+
+- Ordinary entry/retrieval/debug logging and `Debug.Assert` behavior are diagnostic;
+  the latter's argument mutations are not executed in Release.
+- The POST entry in `_methodToActionNameMapping` is used only for missing-metadata
+  diagnostics. POST authorization selects its two action constants directly.
+- Removing the early empty-resource-claims return (line 104), or changing its helper
+  result to true (line 214), still reaches the empty matching-claims rejection and
+  the identical generic 403 without continuation. These are equivalent for callers.
+- The resolver's three survivors have the dispositions described below.
+- The filter-conversion catch body requires malformed internal strategy evidence
+  (for example, a null non-nullable strategy collection). Valid evidence only creates
+  evaluator records. Its four uncovered mutations are outside the input contract.
+- The resolver result switch is exhaustive over its closed variants; matched-claim
+  URIs cannot all be null after matching the non-null resource URI. Their defensive
+  throw mutations are unreachable for supported inputs. `UNSUPPORTED` HTTP methods
+  terminate in MethodNotAllowedMiddleware before reaching resource authorization.
+
+### Claim-set pilot
+
+The focused resolver run has 17 killed, 3 survived, 6 compile errors, 2 ignored, and
+no uncovered or timed-out mutants. Existing tests detect changes to ambiguity,
+matching duplicate metadata, unrelated duplicates, scope precedence, literal legacy
+names, and case-independent resolution. The remaining changes are equivalent for
+supported metadata and current consumers:
+
+- `ClaimSetResolver.cs:65`, removing the empty-candidate early return, still reaches
+  `NoMatch` after matching zero records. Enumerating the already-loaded catalog is
+  unnecessary work but does not alter authorization.
+- Both changes at line 126 (`condition` → `true`, `Length > 0` → `Length >= 0`) return
+  `[""]` instead of `[]` when both scope values and the legacy name are absent.
+  CMS's `ClaimSetCommandValidator` and copy validator prohibit empty metadata names,
+  so either candidate list matches no supported claim set. Every other consumer of
+  `GetCandidates` joins the values for diagnostics, producing the same empty text.
+  Do not invent an empty-name metadata record or assert a private collection shape
+  just to kill these mutants.
+
+The six compile errors include invalid `Count` → `Sum` access and comparisons rolled
+back with it. This is a single-file baseline, not a result for the authorization
+middleware or the full target.
+
+### 2. CMS permission inheritance
+
+The baseline instruments the Claims assembly and contains 40 killed, 6 survived,
+2 uncovered, 6 compile errors, and 24 ignored mutants in the declared two files,
+with no timeouts. The full rerun contains 44 killed, 4 survived, no uncovered mutants,
+the same 6 compile errors and 24 ignored, and no timeouts. Existing literal
+expectations and bounded property scenarios kill
+the executable inheritance, default/override-precedence, ordering, ID-allocation,
+and collision/deduplication changes. Expected semantic permissions are computed
+independently, and the property tests check that the input hierarchy is unchanged.
+
+Four response-model changes are now caught by stronger assertions: returning true for a null
+authorization (`AuthorizationMetadataResponse.cs:26`), returning false for the same
+instance (line 31), and two `&&` → `||` changes in action equality (line 73).
+New tests exercise null, reflexivity, unequal action names/strategies, and casing.
+All four changes are confirmed killed by source location, operator, and replacement
+in the full rerun. The focused normal run passed 211 tests, and both changed C# files
+pass CSharpier.
+
+The other four changes preserve the public contracts:
+
+- `AuthorizationMetadataResolver.cs:180`, default strategy count `> 0` → `>= 0`,
+  copies an empty default list over an already-empty strategy list. Permissions and
+  authorization references are unchanged.
+- `AuthorizationMetadataResponse.cs:61`, additive hash accumulation → subtraction,
+  remains commutative, so equal permissions retain equal hashes.
+- Line 79, ascending → descending strategy-name order during hashing, still gives
+  each equivalent strategy multiset one canonical sequence.
+- Line 80, removing strategy contributions to the action hash, increases collisions
+  but retains equality correctness. Existing forced-collision tests verify that
+  distinct permissions do not merge. Do not assert unequal hashes for unequal values;
+  the hash contract allows collisions.
+
+The resolver's six compile errors include invalid `Count` → `Sum` member access and
+definite-assignment failures around `out var defaultAction`, plus adjacent mutations
+rolled back with them. These are instrumentation limits, not successful test kills.
+
+The first run also warned about four changing test identities in the unrelated
+connection-string validator tests: randomized encrypted input appeared in their
+discovered names. Those cases now use stable argument display names while retaining
+the encrypted values and original assertions. The full rerun has no warnings or
+errors, with the full owning test suite and per-test coverage still enabled.
+
+### 3. Query authorization
+
+The fresh seven-file pair confirms 1,374 → 1,437 assertion-based kills, all 63 intended
+improvements, and no lost kills. The final report has 187 survivors, 109 uncovered,
+461 compile errors, 345 ignored, and three loop timeouts. This replaces the earlier
+five-file/expanded-scope comparisons and shared-output observations; it uses the same
+full scope on both sides.
+
+The regressions assert complete page and count SQL for direct/transitive paths in both
+dialects, exact paging parameters, and no unused count parameters. They reject malformed
+custom-view roots, empty paths, invalid direct/intermediate targets, and mismatched
+self-person anchors. Empty custom-view collections do not retain unused namespace
+parameters or reject an otherwise valid ownership filter. Mixed configuration failures
+on both sides of a namespace strategy retain the intended terminal precedence.
+
+Relationship cases cover mixed strategy/subject failures, missing transitive first-hop
+bindings, retained person metadata for ineligible create-new subjects, and a shared
+update failure when required people views are absent. Cached SQL cases check zero and
+negative AUTH1 indices in both overloads/dialects and reuse with equivalent reserved-name
+arrays/lists. Existing namespace/ownership parameterization and parameter-ceiling
+contracts remain enabled. All 2,745 Plans tests pass.
+
+Nonterminating page-compiler collision loops and the relationship compiler's parameter-
+suffix loop are the three remaining timeout detections, distinct from assertion kills.
+
+Page/compiler dispositions:
 
 - Null container/entry guards in the planner, ownership helper, and page compiler
   reject inputs outside their non-nullable contracts. Removing the required-parameter
@@ -287,73 +394,59 @@ Relationship-specific dispositions (source locations refer to the unchanged prod
   remain an explicit **collision-path coverage limitation**, not a proof of equivalence.
   These runs do not establish exhaustive cache-key collision safety.
 
-### Admission-policy instrumentation pilot
+### 4. Transactional write execution
 
-The OpenIddict pilot produced 13 killed, 2 compile-error, and 2 ignored mutations in
-`ClientAdmissionPolicy.cs`, with no survivors, uncovered mutants, or timeouts. Existing
-tests detect the executable role-configuration, administrative-role, and scope
-admission changes. Stryker attempted invalid `scopes.Count` → `scopes.Sum` member
-access at line 108 and rolled back its neighboring equality mutation as well.
+The eleven-file target improves from 321 to 357 assertion-based kills: 36 intended
+improvements, 99 survivors, 25 uncovered, 389 compile errors, 109 ignored, and no
+timeouts. No previously killed mutation regressed. The complete Backend Release
+suite passes 4,897 tests, including the profile regressions described below.
 
-Executable mutations and coverage in this assembly establish that its assembly-level
-`ExcludeFromCodeCoverage` attribute does not prevent this Stryker run. No attribute or
-coverage-setting change is needed. This pilot does not establish a token-manager or
-full-target result; run the named configuration without the `--mutate` override for
-that scope.
+Regressions protect these observable contracts:
 
+- No-op comparison includes collection row identity and root locator values; stream
+  ETags reject nonpositive versions before composition.
+- Target capture, stored relationship authorization, descriptor hydration, and deferred
+  preconditions share the attempt's session. Combined capture/authorization commands
+  at the parameter ceiling remain combined; one over the ceiling authorizes separately
+  before hydration. Both dialects are covered.
+- Missing PUT targets, absent claims, descriptor/type validation, malformed namespace
+  payloads, and missing document references retain their required failure precedence.
+- Custom-view order and deferred-value provenance are checked in DML mode as well as
+  authorization-only mode. Missing insert IDs and missing/duplicate persistence
+  observations cannot return success.
+- Mixed inline/reserved collection keys and create-command UUID parameters count toward
+  command limits. SQL Server structured claims carry the complete table-valued list and
+  provider metadata (`dms.BigIntTable`/`Id`); the callback reaches the supplied provider.
+- A structured-claim relationship check runs before DML on the same session. Successful
+  standalone authorization must continue to persistence. A relationship denial with no
+  emitted custom-view probe does not invent a required probe.
 
-### Transactional-write executor pilot
+Stryker rolls back **all mutations in `DefaultRelationalWriteExecutor.ExecuteAsyncInternal`**
+after generated-code assignment errors: 148 executor compile errors. Consequently,
+the native score does not qualify commit/rollback or authorization order inside that
+method. Ordinary orchestration regressions cover captured-target branching, matching,
+stale/wildcard/absent-target preconditions, rejection before persistence, rollback before
+commit, commit-exception handling, committed ETags, and success-side effects after commit.
+The composite-phase mutations supply independent evidence for the production command
+path. Production code was not rewritten to work around instrumentation.
 
-The executor-only pilot produced 24 killed, 7 survived, 148 compile-error, and 7
-ignored mutants. The normal Backend suite passed 4,827 tests before the pilot.
-Stryker rolled back **all mutations in `ExecuteAsyncInternal`** after generated-code
-assignment errors involving `createdSession`, `secondCommand`, and exception-mapping
-locals. The 77.42% score does **not** qualify commit/rollback or authorization ordering
-inside that method. Existing regression tests for those contracts remain available;
-no production refactor was made to inflate the instrumented score.
+Remaining dispositions:
 
-The executable survivors are the optional writer-wait telemetry dependency and its
-recording call (57, 680), logger-factory fallback (93), synchronization-context capture
-on the outer await (129), two non-nullable argument guards (629–630), and the enqueue
-success guard (700–701). The last is equivalent for executor-produced outcomes:
-only an applied write has a non-null persisted result; other successful outcomes have
-none. Removing wait telemetry is a remaining observability coverage gap, not a write
-correctness kill. The full configuration includes the composite first/second commands,
-guarded no-op comparison, and all seven behavior-bearing ETag files; its separate
-baseline contains 321 killed, 115 survived, 45 uncovered, 389 compile-error, and
-109 ignored mutations, with no timeouts. `EtagComposer.cs` and `ServedEtagComposer.cs`
-produce no Standard-level mutants; their inclusion alone does not establish mutation
-coverage. A helper-library discovery warning concerns `Backend.Tests.Common`,
-which is not the owning test suite.
+- Optional writer-wait telemetry and its recording call (executor 57/680) are an
+  observability coverage limitation. Logger-factory fallback, synchronization-context
+  capture, and non-nullable argument guards do not establish write-correctness gaps.
+- The enqueue success guard (700–701) is equivalent for executor-produced outcomes:
+  only an applied write has a non-null persisted result.
+- The original non-null standalone-denial body at second phase 668 is unreachable:
+  `ExecuteStandaloneRelationshipAsync` returns null after success and throws on failure
+  for relationship-only calls. Its inverted condition at 667 is now killed through the
+  success/persistence case; the unused original body remains a cleanup observation.
+- `EtagComposer.cs` and `ServedEtagComposer.cs` produce no Standard-level mutants.
+  Inclusion in the configuration alone is not mutation coverage. Logging, defensive
+  unsupported intermediate shapes, and redundant validation remain outside the claimed
+  improvements; compile errors are never counted as assertions.
 
-The composite regressions now independently exercise collection row identity and root
-locator changes; reject nonpositive stream-ETag versions before composition; reject
-missing insert IDs and missing/duplicate persistence observations; retain stored
-relationship authorization in one command; and preserve missing-PUT and no-claims
-denial precedence in ordered segments. Both dialects also classify unmatchable
-references in that segmented path. Custom-view order and deferred-value provenance
-are checked in DML mode as well as authorization-only mode. A mixed inline/reserved
-collection-key case verifies the wider row binding cannot overflow a command budget.
-
-The complete Backend suite passed 4,846 tests after the first changes; the additional
-mixed-key case passed a focused run. The full rerun has 342 killed, 108 survived,
-31 uncovered, 389 compile-error, and 109 ignored mutations, with no timeouts.
-Twenty-one intended mutations are confirmed killed: stream ETag lines 35/37/40;
-first phase 588/1421/1441/1592; guarded no-op 70/77; second command 931–934,
-1006/1098/1225 (two)/1249/1400/1419/1420.
-
-One result assertion still allowed removal of the first phase's stored-relationship
-return at 689: equivalence through the base result type did not establish the concrete
-failure. The fixture now supplies valid no-claims metadata and checks the concrete
-relationship-denial type, stored value source, empty claim IDs, and failed strategy.
-The additional full rerun confirms that return mutation is now killed, taking the
-total to 343 killed, 107 survived, 31 uncovered, 389 compile-error, and 109 ignored,
-with no timeouts (71.31%). Other composite-path survivors still need triage.
-The Model and DDL suites also passed their baseline normal runs: 1,035 and 1,469 tests
-respectively, with one existing DDL skip. The full Model baseline and subsequent
-normal regressions are recorded below; the DDL mutation baseline remains in progress.
-
-### Token-manager baseline and regressions
+### 5. CMS token admission
 
 The full OpenIddict baseline contains 209 killed, 63 survived, 46 uncovered, 87
 compile-error, and 47 ignored mutants across the admission policy and token manager.
@@ -439,108 +532,44 @@ Token-manager dispositions retained without suppressing mutation types:
   validation; malformed input is still rejected by that validation. No private parsing
   shape is asserted solely to raise the score.
 
-### DMS Core profile triage
+### Admission-policy pilot
 
-The full five-file baseline contains 571 killed, 212 survived, 77 uncovered,
-176 compile-error, and 292 ignored mutations, with no timeouts. Each configured
-file contains executable mutants. The first regression cluster covers:
+The OpenIddict pilot produced 13 killed, 2 compile-error, and 2 ignored mutations in
+`ClientAdmissionPolicy.cs`, with no survivors, uncovered mutants, or timeouts. Existing
+tests detect the executable role-configuration, administrative-role, and scope
+admission changes. Stryker attempted invalid `scopes.Count` → `scopes.Sum` member
+access at line 108 and rolled back its neighboring equality mutation as well.
 
-- Complete nested object, collection, and extension projections, including removal
-  of emptied descendants, preservation of multiple server-generated members on
-  surviving scopes, and deep-clone independence.
-- Include/exclude collection filters with multiple values, case-insensitive matches,
-  and absent/null/empty values. Read projection and write classification have distinct
-  existing missing-value contracts; the assertions preserve each contract.
-- Complete extension scope-state inventories for omitted, null, empty, populated,
-  and hidden data, including descendant states, collection ancestor identities,
-  request paths, and initially false creatability flags.
-- Nested validation failures' complete paths, read/write labels, and severity under
-  include/exclude selection, plus explicit extension child names in the classifier.
-- Parent and descendant creatability dependencies, including the stored-existence
-  and creatability flags, target kind, and rejection of a new parent whose visible
-  collection child requires hidden data. Both item orders and create/update attempts
-  are covered without modifying the input scope/item records.
+Executable mutations and coverage in this assembly establish that its assembly-level
+`ExcludeFromCodeCoverage` attribute does not prevent this Stryker run. No attribute or
+coverage-setting change is needed. This pilot does not establish a token-manager or
+full-target result; run the named configuration without the `--mutate` override for
+that scope.
 
-All 10,056 Core unit tests pass, including 29 added cases; the full Backend suite
-passes 4,851 tests, including four new composite descriptor-hydration cases for
-profiled writes and deferred ETag checks. Formatting passes for all eight changed
-test files. The full Core rerun confirms 92 changes from survived/uncovered to
-killed: 27 in creatability, 29 in definition validation, 2 in visibility classification,
-21 in read projection, and 13 in write shaping. The report contains 663 killed,
-152 survived, 45 uncovered, 176 compile-error, and 292 ignored mutations, with no
-timeouts. The compile-error count did not change.
+### 6a. Core profiles
 
-After that first rerun, triage identified identity-reference projection, nested
-extension fall-through, deep request paths and absent-child states in write shaping,
-recursive server-generated-name/extension validation, and creatability ancestor
-matching and dependency gaps. In that report, the name-walk and extension-walk
-removals at `ProfileDataValidator.cs:398/864` were not credited among the 92 kills.
+The five-file target improves from 571 to 715 assertion-based kills: 144 intended
+improvements, 112 survivors, 33 uncovered, 176 compile errors, 292 ignored, and no
+timeouts. No prior kill regressed. All 10,135 Core Release tests pass.
 
-Some survivors already have narrow explanations: the projector's `Count > 0` to
-`>= 0` changes at 113/185/292 receive either a nonempty extension object or null;
-the helper never returns an empty object. Its root metadata condition at 90 falls
-through to the same server-generated preservation helper. Invalid enum defaults
-and non-object query-array elements are outside the API document shapes. Further
-triage is still required before treating the target as qualified. The Backend
-profile baseline is recorded below; the Core result does not prove stored-row
-preservation. The descriptor-hydration rerun confirms three more write-execution
-kills: the profile/deferred-precondition condition and single-document hydration
-selection at `RelationalWriteFirstPhase.cs:1110/1114`. The full eleven-file report
-contains 346 killed, 104 survived, 31 uncovered, 389 compile-error, and 109 ignored
-mutations, with no timeouts. The write target has 25 intended kills since baseline.
+The new cases assert complete nested object, collection, and extension projections;
+identity references and multiple server-generated members; removal of emptied scopes;
+and deep-clone independence. Include/exclude filters cover multiple values, casing,
+and absent/null/empty data, preserving the distinct read/write missing-value contracts.
+Write shaping asserts complete descendant scope-state inventories, parent identities,
+request paths, and unchanged inputs for omitted, null, empty, hidden, and populated data.
 
-A follow-up adds ten Core cases and extends the existing nested projections to
-protect identity-reference preservation, extension filtering under IncludeAll,
-server-generated-field rejection inside nested rules, and complete collection
-request paths through object/collection/extension scopes. All 10,066 Core tests
-pass. The full follow-up report confirms another 18 kills: 10 in definition
-validation (including the recursive name walk at line 398), 3 in read projection,
-and 5 in write shaping. It contains 681 killed, 134 survived, 45 uncovered,
-176 compile-error, and 292 ignored mutations, with no timeouts or loss of a previous
-kill. That report establishes 110 intended kills since baseline.
+Creatability cases cover root versus nested identity visibility, stored existence,
+new and existing parents, immediate-parent dependencies, multi-level collections and
+extensions, and allowed versus blocked siblings in both orders. A child can demote only
+its own parent. Negating the still-creatable checks at 391/487 must not stop traversal
+before a later blocked sibling; both mutations are now killed.
 
-Eight further Core cases now pass in the full 10,074-test suite. They cover missing
-extension namespaces under nested objects/collections (including extension parents),
-read/write error paths and warning severity, and a nested required member sharing a
-root identity member's name. The latter verifies that implicit identity visibility
-remains root-scoped. Two more parent-context cases pass in the full 10,076-test suite:
-a blocked new child demotes only its own collection parent, in either input order.
-
-The full rerun in the isolated model worktree confirms eleven additional kills:
-`CreatabilityAnalyzer.cs:87/88/513` and `ProfileDataValidator.cs:816/818/820/822/862/864/866/868`.
-It contains 692 killed, 123 survived, 45 uncovered, 176 compile-error, and 292 ignored
-mutations, with no timeouts or loss of previous kills. The total is now 121 intended
-kills. Remaining behavioral triage includes absent descendant states and additional
-creatability ancestor/dependency paths. The report and run log were copied into the
-owning Core test directory in the PR checkout.
-
-Three further cases assert the complete per-parent scope-state inventory when a
-collection item's nested object is null, omitted, or hidden, including its own absent
-descendant. They check the shaped document, parent identities, failure list, and input
-immutability. All 10,079 Core tests pass. The full rerun confirms the descendant-state
-emission removal at `WritableRequestShaper.cs:290` is killed: 693 killed, 122 survived,
-45 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills. This brings
-the total to 122 intended improvements. The run used the isolated `mutation-test-spike-check`
-worktree (based on `06aa883c8`); its native report and log were copied to the PR checkout.
-
-Four additional nested-collection cases compare allowed and blocked new children under
-distinct parents, in both the base resource and an extension. They assert the complete
-creatability decisions, required-member failures, dependency, and extension target kind.
-All 10,083 Core tests pass. The full rerun confirms eight further kills in
-`CreatabilityAnalyzer.cs`: 433/447/450/1070/1084/1123 (two)/1124. It contains 701 killed,
-118 survived, 41 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills.
-The total is 130 intended improvements. Additional assertions now cover a blocked
-collection item's complete immediate-parent dependency and validation of selected
-members inside known nested extensions. All 10,091 Core tests pass (29 seconds). The full rerun confirms six more kills:
-creatability 857/858/859 and definition validation 1060/1280/1299. It contains 707 killed,
-112 survived, 41 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills:
-136 intended improvements. Thirty-six further cases cover unknown properties, objects, and collections inside
-objects, collections, and extensions, under read/write and IncludeAll/IncludeOnly
-parents. All 10,127 Core tests pass. The next full rerun confirms six more kills in
-`ProfileDataValidator.cs:1137/1142/1143/1188/1193/1194`: 713 killed, 114 survived,
-33 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills. The
-intended total is 142. IncludeAll early returns at 1017/1229/1294 are repeated by the
-calling traversal; these are not missing property-validation assertions.
+Definition validation covers recursive server-generated names, missing extension
+namespaces, and unknown properties/objects/collections nested under objects,
+collections, and extensions. Read/write labels, paths, severity, IncludeAll/IncludeOnly
+parents, and complete failure/dependency results are asserted. Repeated IncludeAll
+returns at validator 1017/1229/1294 already receive that behavior from their callers.
 
 ### Core profile survivor dispositions
 
@@ -567,7 +596,7 @@ failures, and a lower uncovered count does not remove instrumentation limitation
   at 326/332/388/483/489/546 repeats failed decisions or collects further diagnostics;
   those paths cannot restore a demoted flag. Exhaustive multiplicity/order of redundant
   failure diagnostics is not qualified. Negating the still-creatable checks at 391/487
-  is different: it can stop before a blocked sibling, and requires behavioral coverage.
+  is different: it can stop before a blocked sibling; the new order cases kill both.
 - Creatability's non-collection/collection `ScopeKind` fallbacks at 368/464/527 agree
   with the enclosing branch. The root update OR mutation at 553 only performs an
   extra scan when a create is already non-creatable; it cannot change false to true.
@@ -578,270 +607,68 @@ failures, and a lower uncovered count does not remove instrumentation limitation
   child validation returns an empty list, explaining the repeated guards at 941/969.
   Invalid-schema fallbacks remain separate from valid profile input coverage.
 
-### DMS Backend profile baseline
+### 6b. Backend profiles
 
-The full three-file baseline contains 783 killed, 368 survived, 220 uncovered,
-358 compile-error, 368 ignored, and one timed-out mutation. The timeout changes
-`CountWildcardSegments` at `RelationalWriteProfileMerge.cs:2390` from `index += 3`
-to `index -= 3`; record it separately from assertion-based kills.
+The three-file target improves from 783 to 809 assertion-based kills: 26 intended
+improvements, 350 survivors, 212 uncovered, 358 compile errors, 368 ignored, and one
+loop timeout. No prior kill regressed. The full Backend Release suite passes 4,897 tests.
 
-Stryker rolls back `ProfileCollectionWalker.WalkChildren`, `ExtractRequiredInt32`,
-and `ExtractRequiredInt64`, and the merge synthesizer's
-`TryBuildStoredDocumentReferenceIdentityJson`, after generated-code compile errors.
-The baseline therefore does not qualify mutations inside those methods. Existing
-ordinary walker/merge tests remain the backstop; production code is not rewritten
-to bypass the instrumentation limitation.
+Binding regressions assert complete visible-present/absent and hidden stored-data
+classifications, descendant state application, scope/ancestor mismatch rejection, and
+rejection of hidden metadata without a binding. A later separate-table sibling cannot
+steal an inlined scope's ownership. Identity cases protect numeric-width normalization,
+composite-key ordering/length, unresolved-instance separation, and child scope plus
+parent partition matching. Hidden-member expansion for one stored child cannot erase
+another child's metadata.
 
-The full Backend suite passes 4,874 tests, including 23 added cases. Eleven binding
-regressions assert complete dispositions for visible-present/absent and hidden
-stored data, descendant state application, rejection of scope/ancestor-instance
-mismatches, and rejection of hidden metadata with no matching binding. Ten identity
-cases protect parent partition equality, numeric-width normalization, composite-key
-ordering and length, unresolved identity instance separation, and child scope plus
-parent matching. Two additional walker cases assert complete hidden-member sets on
-both stored children, so expanding a later child cannot erase the earlier child's
-hidden metadata. The full rerun confirms 16 new kills: nine in binding classification
-and seven in the collection walker, including loss of earlier hidden-path expansions
-and incorrect equality across parent partitions. It contains 799 killed, 358 survived,
-214 uncovered, 358 compile-error, 368 ignored, and the same single loop timeout.
-No previously killed mutation regressed. The merge synthesizer's counts are unchanged;
-this result does not close its remaining canonicalization/preservation gaps.
+Merge fixtures compare complete current and merged rows: stable identity, parent key,
+ordinal, resolved reference/descriptor IDs, and natural-key values. The aligned-extension
+fixture reorders visible children while retaining a hidden parent's stored ordinals.
+An existing non-creatable inline scope remains updatable. Two descriptor-identity parts
+are canonicalized together for request, stored-cache, and omitted-row cache-miss paths;
+resetting the builder must not discard the earlier component. Those last cases kill
+`RelationalWriteProfileMerge.cs:3170/3280/3318` and raise the final score to 59.04%.
 
-Two existing composite authorization tests now also inspect the complete SQL Server
-table-valued claim list and invoke the emitted parameter callback to verify it reaches
-the supplied provider configurator with `dms.BigIntTable`/`Id` metadata. The Backend
-suite still passes all 4,874 tests. The full eleven-file rerun confirms both provider
-fallback substitutions are killed (`RelationalWriteFirstPhase.cs:196` and
-`RelationalWriteSecondCommandPhase.cs:141`). It contains 348 killed, 102 survived,
-31 uncovered, 389 compile-error, and 109 ignored mutations, with no timeouts or lost
-kills: 27 intended improvements since baseline. Its report and log were copied from
-the isolated model worktree into the PR checkout.
+Dispositions and limits:
 
-Four further first-phase cases exercise a stored relationship statement at the exact
-combined capture/authorization budget and one parameter over it, in both dialects.
-They assert the fallback still authorizes the captured document before hydration on
-the same session and every command remains within budget. The aligned-extension child
-collection fixture now compares complete current and merged rows, including ordinal
-recalculation; row count and parent-key checks alone allowed an incorrect preserve
-mode to pass. All 4,878 Backend tests pass. These follow-ups await their respective
-write-execution and Backend-profile native reruns. The first complete-row rerun now
-confirms `ProfileCollectionWalker.cs:893` forced preserve is killed: 800 killed,
-357 survived, 214 uncovered, 358 compile-error, 368 ignored, and one loop timeout.
-This is 17 intended improvements, with no prior kills lost. A second variant now hides
-one aligned parent and checks its children's stored ordinals survive while the other
-parent's visible children are reordered. New create-command UUID-budget cases and
-malformed namespace-payload precedence cases also pass; the full Backend suite passes
-4,886 tests (11 seconds). These latest variants await their full native reruns.
+- The timeout at merge 2390 changes `index += 3` to `index -= 3` in wildcard scanning,
+  producing a nonterminating loop. It is separate from assertion-based kills.
+- Stryker rolls back `ProfileCollectionWalker.WalkChildren`, `ExtractRequiredInt32`,
+  `ExtractRequiredInt64`, and merge `TryBuildStoredDocumentReferenceIdentityJson` after
+  generated-code compile errors. Ordinary walker/merge tests remain the backstop;
+  helper/index results do not qualify the rolled-back methods.
+- Removing hash contributions changes collision frequency, not equality or dictionary
+  lookup correctness. Stored physical identity columns are non-null by contract, so
+  null-literal identity branches do not justify fabricated rows.
+- Root merged-versus-flattened projections read the same immutable physical key.
+  Scalar-match and positional descriptor fallbacks can resolve the same IDs under
+  valid stored ordinal/count invariants; arbitrary broken ordinals are not a supported
+  preservation scenario.
+- Deeper ancestor canonicalization fallbacks remain an explicit coverage limitation.
+  The new two-component descriptor and parent-partition cases do not establish every
+  reference identity/collision variant. Defensive malformed intermediate inventories
+  and incidental diagnostic ordering are not counted as correctness improvements.
 
-The next full write-execution rerun confirms six more kills: first phase 393 and second
-phase 1146/1457/1530/1536/2378. The report contains 354 killed, 99 survived, 28 uncovered,
-389 compile-error, 109 ignored, and no timeouts or prior kills lost. This establishes
-33 intended improvements since baseline. One further paired case verifies that a
-relationship denial needs no custom-view probe when no custom view was emitted.
-Both cases pass in the 4,890-test Backend suite (13 seconds). The full rerun confirms
-second phase 2398 is killed: 355 killed, 98 survived, 28 uncovered, 389 compile-error,
-109 ignored, and no timeouts or lost kills. The intended total is 34.
+### 7. Write plans
 
-Four existing merge fixtures now compare the full matched row, including its stable
-identity, parent key, ordinal, resolved document/descriptor identifiers, and natural-key
-values. All 4,886 Backend tests pass with those stronger assertions. A paired inlined-scope
-case additionally distinguishes updating an existing non-creatable scope from creating
-one. Both cases pass in the 4,890-test Backend suite. The full rerun kills merge
-199/203/424/455 and the walker's forced-normal mode at 893: 805 killed, 353 survived,
-213 uncovered, 358 compile-error, 368 ignored, and one loop timeout. No prior kills
-are lost; the intended Backend profile total is 22. The four stronger matched-row
-assertions do not change the canonicalization helpers' mutation statuses.
+The fresh six-file pair with isolated golden output improves from 68.60% to 69.48%:
+236 → 239 killed, 48 → 45 survived, and unchanged 60 uncovered, 161 compile errors,
+and 121 ignored mutations. There are no timeouts or lost kills. The three new kills
+protect required-locator bindings at `WritePlanCompiler.cs:613/620/625`; the new
+non-writable-locator cases detect all three. The full run also confirms the batching
+pilot's 14 kills and remaining statuses.
 
-The second phase's uncovered non-null `standaloneDenial` branch at 667–668 is not a
-missing grant/deny scenario: `ExecuteStandaloneRelationshipAsync` returns null after
-success, while its failure mapper throws for the relationship-only call (no namespace
-plan is supplied). Its current implementation never returns a non-null denial value.
-Keep that redundant branch as a production-cleanup observation, not a fabricated test.
-
-Some identity-helper survivors are outside the correctness contract: removing hash
-contributions or changing constant hash prefixes increases collisions but does not
-change dictionary equality or lookup results. Physical identity columns are non-null
-in supported stored rows, so null-literal identity branches do not justify fabricated
-rows. Remaining triage includes nested preservation modes, ancestor canonicalization,
-physical-row projection and owner-scope selection. The rolled-back main walker remains
-an instrumentation limitation, independently of the tested index/helper behavior.
-
-### CMS permission-inheritance triage
-
-The baseline instruments the Claims assembly and contains 40 killed, 6 survived,
-2 uncovered, 6 compile errors, and 24 ignored mutants in the declared two files,
-with no timeouts. The full rerun contains 44 killed, 4 survived, no uncovered mutants,
-the same 6 compile errors and 24 ignored, and no timeouts. Existing literal
-expectations and bounded property scenarios kill
-the executable inheritance, default/override-precedence, ordering, ID-allocation,
-and collision/deduplication changes. Expected semantic permissions are computed
-independently, and the property tests check that the input hierarchy is unchanged.
-
-Four response-model changes are now caught by stronger assertions: returning true for a null
-authorization (`AuthorizationMetadataResponse.cs:26`), returning false for the same
-instance (line 31), and two `&&` → `||` changes in action equality (line 73).
-New tests exercise null, reflexivity, unequal action names/strategies, and casing.
-All four changes are confirmed killed by source location, operator, and replacement
-in the full rerun. The focused normal run passed 211 tests, and both changed C# files
-pass CSharpier.
-
-The other four changes preserve the public contracts:
-
-- `AuthorizationMetadataResolver.cs:180`, default strategy count `> 0` → `>= 0`,
-  copies an empty default list over an already-empty strategy list. Permissions and
-  authorization references are unchanged.
-- `AuthorizationMetadataResponse.cs:61`, additive hash accumulation → subtraction,
-  remains commutative, so equal permissions retain equal hashes.
-- Line 79, ascending → descending strategy-name order during hashing, still gives
-  each equivalent strategy multiset one canonical sequence.
-- Line 80, removing strategy contributions to the action hash, increases collisions
-  but retains equality correctness. Existing forced-collision tests verify that
-  distinct permissions do not merge. Do not assert unequal hashes for unequal values;
-  the hash contract allows collisions.
-
-The resolver's six compile errors include invalid `Count` → `Sum` member access and
-definite-assignment failures around `out var defaultAction`, plus adjacent mutations
-rolled back with them. These are instrumentation limits, not successful test kills.
-
-The first run also warned about four changing test identities in the unrelated
-connection-string validator tests: randomized encrypted input appeared in their
-discovered names. Those cases now use stable argument display names while retaining
-the encrypted values and original assertions. The full rerun has no warnings or
-errors, with the full owning test suite and per-test coverage still enabled.
-
-### Request authorization triage
-
-The full baseline contains 88 killed, 38 survived, 13 uncovered, 16 compile errors,
-and 41 ignored mutants in the three declared files. The full rerun has 94 killed,
-32 survived, 13 uncovered, the same 16 compile errors and 41 ignored, with no timeouts.
-All six actionable survivors below are confirmed killed by matching file, location,
-operator, and replacement. The focused
-authorization tests passed 154 cases after strengthening the assertions, and the
-complete Core suite passed 10,027 tests before the mutation rerun.
-
-Verified changes in `ResourceActionAuthorizationMiddleware.cs`:
-
-- Lines 148, 271, and 461: removing the exception-handler return or changing a
-  no-strategies failure to success can continue the pipeline while retaining a 500
-  response. Provider-failure and GET/PUT/DELETE strategy-metadata tests now assert no
-  continuation, in addition to their response contracts.
-- Lines 113 and 246: bypassing the no-matching-claim rejection changes the response
-  to an action-specific denial. The unmatched-claim test now pins the generic error
-  body, empty policy output, headers, and zero continuations.
-- Line 468: reversing the ordinal claim-URI sort survived. A case-variant matching
-  catalog now verifies the complete error, distinct URI order, and chosen claim name.
-
-Policy conversion also has explicit Create-only, Update-only, and both-permitted
-cases, with distinct complete evaluator arrays. Existing tests cover both denied
-(the first middleware refuses before conversion), missing strategy metadata,
-cancellation propagation, and preservation of the shared authenticated record.
-
-The 45 remaining survived/uncovered mutations retain these dispositions:
-
-- Ordinary entry/retrieval/debug logging and `Debug.Assert` behavior are diagnostic;
-  the latter's argument mutations are not executed in Release.
-- The POST entry in `_methodToActionNameMapping` is used only for missing-metadata
-  diagnostics. POST authorization selects its two action constants directly.
-- Removing the early empty-resource-claims return (line 104), or changing its helper
-  result to true (line 214), still reaches the empty matching-claims rejection and
-  the identical generic 403 without continuation. These are equivalent for callers.
-- The resolver's three survivors have the dispositions described below.
-- The filter-conversion catch body requires malformed internal strategy evidence
-  (for example, a null non-nullable strategy collection). Valid evidence only creates
-  evaluator records. Its four uncovered mutations are outside the input contract.
-- The resolver result switch is exhaustive over its closed variants; matched-claim
-  URIs cannot all be null after matching the non-null resource URI. Their defensive
-  throw mutations are unreachable for supported inputs. `UNSUPPORTED` HTTP methods
-  terminate in MethodNotAllowedMiddleware before reaching resource authorization.
-
-### Claim-set pilot triage
-
-The focused resolver run has 17 killed, 3 survived, 6 compile errors, 2 ignored, and
-no uncovered or timed-out mutants. Existing tests detect changes to ambiguity,
-matching duplicate metadata, unrelated duplicates, scope precedence, literal legacy
-names, and case-independent resolution. The remaining changes are equivalent for
-supported metadata and current consumers:
-
-- `ClaimSetResolver.cs:65`, removing the empty-candidate early return, still reaches
-  `NoMatch` after matching zero records. Enumerating the already-loaded catalog is
-  unnecessary work but does not alter authorization.
-- Both changes at line 126 (`condition` → `true`, `Length > 0` → `Length >= 0`) return
-  `[""]` instead of `[]` when both scope values and the legacy name are absent.
-  CMS's `ClaimSetCommandValidator` and copy validator prohibit empty metadata names,
-  so either candidate list matches no supported claim set. Every other consumer of
-  `GetCandidates` joins the values for diagnostics, producing the same empty text.
-  Do not invent an empty-name metadata record or assert a private collection shape
-  just to kill these mutants.
-
-The six compile errors include invalid `Count` → `Sum` access and comparisons rolled
-back with it. This is a single-file baseline, not a result for the authorization
-middleware or the full target.
-
-### Decimal pilot instrumentation limitation
-
-The initial Release suites passed: Core 9,976 tests and Plans 2,707 tests. After the
-changes, all 10,021 Core tests and 2,712 Plans tests passed. Focused runs passed 86
-validation tests and 17 batching tests. CSharpier checked all six changed C# files.
-The decimal pilot produced both native reports and killed all three executable `AddError` mutants.
-However, generated code failed definite-assignment analysis at `DecimalValidator.cs:61`
-(`value`), and Stryker's safe mode rolled back the entire `Validate` method: 31 mutants
-are `CompileError`, including `<` → `<=`, `>` → `>=`, range arithmetic, and invalid-value
-handling. One redundant block mutation is ignored by Stryker. The reported 100% is not
-evidence that those rules are mutation-tested. Keep this limitation visible when
-interpreting the full validation target; boundary regression tests provide ordinary
-test coverage without changing production code to accommodate the mutator.
-
-Stryker also attempts discovery in `Backend.Tests.Common`, a helper library referencing
-NUnit without a test adapter. Its no-tests warning is separate from discovery and
-execution of the owning Core suite. The helper library does not need a test adapter.
-
-### Batching pilot triage
-
-The initial pilot killed 14 mutants and left one survivor: removing the public
-binding-list overload's `ArgumentNullException.ThrowIfNull` at line 35. A null list is
-outside its non-nullable contract; the following `Count` access still fails. Retain
-this defensive exception-type distinction without adding a score-only test. One
-`columnBindings.Count` → `columnBindings.Sum` mutant cannot compile, and five redundant
-block mutants are ignored. No batching arithmetic or range-check mutant survived.
-The rerun after adding the transition cases produced the same 14 killed, one defensive survivor, one compile
-error, and five ignored mutants, with no timeouts or uncovered mutants.
-
-Added cases exercise the row-cap/parameter-budget transition (SQL Server widths 2/3;
-PostgreSQL widths 65/66), with exact limits and remainder rounding, plus zero and
-negative widths for both dialects. Existing cases already cover one parameter, exactly
-the dialect ceiling, and one above it. This pilot does not establish a result for the
-other five files in the write-plan target.
-
-### Full write-plan verification
-
-The six-file target contains 235 killed, 44 survived, 60 uncovered, 161 compile-error,
-121 ignored, and five timed-out mutations. This is independent of the batching
-pilot's 93.33% result. Stryker rolls back key-unification
-`ValidatePrecomputedBindingProducerAccounting` and `CreateKeyUnificationMemberWritePlan`
-after generated-code definite-assignment errors; their ordinary producer-accounting
-and complete member-contract tests remain essential.
-
-Two new cases retain complete binding inventories, column/parameter/source alignment,
+Two cases assert complete binding inventories, column/parameter/source alignment,
 insert/update/delete SQL, and collection preallocation/merge plans after required root
-and parent locator columns are marked non-writable. They use the derived stable-key
-fixture for both dialects. The compiler must still bind those structural columns.
-Both `requiredBindingColumns.Add` removals at `WritePlanCompiler.cs:620/625` are now
-killed by those new cases in the full rerun. All 2,745 normal Plans tests pass.
+and parent locator columns are marked non-writable. The compiler must still bind those
+structural columns (`WritePlanCompiler.cs:620/625`), in both dialects. All 2,745 Plans
+tests pass, including the batching transition cases.
 
-The rerun contains 241 killed, 43 survived, 60 uncovered, 161 compile-error, and 121
-ignored mutations, with no timeouts. Besides the two intended kills, two pre-existing
-tests now kill the presence-binding diagnostic at `KeyUnificationWritePlanCompiler.cs:355`
-and the collection-key count mutation at `WritePlanCompiler.cs:392`. Three prior
-timeouts now report killed; two report survived. The null-parameter guard removal at
-`SimpleUpdateSqlEmitter.cs:38` changed from killed to survived. These additional status
-changes are run observations, not credited as improvements from the new locator cases.
+Stryker rolls back key-unification `ValidatePrecomputedBindingProducerAccounting` and
+`CreateKeyUnificationMemberWritePlan` after generated-code definite-assignment errors.
+Ordinary producer-accounting and complete member-contract tests remain essential.
 
-The baseline's five timeouts are `SimpleUpdateSqlEmitter.cs:37` (a null guard),
-`WritePlanCompiler.cs:207/211` (descriptor inventory validation/label), and two condition
-mutations at line 225. These do not introduce loops. The rerun resolves them to three
-killed and two survived; do not attribute the timeout status changes to new assertions.
-
-Initial dispositions supported by source inspection:
+Remaining survivor dispositions:
 
 - Emitter and batching null guards receive non-null lists from the compiler. The
   insert emitter's null-row `continue` is outside the non-null row-list contract.
@@ -867,44 +694,39 @@ Initial dispositions supported by source inspection:
   parent-key inventory name the same physical key. Forcing either selection branch at
   line 800 therefore leaves the emitted predicate unchanged for those models.
 
-The raw score includes instrumentation and run-status limitations; the confirmed
-improvement is preservation of the two required locator binding groups. No mutation
-types or source scope were removed.
+### Batching pilot
 
-### Relational-model verification
+The initial pilot killed 14 mutants and left one survivor: removing the public
+binding-list overload's `ArgumentNullException.ThrowIfNull` at line 35. A null list is
+outside its non-nullable contract; the following `Count` access still fails. Retain
+this defensive exception-type distinction without adding a score-only test. One
+`columnBindings.Count` → `columnBindings.Sum` mutant cannot compile, and five redundant
+block mutants are ignored. No batching arithmetic or range-check mutant survived.
+The rerun after adding the transition cases produced the same 14 killed, one defensive survivor, one compile
+error, and five ignored mutants, with no timeouts or uncovered mutants.
 
-The five-file target contains 328 killed, 109 survived, 180 uncovered, 217 compile-error,
-184 ignored, and eight timed-out mutations. The native report was produced in the
-isolated model worktree and copied into the owning test directory in the PR checkout.
+Added cases exercise the row-cap/parameter-budget transition (SQL Server widths 2/3;
+PostgreSQL widths 65/66), with exact limits and remainder rounding, plus zero and
+negative widths for both dialects. Existing cases already cover one parameter, exactly
+the dialect ceiling, and one above it. This pilot does not establish a result for the
+other five files in the write-plan target.
 
-The baseline exposes a missing fixed-point regression: changing `changed = true` to
-`false` at `TransitiveIdentityMutabilityPass.cs:92` survives. A resource visited before
-its identity-reference target needs another pass to inherit mutability. New cases
-observe the resulting foreign-key actions over a three-hop chain, with both mutable
-and immutable origins and ordinary-reference/disconnected controls in both dialects.
-Pass-level storage-validator cases also exercise the calls that validate local and
-target endpoints of the externally defined `dms.Document` table, exact schema/name
-matching, and compact descriptor storage. All eleven new cases pass in the full
-1,046-test Model suite (25 seconds). The first full rerun confirms eleven intended
-kills: fixed-point continuation at `TransitiveIdentityMutabilityPass.cs:92`, plus
-storage checks and their errors at `ValidateForeignKeyStorageInvariantPass.cs:38/54/58/62/71/72/73/124/125/140`.
-It contains 340 killed, 102 survived, 175 uncovered, 217 compile-error, 184 ignored,
-and the same eight loop timeouts. An additional endpoint-ordering mutation at
-`KeyUnificationPass.cs:898` changes from survived to killed by a pre-existing
-authoritative-manifest test; this is recorded as run variation rather than credited
-to the new cases. No prior killed mutation regressed. Two more
-cases extend implicit same-site unification from two physical identity columns to
-three, for both dialects. They assert every alias shares the stored canonical column
-and reference presence gate, remains non-writable, and retains its source path.
-The 1,048-test Model suite passes (28 seconds); these cases target the surviving
-`memberBindings.Length < 2` → `> 2` mutation at `KeyUnificationPass.cs:564`. The subsequent
-full rerun confirms it is killed, bringing the intended total to twelve: 340 killed,
-101 survived, 175 uncovered, 217 compile-error, 184 ignored, and nine timeouts. The
-unrelated line-898 ordering mutation returns to survived, as in the original baseline.
-The additional timeout removes the target-identity cache fast path at
-`ReferenceConstraintPass.cs:724`; it recomputes unchanged identity metadata and is a
-performance/run-status limitation, separate from the eight nonterminating-loop mutations.
-The final native score includes all nine timeout detections; they are not assertion kills.
+### 8. Relational model
+
+The fresh five-file pair with isolated output confirms twelve new assertion-based
+kills and no lost kills. The final report has 340 killed, 102 survived, 175 uncovered,
+217 compile errors, 184 ignored, and eight loop timeouts. Baseline non-loop timeouts
+are explained above and are not counted as test improvements. All 1,048 Model tests
+pass, including thirteen new cases.
+
+A three-hop identity-reference chain, visited before its mutable origin, requires
+another fixed-point pass (`TransitiveIdentityMutabilityPass.cs:92`). Both dialects check
+the resulting foreign-key actions, immutable origins, ordinary-reference controls,
+and disconnected resources. Storage-validator cases exercise local/target endpoint
+validation for externally defined `dms.Document`, exact schema/name matching, and
+compact descriptor storage. Three-column same-site unification verifies every alias
+shares its stored canonical column and presence gate, stays non-writable, and retains
+its source path (`KeyUnificationPass.cs:564`).
 
 Tool limitations remain separate from test gaps. Stryker rolls back the requiredness
 helper's `GetRequiredProperties` and `IsXNullable` methods after generated-code
@@ -913,7 +735,7 @@ back key-unification equality-constraint parsing, member base-token construction
 ambiguous-endpoint diagnostics. These compile errors do not qualify the corresponding
 requiredness or canonicalization behavior; existing ordinary model tests remain essential.
 
-All eight baseline timeouts introduce nonterminating loops: four union-find mutations
+All eight remaining after-run timeouts introduce nonterminating loops: four union-find mutations
 at `KeyUnificationPass.cs:1300–1309`, and four fixed-point mutations at
 `TransitiveIdentityMutabilityPass.cs:63/66/68/91`. Keep them separate from assertion kills.
 No production mapping changes or `RelationalMappingVersion` bump are part of this work.
@@ -943,20 +765,7 @@ Additional source-based dispositions for the Model baseline:
   suffix fallback after a second name collision remains an explicit unexercised
   collision path; ordinary deterministic naming and first-collision tests remain.
 
-### DDL baseline and regressions
-
-The four-file baseline contains 744 killed, 82 survived, 46 uncovered, 73 compile-error,
-and 211 ignored mutations, with no timeouts. All 335 executable authorization-trigger
-mutations are killed by existing tests. The isolated DDL run took 76m54s at concurrency
-4 under concurrent host load; its native reports and log were copied to this checkout.
-
-The observed gaps are catalog-literal escaping in dialect helpers, empty key/index
-column inventories, nonpositive binary lengths, unnamed/default-free SQL Server column
-rendering, and non-nullable joins beside a nullable join of a different kind. New tests
-check those contracts, including complete sequence/index SQL and ordered composite
-foreign-key columns. All 1,502 DDL tests pass with one existing skip (35 seconds), including 33 new cases. The full-target rerun uses concurrency 8; native verification is in progress.
-
-### Validation baseline triage
+### 9. Validation
 
 The full five-file baseline contains 54 killed, 26 survived, 2 uncovered, 48 compile
 errors, and 18 ignored mutants within its declared scope. The rerun has 59 killed,
@@ -999,29 +808,79 @@ Concrete non-actionable groups retained without suppressing mutation types:
   definite-assignment variants. Some valid adjacent comparisons are rolled back with
   them; ordinary behavioral tests remain essential.
 
+### Decimal pilot limitation
+
+The initial Release suites passed: Core 9,976 tests and Plans 2,707 tests. After the
+changes, all 10,021 Core tests and 2,712 Plans tests passed. Focused runs passed 86
+validation tests and 17 batching tests. CSharpier checked all six changed C# files.
+The decimal pilot produced both native reports and killed all three executable `AddError` mutants.
+However, generated code failed definite-assignment analysis at `DecimalValidator.cs:61`
+(`value`), and Stryker's safe mode rolled back the entire `Validate` method: 31 mutants
+are `CompileError`, including `<` → `<=`, `>` → `>=`, range arithmetic, and invalid-value
+handling. One redundant block mutation is ignored by Stryker. The reported 100% is not
+evidence that those rules are mutation-tested. Keep this limitation visible when
+interpreting the full validation target; boundary regression tests provide ordinary
+test coverage without changing production code to accommodate the mutator.
+
+Stryker also attempts discovery in `Backend.Tests.Common`, a helper library referencing
+NUnit without a test adapter. Its no-tests warning is separate from discovery and
+execution of the owning Core suite. The helper library does not need a test adapter.
+
+### 10. DDL
+
+The final four-file report has 778 killed, 75 survived, 19 uncovered, 73 compile-error,
+and 211 ignored mutations, with no timeouts. Forty-two additional mutations are
+killed by assertions, with no lost kills. The native score is 87.27% → 89.22%; the
+baseline includes 30 timeouts, so its score alone is not the comparison of test quality.
+
+The earlier full pair had 30 and 60 timeouts. Focused before/after runs selected their
+union of 65 mutations by source-character spans, plus 18 overlapping mutations. With
+concurrency 2, `additional-timeout: 100000`, and `timeout-ratio: 3.0`, all 83 receive
+definite outcomes: 36 killed / 45 survived / two uncovered before, and 48 killed /
+35 survived after, with zero timeouts. The fifteen apparent lost kills are confirmed
+killed. The 18 overlapping outcomes agree with their full reports. For comparison of
+assertion improvements, the baseline timing outcomes are checked against these
+controls by source, location, operator, and replacement; native JSON and scores remain
+unchanged. Five baseline timeouts were already killed by existing assertions and are
+excluded from the 42 improvements.
+
+The focused native reports are `StrykerOutput/2026-11-17.00-09-22/reports/` and
+`StrykerOutput/2026-11-17.00-14-17/reports/`, relative to the DDL test directory.
+Their runtimes are 28m03s and 26m23s. Each parent directory contains the exact
+`diagnostic-config.json` and `run.log`. The final full run at
+`StrykerOutput/2026-11-17.00-44-05/` retains its `run-config.json` and log. The named
+DDL configuration now uses this verified timeout budget; source scope and mutation
+types are unchanged.
+
+New regressions cover catalog-literal escaping, empty key/index inventories, mismatched
+foreign-key column counts, nonpositive binary lengths, unnamed/default-free SQL Server
+columns, integer table-valued types, and non-nullable joins beside a nullable join of a
+different kind. They assert complete sequence/index SQL and ordered composite foreign-key
+columns. Nullable-join conjunction mutations at `TrackedChangeTriggerBodyEmitter.cs:593/602`
+are confirmed killed. Final schema-escaping assertions protect both the nested EXEC
+string and the change-version function's catalog lookup (`MssqlDialect.cs:90/323`).
+All 1,504 normal DDL tests pass with one existing skip, including 34 new boundary
+cases and the separate golden-output isolation regression.
+
+Remaining survivor dispositions and limits:
+
+- Most dialect survivors remove null guards on non-nullable identifier/type/list
+  arguments. Valid model generation supplies those values; these mutants do not
+  justify fabricating unsupported null inputs to increase the score.
+- Incidental exception wording is separate from rejection and parameter-name contracts.
+  The latter are asserted; diagnostic sentence fragments are not pinned.
+- Removing `break` at tracked-change lines 252/285 scans past an already found join.
+  Derived join inventories have unique names, so later iterations cannot replace
+  the selected join with another match.
+- Empty person-join paths and partially missing target metadata at lines 319/351,
+  unknown value-source enum branches, and malformed descriptor tombstone roles/paths
+  at lines 905/916 remain intermediate-model validation limits. Valid schema-derived
+  plans do not produce those states. The defensive metadata checks remain in production.
+- Existing database integration tests remain the backstop for executing emitted SQL;
+  this mutation loop exercises the C# emitters and their output contracts.
+
 ## References
 
 - [Stryker.NET configuration](https://stryker-mutator.io/docs/stryker-net/configuration/)
 - [Stryker.NET mutations](https://stryker-mutator.io/docs/stryker-net/mutations/)
 - [Repository conventions](AGENTS.md) and [CMS conventions](src/config/AGENTS.md)
-
-### Latest Core and transactional-write verification
-
-Eight sibling-order Core cases pass in the 10,135-test suite. They confirm
-`CreatabilityAnalyzer.cs:391/487` negations are killed: 715 killed, 112 survived,
-33 uncovered, 176 compile-error, 292 ignored, and no timeouts or lost kills. This
-establishes 144 intended improvements. Four owner-scope Backend cases and a structured
-claim DML case pass in the 4,895-test suite. The profile rerun kills
-`ProfileBindingClassificationCore.cs:711`: 806 killed, 352 survived, 213 uncovered,
-358 compile-error, 368 ignored, and the same loop timeout (23 intended improvements).
-
-The write rerun kills second-phase 1612 (structured claims cannot co-batch with DML)
-and 667 (inverting the successful standalone result check must not skip persistence):
-357 killed, 99 survived, 25 uncovered, 389 compile-error, 109 ignored, and no timeouts
-or lost kills. The write total is 36. The original non-null standalone denial body
-at 668 remains unreachable; the inverted condition is now tested through success.
-
-Two further profile cases pass in the 4,897-test Backend suite. They match an existing
-row using two descriptor identity parts and remove an omitted stored row via the
-cache-miss fallback, asserting the complete five-value current/merged rows. Their
-full profile mutation verification is running.
