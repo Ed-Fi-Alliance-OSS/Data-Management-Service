@@ -33,6 +33,82 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         Guid.Parse("dddddddd-4444-5555-6666-eeeeeeeeeeee")
     );
 
+    [TestCase(null)]
+    [TestCaseSource(nameof(MissingDocumentIdValues))]
+    public async Task It_rejects_a_document_insert_that_returns_no_document_id(object? documentId)
+    {
+        var request = CreateCreatedTargetRequest();
+        var session = new ScriptedWriteSession(
+            CreateReader(Scalar(documentId), Sentinel(1), PersistObservation(1L))
+        );
+
+        var resolve = () =>
+            CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateNewRootMergeResult(request),
+                    RelationalWriteSecondCommandMode.Dml,
+                    session
+                );
+
+        await resolve
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Document insert for resource 'ed-fi.School' did not return a DocumentId.");
+        session.Commands.Should().ContainSingle();
+    }
+
+    private static IEnumerable<object> MissingDocumentIdValues => [DBNull.Value];
+
+    [Test]
+    public async Task It_rejects_a_missing_persisted_target_observation()
+    {
+        var request = CreateExistingTargetRequest();
+        IReadOnlyList<object?[]> missingObservation = [];
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), missingObservation));
+
+        var resolve = () =>
+            CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateChangedRootMergeResult(request),
+                    RelationalWriteSecondCommandMode.Dml,
+                    session
+                );
+
+        await resolve
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage(
+                "Relational write persistence found no ContentVersion for committed document id 345."
+            );
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_rejects_multiple_persisted_target_observations()
+    {
+        var request = CreateExistingTargetRequest();
+        var session = new ScriptedWriteSession(
+            CreateReader(Sentinel(0), [.. PersistObservation(77L), .. PersistObservation(78L)])
+        );
+
+        var resolve = () =>
+            CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateChangedRootMergeResult(request),
+                    RelationalWriteSecondCommandMode.Dml,
+                    session
+                );
+
+        await resolve
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Relational write persistence returned more than one persisted-target observation.");
+        session.Commands.Should().ContainSingle();
+    }
+
     [Test]
     public async Task It_co_batches_the_root_update_and_the_content_version_read_into_one_command()
     {
@@ -434,6 +510,86 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                         StringComparison.OrdinalIgnoreCase
                     )
             );
+    }
+
+    [Test]
+    public async Task It_budgets_for_mixed_inlined_and_reserved_collection_keys()
+    {
+        var rootPlan = Given_Relational_Write_No_Profile_Persister.CreateRootPlan();
+        var collectionPlan = Given_Relational_Write_No_Profile_Persister.CreateCollectionPlan();
+        var scopePlan = Given_Relational_Write_No_Profile_Persister.CreateCollectionExtensionScopePlan();
+        var request = Given_Relational_Write_No_Profile_Persister.CreateRequest(
+            // Dependency order deliberately places the aligned scope ahead of the collection it hangs off,
+            // so the emitted statement order cannot come from this order alone.
+            Given_Relational_Write_No_Profile_Persister.CreateWritePlan([
+                rootPlan,
+                scopePlan,
+                collectionPlan,
+            ]),
+            RelationalWriteOperationKind.Put
+        );
+        var addressCollectionItemId = Given_Relational_Write_No_Profile_Persister.NewCollectionItemId();
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(345L, 255901, "Lincoln High")],
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    scopePlan,
+                    [],
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(addressCollectionItemId, "Blue")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        Given_Relational_Write_No_Profile_Persister.CreateRow(
+                            Given_Relational_Write_No_Profile_Persister.NewCollectionItemId(),
+                            345L,
+                            0,
+                            "Work"
+                        ),
+                        Given_Relational_Write_No_Profile_Persister.CreateRow(
+                            addressCollectionItemId,
+                            345L,
+                            1,
+                            "Home"
+                        ),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+        var session = new ScriptedWriteSession(
+            Reserved(910L),
+            CreateReader(Sentinel(0)),
+            CreateReader(Sentinel(0), Sentinel(1)),
+            CreateReader(PersistObservation(80L))
+        );
+
+        var resolution = await CreateSut(commandBudget: new RelationalCommandBudget(6, 1000))
+            .ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.ContentVersion.Should().Be(80L);
+        session.Commands.Should().HaveCount(4);
+        session.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
+        session.Commands.Skip(1).Should().OnlyContain(command => command.Parameters.Count <= 6);
+        session
+            .Commands[1]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Contain("Work")
+            .And.NotContain("Home");
+        session
+            .Commands[2]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Contain("Home")
+            .And.Contain(910L);
+        session.Commands[2].CommandText.Should().Contain("SchoolExtensionAddress");
     }
 
     [Test]

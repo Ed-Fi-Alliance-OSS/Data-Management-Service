@@ -14,6 +14,27 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit;
 [Parallelizable]
 public class Given_Relational_Write_Guarded_No_Op
 {
+    [TestCase(20L, 345L)]
+    [TestCase(10L, 346L)]
+    public void It_is_not_a_no_op_when_only_the_collection_identity_or_root_locator_changes(
+        long mergedCollectionItemId,
+        long mergedDocumentId
+    )
+    {
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    CreateNestedCollectionPlan(),
+                    [CreateNestedCollectionRow(10L, 345L, 100L, 1, "A")],
+                    [CreateNestedCollectionRow(mergedCollectionItemId, mergedDocumentId, 100L, 1, "A")]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+
+        RelationalWriteGuardedNoOp.IsNoOpCandidate(mergeResult).Should().BeFalse();
+    }
+
     [Test]
     public void It_is_not_a_no_op_when_collection_row_payload_matches_but_immediate_parent_locator_changes()
     {

@@ -125,22 +125,35 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             );
     }
 
-    [Test]
-    public async Task It_emits_the_custom_view_runs_around_the_namespace_check_in_configured_order()
+    [TestCase(false)]
+    [TestCase(true)]
+    public async Task It_emits_the_custom_view_runs_around_the_namespace_check_in_configured_order(
+        bool dmlMode
+    )
     {
         var request = CreateRequest(
             CreateProposedOnlyPlan(("SchoolWithAnEarlyTag", 0), ("SchoolWithALateTag", 2)),
             withNamespace: true
         );
         var session = new ScriptedWriteSession(
-            CreateReader(CreateAuthorizedTable(), CreateAuthorizedTable(), CreateAuthorizedTable())
+            dmlMode
+                ? CreateDmlReader(
+                    Authorized(),
+                    Authorized(),
+                    Authorized(),
+                    Sentinel(3),
+                    PersistObservation(77L)
+                )
+                : CreateReader(CreateAuthorizedTable(), CreateAuthorizedTable(), CreateAuthorizedTable())
         );
 
         await CreateSut()
             .ResolveAsync(
                 request,
-                CreateMergeResult(request),
-                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                dmlMode ? CreateChangedMergeResult(request) : CreateMergeResult(request),
+                dmlMode
+                    ? RelationalWriteSecondCommandMode.Dml
+                    : RelationalWriteSecondCommandMode.AuthorizationOnly,
                 session
             );
 
@@ -152,6 +165,14 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         earlyPosition.Should().BePositive();
         earlyPosition.Should().BeLessThan(namespacePosition);
         namespacePosition.Should().BeLessThan(latePosition);
+        if (dmlMode)
+        {
+            latePosition
+                .Should()
+                .BeLessThan(
+                    commandText.IndexOf("update edfi.\"School\"", StringComparison.OrdinalIgnoreCase)
+                );
+        }
     }
 
     [Test]
@@ -1012,15 +1033,32 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
         commandText.Should().NotContain("cv1|2|").And.NotContain("SchoolWithASelfTag");
     }
 
-    [TestCase(0, "SchoolWithAnEarlyTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow)]
-    [TestCase(1, "SchoolWithALateTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow)]
-    [TestCase(0, "SchoolWithAnEarlyTag", false, CustomViewAuthorizationFailureKind.ProposedValueMissing)]
-    [TestCase(1, "SchoolWithALateTag", false, CustomViewAuthorizationFailureKind.ProposedValueMissing)]
+    [TestCase(0, "SchoolWithAnEarlyTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow, true)]
+    [TestCase(1, "SchoolWithALateTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow, true)]
+    [TestCase(
+        0,
+        "SchoolWithAnEarlyTag",
+        false,
+        CustomViewAuthorizationFailureKind.ProposedValueMissing,
+        true
+    )]
+    [TestCase(1, "SchoolWithALateTag", false, CustomViewAuthorizationFailureKind.ProposedValueMissing, true)]
+    [TestCase(0, "SchoolWithAnEarlyTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow, false)]
+    [TestCase(1, "SchoolWithALateTag", true, CustomViewAuthorizationFailureKind.NoMatchingRow, false)]
+    [TestCase(
+        0,
+        "SchoolWithAnEarlyTag",
+        false,
+        CustomViewAuthorizationFailureKind.ProposedValueMissing,
+        false
+    )]
+    [TestCase(1, "SchoolWithALateTag", false, CustomViewAuthorizationFailureKind.ProposedValueMissing, false)]
     public async Task It_corrects_a_deferred_basis_before_and_after_namespace(
         int deniedCheckIndex,
         string deniedStrategyName,
         bool schoolReferenceWasDeferred,
-        CustomViewAuthorizationFailureKind expectedFailureKind
+        CustomViewAuthorizationFailureKind expectedFailureKind,
+        bool dmlMode
     )
     {
         // The two runs straddle the namespace check in one command; the denying run's own runtime values are
@@ -1040,8 +1078,10 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             )
             .ResolveAsync(
                 request,
-                CreateNullBasisMergeResult(request, schoolReferenceWasDeferred),
-                RelationalWriteSecondCommandMode.AuthorizationOnly,
+                CreateNullBasisMergeResult(request, schoolReferenceWasDeferred, changed: dmlMode),
+                dmlMode
+                    ? RelationalWriteSecondCommandMode.Dml
+                    : RelationalWriteSecondCommandMode.AuthorizationOnly,
                 session
             );
 

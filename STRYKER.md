@@ -52,8 +52,8 @@ begins; pending rows are planned targets, not qualified runs.
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Executor pilot recorded; full composite baseline running |
-| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Full baseline recorded; token-manager regressions in progress |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Full eleven-file baseline recorded; composite regressions in progress |
+| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Full baseline recorded; token-manager rerun in progress |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
@@ -119,6 +119,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% baseline; rerun pending | 11m46s | `StrykerOutput/2026-11-16.18-21-43/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
+| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% baseline; rerun pending | 4m17s | `StrykerOutput/2026-11-16.18-50-04/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -269,7 +270,6 @@ full-target result; run the named configuration without the `--mutate` override 
 that scope.
 
 
-
 ### Transactional-write executor pilot
 
 The executor-only pilot produced 24 killed, 7 survived, 148 compile-error, and 7
@@ -288,8 +288,25 @@ only an applied write has a non-null persisted result; other successful outcomes
 none. Removing wait telemetry is a remaining observability coverage gap, not a write
 correctness kill. The full configuration includes the composite first/second commands,
 guarded no-op comparison, and all seven behavior-bearing ETag files; its separate
-baseline is running. A helper-library discovery warning concerns `Backend.Tests.Common`,
+baseline contains 321 killed, 115 survived, 45 uncovered, 389 compile-error, and
+109 ignored mutations, with no timeouts. `EtagComposer.cs` and `ServedEtagComposer.cs`
+produce no Standard-level mutants; their inclusion alone does not establish mutation
+coverage. A helper-library discovery warning concerns `Backend.Tests.Common`,
 which is not the owning test suite.
+
+The composite regressions now independently exercise collection row identity and root
+locator changes; reject nonpositive stream-ETag versions before composition; reject
+missing insert IDs and missing/duplicate persistence observations; retain stored
+relationship authorization in one command; and preserve missing-PUT and no-claims
+denial precedence in ordered segments. Both dialects also classify unmatchable
+references in that segmented path. Custom-view order and deferred-value provenance
+are checked in DML mode as well as authorization-only mode. A mixed inline/reserved
+collection-key case verifies the wider row binding cannot overflow a command budget.
+
+The complete Backend suite passed 4,846 tests after the first changes; the additional
+mixed-key case passed a focused run. Full mutation verification is pending. The Model
+and DDL suites also passed their baseline normal runs: 1,035 and 1,469 tests respectively,
+with one existing DDL skip. Their mutation baselines remain pending.
 
 ### Token-manager baseline and regressions
 

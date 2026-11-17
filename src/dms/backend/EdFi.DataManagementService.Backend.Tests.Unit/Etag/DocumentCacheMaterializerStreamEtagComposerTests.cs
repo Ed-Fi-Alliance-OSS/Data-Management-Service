@@ -16,6 +16,48 @@ namespace EdFi.DataManagementService.Backend.Tests.Unit.Etag;
 [Parallelizable]
 public class Given_DocumentCacheMaterializerStreamEtagComposer
 {
+    [TestCase(0L, false)]
+    [TestCase(-1L, false)]
+    [TestCase(0L, true)]
+    [TestCase(-1L, true)]
+    public void It_rejects_nonpositive_content_versions_before_composing_an_etag(
+        long contentVersion,
+        bool descriptor
+    )
+    {
+        var composer = new RecordingServedEtagComposer("invalid-stream-etag");
+        var mappingSet = CreateMappingSet();
+
+        Action compose = () =>
+        {
+            if (descriptor)
+            {
+                DocumentCacheMaterializerStreamEtagComposer.ComposeForDescriptor(
+                    composer,
+                    mappingSet,
+                    contentVersion
+                );
+            }
+            else
+            {
+                DocumentCacheMaterializerStreamEtagComposer.ComposeForResource(
+                    composer,
+                    mappingSet,
+                    contentVersion
+                );
+            }
+        };
+
+        compose
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("contentVersion")
+            .WithMessage("ContentVersion must be positive.*")
+            .Which.ActualValue.Should()
+            .Be(contentVersion);
+        composer.CapturedContext.Should().BeNull();
+    }
+
     [Test]
     public void It_composes_ordinary_resource_stream_etags_with_the_fixed_link_bearing_context()
     {

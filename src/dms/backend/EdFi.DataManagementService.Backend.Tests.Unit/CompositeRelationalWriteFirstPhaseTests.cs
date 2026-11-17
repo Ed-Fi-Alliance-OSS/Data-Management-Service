@@ -89,6 +89,24 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
+    public async Task It_returns_missing_put_before_a_deferred_relationship_denial_in_the_segmented_path()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put) with
+        {
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .Be(new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()));
+        resolution.Outcome.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
     public async Task It_selects_the_post_create_immediate_result_before_reference_or_hydration_execution()
     {
         var expected = RelationalWriteExecutorResults.BuildUnknownFailureResult(
@@ -753,6 +771,36 @@ public class Given_The_Composite_Relational_Write_First_Phase
     }
 
     [Test]
+    public async Task It_retains_an_authorized_stored_relationship_result_in_the_composite_path()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put);
+        input = input with
+        {
+            StoredRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
+                    input,
+                    [255901L]
+                ),
+        };
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(target),
+                CreateStoredRelationshipAuthorizationTable(target),
+                CreateDocumentMetadataTable(target, 44L),
+                CreateRootTable(target)
+            )
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.Outcome!.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
+        resolution.Outcome.LockedTarget!.IsHeldBy(session).Should().BeTrue();
+        session.Commands.Should().ContainSingle().Which.CommandText.Should().Contain("AUTH1");
+    }
+
+    [Test]
     public void It_accepts_an_exact_guarded_no_op_lock_proof_from_the_current_session()
     {
         var session = new ScriptedWriteSession();
@@ -993,10 +1041,13 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Contain(dialect is SqlDialect.Pgsql ? "unnest(@" : "OPENJSON(@");
     }
 
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, true)]
     public async Task It_classifies_an_unmatchable_descriptor_as_missing_without_sending_a_lookup(
-        SqlDialect dialect
+        SqlDialect dialect,
+        bool segmented
     )
     {
         // No stored URI is this long, so the value is never bound and the attempt sends no lookup statement.
@@ -1008,7 +1059,16 @@ public class Given_The_Composite_Relational_Write_First_Phase
             dialect: dialect,
             descriptorReferences: [reference]
         );
-        var session = new ScriptedWriteSession(CreateCompositeReader(target: null));
+        if (segmented)
+        {
+            input = input with
+            {
+                StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+            };
+        }
+        var session = new ScriptedWriteSession(
+            segmented ? CreateCaptureReader(target: null) : CreateCompositeReader(target: null)
+        );
 
         var resolution = await CreateSut(new ThrowingNaturalKeyLookupCommandBuilder())
             .ResolveAsync(input, session);
@@ -1322,7 +1382,17 @@ public class Given_The_Composite_Relational_Write_First_Phase
             CreateReader(CreateAuthorizationTable())
         );
 
-        await CreateSut().ResolveAsync(input, session);
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .BeEquivalentTo(
+                RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
+                    RelationalWriteOperationKind.Put,
+                    new RelationshipAuthorizationResult.NoClaims([], [])
+                )
+            );
+        resolution.Outcome.Should().BeNull();
 
         session.Commands.Should().HaveCount(4);
         session.Commands[0].CommandText.Should().NotContain("SchoolWith");
