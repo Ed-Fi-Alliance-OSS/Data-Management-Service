@@ -1373,7 +1373,11 @@ public class Given_The_Composite_Relational_Write_First_Phase
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
-            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        input = input with
+        {
+            StoredRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateStoredSchoolIdNoClaimsAuthorization(input),
         };
         var session = new ScriptedWriteSession(
             CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
@@ -1384,14 +1388,19 @@ public class Given_The_Composite_Relational_Write_First_Phase
 
         var resolution = await CreateSut().ResolveAsync(input, session);
 
-        resolution
+        var failure = resolution
             .ImmediateResult.Should()
-            .BeEquivalentTo(
-                RelationalWriteExecutorResults.BuildNoClaimsRelationshipAuthorizationResult(
-                    RelationalWriteOperationKind.Put,
-                    new RelationshipAuthorizationResult.NoClaims([], [])
-                )
-            );
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure;
+        failure.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Stored);
+        failure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        failure
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Which.StrategyName.Should()
+            .Be("RelationshipsWithEdOrgsOnly");
         resolution.Outcome.Should().BeNull();
 
         session.Commands.Should().HaveCount(4);
