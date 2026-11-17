@@ -56,8 +56,8 @@ begins; pending rows are planned targets, not qualified runs.
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred ten mutations killed; remaining triage in progress |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
-| 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Full baseline complete; required-locator regressions await verification |
-| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
+| 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; two required-locator mutations killed; compiler limitations documented |
+| 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Full baseline complete; mutability and storage-validation regressions in progress |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
 | 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Configuration prepared; baseline pending |
 
@@ -122,7 +122,8 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.93%; further triage in progress | 4m17s / 4m35s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.20-05-20/reports/` |
 | Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 79.19%; further triage in progress | 6m29s / 6m04s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.20-10-50/reports/` |
 | Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
-| Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% baseline; regression rerun pending | 15m18s | `StrykerOutput/2026-11-16.20-28-52/reports/` |
+| Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
+| Full `dms-model-constraints` (five configured files) | 5.0.0 | 53.76% baseline; regression work in progress | 26m52s | `StrykerOutput/2026-11-16.20-34-18/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -673,7 +674,7 @@ negative widths for both dialects. Existing cases already cover one parameter, e
 the dialect ceiling, and one above it. This pilot does not establish a result for the
 other five files in the write-plan target.
 
-### Full write-plan baseline
+### Full write-plan verification
 
 The six-file target contains 235 killed, 44 survived, 60 uncovered, 161 compile-error,
 121 ignored, and five timed-out mutations. This is independent of the batching
@@ -686,12 +687,21 @@ Two new cases retain complete binding inventories, column/parameter/source align
 insert/update/delete SQL, and collection preallocation/merge plans after required root
 and parent locator columns are marked non-writable. They use the derived stable-key
 fixture for both dialects. The compiler must still bind those structural columns.
-Native verification is pending.
+Both `requiredBindingColumns.Add` removals at `WritePlanCompiler.cs:620/625` are now
+killed by those new cases in the full rerun. All 2,745 normal Plans tests pass.
+
+The rerun contains 241 killed, 43 survived, 60 uncovered, 161 compile-error, and 121
+ignored mutations, with no timeouts. Besides the two intended kills, two pre-existing
+tests now kill the presence-binding diagnostic at `KeyUnificationWritePlanCompiler.cs:355`
+and the collection-key count mutation at `WritePlanCompiler.cs:392`. Three prior
+timeouts now report killed; two report survived. The null-parameter guard removal at
+`SimpleUpdateSqlEmitter.cs:38` changed from killed to survived. These additional status
+changes are run observations, not credited as improvements from the new locator cases.
 
 The baseline's five timeouts are `SimpleUpdateSqlEmitter.cs:37` (a null guard),
 `WritePlanCompiler.cs:207/211` (descriptor inventory validation/label), and two condition
-mutations at line 225. These do not introduce loops. They are not credited as
-assertion kills; recheck them in the full rerun before interpreting the score change.
+mutations at line 225. These do not introduce loops. The rerun resolves them to three
+killed and two survived; do not attribute the timeout status changes to new assertions.
 
 Initial dispositions supported by source inspection:
 
@@ -710,9 +720,46 @@ Initial dispositions supported by source inspection:
 - Empty key-unification inventories return the same empty set with or without the
   early return. Remaining invalid-column/plan-shape guards need no fabricated producer
   shapes solely to raise the score.
+- `GetImmediateParentScopeLocatorIndex` receives an existing locator column. The
+  current stable-identity producer emits one immediate-parent locator per non-root
+  scope, so the loop returns at index zero; increment/boundary mutations cannot change
+  valid derived output. The legacy parent-key scan similarly returns before the ordinal.
+- Delete-by-parent uses separate-table one-to-one scopes. For the supported root and
+  collection-aligned extension producers, the explicit parent locator and the legacy
+  parent-key inventory name the same physical key. Forcing either selection branch at
+  line 800 therefore leaves the emitted predicate unchanged for those models.
 
-Further verification still covers required locator omission, supported parent-locator
-ordering, and the timeout dispositions. No mutation types or source scope were removed.
+The raw score includes instrumentation and run-status limitations; the confirmed
+improvement is preservation of the two required locator binding groups. No mutation
+types or source scope were removed.
+
+### Relational-model baseline
+
+The five-file target contains 328 killed, 109 survived, 180 uncovered, 217 compile-error,
+184 ignored, and eight timed-out mutations. The native report was produced in the
+isolated model worktree and copied into the owning test directory in the PR checkout.
+
+The baseline exposes a missing fixed-point regression: changing `changed = true` to
+`false` at `TransitiveIdentityMutabilityPass.cs:92` survives. A resource visited before
+its identity-reference target needs another pass to inherit mutability. New cases
+observe the resulting foreign-key actions over a three-hop chain, with both mutable
+and immutable origins and ordinary-reference/disconnected controls in both dialects.
+Pass-level storage-validator cases also exercise the calls that validate local and
+target endpoints of the externally defined `dms.Document` table, exact schema/name
+matching, and compact descriptor storage. All eleven new cases pass in the full
+1,046-test Model suite (25 seconds); full mutation verification is pending.
+
+Tool limitations remain separate from test gaps. Stryker rolls back the requiredness
+helper's `GetRequiredProperties` and `IsXNullable` methods after generated-code
+definite-assignment errors; only one executable helper mutation remains. It also rolls
+back key-unification equality-constraint parsing, member base-token construction, and
+ambiguous-endpoint diagnostics. These compile errors do not qualify the corresponding
+requiredness or canonicalization behavior; existing ordinary model tests remain essential.
+
+All eight baseline timeouts introduce nonterminating loops: four union-find mutations
+at `KeyUnificationPass.cs:1300–1309`, and four fixed-point mutations at
+`TransitiveIdentityMutabilityPass.cs:63/66/68/91`. Keep them separate from assertion kills.
+No production mapping changes or `RelationalMappingVersion` bump are part of this work.
 
 ### Validation baseline triage
 
