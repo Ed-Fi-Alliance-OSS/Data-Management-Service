@@ -32,7 +32,7 @@ Feature: Route Qualifier Discovery API
                 }
               """
 
-          And the discovery metadata urls should resolve
+          And the discovery metadata urls should resolve to usable documents
 
     Scenario: Concrete metadata endpoint with invalid route qualifiers returns 404
          When a GET request is made to metadata path "Tenant_255901/999999/2024/metadata/dependencies"
