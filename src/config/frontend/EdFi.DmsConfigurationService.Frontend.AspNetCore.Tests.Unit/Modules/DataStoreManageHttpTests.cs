@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -11,15 +12,23 @@ using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using EdFi.DmsConfigurationService.DataModel;
+using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using NUnit.Framework;
+using ExceptionTypeOnlyLoggingMetadata = EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.ExceptionTypeOnlyLoggingMetadata;
+using ManagedDataStoreRouteMetadata = EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.ManagedDataStoreRouteMetadata;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Modules;
 
@@ -628,5 +637,376 @@ public class Given_managed_data_store_HTTP
             .Select(property => property.Key)
             .Should()
             .BeEquivalentTo("jobId", "message");
+    }
+}
+
+/// <summary>
+/// An exception that escapes a managed handler, from resolving a managed dependency at request time or from a
+/// repository call, is answered with the fixed 500 and logged as one failed request naming exception types only:
+/// its message, inner exception and <c>Data</c> reach neither the response nor any captured log message,
+/// structured value, scope or attached exception, in application or framework categories.
+/// </summary>
+[NonParallelizable]
+public class Given_a_managed_data_store_request_whose_dependency_throws
+{
+    private const string MessageCanary = "Password=managed-message-canary";
+    private const string InnerCanary = "managed-inner-exception-canary";
+    private const string DataKeyCanary = "managed-data-key-canary";
+    private const string DataValueCanary = "managed-data-value-canary";
+    private const string FailureTypeChain = "System.TimeoutException -> System.IO.IOException";
+    private const string Admin = "edfi_admin_api/full_access";
+    private const string ReadOnly = "edfi_admin_api/readonly_access";
+
+    private readonly IDataStoreManageRepository _repository = A.Fake<IDataStoreManageRepository>();
+    private readonly TokenRevocationStartupTests.StartupLogCapture _logs = new();
+    private WebApplicationFactory<Program> _factory = null!;
+    private bool _failRepositoryResolution;
+    private int _acceptanceResolutions;
+    private int _repositoryResolutions;
+    private int _recordsBefore;
+
+    private static TimeoutException DependencyFailure()
+    {
+        var failure = new TimeoutException(MessageCanary, new IOException(InnerCanary));
+        failure.Data[DataKeyCanary] = DataValueCanary;
+        return failure;
+    }
+
+    [OneTimeSetUp]
+    public void Start()
+    {
+        _factory = ManagedDataStoreApiTestHost.Create(services =>
+        {
+            services.AddSingleton(JobClaimPolicy.All);
+            services.AddSingleton<ILoggerProvider>(_logs);
+            // Every category at every level, the framework's included: a provider rule outranks category levels.
+            services.AddLogging(logging =>
+                logging.AddFilter<TokenRevocationStartupTests.StartupLogCapture>(
+                    category: null,
+                    LogLevel.Trace
+                )
+            );
+            services.AddTransient<IDataStoreManageRepository>(_ =>
+            {
+                Interlocked.Increment(ref _repositoryResolutions);
+                return _failRepositoryResolution ? throw DependencyFailure() : _repository;
+            });
+            services.AddTransient<ManagedDataStoreCreateAcceptance>(_ =>
+            {
+                Interlocked.Increment(ref _acceptanceResolutions);
+                throw DependencyFailure();
+            });
+        });
+        // Starts the host; a startup resolution of either dependency would fail here.
+        _ = _factory.Services;
+    }
+
+    [OneTimeTearDown]
+    public async Task Stop() => await _factory.DisposeAsync();
+
+    [SetUp]
+    public void Reset()
+    {
+        Fake.Reset(_repository);
+        _failRepositoryResolution = false;
+        Interlocked.Exchange(ref _acceptanceResolutions, 0);
+        Interlocked.Exchange(ref _repositoryResolutions, 0);
+        _recordsBefore = _logs.Records.Count;
+    }
+
+    private HttpClient Client(string? scope)
+    {
+        var client = _factory.CreateClient();
+        client.BaseAddress = new Uri("https://cms.example.test:7443");
+        if (scope is not null)
+        {
+            client.DefaultRequestHeaders.Add("X-Test-Scope", scope);
+        }
+        return client;
+    }
+
+    private static StringContent Json(string json) => new(json, Encoding.UTF8, "application/json");
+
+    [Test]
+    public void It_marks_every_managed_route_for_type_only_exception_logging_and_keeps_its_gate_and_policies()
+    {
+        var routes = _factory
+            .Services.GetRequiredService<EndpointDataSource>()
+            .Endpoints.OfType<RouteEndpoint>()
+            .Where(endpoint =>
+                endpoint.RoutePattern.RawText?.StartsWith("/v3/dataStores/manage", StringComparison.Ordinal)
+                == true
+            )
+            .ToDictionary(endpoint =>
+                $"{endpoint.Metadata.GetRequiredMetadata<IHttpMethodMetadata>().HttpMethods.Single()} {endpoint.RoutePattern.RawText}"
+            );
+        routes
+            .Keys.Should()
+            .BeEquivalentTo(
+                "GET /v3/dataStores/manage/",
+                "GET /v3/dataStores/manage/{id}",
+                "POST /v3/dataStores/manage/",
+                "DELETE /v3/dataStores/manage/{id}"
+            );
+        foreach ((string route, RouteEndpoint endpoint) in routes)
+        {
+            endpoint
+                .Metadata.GetMetadata<ExceptionTypeOnlyLoggingMetadata>()
+                .Should()
+                .BeSameAs(ExceptionTypeOnlyLoggingMetadata.Instance, route);
+            endpoint
+                .Metadata.GetMetadata<ManagedDataStoreRouteMetadata>()
+                .Should()
+                .BeSameAs(ManagedDataStoreRouteMetadata.Instance, route);
+            endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull(route);
+            endpoint
+                .Metadata.GetOrderedMetadata<IAuthorizeData>()
+                .Select(data => data.Policy)
+                .Should()
+                .Equal(
+                    [
+                        SecurityConstants.ServicePolicy,
+                        route.StartsWith("GET ", StringComparison.Ordinal)
+                            ? AuthorizationScopePolicies.ReadOnlyOrAdminScopePolicy
+                            : AuthorizationScopePolicies.AdminScopePolicy,
+                    ],
+                    route
+                );
+        }
+    }
+
+    [Test]
+    public async Task It_contains_a_create_acceptance_factory_exception()
+    {
+        using var client = Client(Admin);
+        await AssertContained(
+            await client.PostAsync(
+                "/v3/dataStores/manage",
+                Json("""{"name":"Store","databaseTemplate":"Minimal"}""")
+            ),
+            "POST",
+            "/v3/dataStores/manage"
+        );
+        _acceptanceResolutions.Should().Be(1);
+        Fake.GetCalls(_repository).Should().BeEmpty();
+    }
+
+    [Test]
+    public async Task It_contains_a_repository_factory_exception()
+    {
+        _failRepositoryResolution = true;
+        using var client = Client(ReadOnly);
+        await AssertContained(await client.GetAsync("/v3/dataStores/manage"), "GET", "/v3/dataStores/manage");
+        _repositoryResolutions.Should().Be(1);
+    }
+
+    [Test]
+    public async Task It_contains_an_exception_thrown_by_a_repository_call()
+    {
+        A.CallTo(() => _repository.GetByIdAsync(A<int>._, A<CancellationToken>._)).Throws(DependencyFailure);
+        using var client = Client(ReadOnly);
+        await AssertContained(
+            await client.GetAsync("/v3/dataStores/manage/17"),
+            "GET",
+            "/v3/dataStores/manage/17"
+        );
+        A.CallTo(() => _repository.GetByIdAsync(17, A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_contains_a_faulted_repository_call()
+    {
+        A.CallTo(() => _repository.AcceptDeleteAsync(A<int>._, A<CancellationToken>._))
+            .ThrowsAsync(DependencyFailure);
+        using var client = Client(Admin);
+        await AssertContained(
+            await client.DeleteAsync("/v3/dataStores/manage/17"),
+            "DELETE",
+            "/v3/dataStores/manage/17"
+        );
+        A.CallTo(() => _repository.AcceptDeleteAsync(17, A<CancellationToken>._))
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_resolves_no_managed_dependency_for_a_request_answered_before_the_handler_needs_one()
+    {
+        _failRepositoryResolution = true;
+        const string Valid = """{"name":"Store","databaseTemplate":"Minimal"}""";
+        foreach (
+            var (method, path, scope, json, expected) in new (
+                string,
+                string,
+                string?,
+                string?,
+                HttpStatusCode
+            )[]
+            {
+                ("POST", "/v3/dataStores/manage", null, Valid, HttpStatusCode.Unauthorized),
+                ("POST", "/v3/dataStores/manage", ReadOnly, Valid, HttpStatusCode.Forbidden),
+                ("DELETE", "/v3/dataStores/manage/17", ReadOnly, null, HttpStatusCode.Forbidden),
+                ("GET", "/v3/dataStores/manage", null, null, HttpStatusCode.Unauthorized),
+                ("POST", "/v3/dataStores/manage", Admin, "{", HttpStatusCode.BadRequest),
+                (
+                    "POST",
+                    "/v3/dataStores/manage",
+                    Admin,
+                    """{"name":"Store","databaseTemplate":"minimal"}""",
+                    HttpStatusCode.BadRequest
+                ),
+                ("GET", "/v3/dataStores/manage?limit=0", ReadOnly, null, HttpStatusCode.BadRequest),
+                ("GET", "/v3/dataStores/manage/oops", ReadOnly, null, HttpStatusCode.BadRequest),
+                ("DELETE", "/v3/dataStores/manage/oops", Admin, null, HttpStatusCode.BadRequest),
+            }
+        )
+        {
+            using var client = Client(scope);
+            using var request = new HttpRequestMessage(new HttpMethod(method), path);
+            if (json is not null)
+            {
+                request.Content = Json(json);
+            }
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(expected, $"{method} {path} {scope}");
+        }
+        using (var charset = Client(Admin))
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, "/v3/dataStores/manage")
+            {
+                Content = new ByteArrayContent(Encoding.UTF8.GetBytes(Valid))
+                {
+                    Headers = { { "Content-Type", "application/json; charset=not-an-encoding" } },
+                },
+            };
+            using var response = await charset.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        }
+        _acceptanceResolutions.Should().Be(0);
+        _repositoryResolutions.Should().Be(0);
+        Fake.GetCalls(_repository).Should().BeEmpty();
+    }
+
+    private async Task AssertContained(HttpResponseMessage response, string method, string path)
+    {
+        using (response)
+        {
+            // Reading the body to its end waits for the pipeline, and so its request log, to finish.
+            string content = await response.Content.ReadAsStringAsync();
+            var records = _logs.Records.Skip(_recordsBefore).ToList();
+            AssertNoCanary(content, "the response body");
+            AssertNoCanary(CapturedText(records), "the captured logs");
+
+            response.StatusCode.Should().Be(HttpStatusCode.InternalServerError);
+            response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            string traceId = response.Headers.GetValues("TraceId").Single();
+            JsonNode
+                .DeepEquals(JsonNode.Parse(content), FailureResponse.ForUnknown(traceId))
+                .Should()
+                .BeTrue(content);
+
+            records
+                .Should()
+                .Contain(
+                    record => record.Category.StartsWith("Microsoft.AspNetCore", StringComparison.Ordinal),
+                    "framework categories are captured"
+                );
+            var failed = records
+                .Should()
+                .ContainSingle(record => record.EventId.Name == "HttpRequestFailed")
+                .Subject;
+            failed.Level.Should().Be(LogLevel.Error);
+            failed.Exception.Should().BeNull();
+            failed
+                .State.Should()
+                .Contain(
+                    new KeyValuePair<string, object?>("ExceptionTypes", FailureTypeChain),
+                    new KeyValuePair<string, object?>("TraceId", traceId),
+                    new KeyValuePair<string, object?>("StatusCode", 500),
+                    new KeyValuePair<string, object?>("Method", method),
+                    new KeyValuePair<string, object?>("Path", path)
+                );
+            failed
+                .Scopes.OfType<IEnumerable<KeyValuePair<string, object>>>()
+                .SelectMany(scope => scope)
+                .Where(pair => pair.Key == "TraceId")
+                .Select(pair => pair.Value)
+                .Should()
+                .Contain(traceId, "the request logging scope carries the same TraceId");
+        }
+    }
+
+    private static void AssertNoCanary(string text, string where) =>
+        text.Should()
+            .NotContain("managed-message-canary", where)
+            .And.NotContain(InnerCanary, where)
+            .And.NotContain(DataKeyCanary, where)
+            .And.NotContain(DataValueCanary, where);
+
+    /// <summary>
+    /// Each record's category, event, rendered message, every structured value and scope, and the attached
+    /// exception with its inner exceptions and <c>Data</c>, walked recursively.
+    /// </summary>
+    private static string CapturedText(IEnumerable<TokenRevocationStartupTests.CapturedStartupLog> records)
+    {
+        StringBuilder text = new();
+        foreach (var record in records)
+        {
+            text.AppendLine($"{record.Category} {record.EventId} {record.Message}");
+            foreach (var pair in record.State)
+            {
+                AppendValue(text, pair);
+            }
+            foreach (object? scope in record.Scopes)
+            {
+                AppendValue(text, scope);
+            }
+            AppendValue(text, record.Exception);
+        }
+        return text.ToString();
+    }
+
+    private static void AppendValue(StringBuilder text, object? value)
+    {
+        switch (value)
+        {
+            case null:
+                return;
+            case string literal:
+                text.AppendLine(literal);
+                return;
+            case KeyValuePair<string, object> pair:
+                text.AppendLine(pair.Key);
+                AppendValue(text, pair.Value);
+                return;
+            case Exception exception:
+                text.AppendLine(exception.ToString());
+                foreach (DictionaryEntry entry in exception.Data)
+                {
+                    AppendValue(text, entry.Key);
+                    AppendValue(text, entry.Value);
+                }
+                if (exception is AggregateException aggregate)
+                {
+                    foreach (Exception inner in aggregate.InnerExceptions)
+                    {
+                        AppendValue(text, inner);
+                    }
+                }
+                else
+                {
+                    AppendValue(text, exception.InnerException);
+                }
+                return;
+            case IEnumerable values:
+                text.AppendLine(value.ToString());
+                foreach (object? item in values)
+                {
+                    AppendValue(text, item);
+                }
+                return;
+            default:
+                text.AppendLine(value.ToString());
+                return;
+        }
     }
 }

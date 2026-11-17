@@ -80,7 +80,7 @@ public static class DataStoreManageModule
         var group = endpoints
             .MapGroup(Route)
             .WithTags("DataStoreManagement")
-            .WithMetadata(ManagedDataStoreRouteMetadata.Instance);
+            .WithMetadata(ManagedDataStoreRouteMetadata.Instance, ExceptionTypeOnlyLoggingMetadata.Instance);
         group
             .MapSecuredGet("", GetAll)
             .WithSummary("Query managed data stores")
