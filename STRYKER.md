@@ -53,7 +53,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Seven-file baseline recorded; relationship regressions awaiting rerun |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Release suite passed; mutation pilot pending |
-| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Admission-policy pilot qualified; full target baseline running |
+| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Full baseline recorded; token-manager regressions in progress |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Pending |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
@@ -95,8 +95,11 @@ Do not change production behavior merely to improve the mutation score.
 
 CMS Backend's Release suite passed 5,375 tests before the Claims baseline. Stryker
 5.0.0 could not select the transitively referenced Claims assembly, so the test
-project now references Claims directly. Locked restore passes without package-lock
-changes. The initial project-selection failure produced no baseline.
+project now references Claims directly. After merging `main` at `b127848d2`, the
+PostgreSQL and SQL Server integration-test lock files also record that reference:
+`main` added references from those suites to the Backend unit-test project. A forced
+locked restore of the complete CMS solution now passes. No package versions changed.
+The initial project-selection failure produced no baseline.
 
 Implementation started from `dfbd0530896805cd3415b679dc62510a9871268a` on 2026-11-16.
 Tool restoration and local-manifest resolution were checked at the repository root,
@@ -114,10 +117,11 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Initial query-authorization cluster (five files, before relationship expansion) | 5.0.0 | 82.50% baseline | 7m11s | `StrykerOutput/2026-11-16.17-53-57/reports/` |
 | Full `dms-query-auth` (seven configured files) | 5.0.0 | 82.20% baseline; rerun pending | 8m09s | `StrykerOutput/2026-11-16.18-11-59/reports/` |
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
+| Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% baseline; rerun pending | 11m46s | `StrykerOutput/2026-11-16.18-21-43/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
-The expanded query-authorization baseline uses `--concurrency 8` on the 24-core local
+The expanded query-authorization and full OpenIddict runs use `--concurrency 8` on the 24-core local
 host. Only one Stryker process runs in the checkout at a time.
 
 ### Query-authorization initial cluster
