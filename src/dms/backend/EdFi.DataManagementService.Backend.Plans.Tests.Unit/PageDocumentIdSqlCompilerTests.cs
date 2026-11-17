@@ -1844,6 +1844,49 @@ public class Given_PageDocumentIdSqlCompiler
         plan.PageDocumentIdSql.Should().NotContain("USI");
     }
 
+    [TestCase(SqlDialect.Pgsql, "Student", "OtherDocumentId")]
+    [TestCase(SqlDialect.Pgsql, "OtherResource", "DocumentId")]
+    [TestCase(SqlDialect.Mssql, "Student", "OtherDocumentId")]
+    [TestCase(SqlDialect.Mssql, "OtherResource", "DocumentId")]
+    public void It_rejects_a_self_person_subject_that_does_not_match_the_stored_anchor(
+        SqlDialect dialect,
+        string subjectTable,
+        string subjectColumn
+    )
+    {
+        var rootTable = new DbTableName(new DbSchemaName("edfi"), "Student");
+        var subject = CreatePersonAuthorizationSubject(
+            RelationshipAuthorizationPersonAuthViewKind.Student,
+            RelationshipAuthorizationPersonKind.Student,
+            new DbColumnName("DocumentId"),
+            RelationshipAuthorizationPersonSubjectPathKind.SelfRootDocumentId,
+            rootTable
+        ) with
+        {
+            Table = new DbTableName(new DbSchemaName("edfi"), subjectTable),
+            Column = new DbColumnName(subjectColumn),
+        };
+        var act = () =>
+            new PageDocumentIdSqlCompiler(dialect).Compile(
+                CreateSpec(
+                    [],
+                    [],
+                    authorization: CreateAuthorizationSpec(
+                        dialect,
+                        CreateAuthorizationStrategy(
+                            AuthorizationStrategyNameConstants.RelationshipsWithPeopleOnly,
+                            subject
+                        )
+                    ),
+                    rootTable: rootTable
+                )
+            );
+
+        act.Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("Self People authorization subject column*does not match root DocumentId column*");
+    }
+
     [TestCase(
         SqlDialect.Pgsql,
         "r.\"StudentAcademicRecord_DocumentId\" IN (SELECT t0.\"DocumentId\" FROM \"edfi\".\"StudentAcademicRecord\" t0 WHERE t0.\"Student_DocumentId\" IN (SELECT t1.\"Student_DocumentId\" FROM \"auth\".\"EducationOrganizationIdToStudentDocumentId\" t1 WHERE t1.\"SourceEducationOrganizationId\" = ANY(@ClaimEducationOrganizationIds))"

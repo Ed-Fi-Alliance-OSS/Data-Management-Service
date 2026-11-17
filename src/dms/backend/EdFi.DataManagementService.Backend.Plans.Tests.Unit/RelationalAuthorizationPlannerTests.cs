@@ -1096,6 +1096,33 @@ public class Given_RelationalAuthorizationPlanner
     }
 
     [Test]
+    public void It_keeps_the_earliest_configuration_failure_ahead_of_a_namespace_terminal()
+    {
+        var outcome = RelationalAuthorizationPlanner.Plan(
+            EmptyMappingSet(ResourceKey(1, "AcademicWeek")),
+            RootNamespaceResource(),
+            NamespaceAuthorizationOperation.ReadMany,
+            [
+                Strategy("UnknownBeforeNamespace", 0),
+                Strategy(AuthorizationStrategyNameConstants.NamespaceBased, 1),
+                Strategy("UnknownAfterNamespace", 2),
+            ],
+            EmptyPrefixContext()
+        );
+
+        var failure = outcome
+            .Should()
+            .BeOfType<RelationalAuthorizationPlanOutcome.SecurityConfigurationError>()
+            .Subject;
+        failure
+            .RelationshipClassification.SecurityConfigurationFailures.Select(item =>
+                item.ConfiguredStrategy!.RawConfiguredIndex
+            )
+            .Should()
+            .Equal(0, 2);
+    }
+
+    [Test]
     public void It_treats_NoFurtherAuthorizationRequired_as_a_non_namespace_strategy_passed_through_to_the_caller()
     {
         var resource = ResourceWithoutSecurableElements();

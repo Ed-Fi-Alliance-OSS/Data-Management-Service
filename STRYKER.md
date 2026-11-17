@@ -51,9 +51,9 @@ begins; pending rows are planned targets, not qualified runs.
 | --- | --- | --- | --- |
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
-| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Initial five-file baseline running |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Pending |
-| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Pending |
+| 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Seven-file baseline recorded; relationship regressions awaiting rerun |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Release suite passed; mutation pilot pending |
+| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Admission-policy pilot qualified; full target baseline running |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Pending |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
@@ -111,9 +111,150 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Claim-set pilot (`Security/ClaimSetResolver.cs`) | 5.0.0 | 85.00% baseline | 4m58s | `StrykerOutput/2026-11-16.17-15-38/reports/` |
 | Full `dms-request-auth` (three configured files) | 5.0.0 | 63.31% → 67.63% | 5m43s / 5m45s | `StrykerOutput/2026-11-16.17-20-46/reports/` → `StrykerOutput/2026-11-16.17-29-57/reports/` |
 | Full `cms-permission-inheritance` (two configured Claims files) | 5.0.0 | 83.33% → 91.67% | 6m25s / 6m19s | `StrykerOutput/2026-11-16.17-39-28/reports/` → `StrykerOutput/2026-11-16.17-47-25/reports/` |
+| Initial query-authorization cluster (five files, before relationship expansion) | 5.0.0 | 82.50% baseline | 7m11s | `StrykerOutput/2026-11-16.17-53-57/reports/` |
+| Full `dms-query-auth` (seven configured files) | 5.0.0 | 82.20% baseline; rerun pending | 8m09s | `StrykerOutput/2026-11-16.18-11-59/reports/` |
+| Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 
-Runs above used `--concurrency 2`. The query-authorization target uses
-`--concurrency 4`; only one Stryker process runs in the checkout at a time.
+Request authorization, Claims, validation, and batching used `--concurrency 2`.
+The initial query-authorization cluster and admission pilot used `--concurrency 4`.
+The expanded query-authorization baseline uses `--concurrency 8` on the 24-core local
+host. Only one Stryker process runs in the checkout at a time.
+
+### Query-authorization initial cluster
+
+The initial five-file scope contains 559 killed, 79 survived, 40 uncovered, 2 timed-out,
+163 compile-error, and 128 ignored mutants. The namespace SQL helper's 41 executable
+mutants and parameter-budget helper's 6 executable mutants were all killed. Their
+remaining compile errors include invalid `Count` → `Sum` access and adjacent changes
+rolled back by Stryker; the results do not prove every boundary was instrumented.
+
+The main test gaps are in `PageDocumentIdSqlCompiler.cs`:
+
+- Lines 1045–1129: removing direct-path returns, subquery projections, joins, view
+  membership, aliases, or closing delimiters can survive fragment-only assertions.
+  New direct/transitive cases assert complete page and count SQL for both dialects,
+  along with the exact paging parameters and absence of count parameters.
+- Lines 1015–1040, 1077, and 1082: malformed custom-view root, empty path, direct
+  source, or intermediate join targets need explicit rejection cases.
+- Line 470: treating an empty custom-view list as active can retain unused namespace
+  parameters when all checks are empty. Line 514's `Any` → `All` rejects an empty
+  custom-view list alongside a real ownership filter. Both empty-list contracts are
+  now tested.
+- Line 1275: removing self-person anchor validation can authorize through a different
+  column from the selected subject. New table/column mismatch cases cover both dialects.
+- `RelationalAuthorizationPlanner.cs:647`: `Min` → `Max` can select a later
+  configuration failure, incorrectly letting an intervening namespace terminal win.
+  A request with failures on both sides of the namespace strategy now checks precedence.
+
+The two timeouts correspond to nonterminating loops: negating the outer collision
+scan at line 152 loops forever for an empty predicate list; removing the inner index
+increment at line 164 loops forever for duplicate semantic predicates. These are
+timeout detections, not assertion-based kills. No increased test delays are needed.
+
+All 2,730 Plans tests passed in Release after the first cluster's changes. The
+configuration also includes `RelationshipAuthorizationPlanner.cs` and
+`SingleRecordRelationshipAuthorizationSqlCompiler.cs`. The expanded baseline contains
+1,423 killed, 187 survived, 122 uncovered, 4 timed-out, 461 compile-error, and 345 ignored
+mutants in those seven files. Matching source location/operator/replacement verifies
+49 intended first-cluster mutations are now killed. The old five-file score and new
+seven-file score have different denominators and are not a before/after comparison.
+
+The expanded report also changes the status of the duplicate-parameter secondary
+sort (page compiler line 303) to killed by an existing golden test, although that sort
+cannot change a valid result. Do not attribute this change to the new tests; verify
+its status in the final rerun. A third page-loop mutation (line 157) and the relationship
+compiler's parameter-suffix loop (line 768) time out in this run.
+
+Relationship regressions now cover a mixed invalid-strategy/subject-planning failure,
+a missing transitive first-hop binding with the correct root-table location, retained
+person metadata for ineligible create-new subjects, and one shared update failure
+when required people views are missing. Cached SQL tests cover zero AUTH1 indices in
+both overloads and dialects, rejection of negative indices, and reuse with equivalent
+reserved names supplied as separate arrays or lists. The complete Plans suite passed
+2,738 tests before the last five added cases; those five subsequently passed focused
+runs. Final full-scope mutation verification is pending.
+
+Initial-cluster exceptions retained after reviewing the expanded report:
+
+- Null container/entry guards in the planner, ownership helper, and page compiler
+  reject inputs outside their non-nullable contracts. Removing the required-parameter
+  guards at page compiler lines 495 and 503 still reaches the corresponding
+  parameterization validator's null guard, so neither removal drops a filter. The ownership helper's
+  unsupported-kind message mutations preserve rejection of an unsupported enum value.
+- Page compiler lines 152 and 247, `<` → `<=`, add one empty outer-loop iteration;
+  the inner loop does not execute and no extra element is accessed. Lines 1738–1739
+  change only list capacity, not the collected collision diagnostics.
+- Reversing the final predicate parameter-name sort at line 139 affects only groups
+  that are rejected as duplicate semantic predicates; the diagnostic formatter sorts
+  those names again. Conversely, removing that later sort at line 1748 is equivalent
+  because the earlier sort already orders the same group. Neither individual mutation
+  changes the result. The duplicate-parameter secondary sort at line 303 cannot break
+  a tie: case-insensitive grouping already merges every such tie.
+- Removing the namespace-list coalescing at line 940 is equivalent because normalization
+  always supplies an array. Changes to tie breakers at lines 942, 948, and 952 reorder
+  AND predicates only within the same configured position; every predicate and binding
+  remains, and ordering between distinct CMS positions is still enforced.
+- Page compiler context-label mutations (lines 489, 508, 541) affect internal
+  diagnostics. Closed target/filter variants and normalized parameter/cursor invariants
+  make defensive fallback messages unreachable. Transitive-person target-null messages
+  follow `ValidateTransitivePersonPath`, which already rejects those missing targets.
+- Planner line 98's default configured index is overwritten on its only production
+  construction path. Classifying an empty strategy list at line 258 produces the same
+  empty plan. Every current operation enforces custom-view checks, so the old
+  not-enabled arms and default unknown-operation branch are unreachable for supported
+  operations. Ownership is the classifier's sole known-but-not-enabled strategy, and
+  the planner removes it into an enforced bucket for every current operation. The
+  namespace `<=` mutation at line 315 requires two distinct configured entries to share
+  a CMS position; callers assign positions from their unique list indices.
+
+
+Relationship-specific dispositions (source locations refer to the unchanged production files):
+
+- Planner empty-list fast paths (472, 703, 766, 1453) and `Count > 0` → `>= 0`
+  changes (647, 928, 977, 1125) retain the same selected subjects or failures. At
+  991, failed check-spec creation already returns a null check spec, so removing
+  `continue` adds no executable check. Stored planning cannot produce the proposed
+  binding failures selected by the conditional at 576. Self-person create-new subjects
+  are removed before the anchor choice at 1206, leaving only the existing-target arm.
+- Contributor-kind fallbacks select the same Student/Contact/Staff kind that the
+  corresponding selector supplies. Successful selectors provide contributors, making
+  their `FirstOrDefault` → `First` changes equivalent on supported inputs. Missing
+  subject/person and unknown path-kind messages are defensive diagnostics. Changes to
+  reason separators and secondary contributor ordering affect failure diagnostics,
+  not the selected subjects or grant/deny result.
+- Compiler null guards and cache-input validation repeated during normalization can
+  survive without allowing invalid SQL. Transitive-path validation at 464 and 1166
+  repeats validation on another path in the same compilation. Generated proposed
+  parameter names always begin with `relationshipAuthorization_`, so dropping the
+  separate `documentUuid`/`resourceKeyId` reservation at 719 cannot create a collision.
+  Collision checks at 1847–1875 defend names already uniquely allocated and validated.
+  Placeholder claim values (695–702) are used only to compile cached SQL shape; actual
+  request claims are bound separately.
+- Both caches retain survivors in capacity accounting, concurrent insertion, and
+  failed-entry removal (planner 1997–2079; compiler 565–653). These are **remaining
+  cache-lifetime/performance coverage gaps**, not equivalent mutants or authorization
+  kills. Normal cache reuse, mapping-set isolation, changed claims/shape/parameter
+  inventories, and equivalent reserved-name collections are exercised through public
+  methods. No timing sleeps or tests of private counters were introduced.
+- Cache hash-contribution removals preserve full structural equality and merely add
+  collisions. Removing a structural equality comparison is different: the unchanged
+  hash precheck masks it unless two unequal keys have the same hash. Those survivors
+  remain an explicit **collision-path coverage limitation**, not a proof of equivalence.
+  These runs do not establish exhaustive cache-key collision safety.
+
+### Admission-policy instrumentation pilot
+
+The OpenIddict pilot produced 13 killed, 2 compile-error, and 2 ignored mutations in
+`ClientAdmissionPolicy.cs`, with no survivors, uncovered mutants, or timeouts. Existing
+tests detect the executable role-configuration, administrative-role, and scope
+admission changes. Stryker attempted invalid `scopes.Count` → `scopes.Sum` member
+access at line 108 and rolled back its neighboring equality mutation as well.
+
+Executable mutations and coverage in this assembly establish that its assembly-level
+`ExcludeFromCodeCoverage` attribute does not prevent this Stryker run. No attribute or
+coverage-setting change is needed. This pilot does not establish a token-manager or
+full-target result; run the named configuration without the `--mutate` override for
+that scope.
 
 ### CMS permission-inheritance triage
 
