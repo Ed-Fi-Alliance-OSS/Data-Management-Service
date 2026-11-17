@@ -27,6 +27,13 @@ public static class MssqlTestDatabaseHelper
     ];
     private static readonly string _runOwnedDatabasePrefix = $"dmsfp{Guid.NewGuid():N}"[..13];
 
+    /// <summary>
+    /// Test seam: awaited inside the lifecycle gate, with the lifecycle connection and the database name,
+    /// right before the source database fence. Only <c>[NonParallelizable]</c> fixtures set it; they
+    /// clear it in a <c>finally</c> and ignore database names they do not own.
+    /// </summary>
+    internal static Func<SqlConnection, string, Task>? BeforeSourceFenceObservationHook { get; set; }
+
     public static bool IsConfigured() => BaselineDatabaseConfiguration.MssqlAdminConnectionString is not null;
 
     public static string RunOwnedDatabasePrefix => _runOwnedDatabasePrefix;
@@ -197,6 +204,13 @@ public static class MssqlTestDatabaseHelper
                 throw new InvalidOperationException(
                     $"SQL Server snapshots owned by database '{databaseName}' remain after teardown: {string.Join(", ", remainingSnapshotNames)}."
                 );
+            }
+
+            await DropCdcAgentJobsAsync(connection, databaseName, commandTimeoutSeconds);
+
+            if (BeforeSourceFenceObservationHook is { } observationHook)
+            {
+                await observationHook(connection, databaseName);
             }
 
             await DropSourceDatabaseIfExistsAsync(connection, databaseName, commandTimeoutSeconds);
@@ -537,6 +551,75 @@ public static class MssqlTestDatabaseHelper
         }
 
         return snapshotNames;
+    }
+
+    /// <summary>
+    /// SQL Agent's CDC capture job holds a session in its database and retries it every minute, so the
+    /// fence must not be the thing that ends it: drop the database's CDC jobs first.
+    /// </summary>
+    private static async Task DropCdcAgentJobsAsync(
+        SqlConnection connection,
+        string databaseName,
+        int commandTimeoutSeconds
+    )
+    {
+        // msdb drops cdc_jobs together with the last job, so read every job type before dropping any.
+        const string readJobTypesSql = """
+            IF OBJECT_ID(N'msdb.dbo.cdc_jobs') IS NOT NULL
+                EXEC sys.sp_executesql
+                    N'SELECT [job_type] FROM msdb.dbo.cdc_jobs WHERE [database_id] = DB_ID(@databaseName);',
+                    N'@databaseName sysname',
+                    @databaseName = @databaseName;
+            """;
+
+        List<string> jobTypes = [];
+        await using (SqlCommand readCommand = connection.CreateCommand())
+        {
+            readCommand.CommandText = readJobTypesSql;
+            readCommand.CommandTimeout = commandTimeoutSeconds;
+            readCommand.Parameters.Add(new SqlParameter("@databaseName", databaseName));
+
+            await using var reader = await readCommand.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                jobTypes.Add(reader.GetString(0));
+            }
+        }
+
+        foreach (var jobType in jobTypes)
+        {
+            await using SqlCommand dropCommand = connection.CreateCommand();
+            dropCommand.CommandText =
+                $"EXEC {QuoteIdentifier(databaseName)}.sys.sp_cdc_drop_job @job_type = @jobType;";
+            dropCommand.CommandTimeout = commandTimeoutSeconds;
+            dropCommand.Parameters.Add(new SqlParameter("@jobType", jobType));
+            await dropCommand.ExecuteNonQueryAsync();
+        }
+
+        if (jobTypes.Count == 0)
+        {
+            return;
+        }
+
+        // sp_cdc_drop_job stops the job asynchronously: its session leaves the database about 10 ms later.
+        // Wait for that signal (bounded); past the limit the fence ends the session as before.
+        const string waitForJobStepSessionsSql = """
+            DECLARE @deadline datetime2 = DATEADD(second, 30, SYSUTCDATETIME());
+            WHILE EXISTS (
+                    SELECT 1
+                    FROM sys.dm_exec_sessions
+                    WHERE [database_id] = DB_ID(@databaseName)
+                      AND [program_name] LIKE N'SQLAgent - TSQL JobStep%'
+                )
+                AND SYSUTCDATETIME() < @deadline
+                WAITFOR DELAY '00:00:00.010';
+            """;
+
+        await using SqlCommand waitCommand = connection.CreateCommand();
+        waitCommand.CommandText = waitForJobStepSessionsSql;
+        waitCommand.CommandTimeout = commandTimeoutSeconds;
+        waitCommand.Parameters.Add(new SqlParameter("@databaseName", databaseName));
+        await waitCommand.ExecuteNonQueryAsync();
     }
 
     private static async Task DropSourceDatabaseIfExistsAsync(

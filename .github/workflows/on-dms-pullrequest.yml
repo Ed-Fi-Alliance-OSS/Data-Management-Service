@@ -1285,11 +1285,17 @@ jobs:
 
       - name: Run Backend MSSQL Integration Tests
         if: success()
+        # Shard 4 took 23-34 min and shards 1-3 5-22 min in recent merge-queue runs. The hang timeout
+        # kills a testhost whose single test runs past 30 min and saves a mini dump; the step timeout
+        # bounds a hang outside a test, such as in a OneTimeTearDown.
+        timeout-minutes: 75
         run: |
           dotnet test ${{ env.TEST_ASSEMBLY }} `
             -v normal `
             --results-directory "./src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/TestResults" `
             --filter "Category=${{ matrix.shard-category }}" `
+            --blame-hang-timeout 30m `
+            --blame-hang-dump-type mini `
             --logger "trx;LogFileName=EdFi.DataManagementService.Backend.Mssql.Tests.Integration.Shard${{ matrix.shard }}.trx" `
             --logger "console" `
             --nologo
@@ -1321,6 +1327,8 @@ jobs:
           name: test-timings-mssql-shard-${{ matrix.shard }}
           path: |
             src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/TestResults/**/*.trx
+            src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/TestResults/**/*.dmp
+            src/dms/backend/EdFi.DataManagementService.Backend.Mssql.Tests.Integration/TestResults/**/Sequence_*.xml
             TestResults/test-timings/mssql-shard-${{ matrix.shard }}/**
           if-no-files-found: ignore
           retention-days: 30

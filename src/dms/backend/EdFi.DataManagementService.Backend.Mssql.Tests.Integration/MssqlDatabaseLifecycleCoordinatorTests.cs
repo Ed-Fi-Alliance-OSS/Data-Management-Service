@@ -5,8 +5,11 @@
 
 using System.Collections.Concurrent;
 using System.Data;
+using System.Diagnostics;
+using System.Globalization;
 using System.Reflection;
 using System.Runtime.CompilerServices;
+using System.Text;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -229,4 +232,377 @@ public class Given_MssqlDatabaseLifecycleCoordinator
 
         return sqlException;
     }
+}
+
+/// <summary>
+/// SQL Agent's CDC capture job holds a session in its database. The teardown fence must not be what
+/// ends that session, so the drop path has to remove the database's CDC Agent jobs before the fence.
+/// </summary>
+[TestFixture(true)]
+[TestFixture(false)]
+[NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool withCaptureInstance)
+{
+    private static readonly TimeSpan _captureSessionWaitLimit = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan _captureSessionPollInterval = TimeSpan.FromMilliseconds(250);
+
+    private readonly List<FenceObservation> _observations = [];
+    private string _databaseName = null!;
+    private Exception? _dropException;
+    private bool _databaseExistsAfterDrop;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server CDC teardown integration tests require a MssqlAdmin connection string."
+        );
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        await MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(_databaseName);
+        await EnableCdcAsync();
+
+        if (withCaptureInstance && await IsSqlAgentRunningAsync())
+        {
+            await WaitForCaptureSessionAsync();
+        }
+
+        MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = ObserveFenceAsync;
+        try
+        {
+            await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName);
+        }
+        catch (Exception exception)
+        {
+            _dropException = exception;
+        }
+        finally
+        {
+            MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = null;
+        }
+
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        _databaseExistsAfterDrop = await DatabaseExistsAsync(connection, _databaseName);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = null;
+
+        if (_databaseName is null)
+        {
+            return;
+        }
+
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        if (await DatabaseExistsAsync(connection, _databaseName))
+        {
+            await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_observes_the_fence_while_the_database_exists()
+    {
+        _observations.Should().Contain(observation => observation.DatabaseExists, DescribeObservations());
+    }
+
+    [Test]
+    public void It_drops_the_cdc_agent_jobs_before_the_fence()
+    {
+        _observations
+            .Should()
+            .OnlyContain(observation => observation.CdcJobTypes.Count == 0, DescribeObservations());
+    }
+
+    [Test]
+    public void It_leaves_no_session_in_the_database_when_the_fence_runs()
+    {
+        _observations
+            .Should()
+            .OnlyContain(observation => observation.Sessions.Count == 0, DescribeObservations());
+    }
+
+    [Test]
+    public void It_drops_the_database()
+    {
+        _dropException.Should().BeNull(DescribeObservations());
+        _databaseExistsAfterDrop.Should().BeFalse(DescribeObservations());
+    }
+
+    private async Task ObserveFenceAsync(SqlConnection connection, string databaseName)
+    {
+        if (!string.Equals(databaseName, _databaseName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        const string sql = """
+            SELECT CASE WHEN DB_ID(@databaseName) IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END;
+
+            IF OBJECT_ID(N'msdb.dbo.cdc_jobs') IS NOT NULL
+                EXEC sys.sp_executesql
+                    N'SELECT [job_type] FROM msdb.dbo.cdc_jobs WHERE [database_id] = DB_ID(@databaseName) ORDER BY [job_type];',
+                    N'@databaseName sysname',
+                    @databaseName = @databaseName;
+            ELSE
+                SELECT CAST(N'' AS nvarchar(20)) AS [job_type] WHERE 1 = 0;
+
+            SELECT CONCAT([session_id], N' ', [program_name], N' ', [status])
+            FROM sys.dm_exec_sessions
+            WHERE [database_id] = DB_ID(@databaseName)
+              AND [session_id] <> @@SPID
+            ORDER BY [session_id];
+            """;
+
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.Add(
+            new SqlParameter("@databaseName", SqlDbType.NVarChar, 128) { Value = databaseName }
+        );
+
+        await using SqlDataReader reader = await command.ExecuteReaderAsync();
+        await reader.ReadAsync();
+        var databaseExists = reader.GetBoolean(0);
+        await reader.NextResultAsync();
+        List<string> jobTypes = await ReadStringsAsync(reader);
+        await reader.NextResultAsync();
+        List<string> sessions = await ReadStringsAsync(reader);
+
+        _observations.Add(new(databaseExists, jobTypes, sessions));
+    }
+
+    private async Task EnableCdcAsync()
+    {
+        await using SqlConnection connection = await OpenConnectionAsync(_databaseName);
+        await ExecuteNonQueryAsync(
+            connection,
+            """
+            CREATE TABLE [dbo].[CdcTeardownProbe]
+            (
+                [ProbeId] int NOT NULL CONSTRAINT [PK_CdcTeardownProbe] PRIMARY KEY CLUSTERED,
+                [ProbeValue] int NOT NULL
+            );
+
+            EXEC sys.sp_cdc_enable_db;
+            """
+        );
+
+        if (withCaptureInstance)
+        {
+            // The first capture instance creates and starts the database's capture and cleanup jobs.
+            await ExecuteNonQueryAsync(
+                connection,
+                """
+                EXEC sys.sp_cdc_enable_table
+                    @source_schema = N'dbo',
+                    @source_name = N'CdcTeardownProbe',
+                    @role_name = NULL,
+                    @supports_net_changes = 0;
+                """
+            );
+        }
+    }
+
+    private static async Task<bool> IsSqlAgentRunningAsync()
+    {
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT COUNT(*)
+            FROM sys.dm_server_services
+            WHERE [servicename] LIKE N'SQL Server Agent%'
+              AND [status_desc] = N'Running';
+            """;
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) > 0;
+    }
+
+    private async Task WaitForCaptureSessionAsync()
+    {
+        const string sql = """
+            SELECT COUNT(*)
+            FROM sys.dm_exec_sessions
+            WHERE [database_id] = DB_ID(@databaseName)
+              AND [program_name] LIKE N'SQLAgent - TSQL JobStep%';
+            """;
+
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        var stopwatch = Stopwatch.StartNew();
+
+        while (stopwatch.Elapsed < _captureSessionWaitLimit)
+        {
+            await using (SqlCommand command = connection.CreateCommand())
+            {
+                command.CommandText = sql;
+                command.Parameters.Add(
+                    new SqlParameter("@databaseName", SqlDbType.NVarChar, 128) { Value = _databaseName }
+                );
+
+                if (Convert.ToInt32(await command.ExecuteScalarAsync()) > 0)
+                {
+                    return;
+                }
+            }
+
+            await Task.Delay(_captureSessionPollInterval);
+        }
+
+        Assert.Fail(
+            $"SQL Agent is running, but no CDC capture session appeared in '{_databaseName}' within "
+                + $"{_captureSessionWaitLimit.TotalSeconds} s.{Environment.NewLine}"
+                + await DescribeCaptureJobStateAsync(connection)
+        );
+    }
+
+    private async Task<string> DescribeCaptureJobStateAsync(SqlConnection connection)
+    {
+        const string cdcJobsSql = """
+            IF OBJECT_ID(N'msdb.dbo.cdc_jobs') IS NOT NULL
+                EXEC sys.sp_executesql
+                    N'SELECT [job_type], CONVERT(nvarchar(36), [job_id]) FROM msdb.dbo.cdc_jobs WHERE [database_id] = DB_ID(@databaseName);',
+                    N'@databaseName sysname',
+                    @databaseName = @databaseName;
+            ELSE
+                SELECT N'msdb.dbo.cdc_jobs does not exist', NULL;
+            """;
+        const string jobActivitySql = """
+            SELECT jobs.[name], activity.[session_id], activity.[start_execution_date], activity.[stop_execution_date]
+            FROM msdb.dbo.sysjobs jobs
+            INNER JOIN msdb.dbo.sysjobactivity activity ON activity.[job_id] = jobs.[job_id]
+            WHERE jobs.[name] IN (N'cdc.' + @databaseName + N'_capture', N'cdc.' + @databaseName + N'_cleanup');
+            """;
+        const string jobHistorySql = """
+            SELECT TOP (10) jobs.[name], history.[step_id], history.[run_status], history.[run_date],
+                history.[run_time], history.[message]
+            FROM msdb.dbo.sysjobhistory history
+            INNER JOIN msdb.dbo.sysjobs jobs ON jobs.[job_id] = history.[job_id]
+            WHERE jobs.[name] IN (N'cdc.' + @databaseName + N'_capture', N'cdc.' + @databaseName + N'_cleanup')
+            ORDER BY history.[instance_id] DESC;
+            """;
+        const string sessionsSql = """
+            SELECT [session_id], [program_name], [login_name], [status]
+            FROM sys.dm_exec_sessions
+            WHERE [database_id] = DB_ID(@databaseName);
+            """;
+
+        StringBuilder description = new();
+        foreach (
+            (string title, string sql) in new[]
+            {
+                ("msdb.dbo.cdc_jobs", cdcJobsSql),
+                ("msdb.dbo.sysjobactivity", jobActivitySql),
+                ("msdb.dbo.sysjobhistory (latest first)", jobHistorySql),
+                ("sessions in the database", sessionsSql),
+            }
+        )
+        {
+            description.AppendLine($"{title}:");
+            foreach (var row in await ReadRowsAsTextAsync(connection, sql))
+            {
+                description.AppendLine($"  {row}");
+            }
+        }
+
+        return description.ToString();
+    }
+
+    private async Task<List<string>> ReadRowsAsTextAsync(SqlConnection connection, string sql)
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        command.Parameters.Add(
+            new SqlParameter("@databaseName", SqlDbType.NVarChar, 128) { Value = _databaseName }
+        );
+
+        List<string> rows = [];
+        await using SqlDataReader reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            rows.Add(
+                string.Join(
+                    " | ",
+                    Enumerable
+                        .Range(0, reader.FieldCount)
+                        .Select(ordinal =>
+                            reader.IsDBNull(ordinal)
+                                ? "NULL"
+                                : Convert.ToString(reader.GetValue(ordinal), CultureInfo.InvariantCulture)
+                        )
+                )
+            );
+        }
+
+        return rows;
+    }
+
+    private string DescribeObservations()
+    {
+        return _observations.Count == 0
+            ? $"the fence observation hook never ran for '{_databaseName}'; drop exception: {_dropException}"
+            : $"fence observations for '{_databaseName}' (with capture instance: {withCaptureInstance}):{Environment.NewLine}"
+                + string.Join(
+                    Environment.NewLine,
+                    _observations.Select(
+                        (observation, index) =>
+                            $"  #{index + 1}: exists={observation.DatabaseExists}, "
+                            + $"cdc jobs=[{string.Join(", ", observation.CdcJobTypes)}], "
+                            + $"sessions=[{string.Join("; ", observation.Sessions)}]"
+                    )
+                )
+                + $"{Environment.NewLine}drop exception: {_dropException?.ToString() ?? "none"}";
+    }
+
+    private static async Task<List<string>> ReadStringsAsync(SqlDataReader reader)
+    {
+        List<string> values = [];
+        while (await reader.ReadAsync())
+        {
+            values.Add(reader.GetString(0));
+        }
+
+        return values;
+    }
+
+    private static async Task<bool> DatabaseExistsAsync(SqlConnection connection, string databaseName)
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT CASE WHEN DB_ID(@databaseName) IS NULL THEN 0 ELSE 1 END;";
+        command.Parameters.Add(
+            new SqlParameter("@databaseName", SqlDbType.NVarChar, 128) { Value = databaseName }
+        );
+
+        return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
+    }
+
+    private static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = sql;
+        await command.ExecuteNonQueryAsync();
+    }
+
+    /// <summary>
+    /// Unpooled, so that no idle connection from this fixture is counted as a session in the database.
+    /// </summary>
+    private static async Task<SqlConnection> OpenConnectionAsync(string databaseName)
+    {
+        SqlConnectionStringBuilder builder = new(MssqlTestDatabaseHelper.BuildConnectionString(databaseName))
+        {
+            Pooling = false,
+        };
+        SqlConnection connection = new(builder.ConnectionString);
+        await connection.OpenAsync();
+        return connection;
+    }
+
+    private sealed record FenceObservation(
+        bool DatabaseExists,
+        IReadOnlyList<string> CdcJobTypes,
+        IReadOnlyList<string> Sessions
+    );
 }
