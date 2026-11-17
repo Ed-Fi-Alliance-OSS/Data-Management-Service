@@ -7,6 +7,7 @@ using System.Reflection;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Xml.Linq;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
@@ -278,6 +279,14 @@ public partial class BackendProjectBoundaryTests
             _used.Should().Contain([typeof(IHttpClientFactory), typeof(HttpRequestMessage)]);
 
         [Test]
+        public void It_uses_no_data_store_provisioner_type() =>
+            _used
+                .Where(type => type.Namespace == typeof(DmsDataStoreCreateRequest).Namespace)
+                .Select(type => type.FullName)
+                .Should()
+                .BeEmpty();
+
+        [Test]
         public void It_uses_no_database_api_in_any_signature_or_field() =>
             _used
                 .Where(type =>
@@ -333,7 +342,9 @@ public partial class BackendProjectBoundaryTests
 
     /// <summary>
     /// Acceptance criterion 14: no Configuration Service product source (C# or SQL, test projects excluded) names a
-    /// DMS table, the DMS schema or <c>EffectiveSchema</c>.
+    /// DMS table, the DMS schema or <c>EffectiveSchema</c>. The data store provisioner's <c>DataStoreProvisioning</c>
+    /// folders are left out: acceptance criterion 15 keeps that administrative database access with the provisioner,
+    /// which creates and verifies DMS databases, and the projection reader's types use none of it.
     /// </summary>
     [TestFixture]
     public partial class Given_the_configuration_service_product_sources
@@ -354,7 +365,7 @@ public partial class BackendProjectBoundaryTests
                             Path.GetRelativePath(ConfigurationServiceRoot, file)
                                 .Split(Path.DirectorySeparatorChar),
                             segment =>
-                                segment is "bin" or "obj" or "tests"
+                                segment is "bin" or "obj" or "tests" or "DataStoreProvisioning"
                                 || segment.Contains(".Tests", StringComparison.Ordinal)
                         )
                     ),
