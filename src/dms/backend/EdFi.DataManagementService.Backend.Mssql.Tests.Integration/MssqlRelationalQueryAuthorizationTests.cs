@@ -2590,7 +2590,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
         );
     }
 
-    private async Task<UpsertResult> UpsertAsync(
+    /// <summary>
+    /// Issues a POST for any resource of the fixture through the production repository, with no further
+    /// authorization unless <paramref name="strategyNames"/> are given.
+    /// </summary>
+    public async Task<UpsertResult> UpsertAsync(
         string projectEndpointName,
         string resourceName,
         JsonNode requestBody,
@@ -2649,7 +2653,11 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             .UpsertDocument(request);
     }
 
-    private async Task<UpdateResult> UpdateAsync(
+    /// <summary>
+    /// Issues a PUT for any resource of the fixture through the production repository under the given
+    /// claimed education organizations and strategies.
+    /// </summary>
+    public async Task<UpdateResult> UpdateAsync(
         string projectEndpointName,
         string resourceName,
         JsonNode requestBody,
@@ -2956,7 +2964,7 @@ internal sealed class MssqlRelationalQueryAuthorizationTestContext : IAsyncDispo
             );
     }
 
-    private async Task SeedDescriptorAsync(
+    public async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
         string @namespace,

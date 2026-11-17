@@ -253,6 +253,13 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         _writeSessionRecorder.Reset();
     }
 
+    /// <summary>
+    /// Every command the production write session issued since the last <see cref="ResetRecorder"/>, in
+    /// issue order.
+    /// </summary>
+    public IReadOnlyList<PostgresqlRelationalQueryAuthorizationRecordedCommand> RecordedWriteCommands =>
+        _writeSessionRecorder.Commands;
+
     public void AssertDeleteWithIfMatchSharedGuardedSession()
     {
         var commands = _writeSessionRecorder.Commands;
@@ -2126,7 +2133,11 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
         );
     }
 
-    private async Task<UpsertResult> UpsertAsync(
+    /// <summary>
+    /// Issues a POST for any resource of the fixture through the production repository, with no further
+    /// authorization unless <paramref name="strategyNames"/> are given.
+    /// </summary>
+    public async Task<UpsertResult> UpsertAsync(
         string projectEndpointName,
         string resourceName,
         JsonNode requestBody,
@@ -2184,7 +2195,11 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             .UpsertDocument(request);
     }
 
-    private async Task<UpdateResult> UpdateAsync(
+    /// <summary>
+    /// Issues a PUT for any resource of the fixture through the production repository under the given
+    /// claimed education organizations and strategies.
+    /// </summary>
+    public async Task<UpdateResult> UpdateAsync(
         string projectEndpointName,
         string resourceName,
         JsonNode requestBody,
@@ -2476,7 +2491,7 @@ internal sealed class PostgresqlRelationalQueryAuthorizationTestContext : IAsync
             );
     }
 
-    private async Task SeedDescriptorAsync(
+    public async Task SeedDescriptorAsync(
         Guid documentUuid,
         string resourceName,
         string @namespace,
