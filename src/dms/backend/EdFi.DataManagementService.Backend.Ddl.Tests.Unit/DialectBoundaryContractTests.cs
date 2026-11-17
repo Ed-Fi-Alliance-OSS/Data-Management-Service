@@ -188,6 +188,30 @@ public class Given_Mssql_Column_Default_And_Table_Type_Contracts
 {
     private readonly MssqlDialect _dialect = new(new MssqlDialectRules());
 
+    [Test]
+    public void It_escapes_the_change_version_function_schema_in_the_catalog_lookup()
+    {
+        _dialect
+            .CreateGetMaxChangeVersionFunction(new("Owner's"))
+            .ReplaceLineEndings("\n")
+            .Should()
+            .Be(
+                """
+                CREATE OR ALTER FUNCTION [Owner's].[GetMaxChangeVersion]()
+                RETURNS bigint
+                AS
+                BEGIN
+                    DECLARE @Result bigint;
+                    SELECT @Result = CONVERT(bigint, seq.current_value) FROM sys.sequences seq
+                    INNER JOIN sys.schemas sch
+                    ON seq.schema_id = sch.schema_id
+                    WHERE seq.name = 'ChangeVersionSequence' AND sch.name = 'Owner''s';
+                    RETURN @Result;
+                END;
+                """.ReplaceLineEndings("\n")
+            );
+    }
+
     [TestCase("int")]
     [TestCase("smallint")]
     [TestCase("tinyint")]

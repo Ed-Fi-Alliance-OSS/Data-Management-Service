@@ -401,7 +401,12 @@ public class Given_MssqlDialect_Create_Schema_With_Quote_In_Name
     [Test]
     public void It_should_escape_single_quotes_in_literal()
     {
-        _ddl.Should().Contain("N'test''schema'");
+        _ddl.ReplaceLineEndings("\n")
+            .Should()
+            .Be(
+                "IF NOT EXISTS (SELECT 1 FROM sys.schemas WHERE name = N'test''schema')\n"
+                    + "    EXEC('CREATE SCHEMA [test''schema]');"
+            );
     }
 }
 
