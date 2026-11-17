@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -836,6 +837,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
     [Test]
     public async Task It_binds_the_decoded_target_to_a_structured_relationship_fallback()
     {
+        long[] claimIds = [.. Enumerable.Range(1, 2000).Select(static value => (long)value)];
+        var configurator = A.Fake<IRelationalParameterConfigurator>();
         var input = CreateInput(
             RelationalWriteOperationKind.Put,
             includeReadPlan: true,
@@ -846,7 +849,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             StoredRelationshipAuthorization =
                 Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
                     input,
-                    Enumerable.Range(1, 2000).Select(static value => (long)value).ToArray()
+                    claimIds
                 ),
         };
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
@@ -856,7 +859,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target))
         );
 
-        var resolution = await CreateSut().ResolveAsync(input, session);
+        var resolution = await CreateSut(parameterConfigurator: configurator).ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
         resolution.Outcome!.LockedTarget!.IsHeldBy(session).Should().BeTrue();
@@ -869,6 +872,30 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Value.Should()
             .Be(target.DocumentId);
         session.Commands[1].CommandText.Should().NotContain("@dms_composite_target_documentid");
+        var structuredParameter = session
+            .Commands[1]
+            .Parameters.Single(parameter => parameter.Value is DataTable);
+        var table = (DataTable)structuredParameter.Value!;
+        table
+            .Columns.Cast<DataColumn>()
+            .Select(column => (column.ColumnName, column.DataType))
+            .Should()
+            .Equal(("Id", typeof(long)));
+        table.Rows.Cast<DataRow>().Select(row => (long)row[0]).Should().Equal(claimIds);
+        var providerParameter = new ScriptedDbParameter();
+        structuredParameter.ConfigureParameter.Should().NotBeNull();
+        structuredParameter.ConfigureParameter!(providerParameter);
+        A.CallTo(() =>
+                configurator.ConfigureParameter(
+                    providerParameter,
+                    A<QuerySqlParameter>.That.Matches(parameter =>
+                        parameter.Binding.Kind == QuerySqlParameterBindingKind.MssqlStructured
+                        && parameter.Binding.StructuredTypeName == "dms.BigIntTable"
+                        && parameter.Binding.StructuredColumnName == "Id"
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
@@ -1186,11 +1213,13 @@ public class Given_The_Composite_Relational_Write_First_Phase
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         RelationalCommandBudget? commandBudget = null,
         IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
-        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null,
+        IRelationalParameterConfigurator? parameterConfigurator = null
     ) =>
         new(
             lookupCommandBuilder ?? new ThrowingNaturalKeyLookupCommandBuilder(),
             new ResolvedDocumentReferenceMapFactory(),
+            relationalParameterConfigurator: parameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             commandBudget: commandBudget,
             customViewValidationCommandExecutor: customViewValidationCommandExecutor,

@@ -13,6 +13,150 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 public abstract class CreatabilityAnalyzerTests
 {
     [TestFixture]
+    public class Given_A_Blocked_Child_Under_Only_One_Collection_Parent : CreatabilityAnalyzerTests
+    {
+        [TestCase(false)]
+        [TestCase(true)]
+        public void It_demotes_only_the_parent_with_the_noncreatable_child(bool reverseOrder)
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new("$", ScopeKind.Root, null, [], [], ["rootId"]),
+                new("$.groups[*]", ScopeKind.Collection, "$", [], ["id"], ["id"]),
+                new(
+                    "$.groups[*].detail",
+                    ScopeKind.NonCollection,
+                    "$.groups[*]",
+                    ["$.groups[*]"],
+                    [],
+                    ["visible", "required"]
+                ),
+            ];
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [
+                    new CollectionRule(
+                        "groups",
+                        MemberSelection.IncludeAll,
+                        null,
+                        null,
+                        [
+                            new ObjectRule(
+                                "detail",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                [new PropertyRule("visible")],
+                                null,
+                                null,
+                                null
+                            ),
+                        ],
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                []
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                new ProfileVisibilityClassifier(profile, scopes),
+                "TestProfile",
+                "Resource",
+                "PUT",
+                "write"
+            );
+            var parentA = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress("$.groups[*]", "id", "A"),
+                false,
+                "$.groups[0]"
+            );
+            var parentB = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress("$.groups[*]", "id", "B"),
+                false,
+                "$.groups[1]"
+            );
+            var detailA = new RequestScopeState(
+                new ScopeInstanceAddress(
+                    "$.groups[*].detail",
+                    [new AncestorCollectionInstance("$.groups[*]", parentA.Address.SemanticIdentityInOrder)]
+                ),
+                ProfileVisibilityKind.VisiblePresent,
+                false
+            );
+            var detailB = new RequestScopeState(
+                new ScopeInstanceAddress(
+                    "$.groups[*].detail",
+                    [new AncestorCollectionInstance("$.groups[*]", parentB.Address.SemanticIdentityInOrder)]
+                ),
+                ProfileVisibilityKind.VisibleAbsent,
+                false
+            );
+            ImmutableArray<RequestScopeState> states =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, false),
+                .. reverseOrder ? new[] { detailB, detailA } : new[] { detailA, detailB },
+            ];
+            ImmutableArray<VisibleRequestCollectionItem> items = reverseOrder
+                ? [parentB, parentA]
+                : [parentA, parentB];
+
+            var result = analyzer.Analyze(
+                states,
+                items,
+                new TestExistenceLookup(existingScopes: ScopeAddressSet(MakeAddress("$"))),
+                isCreate: false,
+                new Dictionary<string, IReadOnlyList<string>>
+                {
+                    ["$"] = ["rootId"],
+                    ["$.groups[*]"] = ["id"],
+                    ["$.groups[*].detail"] = ["required"],
+                }
+            );
+
+            result
+                .EnrichedCollectionItems.Single(item =>
+                    item.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>() == "A"
+                )
+                .Creatable.Should()
+                .BeFalse();
+            result
+                .EnrichedCollectionItems.Single(item =>
+                    item.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>() == "B"
+                )
+                .Creatable.Should()
+                .BeTrue();
+            result.Failures.Should().HaveCount(2);
+            var failures = result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .ToArray();
+            failures.Should().HaveCount(2);
+            failures
+                .Single(failure => failure.JsonScope == "$.groups[*].detail")
+                .HiddenCreationRequiredMemberPaths.Should()
+                .Equal("required");
+            var parentFailure = failures.Single(failure => failure.JsonScope == "$.groups[*]");
+            parentFailure.HiddenCreationRequiredMemberPaths.Should().BeEmpty();
+            parentFailure
+                .Dependencies.Should()
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                        ProfileCreatabilityTargetKind.NestedOrCommonTypeScope,
+                        "$.groups[*].detail",
+                        ScopeKind.NonCollection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
+                    )
+                );
+            states.Should().OnlyContain(state => !state.Creatable);
+            items.Should().OnlyContain(item => !item.Creatable);
+        }
+    }
+
+    [TestFixture]
     public class Given_A_Root_Identity_Name_Reused_By_A_Nested_Required_Member : CreatabilityAnalyzerTests
     {
         [TestCase(false)]

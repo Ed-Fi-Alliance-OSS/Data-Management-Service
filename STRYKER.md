@@ -56,7 +56,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred ten mutations killed; remaining triage in progress |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
-| 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
+| 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Full baseline complete; required-locator regressions await verification |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
 | 10 / `dms-ddl` | `src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit` | `stryker-ddl.json` | Configuration prepared; baseline pending |
@@ -122,11 +122,16 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.93%; further triage in progress | 4m17s / 4m35s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.20-05-20/reports/` |
 | Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 79.19%; further triage in progress | 6m29s / 6m04s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.20-10-50/reports/` |
 | Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
+| Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% baseline; regression rerun pending | 15m18s | `StrykerOutput/2026-11-16.20-28-52/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
 The expanded query-authorization and full OpenIddict runs use `--concurrency 8` on the 24-core local
-host. Only one Stryker process runs in the checkout at a time.
+host. Only one Stryker process runs in each checkout at a time. Model and DDL
+baselines use separate sibling worktrees, `mutation-test-spike-model` and
+`mutation-test-spike-ddl`, created from PR commit `ea98de68a`, with concurrency 4.
+Their normal suites passed 1,035 and 1,469 tests respectively (one existing DDL skip).
+Runtime observations include concurrent host load; they are not performance benchmarks.
 
 ### Query-authorization initial cluster
 
@@ -476,7 +481,9 @@ extension namespaces under nested objects/collections (including extension paren
 read/write error paths and warning severity, and a nested required member sharing a
 root identity member's name. The latter verifies that implicit identity visibility
 remains root-scoped. These eight cases still require a fresh Core mutation rerun;
-they are not credited among the 110 verified kills.
+they are not credited among the 110 verified kills. Two more parent-context cases
+now pass in the full 10,076-test suite: a blocked new child demotes only its own
+collection parent, in either input order. Their mutation verification is also pending.
 
 ### DMS Backend profile baseline
 
@@ -506,6 +513,11 @@ and incorrect equality across parent partitions. It contains 799 killed, 358 sur
 214 uncovered, 358 compile-error, 368 ignored, and the same single loop timeout.
 No previously killed mutation regressed. The merge synthesizer's counts are unchanged;
 this result does not close its remaining canonicalization/preservation gaps.
+
+Two existing composite authorization tests now also inspect the complete SQL Server
+table-valued claim list and invoke the emitted parameter callback to verify it reaches
+the supplied provider configurator with `dms.BigIntTable`/`Id` metadata. The Backend
+suite still passes all 4,874 tests. Their write-execution mutation rerun is pending.
 
 Some identity-helper survivors are outside the correctness contract: removing hash
 contributions or changing constant hash prefixes increases collisions but does not
@@ -660,6 +672,47 @@ PostgreSQL widths 65/66), with exact limits and remainder rounding, plus zero an
 negative widths for both dialects. Existing cases already cover one parameter, exactly
 the dialect ceiling, and one above it. This pilot does not establish a result for the
 other five files in the write-plan target.
+
+### Full write-plan baseline
+
+The six-file target contains 235 killed, 44 survived, 60 uncovered, 161 compile-error,
+121 ignored, and five timed-out mutations. This is independent of the batching
+pilot's 93.33% result. Stryker rolls back key-unification
+`ValidatePrecomputedBindingProducerAccounting` and `CreateKeyUnificationMemberWritePlan`
+after generated-code definite-assignment errors; their ordinary producer-accounting
+and complete member-contract tests remain essential.
+
+Two new cases retain complete binding inventories, column/parameter/source alignment,
+insert/update/delete SQL, and collection preallocation/merge plans after required root
+and parent locator columns are marked non-writable. They use the derived stable-key
+fixture for both dialects. The compiler must still bind those structural columns.
+Native verification is pending.
+
+The baseline's five timeouts are `SimpleUpdateSqlEmitter.cs:37` (a null guard),
+`WritePlanCompiler.cs:207/211` (descriptor inventory validation/label), and two condition
+mutations at line 225. These do not introduce loops. They are not credited as
+assertion kills; recheck them in the full rerun before interpreting the score change.
+
+Initial dispositions supported by source inspection:
+
+- Emitter and batching null guards receive non-null lists from the compiler. The
+  insert emitter's empty-row `continue` is outside accepted nonempty batched row shapes.
+- `KeyUnificationWritePlanCompiler.cs:377` repeats the nullable-boolean condition
+  already required by `KeyUnificationPresenceConventions.IsSyntheticPresenceColumn`
+  before entering that validation. Public compilation rejects non-nullable boolean
+  and nullable non-boolean candidates earlier as unsupported null-source bindings.
+- Producer binding indices are derived from the same binding inventory; the range
+  guards at 288/294 are not reachable with out-of-range producer metadata. Constructor
+  and upstream model validation still apply.
+- Removing the duplicate-inventory precheck does not accept duplicate physical keys:
+  `BuildWriteSourceLookupMap` independently rejects them with `TryAdd`. Ordering and
+  inventory-name mutations affect the diagnostic summary, not the accepted model.
+- Empty key-unification inventories return the same empty set with or without the
+  early return. Remaining invalid-column/plan-shape guards need no fabricated producer
+  shapes solely to raise the score.
+
+Further verification still covers required locator omission, supported parent-locator
+ordering, and the timeout dispositions. No mutation types or source scope were removed.
 
 ### Validation baseline triage
 

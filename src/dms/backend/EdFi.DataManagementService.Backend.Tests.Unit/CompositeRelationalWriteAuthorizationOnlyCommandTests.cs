@@ -13,6 +13,7 @@ using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
 using Npgsql;
 using NUnit.Framework;
@@ -293,18 +294,20 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
     [Test]
     public async Task It_runs_a_structured_claim_relationship_check_as_an_ordered_segment()
     {
+        var claimIds = CreateStructuredClaimIds();
+        var configurator = A.Fake<IRelationalParameterConfigurator>();
         var request = CreateRequest(
             withNamespace: true,
             withRelationship: true,
             dialect: SqlDialect.Mssql,
-            claimEducationOrganizationIds: CreateStructuredClaimIds()
+            claimEducationOrganizationIds: claimIds
         );
         var session = new ScriptedWriteSession(
             CreateReader(CreateAuthorizedTable()),
             CreateReader(CreateAuthorizedTable())
         );
 
-        var resolution = await CreateSut()
+        var resolution = await CreateSut(parameterConfigurator: configurator)
             .ResolveAsync(
                 request,
                 CreateMergeResult(request),
@@ -317,6 +320,30 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
         // one-command target, not a silent extra round trip.
         resolution.ImmediateResult.Should().BeNull();
         session.Commands.Should().HaveCount(2);
+        var structuredParameter = session
+            .Commands[1]
+            .Parameters.Single(parameter => parameter.Value is DataTable);
+        var table = (DataTable)structuredParameter.Value!;
+        table
+            .Columns.Cast<DataColumn>()
+            .Select(column => (column.ColumnName, column.DataType))
+            .Should()
+            .Equal(("Id", typeof(long)));
+        table.Rows.Cast<DataRow>().Select(row => (long)row[0]).Should().Equal(claimIds);
+        var providerParameter = new ScriptedDbParameter();
+        structuredParameter.ConfigureParameter.Should().NotBeNull();
+        structuredParameter.ConfigureParameter!(providerParameter);
+        A.CallTo(() =>
+                configurator.ConfigureParameter(
+                    providerParameter,
+                    A<QuerySqlParameter>.That.Matches(parameter =>
+                        parameter.Binding.Kind == QuerySqlParameterBindingKind.MssqlStructured
+                        && parameter.Binding.StructuredTypeName == "dms.BigIntTable"
+                        && parameter.Binding.StructuredColumnName == "Id"
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [Test]
@@ -661,8 +688,9 @@ public class Given_The_Composite_Relational_Write_Proposed_Authorization
 
     private static CompositeRelationalWriteSecondCommand CreateSut(
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
-        RelationalCommandBudget? commandBudget = null
-    ) => new(relationalParameterConfigurator: null, providerFailureExtractor, commandBudget: commandBudget);
+        RelationalCommandBudget? commandBudget = null,
+        IRelationalParameterConfigurator? parameterConfigurator = null
+    ) => new(parameterConfigurator, providerFailureExtractor, commandBudget: commandBudget);
 
     /// <summary>
     /// Enough claims that the SQL Server parameterization becomes a table-valued parameter rather than a
