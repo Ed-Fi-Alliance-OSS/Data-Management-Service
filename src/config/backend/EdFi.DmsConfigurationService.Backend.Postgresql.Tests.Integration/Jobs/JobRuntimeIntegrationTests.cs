@@ -220,13 +220,14 @@ public class JobRuntimeIntegrationTests
             return readiness;
         }
 
-        public JobScheduleDispatcherService Dispatcher() =>
+        public JobScheduleDispatcherService Dispatcher(JobClaimPolicy? featurePolicy = null) =>
             new(
                 _provider.GetRequiredService<IServiceScopeFactory>(),
                 Metrics,
                 Options.Create(Settings),
                 TimeProvider.System,
-                NullLogger<JobScheduleDispatcherService>.Instance
+                NullLogger<JobScheduleDispatcherService>.Instance,
+                featurePolicy ?? JobClaimPolicy.All
             );
 
         public Task<JobExecutionResult> ExecuteAsync(ClaimedJob job) =>

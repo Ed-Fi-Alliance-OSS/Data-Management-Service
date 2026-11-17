@@ -6,6 +6,7 @@
 using System.Data.Common;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -108,7 +109,9 @@ public sealed class JobScheduleRepository(
         """;
 
     // D-8 (1): one due schedule, skipping locked rows, so the statement never waits and its time is fresh. An
-    // expired lease counts as free (defensive recovery); a live one does not.
+    // expired lease counts as free (defensive recovery); a live one does not. A schedule of an excluded managed job
+    // type is never selected, so it is neither leased nor advanced and enqueues nothing; the exact-type comparison
+    // is the one the claim uses.
     private const string LockDueSql = $"""
         {FreshTime}
         SELECT s."Id", s."NextRunAt", s."ScheduleType"
@@ -116,6 +119,7 @@ public sealed class JobScheduleRepository(
         WHERE s."Enabled"
           AND s."NextRunAt" <= t.now
           AND (s."LeaseExpiresAt" IS NULL OR s."LeaseExpiresAt" <= t.now)
+          AND (NOT @ExcludeManagedJobs OR s."JobType" COLLATE "C" NOT IN (@ManagedCreate, @ManagedDelete))
         ORDER BY s."NextRunAt", s."Id"
         LIMIT 1
         FOR UPDATE OF s SKIP LOCKED;
@@ -390,12 +394,14 @@ public sealed class JobScheduleRepository(
         string owner,
         int leaseSeconds,
         string newJobId,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     )
     {
         ArgumentException.ThrowIfNullOrEmpty(owner);
         ArgumentException.ThrowIfNullOrEmpty(newJobId);
         ArgumentOutOfRangeException.ThrowIfLessThan(leaseSeconds, 1);
+        ArgumentNullException.ThrowIfNull(policy);
 
         JobDeadline budget = JobDeadline.Start(MaterializationTimeout);
         JobDatabaseSession session = NewSession();
@@ -409,7 +415,18 @@ public sealed class JobScheduleRepository(
                 "LockDue",
                 token =>
                     session.Connection.QuerySingleOrDefaultAsync<DueRow>(
-                        PostgresqlJobSession.Command(session, LockDueSql, null, budget, token)
+                        PostgresqlJobSession.Command(
+                            session,
+                            LockDueSql,
+                            new
+                            {
+                                ExcludeManagedJobs = policy.ExcludesManagedDataStores,
+                                ManagedCreate = ManagedJobTypes.Create,
+                                ManagedDelete = ManagedJobTypes.Delete,
+                            },
+                            budget,
+                            token
+                        )
                     ),
                 budget,
                 cancellationToken

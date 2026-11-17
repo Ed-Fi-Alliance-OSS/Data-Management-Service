@@ -307,6 +307,9 @@ public class Given_a_managed_create_handler
     [
         TestCase(DmsProvisioningFailureCode.LockTimeout),
         TestCase(DmsProvisioningFailureCode.ArtifactChangedSinceCreate),
+        TestCase(DmsProvisioningFailureCode.ArtifactUntrusted),
+        TestCase(DmsProvisioningFailureCode.ArtifactTampered),
+        TestCase(DmsProvisioningFailureCode.TargetUnowned),
         TestCase(DmsProvisioningFailureCode.StartupValidationFailed),
         TestCase(DmsProvisioningFailureCode.AdminPrivilegeMissing),
         TestCase(DmsProvisioningFailureCode.InvalidTargetName)
@@ -320,6 +323,43 @@ public class Given_a_managed_create_handler
         var exception = await ((Func<Task>)Run).Should().ThrowAsync<ManagedDataStoreProvisioningException>();
         exception.Which.Failure.Should().Be(failure);
         _order.Should().NotContain("publish");
+    }
+
+    [TestCase(false, TestName = "It_retries_a_missing_artifact_found_while_resolving_the_pin")]
+    [TestCase(true, TestName = "It_retries_a_missing_artifact_found_while_creating_with_the_persisted_pin")]
+    public async Task It_retries_a_missing_artifact_after_acceptance(bool pinned)
+    {
+        var missing = DmsProvisioningFailure.Create(
+            DmsProvisioningFailureCode.ArtifactMissing,
+            DmsProvisioningDiagnostic.ForOperation("LocateArtifact")
+        );
+        // The catalog's own classification is unchanged; only the accepted operation retries it.
+        missing.Category.Should().Be(DmsProvisioningFailureCategory.OperatorInspectionRequired);
+        if (pinned)
+        {
+            _operation = _operation with { PinnedArtifact = _pin };
+            _physical = new DmsDataStoreCreateResult.Failure(missing, DmsCleanupReport.Clean);
+        }
+        else
+        {
+            A.CallTo(() =>
+                    _provisioner.ResolveArtifactAsync(DmsDatabaseTemplate.Minimal, A<CancellationToken>._)
+                )
+                .Returns(new DmsArtifactResolution.Failure(missing, DmsCleanupReport.Clean));
+        }
+
+        var exception = await ((Func<Task>)Run).Should().ThrowAsync<ManagedDataStoreProvisioningException>();
+
+        exception
+            .Which.Failure.Should()
+            .Be(
+                DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.ArtifactMissing,
+                    DmsProvisioningFailureCategory.Transient,
+                    missing.Diagnostic
+                )
+            );
+        _order.Should().NotContain("pin").And.NotContain("publish");
     }
 
     [Test]

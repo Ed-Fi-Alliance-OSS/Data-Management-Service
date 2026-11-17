@@ -36,7 +36,7 @@ public sealed class CreateManagedDataStoreHandler(
             );
             if (resolution is DmsArtifactResolution.Failure failed)
             {
-                throw new ManagedDataStoreProvisioningException(failed.Detail);
+                throw new ManagedDataStoreProvisioningException(ForAcceptedCreate(failed.Detail));
             }
             operation = await repository.PinCreateAsync(
                 operation,
@@ -67,7 +67,7 @@ public sealed class CreateManagedDataStoreHandler(
         );
         if (result is DmsDataStoreCreateResult.Failure failure)
         {
-            throw new ManagedDataStoreProvisioningException(failure.Detail);
+            throw new ManagedDataStoreProvisioningException(ForAcceptedCreate(failure.Detail));
         }
         var actualPin = result switch
         {
@@ -90,6 +90,21 @@ public sealed class CreateManagedDataStoreHandler(
             cancellationToken
         );
     }
+
+    /// <summary>
+    /// An accepted create whose allowlisted package or attestation is absent retries within the job's attempts: the
+    /// absence is an outage of the artifact store, and every retry repeats the trust, hash, manifest, and persisted-pin
+    /// checks before any physical work. Every other failure, an untrusted, tampered, or changed artifact included,
+    /// keeps its own category.
+    /// </summary>
+    private static DmsProvisioningFailure ForAcceptedCreate(DmsProvisioningFailure failure) =>
+        failure.Code == DmsProvisioningFailureCode.ArtifactMissing
+            ? DmsProvisioningFailure.Create(
+                failure.Code,
+                DmsProvisioningFailureCategory.Transient,
+                failure.Diagnostic
+            )
+            : failure;
 }
 
 /// <summary>A typed signal to the executor, which commits the job and lifecycle outcome together.</summary>

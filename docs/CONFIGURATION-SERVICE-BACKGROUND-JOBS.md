@@ -40,16 +40,19 @@ fence; a fence needs at least 2 s of lease left once its lock is held; exhaustio
 ### Managed data-store enablement
 
 `AppSettings:EnableDataStoreManagement` defaults to `true` and is captured at startup. Use the
-same value on every replica and restart them to change it. When `false`, claim and exhaustion
-selection exclude exactly `ManagedDataStore.Create` and `ManagedDataStore.Delete`, preserving
-their rows, attempts and fencing tokens. Managed acceptance and enqueue paths also refuse new
+same value on every replica and restart them to change it. When `false`, claim, exhaustion and
+schedule-materialization selection exclude exactly `ManagedDataStore.Create` and
+`ManagedDataStore.Delete`, preserving their rows, attempts and fencing tokens. Managed acceptance and enqueue paths also refuse new
 work before secret resolution or catalog writes. Registrations remain intact; re-enabling resumes
 eligible persisted work without resetting its counters or artifact pins.
 
 Other job types, recurring schedules, polling and retention remain operational. This switch does
 not immediately cancel work already executing. Both managed handlers remain registered and the
-secured `/v3/dataStores/manage` routes return 400 while disabled. There are no managed recurring
-schedules. See the [startup and rollout policy](./CONFIGURATION.md#managed-data-store-lifecycle)
+secured `/v3/dataStores/manage` routes return 400 while disabled. The managed lifecycle creates no
+recurring schedules. A code-supplied schedule of either managed type is neither materialized nor
+advanced while disabled, and other due schedules are materialized past it; after re-enabling it
+follows the normal schedule rules, and the managed handlers still decide whether such a job is a
+valid lifecycle operation. See the [startup and rollout policy](./CONFIGURATION.md#managed-data-store-lifecycle)
 before enabling the feature; the shipped examples explicitly opt out. The
 [managed lifecycle operations guide](CMS-MANAGED-DATA-STORES.md) explains physical admission,
 atomic lifecycle/job outcomes, recovery, tombstones and eventual DMS visibility.
@@ -419,7 +422,10 @@ lifecycle maps the value itself.
   server message, so its code and diagnostic may be recorded as they are. `TrustPolicyUnavailable` follows
   the same rule: `Transient` while the trust policy file is temporarily held, `OperatorInspectionRequired`
   otherwise. `NotReady` comes only from the startup gate; a trust-policy problem an operation meets never
-  produces it and never changes readiness.
+  produces it and never changes readiness. The managed create handler retries one more code: an
+  accepted create treats `ArtifactMissing` as `Transient`, because the package or attestation may be
+  only temporarily unavailable; each retry repeats every trust, hash, manifest and pin check before
+  physical work. Other artifact codes stay terminal.
 - **Cancellation.** Pass the handler's cancellation token to every call. When it is cancelled, the call
   settles the outcome and makes its bounded cleanup attempts, then throws `OperationCanceledException`. If
   the identity marker is found committed, the call reports success instead. A cancelled call returns no

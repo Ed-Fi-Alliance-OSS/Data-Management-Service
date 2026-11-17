@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -61,7 +62,8 @@ public class JobOptionsStartupTests
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(
         Dictionary<string, string?> settings,
-        Dictionary<string, string>? hostSettings = null
+        Dictionary<string, string>? hostSettings = null,
+        Action<IServiceCollection>? testServices = null
     ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -73,6 +75,10 @@ public class JobOptionsStartupTests
             builder.ConfigureAppConfiguration(
                 (_, configuration) => configuration.AddInMemoryCollection(settings)
             );
+            if (testServices is not null)
+            {
+                builder.ConfigureTestServices(testServices);
+            }
         });
 
     /// <summary>
@@ -371,5 +377,70 @@ public class JobOptionsStartupTests
 
         [Test]
         public void It_registers_the_executor() => _executor.Should().NotBeNull();
+    }
+
+    [TestFixture]
+    public class Given_the_scheduler_while_data_store_management_is_disabled
+    {
+        [Test]
+        public async Task It_materializes_due_schedules_under_the_feature_policy()
+        {
+            RecordingScheduleRepository schedules = new();
+            using var factory = CreateFactory(
+                [],
+                new Dictionary<string, string>
+                {
+                    ["AppSettings:EnableDataStoreManagement"] = "false",
+                    ["JobSettings:SchedulerEnabled"] = "true",
+                },
+                services => services.AddScoped<IJobScheduleRepository>(_ => schedules)
+            );
+            _ = factory.Services;
+
+            (await schedules.FirstPolicy.WaitAsync(TimeSpan.FromSeconds(30)))
+                .Should()
+                .BeSameAs(JobClaimPolicy.ExcludeManagedDataStores);
+        }
+
+        private sealed class RecordingScheduleRepository : IJobScheduleRepository
+        {
+            private readonly TaskCompletionSource<JobClaimPolicy> _firstPolicy = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            public Task<JobClaimPolicy> FirstPolicy => _firstPolicy.Task;
+
+            public Task<JobScheduleMaterializeResult> MaterializeNextDue(
+                string owner,
+                int leaseSeconds,
+                string newJobId,
+                JobClaimPolicy policy,
+                CancellationToken cancellationToken
+            )
+            {
+                _firstPolicy.TrySetResult(policy);
+                return Task.FromResult<JobScheduleMaterializeResult>(
+                    new JobScheduleMaterializeResult.NoneDue()
+                );
+            }
+
+            public Task<JobScheduleUpsertResult> Upsert(
+                JobScheduleUpsertCommand command,
+                CancellationToken cancellationToken
+            ) => throw new NotSupportedException();
+
+            public Task<JobScheduleDisableResult> Disable(
+                string scheduleType,
+                CancellationToken cancellationToken
+            ) => throw new NotSupportedException();
+
+            public Task<JobScheduleDisableResult> DisableById(long id, CancellationToken cancellationToken) =>
+                throw new NotSupportedException();
+
+            public Task<JobScheduleListResult> ListByType(
+                string scheduleType,
+                CancellationToken cancellationToken
+            ) => throw new NotSupportedException();
+        }
     }
 }

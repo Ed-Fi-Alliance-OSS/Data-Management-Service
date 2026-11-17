@@ -139,7 +139,12 @@ DELETE does not change this. If attempts are exhausted before the CMS success tr
 physical success alone does not establish completion: the job ends in `Error` and the managed record
 in `CreateError`/`DeleteError`. Earlier attempts remain eligible for reconciliation. A transient
 physical outage after acceptance uses the existing job backoff
-and maximum attempts; it does not close the startup readiness latch. While a host's startup readiness
+and maximum attempts; it does not close the startup readiness latch. That includes an accepted
+create whose allowlisted package or attestation is temporarily missing (`ArtifactMissing`), before or
+after the physical create: the record is `CreateFailed` while retrying, every retry repeats the trust,
+hash, manifest and pin checks, and restoring the same verified package lets the original job finish.
+A package that stays missing exhausts into `CreateError`; an untrusted, tampered or changed package
+stays terminal. While a host's startup readiness
 is `NotReady`, its worker neither claims nor exhausts `ManagedDataStore.Create` and
 `ManagedDataStore.Delete` jobs; other jobs keep running. Previously accepted, nonterminal managed work
 stays queued with its attempts, identity and pin unchanged, and resumes after remediation and a
@@ -187,7 +192,7 @@ operator-installed logging sink.
 
 To pause, stop new submissions, allow admitted operations to settle, then consistently restart CMS
 replicas with `AppSettings:EnableDataStoreManagement=false`. This is not immediate cancellation of
-physical work already admitted. It suppresses acceptance, enqueue, claim and exhaustion for exactly
+physical work already admitted. It suppresses acceptance, enqueue, schedule materialization, claim and exhaustion for exactly
 `ManagedDataStore.Create` and `ManagedDataStore.Delete`. Other jobs, scheduling and retention continue;
 do not disable the entire worker merely to pause managed work. Ordinary managed-link guards remain active.
 

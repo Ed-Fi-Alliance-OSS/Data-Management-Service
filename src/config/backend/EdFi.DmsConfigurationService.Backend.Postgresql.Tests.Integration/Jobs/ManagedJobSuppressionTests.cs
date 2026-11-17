@@ -11,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using FluentAssertions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using Npgsql;
@@ -452,7 +453,7 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
             .Should()
             .BeOfType<JobScheduleUpsertResult.Success>();
         string jobId = Guid.NewGuid().ToString("N");
-        (await schedules.MaterializeNextDue("dispatcher", 30, jobId, default))
+        (await schedules.MaterializeNextDue("dispatcher", 30, jobId, feature, default))
             .Should()
             .BeOfType<JobScheduleMaterializeResult.Materialized>();
         long id = await Connection!.ExecuteScalarAsync<long>(
@@ -540,4 +541,137 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
             reclaimed.FencingToken.Should().Be(4);
         }
     }
+}
+
+/// <summary>
+/// Managed create and delete schedules persisted through the schedule service with the real managed handler
+/// registrations, due ahead of every other schedule.
+/// </summary>
+[TestFixture]
+public class Given_due_managed_schedules_while_management_is_disabled
+    : JobScheduleRepositoryTests.JobScheduleTestBase
+{
+    private static readonly JobClaimPolicy Disabled = JobClaimPolicy.ExcludeManagedDataStores;
+
+    private ServiceProvider? _services;
+    private long _create;
+    private long _delete;
+
+    [SetUp]
+    public async Task PersistManagedSchedules()
+    {
+        ServiceCollection services = new();
+        services.AddSingleton<IJobScheduleRepository>(Repository());
+        services.AddJobHandler<
+            CreateManagedDataStoreHandler,
+            CreateManagedDataStorePayload,
+            CreateManagedDataStorePayloadValidator
+        >(ManagedJobTypes.Create, ManagedJobTypes.PayloadVersion);
+        services.AddJobHandler<
+            DeleteManagedDataStoreHandler,
+            DeleteManagedDataStorePayload,
+            DeleteManagedDataStorePayloadValidator
+        >(ManagedJobTypes.Delete, ManagedJobTypes.PayloadVersion);
+        _services = services.BuildServiceProvider();
+        IJobScheduleService schedules = _services.GetRequiredService<IJobScheduleService>();
+        _create = await PersistAsync(schedules, "Managed.CreateSchedule", ManagedJobTypes.Create);
+        _delete = await PersistAsync(schedules, "Managed.DeleteSchedule", ManagedJobTypes.Delete);
+        await Connection!.ExecuteAsync(
+            """UPDATE "dmscs"."JobSchedule" SET "NextRunAt" = "NextRunAt" - interval '1 hour' WHERE "Id" = ANY(@Ids);""",
+            new { Ids = new[] { _create, _delete } }
+        );
+    }
+
+    [TearDown]
+    public async Task DisposeServices()
+    {
+        if (_services is not null)
+        {
+            await _services.DisposeAsync();
+        }
+    }
+
+    [Test]
+    public async Task It_leaves_them_unchanged_and_materializes_an_unrelated_due_schedule()
+    {
+        long unrelated = await SeedScheduleAsync(nextRunOffset: -1);
+        string before = await SnapshotAsync(_create, _delete);
+
+        MaterializedOf(await MaterializeAsync(policy: Disabled)).ScheduleId.Should().Be(unrelated);
+        (await MaterializeAsync(policy: Disabled)).Should().BeOfType<JobScheduleMaterializeResult.NoneDue>();
+
+        (await SnapshotAsync(_create, _delete)).Should().Be(before);
+        (await JobsOfAsync(_create)).Should().BeEmpty();
+        (await JobsOfAsync(_delete)).Should().BeEmpty();
+        (await JobsOfAsync(unrelated)).Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_materializes_them_once_enabled_with_the_existing_coalescing()
+    {
+        (await MaterializeAsync(policy: Disabled)).Should().BeOfType<JobScheduleMaterializeResult.NoneDue>();
+
+        MaterializedOf(await MaterializeAsync(policy: JobClaimPolicy.All)).ScheduleId.Should().Be(_create);
+        MaterializedOf(await MaterializeAsync(policy: JobClaimPolicy.All)).ScheduleId.Should().Be(_delete);
+        (await JobsOfAsync(_create))
+            .Should()
+            .ContainSingle()
+            .Which.JobType.Should()
+            .Be(ManagedJobTypes.Create);
+        (await JobsOfAsync(_delete))
+            .Should()
+            .ContainSingle()
+            .Which.JobType.Should()
+            .Be(ManagedJobTypes.Delete);
+
+        // The occurrence's job is still pending, so the next due occurrence (a new one, between the enqueued
+        // occurrence and the advanced time) is coalesced, not added.
+        await Connection!.ExecuteAsync(
+            """UPDATE "dmscs"."JobSchedule" SET "NextRunAt" = "NextRunAt" - interval '90 minutes' WHERE "Id" = @Id;""",
+            new { Id = _create }
+        );
+        (await MaterializeAsync(policy: JobClaimPolicy.All))
+            .Should()
+            .BeOfType<JobScheduleMaterializeResult.SkippedActiveJob>()
+            .Which.ScheduleId.Should()
+            .Be(_create);
+        (await JobsOfAsync(_create)).Should().ContainSingle();
+    }
+
+    [TestCase("manageddatastore.create")]
+    [TestCase("ManagedDataStore.Create ")]
+    [TestCase("ManagedDataStore.Delete ")]
+    [TestCase("ManagedDataStore.CreateX")]
+    public async Task It_keeps_near_match_job_types_eligible(string jobType)
+    {
+        long nearMatch = await SeedScheduleAsync(nextRunOffset: -1, jobType: jobType);
+
+        MaterializedOf(await MaterializeAsync(policy: Disabled)).ScheduleId.Should().Be(nearMatch);
+        (await JobsOfAsync(nearMatch)).Should().ContainSingle().Which.JobType.Should().Be(jobType);
+    }
+
+    private static async Task<long> PersistAsync(
+        IJobScheduleService schedules,
+        string scheduleType,
+        string jobType
+    ) =>
+        (
+            await schedules.UpsertAsync(
+                new(scheduleType, jobType, ManagedJobTypes.PayloadVersion, """{"manageId":1}""", 60, true),
+                default
+            )
+        )
+            .Should()
+            .BeOfType<JobScheduleServiceResult.Success>()
+            .Subject.ScheduleId;
+
+    private async Task<string> SnapshotAsync(params long[] ids) =>
+        JsonSerializer.Serialize(
+            (
+                await Connection!.QueryAsync(
+                    """SELECT * FROM "dmscs"."JobSchedule" WHERE "Id" = ANY(@Ids) ORDER BY "Id";""",
+                    new { Ids = ids }
+                )
+            ).Select(row => ((IDictionary<string, object>)row).ToDictionary())
+        );
 }

@@ -41,7 +41,8 @@ public class FailureCodeCategoryTests
         [Unknown] = [Transient],
         [ExclusiveAccessNotEstablished] = [Transient, OperatorInspectionRequired],
         [LockLost] = [Transient, OperatorInspectionRequired],
-        [ArtifactMissing] = [OperatorInspectionRequired],
+        // An accepted managed create retries a temporary artifact outage.
+        [ArtifactMissing] = [OperatorInspectionRequired, Transient],
         [ArtifactUntrusted] = [OperatorInspectionRequired],
         [ArtifactTampered] = [OperatorInspectionRequired],
         [ManifestInvalid] = [OperatorInspectionRequired],
@@ -131,7 +132,7 @@ public class FailureCodeCategoryTests
         }
 
         [Test]
-        public void It_gives_exactly_seven_codes_a_context_dependent_category() =>
+        public void It_gives_exactly_eight_codes_a_context_dependent_category() =>
             _codes
                 .Where(code => DmsProvisioningFailure.CategoriesOf(code).Count > 1)
                 .Should()
@@ -140,6 +141,7 @@ public class FailureCodeCategoryTests
                     StagingFailed,
                     ExclusiveAccessNotEstablished,
                     LockLost,
+                    ArtifactMissing,
                     RestoreFailed,
                     DropFailed,
                     TrustPolicyUnavailable,

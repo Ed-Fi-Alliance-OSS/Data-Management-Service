@@ -185,7 +185,8 @@ public sealed record DmsProvisioningFailure
                 "The target lock holder session was lost during the operation."
             ),
             [DmsProvisioningFailureCode.ArtifactMissing] = new(
-                [Inspection],
+                // Transient only where an accepted managed operation retries a temporary artifact outage.
+                [Inspection, Transient],
                 "The allowlisted package or its attestation is missing from the artifact directory."
             ),
             [DmsProvisioningFailureCode.ArtifactUntrusted] = new(

@@ -7,12 +7,14 @@ using System.Net;
 using System.Net.Http.Json;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using static EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStoreProvisioning.MssqlProvisioningTestServer;
 using Worker = EdFi.DmsConfigurationService.Backend.Tests.Unit.ManagedDataStores.ManagedDataStoreWorkerProcess;
 
@@ -224,6 +226,222 @@ public partial class Given_data_store_namespace_reservations
             {
                 await holder.DisposeAsync();
             }
+            if (targetCleanup is not null)
+            {
+                await targetCleanup.DisposeAsync();
+            }
+            await DropLiveRuntimeLogin(login);
+        }
+    }
+
+    [
+        TestCase(
+            false,
+            false,
+            TestName = "It_retries_a_withheld_package_before_pinning_and_completes_the_same_job"
+        ),
+        TestCase(
+            true,
+            false,
+            TestName = "It_retries_a_withheld_attestation_on_an_owned_target_and_reconciles_once"
+        ),
+        TestCase(false, true, TestName = "It_exhausts_a_package_that_stays_withheld_and_does_not_revive")
+    ]
+    [Category("DataStoreManageTransientRecovery"), Category("DmsProvisioning")]
+    public async Task It_retries_a_temporary_artifact_outage_on_a_ready_host(
+        bool afterPhysicalCreate,
+        bool permanent
+    )
+    {
+        _ = RequireAdmissionEndpoint();
+        if (!RealTemplatePackage.IsConfigured)
+        {
+            DmsProvisioningLaneRequirement.SkipLocallyOrFailInCi(
+                "DMS_TEMPLATE_PACKAGE_DIRECTORY is required for managed transient qualification."
+            );
+        }
+        var package = RealTemplatePackage.Find("mssql", RestoreManifest.MinimalTemplateKind);
+        await using var lane = await Lane.BuildAsync(package, DmsDatabaseTemplate.Minimal, new LaneHooks());
+        string login = await CreateLiveRuntimeLogin();
+        string runtime = LiveRuntimeConnection(login);
+        // Only this lane's private allowlisted copy is withheld, never a shared package directory.
+        string artifact = afterPhysicalCreate
+            ? lane.PackagePath + TemplateArtifactCatalog.AttestationExtension
+            : lane.PackagePath;
+        string withheld = artifact + ".withheld";
+        TestDatabase? targetCleanup = null;
+        try
+        {
+            // One host, Ready from startup, accepts the create and runs every attempt below; it never restarts.
+            using var host = LiveRecoveryHost(lane, runtime);
+            using var client = ManagedClient(host);
+            var response = await client.PostAsJsonAsync(
+                "/v3/dataStores/manage",
+                new { name = "Outage" + Guid.NewGuid().ToString("N")[..12], databaseTemplate = "Minimal" }
+            );
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            int id = int.Parse(response.Headers.Location!.Segments[^1]);
+            var accepted = await LiveRow(id);
+            var target = accepted.Restore(ProtectedDatabaseNames.Create("cms", [])).TargetName;
+            targetCleanup = new TestDatabase(target.Value);
+            string jobId = accepted.CreateJobId;
+            int attempt = 1;
+            if (afterPhysicalCreate)
+            {
+                // The physical create succeeds and its publication rolls back: the target is owned, unpublished.
+                using (var faulted = LiveRecoveryHost(lane, runtime, id))
+                {
+                    (
+                        await faulted
+                            .Services.GetRequiredService<JobExecutor>()
+                            .ExecuteAsync(await LiveClaim(faulted, jobId, attempt), default)
+                    )
+                        .Outcome.Should()
+                        .Be(JobExecutionOutcome.RetryScheduled);
+                    ((LiveFinalizationFault)faulted.Services.GetRequiredService<IJobFenceFactory>())
+                        .Fired.Should()
+                        .BeTrue();
+                }
+                attempt++;
+                await MakeLiveRetryDue(jobId);
+            }
+            var before = await LiveRow(id);
+            var pinBefore = before.Restore(ProtectedDatabaseNames.Create("cms", [])).PinnedArtifact;
+            pinBefore.Should().Be(afterPhysicalCreate ? lane.Request.PinnedArtifact : null);
+            var physicalBefore = await lane.Engine.InspectAsync(target, default);
+            physicalBefore
+                .Should()
+                .BeOfType(
+                    afterPhysicalCreate
+                        ? typeof(DmsLiveTargetState.Present)
+                        : typeof(DmsLiveTargetState.Absent)
+                );
+            int maxAttempts = host.Services.GetRequiredService<IOptions<JobOptions>>().Value.MaxAttempts;
+            await using var catalog = await Open();
+
+            File.Move(artifact, withheld);
+            try
+            {
+                while (true)
+                {
+                    bool final = attempt == maxAttempts;
+                    (await Attempt(attempt))
+                        .Should()
+                        .Be(final ? JobExecutionOutcome.Failed : JobExecutionOutcome.RetryScheduled);
+                    var failed = await LiveRow(id);
+                    failed.CreateJobId.Should().Be(jobId);
+                    failed.TargetDatabaseName.Should().Be(accepted.TargetDatabaseName);
+                    failed.ExpectedSourceIdentity.Should().Be(accepted.ExpectedSourceIdentity);
+                    failed
+                        .Restore(ProtectedDatabaseNames.Create("cms", []))
+                        .PinnedArtifact.Should()
+                        .Be(pinBefore);
+                    failed.DataStoreId.Should().BeNull();
+                    failed.LastAttempt.Should().Be(attempt);
+                    (await lane.Engine.InspectAsync(target, default)).Should().Be(physicalBefore);
+                    (await catalog.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
+                        .Should()
+                        .Be(0);
+                    host.Services.GetRequiredService<IDmsDataStoreProvisionerReadiness>()
+                        .Current.Should()
+                        .BeOfType<DmsProvisionerReadiness.Ready>();
+                    var job = await Job();
+                    job.AttemptCount.Should().Be(attempt);
+                    if (final)
+                    {
+                        failed.Status.Should().Be("CreateError");
+                        failed.LastFailureCategory.Should().Be("OperatorInspectionRequired");
+                        failed.LastFailureProvisioningCode.Should().BeNull();
+                        failed.LastFailureJobCode.Should().Be("AttemptsExhausted");
+                        job.Status.Should().Be("Error");
+                        job.ErrorMessage.Should().Be(JobErrorCode.AttemptsExhausted.Message);
+                        break;
+                    }
+                    failed.Status.Should().Be("CreateFailed");
+                    failed.LastFailureCategory.Should().Be("Transient");
+                    failed.LastFailureProvisioningCode.Should().Be("ArtifactMissing");
+                    failed.LastFailureJobCode.Should().BeNull();
+                    job.Status.Should().Be("Pending");
+                    job.NextAttemptAt.Should()
+                        .BeAfter(await catalog.ExecuteScalarAsync<DateTime>("SELECT SYSUTCDATETIME();"));
+                    attempt++;
+                    await MakeLiveRetryDue(jobId);
+                    if (!permanent)
+                    {
+                        break;
+                    }
+                }
+            }
+            finally
+            {
+                File.Move(withheld, artifact);
+            }
+
+            if (permanent)
+            {
+                // Restoring the artifact does not revive the terminal job or its reservation.
+                (
+                    await host
+                        .Services.GetRequiredService<IJobLeaseRepository>()
+                        .ClaimNext("live-recovery", 300, maxAttempts, default)
+                )
+                    .Should()
+                    .BeOfType<JobClaimResult.NoneAvailable>();
+                (await LiveRow(id)).Status.Should().Be("CreateError");
+                (await lane.Engine.InspectAsync(target, default)).Should().Be(physicalBefore);
+                return;
+            }
+
+            (await Attempt(attempt)).Should().Be(JobExecutionOutcome.Completed);
+            var created = await LiveRow(id);
+            created.Status.Should().Be("Created");
+            created.CreateJobId.Should().Be(jobId);
+            created.TargetDatabaseName.Should().Be(accepted.TargetDatabaseName);
+            created.ExpectedSourceIdentity.Should().Be(accepted.ExpectedSourceIdentity);
+            created
+                .Restore(ProtectedDatabaseNames.Create("cms", []))
+                .PinnedArtifact.Should()
+                .Be(lane.Request.PinnedArtifact);
+            created.LastAttempt.Should().Be(attempt);
+            created.LastFailureCategory.Should().BeNull();
+            created.LastFailureProvisioningCode.Should().BeNull();
+            (await catalog.ExecuteScalarAsync<int>("""SELECT "Id" FROM dmscs."DataStore";"""))
+                .Should()
+                .Be(created.DataStoreId);
+            var present = (await lane.Engine.InspectAsync(target, default))
+                .Should()
+                .BeOfType<DmsLiveTargetState.Present>()
+                .Subject;
+            if (afterPhysicalCreate)
+            {
+                // Reconciled: the same physical instance, never a second create.
+                present.Should().Be(physicalBefore);
+            }
+            var completed = await Job();
+            completed.Status.Should().Be("Completed");
+            completed.AttemptCount.Should().Be(attempt);
+            lane.OperationEntries.Should().BeEmpty();
+
+            async Task<JobExecutionOutcome> Attempt(int number) =>
+                (
+                    await host
+                        .Services.GetRequiredService<JobExecutor>()
+                        .ExecuteAsync(await LiveClaim(host, jobId, number), default)
+                ).Outcome;
+
+            Task<(string Status, int AttemptCount, DateTime NextAttemptAt, string? ErrorMessage)> Job() =>
+                catalog.QuerySingleAsync<(
+                    string Status,
+                    int AttemptCount,
+                    DateTime NextAttemptAt,
+                    string? ErrorMessage
+                )>(
+                    """SELECT "Status", "AttemptCount", "NextAttemptAt", "ErrorMessage" FROM dmscs."Job" WHERE "JobId" = @JobId;""",
+                    new { JobId = jobId }
+                );
+        }
+        finally
+        {
             if (targetCleanup is not null)
             {
                 await targetCleanup.DisposeAsync();

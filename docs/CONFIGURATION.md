@@ -411,12 +411,17 @@ The target provider comes from `DmsDataStoreProvisioning:Provider`; it is indepe
 not put them in committed examples or logs.
 
 Readiness is latched for the process. Remediate environmental failures and restart to probe again.
-Previously accepted unfinished jobs executed under a closed gate converge atomically to terminal
-job/lifecycle Error states; restart does not revive those terminal jobs. Transient failures discovered
-after Ready acceptance retain normal durable retry behavior. Disabling management suppresses new
-acceptance, enqueue, claim and exhaustion for these two exact job types; it does not cancel an
-already executing physical operation. Drain workers before coordinated changes and use the same
-flags/configuration on every replica.
+While readiness is closed, the worker neither claims nor exhausts previously accepted, nonterminal
+`ManagedDataStore.Create` and `ManagedDataStore.Delete` jobs: they keep their attempts, identity and
+artifact pin, and remediation plus a restart that reports Ready resumes the original jobs. Jobs that
+already ended in `Error`, and records already in `CreateError`/`DeleteError`, are not revived.
+Transient failures discovered after Ready acceptance retain normal durable retry behavior; this
+includes an allowlisted package or attestation that is temporarily missing for an accepted create,
+which retries with every trust, hash, manifest and pin check and exhausts normally if it stays
+missing. Disabling management suppresses new acceptance, enqueue, schedule materialization, claim and
+exhaustion for these two exact job types; it does not cancel an already executing physical
+operation. Drain workers before coordinated changes and use the same flags/configuration on every
+replica.
 
 Before upgrading, follow the [canonical-name migration preflight and rollback qualification](../reference/design/managed-data-stores-DMS-1439/catalog-name-uniqueness-rollout.md).
 Inventory custom residual unique indexes on ordinary display `Name`: these can still reject names

@@ -309,6 +309,49 @@ public class TemplateArtifactCatalogTests
     }
 
     [TestFixture]
+    public class Given_the_package_disappears_after_it_was_located
+    {
+        private CatalogWorkspace _workspace = null!;
+        private TemplateArtifactStaging _staging = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _workspace = new CatalogWorkspace();
+            string packagePath = _workspace.Build(_workspace.MinimalBuilder()).PackagePath;
+            TemplateArtifactCatalog catalog = _workspace.Catalog();
+            // After the existence checks and the attestation read, before the package is opened.
+            catalog.BeforeClaim = () => File.Delete(packagePath);
+            _staging = await catalog.StageAsync(
+                DmsDatabaseTemplate.Minimal,
+                DmsOperationId.New(),
+                CancellationToken.None
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _workspace.Dispose();
+
+        [Test]
+        public void It_reports_the_missing_package_in_the_default_category()
+        {
+            DmsProvisioningFailure failure = _staging
+                .Should()
+                .BeOfType<TemplateArtifactStaging.Failure>()
+                .Subject.Detail;
+            (failure.Code, failure.Category, failure.Diagnostic.Operation)
+                .Should()
+                .Be(
+                    (
+                        DmsProvisioningFailureCode.ArtifactMissing,
+                        DmsProvisioningFailureCategory.OperatorInspectionRequired,
+                        TemplateArtifactCatalog.StagePackageStep
+                    )
+                );
+        }
+    }
+
+    [TestFixture]
     public class Given_packages_the_trust_policy_does_not_vouch_for
     {
         private Outcome _unknownKey = null!;

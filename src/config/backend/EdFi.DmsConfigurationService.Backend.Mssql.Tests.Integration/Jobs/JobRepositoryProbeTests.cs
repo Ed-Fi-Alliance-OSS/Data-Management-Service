@@ -1319,6 +1319,7 @@ public class Given_live_schedule_materializations_through_the_schedule_repositor
                 "probe-scheduler",
                 LeaseSeconds,
                 Guid.NewGuid().ToString("N"),
+                JobClaimPolicy.All,
                 CancellationToken.None
             );
             transactions.Add(ElapsedMilliseconds(start));
@@ -1352,6 +1353,7 @@ public class Given_live_schedule_materializations_through_the_schedule_repositor
             "probe-scheduler",
             LeaseSeconds,
             Guid.NewGuid().ToString("N"),
+            JobClaimPolicy.All,
             CancellationToken.None
         );
         Report(
