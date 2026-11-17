@@ -13,6 +13,102 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 public abstract class WritableRequestShaperTests
 {
     [TestFixture]
+    public class Given_Absent_Descendants_Under_A_Collection_Item : WritableRequestShaperTests
+    {
+        [TestCase("null")]
+        [TestCase("omitted")]
+        [TestCase("hidden")]
+        public void It_retains_descendant_scope_states_for_each_parent_identity(string submitted)
+        {
+            const string parentScope = "$.parents[*]";
+            const string detailScope = parentScope + ".detail";
+            const string childScope = detailScope + ".child";
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new("$", ScopeKind.Root, null, [], [], []),
+                new(parentScope, ScopeKind.Collection, "$", [], ["code"], ["code"]),
+                new(detailScope, ScopeKind.NonCollection, parentScope, [parentScope], [], []),
+                new(childScope, ScopeKind.NonCollection, detailScope, [parentScope], [], ["value"]),
+            ];
+            bool hidden = submitted == "hidden";
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [
+                    new CollectionRule(
+                        "parents",
+                        hidden ? MemberSelection.IncludeOnly : MemberSelection.IncludeAll,
+                        null,
+                        [new PropertyRule("code")],
+                        null,
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                []
+            );
+            var request = JsonNode.Parse(
+                """{"parents":[{"code":"P","detail":{"child":{"value":"first"}}},{"code":"Q","detail":{"child":{"value":"second"}}}]}"""
+            )!;
+            if (submitted == "null")
+            {
+                request["parents"]![0]!["detail"] = null;
+            }
+            else if (submitted == "omitted")
+            {
+                request["parents"]![0]!.AsObject().Remove("detail");
+            }
+            var original = request.DeepClone();
+
+            var result = BuildShaper(profile, scopes).Shape(request);
+
+            var firstVisibility = hidden ? ProfileVisibilityKind.Hidden : ProfileVisibilityKind.VisibleAbsent;
+            var secondVisibility = hidden
+                ? ProfileVisibilityKind.Hidden
+                : ProfileVisibilityKind.VisiblePresent;
+            result
+                .RequestScopeStates.Select(state =>
+                    (
+                        state.Address.JsonScope,
+                        Parent: state.Address.AncestorCollectionInstances.IsEmpty
+                            ? ""
+                            : state
+                                .Address.AncestorCollectionInstances.Single()
+                                .SemanticIdentityInOrder.Single()
+                                .Value!.GetValue<string>(),
+                        state.Visibility,
+                        state.Creatable
+                    )
+                )
+                .Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        ("$", "", ProfileVisibilityKind.VisiblePresent, false),
+                        (detailScope, "P", firstVisibility, false),
+                        (childScope, "P", firstVisibility, false),
+                        (detailScope, "Q", secondVisibility, false),
+                        (childScope, "Q", secondVisibility, false),
+                    }
+                );
+            var expected = JsonNode.Parse(
+                hidden
+                    ? """{"parents":[{"code":"P"},{"code":"Q"}]}"""
+                    : """{"parents":[{"code":"P"},{"code":"Q","detail":{"child":{"value":"second"}}}]}"""
+            );
+            JsonNode.DeepEquals(result.WritableRequestBody, expected).Should().BeTrue();
+            result
+                .VisibleRequestCollectionItems.Select(item => item.RequestJsonPath)
+                .Should()
+                .Equal("$.parents[0]", "$.parents[1]");
+            result.ValidationFailures.Should().BeEmpty();
+            JsonNode.DeepEquals(request, original).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
     public class Given_Collections_Below_Object_And_Extension_Scopes : WritableRequestShaperTests
     {
         [TestCase("object")]

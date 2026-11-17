@@ -52,7 +52,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-five mutations killed; remaining composite-path triage in progress |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-seven mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred twenty-one mutations killed; remaining triage in progress |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
@@ -119,7 +119,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
-| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.93%; further triage in progress | 4m17s / 4m35s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.20-05-20/reports/` |
+| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 72.35%; further triage in progress | 4m17s / 6m34s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.21-18-10/reports/` |
 | Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 80.47%; further triage in progress | 6m29s / 10m12s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.21-05-31/reports/` |
 | Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
 | Full `dms-write-plans` (six configured files) | 5.0.0 | 69.77% → 70.06% | 15m18s / 16m20s | `StrykerOutput/2026-11-16.20-28-52/reports/` → `StrykerOutput/2026-11-16.20-57-58/reports/` |
@@ -490,6 +490,11 @@ kills. Remaining behavioral triage includes absent descendant states and additio
 creatability ancestor/dependency paths. The report and run log were copied into the
 owning Core test directory in the PR checkout.
 
+Three further cases assert the complete per-parent scope-state inventory when a
+collection item's nested object is null, omitted, or hidden, including its own absent
+descendant. They check the shaped document, parent identities, failure list, and input
+immutability. All 10,079 Core tests pass; the new cases await native verification.
+
 ### DMS Backend profile baseline
 
 The full three-file baseline contains 783 killed, 368 survived, 220 uncovered,
@@ -522,7 +527,18 @@ this result does not close its remaining canonicalization/preservation gaps.
 Two existing composite authorization tests now also inspect the complete SQL Server
 table-valued claim list and invoke the emitted parameter callback to verify it reaches
 the supplied provider configurator with `dms.BigIntTable`/`Id` metadata. The Backend
-suite still passes all 4,874 tests. Their write-execution mutation rerun is pending.
+suite still passes all 4,874 tests. The full eleven-file rerun confirms both provider
+fallback substitutions are killed (`RelationalWriteFirstPhase.cs:196` and
+`RelationalWriteSecondCommandPhase.cs:141`). It contains 348 killed, 102 survived,
+31 uncovered, 389 compile-error, and 109 ignored mutations, with no timeouts or lost
+kills: 27 intended improvements since baseline. Its report and log were copied from
+the isolated model worktree into the PR checkout.
+
+The second phase's uncovered non-null `standaloneDenial` branch at 667–668 is not a
+missing grant/deny scenario: `ExecuteStandaloneRelationshipAsync` returns null after
+success, while its failure mapper throws for the relationship-only call (no namespace
+plan is supplied). Its current implementation never returns a non-null denial value.
+Keep that redundant branch as a production-cleanup observation, not a fabricated test.
 
 Some identity-helper survivors are outside the correctness contract: removing hash
 contributions or changing constant hash prefixes increases collisions but does not
@@ -751,7 +767,13 @@ and immutable origins and ordinary-reference/disconnected controls in both diale
 Pass-level storage-validator cases also exercise the calls that validate local and
 target endpoints of the externally defined `dms.Document` table, exact schema/name
 matching, and compact descriptor storage. All eleven new cases pass in the full
-1,046-test Model suite (25 seconds); full mutation verification is pending.
+1,046-test Model suite (25 seconds); full mutation verification is pending. Two more
+cases extend implicit same-site unification from two physical identity columns to
+three, for both dialects. They assert every alias shares the stored canonical column
+and reference presence gate, remains non-writable, and retains its source path.
+The 1,048-test Model suite passes (28 seconds); these cases target the surviving
+`memberBindings.Length < 2` → `> 2` mutation at `KeyUnificationPass.cs:564` and await
+the subsequent full rerun.
 
 Tool limitations remain separate from test gaps. Stryker rolls back the requiredness
 helper's `GetRequiredProperties` and `IsXNullable` methods after generated-code

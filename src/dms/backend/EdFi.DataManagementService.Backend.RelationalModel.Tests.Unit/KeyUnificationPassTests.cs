@@ -308,6 +308,85 @@ public class Given_Key_Unification_With_Implicit_Same_Site_Reference_Field_Edges
         _resourceModel.KeyUnificationEqualityConstraints.Ignored.Should().BeEmpty();
         _resourceModel.KeyUnificationEqualityConstraints.Skipped.Should().BeEmpty();
     }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_unifies_all_three_physical_identity_columns_for_one_logical_reference_field(
+        SqlDialect dialect
+    )
+    {
+        var projectSchema =
+            KeyUnificationPassTestSchemaBuilder.BuildImplicitSameSiteReferenceUnificationProjectSchema();
+        var resources = projectSchema["resourceSchemas"]!.AsObject();
+        var school = resources["schools"]!.AsObject();
+        school["identityJsonPaths"]!.AsArray().Add("$.campusId");
+        school["documentPathsMapping"]!["CampusId"] = new JsonObject
+        {
+            ["isReference"] = false,
+            ["path"] = "$.campusId",
+        };
+        school["jsonSchemaForInsert"]!["properties"]!["campusId"] = new JsonObject { ["type"] = "integer" };
+        school["jsonSchemaForInsert"]!["required"]!.AsArray().Add("campusId");
+        school["equalityConstraints"]!
+            .AsArray()
+            .Add(new JsonObject { ["sourceJsonPath"] = "$.schoolId", ["targetJsonPath"] = "$.campusId" });
+        resources["enrollments"]!["documentPathsMapping"]!["School"]!["referenceJsonPaths"]!
+            .AsArray()
+            .Add(
+                new JsonObject
+                {
+                    ["identityJsonPath"] = "$.campusId",
+                    ["referenceJsonPath"] = "$.schoolReference.schoolId",
+                }
+            );
+        var project = EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+            projectSchema,
+            isExtensionProject: false
+        );
+        var schemaSet = EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet([project]);
+        var builder = new DerivedRelationalModelSetBuilder(
+            KeyUnificationPassTestSchemaBuilder.BuildPassesThroughKeyUnification()
+        );
+        ISqlDialectRules rules =
+            dialect is SqlDialect.Pgsql ? new PgsqlDialectRules() : new MssqlDialectRules();
+
+        var result = builder.Build(schemaSet, dialect, rules);
+
+        var enrollment = result
+            .ConcreteResourcesInNameOrder.Single(resource =>
+                resource.ResourceKey.Resource.ResourceName == "Enrollment"
+            )
+            .RelationalModel;
+        var root = enrollment.Root;
+        var unified = root.KeyUnificationClasses.Should().ContainSingle().Subject;
+        unified
+            .MemberPathColumns.Select(column => column.Value)
+            .Should()
+            .Equal("School_CampusId", "School_LocalEducationAgencyId", "School_SchoolId");
+        var aliases = root.Columns.Where(column => column.Storage is ColumnStorage.UnifiedAlias).ToArray();
+        aliases
+            .Select(column => column.ColumnName.Value)
+            .Should()
+            .BeEquivalentTo("School_CampusId", "School_LocalEducationAgencyId", "School_SchoolId");
+        foreach (var alias in aliases)
+        {
+            alias.IsWritable.Should().BeFalse();
+            alias.SourceJsonPath!.Value.Canonical.Should().Be("$.schoolReference.schoolId");
+            alias
+                .Storage.Should()
+                .Be(
+                    new ColumnStorage.UnifiedAlias(
+                        unified.CanonicalColumn,
+                        new DbColumnName("School_DocumentId")
+                    )
+                );
+        }
+        root.Columns.Single(column => column.ColumnName == unified.CanonicalColumn)
+            .Storage.Should()
+            .BeOfType<ColumnStorage.Stored>();
+        enrollment.KeyUnificationEqualityConstraints.Applied.Should().BeEmpty();
+        enrollment.KeyUnificationEqualityConstraints.Skipped.Should().BeEmpty();
+    }
 }
 
 /// <summary>
