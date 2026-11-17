@@ -517,6 +517,142 @@ public class ProjectionServiceTokenProviderTests
         }
     }
 
+    /// <summary>
+    /// A 200 token response for <c>expires_in</c> 10 whose body ends <paramref name="atEnd"/> after the request
+    /// started; the second and later requests answer <c>token-2</c>, <c>token-3</c>, ... at once.
+    /// </summary>
+    private static FakeDmsHandler ExpiringWhileRead(
+        Func<Harness> harness,
+        TimeSpan atEnd,
+        Action? alsoAtEnd = null
+    )
+    {
+        int calls = 0;
+        return FakeDmsHandler.Answering(() =>
+        {
+            int call = Interlocked.Increment(ref calls);
+            return call == 1
+                ? DmsResponses.Stream(
+                    HttpStatusCode.OK,
+                    new EndOfBodyStream(
+                        Encoding.UTF8.GetBytes(
+                            """{"access_token":"exhausted","token_type":"bearer","expires_in":10}"""
+                        ),
+                        () =>
+                        {
+                            harness().Time.Advance(atEnd);
+                            alsoAtEnd?.Invoke();
+                        }
+                    )
+                )
+                : TokenResponse("token-" + call);
+        });
+    }
+
+    [TestFixture(0L, 60)]
+    [TestFixture(0L, 0)]
+    [TestFixture(TimeSpan.TicksPerSecond, 60)]
+    public class Given_a_token_whose_lifetime_ends_while_its_response_is_read(
+        long ticksPastExpiry,
+        int margin
+    )
+    {
+        private Harness _harness = null!;
+        private ProjectionServiceTokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The body ends at (or past) request start + expires_in, well inside the 30 s token timeout and the
+            // 600 s read deadline, so only the grant's own expiry can refuse it.
+            _harness = new Harness(
+                ExpiringWhileRead(
+                    () => _harness,
+                    TimeSpan.FromSeconds(10) + TimeSpan.FromTicks(ticksPastExpiry)
+                ),
+                settings =>
+                {
+                    settings.TokenExpirySafetyMarginSeconds = margin;
+                    settings.TokenRequestTimeoutSeconds = 30;
+                }
+            );
+            _result = await _harness.GetAsync().WaitAsync(_hangGuard);
+        }
+
+        [Test]
+        public void It_finished_before_the_request_and_read_deadlines() =>
+            (_harness.Time.GetUtcNow() - _start).Should().BeLessThan(TimeSpan.FromSeconds(30));
+
+        [Test]
+        public void It_fails_with_a_transient_token_timeout()
+        {
+            ShouldFailWith(_result, Code.Timeout, null);
+            _result
+                .Should()
+                .BeOfType<ProjectionServiceTokenResult.Failed>()
+                .Which.Failure.Category.Should()
+                .Be(EducationOrganizationProjectionFailureCategory.Transient);
+        }
+
+        [Test]
+        public async Task It_does_not_reuse_the_exhausted_token()
+        {
+            ShouldBeIssued(await _harness.GetAsync()).AccessToken.Should().Be("token-2");
+            _harness.Handler.Requests.Should().HaveCount(2);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_token_response_read_just_before_its_lifetime_ends
+    {
+        private Harness _harness = null!;
+        private ProjectionServiceTokenResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // Still valid when it arrives, but its 10 s lifetime is inside the 60 s margin: used once, never cached.
+            _harness = new Harness(
+                ExpiringWhileRead(() => _harness, TimeSpan.FromSeconds(10) - TimeSpan.FromTicks(1)),
+                settings => settings.TokenExpirySafetyMarginSeconds = 60
+            );
+            _result = await _harness.GetAsync().WaitAsync(_hangGuard);
+        }
+
+        [Test]
+        public void It_returns_the_token() => ShouldBeIssued(_result).AccessToken.Should().Be("exhausted");
+
+        [Test]
+        public async Task It_does_not_reuse_it()
+        {
+            ShouldBeIssued(await _harness.GetAsync()).AccessToken.Should().Be("token-2");
+            _harness.Handler.Requests.Should().HaveCount(2);
+        }
+    }
+
+    [TestFixture]
+    public class Given_the_caller_cancels_as_the_token_lifetime_ends_during_its_response
+    {
+        [Test]
+        public async Task It_throws_with_the_caller_token_and_caches_nothing()
+        {
+            using CancellationTokenSource caller = new();
+            Harness harness = null!;
+            harness = new Harness(ExpiringWhileRead(() => harness, TimeSpan.FromSeconds(10), caller.Cancel));
+
+            Exception? exception = await CaptureAsync(() =>
+                harness.GetAsync(cancellationToken: caller.Token).WaitAsync(_hangGuard)
+            );
+
+            exception
+                .Should()
+                .BeAssignableTo<OperationCanceledException>()
+                .Which.CancellationToken.Should()
+                .Be(caller.Token);
+            ShouldBeIssued(await harness.GetAsync()).AccessToken.Should().Be("token-2");
+        }
+    }
+
     [TestFixture]
     public class Given_a_lifetime_beyond_int_max_seconds
     {

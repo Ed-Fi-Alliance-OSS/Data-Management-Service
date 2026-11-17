@@ -1344,6 +1344,49 @@ public class EducationOrganizationProjectionReaderTests
     }
 
     [TestFixture]
+    public class Given_a_token_whose_lifetime_ends_while_it_is_issued
+    {
+        private ProjectionReaderHarness _harness = null!;
+        private EducationOrganizationProjectionReadResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            // The real token provider reads a 200 grant for expires_in 10 whose body ends 10 s after the request
+            // started: inside the 30 s token timeout and the 600 s read deadline, but the grant is already spent.
+            _harness = null!;
+            _harness = new ProjectionReaderHarness(
+                (_, _, _) => Task.FromResult(Page(null, Schools(255901001))),
+                token: () =>
+                    DmsResponses.Stream(
+                        HttpStatusCode.OK,
+                        new EndOfBodyStream(
+                            Encoding.UTF8.GetBytes(
+                                """{"access_token":"exhausted","token_type":"bearer","expires_in":10}"""
+                            ),
+                            () => _harness.Time.Advance(TimeSpan.FromSeconds(10))
+                        )
+                    )
+            );
+            _result = await _harness.ReadAsync().WaitAsync(_hangGuard);
+        }
+
+        [Test]
+        public void It_fails_transiently_at_the_token_stage()
+        {
+            ShouldFailWith(_result, Code.Timeout, Stage.Token, null);
+            ShouldFail(_result).Category.Should().Be(Category.Transient);
+        }
+
+        [Test]
+        public void It_sends_no_page_request_with_the_exhausted_token() =>
+            _harness.PageRequests.Should().BeEmpty();
+
+        [Test]
+        public void It_requested_one_token() => _harness.TokenRequests.Should().ContainSingle();
+    }
+
+    [TestFixture]
     public class Given_restarts_that_use_up_the_read_deadline
     {
         private ProjectionReaderHarness _harness = null!;

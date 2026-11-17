@@ -21,8 +21,10 @@ namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 /// Tokens are cached per tenant and client id, not per URL, until their expiry minus
 /// <c>TokenExpirySafetyMarginSeconds</c> counted from when the request started; a token whose lifetime does not exceed
 /// the margin is used once and not cached. Concurrent callers for one tenant and client wait for a single request and
-/// then use its token; a failed request is not cached, so the next waiter makes its own. The provider logs nothing
-/// itself; its failures carry only the status and the sanitized problem fields, never a credential or token.
+/// then use its token; a failed request is not cached, so the next waiter makes its own. A token already expired
+/// (request start plus <c>expires_in</c>) when its response has been read is a <c>Timeout</c>, neither cached nor
+/// returned. The provider logs nothing itself; its failures carry only the status and the sanitized problem fields,
+/// never a credential or token.
 /// </summary>
 public sealed class ProjectionServiceTokenProvider(
     IHttpClientFactory httpClientFactory,
@@ -117,8 +119,16 @@ public sealed class ProjectionServiceTokenProvider(
             }
 
             // Lifetimes beyond int.MaxValue seconds (about 68 years) are treated as that, so the sum cannot overflow.
-            long lifetime =
-                Math.Min(issued!.ExpiresInSeconds, int.MaxValue) - _settings.TokenExpirySafetyMarginSeconds;
+            long expiresIn = Math.Min(issued!.ExpiresInSeconds, int.MaxValue);
+
+            // A grant whose own lifetime, counted from the request start, ran out while it was acquired is neither
+            // cached nor returned: the read fails as a transient timeout instead of sending a spent token.
+            if (timeProvider.GetUtcNow() >= start.AddSeconds(expiresIn))
+            {
+                return Failed(Code.Timeout);
+            }
+
+            long lifetime = expiresIn - _settings.TokenExpirySafetyMarginSeconds;
             // A lifetime that does not exceed the margin stores an entry that is already unusable.
             _cache[key] = new CacheEntry(issued.Token, start.AddSeconds(lifetime));
             return new ProjectionServiceTokenResult.Issued(issued.Token);
