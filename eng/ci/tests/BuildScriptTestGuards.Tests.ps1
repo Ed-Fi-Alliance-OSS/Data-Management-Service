@@ -230,6 +230,10 @@ Describe "build-dms.ps1 refuses the DMS projection reader Keycloak run outside a
         $output = & pwsh -NoLogo -NoProfile -File $script:buildScript @Arguments -RunDmsProjectionReaderKeycloakE2E 2>&1
 
         $LASTEXITCODE | Should -Not -Be 0
-        ($output | Out-String) | Should -Match '-RunDmsProjectionReaderKeycloakE2E requires the E2ETest command with -IdentityProvider keycloak'
+        # pwsh word-wraps an uncaught script error to the console width and starts each continuation line with
+        # "| ", so on a narrow runner console the message spans several lines. Rejoin them before matching.
+        $rendered = ($output | Out-String) -replace '\e\[[0-9;]*m', '' -replace '\s*\r?\n\s*\|\s*', ' '
+        $rendered | Should -Match ([regex]::Escape(
+                '-RunDmsProjectionReaderKeycloakE2E requires the E2ETest command with -IdentityProvider keycloak'))
     }
 }
