@@ -376,9 +376,12 @@ Job handlers that call it must follow this contract.
 
 The state is set once at startup and never returns from `NotReady` to `Ready` without a restart. Every
 provisioner call checks it first: while it is not `Ready`, the call returns a failure with category
-`NotReady` (`FeatureDisabled` or `StartupValidationFailed`) and touches nothing. A handler should not
-enqueue or keep retrying provisioning work while the gate is closed: `NotReady` is terminal until a
-restart, so treat it as a permanent job failure and let the record converge, as described in
+`NotReady` (`FeatureDisabled` or `StartupValidationFailed`) and touches nothing. Do not enqueue or keep
+retrying provisioning work while the gate is closed. The worker derives its eligibility from the feature
+policy and this state on every poll (`JobClaimPolicy.ForWorker`): while it is not `Ready`, it neither
+claims nor exhausts `ManagedDataStore.Create` and `ManagedDataStore.Delete`, so accepted work waits for a
+restart that reports `Ready` instead of failing on a latch it cannot change. Other job types are
+unaffected. A handler that still receives `NotReady` treats it as terminal, as described in
 [What consumers must provide](#what-consumers-must-provide).
 
 ### Pin, then create

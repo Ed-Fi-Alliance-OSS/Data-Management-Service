@@ -137,7 +137,6 @@ internal static class DataStoreManageOpenApi
         };
         if (operation.Responses?["202"] is OpenApiResponse response)
         {
-            response.Content?.Clear();
             response.Headers = new Dictionary<string, IOpenApiHeader>
             {
                 ["Location"] = new OpenApiHeader

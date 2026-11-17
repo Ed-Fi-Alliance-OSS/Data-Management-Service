@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -19,6 +20,9 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 /// On host stop it claims nothing more, the stop signal cancels every execution, and it waits for all of them: an
 /// execution that still owns its job releases it to <c>Pending</c> with its attempt kept, and one that is uncertain
 /// writes nothing (§4.4). The host's shutdown timeout bounds that wait.
+///
+/// Each poll derives its eligibility from the feature policy and the current provisioning readiness
+/// (<see cref="JobClaimPolicy.ForWorker"/>), so managed work is neither claimed nor exhausted while readiness is closed.
 /// </remarks>
 public sealed class JobWorkerService(
     IJobLeaseRepository leaseRepository,
@@ -26,7 +30,8 @@ public sealed class JobWorkerService(
     IOptions<JobOptions> options,
     TimeProvider timeProvider,
     ILogger<JobWorkerService> logger,
-    JobClaimPolicy claimPolicy
+    JobClaimPolicy claimPolicy,
+    IDmsDataStoreProvisionerReadiness readiness
 ) : BackgroundService
 {
     internal static readonly EventId JobsExhausted = new(1437_10, nameof(JobsExhausted));
@@ -90,11 +95,13 @@ public sealed class JobWorkerService(
     /// <summary>One poll: an <c>Exhaust</c> sweep, then claims until the queue is empty or the worker is at capacity.</summary>
     private async Task PollAsync(JobOptions settings, CancellationToken stoppingToken)
     {
+        // Read per poll, never captured at construction: one value covers this poll's sweep and claims.
+        JobClaimPolicy policy = claimPolicy.ForWorker(readiness.Current);
         switch (
             await leaseRepository.Exhaust(
                 settings.MaxAttempts,
                 JobErrorCode.AttemptsExhausted,
-                claimPolicy,
+                policy,
                 stoppingToken
             )
         )
@@ -121,7 +128,7 @@ public sealed class JobWorkerService(
                 Owner,
                 (int)settings.LeaseDuration.TotalSeconds,
                 settings.MaxAttempts,
-                claimPolicy,
+                policy,
                 stoppingToken
             );
             if (claim is not JobClaimResult.Claimed claimed)

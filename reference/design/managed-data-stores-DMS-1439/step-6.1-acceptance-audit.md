@@ -4,6 +4,16 @@ Original audited source: `919872aae1293beff20a412cb5323317f37be7c1`, 2026-11-15.
 
 Step 6.2 supplies the [operations guide](../../../docs/CMS-MANAGED-DATA-STORES.md) and links from configuration, operations and background-job documentation. This completes the proposed documentation/evidence deliverables for review, including AC16's cache explanation and AC9's recorded clarification; it does not execute operator rollout checks or qualify remaining deployment permutations. The 17 criteria below retain their concrete evidence and limits. Historical requests in the G5/G6 sections describe the original audit boundary, not new work or a reopening of approved 6.1.
 
+## 2026-11-16 corrections (CAR-1439-001 to 003)
+
+These qualify the historical statements below. The historical results stay valid for what they tested; they do not validate the new behavior.
+
+- **AC4/AC8 response contract.** Jira comment 99313 and ADMINAPI-1523 now govern ([Q1](contract-provenance.md#q1--acceptance-responses)). POST returns 202 with `jobQueuedResult` (`jobId`, `message`) and the absolute Location. DELETE returns 202 with `jobQueuedResult` and no Location. Statements below about "empty 202", "bodyless 202/204" or "Created/Ready retains empty 204" describe the superseded contract.
+- **AC3/AC7/AC10 closed readiness.** The worker no longer claims or exhausts managed jobs while startup readiness is not Ready (`JobClaimPolicy.ForWorker`). Accepted nonterminal work stays queued and resumes after a Ready restart. E14/G1d ("closed-gate terminalization", "failures remain terminal after Ready restart") recorded the replaced behavior; that fixture is now `Given_external_managed_data_store_readiness_pause`. Records already in CreateError/DeleteError are not repaired by this change.
+- **AC14 disabled gate.** `ManagedDataStoreFeatureGateMiddleware` returns the disabled 400 after authorization and before JSON charset validation, for every route marked with `ManagedDataStoreRouteMetadata`.
+
+Evidence for these corrections is in `evidence/car-0002-52fe24a02` under the DMS-1439 spec directory, and is summarized in that round's report.
+
 ## Governing contract and audit method
 
 The live Jira description was read again with `acli jira workitem view DMS-1439 --json`. All **17** acceptance criteria match the [repository story](../../spikes/DMS-1334/DMS-1439-managed-data-store-lifecycle.md), after removing Markdown code formatting and rendering Jira issue cards. Jira still says snapshot removal in AC9. The explicit user clarification in [contract-provenance.md](contract-provenance.md#q4--authorized-ac9-clarification) governs: DMS-1439 owns physical deletion, ordinary catalog/dependent removal and the tombstone; DMS-1441 owns snapshot persistence and cleanup. No snapshot dependency is reinstated, and no Jira edit was made.

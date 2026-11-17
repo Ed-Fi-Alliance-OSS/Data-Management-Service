@@ -397,7 +397,7 @@ public partial class Given_data_store_namespace_reservations
                 }
                 (await client.DeleteAsync($"/v3/dataStores/manage/{id}"))
                     .StatusCode.Should()
-                    .Be(HttpStatusCode.NoContent);
+                    .Be(HttpStatusCode.Accepted);
             }
 
             var deleting = await ReadRow(id);

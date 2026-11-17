@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Collections.Concurrent;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using FluentAssertions;
@@ -44,6 +45,9 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
 
     public ConcurrentQueue<string> Calls { get; } = new();
 
+    /// <summary>The eligibility each sweep and claim received, recorded before the call is.</summary>
+    public ConcurrentQueue<(string Call, JobClaimPolicy Policy)> Policies { get; } = new();
+
     /// <summary>The next this many claims throw, as a lost connection would.</summary>
     public int ClaimsThatThrow { get; set; }
 
@@ -70,14 +74,22 @@ public sealed class SimulatedJobTable : IJobLeaseRepository
         int maxAttempts,
         JobClaimPolicy policy,
         CancellationToken cancellationToken
-    ) => ClaimNext(owner, leaseSeconds, maxAttempts, cancellationToken);
+    )
+    {
+        Policies.Enqueue(("ClaimNext", policy));
+        return ClaimNext(owner, leaseSeconds, maxAttempts, cancellationToken);
+    }
 
     public Task<JobExhaustResult> Exhaust(
         int maxAttempts,
         JobErrorCode errorCode,
         JobClaimPolicy policy,
         CancellationToken cancellationToken
-    ) => Exhaust(maxAttempts, errorCode, cancellationToken);
+    )
+    {
+        Policies.Enqueue(("Exhaust", policy));
+        return Exhaust(maxAttempts, errorCode, cancellationToken);
+    }
 
     public Task<JobClaimResult> ClaimNext(
         string owner,
@@ -247,9 +259,21 @@ public sealed class WorkerHarness : IDisposable
 {
     private readonly ExecutorHarness _executor;
 
-    public WorkerHarness(SimulatedJobTable? table = null, int maxConcurrentJobs = 2, int maxAttempts = 5)
+    public WorkerHarness(
+        SimulatedJobTable? table = null,
+        int maxConcurrentJobs = 2,
+        int maxAttempts = 5,
+        JobClaimPolicy? policy = null,
+        DmsDataStoreProvisionerReadiness? readiness = null
+    )
     {
         Table = table ?? new SimulatedJobTable();
+        if (readiness is null)
+        {
+            readiness = new DmsDataStoreProvisionerReadiness();
+            readiness.Record(new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UnixEpoch));
+        }
+        Readiness = readiness;
         _executor = new ExecutorHarness(leaseRepository: Table);
         _executor.Settings.MaxConcurrentJobs = maxConcurrentJobs;
         _executor.Settings.MaxAttempts = maxAttempts;
@@ -273,7 +297,8 @@ public sealed class WorkerHarness : IDisposable
             Options.Create(_executor.Settings),
             _executor.Time,
             Logger,
-            EdFi.DmsConfigurationService.Backend.Jobs.JobClaimPolicy.All
+            policy ?? EdFi.DmsConfigurationService.Backend.Jobs.JobClaimPolicy.All,
+            readiness
         );
     }
 
@@ -281,6 +306,7 @@ public sealed class WorkerHarness : IDisposable
     private int _maximumConcurrent;
 
     public SimulatedJobTable Table { get; }
+    public DmsDataStoreProvisionerReadiness Readiness { get; }
     public JobWorkerService Worker { get; }
     public CapturingLogger<JobWorkerService> Logger { get; } = new();
     public ConcurrentQueue<string> Started { get; } = new();
@@ -660,6 +686,124 @@ public class JobWorkerServiceTests
             _harness
                 .Table.Calls.Should()
                 .Equal("Exhaust", "ClaimNext", "Exhaust", "ClaimNext", "Exhaust", "ClaimNext");
+        }
+    }
+
+    [TestFixture]
+    public class Given_provisioning_readiness_that_is_not_ready
+    {
+        private static readonly DmsProvisionerReadiness NotReady = new DmsProvisionerReadiness.NotReady([
+            new(DmsProvisioningFailureCode.ArtifactMissing, "CatalogProbes"),
+        ]);
+
+        private static async Task<WorkerHarness> Started(
+            JobClaimPolicy policy,
+            DmsDataStoreProvisionerReadiness readiness
+        )
+        {
+            var harness = new WorkerHarness(policy: policy, readiness: readiness);
+            harness.Table.Add();
+            await harness.Worker.StartAsync(CancellationToken.None);
+            await WorkerHarness.Until(() => harness.Table.Calls.Count >= 2, "the first poll ran");
+            return harness;
+        }
+
+        private static IEnumerable<JobClaimPolicy> Polls(WorkerHarness harness, int skip = 0) =>
+            harness.Table.Policies.Skip(skip).Select(entry => entry.Policy);
+
+        [Test]
+        public async Task It_withholds_managed_sweeps_and_claims_until_a_ready_verdict_is_recorded()
+        {
+            var readiness = new DmsDataStoreProvisionerReadiness();
+            var harness = await Started(JobClaimPolicy.All, readiness);
+            try
+            {
+                int closed = harness.Table.Policies.Count;
+                harness
+                    .Table.Policies.Take(2)
+                    .Select(entry => entry.Call)
+                    .Should()
+                    .Equal("Exhaust", "ClaimNext");
+                Polls(harness)
+                    .Should()
+                    .OnlyContain(policy => policy == JobClaimPolicy.ExcludeManagedDataStores);
+
+                // Eligibility is read per poll, not captured when the worker was constructed or started.
+                readiness.Record(new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UnixEpoch));
+                await harness.AdvanceUntil(
+                    () => harness.Table.Policies.Skip(closed).Any(entry => entry.Call == "Exhaust"),
+                    "a poll ran after the verdict"
+                );
+                Polls(harness, closed).First().Should().BeSameAs(JobClaimPolicy.All);
+            }
+            finally
+            {
+                await harness.StopAsync();
+                harness.Dispose();
+            }
+        }
+
+        [Test]
+        public async Task It_keeps_managed_work_withheld_under_a_recorded_not_ready_verdict_and_runs_other_jobs()
+        {
+            var readiness = new DmsDataStoreProvisionerReadiness();
+            readiness.Record(NotReady);
+            var harness = await Started(JobClaimPolicy.All, readiness);
+            try
+            {
+                await WorkerHarness.Until(
+                    () => harness.Started.Contains("job-1"),
+                    "the unrelated job started"
+                );
+                await harness.AdvanceUntil(
+                    () => harness.Table.Policies.Count(entry => entry.Call == "Exhaust") >= 2,
+                    "a second poll ran"
+                );
+                Polls(harness)
+                    .Should()
+                    .OnlyContain(policy => policy == JobClaimPolicy.ExcludeManagedDataStores);
+            }
+            finally
+            {
+                await harness.StopAsync();
+                harness.Dispose();
+            }
+        }
+
+        [Test]
+        public async Task It_keeps_the_disabled_feature_policy_when_readiness_is_ready()
+        {
+            var readiness = new DmsDataStoreProvisionerReadiness();
+            readiness.Record(new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UnixEpoch));
+            var harness = await Started(JobClaimPolicy.ExcludeManagedDataStores, readiness);
+            try
+            {
+                Polls(harness)
+                    .Should()
+                    .OnlyContain(policy => policy == JobClaimPolicy.ExcludeManagedDataStores);
+            }
+            finally
+            {
+                await harness.StopAsync();
+                harness.Dispose();
+            }
+        }
+
+        [Test]
+        public void It_derives_the_worker_policy_from_the_feature_policy_and_readiness()
+        {
+            var ready = new DmsProvisionerReadiness.Ready("mssql", DateTimeOffset.UnixEpoch);
+            JobClaimPolicy.All.ForWorker(ready).Should().BeSameAs(JobClaimPolicy.All);
+            JobClaimPolicy.All.ForWorker(NotReady).Should().BeSameAs(JobClaimPolicy.ExcludeManagedDataStores);
+            JobClaimPolicy
+                .All.ForWorker(new DmsProvisionerReadiness.Disabled())
+                .Should()
+                .BeSameAs(JobClaimPolicy.ExcludeManagedDataStores);
+            JobClaimPolicy
+                .ExcludeManagedDataStores.ForWorker(ready)
+                .Should()
+                .BeSameAs(JobClaimPolicy.ExcludeManagedDataStores);
+            JobClaimPolicy.All.ForWorker(NotReady).Allows("Unrelated.Type").Should().BeTrue();
         }
     }
 }

@@ -261,7 +261,7 @@ public class Given_external_managed_data_store_readiness
             async Task Delete(Uri location)
             {
                 using var response = await client.DeleteAsync(location);
-                response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+                response.StatusCode.Should().Be(HttpStatusCode.Accepted);
                 await Poll(location, "Deleted");
             }
 

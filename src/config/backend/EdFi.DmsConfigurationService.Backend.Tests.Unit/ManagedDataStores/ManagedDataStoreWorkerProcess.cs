@@ -41,6 +41,9 @@ public sealed class ManagedDataStoreWorkerProcess : IAsyncDisposable
         public required int MaxAttempts { get; init; }
         public required StopPoint StopAt { get; init; }
         public bool ContinueAfterRetry { get; init; }
+
+        /// <summary>Starts the child with a failing startup probe, so the real readiness verdict is NotReady.</summary>
+        public bool ClosedReadiness { get; init; }
     }
 
     public enum StopPoint

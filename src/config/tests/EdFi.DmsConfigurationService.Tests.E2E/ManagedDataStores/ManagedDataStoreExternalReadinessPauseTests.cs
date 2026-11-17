@@ -16,10 +16,10 @@ namespace EdFi.DmsConfigurationService.Tests.E2E.ManagedDataStores;
 
 [TestFixture, NonParallelizable, Category("ManagedDataStoreExternalHttp")]
 [Explicit("Requires the real managed HTTP provisioning lane; queues work before a closed-readiness restart.")]
-public class Given_external_managed_data_store_terminal_readiness
+public class Given_external_managed_data_store_readiness_pause
 {
     [TestCase(false), TestCase(true)]
-    public async Task It_terminalizes_previously_accepted_create_and_delete_without_revival(bool mssql)
+    public async Task It_pauses_previously_accepted_create_and_delete_then_resumes_them_when_ready(bool mssql)
     {
         await using var provisioning = await ManagedDataStoreExternalProvisioning.CreateAsync(mssql);
         await using var deployment = await ManagedDataStoreExternalDeployment.CreateAsync(mssql);
@@ -34,7 +34,7 @@ public class Given_external_managed_data_store_terminal_readiness
                 Timeout = TimeSpan.FromSeconds(30),
             };
             await Start(ready: true, worker: true);
-            string clientId = "http-terminal-" + Guid.NewGuid().ToString("N");
+            string clientId = "http-pause-" + Guid.NewGuid().ToString("N");
             using (
                 var register = await client.PostAsync(
                     "connect/register",
@@ -43,7 +43,7 @@ public class Given_external_managed_data_store_terminal_readiness
                         {
                             ["ClientId"] = clientId,
                             ["ClientSecret"] = deployment.ClientSecret,
-                            ["DisplayName"] = "External terminal readiness qualification",
+                            ["DisplayName"] = "External readiness pause qualification",
                         }
                     )
                 )
@@ -73,8 +73,8 @@ public class Given_external_managed_data_store_terminal_readiness
                 client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
             }
             string prefix = "Http" + Guid.NewGuid().ToString("N")[..12];
-            Uri deleteLocation = await AcceptCreate(prefix + "Retained");
-            JsonElement created = await Poll(deleteLocation, "Created");
+            (Uri deleteLocation, _) = await AcceptCreate(prefix + "Retained");
+            await Poll(deleteLocation, "Created");
             var original = await ReadRow(deleteLocation);
             // Preserve independent CMS evidence for operator inspection if a later assertion fails.
             await TestContext.Progress.WriteLineAsync(
@@ -90,185 +90,145 @@ public class Given_external_managed_data_store_terminal_readiness
 
             await deployment.StopAsync();
             await Start(ready: true, worker: false);
-            Uri createLocation = await AcceptCreate(prefix + "Pending");
+            (Uri createLocation, string createJobId) = await AcceptCreate(prefix + "Pending");
+            string deleteJobId;
             using (var response = await client.DeleteAsync(deleteLocation))
             {
-                response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+                response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+                deleteJobId = await QueuedJobId(response, "The Data Store has been queued to be deleted.");
             }
             var pendingCreate = await ReadRow(createLocation);
             var pendingDelete = await ReadRow(deleteLocation);
             pendingCreate.Status.Should().Be("PendingCreate");
-            pendingCreate.PinnedContractVersion.Should().BeNull();
+            pendingCreate.CreateJobId.Should().Be(createJobId);
             pendingDelete.Status.Should().Be("PendingDelete");
-            pendingDelete.PinnedPackageSha256.Should().Be(original.PinnedPackageSha256);
-            string[] jobIds = [pendingCreate.CreateJobId, pendingDelete.DeleteJobId!];
+            pendingDelete.DeleteJobId.Should().Be(deleteJobId);
+            string[] jobIds = [createJobId, deleteJobId];
             int[] ids = [pendingCreate.Id, pendingDelete.Id];
-            Dictionary<string, DateTime> acceptedDueTimes;
+            await deployment.StopAsync();
+
+            // There is no unrelated production handler or public enqueue API: an unknown type settled by the
+            // production executor is the observable worker progress. The managed jobs lead the due queue.
+            string unrelatedId = Guid.NewGuid().ToString("N");
             await using (var cms = await deployment.OpenAsync())
             {
-                acceptedDueTimes = (
-                    await cms.QueryAsync<(string JobId, DateTime NextAttemptAt)>(
-                        """SELECT "JobId", "NextAttemptAt" FROM dmscs."Job" WHERE "JobId" IN (@First, @Second);""",
-                        new { First = jobIds[0], Second = jobIds[1] }
-                    )
-                ).ToDictionary(row => row.JobId, row => row.NextAttemptAt);
+                DateTime due = await cms.ExecuteScalarAsync<DateTime>(
+                    mssql ? "SELECT SYSUTCDATETIME();" : "SELECT clock_timestamp() AT TIME ZONE 'UTC';"
+                );
                 (
                     await cms.ExecuteScalarAsync<int>(
-                        """SELECT COUNT(*) FROM dmscs."Job" WHERE "JobId" IN (@First, @Second) AND "Status" = 'Pending' AND "AttemptCount" = 0 AND "FencingToken" = 0 AND "LeaseOwner" IS NULL;""",
+                        """SELECT COUNT(*) FROM dmscs."Job" WHERE "JobId" IN (@First, @Second) AND "Status" = 'Pending' AND "AttemptCount" = 0 AND "FencingToken" = 0 AND "LeaseOwner" IS NULL AND "NextAttemptAt" <= @Due;""",
+                        new
+                        {
+                            First = jobIds[0],
+                            Second = jobIds[1],
+                            Due = due,
+                        }
+                    )
+                ).Should().Be(2);
+                await cms.ExecuteAsync(
+                    """
+                    INSERT INTO dmscs."Job" ("JobId", "JobType", "PayloadVersion", "Payload", "Status",
+                        "CreatedAt", "NextAttemptAt", "AttemptCount")
+                    VALUES (@Id, 'Unrelated.Unknown', 1, '{}', 'Pending', @Due, @Due, 0);
+                    """,
+                    new { Id = unrelatedId, Due = due }
+                );
+            }
+            string paused = await Snapshot();
+            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeFalse();
+
+            provisioning.SetMinimalPackageAvailable(false);
+            await Start(ready: false, worker: true);
+            // Positive worker progress bounds the observation: the unrelated job queued behind both managed
+            // jobs is settled while neither managed job is claimed, attempted or exhausted.
+            await JobStatus(unrelatedId, "Error");
+            (await Snapshot())
+                .Should()
+                .Be(paused, "closed readiness must leave accepted managed work untouched");
+            (await GetJson(createLocation.AbsoluteUri))
+                .GetProperty("status")
+                .GetString()
+                .Should()
+                .Be("PendingCreate");
+            (await GetJson(deleteLocation.AbsoluteUri))
+                .GetProperty("status")
+                .GetString()
+                .Should()
+                .Be("PendingDelete");
+            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeFalse();
+            await VerifyRetainedTarget();
+            provisioning.OperationsAreEmpty.Should().BeTrue();
+            await deployment.StopAsync();
+            (await Snapshot()).Should().Be(paused);
+
+            provisioning.SetMinimalPackageAvailable(true);
+            await Start(ready: true, worker: true);
+            JsonElement created = await Poll(createLocation, "Created");
+            await Poll(deleteLocation, "Deleted");
+            await JobStatus(createJobId, "Completed");
+            await JobStatus(deleteJobId, "Completed");
+            var resumedCreate = await ReadRow(createLocation);
+            var resumedDelete = await ReadRow(deleteLocation);
+            foreach (
+                var (accepted, resumed) in new[]
+                {
+                    (pendingCreate, resumedCreate),
+                    (pendingDelete, resumedDelete),
+                }
+            )
+            {
+                resumed.Id.Should().Be(accepted.Id);
+                resumed.ExpectedSourceIdentity.Should().Be(accepted.ExpectedSourceIdentity);
+                resumed.EndpointDescriptor.Should().Be(accepted.EndpointDescriptor);
+                resumed.TargetDatabaseName.Should().Be(accepted.TargetDatabaseName);
+                resumed.CreateJobId.Should().Be(accepted.CreateJobId);
+                resumed.DeleteJobId.Should().Be(accepted.DeleteJobId);
+                resumed.LastAttempt.Should().Be(1);
+                resumed.LastFailureCategory.Should().BeNull();
+            }
+            resumedDelete.PinnedPackageSha256.Should().Be(pendingDelete.PinnedPackageSha256);
+            resumedDelete.DataStoreId.Should().BeNull();
+            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeTrue();
+            (await provisioning.TargetExistsAsync(original.TargetDatabaseName)).Should().BeFalse();
+            // The deleted store's routing row is gone; the created store has exactly one registration.
+            using (var stale = await client.GetAsync("v3/dataStores/" + original.DataStoreId))
+            {
+                stale.StatusCode.Should().Be(HttpStatusCode.NotFound);
+            }
+            created.GetProperty("dataStoreId").GetInt32().Should().Be(resumedCreate.DataStoreId!.Value);
+            await using (var cms = await deployment.OpenAsync())
+            {
+                (await cms.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
+                    .Should()
+                    .Be(1);
+                (
+                    await cms.ExecuteScalarAsync<int>(
+                        """SELECT COUNT(*) FROM dmscs."Job" WHERE "JobId" IN (@First, @Second) AND "Status" = 'Completed' AND "AttemptCount" = 1 AND "FencingToken" > 0 AND "LeaseOwner" IS NULL AND "LeaseExpiresAt" IS NULL;""",
                         new { First = jobIds[0], Second = jobIds[1] }
                     )
                 )
                     .Should()
                     .Be(2);
-            }
-            string pendingSnapshot = await Snapshot();
-            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeFalse();
-            await VerifyRetainedTarget();
-
-            await deployment.StopAsync();
-            (await Snapshot())
-                .Should()
-                .Be(pendingSnapshot, "both accepted jobs must still be unclaimed at shutdown");
-            provisioning.SetMinimalPackageAvailable(false);
-            await Start(ready: false, worker: true);
-            JsonElement createError = await Poll(createLocation, "CreateError");
-            JsonElement deleteError = await Poll(deleteLocation, "DeleteError");
-            foreach (
-                var (location, accepted, jobId) in new[]
-                {
-                    (createLocation, pendingCreate, pendingCreate.CreateJobId),
-                    (deleteLocation, pendingDelete, pendingDelete.DeleteJobId!),
-                }
-            )
-            {
-                await JobStatus(jobId, "Error");
-                var failed = await ReadRow(location);
-                failed.LastAttempt.Should().Be(1);
-                failed.LastFailureCategory.Should().Be("NotReady");
-                failed.LastFailureProvisioningCode.Should().Be("StartupValidationFailed");
-                failed.LastFailureJobCode.Should().BeNull();
-                failed
-                    .Should()
-                    .BeEquivalentTo(
-                        accepted,
-                        options =>
-                            options
-                                .Excluding(row => row.Status)
-                                .Excluding(row => row.LastAttempt)
-                                .Excluding(row => row.LastFailureCategory)
-                                .Excluding(row => row.LastFailureProvisioningCode)
-                                .Excluding(row => row.UpdatedAt)
-                                .Excluding(row => row.LastModifiedDate)
-                                .Excluding(row => row.LastRefreshed)
-                    );
-                await using var cms = await deployment.OpenAsync();
-                var job = await cms.QuerySingleAsync<(
-                    int AttemptCount,
-                    long FencingToken,
-                    string? LeaseOwner,
-                    DateTime? LeaseExpiresAt,
-                    DateTime? NextAttemptAt,
-                    DateTime FinishedAt,
-                    DateTime LastModifiedAt,
-                    string ErrorMessage
-                )>(
-                    """SELECT "AttemptCount", "FencingToken", "LeaseOwner", "LeaseExpiresAt", "NextAttemptAt", "FinishedAt", "LastModifiedAt", "ErrorMessage" FROM dmscs."Job" WHERE "JobId" = @JobId;""",
-                    new { JobId = jobId }
-                );
-                job.AttemptCount.Should().Be(1);
-                job.FencingToken.Should().BeGreaterThan(0);
-                job.LeaseOwner.Should().BeNull();
-                job.LeaseExpiresAt.Should().BeNull();
-                job.NextAttemptAt.Should()
-                    .Be(acceptedDueTimes[jobId], "terminal failure must not schedule a retry");
-                job.ErrorMessage.Should().Be("The job handler failed.");
-                job.FinishedAt.Should().Be(failed.UpdatedAt);
-                job.LastModifiedAt.Should().Be(failed.LastModifiedDate);
-                failed.LastRefreshed.Should().Be(failed.LastModifiedDate);
-            }
-            foreach (string field in new[] { "dataStoreId", "dataStoreName", "databaseName" })
-            {
-                createError.GetProperty(field).ValueKind.Should().Be(JsonValueKind.Null);
-                deleteError
-                    .GetProperty(field)
-                    .GetRawText()
-                    .Should()
-                    .Be(created.GetProperty(field).GetRawText());
-            }
-            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeFalse();
-            await VerifyRetainedTarget();
-            provisioning.OperationsAreEmpty.Should().BeTrue();
-            string terminalSnapshot = await Snapshot();
-
-            await deployment.StopAsync();
-            provisioning.SetMinimalPackageAvailable(true);
-            await Start(ready: true, worker: true);
-            (await Snapshot()).Should().Be(terminalSnapshot);
-            // Completing newer work is a real worker-progress observation, not a sleep asserting no revival.
-            Uri control = await AcceptCreate(prefix + "Control");
-            JsonElement controlCreated = await Poll(control, "Created");
-            using (var response = await client.DeleteAsync(control))
-            {
-                response.StatusCode.Should().Be(HttpStatusCode.NoContent);
-            }
-            await Poll(control, "Deleted");
-            var controlRow = await ReadRow(control);
-            await JobStatus(controlRow.DeleteJobId!, "Completed");
-            (await Snapshot())
-                .Should()
-                .Be(terminalSnapshot, "Ready must not revive settled Error jobs or reset lifecycle failures");
-            foreach (
-                var (location, name, expected) in new[]
-                {
-                    (createLocation, pendingCreate.Name, "CreateError"),
-                    (deleteLocation, pendingDelete.Name, "DeleteError"),
-                }
-            )
-            {
-                (await GetJson(location.AbsoluteUri)).GetProperty("status").GetString().Should().Be(expected);
-                using var duplicate = await client.PostAsJsonAsync(
-                    "v3/dataStores/manage",
-                    new { name, databaseTemplate = "Minimal" }
-                );
-                duplicate.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-                using var deletion = await client.DeleteAsync(location);
-                deletion.StatusCode.Should().Be(HttpStatusCode.BadRequest);
-            }
-            (await Snapshot()).Should().Be(terminalSnapshot);
-            await VerifyRetainedTarget();
-            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeFalse();
-            (await provisioning.TargetExistsAsync(controlCreated.GetProperty("databaseName").GetString()!))
-                .Should()
-                .BeFalse();
-            await using (var cms = await deployment.OpenAsync())
-            {
-                (await cms.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."Job";""")).Should().Be(5);
                 (
                     await cms.ExecuteScalarAsync<int>(
                         """SELECT COUNT(*) FROM dmscs."Job" WHERE "Status" = 'Error';"""
                     )
                 )
                     .Should()
-                    .Be(2);
-                (await cms.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."DataStore";"""))
-                    .Should()
-                    .Be(1);
+                    .Be(1, "only the unrelated unknown-type job ends in Error");
             }
-            deployment.ContainsSecret(deployment.Output).Should().BeFalse();
-            provisioning.OperationsAreEmpty.Should().BeTrue();
 
-            // Post-assertion cleanup only: DeleteError correctly retains this target and cannot be retried
-            // through the API. Stop the worker and use the real endpoint/identity-checked physical protocol.
-            await deployment.StopAsync();
-            await provisioning.RemoveVerifiedTargetAsync(
-                original.TargetDatabaseName,
-                original.ExpectedSourceIdentity,
-                original.EndpointDescriptor
-            );
-            (await provisioning.TargetExistsAsync(original.TargetDatabaseName)).Should().BeFalse();
-            (await Snapshot())
-                .Should()
-                .Be(terminalSnapshot, "cleanup must not reset or repair the CMS aggregate/job");
+            // Remove the remaining target through the qualified API before fixture disposal.
+            using (var response = await client.DeleteAsync(createLocation))
+            {
+                response.StatusCode.Should().Be(HttpStatusCode.Accepted);
+            }
+            await Poll(createLocation, "Deleted");
+            await JobStatus((await ReadRow(createLocation)).DeleteJobId!, "Completed");
+            (await provisioning.TargetExistsAsync(pendingCreate.TargetDatabaseName)).Should().BeFalse();
+            provisioning.OperationsAreEmpty.Should().BeTrue();
+            deployment.ContainsSecret(deployment.Output).Should().BeFalse();
 
             async Task Start(bool ready, bool worker)
             {
@@ -330,18 +290,43 @@ public class Given_external_managed_data_store_terminal_readiness
                         new { First = jobIds[0], Second = jobIds[1] }
                     )
                 ).ToArray();
+                var catalog = (
+                    await cms.QueryAsync("""SELECT * FROM dmscs."DataStore" ORDER BY "Id";""")
+                ).ToArray();
                 return Convert.ToHexString(
-                    SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(new { rows, jobs }))
+                    SHA256.HashData(
+                        JsonSerializer.SerializeToUtf8Bytes(
+                            new
+                            {
+                                rows,
+                                jobs,
+                                catalog,
+                            }
+                        )
+                    )
                 );
             }
-            async Task<Uri> AcceptCreate(string name)
+            async Task<(Uri Location, string JobId)> AcceptCreate(string name)
             {
                 using var response = await client.PostAsJsonAsync(
                     "v3/dataStores/manage",
                     new { name, databaseTemplate = "Minimal" }
                 );
                 response.StatusCode.Should().Be(HttpStatusCode.Accepted);
-                return response.Headers.Location!;
+                return (
+                    response.Headers.Location!,
+                    await QueuedJobId(response, "The Data Store has been queued to be created.")
+                );
+            }
+            static async Task<string> QueuedJobId(HttpResponseMessage response, string message)
+            {
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                json.RootElement.EnumerateObject()
+                    .Select(property => property.Name)
+                    .Should()
+                    .Equal("jobId", "message");
+                json.RootElement.GetProperty("message").GetString().Should().Be(message);
+                return json.RootElement.GetProperty("jobId").GetString()!;
             }
             async Task<JsonElement> GetJson(string path)
             {
@@ -358,7 +343,11 @@ public class Given_external_managed_data_store_terminal_readiness
                 while (true)
                 {
                     JsonElement row = await GetJson(location.AbsoluteUri);
-                    if (row.GetProperty("status").GetString() == expected)
+                    string status = row.GetProperty("status").GetString()!;
+                    new[] { "CreateFailed", "CreateError", "DeleteFailed", "DeleteError" }
+                        .Should()
+                        .NotContain(status);
+                    if (status == expected)
                     {
                         return row;
                     }
@@ -368,7 +357,7 @@ public class Given_external_managed_data_store_terminal_readiness
             async Task JobStatus(string id, string expected)
             {
                 await using var cms = await deployment.OpenAsync();
-                using var deadline = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+                using var deadline = new CancellationTokenSource(TimeSpan.FromMinutes(3));
                 while (
                     await cms.ExecuteScalarAsync<string>(
                         """SELECT "Status" FROM dmscs."Job" WHERE "JobId" = @Id;""",

@@ -234,6 +234,10 @@ app.UseMiddleware<ConnectSourceRateLimitMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
 
+// After authorization, so 401/403 keep precedence, and before charset validation, so a disabled managed
+// route returns its disabled-feature 400 whatever the request's encoding or body.
+app.UseMiddleware<ManagedDataStoreFeatureGateMiddleware>();
+
 // Reject JSON requests declaring an unsupported charset with the Ed-Fi 415 contract before body
 // binding reads them. Placed after authorization so authentication and authorization failures keep
 // their 401/403 responses.

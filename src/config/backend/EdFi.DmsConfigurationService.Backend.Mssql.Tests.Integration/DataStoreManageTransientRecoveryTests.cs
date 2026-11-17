@@ -62,7 +62,7 @@ public partial class Given_data_store_namespace_reservations
                     .Be(JobExecutionOutcome.Completed);
                 (await client.DeleteAsync($"/v3/dataStores/manage/{id}"))
                     .StatusCode.Should()
-                    .Be(HttpStatusCode.NoContent);
+                    .Be(HttpStatusCode.Accepted);
             }
             var pending = await LiveRow(id);
             string jobId = delete ? pending.DeleteJobId! : pending.CreateJobId;

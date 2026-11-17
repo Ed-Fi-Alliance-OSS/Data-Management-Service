@@ -90,21 +90,22 @@ public partial class Given_data_store_namespace_reservations
                     .Be(JobExecutionOutcome.Completed);
                 (await client.DeleteAsync($"/v3/dataStores/manage/{id}"))
                     .StatusCode.Should()
-                    .Be(HttpStatusCode.NoContent);
+                    .Be(HttpStatusCode.Accepted);
             }
             var pending = await LiveRow(id);
             string jobId = delete ? pending.DeleteJobId! : pending.CreateJobId;
-            Worker.Settings Settings(Worker.StopPoint stop) =>
+            Worker.Settings Settings(Worker.StopPoint stop, string? observe = null, bool closed = false) =>
                 new()
                 {
                     CatalogConnection = _database.ConnectionString,
                     RuntimeConnection = runtime,
                     Provisioning = lane.WithEngine(Engine()).Options,
                     ManageId = id,
-                    JobId = jobId,
+                    JobId = observe ?? jobId,
                     Delete = delete,
                     MaxAttempts = exhaust ? 1 : 2,
                     StopAt = stop,
+                    ClosedReadiness = closed,
                 };
             string testAssembly = typeof(Given_data_store_namespace_reservations).Assembly.Location;
             Worker.Signal checkpoint;
@@ -167,6 +168,42 @@ public partial class Given_data_store_namespace_reservations
             )
                 .Should()
                 .Be(1);
+
+            // A restart while startup readiness is closed must neither claim, attempt nor exhaust the interrupted
+            // job, while the same worker still settles unrelated work queued behind it.
+            string unrelated = Guid.NewGuid().ToString("N");
+            await catalog.ExecuteAsync(
+                """
+                INSERT INTO dmscs."Job" ("JobId", "JobType", "PayloadVersion", "Payload", "Status", "CreatedAt", "NextAttemptAt", "AttemptCount")
+                VALUES (@Id, 'Unrelated.Unknown', 1, '{}', 'Pending', SYSUTCDATETIME(), SYSUTCDATETIME(), 0);
+                """,
+                new { Id = unrelated }
+            );
+            string paused = await ManagedSnapshot();
+            await using (
+                var closed = await Worker.StartAsync(
+                    testAssembly,
+                    Settings(Worker.StopPoint.None, observe: unrelated, closed: true)
+                )
+            )
+            {
+                var progressed = await closed.ReadAsync();
+                progressed.Kind.Should().Be("JobFailed");
+                progressed.ProcessId.Should().NotBe(checkpoint.ProcessId);
+                await closed.RequireSuccessfulExitAsync();
+            }
+            (await ManagedSnapshot()).Should().Be(paused);
+            (await lane.Engine.InspectAsync(identity.TargetName, default))
+                .Should()
+                .Be(physicalBeforeRecovery);
+            (
+                await catalog.ExecuteScalarAsync<string>(
+                    """SELECT "ErrorMessage" FROM dmscs."Job" WHERE "JobId" = @Id AND "Status" = 'Error';""",
+                    new { Id = unrelated }
+                )
+            )
+                .Should()
+                .Be(JobErrorCode.UnsupportedJobType.Message);
 
             Worker.Signal settled;
             await using (
@@ -242,6 +279,26 @@ public partial class Given_data_store_namespace_reservations
             // Both reclamation and exhaustion invalidate the dead owner's fence.
             finishedJob.FencingToken.Should().Be(checkpoint.Fence + 1);
             lane.OperationEntries.Should().BeEmpty();
+
+            async Task<string> ManagedSnapshot() =>
+                JsonSerializer.Serialize(
+                    new
+                    {
+                        Row = await LiveRow(id),
+                        Job = (
+                            (IDictionary<string, object>)
+                                await catalog.QuerySingleAsync(
+                                    """SELECT * FROM dmscs."Job" WHERE "JobId" = @JobId;""",
+                                    new { JobId = jobId }
+                                )
+                        ).ToDictionary(),
+                        DataStores = (
+                            await catalog.QueryAsync("""SELECT * FROM dmscs."DataStore" ORDER BY "Id";""")
+                        )
+                            .Select(row => ((IDictionary<string, object>)row).ToDictionary())
+                            .ToArray(),
+                    }
+                );
         }
         finally
         {
@@ -325,9 +382,14 @@ public partial class Given_data_store_namespace_reservations
                 ["JobSettings:WorkerEnabled"] = "true",
                 ["JobSettings:MaxAttempts"] = settings.MaxAttempts.ToString(CultureInfo.InvariantCulture),
             },
+            ready: !settings.ClosedReadiness,
             configure: services =>
             {
-                services.AddSingleton<IDmsDataStoreProvisioner>(provisioner);
+                // Closed readiness keeps the provisioner production registers for a NotReady verdict.
+                if (!settings.ClosedReadiness)
+                {
+                    services.AddSingleton<IDmsDataStoreProvisioner>(provisioner);
+                }
                 services.AddSingleton<ILogger<JobExecutor>>(observer);
                 services.AddSingleton<ILogger<JobWorkerService>>(observer);
                 if (settings.StopAt != Worker.StopPoint.None)

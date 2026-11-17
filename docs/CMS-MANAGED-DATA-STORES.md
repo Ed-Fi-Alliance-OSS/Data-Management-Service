@@ -106,11 +106,11 @@ accepting, with target reservation spanning tenants.
 
 | Request/outcome | Contract |
 | --- | --- |
-| Accepted POST | Empty **202** and an absolute `Location` for the managed record, after aggregate/job linkage commits. No job ID or message body. Poll that managed URL. |
+| Accepted POST | **202** with a `jobQueuedResult` body, `{"jobId": "…", "message": "The Data Store has been queued to be created."}`, and an absolute `Location` for the managed record, after aggregate/job linkage commits. `jobId` is the durable create job, readable through `/v3/jobs/{jobId}` in the same tenant. |
 | Duplicate name / reserved target | **400** with `A data store with this name already exists.` / `The requested target database is already reserved.` No accepted work. |
 | GET collection/by ID | Nine public fields: `id`, `name`, `dataStoreId`, `dataStoreName`, `status`, `databaseTemplate`, `databaseName`, `lastRefreshed`, `lastModifiedDate`. Internal identity, pins, credentials and job linkage are not returned. |
 | Pending/unlinked create | All three linked fields (`dataStoreId`, `dataStoreName`, `databaseName`) are explicitly null until publication, including failed/error creates. |
-| DELETE of Created | Empty **204**, no Location. This accepts asynchronous deletion; it does not mean the physical database has already disappeared. |
+| DELETE of Created | **202** with a `jobQueuedResult` body, `{"jobId": "…", "message": "The Data Store has been queued to be deleted."}`, no Location. This accepts asynchronous deletion; it does not mean the physical database has already disappeared. |
 | DELETE of absent/Deleted | **404**; GET still returns a Deleted tombstone. |
 | DELETE in another lifecycle state | State-specific **400**, with no state/job mutation. State/not-found checks take precedence over readiness. |
 | Closed readiness | **503**, `Managed data store provisioning is unavailable.` for POST or otherwise eligible DELETE; no Retry-After or readiness detail. |
@@ -133,10 +133,14 @@ education-organization refresh. Deleted records retain historical linked fields.
 
 The durable job and matching lifecycle retry/terminal outcome commit together, including failures
 before handler execution. A transient physical outage after acceptance uses the existing job backoff
-and maximum attempts; it does not close the startup readiness latch. Previously accepted work that
-still needs provisioning when a restarted host is `NotReady` converges to terminal failure. Restoring
-readiness does not revive terminal jobs. There is no managed reset/retry endpoint; failed/error records
-retain their name and target reservation until successful managed deletion, and DELETE admits only Created.
+and maximum attempts; it does not close the startup readiness latch. While a host's startup readiness
+is `NotReady`, its worker neither claims nor exhausts `ManagedDataStore.Create` and
+`ManagedDataStore.Delete` jobs; other jobs keep running. Previously accepted, nonterminal managed work
+stays queued with its attempts, identity and pin unchanged, and resumes after remediation and a
+restart that reports Ready. This does not repair records that already ended in `CreateError` or
+`DeleteError`; those need operator investigation. There is no managed reset/retry endpoint;
+failed/error records retain their name and target reservation until successful managed deletion, and
+DELETE admits only Created.
 
 Physical work and CMS persistence cannot share a transaction. After physical create succeeds but
 publication fails, a later attempt reuses the recorded identity and artifact pin, reconciles the target
@@ -161,7 +165,7 @@ moves are not automatically equivalent endpoints. Live two-server rollover has *
 For an incident, collect managed ID, tenant partition, lifecycle state, UTC observation times and safe
 correlation/job identifiers through authorized diagnostics. If a job ID is known, its secured
 `/v3/jobs/{jobId}` resource reports the public job status; it is not the managed Location ID. Job
-failures intentionally use fixed safe messages. Restricted CMS failure fields and the provisioner's
+failures intentionally use fixed safe messages. The accepted POST/DELETE response's `jobId` is that identifier. Restricted CMS failure fields and the provisioner's
 [failure-code guide](OPERATIONS.md#failure-codes) distinguish transient, NotReady, invalid request,
 permanent and operator-inspection failures; do not infer the root cause from `HandlerFailed` alone.
 

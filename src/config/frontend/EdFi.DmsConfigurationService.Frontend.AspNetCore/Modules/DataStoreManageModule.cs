@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
+using EdFi.DmsConfigurationService.DataModel.Model.Job;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
@@ -24,13 +25,20 @@ public static class DataStoreManageModule
 {
     private const string Route = "/v3/dataStores/manage";
 
+    internal const string CreateQueuedMessage = "The Data Store has been queued to be created.";
+    internal const string DeleteQueuedMessage = "The Data Store has been queued to be deleted.";
+
     internal static readonly EventId ManagedRequestFailed = new(1439_40, nameof(ManagedRequestFailed));
 
     private static IResult Invalid(HttpContext context, string message, string field = "dataStore") =>
         FailureResults.DataValidation([new ValidationFailure(field, message)], context.TraceIdentifier);
 
-    private static IResult Disabled(HttpContext context) =>
+    /// <summary>The disabled-feature problem; the feature gate middleware returns it before body validation.</summary>
+    internal static IResult Disabled(HttpContext context) =>
         Invalid(context, "Data store management is disabled by AppSettings:EnableDataStoreManagement.");
+
+    private static IResult Queued(string? location, string jobId, string message) =>
+        Results.Accepted(location, new JobQueuedResponse { JobId = jobId, Message = message });
 
     private static IResult Unavailable(HttpContext context) =>
         FailureResults.ServiceUnavailable(
@@ -69,7 +77,10 @@ public static class DataStoreManageModule
 
     public static void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        var group = endpoints.MapGroup(Route).WithTags("DataStoreManagement");
+        var group = endpoints
+            .MapGroup(Route)
+            .WithTags("DataStoreManagement")
+            .WithMetadata(ManagedDataStoreRouteMetadata.Instance);
         group
             .MapSecuredGet("", GetAll)
             .WithSummary("Query managed data stores")
@@ -96,10 +107,10 @@ public static class DataStoreManageModule
             .MapSecuredPost("", Create)
             .WithSummary("Accept managed data store creation")
             .WithDescription(
-                "Returns an empty 202 response after durable acceptance. Location is the absolute management resource URL. Disabled management returns 400; closed provisioner readiness returns 503 without acceptance."
+                "Returns 202 with a jobQueuedResult after durable acceptance; its jobId is readable through /v3/jobs/{jobId}. Location is the absolute management resource URL. Disabled management returns 400; closed provisioner readiness returns 503 without acceptance."
             )
             .Accepts<DataStoreManageInsertCommand>("application/json")
-            .Produces(202)
+            .Produces<JobQueuedResponse>(202)
             .ProducesProblem(400)
             .ProducesProblem(401)
             .ProducesProblem(403)
@@ -110,9 +121,9 @@ public static class DataStoreManageModule
             .MapSecuredDelete("/{id}", Delete)
             .WithSummary("Accept managed data store deletion")
             .WithDescription(
-                "Only Created can be deleted. Returns an empty 204 after durable acceptance, without Location. Absent or Deleted returns 404; other states return 400. Closed readiness returns 503 without changing Created."
+                "Only Created can be deleted. Returns 202 with a jobQueuedResult after durable acceptance, without Location; its jobId is readable through /v3/jobs/{jobId}. Absent or Deleted returns 404; other states return 400. Closed readiness returns 503 without changing Created."
             )
-            .Produces(204)
+            .Produces<JobQueuedResponse>(202)
             .ProducesProblem(400)
             .ProducesProblem(401)
             .ProducesProblem(403)
@@ -237,7 +248,7 @@ public static class DataStoreManageModule
                 new PathString(context.Request.PathBase.Value?.TrimEnd('/')),
                 new PathString(Route + "/" + success.Id.ToString(CultureInfo.InvariantCulture))
             );
-            return Results.Accepted(location);
+            return Queued(location, success.JobId, CreateQueuedMessage);
         }
         return result switch
         {
@@ -298,7 +309,7 @@ public static class DataStoreManageModule
             .GetRequiredService<IDataStoreManageRepository>()
             .AcceptDeleteAsync(manageId, context.RequestAborted) switch
         {
-            DataStoreManageDeleteResult.Success => Results.NoContent(),
+            DataStoreManageDeleteResult.Success success => Queued(null, success.JobId, DeleteQueuedMessage),
             DataStoreManageDeleteResult.ManagementDisabled => Disabled(context),
             DataStoreManageDeleteResult.NotFound => FailureResults.NotFound(
                 "Managed data store not found.",

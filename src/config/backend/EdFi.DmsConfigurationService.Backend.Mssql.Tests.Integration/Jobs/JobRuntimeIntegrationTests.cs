@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Diagnostics;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
@@ -207,8 +208,17 @@ public class JobRuntimeIntegrationTests
                 Options.Create(Settings),
                 TimeProvider.System,
                 NullLogger<JobWorkerService>.Instance,
-                JobClaimPolicy.All
+                JobClaimPolicy.All,
+                ReadyProvisioning()
             );
+
+        /// <summary>A recorded Ready verdict, so the generic runtime's eligibility is the feature policy alone.</summary>
+        private static DmsDataStoreProvisionerReadiness ReadyProvisioning()
+        {
+            var readiness = new DmsDataStoreProvisionerReadiness();
+            readiness.Record(new DmsProvisionerReadiness.Ready("mssql", DateTimeOffset.UtcNow));
+            return readiness;
+        }
 
         public JobScheduleDispatcherService Dispatcher() =>
             new(

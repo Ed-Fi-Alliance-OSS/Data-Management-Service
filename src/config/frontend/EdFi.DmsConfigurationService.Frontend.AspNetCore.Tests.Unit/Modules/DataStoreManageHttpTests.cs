@@ -74,8 +74,8 @@ public class Given_managed_data_store_HTTP
         Fake.ClearRecordedCalls(_admin);
         _receivedQuery = null;
         _receivedCreate = null;
-        _create = new DataStoreManageCreateResult.Success(17, "internal-job");
-        _delete = new DataStoreManageDeleteResult.Success("internal-job");
+        _create = new DataStoreManageCreateResult.Success(17, "accepted-create-job");
+        _delete = new DataStoreManageDeleteResult.Success("accepted-delete-job");
         _get = new DataStoreManageGetResult.Success(Model("PendingCreate"));
         _query = new DataStoreManageQueryResult.Success([Model("PendingCreate")]);
         A.CallTo(() => _readiness.Current)
@@ -151,21 +151,95 @@ public class Given_managed_data_store_HTTP
             new StringContent(json, Encoding.UTF8, "application/json")
         );
 
+    /// <summary>Exactly the two jobQueuedResult properties, carrying the repository's committed job ID.</summary>
+    private static async Task AssertQueued(HttpResponseMessage response, string jobId, string message)
+    {
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+        body.Select(property => property.Key).Should().Equal("jobId", "message");
+        body["jobId"]!.GetValue<string>().Should().Be(jobId);
+        body["message"]!.GetValue<string>().Should().Be(message);
+    }
+
+    private static HttpRequestMessage UnsupportedCharsetPost(string path) =>
+        new(HttpMethod.Post, path)
+        {
+            Content = new ByteArrayContent(
+                Encoding.UTF8.GetBytes("""{"name":"Store","databaseTemplate":"Minimal"}""")
+            )
+            {
+                Headers = { { "Content-Type", "application/json; charset=not-an-encoding" } },
+            },
+        };
+
+    [Test]
+    public async Task It_returns_the_disabled_400_before_charset_validation_and_keeps_other_outcomes()
+    {
+        await using var disabled = Host(enabled: false);
+        foreach (
+            var (host, scope, path, expected) in new (
+                WebApplicationFactory<Program>,
+                string?,
+                string,
+                HttpStatusCode
+            )[]
+            {
+                (disabled, "edfi_admin_api/full_access", "/v3/dataStores/manage", HttpStatusCode.BadRequest),
+                (disabled, null, "/v3/dataStores/manage", HttpStatusCode.Unauthorized),
+                (
+                    disabled,
+                    "edfi_admin_api/readonly_access",
+                    "/v3/dataStores/manage",
+                    HttpStatusCode.Forbidden
+                ),
+                (
+                    disabled,
+                    "edfi_admin_api/full_access",
+                    "/v3/dataStores",
+                    HttpStatusCode.UnsupportedMediaType
+                ),
+                (
+                    _factory,
+                    "edfi_admin_api/full_access",
+                    "/v3/dataStores/manage",
+                    HttpStatusCode.UnsupportedMediaType
+                ),
+            }
+        )
+        {
+            using var client = Client(host, scope);
+            using var request = UnsupportedCharsetPost(path);
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(expected, $"{path} {scope}");
+            if (expected == HttpStatusCode.BadRequest)
+            {
+                JsonNode.Parse(await response.Content.ReadAsStringAsync())!["validationErrors"]![
+                    "dataStore"
+                ]![0]!
+                    .GetValue<string>()
+                    .Should()
+                    .Be("Data store management is disabled by AppSettings:EnableDataStoreManagement.");
+            }
+        }
+        Fake.GetCalls(_repository).Should().BeEmpty();
+        Fake.GetCalls(_admin).Should().BeEmpty();
+    }
+
     [TestCase(""), TestCase("/cms"), TestCase("/cms/")]
-    public async Task It_returns_bodyless_acceptance_and_absolute_location(string pathBase)
+    public async Task It_returns_the_queued_job_and_absolute_location(string pathBase)
     {
         using var client = Client();
         client.DefaultRequestHeaders.Add("X-Test-PathBase", pathBase);
         using var response = await Post(client, suffix: "/");
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
-        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        await AssertQueued(response, "accepted-create-job", "The Data Store has been queued to be created.");
         response
             .Headers.Location!.AbsoluteUri.Should()
             .Be($"https://cms.example.test:7443{pathBase.TrimEnd('/')}/v3/dataStores/manage/17");
         _receivedCreate!.Name.Should().Be("Store");
         using var deleted = await client.DeleteAsync("/v3/dataStores/manage/17");
-        deleted.StatusCode.Should().Be(HttpStatusCode.NoContent);
-        (await deleted.Content.ReadAsStringAsync()).Should().BeEmpty();
+        deleted.StatusCode.Should().Be(HttpStatusCode.Accepted);
+        await AssertQueued(deleted, "accepted-delete-job", "The Data Store has been queued to be deleted.");
         deleted.Headers.Location.Should().BeNull();
     }
 
@@ -511,7 +585,7 @@ public class Given_managed_data_store_HTTP
         var document = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
         var path = document["paths"]!["/v3/dataStores/manage"]!;
         var post = path["post"]!;
-        post["responses"]!["202"]!["content"]?.AsObject().Should().BeNullOrEmpty();
+        AssertQueuedSchema(document, post["responses"]!["202"]!);
         post["responses"]!["202"]!["headers"]!["Location"]!["schema"]!["format"]!
             .GetValue<string>()
             .Should()
@@ -538,7 +612,21 @@ public class Given_managed_data_store_HTTP
             .GetValue<int>()
             .Should()
             .Be(25);
-        var deletion = document["paths"]!["/v3/dataStores/manage/{id}"]!["delete"]!["responses"]!["204"]!;
-        deletion["content"]?.AsObject().Should().BeNullOrEmpty();
+        var deletion = document["paths"]!["/v3/dataStores/manage/{id}"]!["delete"]!["responses"]!.AsObject();
+        deletion.Should().NotContainKey("204");
+        AssertQueuedSchema(document, deletion["202"]!);
+        deletion["202"]!["headers"]?["Location"].Should().BeNull();
+    }
+
+    private static void AssertQueuedSchema(JsonNode document, JsonNode response)
+    {
+        var schema = response["content"]!["application/json"]!["schema"]!;
+        string reference = schema["$ref"]!.GetValue<string>();
+        var resolved = document["components"]!["schemas"]![reference.Split('/')[^1]]!;
+        resolved["properties"]!
+            .AsObject()
+            .Select(property => property.Key)
+            .Should()
+            .BeEquivalentTo("jobId", "message");
     }
 }

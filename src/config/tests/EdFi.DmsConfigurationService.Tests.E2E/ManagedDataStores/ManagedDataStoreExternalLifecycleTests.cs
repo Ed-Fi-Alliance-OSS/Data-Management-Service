@@ -103,7 +103,10 @@ public class Given_external_managed_data_store_lifecycle
                 new { name = managedName, databaseTemplate = "Minimal" }
             );
             acceptance.StatusCode.Should().Be(HttpStatusCode.Accepted);
-            (await acceptance.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+            string createJobId = await QueuedJobId(
+                acceptance,
+                "The Data Store has been queued to be created."
+            );
             Uri location = acceptance.Headers.Location!;
             location.IsAbsoluteUri.Should().BeTrue();
             int manageId = int.Parse(location.Segments[^1]);
@@ -213,11 +216,12 @@ public class Given_external_managed_data_store_lifecycle
                 body.Contains(location.AbsoluteUri, StringComparison.Ordinal).Should().BeTrue();
                 deployment.ContainsSecret(body).Should().BeFalse();
             }
+            string deleteJobId;
             using (var deletion = await client.DeleteAsync(location))
             {
-                deletion.StatusCode.Should().Be(HttpStatusCode.NoContent);
+                deletion.StatusCode.Should().Be(HttpStatusCode.Accepted);
                 deletion.Headers.Location.Should().BeNull();
-                (await deletion.Content.ReadAsByteArrayAsync()).Should().BeEmpty();
+                deleteJobId = await QueuedJobId(deletion, "The Data Store has been queued to be deleted.");
             }
             JsonElement deleted = await Poll("Deleted");
             foreach (
@@ -282,6 +286,13 @@ public class Given_external_managed_data_store_lifecycle
                 await Task.Delay(100, settlement.Token);
             }
             (await cms.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."Job";""")).Should().Be(2);
+            // The returned identifiers are the two durable jobs, readable through the jobs API.
+            foreach (string jobId in new[] { createJobId, deleteJobId })
+            {
+                JsonElement job = await GetJson("v3/jobs/" + jobId);
+                job.GetProperty("jobId").GetString().Should().Be(jobId);
+                job.GetProperty("status").GetString().Should().Be("Completed");
+            }
             (
                 await cms.ExecuteScalarAsync<int>(
                     """SELECT COUNT(*) FROM dmscs."Job" WHERE "AttemptCount" = 1 AND "FencingToken" > 0 AND "LeaseOwner" IS NULL AND "LeaseExpiresAt" IS NULL AND "FinishedAt" IS NOT NULL;"""
@@ -306,6 +317,16 @@ public class Given_external_managed_data_store_lifecycle
                 deployment.ContainsSecret(body).Should().BeFalse();
                 using var json = JsonDocument.Parse(body);
                 return json.RootElement.Clone();
+            }
+            static async Task<string> QueuedJobId(HttpResponseMessage response, string message)
+            {
+                using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+                json.RootElement.EnumerateObject()
+                    .Select(property => property.Name)
+                    .Should()
+                    .Equal("jobId", "message");
+                json.RootElement.GetProperty("message").GetString().Should().Be(message);
+                return json.RootElement.GetProperty("jobId").GetString()!;
             }
             async Task<JsonElement> Poll(string expected)
             {

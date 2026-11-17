@@ -85,7 +85,7 @@ public class Given_external_managed_data_store_suppression
             Uri createLocation = await AcceptCreate(prefix + "Create");
             using (var response = await client.DeleteAsync(deleteLocation))
             {
-                response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+                response.StatusCode.Should().Be(HttpStatusCode.Accepted);
             }
             var pendingCreate = await ReadRow(createLocation);
             var pendingDelete = await ReadRow(deleteLocation);
@@ -313,7 +313,7 @@ public class Given_external_managed_data_store_suppression
             }
             using (var response = await client.DeleteAsync(createLocation))
             {
-                response.StatusCode.Should().Be(HttpStatusCode.NoContent);
+                response.StatusCode.Should().Be(HttpStatusCode.Accepted);
             }
             await Poll(createLocation, "Deleted");
             await WaitFor(async () => await JobIsCompleted((await ReadRow(createLocation)).DeleteJobId!));

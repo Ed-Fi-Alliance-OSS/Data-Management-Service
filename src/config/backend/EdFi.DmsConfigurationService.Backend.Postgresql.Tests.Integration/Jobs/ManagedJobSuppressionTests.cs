@@ -5,6 +5,7 @@
 
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -398,8 +399,9 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
         (await Snapshot(managed)).Should().Be(before);
     }
 
-    [Test]
-    public async Task It_runs_the_worker_and_materializes_an_unrelated_recurring_schedule()
+    [TestCase(false, TestName = "It_runs_the_worker_and_materializes_an_unrelated_recurring_schedule")]
+    [TestCase(true, TestName = "It_pauses_managed_work_while_readiness_is_closed_and_runs_unrelated_work")]
+    public async Task It_runs_unrelated_work_without_touching_managed_rows(bool closedReadiness)
     {
         long managed = await SeedJobAsync(nextAttemptOffset: -100, jobType: ManagedJobTypes.Create);
         long exhaustedManaged = await SeedJobAsync(
@@ -407,8 +409,28 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
             attemptCount: 5,
             jobType: ManagedJobTypes.Delete
         );
+        long expiredManaged = await SeedJobAsync(
+            status: JobStatuses.InProgress,
+            nextAttemptOffset: -100,
+            attemptCount: 1,
+            leaseOwner: "dead-worker",
+            leaseOffset: -10,
+            fencingToken: 3,
+            jobType: ManagedJobTypes.Create
+        );
         string before = await Snapshot(managed);
         string exhaustedBefore = await Snapshot(exhaustedManaged);
+        string expiredBefore = await Snapshot(expiredManaged);
+        // Closed readiness alone must withhold managed work: the feature itself stays enabled.
+        JobClaimPolicy feature = closedReadiness ? JobClaimPolicy.All : Disabled;
+        var readiness = new DmsDataStoreProvisionerReadiness();
+        readiness.Record(
+            closedReadiness
+                ? new DmsProvisionerReadiness.NotReady([
+                    new(DmsProvisioningFailureCode.ArtifactMissing, "CatalogProbes"),
+                ])
+                : new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UtcNow)
+        );
         JobScheduleRepository schedules = new(
             Configuration.DatabaseOptions,
             new TestAuditContext(),
@@ -471,7 +493,8 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
             Options.Create(settings),
             TimeProvider.System,
             NullLogger<JobWorkerService>.Instance,
-            Disabled
+            feature,
+            readiness
         );
         try
         {
@@ -486,6 +509,7 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
         runtime.Script.JobIds.Should().Equal(jobId);
         (await Snapshot(managed)).Should().Be(before);
         (await Snapshot(exhaustedManaged)).Should().Be(exhaustedBefore);
+        (await Snapshot(expiredManaged)).Should().Be(expiredBefore);
         (await schedules.ListByType("Runtime.Schedule", default))
             .Should()
             .BeOfType<JobScheduleListResult.Success>()
@@ -493,5 +517,27 @@ public class Given_disabled_management_job_runtime : JobRuntimeIntegrationTests.
             .ContainSingle()
             .Which.Enabled.Should()
             .BeTrue();
+        if (closedReadiness)
+        {
+            // A healthy restart's policy makes the same rows eligible again: genuine exhaustion still applies to the
+            // over-limit row, and the expired lease and pending create are reclaimed, never reset.
+            JobClaimPolicy healthy = feature.ForWorker(
+                new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UtcNow)
+            );
+            var repository = Repository();
+            (await repository.Exhaust(settings.MaxAttempts, JobErrorCode.AttemptsExhausted, healthy, default))
+                .Should()
+                .BeEquivalentTo(new JobExhaustResult.Success(1));
+            (await RowAsync(exhaustedManaged)).Status.Should().Be(JobStatuses.Error);
+            Claimed(await repository.ClaimNext("restarted", 300, settings.MaxAttempts, healthy, default))
+                .Id.Should()
+                .Be(managed);
+            var reclaimed = Claimed(
+                await repository.ClaimNext("restarted", 300, settings.MaxAttempts, healthy, default)
+            );
+            reclaimed.Id.Should().Be(expiredManaged);
+            reclaimed.AttemptCount.Should().Be(2);
+            reclaimed.FencingToken.Should().Be(4);
+        }
     }
 }

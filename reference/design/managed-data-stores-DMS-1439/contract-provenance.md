@@ -57,15 +57,27 @@ not prove runtime timestamps, sorting or tombstone behavior:
 
 ## Q1 — acceptance responses
 
-Keep written AC4/AC8: POST returns **202 with zero body bytes** and an absolute
-managed-resource `Location`; DELETE returns **204 with zero body bytes and no
-Location**. Build the managed URL from scheme, host/port, PathBase and canonical
-route. Acceptance follows the committed aggregate/job transaction. Neither body
-contains `jobId` or `message`.
+**Current decision (2026-11-16, superseding the earlier choice below).** Jira comment
+99313 on DMS-1439 states that the new CMS POST and DELETE endpoints follow Admin API's
+`jobQueuedResult`, and [ADMINAPI-1523](https://edfi.atlassian.net/browse/ADMINAPI-1523)
+requires `jobId`/`message` for both operations and 202 for DELETE. That clarification
+governs AC4/AC8:
 
-Jira comment 99313 and [ADMINAPI-1523](https://edfi.atlassian.net/browse/ADMINAPI-1523)
-at upstream commit `bc4199b50409cbc4b71b5271af24bc1dfbf97518` are conflicting later
-evidence, not a replacement pin or permission to change the written contract.
+- POST returns **202** with `{"jobId", "message"}` and the absolute managed-resource
+  `Location` (scheme, host/port, PathBase, canonical route). Message:
+  `The Data Store has been queued to be created.` (the Jira example text).
+- DELETE returns **202** with `{"jobId", "message"}` and no Location. Message:
+  `The Data Store has been queued to be deleted.` (ADMINAPI-1523 requires only a
+  similar message; this is the corresponding wording, not an upstream literal).
+- `jobId` is the durable job the acceptance transaction committed, readable through
+  `/v3/jobs/{jobId}` in the same tenant partition. The endpoint never generates or
+  enqueues another one. The managed GET model stays at its nine fields.
+
+Superseded earlier decision, kept for history: written AC4/AC8 were kept (POST 202
+and DELETE 204, both with zero body bytes), and comment 99313/ADMINAPI-1523 at upstream
+commit `bc4199b50409cbc4b71b5271af24bc1dfbf97518` were treated as conflicting later
+evidence. Results recorded against that contract validate the empty-body responses
+only, not the current ones.
 
 ## Q2 — managed query contract
 

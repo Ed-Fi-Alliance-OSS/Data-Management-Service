@@ -80,6 +80,38 @@ public partial class Given_data_store_namespace_reservations
     private static Task<HttpResponseMessage> ManagedPost(HttpClient client, string name) =>
         client.PostAsJsonAsync("/v3/dataStores/manage", new { name, databaseTemplate = "Minimal" });
 
+    /// <summary>The jobQueuedResult's job ID, after checking the body holds exactly the two contract fields.</summary>
+    private static async Task<string> QueuedJobId(HttpResponseMessage response, string message)
+    {
+        var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!.AsObject();
+        body.Select(property => property.Key).Should().Equal("jobId", "message");
+        body["message"]!.GetValue<string>().Should().Be(message);
+        return body["jobId"]!.GetValue<string>();
+    }
+
+    /// <summary>The returned ID reads the durable job through the jobs API, in the selected partition only.</summary>
+    private static async Task AssertJobReadable(
+        WebApplicationFactory<Program> host,
+        string jobId,
+        string? tenant,
+        string? otherTenant
+    )
+    {
+        using var selected = ManagedClient(host, tenant);
+        using var job = await selected.GetAsync($"/v3/jobs/{jobId}");
+        job.StatusCode.Should().Be(HttpStatusCode.OK);
+        JsonNode.Parse(await job.Content.ReadAsStringAsync())!["jobId"]!
+            .GetValue<string>()
+            .Should()
+            .Be(jobId);
+        if (otherTenant is not null)
+        {
+            using var other = ManagedClient(host, otherTenant);
+            using var absent = await other.GetAsync($"/v3/jobs/{jobId}");
+            absent.StatusCode.Should().Be(HttpStatusCode.NotFound);
+        }
+    }
+
     [TestCase(false), TestCase(true), Category("DataStoreManageHttp")]
     public async Task It_accepts_HTTP_create_atomically_and_reads_only_the_selected_partition(
         bool multitenant
@@ -96,12 +128,24 @@ public partial class Given_data_store_namespace_reservations
         using var client = ManagedClient(host, multitenant ? "api-a" : null);
         using var response = await ManagedPost(client, " Store ");
         response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
-        (await response.Content.ReadAsStringAsync()).Should().BeEmpty();
+        string jobId = await QueuedJobId(response, "The Data Store has been queued to be created.");
         int id = int.Parse(
             response.Headers.Location!.Segments[^1],
             System.Globalization.CultureInfo.InvariantCulture
         );
         await AssertAcceptanceCounts(1, 1);
+        await using (var connection = await Open())
+        {
+            (
+                await connection.ExecuteScalarAsync<string>(
+                    """SELECT "CreateJobId" FROM dmscs."DataStoreManage" WHERE "Id" = @Id;""",
+                    new { Id = id }
+                )
+            )
+                .Should()
+                .Be(jobId);
+        }
+        await AssertJobReadable(host, jobId, multitenant ? "api-a" : null, multitenant ? "api-b" : null);
         using var duplicate = await ManagedPost(client, "store");
         duplicate.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         await AssertAcceptanceCounts(1, 1);
@@ -201,7 +245,7 @@ public partial class Given_data_store_namespace_reservations
         var expected = status switch
         {
             "Absent" or "Deleted" => HttpStatusCode.NotFound,
-            "Created" when ready => HttpStatusCode.NoContent,
+            "Created" when ready => HttpStatusCode.Accepted,
             "Created" => HttpStatusCode.ServiceUnavailable,
             _ => HttpStatusCode.BadRequest,
         };
@@ -217,10 +261,13 @@ public partial class Given_data_store_namespace_reservations
         string body = await response.Content.ReadAsStringAsync();
         response.StatusCode.Should().Be(expected, body);
         response.Headers.Location.Should().BeNull();
-        if (expected == HttpStatusCode.NoContent)
+        if (expected == HttpStatusCode.Accepted)
         {
-            body.Should().BeEmpty();
-            (await DeleteRow(connection, seed.Id))["Status"].Should().Be("PendingDelete");
+            string jobId = await QueuedJobId(response, "The Data Store has been queued to be deleted.");
+            var row = await DeleteRow(connection, seed.Id);
+            row["Status"].Should().Be("PendingDelete");
+            row["DeleteJobId"].Should().Be(jobId);
+            await AssertJobReadable(host, jobId, null, null);
             (await connection.ExecuteScalarAsync<int>("""SELECT COUNT(*) FROM dmscs."Job";"""))
                 .Should()
                 .Be(1);
@@ -245,6 +292,32 @@ public partial class Given_data_store_namespace_reservations
         }
         using var get = await client.GetAsync($"/v3/dataStores/manage/{requestedId}");
         get.StatusCode.Should().Be(status == "Absent" ? HttpStatusCode.NotFound : HttpStatusCode.OK);
+    }
+
+    [Test, Category("DataStoreManageHttp")]
+    public async Task It_returns_the_HTTP_delete_job_readable_only_in_the_selected_tenant()
+    {
+        long tenant = await Tenant("api-a");
+        long otherTenant = await Tenant("api-b");
+        var seed = await SeedDeleteAcceptance(tenant);
+        using var current = AcceptanceServices(tenant);
+        using var other = AcceptanceServices(otherTenant);
+        await using var host = ManagedHttpHost(
+            id => (id == otherTenant ? other : current).GetRequiredService<IJobEnqueuer>(),
+            multitenant: true
+        );
+        using var client = ManagedClient(host, "api-a");
+        using var response = await client.DeleteAsync($"/v3/dataStores/manage/{seed.Id}");
+        response.StatusCode.Should().Be(HttpStatusCode.Accepted, await response.Content.ReadAsStringAsync());
+        response.Headers.Location.Should().BeNull();
+        string jobId = await QueuedJobId(response, "The Data Store has been queued to be deleted.");
+        await using (var connection = await Open())
+        {
+            var row = await DeleteRow(connection, seed.Id);
+            row["Status"].Should().Be("PendingDelete");
+            row["DeleteJobId"].Should().Be(jobId);
+        }
+        await AssertJobReadable(host, jobId, "api-a", "api-b");
     }
 
     [Test, Category("DataStoreManageHttp")]
