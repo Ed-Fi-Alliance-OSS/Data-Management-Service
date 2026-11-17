@@ -13,6 +13,165 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 public abstract class WritableRequestShaperTests
 {
     [TestFixture]
+    public class Given_Collections_Below_Object_And_Extension_Scopes : WritableRequestShaperTests
+    {
+        [TestCase("object")]
+        [TestCase("collection")]
+        [TestCase("extension")]
+        public void It_retains_nested_filtering_and_complete_collection_request_paths(string container)
+        {
+            var rowsRule = new CollectionRule(
+                "rows",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("code")],
+                null,
+                null,
+                null,
+                null
+            );
+            ContentTypeDefinition profile;
+            List<CompiledScopeDescriptor> scopes = [new("$", ScopeKind.Root, null, [], [], [])];
+            string parentScope;
+            string[] ancestors;
+            string sourceJson;
+            string expectedJson;
+            string[] expectedPaths;
+            switch (container)
+            {
+                case "object":
+                    parentScope = "$.parent";
+                    ancestors = [];
+                    scopes.Add(new(parentScope, ScopeKind.NonCollection, "$", [], [], []));
+                    profile = new(
+                        MemberSelection.IncludeAll,
+                        [],
+                        [
+                            new ObjectRule(
+                                "parent",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                null,
+                                [rowsRule],
+                                null
+                            ),
+                        ],
+                        [],
+                        []
+                    );
+                    sourceJson = """{ "parent": { "rows": [{ "code": "A", "secret": "hidden" }] } }""";
+                    expectedJson = """{ "parent": { "rows": [{ "code": "A" }] } }""";
+                    expectedPaths = ["$.parent.rows[0]"];
+                    break;
+                case "collection":
+                    parentScope = "$.parents[*].detail";
+                    ancestors = ["$.parents[*]"];
+                    scopes.Add(
+                        new("$.parents[*]", ScopeKind.Collection, "$", [], ["parentCode"], ["parentCode"])
+                    );
+                    scopes.Add(
+                        new(parentScope, ScopeKind.NonCollection, "$.parents[*]", [.. ancestors], [], [])
+                    );
+                    profile = new(
+                        MemberSelection.IncludeAll,
+                        [],
+                        [],
+                        [
+                            new CollectionRule(
+                                "parents",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                [
+                                    new ObjectRule(
+                                        "detail",
+                                        MemberSelection.IncludeAll,
+                                        null,
+                                        null,
+                                        null,
+                                        [rowsRule],
+                                        null
+                                    ),
+                                ],
+                                null,
+                                null,
+                                null
+                            ),
+                        ],
+                        []
+                    );
+                    sourceJson =
+                        """{ "parents": [{ "parentCode": "P", "detail": { "rows": [{ "code": "A", "secret": "hidden" }] } }] }""";
+                    expectedJson =
+                        """{ "parents": [{ "parentCode": "P", "detail": { "rows": [{ "code": "A" }] } }] }""";
+                    expectedPaths = ["$.parents[0]", "$.parents[0].detail.rows[0]"];
+                    break;
+                default:
+                    parentScope = "$._ext.sample";
+                    ancestors = [];
+                    scopes.Add(new(parentScope, ScopeKind.NonCollection, "$", [], [], []));
+                    profile = new(
+                        MemberSelection.IncludeAll,
+                        [],
+                        [],
+                        [],
+                        [
+                            new ExtensionRule(
+                                "sample",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                null,
+                                [rowsRule]
+                            ),
+                        ]
+                    );
+                    sourceJson =
+                        """{ "_ext": { "sample": { "rows": [{ "code": "A", "secret": "hidden" }] } } }""";
+                    expectedJson = """{ "_ext": { "sample": { "rows": [{ "code": "A" }] } } }""";
+                    expectedPaths = ["$._ext.sample.rows[0]"];
+                    break;
+            }
+            string rowScope = parentScope + ".rows[*]";
+            scopes.Add(
+                new(rowScope, ScopeKind.Collection, parentScope, [.. ancestors], ["code"], ["code", "secret"])
+            );
+            JsonNode source = JsonNode.Parse(sourceJson)!;
+
+            var result = BuildShaper(profile, scopes).Shape(source);
+
+            JsonNode
+                .DeepEquals(result.WritableRequestBody, JsonNode.Parse(expectedJson))
+                .Should()
+                .BeTrue(result.WritableRequestBody.ToJsonString());
+            result.VisibleRequestCollectionItems.Select(i => i.RequestJsonPath).Should().Equal(expectedPaths);
+            var row = result.VisibleRequestCollectionItems.Single(i => i.Address.JsonScope == rowScope);
+            row.Address.SemanticIdentityInOrder.Should()
+                .ContainSingle()
+                .Which.RelativePath.Should()
+                .Be("code");
+            row.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("A");
+            row.Address.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
+            row.Address.ParentAddress.JsonScope.Should().Be(parentScope);
+            row.Address.ParentAddress.AncestorCollectionInstances.Should().HaveCount(ancestors.Length);
+            if (container == "collection")
+            {
+                var ancestor = row.Address.ParentAddress.AncestorCollectionInstances.Single();
+                ancestor.JsonScope.Should().Be("$.parents[*]");
+                ancestor
+                    .SemanticIdentityInOrder.Should()
+                    .ContainSingle()
+                    .Which.RelativePath.Should()
+                    .Be("parentCode");
+                ancestor.SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("P");
+            }
+            result.ValidationFailures.Should().BeEmpty();
+            JsonNode.DeepEquals(source, JsonNode.Parse(sourceJson)).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
     public class Given_Extension_Scope_State_Contracts : WritableRequestShaperTests
     {
         [TestCase("omitted", false)]

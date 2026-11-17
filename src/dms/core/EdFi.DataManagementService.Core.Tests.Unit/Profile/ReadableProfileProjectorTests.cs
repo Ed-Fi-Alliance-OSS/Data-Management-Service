@@ -105,6 +105,21 @@ public class ReadableProfileProjectorTests
                     }
                     """
             )!;
+            var nestedExtensionRule = new ExtensionRule(
+                "sample",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("visible")],
+                null,
+                null
+            );
+            if (container is "object" or "collection")
+            {
+                sourceBody["_ext"] = JsonNode.Parse(
+                    """{ "sample": { "visible": "extension", "secret": "hidden" } }"""
+                );
+                expectedBody["_ext"] = JsonNode.Parse("""{ "sample": { "visible": "extension" } }""");
+            }
             ContentTypeDefinition contentType;
             JsonNode source;
             JsonNode expected;
@@ -122,7 +137,7 @@ public class ReadableProfileProjectorTests
                                 null,
                                 [childRule],
                                 [rowRule],
-                                null
+                                [nestedExtensionRule]
                             ),
                         ]
                     );
@@ -141,7 +156,7 @@ public class ReadableProfileProjectorTests
                                 null,
                                 [childRule],
                                 [rowRule],
-                                null,
+                                [nestedExtensionRule],
                                 null
                             ),
                         ]
@@ -179,6 +194,41 @@ public class ReadableProfileProjectorTests
                 .DeepEquals(projected, expected)
                 .Should()
                 .BeTrue("projected subtrees must be independent");
+        }
+
+        [Test]
+        public void It_preserves_an_identity_reference_even_when_an_object_rule_hides_the_identity()
+        {
+            JsonNode source = JsonNode.Parse(
+                """{ "id": "document", "schoolReference": { "schoolId": 200, "name": "Campus" }, "hidden": "secret" }"""
+            )!;
+            var contentType = CreateContentType(
+                MemberSelection.IncludeOnly,
+                objects:
+                [
+                    new ObjectRule(
+                        "schoolReference",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        [new PropertyRule("name")],
+                        null,
+                        null,
+                        null
+                    ),
+                ]
+            );
+
+            JsonNode result = _projector.Project(source, contentType, IdentityNames("schoolReference"));
+
+            JsonNode
+                .DeepEquals(
+                    result,
+                    JsonNode.Parse(
+                        """{ "id": "document", "schoolReference": { "schoolId": 200, "name": "Campus" } }"""
+                    )
+                )
+                .Should()
+                .BeTrue(result.ToJsonString());
         }
 
         [TestCase(FilterMode.IncludeOnly)]

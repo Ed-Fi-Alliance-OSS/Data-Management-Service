@@ -55,7 +55,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-two mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Ninety-two mutations killed; remaining triage in progress |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Full baseline running |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Full baseline complete; binding regressions in progress |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
@@ -121,6 +121,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.31%; further triage in progress | 4m17s / 4m33s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.19-19-30/reports/` |
 | Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 77.09%; further triage in progress | 6m29s / 5m56s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.19-48-56/reports/` |
+| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% baseline; regression rerun pending | 5m01s | `StrykerOutput/2026-11-16.19-55-14/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -455,6 +456,32 @@ triage is still required before treating the target as qualified. The Backend
 profile baseline is running separately; the Core result does not prove stored-row
 preservation. The new descriptor-hydration cases also await the write-execution
 mutation rerun.
+
+A follow-up adds ten Core cases and extends the existing nested projections to
+protect identity-reference preservation, extension filtering under IncludeAll,
+server-generated-field rejection inside nested rules, and complete collection
+request paths through object/collection/extension scopes. All 10,066 Core tests
+pass. Native verification of this follow-up remains pending.
+
+### DMS Backend profile baseline
+
+The full three-file baseline contains 783 killed, 368 survived, 220 uncovered,
+358 compile-error, 368 ignored, and one timed-out mutation. The timeout changes
+`CountWildcardSegments` at `RelationalWriteProfileMerge.cs:2390` from `index += 3`
+to `index -= 3`; record it separately from assertion-based kills.
+
+Stryker rolls back `ProfileCollectionWalker.WalkChildren`, `ExtractRequiredInt32`,
+and `ExtractRequiredInt64`, and the merge synthesizer's
+`TryBuildStoredDocumentReferenceIdentityJson`, after generated-code compile errors.
+The baseline therefore does not qualify mutations inside those methods. Existing
+ordinary walker/merge tests remain the backstop; production code is not rewritten
+to bypass the instrumentation limitation.
+
+The first eleven binding regressions pass normally. They assert all binding
+dispositions for visible-present/absent and hidden stored data, descendant state
+application, rejection of scope/ancestor-instance mismatches, and rejection of
+hidden metadata with no matching binding. Their native verification and the
+remaining collection/merge triage are pending.
 
 ### CMS permission-inheritance triage
 
