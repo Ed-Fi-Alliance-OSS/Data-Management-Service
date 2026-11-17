@@ -458,4 +458,167 @@ public class ResourceQueryFilterValidatorTests
             validate.Should().Throw<InvalidOperationException>().WithMessage("*duration*");
         }
     }
+
+    private static QueryField BoundedField(string queryFieldName, int? maxLength) =>
+        new(queryFieldName, [new JsonPathAndType($"$.{queryFieldName}", "string", maxLength)]);
+
+    private static ResourceQueryFilterResult ValidateOne(QueryField field, string value) =>
+        ResourceQueryFilterValidator.Validate(
+            new Dictionary<string, string> { [field.QueryFieldName] = value },
+            [field],
+            ordinalExcludedNames: [],
+            ignoreCaseExcludedNames: []
+        );
+
+    /// <summary>
+    /// A string filter longer than its field's declared maxLength is rejected as an invalid filter value,
+    /// the same way a value of the wrong type is.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_String_Filter_With_A_Declared_MaxLength : ResourceQueryFilterValidatorTests
+    {
+        private static readonly QueryField _field = BoundedField("studentUniqueId", 5);
+
+        [TestCase("")]
+        [TestCase("abcd")]
+        [TestCase("abcde")]
+        public void It_accepts_a_value_at_or_under_the_bound(string value)
+        {
+            ValidateOne(_field, value).Should().BeOfType<ResourceQueryFilterResult.Valid>();
+        }
+
+        [Test]
+        public void It_passes_an_accepted_value_through_unchanged()
+        {
+            ((ResourceQueryFilterResult.Valid)ValidateOne(_field, "abcde"))
+                .QueryElements[0]
+                .Value.Should()
+                .Be("abcde");
+        }
+
+        [TestCase("abcdef")]
+        [TestCase("abcde ")]
+        public void It_rejects_a_value_one_over_the_bound_including_trailing_space_overflow(string value)
+        {
+            ((ResourceQueryFilterResult.InvalidValues)ValidateOne(_field, value))
+                .ValidationErrors["$.studentUniqueId"]
+                .Should()
+                .Equal($"The value '{value}' is not valid for studentUniqueId.");
+        }
+    }
+
+    /// <summary>
+    /// Filter length is counted in text elements, the unit JsonSchema.Net's maxLength uses for request
+    /// bodies. Each case is checked against JsonSchema.Net itself so the two units cannot drift apart.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_Bounded_String_Filter_With_Unicode_Content : ResourceQueryFilterValidatorTests
+    {
+        private const int Bound = 3;
+        private const string Supplementary = "\U0001F600";
+        private const string Combining = "é";
+        private static readonly string _heavyCombining = "e" + new string('́', 50);
+
+        private static IEnumerable<TestCaseData> Cases()
+        {
+            yield return new TestCaseData("ascii-at-bound", "abc");
+            yield return new TestCaseData("ascii-over-bound", "abcd");
+            yield return new TestCaseData(
+                "supplementary-at-bound",
+                Supplementary + Supplementary + Supplementary
+            );
+            yield return new TestCaseData(
+                "supplementary-over-bound",
+                Supplementary + Supplementary + Supplementary + Supplementary
+            );
+            yield return new TestCaseData("combining-at-bound", Combining + Combining + Combining);
+            yield return new TestCaseData(
+                "combining-over-bound",
+                Combining + Combining + Combining + Combining
+            );
+            yield return new TestCaseData(
+                "heavy-combining-at-bound",
+                _heavyCombining + _heavyCombining + _heavyCombining
+            );
+        }
+
+        private static bool JsonSchemaAccepts(string value) =>
+            Json
+                .Schema.JsonSchema.FromText($$"""{"type":"string","maxLength":{{Bound}}}""")
+                .Evaluate(System.Text.Json.Nodes.JsonValue.Create(value))
+                .IsValid;
+
+        [TestCaseSource(nameof(Cases))]
+        public void It_agrees_with_json_schema_max_length(string caseName, string value)
+        {
+            bool filterAccepted =
+                ValidateOne(BoundedField("name", Bound), value) is ResourceQueryFilterResult.Valid;
+
+            filterAccepted.Should().Be(JsonSchemaAccepts(value), caseName);
+        }
+
+        [Test]
+        public void It_accepts_three_text_elements_spanning_far_more_than_three_utf16_units()
+        {
+            string value = _heavyCombining + _heavyCombining + _heavyCombining;
+
+            value.Length.Should().Be(153);
+            ValidateOne(BoundedField("name", Bound), value)
+                .Should()
+                .BeOfType<ResourceQueryFilterResult.Valid>();
+        }
+
+        [Test]
+        public void It_rejects_four_supplementary_characters()
+        {
+            ValidateOne(
+                    BoundedField("name", Bound),
+                    Supplementary + Supplementary + Supplementary + Supplementary
+                )
+                .Should()
+                .BeOfType<ResourceQueryFilterResult.InvalidValues>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_A_String_Filter_Without_A_Declared_MaxLength : ResourceQueryFilterValidatorTests
+    {
+        [Test]
+        public void It_invents_no_bound()
+        {
+            ValidateOne(BoundedField("duration", null), new string('x', 10_000))
+                .Should()
+                .BeOfType<ResourceQueryFilterResult.Valid>();
+        }
+    }
+
+    [TestFixture]
+    [Parallelizable]
+    public class Given_An_Over_Long_String_Filter_Alongside_A_Mistyped_Filter
+        : ResourceQueryFilterValidatorTests
+    {
+        private ResourceQueryFilterResult _result = null!;
+
+        [SetUp]
+        public void Setup()
+        {
+            _result = ResourceQueryFilterValidator.Validate(
+                new Dictionary<string, string> { ["studentUniqueId"] = "abcdef", ["schoolId"] = "abc" },
+                [BoundedField("studentUniqueId", 5), Field("schoolId", "number")],
+                ordinalExcludedNames: [],
+                ignoreCaseExcludedNames: []
+            );
+        }
+
+        [Test]
+        public void It_reports_both_faults()
+        {
+            ((ResourceQueryFilterResult.InvalidValues)_result)
+                .ValidationErrors.Keys.Should()
+                .BeEquivalentTo("$.studentUniqueId", "$.schoolId");
+        }
+    }
 }

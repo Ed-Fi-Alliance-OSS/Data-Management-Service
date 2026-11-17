@@ -1488,7 +1488,10 @@ internal static class NormalizedPlanContractCodec
         return new QuerySqlParameterBindingDto(
             Kind: EncodeQuerySqlParameterBindingKind(binding.Kind),
             StructuredTypeName: binding.StructuredTypeName,
-            StructuredColumnName: binding.StructuredColumnName
+            StructuredColumnName: binding.StructuredColumnName,
+            StringContract: binding.StringContract is { } stringContract
+                ? new QuerySqlStringContractDto(stringContract.MaxLength)
+                : null
         );
     }
 
@@ -1506,9 +1509,9 @@ internal static class NormalizedPlanContractCodec
 
         return decodedKind switch
         {
-            ExternalPlans.QuerySqlParameterBindingKind.Scalar => ExternalPlans
-                .QuerySqlParameterBinding
-                .Scalar,
+            ExternalPlans.QuerySqlParameterBindingKind.Scalar => binding.StringContract is { } stringContract
+                ? ExternalPlans.QuerySqlParameterBinding.CreateString(stringContract.MaxLength)
+                : ExternalPlans.QuerySqlParameterBinding.Scalar,
             ExternalPlans.QuerySqlParameterBindingKind.PgsqlArray => ExternalPlans
                 .QuerySqlParameterBinding
                 .PgsqlArray,
