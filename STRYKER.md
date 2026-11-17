@@ -53,9 +53,9 @@ begins; pending rows are planned targets, not qualified runs.
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-two mutations killed; remaining composite-path triage in progress |
-| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Twenty-one mutations killed; final response-contract rerun pending |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Full baseline complete; regression verification in progress |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
+| 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Ninety-two mutations killed; remaining triage in progress |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Full baseline running |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
@@ -120,7 +120,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.96% | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.31%; further triage in progress | 4m17s / 4m33s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.19-19-30/reports/` |
-| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% baseline; regression rerun pending | 6m29s | `StrykerOutput/2026-11-16.19-24-29/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 77.09%; further triage in progress | 6m29s / 5m56s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.19-48-56/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -433,9 +433,28 @@ file contains executable mutants. The first regression cluster covers:
 All 10,056 Core unit tests pass, including 29 added cases; the full Backend suite
 passes 4,851 tests, including four new composite descriptor-hydration cases for
 profiled writes and deferred ETag checks. Formatting passes for all eight changed
-test files. The native reruns and remaining survivor triage are pending. This Core
-result does not qualify Backend profile preservation; that assembly requires its
-own report.
+test files. The full Core rerun confirms 92 changes from survived/uncovered to
+killed: 27 in creatability, 29 in definition validation, 2 in visibility classification,
+21 in read projection, and 13 in write shaping. The report contains 663 killed,
+152 survived, 45 uncovered, 176 compile-error, and 292 ignored mutations, with no
+timeouts. The compile-error count did not change.
+
+Remaining triage includes identity-reference projection and nested extension
+fall-through, deep request paths and absent-child states in write shaping, recursive
+server-generated-name/extension validation, and additional creatability ancestor
+matching and dependency paths. The new nested validation cases execute but do not
+kill the name-walk and extension-walk removals at `ProfileDataValidator.cs:398` and
+`:864`; these are still coverage gaps. They are not credited among the 92 kills.
+
+Some survivors already have narrow explanations: the projector's `Count > 0` to
+`>= 0` changes at 113/185/292 receive either a nonempty extension object or null;
+the helper never returns an empty object. Its root metadata condition at 90 falls
+through to the same server-generated preservation helper. Invalid enum defaults
+and non-object query-array elements are outside the API document shapes. Further
+triage is still required before treating the target as qualified. The Backend
+profile baseline is running separately; the Core result does not prove stored-row
+preservation. The new descriptor-hydration cases also await the write-execution
+mutation rerun.
 
 ### CMS permission-inheritance triage
 
