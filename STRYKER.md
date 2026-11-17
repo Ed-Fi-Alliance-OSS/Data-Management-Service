@@ -55,7 +55,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-five mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | One hundred ten mutations killed; remaining triage in progress |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Full baseline complete; binding and identity regression rerun in progress |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Sixteen mutations killed; collection/merge triage remains |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
@@ -121,7 +121,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.93%; further triage in progress | 4m17s / 4m35s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.20-05-20/reports/` |
 | Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% → 79.19%; further triage in progress | 6m29s / 6m04s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.20-10-50/reports/` |
-| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% baseline; regression rerun pending | 5m01s | `StrykerOutput/2026-11-16.19-55-14/reports/` |
+| Full `dms-profile-backend` (three configured files) | 5.0.0 | 57.14% → 58.31%; further triage in progress | 5m01s / 5m26s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.20-19-25/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -471,6 +471,13 @@ kill. The target now has 110 intended kills since baseline. Remaining behavioral
 triage includes unknown nested extensions (line 864), absent descendant states,
 and additional creatability ancestor/dependency paths.
 
+Eight further Core cases now pass in the full 10,074-test suite. They cover missing
+extension namespaces under nested objects/collections (including extension parents),
+read/write error paths and warning severity, and a nested required member sharing a
+root identity member's name. The latter verifies that implicit identity visibility
+remains root-scoped. These eight cases still require a fresh Core mutation rerun;
+they are not credited among the 110 verified kills.
+
 ### DMS Backend profile baseline
 
 The full three-file baseline contains 783 killed, 368 survived, 220 uncovered,
@@ -493,8 +500,20 @@ cases protect parent partition equality, numeric-width normalization, composite-
 ordering and length, unresolved identity instance separation, and child scope plus
 parent matching. Two additional walker cases assert complete hidden-member sets on
 both stored children, so expanding a later child cannot erase the earlier child's
-hidden metadata. Their native verification and remaining collection/merge triage
-are pending.
+hidden metadata. The full rerun confirms 16 new kills: nine in binding classification
+and seven in the collection walker, including loss of earlier hidden-path expansions
+and incorrect equality across parent partitions. It contains 799 killed, 358 survived,
+214 uncovered, 358 compile-error, 368 ignored, and the same single loop timeout.
+No previously killed mutation regressed. The merge synthesizer's counts are unchanged;
+this result does not close its remaining canonicalization/preservation gaps.
+
+Some identity-helper survivors are outside the correctness contract: removing hash
+contributions or changing constant hash prefixes increases collisions but does not
+change dictionary equality or lookup results. Physical identity columns are non-null
+in supported stored rows, so null-literal identity branches do not justify fabricated
+rows. Remaining triage includes nested preservation modes, ancestor canonicalization,
+physical-row projection and owner-scope selection. The rolled-back main walker remains
+an instrumentation limitation, independently of the tested index/helper behavior.
 
 ### CMS permission-inheritance triage
 

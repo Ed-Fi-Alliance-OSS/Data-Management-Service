@@ -13,6 +13,78 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 public abstract class CreatabilityAnalyzerTests
 {
     [TestFixture]
+    public class Given_A_Root_Identity_Name_Reused_By_A_Nested_Required_Member : CreatabilityAnalyzerTests
+    {
+        [TestCase(false)]
+        [TestCase(true)]
+        public void It_applies_implicit_identity_visibility_only_at_the_root(bool nestedMemberVisible)
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new("$", ScopeKind.Root, null, [], [], ["code"]),
+                new("$.detail", ScopeKind.NonCollection, "$", [], [], ["code", "value"]),
+            ];
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeOnly,
+                [],
+                [
+                    new ObjectRule(
+                        "detail",
+                        MemberSelection.IncludeOnly,
+                        null,
+                        nestedMemberVisible
+                            ? [new PropertyRule("code"), new PropertyRule("value")]
+                            : [new PropertyRule("value")],
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                [],
+                []
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                new ProfileVisibilityClassifier(profile, scopes),
+                "TestProfile",
+                "Resource",
+                "POST",
+                "write",
+                resourceIdentityJsonPaths: ["$.code"]
+            );
+            ImmutableArray<RequestScopeState> states =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, false),
+                new(MakeAddress("$.detail"), ProfileVisibilityKind.VisiblePresent, false),
+            ];
+
+            var result = analyzer.Analyze(
+                states,
+                [],
+                new TestExistenceLookup(),
+                isCreate: true,
+                new Dictionary<string, IReadOnlyList<string>> { ["$"] = ["code"], ["$.detail"] = ["code"] }
+            );
+
+            result.RootResourceCreatable.Should().Be(nestedMemberVisible);
+            result.EnrichedScopeStates.Should().OnlyContain(state => state.Creatable == nestedMemberVisible);
+            states.Should().OnlyContain(state => !state.Creatable);
+            if (nestedMemberVisible)
+            {
+                result.Failures.Should().BeEmpty();
+            }
+            else
+            {
+                var failure = result
+                    .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                    .Single(failure => failure.JsonScope == "$.detail");
+                failure.HiddenCreationRequiredMemberPaths.Should().Equal("code");
+                failure.Dependencies.Should().BeEmpty();
+            }
+        }
+    }
+
+    [TestFixture]
     public class Given_A_New_Scope_With_A_NonCreatable_Collection_Child : CreatabilityAnalyzerTests
     {
         [TestCase(false, false)]

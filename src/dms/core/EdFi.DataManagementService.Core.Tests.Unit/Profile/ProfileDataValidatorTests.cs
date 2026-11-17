@@ -274,23 +274,29 @@ public class ProfileDataValidatorTests
             A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
         }
 
-        [TestCase("object", MemberSelection.IncludeOnly, false, false)]
-        [TestCase("object", MemberSelection.ExcludeOnly, true, false)]
-        [TestCase("collection", MemberSelection.IncludeOnly, true, false)]
-        [TestCase("collection", MemberSelection.ExcludeOnly, false, false)]
-        [TestCase("extension", MemberSelection.IncludeOnly, false, false)]
-        [TestCase("extension", MemberSelection.ExcludeOnly, true, false)]
-        [TestCase("object", MemberSelection.IncludeOnly, false, true)]
-        [TestCase("object", MemberSelection.ExcludeOnly, true, true)]
-        [TestCase("collection", MemberSelection.IncludeOnly, true, true)]
-        [TestCase("collection", MemberSelection.ExcludeOnly, false, true)]
-        [TestCase("extension", MemberSelection.IncludeOnly, false, true)]
-        [TestCase("extension", MemberSelection.ExcludeOnly, true, true)]
+        [TestCase("object", MemberSelection.IncludeOnly, false, "property")]
+        [TestCase("object", MemberSelection.ExcludeOnly, true, "property")]
+        [TestCase("collection", MemberSelection.IncludeOnly, true, "property")]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false, "property")]
+        [TestCase("extension", MemberSelection.IncludeOnly, false, "property")]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true, "property")]
+        [TestCase("object", MemberSelection.IncludeOnly, false, "serverGenerated")]
+        [TestCase("object", MemberSelection.ExcludeOnly, true, "serverGenerated")]
+        [TestCase("collection", MemberSelection.IncludeOnly, true, "serverGenerated")]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false, "serverGenerated")]
+        [TestCase("extension", MemberSelection.IncludeOnly, false, "serverGenerated")]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true, "serverGenerated")]
+        [TestCase("object", MemberSelection.IncludeOnly, false, "extension")]
+        [TestCase("object", MemberSelection.ExcludeOnly, true, "extension")]
+        [TestCase("collection", MemberSelection.IncludeOnly, true, "extension")]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false, "extension")]
+        [TestCase("extension", MemberSelection.IncludeOnly, false, "extension")]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true, "extension")]
         public void It_reports_nested_member_failures_with_their_full_paths_and_content_type(
             string container,
             MemberSelection memberSelection,
             bool writable,
-            bool serverGenerated
+            string invalidKind
         )
         {
             JsonNode parentSchema = JsonNode.Parse(
@@ -302,24 +308,30 @@ public class ProfileDataValidatorTests
                 } }
                 """
             )!;
+            bool serverGenerated = invalidKind == "serverGenerated";
+            bool unknownExtension = invalidKind == "extension";
             string memberName = serverGenerated ? "link" : "missing";
+            string memberPath = unknownExtension ? "_ext.missing" : memberName;
+            IReadOnlyList<ExtensionRule>? extensions = unknownExtension
+                ? [new ExtensionRule("missing", MemberSelection.IncludeAll, null, null, null, null)]
+                : null;
             var child = new ObjectRule(
                 "child",
                 memberSelection,
                 null,
-                [new PropertyRule(memberName)],
+                unknownExtension ? null : [new PropertyRule(memberName)],
                 null,
                 null,
-                null
+                extensions
             );
             var rows = new CollectionRule(
                 "rows",
                 memberSelection,
                 null,
-                [new PropertyRule(memberName)],
+                unknownExtension ? null : [new PropertyRule(memberName)],
                 null,
                 null,
-                null,
+                extensions,
                 null
             );
             ContentTypeDefinition content;
@@ -424,6 +436,14 @@ public class ProfileDataValidatorTests
                     ? ValidationSeverity.Error
                     : ValidationSeverity.Warning;
             string contentType = writable ? "write" : "read";
+            string? sharedMessage = invalidKind switch
+            {
+                "extension" =>
+                    $"Extension 'missing' in {contentType} content type does not exist in resource 'Student'.",
+                "serverGenerated" =>
+                    $"Property 'link' in {contentType} content type is a server-generated field and is not profile-addressable.",
+                _ => null,
+            };
             result
                 .Failures.Should()
                 .BeEquivalentTo(
@@ -433,19 +453,17 @@ public class ProfileDataValidatorTests
                             severity,
                             "TestProfile",
                             "Student",
-                            prefix + "child." + memberName,
-                            serverGenerated
-                                ? $"Property 'link' in {contentType} content type is a server-generated field and is not profile-addressable."
-                                : $"Property 'missing' in object 'child' ({contentType} content type) does not exist."
+                            prefix + "child." + memberPath,
+                            sharedMessage
+                                ?? $"Property 'missing' in object 'child' ({contentType} content type) does not exist."
                         ),
                         new ValidationFailure(
                             severity,
                             "TestProfile",
                             "Student",
-                            prefix + "rows[]." + memberName,
-                            serverGenerated
-                                ? $"Property 'link' in {contentType} content type is a server-generated field and is not profile-addressable."
-                                : $"Property 'missing' in collection 'rows' ({contentType} content type) does not exist."
+                            prefix + "rows[]." + memberPath,
+                            sharedMessage
+                                ?? $"Property 'missing' in collection 'rows' ({contentType} content type) does not exist."
                         ),
                     }
                 );
