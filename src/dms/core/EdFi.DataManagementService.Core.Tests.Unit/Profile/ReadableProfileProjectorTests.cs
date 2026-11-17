@@ -36,6 +36,205 @@ public class ReadableProfileProjectorTests
 
     private static IReadOnlySet<string> IdentityNames(params string[] names) => new HashSet<string>(names);
 
+    [TestFixture]
+    public class Given_Nested_Projection_Contracts : ReadableProfileProjectorTests
+    {
+        [TestCase("object", true)]
+        [TestCase("object", false)]
+        [TestCase("collection", true)]
+        [TestCase("collection", false)]
+        [TestCase("extension", true)]
+        [TestCase("extension", false)]
+        public void It_filters_descendants_and_preserves_all_metadata_on_surviving_scopes(
+            string container,
+            bool descendantsSurvive
+        )
+        {
+            var childRule = new ObjectRule(
+                "child",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("visible")],
+                null,
+                null,
+                null
+            );
+            var rowRule = new CollectionRule(
+                "rows",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("visible")],
+                null,
+                null,
+                null,
+                null
+            );
+            var sourceBody = JsonNode.Parse(
+                """
+                {
+                    "visible": "parent",
+                    "_etag": "parent-tag",
+                    "link": { "rel": "Resource", "href": "/resources/1" },
+                    "child": { "visible": "child", "secret": "hidden" },
+                    "rows": [
+                        { "visible": "row", "secret": "hidden" },
+                        { "secret": "hidden" }
+                    ]
+                }
+                """
+            )!;
+            if (!descendantsSurvive)
+            {
+                sourceBody["child"]!.AsObject().Remove("visible");
+                sourceBody["rows"]![0]!.AsObject().Remove("visible");
+            }
+
+            JsonNode expectedBody = JsonNode.Parse(
+                descendantsSurvive
+                    ? """
+                    {
+                        "visible": "parent", "_etag": "parent-tag",
+                        "link": { "rel": "Resource", "href": "/resources/1" },
+                        "child": { "visible": "child" }, "rows": [{ "visible": "row" }]
+                    }
+                    """
+                    : """
+                    {
+                        "visible": "parent", "_etag": "parent-tag",
+                        "link": { "rel": "Resource", "href": "/resources/1" }
+                    }
+                    """
+            )!;
+            ContentTypeDefinition contentType;
+            JsonNode source;
+            JsonNode expected;
+            switch (container)
+            {
+                case "object":
+                    contentType = CreateContentType(
+                        MemberSelection.IncludeAll,
+                        objects:
+                        [
+                            new ObjectRule(
+                                "parent",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                [childRule],
+                                [rowRule],
+                                null
+                            ),
+                        ]
+                    );
+                    source = new JsonObject { ["parent"] = sourceBody };
+                    expected = new JsonObject { ["parent"] = expectedBody };
+                    break;
+                case "collection":
+                    contentType = CreateContentType(
+                        MemberSelection.IncludeAll,
+                        collections:
+                        [
+                            new CollectionRule(
+                                "parents",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                [childRule],
+                                [rowRule],
+                                null,
+                                null
+                            ),
+                        ]
+                    );
+                    source = new JsonObject { ["parents"] = new JsonArray(sourceBody) };
+                    expected = new JsonObject { ["parents"] = new JsonArray(expectedBody) };
+                    break;
+                default:
+                    contentType = CreateContentType(
+                        MemberSelection.IncludeAll,
+                        extensions:
+                        [
+                            new ExtensionRule(
+                                "sample",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                [childRule],
+                                [rowRule]
+                            ),
+                        ]
+                    );
+                    source = new JsonObject { ["_ext"] = new JsonObject { ["sample"] = sourceBody } };
+                    expected = new JsonObject { ["_ext"] = new JsonObject { ["sample"] = expectedBody } };
+                    break;
+            }
+
+            JsonNode original = source.DeepClone();
+            JsonNode projected = _projector.Project(source, contentType, IdentityNames());
+
+            JsonNode.DeepEquals(projected, expected).Should().BeTrue(projected.ToJsonString());
+            JsonNode.DeepEquals(source, original).Should().BeTrue();
+            sourceBody["link"]!["href"] = "/changed";
+            JsonNode
+                .DeepEquals(projected, expected)
+                .Should()
+                .BeTrue("projected subtrees must be independent");
+        }
+
+        [TestCase(FilterMode.IncludeOnly)]
+        [TestCase(FilterMode.ExcludeOnly)]
+        public void It_matches_any_allowed_value_and_preserves_items_without_a_filter_value(FilterMode mode)
+        {
+            JsonNode source = JsonNode.Parse(
+                """
+                { "addresses": [
+                    { "type": "home", "city": "Austin" },
+                    { "type": "Work", "city": "Dallas" },
+                    { "type": "Other", "city": "Houston" },
+                    { "city": "Absent" },
+                    { "type": null, "city": "Null" },
+                    { "type": "", "city": "Empty" }
+                ] }
+                """
+            )!;
+            var contentType = CreateContentType(
+                MemberSelection.IncludeAll,
+                collections:
+                [
+                    new CollectionRule(
+                        "addresses",
+                        MemberSelection.IncludeAll,
+                        null,
+                        null,
+                        null,
+                        null,
+                        null,
+                        new CollectionItemFilter("type", mode, ["Home", "Work"])
+                    ),
+                ]
+            );
+            JsonNode expected = JsonNode.Parse(
+                mode == FilterMode.IncludeOnly
+                    ? """
+                    { "addresses": [
+                        { "type": "home", "city": "Austin" }, { "type": "Work", "city": "Dallas" },
+                        { "city": "Absent" }, { "type": null, "city": "Null" }, { "type": "", "city": "Empty" }
+                    ] }
+                    """
+                    : """
+                    { "addresses": [
+                        { "type": "Other", "city": "Houston" }, { "city": "Absent" },
+                        { "type": null, "city": "Null" }, { "type": "", "city": "Empty" }
+                    ] }
+                    """
+            )!;
+
+            JsonNode projected = _projector.Project(source, contentType, IdentityNames());
+
+            JsonNode.DeepEquals(projected, expected).Should().BeTrue(projected.ToJsonString());
+        }
+    }
+
     // =======================================================================
     //  AC: Hidden scalar members are removed
     // =======================================================================

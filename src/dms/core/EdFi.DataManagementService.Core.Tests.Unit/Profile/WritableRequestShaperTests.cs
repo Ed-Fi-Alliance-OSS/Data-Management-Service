@@ -12,6 +12,148 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 
 public abstract class WritableRequestShaperTests
 {
+    [TestFixture]
+    public class Given_Extension_Scope_State_Contracts : WritableRequestShaperTests
+    {
+        [TestCase("omitted", false)]
+        [TestCase("null", false)]
+        [TestCase("empty", false)]
+        [TestCase("populated", false)]
+        [TestCase("omitted", true)]
+        [TestCase("null", true)]
+        [TestCase("empty", true)]
+        [TestCase("populated", true)]
+        public void It_emits_exact_scope_states_with_ancestor_identity_and_no_premature_creatability(
+            string submitted,
+            bool hidden
+        )
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                .. ProfileTestFixtures.ExtensionFixtureScopes,
+                new("$._ext.sample.detail", ScopeKind.NonCollection, "$._ext.sample", [], [], ["value"]),
+                new(
+                    "$.classPeriods[*]._ext.sample.detail",
+                    ScopeKind.NonCollection,
+                    "$.classPeriods[*]._ext.sample",
+                    ["$.classPeriods[*]"],
+                    [],
+                    ["value"]
+                ),
+            ];
+            var profile = hidden
+                ? new ContentTypeDefinition(
+                    MemberSelection.IncludeOnly,
+                    [],
+                    [],
+                    [
+                        new CollectionRule(
+                            "classPeriods",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            [new PropertyRule("classPeriodName")],
+                            null,
+                            null,
+                            null,
+                            null
+                        ),
+                    ],
+                    []
+                )
+                : ProfileTestFixtures.BuildIncludeAllProfile();
+            JsonNode request = JsonNode.Parse(
+                """{ "classPeriods": [{ "classPeriodName": "One" }, { "classPeriodName": "Two" }] }"""
+            )!;
+            if (submitted != "omitted")
+            {
+                JsonNode? extension = submitted switch
+                {
+                    "null" => null,
+                    "empty" => new JsonObject(),
+                    _ => JsonNode.Parse("""{ "detail": { "value": "visible" } }"""),
+                };
+                request["_ext"] = new JsonObject { ["sample"] = extension?.DeepClone() };
+                request["classPeriods"]![0]!["_ext"] = new JsonObject { ["sample"] = extension };
+            }
+            JsonNode original = request.DeepClone();
+
+            var result = BuildShaper(profile, scopes).Shape(request);
+
+            var extensionVisibility = (hidden, submitted) switch
+            {
+                (true, _) => ProfileVisibilityKind.Hidden,
+                (false, "empty" or "populated") => ProfileVisibilityKind.VisiblePresent,
+                _ => ProfileVisibilityKind.VisibleAbsent,
+            };
+            var detailVisibility = (hidden, submitted) switch
+            {
+                (true, _) => ProfileVisibilityKind.Hidden,
+                (false, "populated") => ProfileVisibilityKind.VisiblePresent,
+                _ => ProfileVisibilityKind.VisibleAbsent,
+            };
+            var absentVisibility = hidden
+                ? ProfileVisibilityKind.Hidden
+                : ProfileVisibilityKind.VisibleAbsent;
+            result
+                .RequestScopeStates.Select(s =>
+                    (
+                        s.Address.JsonScope,
+                        Ancestor: s.Address.AncestorCollectionInstances.IsEmpty
+                            ? ""
+                            : s
+                                .Address.AncestorCollectionInstances.Single()
+                                .SemanticIdentityInOrder.Single()
+                                .Value!.GetValue<string>(),
+                        s.Visibility,
+                        s.Creatable
+                    )
+                )
+                .Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        ("$", "", ProfileVisibilityKind.VisiblePresent, false),
+                        ("$._ext.sample", "", extensionVisibility, false),
+                        ("$._ext.sample.detail", "", detailVisibility, false),
+                        ("$.classPeriods[*]._ext.sample", "One", extensionVisibility, false),
+                        ("$.classPeriods[*]._ext.sample.detail", "One", detailVisibility, false),
+                        ("$.classPeriods[*]._ext.sample", "Two", absentVisibility, false),
+                        ("$.classPeriods[*]._ext.sample.detail", "Two", absentVisibility, false),
+                    }
+                );
+            result.VisibleRequestCollectionItems.Should().HaveCount(2);
+            result
+                .VisibleRequestCollectionItems.Select(i => i.RequestJsonPath)
+                .Should()
+                .Equal("$.classPeriods[0]", "$.classPeriods[1]");
+            result.VisibleRequestCollectionItems.Should().OnlyContain(i => !i.Creatable);
+            result.ValidationFailures.Should().BeEmpty();
+            JsonNode expected = JsonNode.Parse(
+                (hidden, submitted) switch
+                {
+                    (true, _) or (false, "omitted" or "null") =>
+                        """{ "classPeriods": [{ "classPeriodName": "One" }, { "classPeriodName": "Two" }] }""",
+                    (false, "empty") => """
+                    { "_ext": { "sample": {} }, "classPeriods": [
+                        { "classPeriodName": "One", "_ext": { "sample": {} } }, { "classPeriodName": "Two" }
+                    ] }
+                    """,
+                    _ => """
+                    { "_ext": { "sample": { "detail": { "value": "visible" } } }, "classPeriods": [
+                        { "classPeriodName": "One", "_ext": { "sample": { "detail": { "value": "visible" } } } },
+                        { "classPeriodName": "Two" }
+                    ] }
+                    """,
+                }
+            )!;
+            JsonNode
+                .DeepEquals(result.WritableRequestBody, expected)
+                .Should()
+                .BeTrue(result.WritableRequestBody.ToJsonString());
+            JsonNode.DeepEquals(request, original).Should().BeTrue();
+        }
+    }
+
     // -----------------------------------------------------------------------
     //  Shared helper
     // -----------------------------------------------------------------------

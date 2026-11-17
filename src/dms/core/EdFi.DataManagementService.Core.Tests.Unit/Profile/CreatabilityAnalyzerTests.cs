@@ -12,6 +12,144 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 
 public abstract class CreatabilityAnalyzerTests
 {
+    [TestFixture]
+    public class Given_A_New_Scope_With_A_NonCreatable_Collection_Child : CreatabilityAnalyzerTests
+    {
+        [TestCase(false, false)]
+        [TestCase(false, true)]
+        [TestCase(true, false)]
+        [TestCase(true, true)]
+        public void It_rejects_the_scope_and_identifies_the_blocking_collection(
+            bool isCreate,
+            bool reverseItems
+        )
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new("$", ScopeKind.Root, null, [], [], ["field"]),
+                new("$.parent", ScopeKind.NonCollection, "$", [], [], ["value"]),
+                new("$.parent.allowed[*]", ScopeKind.Collection, "$.parent", [], ["id"], ["id"]),
+                new("$.parent.blocked[*]", ScopeKind.Collection, "$.parent", [], ["id"], ["id", "required"]),
+            ];
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [
+                    new ObjectRule(
+                        "parent",
+                        MemberSelection.IncludeAll,
+                        null,
+                        null,
+                        null,
+                        [
+                            new CollectionRule(
+                                "allowed",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null,
+                                null
+                            ),
+                            new CollectionRule(
+                                "blocked",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                [new PropertyRule("id")],
+                                null,
+                                null,
+                                null,
+                                null
+                            ),
+                        ],
+                        null
+                    ),
+                ],
+                [],
+                []
+            );
+            var analyzer = new CreatabilityAnalyzer(
+                scopes,
+                new ProfileVisibilityClassifier(profile, scopes),
+                "TestProfile",
+                "Resource",
+                isCreate ? "POST" : "PUT",
+                "write"
+            );
+            ImmutableArray<RequestScopeState> states =
+            [
+                new(MakeAddress("$"), ProfileVisibilityKind.VisiblePresent, false),
+                new(MakeAddress("$.parent"), ProfileVisibilityKind.VisiblePresent, false),
+            ];
+            var parentAddress = MakeAddress("$.parent");
+            var allowed = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress("$.parent.allowed[*]", "id", "A") with
+                {
+                    ParentAddress = parentAddress,
+                },
+                false,
+                "$.parent.allowed[0]"
+            );
+            var blocked = new VisibleRequestCollectionItem(
+                MakeCollectionRowAddress("$.parent.blocked[*]", "id", "B") with
+                {
+                    ParentAddress = parentAddress,
+                },
+                false,
+                "$.parent.blocked[0]"
+            );
+            ImmutableArray<VisibleRequestCollectionItem> items = reverseItems
+                ? [blocked, allowed]
+                : [allowed, blocked];
+            var required = new Dictionary<string, IReadOnlyList<string>>
+            {
+                ["$"] = ["field"],
+                ["$.parent"] = ["value"],
+                ["$.parent.allowed[*]"] = ["id"],
+                ["$.parent.blocked[*]"] = ["id", "required"],
+            };
+
+            var result = analyzer.Analyze(states, items, new TestExistenceLookup(), isCreate, required);
+
+            result.RootResourceCreatable.Should().BeFalse();
+            result.EnrichedScopeStates.Should().OnlyContain(s => !s.Creatable);
+            result
+                .EnrichedCollectionItems.Single(i => i.Address.JsonScope == "$.parent.allowed[*]")
+                .Creatable.Should()
+                .BeTrue();
+            result
+                .EnrichedCollectionItems.Single(i => i.Address.JsonScope == "$.parent.blocked[*]")
+                .Creatable.Should()
+                .BeFalse();
+            var failures = result
+                .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
+                .ToArray();
+            failures.Should().HaveCount(2);
+            var parentFailure = failures.Single(f => f.JsonScope == "$.parent");
+            parentFailure.TargetKind.Should().Be(ProfileCreatabilityTargetKind.OneToOneScope);
+            parentFailure.HiddenCreationRequiredMemberPaths.Should().BeEmpty();
+            parentFailure
+                .Dependencies.Should()
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                        ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem,
+                        "$.parent.blocked[*]",
+                        ScopeKind.Collection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
+                    )
+                );
+            failures
+                .Single(f => f.JsonScope == "$.parent.blocked[*]")
+                .HiddenCreationRequiredMemberPaths.Should()
+                .Equal("required");
+            states.Should().OnlyContain(s => !s.Creatable);
+            items.Should().OnlyContain(i => !i.Creatable);
+        }
+    }
+
     // -----------------------------------------------------------------------
     //  Test helper: mock IStoredSideExistenceLookup
     // -----------------------------------------------------------------------
@@ -858,7 +996,17 @@ public abstract class CreatabilityAnalyzerTests
             var childFailure = childFailures.First();
             childFailure
                 .Dependencies.Should()
-                .Contain(d => d.DependencyKind == ProfileCreatabilityDependencyKind.ImmediateVisibleParent);
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.ImmediateVisibleParent,
+                        ProfileCreatabilityTargetKind.OneToOneScope,
+                        "$.parentObject",
+                        ScopeKind.NonCollection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
+                    )
+                );
+            childFailure.TargetKind.Should().Be(ProfileCreatabilityTargetKind.NestedOrCommonTypeScope);
         }
     }
 
@@ -1630,9 +1778,17 @@ public abstract class CreatabilityAnalyzerTests
             var parentFailure = parentFailures.First();
             parentFailure
                 .Dependencies.Should()
-                .Contain(d =>
-                    d.DependencyKind == ProfileCreatabilityDependencyKind.RequiredVisibleDescendant
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                        ProfileCreatabilityTargetKind.ExtensionScope,
+                        "$.parentObject._ext.sample",
+                        ScopeKind.NonCollection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
+                    )
                 );
+            parentFailure.TargetKind.Should().Be(ProfileCreatabilityTargetKind.OneToOneScope);
         }
     }
 
@@ -2729,7 +2885,18 @@ public abstract class CreatabilityAnalyzerTests
             _result
                 .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
                 .Should()
-                .Contain(f => f.JsonScope == "$.items[*]");
+                .ContainSingle(f => f.JsonScope == "$.items[*]")
+                .Which.Dependencies.Should()
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                        ProfileCreatabilityTargetKind.NestedOrCommonTypeScope,
+                        "$.items[*].detail",
+                        ScopeKind.NonCollection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
+                    )
+                );
         }
     }
 
@@ -2923,11 +3090,16 @@ public abstract class CreatabilityAnalyzerTests
             _result
                 .Failures.OfType<VisibleScopeOrItemInsertRejectedWhenNonCreatableCreatabilityViolationFailure>()
                 .Should()
-                .Contain(f =>
-                    f.JsonScope == "$.outer[*]"
-                    && f.Dependencies.Any(d =>
-                        d.DependencyKind == ProfileCreatabilityDependencyKind.RequiredVisibleDescendant
-                        && d.JsonScope == "$.outer[*].inner[*]"
+                .ContainSingle(f => f.JsonScope == "$.outer[*]")
+                .Which.Dependencies.Should()
+                .Equal(
+                    new ProfileFailureDiagnostic.CreatabilityDependency(
+                        ProfileCreatabilityDependencyKind.RequiredVisibleDescendant,
+                        ProfileCreatabilityTargetKind.CollectionOrCommonTypeItem,
+                        "$.outer[*].inner[*]",
+                        ScopeKind.Collection,
+                        ExistsInStoredState: false,
+                        CreatableInRequest: false
                     )
                 );
         }

@@ -274,6 +274,172 @@ public class ProfileDataValidatorTests
             A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
         }
 
+        [TestCase("object", MemberSelection.IncludeOnly, false)]
+        [TestCase("object", MemberSelection.ExcludeOnly, true)]
+        [TestCase("collection", MemberSelection.IncludeOnly, true)]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false)]
+        [TestCase("extension", MemberSelection.IncludeOnly, false)]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true)]
+        public void It_reports_nested_member_failures_with_their_full_paths_and_content_type(
+            string container,
+            MemberSelection memberSelection,
+            bool writable
+        )
+        {
+            JsonNode parentSchema = JsonNode.Parse(
+                """
+                { "type": "object", "properties": {
+                    "child": { "type": "object", "properties": { "known": { "type": "string" } } },
+                    "rows": { "type": "array", "items": { "type": "object",
+                        "properties": { "known": { "type": "string" } } } }
+                } }
+                """
+            )!;
+            var child = new ObjectRule(
+                "child",
+                memberSelection,
+                null,
+                [new PropertyRule("missing")],
+                null,
+                null,
+                null
+            );
+            var rows = new CollectionRule(
+                "rows",
+                memberSelection,
+                null,
+                [new PropertyRule("missing")],
+                null,
+                null,
+                null,
+                null
+            );
+            ContentTypeDefinition content;
+            JsonObject schemaProperties;
+            string prefix;
+            switch (container)
+            {
+                case "object":
+                    content = new(
+                        MemberSelection.IncludeOnly,
+                        [],
+                        [
+                            new ObjectRule(
+                                "parent",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                null,
+                                [child],
+                                [rows],
+                                null
+                            ),
+                        ],
+                        [],
+                        []
+                    );
+                    schemaProperties = new JsonObject { ["parent"] = parentSchema };
+                    prefix = "parent.";
+                    break;
+                case "collection":
+                    content = new(
+                        MemberSelection.IncludeOnly,
+                        [],
+                        [],
+                        [
+                            new CollectionRule(
+                                "parents",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                null,
+                                [child],
+                                [rows],
+                                null,
+                                null
+                            ),
+                        ],
+                        []
+                    );
+                    schemaProperties = new JsonObject
+                    {
+                        ["parents"] = new JsonObject { ["type"] = "array", ["items"] = parentSchema },
+                    };
+                    prefix = "parents[].";
+                    break;
+                default:
+                    content = new(
+                        MemberSelection.IncludeOnly,
+                        [],
+                        [],
+                        [],
+                        [
+                            new ExtensionRule(
+                                "sample",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                null,
+                                [child],
+                                [rows]
+                            ),
+                        ]
+                    );
+                    schemaProperties = new JsonObject
+                    {
+                        ["_ext"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject { ["sample"] = parentSchema },
+                        },
+                    };
+                    prefix = "_ext.sample.";
+                    break;
+            }
+            var resourceNode = _apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new("Student"));
+            resourceNode!["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = schemaProperties,
+            };
+            var resourceProfile = new ResourceProfile(
+                "Student",
+                null,
+                writable ? null : content,
+                writable ? content : null
+            );
+            var profile = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            var result = new ProfileDataValidator(_logger).Validate(profile, _effectiveApiSchemaProvider);
+
+            var severity =
+                memberSelection == MemberSelection.IncludeOnly
+                    ? ValidationSeverity.Error
+                    : ValidationSeverity.Warning;
+            string contentType = writable ? "write" : "read";
+            result
+                .Failures.Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            severity,
+                            "TestProfile",
+                            "Student",
+                            prefix + "child.missing",
+                            $"Property 'missing' in object 'child' ({contentType} content type) does not exist."
+                        ),
+                        new ValidationFailure(
+                            severity,
+                            "TestProfile",
+                            "Student",
+                            prefix + "rows[].missing",
+                            $"Property 'missing' in collection 'rows' ({contentType} content type) does not exist."
+                        ),
+                    }
+                );
+            result.HasErrors.Should().Be(memberSelection == MemberSelection.IncludeOnly);
+        }
+
         [Test]
         public void Should_construct_successfully()
         {

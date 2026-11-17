@@ -253,7 +253,7 @@ public class Given_Relational_Write_Current_State_Loader
         );
     }
 
-    private static ResourceReadPlan CreateReadPlanWithDescriptor()
+    internal static ResourceReadPlan CreateReadPlanWithDescriptor()
     {
         var descriptorResource = new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor");
         var descriptorValuePath = new JsonPathExpression(
@@ -383,7 +383,7 @@ public class Given_Relational_Write_Current_State_Loader
         );
     }
 
-    private static TableWritePlan CreateRootPlanWithDescriptor(QualifiedResourceName descriptorResource)
+    internal static TableWritePlan CreateRootPlanWithDescriptor(QualifiedResourceName descriptorResource)
     {
         var tableModel = new DbTableModel(
             new DbTableName(new DbSchemaName("edfi"), "School"),

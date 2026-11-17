@@ -54,7 +54,7 @@ begins; pending rows are planned targets, not qualified runs.
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-two mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Twenty-one mutations killed; final response-contract rerun pending |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Full baseline running |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Full baseline complete; regression verification in progress |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
@@ -120,6 +120,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.33%; final response-contract rerun pending | 11m46s / 13m59s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.18-55-14/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
 | Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.31%; further triage in progress | 4m17s / 4m33s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.19-19-30/reports/` |
+| Full `dms-profile-core` (five configured files) | 5.0.0 | 66.40% baseline; regression rerun pending | 6m29s | `StrykerOutput/2026-11-16.19-24-29/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -395,6 +396,35 @@ Token-manager dispositions retained without suppressing mutation types:
 - `ReadKeyId`'s defensive catch/empty-header returns (1362–1373) precede full JWT
   validation; malformed input is still rejected by that validation. No private parsing
   shape is asserted solely to raise the score.
+
+### DMS Core profile triage
+
+The full five-file baseline contains 571 killed, 212 survived, 77 uncovered,
+176 compile-error, and 292 ignored mutations, with no timeouts. Each configured
+file contains executable mutants. The first regression cluster covers:
+
+- Complete nested object, collection, and extension projections, including removal
+  of emptied descendants, preservation of multiple server-generated members on
+  surviving scopes, and deep-clone independence.
+- Include/exclude collection filters with multiple values, case-insensitive matches,
+  and absent/null/empty values. Read projection and write classification have distinct
+  existing missing-value contracts; the assertions preserve each contract.
+- Complete extension scope-state inventories for omitted, null, empty, populated,
+  and hidden data, including descendant states, collection ancestor identities,
+  request paths, and initially false creatability flags.
+- Nested validation failures' complete paths, read/write labels, and severity under
+  include/exclude selection, plus explicit extension child names in the classifier.
+- Parent and descendant creatability dependencies, including the stored-existence
+  and creatability flags, target kind, and rejection of a new parent whose visible
+  collection child requires hidden data. Both item orders and create/update attempts
+  are covered without modifying the input scope/item records.
+
+All 10,056 Core unit tests pass, including 29 added cases; the full Backend suite
+passes 4,851 tests, including four new composite descriptor-hydration cases for
+profiled writes and deferred ETag checks. Formatting passes for all eight changed
+test files. The native reruns and remaining survivor triage are pending. This Core
+result does not qualify Backend profile preservation; that assembly requires its
+own report.
 
 ### CMS permission-inheritance triage
 

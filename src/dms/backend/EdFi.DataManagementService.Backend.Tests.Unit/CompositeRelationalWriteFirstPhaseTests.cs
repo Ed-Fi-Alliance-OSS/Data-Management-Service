@@ -73,6 +73,107 @@ public class Given_The_Composite_Relational_Write_First_Phase
         session.Commands.Should().ContainSingle();
     }
 
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task It_hydrates_descriptor_uris_for_profiles_or_deferred_etag_checks(
+        bool profiled,
+        bool deferredPrecondition
+    )
+    {
+        const string descriptorUri = "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade";
+        var readPlan = Given_Relational_Write_Current_State_Loader.CreateReadPlanWithDescriptor();
+        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single() with
+        {
+            SelectBySingleDocumentSql = """
+                SELECT d."DescriptorId", d."Namespace" || '#' || d."CodeValue" AS "Uri"
+                FROM dms."Descriptor" d
+                JOIN edfi."School" s ON s."EntryGradeLevelDescriptor_DescriptorId" = d."DescriptorId"
+                WHERE s."DocumentId" = @DocumentId
+                """,
+        };
+        readPlan = readPlan with { DescriptorProjectionPlansInOrder = [descriptorPlan] };
+        var rootPlan = Given_Relational_Write_Current_State_Loader.CreateRootPlanWithDescriptor(
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+        var writePlan = new ResourceWritePlan(readPlan.Model, [rootPlan]);
+        var mappingSet = Given_Default_Relational_Write_Executor.CreateMappingSet(readPlan.Model, [rootPlan]);
+        var body = JsonNode.Parse($$"""{"entryGradeLevelDescriptor":"{{descriptorUri}}"}""")!;
+        var input = new RelationalWriteExecutorInput(
+            mappingSet,
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),
+            writePlan,
+            readPlan,
+            body,
+            allowIdentityUpdates: false,
+            new TraceId("composite-descriptor-hydration"),
+            new ReferenceResolverRequest(mappingSet, readPlan.Model.Resource, [], []),
+            profileWriteContext: profiled
+                ? Given_Default_Relational_Write_Executor.BuildVisiblePresentRootProfileWriteContext(
+                    body,
+                    writePlan
+                )
+                : null,
+            writePrecondition: new WritePrecondition.IfMatch("\"44-schema.j._.l.i\""),
+            proposedRelationshipAuthorization: deferredPrecondition
+                ? new RelationshipAuthorizationResult.NoAuthorizationRequired([])
+                : null
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var rootRows = new DataTable();
+        rootRows.Columns.Add("DocumentId", typeof(long));
+        rootRows.Columns.Add("EntryGradeLevelDescriptor_DescriptorId", typeof(int));
+        rootRows.Rows.Add(345L, 601);
+        List<DataTable> resultSets =
+        [
+            CreateCaptureTable(target),
+            CreateDocumentMetadataTable(target, 44L),
+            rootRows,
+        ];
+        if (profiled || deferredPrecondition)
+        {
+            var descriptors = new DataTable();
+            descriptors.Columns.Add("DescriptorId", typeof(int));
+            descriptors.Columns.Add("Uri", typeof(string));
+            descriptors.Rows.Add(601, descriptorUri);
+            resultSets.Add(descriptors);
+        }
+        var session = new ScriptedWriteSession(CreateReader(resultSets.ToArray()));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        var currentState = resolution.Outcome!.CurrentState!;
+        currentState.DocumentMetadata.ContentVersion.Should().Be(44L);
+        currentState
+            .TableRowsInDependencyOrder.Should()
+            .ContainSingle()
+            .Which.Rows.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Equal(345L, 601);
+        var commandText = session.Commands.Should().ContainSingle().Which.CommandText;
+        commandText.Should().NotContainEquivalentOf("CREATE TEMP TABLE");
+        if (profiled || deferredPrecondition)
+        {
+            currentState
+                .DescriptorRowsInPlanOrder.Should()
+                .ContainSingle()
+                .Which.Rows.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new DescriptorUriRow(601, descriptorUri));
+            commandText.Should().Contain("d.\"Namespace\" || '#' || d.\"CodeValue\"");
+        }
+        else
+        {
+            currentState.DescriptorRowsInPlanOrder.Should().ContainSingle().Which.Rows.Should().BeEmpty();
+            commandText.Should().NotContain("FROM dms.\"Descriptor\"");
+        }
+    }
+
     [Test]
     public async Task It_returns_missing_put_without_decoding_absent_hydration_as_current_state()
     {
