@@ -52,9 +52,9 @@ begins; pending rows are planned targets, not qualified runs.
 | 1 / `dms-request-auth` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-request-auth.json` | Qualified; six actionable survivors killed |
 | 2 / `cms-permission-inheritance` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-claims.json` | Qualified; four actionable mutations killed |
 | 3 / `dms-query-auth` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-query-auth.json` | Verified; 63 intended mutations killed across the two stages; cache limitations remain |
-| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-one mutations killed; remaining composite-path triage in progress |
+| 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Twenty-two mutations killed; remaining composite-path triage in progress |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Twenty-one mutations killed; final response-contract rerun pending |
-| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
+| 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Full baseline running |
 | 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Configuration prepared; baseline pending |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Pilot verified; full target pending |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Configuration prepared; baseline pending |
@@ -119,7 +119,7 @@ SDK: 10.0.102; runtime: 10.0.2. Full-scope qualification remains in progress.
 | Admission-policy pilot (`Services/ClientAdmissionPolicy.cs`) | 5.0.0 | 100.00% baseline; 2 compile errors | 6m00s | `StrykerOutput/2026-11-16.18-01-26/reports/` |
 | Full `cms-token-admission` (two configured OpenIddict files) | 5.0.0 | 65.72% → 72.33%; final response-contract rerun pending | 11m46s / 13m59s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.18-55-14/reports/` |
 | Write-executor pilot (`DefaultRelationalWriteExecutor.cs`) | 5.0.0 | 77.42% baseline; 148 compile errors | 4m19s | `StrykerOutput/2026-11-16.18-45-09/reports/` |
-| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.10%; further triage in progress | 4m17s / 4m37s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.19-09-31/reports/` |
+| Full `dms-write-execution` (eleven configured files) | 5.0.0 | 66.74% → 71.31%; further triage in progress | 4m17s / 4m33s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.19-19-30/reports/` |
 
 Request authorization, Claims, validation, and batching used `--concurrency 2`.
 The initial query-authorization cluster and admission pilot used `--concurrency 4`.
@@ -314,7 +314,9 @@ One result assertion still allowed removal of the first phase's stored-relations
 return at 689: equivalence through the base result type did not establish the concrete
 failure. The fixture now supplies valid no-claims metadata and checks the concrete
 relationship-denial type, stored value source, empty claim IDs, and failed strategy.
-That final assertion and remaining composite-path survivors still need verification.
+The additional full rerun confirms that return mutation is now killed, taking the
+total to 343 killed, 107 survived, 31 uncovered, 389 compile-error, and 109 ignored,
+with no timeouts (71.31%). Other composite-path survivors still need triage.
 The Model
 and DDL suites also passed their baseline normal runs: 1,035 and 1,469 tests respectively,
 with one existing DDL skip. Their mutation baselines remain pending.
@@ -366,8 +368,9 @@ callback; the delay continuation could dispose the callback registration before
 cancellation invoked it. It now waits for an explicit callback-finished signal before
 disposing the registration, preserving the deadlock/fence assertions without increasing
 delays or excluding the test. All 94 job-executor cases pass, and the repaired callback
-fixture passed ten consecutive runs (two tests each). The full CMS suite and a fresh
-token mutation run are being rerun; the failed invocation establishes no baseline.
+fixture passed ten consecutive runs (two tests each). The full CMS suite then passed
+7,327 tests with 16 existing skips in 3m51s. A fresh token mutation run is pending;
+the failed invocation establishes no baseline.
 
 Token-manager dispositions retained without suppressing mutation types:
 
