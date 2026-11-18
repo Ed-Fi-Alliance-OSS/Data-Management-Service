@@ -206,10 +206,13 @@ internal static class ProjectionCursorCodec
     }
 
     /// <summary>
-    /// The first 32 lower-case hex characters of SHA-256 over
-    /// <c>&lt;tenant&gt;|&lt;contractVersion&gt;|&lt;key1&gt;=&lt;value1&gt;;&lt;key2&gt;=&lt;value2&gt;...</c>, where
-    /// the tenant is lower-cased (empty in single-tenant mode), the contract version is used as sent,
-    /// and the route-qualifier pairs are lower-cased and sorted ordinally by key.
+    /// The first 32 lower-case hex characters of SHA-256 over the UTF-8 binding text
+    /// <c>S(tenant)S(contractVersion)S(key1)S(value1)S(key2)S(value2)...</c>, where <c>S(x)</c> is
+    /// <c>&lt;byteCount&gt;:&lt;x&gt;</c> with <c>byteCount</c> the invariant decimal UTF-8 byte count
+    /// of <c>x</c>, as in <see cref="ProjectionDigest"/>. The tenant is lower-cased (empty in
+    /// single-tenant mode), the contract version is used as sent, and the route-qualifier pairs are
+    /// lower-cased and sorted ordinally by key. Every field carries its own length, so no tenant,
+    /// version, key or value can be read as part of another, whatever characters it contains.
     /// </summary>
     public static string ComputeBindingHash(
         string? tenant,
@@ -220,24 +223,31 @@ internal static class ProjectionCursorCodec
         ArgumentNullException.ThrowIfNull(contractVersion);
         ArgumentNullException.ThrowIfNull(routeQualifiers);
 
-        IEnumerable<string> pairs = routeQualifiers
+        IEnumerable<(string Key, string Value)> pairs = routeQualifiers
             .Select(pair =>
                 (Key: pair.Key.Value.ToLowerInvariant(), Value: pair.Value.Value.ToLowerInvariant())
             )
-            .OrderBy(pair => pair.Key, StringComparer.Ordinal)
-            .Select(pair => $"{pair.Key}={pair.Value}");
+            .OrderBy(pair => pair.Key, StringComparer.Ordinal);
 
-        string bindingText = string.Concat(
-            (tenant ?? string.Empty).ToLowerInvariant(),
-            "|",
-            contractVersion,
-            "|",
-            string.Join(';', pairs)
-        );
+        StringBuilder bindingText = new();
+        AppendBindingField(bindingText, (tenant ?? string.Empty).ToLowerInvariant());
+        AppendBindingField(bindingText, contractVersion);
+        foreach ((string key, string value) in pairs)
+        {
+            AppendBindingField(bindingText, key);
+            AppendBindingField(bindingText, value);
+        }
 
-        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(bindingText));
+        byte[] hash = SHA256.HashData(Encoding.UTF8.GetBytes(bindingText.ToString()));
         return Convert.ToHexStringLower(hash)[..BindingHashLength];
     }
+
+    /// <summary>Appends <c>&lt;byteCount&gt;:&lt;value&gt;</c>, the length-prefixed binding field.</summary>
+    private static void AppendBindingField(StringBuilder bindingText, string value) =>
+        bindingText
+            .Append(Encoding.UTF8.GetByteCount(value).ToString(CultureInfo.InvariantCulture))
+            .Append(':')
+            .Append(value);
 
     private static bool TryDecodePayload(string? text, out string payload)
     {

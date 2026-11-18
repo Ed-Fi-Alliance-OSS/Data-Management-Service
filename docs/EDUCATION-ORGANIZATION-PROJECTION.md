@@ -119,7 +119,7 @@ Every response, success or problem, carries exactly one
 {
   "contractVersion": "educationOrganizationProjection.v1",
   "dataStoreId": 3788,
-  "nextCursor": "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCw0NGNlM2RiYTc0ZWM4ZjhiYTE0ZGFjN2U5NDNmYWRmNw",
+  "nextCursor": "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCwyNTM5ZDliNDYyMjU4ZjU1MWIyMGEzYmYzZjM2ODA5MQ",
   "items": [
     {
       "educationOrganizationId": 1,
@@ -428,13 +428,21 @@ returned, encoded like `<id>` in the digest, `<digest>` is the unpadded
 base64url digest of the read's first page,
 `<walkIssuedAtUnixSeconds>` is the first page's time, carried unchanged into
 later cursors, and `<bindingHash>` is the first 32 lower-case hexadecimal
-characters of SHA-256 over
-`<tenant>|<contractVersion>|<key1>=<value1>;<key2>=<value2>...`. In that
-binding text the tenant is lower-cased and is the empty string in
-single-tenant mode, and the
-route-qualifier pairs are lower-cased and sorted by key. The cursor is not
-signed. Changing it can only move the position, or fail the digest check, within
-a set the caller is already authorized to read in full.
+characters of SHA-256 over the UTF-8 binding text
+`S(<tenant>)S(<contractVersion>)S(<key1>)S(<value1>)S(<key2>)S(<value2>)...`,
+where `S(x)` is `<byteCount>:<x>` and `<byteCount>` is the decimal UTF-8 byte
+count of `x`, as in the digest. In that binding text the tenant is lower-cased
+and is the empty string in single-tenant mode, and the route-qualifier pairs
+are lower-cased and sorted by key. Because every field carries its own length,
+a `;`, `=`, `|` or `:` inside a tenant, key or value cannot make two contexts
+bind alike. The cursor is not signed. Changing it can only move the position, or
+fail the digest check, within a set the caller is already authorized to read in
+full.
+
+This binding encoding replaced an earlier delimiter-only form (`<tenant>|<contractVersion>|<key1>=<value1>;...`),
+which is not accepted as a fallback. A cursor issued before the change no longer
+matches its request and is answered `400 invalid-cursor`; the client restarts
+the read without a cursor, within its existing restart budget.
 
 DMS does not write cursors to its logs. Its request logs record the path without
 the query string, and the framework's request-starting and request-finished

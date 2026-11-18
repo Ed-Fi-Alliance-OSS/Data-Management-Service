@@ -299,7 +299,7 @@ public class EducationOrganizationProjectionReaderTests
             Query(_harness.PageRequests[1], "cursor")
                 .Should()
                 .Be(
-                    "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCw0NGNlM2RiYTc0ZWM4ZjhiYTE0ZGFjN2U5NDNmYWRmNw"
+                    "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCwyNTM5ZDliNDYyMjU4ZjU1MWIyMGEzYmYzZjM2ODA5MQ"
                 );
     }
 

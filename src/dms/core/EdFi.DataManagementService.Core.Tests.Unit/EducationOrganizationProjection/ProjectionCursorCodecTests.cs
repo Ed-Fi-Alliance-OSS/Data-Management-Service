@@ -19,17 +19,33 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.EducationOrganizationProjec
 internal static class ProjectionCursorFixtures
 {
     public const string WorkedDigest = "GaxBPNNJxHrBm_SH5xd_L9t3aLovNF-MQpC7_c_Yv_o";
-    public const string WorkedBinding = "44ce3dba74ec8f8ba14dac7e943fadf7";
+    public const string WorkedBinding = "2539d9b462258f551b20a3bf3f368091";
     public const long WorkedWalkIssuedAt = 1790953200;
 
     public const string WorkedNextCursor =
-        "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCw0NGNlM2RiYTc0ZWM4ZjhiYTE0ZGFjN2U5NDNmYWRmNw";
+        "MSwzNzg4LDEwLEdheEJQTk5KeEhyQm1fU0g1eGRfTDl0M2FMb3ZORi1NUXBDN19jX1l2X28sMTc5MDk1MzIwMCwyNTM5ZDliNDYyMjU4ZjU1MWIyMGEzYmYzZjM2ODA5MQ";
 
     public static Dictionary<RouteQualifierName, RouteQualifierValue> WorkedQualifiers() =>
         new()
         {
             [new RouteQualifierName("districtId")] = new RouteQualifierValue("255901"),
             [new RouteQualifierName("schoolYear")] = new RouteQualifierValue("2025"),
+        };
+
+    /// <summary>Route qualifiers <c>{a: "x;b=y", b: "z"}</c>.</summary>
+    public static Dictionary<RouteQualifierName, RouteQualifierValue> DelimiterInFirstValue() =>
+        new()
+        {
+            [new RouteQualifierName("a")] = new RouteQualifierValue("x;b=y"),
+            [new RouteQualifierName("b")] = new RouteQualifierValue("z"),
+        };
+
+    /// <summary>Route qualifiers <c>{a: "x", b: "y;b=z"}</c>.</summary>
+    public static Dictionary<RouteQualifierName, RouteQualifierValue> DelimiterInSecondValue() =>
+        new()
+        {
+            [new RouteQualifierName("a")] = new RouteQualifierValue("x"),
+            [new RouteQualifierName("b")] = new RouteQualifierValue("y;b=z"),
         };
 
     /// <summary>Encodes arbitrary payload text the way a well-formed cursor is encoded.</summary>
@@ -233,11 +249,11 @@ public class Given_The_Projection_Cursor_Codec_Strict_Decoding
     [Test]
     public void It_rejects_a_final_character_with_non_zero_unused_bits_without_throwing()
     {
-        // The issued cursor ends in 'w', whose four unused low bits are zero; 'x' differs only there.
+        // The issued cursor ends in 'Q', whose four unused low bits are zero; 'R' differs only there.
         string cursor = ProjectionCursorFixtures.WorkedNextCursor;
-        cursor[^1].Should().Be('w');
+        cursor[^1].Should().Be('Q');
 
-        ProjectionCursorCodec.TryDecode(cursor[..^1] + "x", out ProjectionCursor? decoded).Should().BeFalse();
+        ProjectionCursorCodec.TryDecode(cursor[..^1] + "R", out ProjectionCursor? decoded).Should().BeFalse();
         decoded.Should().BeNull();
     }
 
@@ -506,6 +522,8 @@ public class Given_The_Projection_Cursor_Binding_Hash
     [Test]
     public void It_reproduces_the_contract_example_binding()
     {
+        // SHA-256("13:tenant_25590134:educationOrganizationProjection.v110:districtid6:255901"
+        //     + "10:schoolyear4:2025"), first 32 hex characters.
         ProjectionCursorCodec
             .ComputeBindingHash("Tenant_255901", V1, ProjectionCursorFixtures.WorkedQualifiers())
             .Should()
@@ -545,8 +563,8 @@ public class Given_The_Projection_Cursor_Binding_Hash
     [Test]
     public void It_uses_an_empty_tenant_in_single_tenant_mode()
     {
-        // SHA-256("|educationOrganizationProjection.v1|"), first 32 hex characters.
-        const string Expected = "a7ed14f5de670942efba40cc1c6178ce";
+        // SHA-256("0:34:educationOrganizationProjection.v1"), first 32 hex characters.
+        const string Expected = "f6d40253883f3c3f6f3514455dc5291c";
 
         ProjectionCursorCodec
             .ComputeBindingHash(null, V1, new Dictionary<RouteQualifierName, RouteQualifierValue>())
@@ -568,7 +586,7 @@ public class Given_The_Projection_Cursor_Binding_Hash
                 ProjectionCursorFixtures.WorkedQualifiers()
             )
             .Should()
-            .Be("6880b93d885842ea65a363a96627926e");
+            .Be("1659d2fd51a1e74f363255f38c1b0b1f");
     }
 
     [Test]
@@ -585,6 +603,33 @@ public class Given_The_Projection_Cursor_Binding_Hash
         ProjectionCursorCodec
             .ComputeBindingHash("Tenant_255901", V1, otherYear)
             .Should()
-            .Be("33674a5d38aa9be67aab8585be410561");
+            .Be("a26ba36ca4f9600962b10d7f6a37b535");
+    }
+
+    /// <summary>
+    /// Every field carries its own length, so a delimiter inside a route-qualifier value cannot make
+    /// two different contexts produce the same binding text. Both contexts below had the binding text
+    /// <c>t|educationOrganizationProjection.v1|a=x;b=y;b=z</c> under the earlier delimiter-only
+    /// encoding.
+    /// </summary>
+    [Test]
+    public void It_does_not_confuse_a_delimiter_inside_a_value_with_the_next_qualifier()
+    {
+        string first = ProjectionCursorCodec.ComputeBindingHash(
+            "t",
+            V1,
+            ProjectionCursorFixtures.DelimiterInFirstValue()
+        );
+        string second = ProjectionCursorCodec.ComputeBindingHash(
+            "t",
+            V1,
+            ProjectionCursorFixtures.DelimiterInSecondValue()
+        );
+
+        // SHA-256("1:t34:educationOrganizationProjection.v11:a5:x;b=y1:b1:z") and
+        // SHA-256("1:t34:educationOrganizationProjection.v11:a1:x1:b5:y;b=z"), first 32 hex characters.
+        first.Should().Be("c4caa967ff8115de66389a101499d69e");
+        second.Should().Be("aaf482a9b614e1ec09d3b4e2ac20afa4");
+        first.Should().NotBe(second);
     }
 }

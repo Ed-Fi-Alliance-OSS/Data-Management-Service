@@ -546,6 +546,36 @@ public abstract class ParseEducationOrganizationProjectionRequestMiddlewareTests
 
             AssertInvalidCursor();
         }
+
+        /// <summary>
+        /// A cursor issued for <c>{a: "x;b=y", b: "z"}</c>, with the same store, position, digest and
+        /// walk time, replayed for <c>{a: "x", b: "y;b=z"}</c>. Both contexts had the same binding
+        /// text under the earlier delimiter-only encoding, so the replay was accepted.
+        /// </summary>
+        [Test]
+        public async Task It_rejects_it_in_a_context_whose_qualifiers_differ_only_in_where_a_delimiter_falls()
+        {
+            string issuedBinding = ProjectionCursorCodec.ComputeBindingHash(
+                Tenant,
+                ProjectionContractVersions.V1,
+                ProjectionCursorFixtures.DelimiterInFirstValue()
+            );
+            Dictionary<string, string> query = Query(
+                ("dataStoreId", "3788"),
+                (
+                    "cursor",
+                    ProjectionCursorFixtures.CursorFor(
+                        ProjectionCursorFixtures.ValidPayload(binding: issuedBinding)
+                    )
+                )
+            );
+
+            await Execute(query, routeQualifiers: ProjectionCursorFixtures.DelimiterInFirstValue());
+            NextCalled.Should().BeTrue("the cursor is accepted in the context that issued it");
+
+            await Execute(query, routeQualifiers: ProjectionCursorFixtures.DelimiterInSecondValue());
+            AssertInvalidCursor();
+        }
     }
 
     [TestFixture]
