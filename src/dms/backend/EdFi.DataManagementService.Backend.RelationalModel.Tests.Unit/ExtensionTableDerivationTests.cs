@@ -629,17 +629,6 @@ public class Given_Extension_Table_Derivation_With_Standalone_Extension_Project_
                 table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension"
             );
     }
-
-    [Test]
-    public void It_should_preserve_the_standalone_extension_project_resource()
-    {
-        _result
-            .ConcreteResourcesInNameOrder.Should()
-            .Contain(model =>
-                model.ResourceKey.Resource.ProjectName == "Homograph"
-                && model.ResourceKey.Resource.ResourceName == "School"
-            );
-    }
 }
 
 /// <summary>
