@@ -52,6 +52,13 @@ PORT=${DMS1565_PORT:-$PUBLISHED_PORT}
 mkdir -p "$6" || fail "cannot create output directory '$6'"
 OUT=$(cd "$6" && pwd)
 LOG="$OUT/block-$BLOCK-$ARM.log"
+# A retry must not inherit an earlier attempt's capture: if this attempt then failed, the analyzer would
+# still find the old block JSON. Refuse any existing output for this block before touching the database.
+for existing in "$OUT"/block-"$BLOCK"-*.json "$OUT"/block-"$BLOCK"-*.log; do
+  if [ -e "$existing" ]; then
+    fail "output for block $BLOCK already exists ($existing); remove it or use a new output directory"
+  fi
+done
 
 sq() {
   SQLCMDPASSWORD=$(cat "$PASSWORD_FILE") docker exec -i -e SQLCMDPASSWORD "$CONTAINER" \

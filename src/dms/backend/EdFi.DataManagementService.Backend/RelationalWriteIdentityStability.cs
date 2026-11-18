@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 using EdFi.DataManagementService.Core.External.Backend;
@@ -23,6 +25,11 @@ namespace EdFi.DataManagementService.Backend;
 /// </summary>
 internal static class RelationalWriteIdentityStability
 {
+    private static readonly ConditionalWeakTable<
+        TableWritePlan,
+        RelationalWriteReducedRootUpdate
+    > _reducedRootUpdateByPlan = new();
+
     public static (RelationalWriteMergeResult MergeResult, RelationalWriteExecutorResult? Failure) Apply(
         RelationalWriteExecutorRequest request,
         RelationalWriteMergeResult mergeResult
@@ -78,16 +85,13 @@ internal static class RelationalWriteIdentityStability
         }
 
         var rootTableWritePlan = rootTableState.TableWritePlan;
-        var identityProjectionBindingIndexes = GetIdentityProjectionBindingIndexesOrThrow(
-            request.MappingSet,
-            rootTableWritePlan
-        );
+        var reducedRootUpdate = GetReducedRootUpdate(request.MappingSet, rootTableWritePlan);
         var currentRootRow = rootTableState.CurrentRows[0];
         var mergedRootRow = rootTableState.MergedRows[0];
         FlattenedWriteValue[]? reboundValues = null;
         var hasIdentityChange = false;
 
-        foreach (var bindingIndex in identityProjectionBindingIndexes)
+        foreach (var bindingIndex in reducedRootUpdate.OmittedBindingIndexes)
         {
             var currentValue = currentRootRow.Values[bindingIndex];
             var mergedValue = mergedRootRow.Values[bindingIndex];
@@ -141,10 +145,7 @@ internal static class RelationalWriteIdentityStability
 
         if (!hasIdentityChange)
         {
-            finalizedRootTableState = finalizedRootTableState with
-            {
-                UpdateOmittedBindingIndexes = [.. identityProjectionBindingIndexes],
-            };
+            finalizedRootTableState = finalizedRootTableState with { ReducedRootUpdate = reducedRootUpdate };
         }
 
         return (
@@ -176,6 +177,36 @@ internal static class RelationalWriteIdentityStability
             ),
             _ => throw new ArgumentOutOfRangeException(nameof(operationKind), operationKind, null),
         };
+    }
+
+    /// <summary>
+    /// The root plan's one reduced update, resolved on the first write against the plan and reused for the
+    /// plan's lifetime. Its omitted bindings are the identity projection the guard compares.
+    /// </summary>
+    private static RelationalWriteReducedRootUpdate GetReducedRootUpdate(
+        MappingSet mappingSet,
+        TableWritePlan rootTableWritePlan
+    )
+    {
+        if (_reducedRootUpdateByPlan.TryGetValue(rootTableWritePlan, out var reducedRootUpdate))
+        {
+            return reducedRootUpdate;
+        }
+
+        ImmutableArray<int> identityProjectionBindingIndexes =
+        [
+            .. GetIdentityProjectionBindingIndexesOrThrow(mappingSet, rootTableWritePlan),
+        ];
+
+        return _reducedRootUpdateByPlan.GetValue(
+            rootTableWritePlan,
+            plan =>
+                RelationalWriteReducedRootUpdate.Create(
+                    plan,
+                    mappingSet.Key.Dialect,
+                    identityProjectionBindingIndexes
+                )
+        );
     }
 
     private static int[] GetIdentityProjectionBindingIndexesOrThrow(

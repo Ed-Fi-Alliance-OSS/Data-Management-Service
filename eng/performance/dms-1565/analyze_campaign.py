@@ -5,10 +5,12 @@
 # See the LICENSE and NOTICES files in the project root for more information.
 """DMS-1565 campaign analysis.
 
-Usage: analyze_campaign.py <output-dir>   (writes <output-dir>/analysis.json and block-medians.csv)
+Usage: analyze_campaign.py <output-dir> [expected-blocks, default 12]
+       (writes <output-dir>/analysis.json and block-medians.csv)
 
-The captures are validated first and the analysis refuses to run on anything invalid: block ids must be
-unique and form at least two complete baseline/changed pairs of consecutive block ids with equal settings and resource order,
+The captures are validated first and the analysis refuses to run on anything invalid: the block ids must be
+exactly 1..expected-blocks (so a campaign whose second run stopped early is rejected, not analyzed as a
+smaller one), forming baseline/changed pairs of consecutive block ids with equal settings and resource order,
 every block must report a successful smoke GET, the same effective schema hash and a READ_WRITE Query
 Store at both ends, and every resource must have exactly the declared number of latency samples and root
 UPDATE executions with non-negative counter deltas.
@@ -96,12 +98,17 @@ def validate_block(block):
             require(count >= compiles_before.get(query_id, 0), f"{where}: compile count fell for query {query_id}")
 
 
-def validate(blocks):
+def validate(blocks, expected_blocks):
+    require(
+        expected_blocks >= 4 and expected_blocks % 2 == 0,
+        f"expected block count {expected_blocks} must be even and at least 4 (two pairs support the threshold)",
+    )
     ids = [int(block["block"]) for block in blocks]
     require(len(ids) == len(set(ids)), f"duplicate block ids {sorted(ids)}")
+    missing = sorted(set(range(1, expected_blocks + 1)) - set(ids))
+    unexpected = sorted(set(ids) - set(range(1, expected_blocks + 1)))
+    require(not missing and not unexpected, f"expected blocks 1..{expected_blocks}; missing {missing}, unexpected {unexpected}")
     blocks = sorted(blocks, key=lambda block: int(block["block"]))
-    require(len(blocks) % 2 == 0, f"{len(blocks)} blocks do not form complete pairs")
-    require(len(blocks) >= 4, f"{len(blocks) // 2} pair(s) cannot support the regression threshold; at least two are required")
     hashes = {block["effectiveSchema"][0]["EffectiveSchemaHash"] for block in blocks}
     require(len(hashes) == 1, f"effective schema hashes differ across blocks: {sorted(hashes)}")
     settings = {(block["warmup"], block["measured"]) for block in blocks}
@@ -200,9 +207,9 @@ def write_block_medians(report, path):
                                  f"{b['p95']:.3f}", f"{c['p95']:.3f}"])
 
 
-def main(output_dir):
+def main(output_dir, expected_blocks=12):
     try:
-        pairs = validate(load_blocks(output_dir))
+        pairs = validate(load_blocks(output_dir), expected_blocks)
     except InvalidCapture as error:
         print(f"invalid capture: {error}", file=sys.stderr)
         return 2
@@ -224,4 +231,7 @@ def main(output_dir):
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1]))
+    if len(sys.argv) not in (2, 3):
+        print("usage: analyze_campaign.py <output-dir> [expected-blocks]", file=sys.stderr)
+        sys.exit(64)
+    sys.exit(main(sys.argv[1], int(sys.argv[2]) if len(sys.argv) == 3 else 12))

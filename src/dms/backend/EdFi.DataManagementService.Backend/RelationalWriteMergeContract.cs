@@ -48,11 +48,11 @@ internal sealed record RelationalWriteMergedTableState
     public ImmutableArray<RelationalWriteMergedTableRow> MergedRows { get; init; }
 
     /// <summary>
-    /// Binding indexes an in-place update of this table's row leaves out of its SET list because the
-    /// write has established that their merged values equal the stored ones. Empty, the default, assigns
-    /// every writable non-key binding through the compiled <see cref="TableWritePlan.UpdateSql"/>.
+    /// The root table's reduced in-place update, attached by the identity guard when the write has established
+    /// that the merged identity-projection values equal the stored ones. Null, the default, assigns every
+    /// writable non-key binding through the compiled <see cref="TableWritePlan.UpdateSql"/>.
     /// </summary>
-    public ImmutableArray<int> UpdateOmittedBindingIndexes { get; init; } = [];
+    public RelationalWriteReducedRootUpdate? ReducedRootUpdate { get; init; }
 }
 
 internal sealed record RelationalWriteMergeResult

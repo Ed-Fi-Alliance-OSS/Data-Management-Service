@@ -407,9 +407,14 @@ public class Given_A_Root_Update_Whose_Identity_Changes_With_Identity_Updates_Al
 
         statement.SingleRowSql.Should().Be(rootPlan.UpdateSql);
         RelationalWriteRootUpdateShapeTestSupport
-            .AssignedColumns(statement.EmitBatchSql(1))
+            .AssignedColumns(statement.SingleRowSql)
             .Should()
             .Equal(_fullSetList);
+        statement
+            .Invoking(s => s.EmitBatchSql(2))
+            .Should()
+            .Throw<InvalidOperationException>()
+            .WithMessage("*only its single-row SQL is sent*");
     }
 
     [Test]
@@ -431,7 +436,7 @@ public class Given_A_Root_Update_Whose_Identity_Changes_With_Identity_Updates_Al
 
         statement.SingleRowSql.Should().Be(rootPlan.UpdateSql);
         RelationalWriteRootUpdateShapeTestSupport
-            .AssignedColumns(statement.EmitBatchSql(1))
+            .AssignedColumns(statement.SingleRowSql)
             .Should()
             .Equal(_fullSetList);
     }
@@ -648,25 +653,11 @@ public class Given_The_Reduced_Root_Update_Emitter(SqlDialect dialect)
     }
 
     [Test]
-    public void It_renders_the_text_once_per_plan_and_reuses_it_from_any_emitter()
+    public void It_leaves_only_the_omitted_assignments_out_of_the_set_list()
     {
-        var first = _sut.EmitUpdate(_rootPlan, [1, 2]);
-
-        new WritePlanBatchSqlEmitter(dialect).EmitUpdate(_rootPlan, [1, 2]).Should().BeSameAs(first);
         RelationalWriteRootUpdateShapeTestSupport
-            .AssignedColumns(first)
+            .AssignedColumns(_sut.EmitUpdate(_rootPlan, [1, 2]))
             .Should()
             .Equal("School_DocumentId", "BeginDate", "EndDate", "TotalInstructionalDays");
-    }
-
-    [Test]
-    public void It_renders_a_different_omitted_set_rather_than_reusing_the_cached_text()
-    {
-        _sut.EmitUpdate(_rootPlan, [1, 2]);
-
-        RelationalWriteRootUpdateShapeTestSupport
-            .AssignedColumns(_sut.EmitUpdate(_rootPlan, [1]))
-            .Should()
-            .Equal("School_SchoolId", "School_DocumentId", "BeginDate", "EndDate", "TotalInstructionalDays");
     }
 }

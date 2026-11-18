@@ -19,7 +19,17 @@ ticket's projected 14 ms to 9 ms Session improvement or production throughput.
 Baseline `0fd5300f0` versus changed `d1092362b`. Twelve blocks (six interleaved baseline/changed pairs,
 two runs of three pairs), each a fresh restore and a fresh host, concurrency 1, 50 warmup and 300 measured
 PUTs per resource per block, every PUT changing one non-key root column. Pooled over 1,800 requests per
-arm and resource:
+arm and resource.
+
+The measured revision predates the review changes that followed it: the reduced update is now rendered
+by the compiler's own UPDATE emitter, resolved once per root plan, and bound with only its own parameters
+on the standalone transport. The campaign was not rerun on the final head. For Session, the head was
+checked against the capture instead. The composite-transport Session UPDATE recorded by the SQL Server
+root-identity integration fixture is byte-identical to the `query_sql_text` Query Store captured for
+Session in the campaign. The composite transport drops parameters its SQL does not reference at both
+revisions, so identical text binds the same seven parameters the capture declares. The other four
+resources' reduced statements come from the same emitter and the same omission rule, but the fixture
+issues no UPDATE for them, so they were not compared text for text.
 
 | Resource | Median ms (baseline → changed) | p95 ms | Pairs with lower median | Regression threshold |
 | --- | --- | --- | --- | --- |
@@ -139,13 +149,15 @@ removed and from a different revision; that difference is not explained here.
    ```sh
    ./run-campaign.sh <output-dir> 1    # blocks 1-6: three baseline/changed pairs
    ./run-campaign.sh <output-dir> 7    # blocks 7-12: the second run of three pairs
-   ./analyze_campaign.py <output-dir>  # reads every block-*.json in the directory
+   ./analyze_campaign.py <output-dir>  # requires exactly blocks 1-12 (pass a count to analyze fewer)
    ```
 
    Each campaign refuses to start unless both arms hold a byte-identical harness, every block log records
    the sha256 of its harness, document list and `ApiSchema.json`, and the analysis refuses captures that
-   fail validation. `run-block.sh` connects the harness to the host port the SQL Server container
-   publishes, and fails if `DMS1565_PORT` names a different one. The published captures keep the two runs
+   fail validation. `run-block.sh` refuses to start when the output directory already holds that block's
+   JSON or log, so a failed retry cannot leave an earlier attempt's capture for the analysis. It connects
+   the harness to the host port the SQL Server container publishes, and fails if `DMS1565_PORT` names a
+   different one. The published captures keep the two runs
    in `task3b/run1/` and `task3b/run2/`, and `task3b/all12/` holds their combined analysis.
 
 ## Evidence

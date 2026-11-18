@@ -565,7 +565,11 @@ public class Given_Relational_Write_No_Profile_Persister
                     [CreateRow(345L, 255901, "Lincoln High", "LH")]
                 )
                 {
-                    UpdateOmittedBindingIndexes = [1],
+                    ReducedRootUpdate = RelationalWriteReducedRootUpdate.Create(
+                        rootPlan,
+                        request.MappingSet.Key.Dialect,
+                        [1]
+                    ),
                 },
             ],
             supportsGuardedNoOp: true

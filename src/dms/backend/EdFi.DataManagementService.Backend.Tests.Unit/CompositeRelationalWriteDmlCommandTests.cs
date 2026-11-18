@@ -74,7 +74,13 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                     [CreateRootRow(255901, "Lincoln High Updated")]
                 )
                 {
-                    UpdateOmittedBindingIndexes = schoolIdUnchanged ? [1] : [],
+                    ReducedRootUpdate = schoolIdUnchanged
+                        ? RelationalWriteReducedRootUpdate.Create(
+                            rootPlan,
+                            request.MappingSet.Key.Dialect,
+                            [1]
+                        )
+                        : null,
                 },
             ],
             supportsGuardedNoOp: true
