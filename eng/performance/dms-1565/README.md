@@ -16,20 +16,21 @@ ticket's projected 14 ms to 9 ms Session improvement or production throughput.
 
 ### PUT latency
 
-Baseline `0fd5300f0` versus changed `d1092362b`. Twelve blocks (six interleaved baseline/changed pairs,
-two runs of three pairs), each a fresh restore and a fresh host, concurrency 1, 50 warmup and 300 measured
-PUTs per resource per block, every PUT changing one non-key root column. Pooled over 1,800 requests per
-arm and resource.
+Baseline `0fd5300f0` on `main` versus the changed build: this ticket's change as it stood before review.
+The evidence set's `task3b/arm-identities.txt` records its branch revision. Twelve blocks (six interleaved
+baseline/changed pairs, two runs of three pairs), each a fresh restore and a fresh host, concurrency 1, 50
+warmup and 300 measured PUTs per resource per block, every PUT changing one non-key root column. Pooled
+over 1,800 requests per arm and resource.
 
 The measured revision predates the review changes that followed it: the reduced update is now rendered
 by the compiler's own UPDATE emitter, resolved once per root plan, and bound with only its own parameters
-on the standalone transport. Rather than repeating the campaign, the head (`634cafdef`) was checked against
-it with one short block (`run-block.sh changed 1 <order> 0 5`, the campaign's harness, a fresh restore).
-For each of the five resources, the root UPDATE Query Store recorded on the head, parameter declaration
-included, is identical to one the campaign recorded in every one of its six changed blocks. Each
-resource's campaign captures share a single statement body and parameter list; they differ only in
-`nvarchar` parameter lengths, which vary with the values sent. The head therefore sends SQL Server the
-same statements the campaign measured.
+on the standalone transport. Rather than repeating the campaign, the branch's final code was checked
+against it with one short block (`run-block.sh changed 1 <order> 0 5`, the campaign's harness, a fresh
+restore). For each of the five resources, the root UPDATE Query Store recorded on the final code,
+parameter declaration included, is identical to one the campaign recorded in every one of its six
+changed blocks. Each resource's campaign captures share a single statement body and parameter list;
+they differ only in `nvarchar` parameter lengths, which vary with the values sent. The final code
+therefore sends SQL Server the same statements the campaign measured.
 
 | Resource | Median ms (baseline → changed) | p95 ms | Pairs with lower median | Regression threshold |
 | --- | --- | --- | --- | --- |
@@ -109,7 +110,7 @@ removed and from a different revision; that difference is not explained here.
   on. The schema is the stock supported one in both arms, with all 143 root-to-`dms.Document` foreign
   keys present.
 - **Schema compatibility.** SchemaTools at the artifact's recorded revision `efc9079a0`, at `0fd5300f0`
-  and at `d1092362b` compute effective schema hash `a0d39468…` for the core-only
+  and in the changed build compute effective schema hash `a0d39468…` for the core-only
   `EdFi.DataStandard52.ApiSchema` 1.0.335 and emit byte-identical DDL. The restored catalog matches a fresh
   `ddl provision` of the baseline (`catalog-dump.sql`, Configuration Service objects excluded, module text
   compared without CR and trailing newlines). The host validates the stored hash at startup, and each
@@ -135,8 +136,12 @@ removed and from a different revision; that difference is not explained here.
    and a disk volume large enough for two restores (about 21 GB each), for example host port 1437 and a
    5 GB memory cap. Keep its SA password in a file and point `DMS1565_SA_PASSWORD_FILE` at it.
 3. Prepare `$DMS1565_WORK`:
-   - `git archive 0fd5300f0 | tar -x -C "$DMS1565_WORK/arm-baseline"` and the same for `d1092362b` into
-     `arm-changed`; copy `Given_A_Dms1565_Northridge_Put_Latency_Block.cs` into each arm's
+   - `git archive 0fd5300f0 | tar -x -C "$DMS1565_WORK/arm-baseline"`, and the same into `arm-changed` for
+     the commit that merged this ticket, which is the first to add this README:
+     `git log --diff-filter=A --format=%H -- eng/performance/dms-1565/README.md | tail -1`. That commit
+     sends the measured statements (see above). If it also carries later `main` changes that move the
+     effective schema hash, the analysis rejects the campaign.
+   - Copy `Given_A_Dms1565_Northridge_Put_Latency_Block.cs` into each arm's
      `src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql/` and run
      `dotnet build src/dms/tests/EdFi.DataManagementService.Tests.Integration -c Release` in each arm.
    - `./stage-apischema.sh "$DMS1565_WORK/apischema-core-only"`. It copies the package unmodified and
@@ -182,7 +187,7 @@ sha256 `07eb6c49baa9a18c9b24e2a596839e5af26e278060b64381f793ec8edfbdc901`). The 
 - `task3a/replay/`: the replayed root statements (`baseline.sql`, `changed.sql`), each run's
   `SET STATISTICS XML` output, and `replay-summary.json` with the 300 and 13 operator counts.
 - `task3a/`, otherwise: the restore and catalog comparison, and the SchemaTools hash and DDL checksums for
-  `efc9079a0`, `0fd5300f0` and `d1092362b`.
+  `efc9079a0`, `0fd5300f0` and the changed build.
 
 The results were produced with the executed copies of these scripts, kept in the evidence set. The
 committed versions add input validation, parameterized paths and the container port check. The committed
