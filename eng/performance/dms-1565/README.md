@@ -23,13 +23,13 @@ arm and resource.
 
 The measured revision predates the review changes that followed it: the reduced update is now rendered
 by the compiler's own UPDATE emitter, resolved once per root plan, and bound with only its own parameters
-on the standalone transport. The campaign was not rerun on the final head. For Session, the head was
-checked against the capture instead. The composite-transport Session UPDATE recorded by the SQL Server
-root-identity integration fixture is byte-identical to the `query_sql_text` Query Store captured for
-Session in the campaign. The composite transport drops parameters its SQL does not reference at both
-revisions, so identical text binds the same seven parameters the capture declares. The other four
-resources' reduced statements come from the same emitter and the same omission rule, but the fixture
-issues no UPDATE for them, so they were not compared text for text.
+on the standalone transport. Rather than repeating the campaign, the head (`634cafdef`) was checked against
+it with one short block (`run-block.sh changed 1 <order> 0 5`, the campaign's harness, a fresh restore).
+For each of the five resources, the root UPDATE Query Store recorded on the head, parameter declaration
+included, is identical to one the campaign recorded in every one of its six changed blocks. Each
+resource's campaign captures share a single statement body and parameter list; they differ only in
+`nvarchar` parameter lengths, which vary with the values sent. The head therefore sends SQL Server the
+same statements the campaign measured.
 
 | Resource | Median ms (baseline → changed) | p95 ms | Pairs with lower median | Regression threshold |
 | --- | --- | --- | --- | --- |
