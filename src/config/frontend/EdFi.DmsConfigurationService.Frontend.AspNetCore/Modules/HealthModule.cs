@@ -12,9 +12,8 @@ public class HealthModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapPublicGet(
-            "/health",
-            () => Results.Text(DateTime.Now.ToString(CultureInfo.InvariantCulture))
+        endpoints.MapPublicGet("/health", () =>
+            Results.Text(DateTime.Now.ToString(CultureInfo.InvariantCulture))
         );
     }
 }

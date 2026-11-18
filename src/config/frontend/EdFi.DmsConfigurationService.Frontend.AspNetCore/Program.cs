@@ -83,21 +83,19 @@ builder.Services.AddOpenApi(options =>
 });
 
 // Add CORS policy to allow Swagger UI to access the Configuration Service
-string swaggerUiOrigin =
-    builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin") ?? "http://localhost:8082";
+string swaggerUiOrigin = builder.Configuration.GetValue<string>("Cors:SwaggerUIOrigin")
+    ?? "http://localhost:8082";
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy(
-        "AllowSwaggerUI",
-        policy =>
-        {
-            policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
-        }
-    );
+    options.AddPolicy("AllowSwaggerUI", policy =>
+    {
+        policy.WithOrigins(swaggerUiOrigin).AllowAnyHeader().AllowAnyMethod();
+    });
 });
 
-var reverseProxySettings =
-    builder.Configuration.GetSection("AppSettings:ReverseProxy").Get<ReverseProxySettings>()
+var reverseProxySettings = builder
+    .Configuration.GetSection("AppSettings:ReverseProxy")
+    .Get<ReverseProxySettings>()
     ?? new ReverseProxySettings();
 var useReverseProxyHeaders = reverseProxySettings.UseForwardedHeaders;
 if (useReverseProxyHeaders)

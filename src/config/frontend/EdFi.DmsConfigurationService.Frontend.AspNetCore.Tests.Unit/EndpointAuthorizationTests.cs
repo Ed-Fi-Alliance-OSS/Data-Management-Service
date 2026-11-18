@@ -267,16 +267,11 @@ public class EndpointAuthorizationTests
                 next(app);
                 if (includeProbe)
                 {
-                    app.UseEndpoints(endpoints =>
-                        endpoints.MapGet(
-                            ProbePath,
-                            () =>
-                            {
-                                state.HandlerCalls++;
-                                return Results.Text("probe reached");
-                            }
-                        )
-                    );
+                    app.UseEndpoints(endpoints => endpoints.MapGet(ProbePath, () =>
+                        {
+                            state.HandlerCalls++;
+                            return Results.Text("probe reached");
+                        }));
                 }
             };
     }
