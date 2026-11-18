@@ -1128,6 +1128,103 @@ public class ServiceClaimAuthorizationMiddlewareTests
         }
     }
 
+    /// <summary>
+    /// The projection claim name matches ordinally ignoring case: letter-case variants of the claim are the
+    /// claim, and a distinct claim whose name differs by a character a culture-aware comparison ignores
+    /// (U+00AD SOFT HYPHEN) is not, even with Read and NoFurtherAuthorizationRequired.
+    /// </summary>
+    [TestFixture]
+    [Parallelizable]
+    public class Given_The_Projection_Requirement_And_Claim_Names_Other_Than_The_Canonical_Spelling
+    {
+        private const string SoftHyphenClaimUri =
+            "http://ed-fi.org/identity/claims/services/education­OrganizationProjection";
+
+        private static ResourceClaim ReadClaim(string claimUri) =>
+            new(
+                claimUri,
+                "Read",
+                [new AuthorizationStrategy(AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired)]
+            );
+
+        private static async Task<(RequestInfo RequestInfo, bool NextCalled)> Execute(
+            params ResourceClaim[] resourceClaims
+        )
+        {
+            RequestInfo requestInfo = CreateRequestInfo(operation: null);
+            var nextCalled = false;
+
+            await CreateMiddleware(
+                    CreateProvider(new ClaimSet(ClaimSetName, [.. resourceClaims])),
+                    requirement: ServiceClaimRequirement.EducationOrganizationProjection
+                )
+                .Execute(
+                    requestInfo,
+                    () =>
+                    {
+                        nextCalled = true;
+                        return Task.CompletedTask;
+                    }
+                );
+
+            return (requestInfo, nextCalled);
+        }
+
+        private static void ShouldBeForbiddenWithoutNext(RequestInfo requestInfo, bool nextCalled)
+        {
+            nextCalled.Should().BeFalse();
+            requestInfo.FrontendResponse.StatusCode.Should().Be(403);
+            requestInfo.FrontendResponse.Body!["type"]!
+                .GetValue<string>()
+                .Should()
+                .Be("urn:ed-fi:api:security:authorization:");
+            Errors(requestInfo).Should().BeEmpty();
+        }
+
+        [TestCase(ProjectionClaimUri)]
+        [TestCase("http://ed-fi.org/identity/claims/services/EducationOrganizationProjection")]
+        [TestCase("HTTP://ED-FI.ORG/IDENTITY/CLAIMS/SERVICES/EDUCATIONORGANIZATIONPROJECTION")]
+        public async Task It_authorizes_the_canonical_name_and_its_letter_case_variants(string claimUri)
+        {
+            (RequestInfo requestInfo, bool nextCalled) = await Execute(ReadClaim(claimUri));
+
+            nextCalled.Should().BeTrue();
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+        }
+
+        [Test]
+        public void It_uses_a_name_that_a_culture_aware_comparison_takes_for_the_claim() =>
+            string.Equals(SoftHyphenClaimUri, ProjectionClaimUri, StringComparison.InvariantCultureIgnoreCase)
+                .Should()
+                .BeTrue("the regression needs a name the shared culture-aware comparison would match");
+
+        [Test]
+        public async Task It_forbids_a_distinct_claim_containing_a_soft_hyphen()
+        {
+            (RequestInfo requestInfo, bool nextCalled) = await Execute(ReadClaim(SoftHyphenClaimUri));
+
+            ShouldBeForbiddenWithoutNext(requestInfo, nextCalled);
+        }
+
+        [Test]
+        public async Task It_forbids_it_when_the_genuine_claim_is_present_but_not_granted_Read()
+        {
+            (RequestInfo requestInfo, bool nextCalled) = await Execute(
+                ProjectionResourceClaim(
+                    "Create",
+                    AuthorizationStrategyNameConstants.NoFurtherAuthorizationRequired
+                ),
+                ReadClaim(SoftHyphenClaimUri)
+            );
+
+            ShouldBeForbiddenWithoutNext(requestInfo, nextCalled);
+        }
+
+        [Test]
+        public void It_keeps_the_shared_comparison_for_the_identity_requirement() =>
+            ServiceClaimRequirement.Identity.ClaimNameComparison.Should().BeNull();
+    }
+
     [TestFixture]
     [Parallelizable]
     public class Given_The_Identity_Requirement_And_A_Claim_Set_Granting_Only_The_Projection_Claim

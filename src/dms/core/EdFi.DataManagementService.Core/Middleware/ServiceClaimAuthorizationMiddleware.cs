@@ -32,6 +32,18 @@ internal sealed record ServiceClaimRequirement(
 )
 {
     /// <summary>
+    /// How a claim set's resource-claim name is compared with <see cref="ClaimUri" />. <c>null</c>
+    /// keeps the shared <see cref="ClaimSetExtensions.FindMatchingResourceClaims" /> comparison.
+    /// </summary>
+    public StringComparison? ClaimNameComparison { get; init; }
+
+    /// <summary>The claim set's resource claims whose name matches <see cref="ClaimUri" />.</summary>
+    public ResourceClaim[] FindMatchingClaims(ClaimSet claimSet) =>
+        ClaimNameComparison is { } comparison
+            ? [.. claimSet.ResourceClaims.Where(claim => string.Equals(claim.Name, ClaimUri, comparison))]
+            : claimSet.FindMatchingResourceClaims(ClaimUri);
+
+    /// <summary>
     /// The <c>http://ed-fi.org/identity/claims/services/identity</c> claim. The required action is
     /// <c>Create</c> for <see cref="IdentityOperation.Create" /> and <c>Read</c> for every other identity
     /// operation - <c>Update</c> is never consulted, so a claim set granting only <c>Update</c> on the
@@ -47,10 +59,15 @@ internal sealed record ServiceClaimRequirement(
 
     /// <summary>
     /// The <see cref="Conventions.EducationOrganizationProjectionServiceClaimUri" /> claim; every
-    /// projection request requires <c>Read</c>.
+    /// projection request requires <c>Read</c>. The claim name matches ordinally ignoring case, as CMS
+    /// resolves claim names, so a distinct claim whose name differs only by a character a culture-aware
+    /// comparison ignores (such as U+00AD) does not authorize the projection.
     /// </summary>
     public static ServiceClaimRequirement EducationOrganizationProjection { get; } =
-        new(Conventions.EducationOrganizationProjectionServiceClaimUri, static _ => "Read", "service claim");
+        new(Conventions.EducationOrganizationProjectionServiceClaimUri, static _ => "Read", "service claim")
+        {
+            ClaimNameComparison = StringComparison.OrdinalIgnoreCase,
+        };
 }
 
 /// <summary>
@@ -128,7 +145,7 @@ internal sealed class ServiceClaimAuthorizationMiddleware(
                 throw new UnreachableException("Unknown claim-set resolution result.");
         }
 
-        ResourceClaim[] matchingClaims = claimSet.FindMatchingResourceClaims(requirement.ClaimUri);
+        ResourceClaim[] matchingClaims = requirement.FindMatchingClaims(claimSet);
 
         ResourceClaim[] authorizedActions = matchingClaims
             .Where(claim => string.Equals(claim.Action, requiredAction, StringComparison.OrdinalIgnoreCase))
