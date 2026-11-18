@@ -26,11 +26,12 @@ The measured revision predates the review changes that followed it: the reduced 
 by the compiler's own UPDATE emitter, resolved once per root plan, and bound with only its own parameters
 on the standalone transport. Rather than repeating the campaign, the branch's final code was checked
 against it with one short block (`run-block.sh changed 1 <order> 0 5`, the campaign's harness, a fresh
-restore). For each of the five resources, the root UPDATE Query Store recorded on the final code,
-parameter declaration included, is identical to one the campaign recorded in every one of its six
-changed blocks. Each resource's campaign captures share a single statement body and parameter list;
-they differ only in `nvarchar` parameter lengths, which vary with the values sent. The final code
-therefore sends SQL Server the same statements the campaign measured.
+restore). The short run recorded one root UPDATE text and parameter declaration per resource, and for
+each of the five resources that text is identical to one the campaign recorded in every one of its six
+changed blocks. The campaign recorded more variants, because parameter declarations follow the values
+sent: `nvarchar` lengths vary, and `repeatGradeIndicator` and `officialAttendancePeriod` are declared
+`bit` when a PUT sets them and `nvarchar(4000)` when it clears them. The short run only set those two
+fields, so the cleared variants were not compared on the final code.
 
 | Resource | Median ms (baseline → changed) | p95 ms | Pairs with lower median | Regression threshold |
 | --- | --- | --- | --- | --- |
@@ -65,7 +66,7 @@ Inclusive per-execution averages of the root `UPDATE [edfi].[<Table>]` statement
 requests (Query Store statement figures, which may include nested trigger work), mean of the six blocks
 per arm. The execution delta was exactly 300 in every block and resource.
 
-| Resource | Duration µs | CPU µs | Logical reads | Distinct plans | Compiles in measured window |
+| Resource | Duration µs | CPU µs | Logical reads | Distinct plans including warmup | Compiles in measured window |
 | --- | --- | --- | --- | --- | --- |
 | sessions | 6,005 → 539 | 5,992 → 530 | 94.3 → 54.3 | 2 → 1 | 0 → 0 |
 | courseOfferings | 4,279 → 565 | 4,273 → 562 | 82.5 → 54.5 | 24 → 12 | 14 → 6 |
