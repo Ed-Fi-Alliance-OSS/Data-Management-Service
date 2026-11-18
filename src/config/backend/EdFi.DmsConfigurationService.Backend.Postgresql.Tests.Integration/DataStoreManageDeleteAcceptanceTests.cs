@@ -7,6 +7,7 @@ using System.Data;
 using System.Data.Common;
 using System.Text.Json;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -310,6 +311,73 @@ public partial class Given_data_store_namespace_reservations
             .Should()
             .BeOfType<DataStoreManageDeleteResult.NotFound>();
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageDeleteAcceptance")]
+    public async Task It_refuses_delete_while_ready_for_another_target_provider_without_mutation(
+        [Values(false, true)] bool multitenant,
+        [Values("postgresql", "mssql")] string storedProvider
+    )
+    {
+        long? tenant = multitenant ? await Tenant("selected") : null;
+        var seed = await SeedDeleteAcceptance(tenant);
+        await using var connection = await Open();
+        if (storedProvider == "mssql")
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."DataStoreManage" SET "EndpointDescriptor" = @Endpoint WHERE "Id" = @Id;""",
+                new
+                {
+                    seed.Id,
+                    Endpoint = new ManagedDataStoreEndpoint(
+                        "mssql",
+                        "tcp",
+                        "db.example.test",
+                        1433,
+                        null,
+                        "master"
+                    ).CanonicalEncoding,
+                }
+            );
+        }
+        string before = await DeleteAcceptanceSnapshot();
+        var refusing = new EnqueuerDecorator(
+            (_, _, _) => throw new AssertionException("Refused delete must not enqueue.")
+        );
+        // The CMS persistence provider is independent of the target: the record's own target decides.
+        (
+            await ManagedRepository(
+                    refusing,
+                    tenant,
+                    ReadyFor(storedProvider == "postgresql" ? "mssql" : "postgresql")
+                )
+                .AcceptDeleteAsync(seed.Id, default)
+        )
+            .Should()
+            .BeOfType<DataStoreManageDeleteResult.ProvisioningUnavailable>();
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+
+        using var services = AcceptanceServices(tenant);
+        var rowBefore = await DeleteRow(connection, seed.Id);
+        var accepted = (
+            await ManagedRepository(
+                    services.GetRequiredService<IJobEnqueuer>(),
+                    tenant,
+                    ReadyFor(storedProvider)
+                )
+                .AcceptDeleteAsync(seed.Id, default)
+        )
+            .Should()
+            .BeOfType<DataStoreManageDeleteResult.Success>()
+            .Subject;
+        await AssertAcceptedDelete(connection, seed.Id, tenant, accepted.JobId, rowBefore);
+    }
+
+    private static DmsDataStoreProvisionerReadiness ReadyFor(string provider)
+    {
+        DmsDataStoreProvisionerReadiness readiness = new();
+        readiness.Record(new DmsProvisionerReadiness.Ready(provider, DateTimeOffset.UtcNow));
+        return readiness;
     }
 
     [Test, Category("DataStoreManageDeleteAcceptance")]

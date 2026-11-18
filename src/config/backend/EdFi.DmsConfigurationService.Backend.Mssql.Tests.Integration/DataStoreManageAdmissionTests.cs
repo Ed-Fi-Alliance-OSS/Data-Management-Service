@@ -173,8 +173,12 @@ public partial class Given_data_store_namespace_reservations
     {
         await CompleteAdmissionJob(created.Claim);
         using var services = AcceptanceServices();
+        // The provisioner is ready for the seeded record's own target provider.
         var accepted = (
-            await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
+            await ManagedRepository(
+                    services.GetRequiredService<IJobEnqueuer>(),
+                    readiness: ReadyFor(created.Command.Identity.Endpoint.Provider)
+                )
                 .AcceptDeleteAsync(created.Command.Id, default)
         )
             .Should()

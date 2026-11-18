@@ -48,9 +48,10 @@ public static class ManagedDataStoreStartup
             provider,
             services
         );
-        // Only literal destinations are compared; secret-dependent routing is left to the operation-time
-        // guard, which compares the resolved runtime snapshot with the persisted administrative endpoint.
-        if (admin is not null && runtime is not null && admin != runtime)
+        // Only components both settings make known without resolving a secret are compared. The rest is
+        // left to the operation-time guard, which compares the resolved runtime snapshot with the persisted
+        // administrative endpoint.
+        if (admin is not null && runtime is not null && admin.ProvablyDiffersFrom(runtime))
         {
             Fail(
                 "DmsDataStoreProvisioning:AdminConnectionString and DataStoreManagement:RuntimeConnectionString must name the same canonical target endpoint (host and port, or named instance). Credentials and database names may differ."
@@ -58,8 +59,28 @@ public static class ManagedDataStoreStartup
         }
     }
 
-    /// <returns>The canonical endpoint, or null when the effective routing depends on a secret.</returns>
-    private static ManagedDataStoreEndpoint? ValidateConnection(
+    /// <summary>
+    /// The statically known destination. When <paramref name="PortOrInstanceKnown"/> is false, the effective
+    /// port or named instance depends on a secret and the endpoint carries only a parser representative for it.
+    /// </summary>
+    private sealed record KnownEndpoint(ManagedDataStoreEndpoint Endpoint, bool PortOrInstanceKnown)
+    {
+        public bool ProvablyDiffersFrom(KnownEndpoint other) =>
+            PortOrInstanceKnown && other.PortOrInstanceKnown
+                ? Endpoint != other.Endpoint
+                : WithoutPortOrInstance(Endpoint) != WithoutPortOrInstance(other.Endpoint);
+
+        // Representatives are never compared as real values.
+        private static ManagedDataStoreEndpoint WithoutPortOrInstance(ManagedDataStoreEndpoint endpoint) =>
+            endpoint with
+            {
+                Port = null,
+                Instance = null,
+            };
+    }
+
+    /// <returns>The known endpoint, or null when the effective host depends on a secret.</returns>
+    private static KnownEndpoint? ValidateConnection(
         string? value,
         string key,
         IManagedDataStoreRuntimeConnectionProvider provider,
@@ -79,6 +100,7 @@ public static class ManagedDataStoreStartup
         {
             bool routingUnknown = false;
             bool portUnknown = false;
+            bool suffixUnknown = false;
             // References occur in individual values. Do not resolve them at this static boundary or
             // parse a token in a typed field (e.g. Port) with a driver before substitution.
             if (hasReferences)
@@ -137,6 +159,13 @@ public static class ManagedDataStoreStartup
                 string locator = (string?)literalFields[routingField] ?? string.Empty;
                 // The native builder has applied aliases and last-assignment precedence to this template.
                 routingUnknown = SecretReferenceTokens.Find(locator).Count != 0;
+                if (routingUnknown && provider.Provider == "mssql" && HasLiteralServer(locator))
+                {
+                    // Only the port or instance after a literal "tcp:host" and its separator is unknown.
+                    // A reference inside a PostgreSQL host could add routing syntax, so none is compared.
+                    routingUnknown = false;
+                    suffixUnknown = true;
+                }
                 literalFields[routingField] = StaticLocator(locator, provider.Provider == "postgresql");
                 value = literalFields.ConnectionString;
             }
@@ -148,16 +177,22 @@ public static class ManagedDataStoreStartup
             {
                 return null;
             }
+            if (suffixUnknown)
+            {
+                return new(endpoint, PortOrInstanceKnown: false);
+            }
             if (portUnknown)
             {
-                // A literal inline host port overrides Port; otherwise the representative port decided it.
+                // A literal inline host port overrides Port; otherwise the representative port decided it,
+                // and only the literal host is known.
                 var alternative = provider.CreateBuilder(value);
                 alternative["Port"] = endpoint.Port == 1 ? 2 : 1;
-                return provider.TryParse(alternative.ConnectionString, out var other) && other == endpoint
-                    ? endpoint
-                    : null;
+                return new(
+                    endpoint,
+                    provider.TryParse(alternative.ConnectionString, out var other) && other == endpoint
+                );
             }
-            return endpoint;
+            return new(endpoint, PortOrInstanceKnown: true);
         }
         catch (Exception exception)
             when (exception is ArgumentException or FormatException or OverflowException)
@@ -188,6 +223,17 @@ public static class ManagedDataStoreStartup
             "\\A" + Regex.Escape(MaskReferences(value)).Replace(Unknown.ToString(), ".*") + "\\z",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.NonBacktracking
         );
+
+    /// <summary>
+    /// SQL Server only: true when every reference follows the first port or instance separator, so the protocol
+    /// prefix and host before it are literal. <see cref="StaticLocator"/> still validates the whole locator.
+    /// </summary>
+    private static bool HasLiteralServer(string locator)
+    {
+        string masked = MaskReferences(locator).Trim();
+        int separator = masked.IndexOfAny([',', '\\']);
+        return separator > 0 && !masked[..separator].Contains(Unknown);
+    }
 
     private static string StaticLocator(string value, bool postgresql)
     {

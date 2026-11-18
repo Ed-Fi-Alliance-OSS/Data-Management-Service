@@ -270,7 +270,7 @@ public partial class Given_data_store_namespace_reservations
 
     [Test, Category("DataStoreManageTerminalOutcome")]
     public async Task It_terminal_preserves_created_deleted_and_newer_delete_operations(
-        [Values(false, true)] bool exhausted,
+        [Values("terminal", "managed-terminal", "exhausted")] string outcome,
         [Values("Created", "Deleted", "newer-delete")] string protectedState
     )
     {
@@ -302,7 +302,7 @@ public partial class Given_data_store_namespace_reservations
         }
         await using var connection = await Open();
         var before = await DeleteRow(connection, id);
-        await TerminalOrExhaust(claim, exhausted);
+        await TerminalOrExhaust(claim, outcome);
         (await DeleteRow(connection, id)).Should().BeEquivalentTo(before);
     }
 
@@ -408,29 +408,44 @@ public partial class Given_data_store_namespace_reservations
             .BeOfType<DataStoreManageGetResult.Success>();
     }
 
-    private async Task TerminalOrExhaust(ClaimedJob claim, bool exhausted)
+    private async Task TerminalOrExhaust(ClaimedJob claim, string outcome)
     {
         var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings);
-        if (!exhausted)
-        {
-            (await Terminal(repository, claim)).Should().BeOfType<JobWriteResult.Success>();
-            return;
-        }
         await using var connection = await Open();
-        await connection.ExecuteAsync(
-            """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE "Id" = @Id;""",
-            new { claim.Id }
-        );
         string otherJobs = await OtherJobs(connection, claim.Id);
-        // The operation's CMS success already committed, so its last attempt completes instead of failing.
-        (await repository.Exhaust(claim.AttemptCount, JobErrorCode.AttemptsExhausted, default))
-            .Should()
-            .Be(new JobExhaustResult.Success(0, 1));
-        await AssertSettled(connection, claim);
+        if (outcome == "exhausted")
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."Job" SET "LeaseExpiresAt" = (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second' WHERE "Id" = @Id;""",
+                new { claim.Id }
+            );
+            // The operation's CMS success already committed, so its last attempt completes instead of failing.
+            (await repository.Exhaust(claim.AttemptCount, JobErrorCode.AttemptsExhausted, default))
+                .Should()
+                .Be(new JobExhaustResult.Success(0, 1));
+        }
+        else
+        {
+            // A terminal write by the job's current owner, such as a final attempt whose tenant lookup failed
+            // before the handler ran, completes the committed operation instead of recording Error.
+            var result =
+                outcome == "terminal"
+                    ? await Terminal(repository, claim)
+                    : await repository.FailManaged(
+                        claim.Id,
+                        claim.LeaseOwner,
+                        claim.FencingToken,
+                        ManagedDataStoreFailure.FromJob(JobErrorCode.AttemptsExhausted),
+                        null,
+                        default
+                    );
+            result.Should().BeOfType<JobWriteResult.Success>().Which.SettledAsCompleted.Should().BeTrue();
+        }
+        await AssertSettled(connection, claim, fenced: outcome == "exhausted");
         (await OtherJobs(connection, claim.Id)).Should().Be(otherJobs);
     }
 
-    private async Task AssertSettled(DbConnection connection, ClaimedJob claim)
+    private async Task AssertSettled(DbConnection connection, ClaimedJob claim, bool fenced = true)
     {
         var job = await connection.QuerySingleAsync<(
             string Status,
@@ -446,7 +461,8 @@ public partial class Given_data_store_namespace_reservations
         job.Status.Should().Be("Completed");
         job.ErrorMessage.Should().BeNull();
         job.AttemptCount.Should().Be(claim.AttemptCount);
-        job.FencingToken.Should().Be(claim.FencingToken + 1);
+        // The exhaustion sweep advances the fence; the owner's own write keeps it.
+        job.FencingToken.Should().Be(claim.FencingToken + (fenced ? 1 : 0));
         job.LeaseOwner.Should().BeNull();
         job.FinishedAt.Should().NotBeNull();
         (
@@ -474,14 +490,18 @@ public partial class Given_data_store_namespace_reservations
         );
 
     [Test, Category("DataStoreManageTerminalOutcome")]
-    public async Task It_exhaustion_completes_only_the_exact_committed_operation(
+    public async Task It_terminal_or_exhaustion_completes_only_the_exact_committed_operation(
+        [Values(false, true)] bool exhausted,
         [Values("tenant", "job-case", "type", "unlinked")] string mismatch
     )
     {
         var creation = await SeedPublication();
         await PublicationRepository().PublishCreateAsync(creation.Command, creation.Execution, default);
         await using var connection = await Open();
-        await ExpireTerminalClaim(connection, creation.Claim);
+        if (exhausted)
+        {
+            await ExpireTerminalClaim(connection, creation.Claim);
+        }
         switch (mismatch)
         {
             case "tenant":
@@ -515,15 +535,22 @@ public partial class Given_data_store_namespace_reservations
                 break;
         }
         var before = await DeleteRow(connection, creation.Command.Id);
-        (
-            await new JobLeaseRepository(PublicationOptions, PublicationTimings).Exhaust(
-                1,
-                JobErrorCode.AttemptsExhausted,
-                default
-            )
-        )
-            .Should()
-            .Be(new JobExhaustResult.Success(1, 0));
+        var repository = new JobLeaseRepository(PublicationOptions, PublicationTimings);
+        if (exhausted)
+        {
+            (await repository.Exhaust(1, JobErrorCode.AttemptsExhausted, default))
+                .Should()
+                .Be(new JobExhaustResult.Success(1, 0));
+        }
+        else
+        {
+            // Without exact proof of the committed operation, a terminal write still fails the job.
+            (await Terminal(repository, creation.Claim))
+                .Should()
+                .BeOfType<JobWriteResult.Success>()
+                .Which.SettledAsCompleted.Should()
+                .BeFalse();
+        }
         (
             await connection.QuerySingleAsync<(string Status, string? ErrorMessage)>(
                 """SELECT "Status", "ErrorMessage" FROM dmscs."Job" WHERE "Id" = @Id;""",
@@ -531,7 +558,9 @@ public partial class Given_data_store_namespace_reservations
             )
         )
             .Should()
-            .Be(("Error", JobErrorCode.AttemptsExhausted.Message));
+            .Be(
+                ("Error", (exhausted ? JobErrorCode.AttemptsExhausted : JobErrorCode.InvalidPayload).Message)
+            );
         (await DeleteRow(connection, creation.Command.Id)).Should().BeEquivalentTo(before);
     }
 

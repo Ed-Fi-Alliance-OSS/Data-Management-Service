@@ -13,8 +13,14 @@ public record JobWriteResult
 {
     /// <summary>
     /// The write committed. <paramref name="NewLeaseExpiresAt"/> is set for a renewal.
+    /// <paramref name="SettledAsCompleted"/> is set when a terminal failure write found that the exact
+    /// operation's CMS success had already committed, and completed the job instead of failing it.
     /// </summary>
-    public record Success(DateTime? NewLeaseExpiresAt, DateTime DatabaseUtcNow) : JobWriteResult;
+    public record Success(
+        DateTime? NewLeaseExpiresAt,
+        DateTime DatabaseUtcNow,
+        bool SettledAsCompleted = false
+    ) : JobWriteResult;
 
     /// <summary>
     /// The guarded write matched no row: the lease expired, was reclaimed, or the token is stale.

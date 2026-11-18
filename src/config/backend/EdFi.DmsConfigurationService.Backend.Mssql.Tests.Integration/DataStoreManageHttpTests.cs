@@ -251,10 +251,18 @@ public partial class Given_data_store_namespace_reservations
         };
         string? expectedMessage = status switch
         {
-            "PendingCreate" or "CreateInProgress" => "The data store is still being created.",
-            "CreateFailed" or "CreateError" => "Data store creation has failed.",
-            "PendingDelete" or "DeleteInProgress" => "The data store is already being deleted.",
-            "DeleteFailed" or "DeleteError" => "Data store deletion has failed.",
+            "PendingCreate" => "The data store is queued to be created (PendingCreate).",
+            "CreateInProgress" => "The data store is being created (CreateInProgress).",
+            "CreateFailed" =>
+                "Data store creation failed and is eligible for an automatic retry (CreateFailed).",
+            "CreateError" =>
+                "Data store creation failed and will not be retried; operator investigation is required (CreateError).",
+            "PendingDelete" => "The data store is queued to be deleted (PendingDelete).",
+            "DeleteInProgress" => "The data store is being deleted (DeleteInProgress).",
+            "DeleteFailed" =>
+                "Data store deletion failed and is eligible for an automatic retry (DeleteFailed).",
+            "DeleteError" =>
+                "Data store deletion failed and will not be retried; operator investigation is required (DeleteError).",
             _ => null,
         };
         using var response = await client.DeleteAsync($"/v3/dataStores/manage/{requestedId}");

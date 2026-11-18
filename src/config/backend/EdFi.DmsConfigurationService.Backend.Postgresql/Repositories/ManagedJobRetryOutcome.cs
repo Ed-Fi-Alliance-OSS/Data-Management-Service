@@ -25,9 +25,13 @@ internal static class ManagedJobRetryOutcome
         DateTime DatabaseUtcNow
     );
 
-    internal sealed record Target(int Id, int Attempt, string Status);
+    /// <summary>
+    /// The locked aggregate a retry or terminal write projects onto. <paramref name="Settled"/> means the exact
+    /// operation's CMS success already committed: the job completes and the aggregate is left unchanged.
+    /// </summary>
+    internal sealed record Target(int Id, int Attempt, string Status, bool Settled = false);
 
-    private sealed record Aggregate(int Id, int LastAttempt);
+    private sealed record Aggregate(int Id, int LastAttempt, string Status);
 
     private sealed record ExhaustedAggregate(int Id, string JobId, int LastAttempt, string Status);
 
@@ -57,13 +61,23 @@ internal static class ManagedJobRetryOutcome
                 session.Connection.QuerySingleOrDefaultAsync<Aggregate>(
                     PostgresqlJobSession.Command(
                         session,
+                        // A terminal write also matches the exact operation's committed success, with the
+                        // evidence the exhaustion sweep requires (WriteExhaustedAsync).
                         """
-                        SELECT "Id", "LastAttempt" FROM dmscs."DataStoreManage"
+                        SELECT "Id", "LastAttempt", "Status" FROM dmscs."DataStoreManage"
                         WHERE ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL))
-                          AND ((@IsCreate AND "CreateJobId" = @JobId COLLATE "C" AND "DeleteJobId" IS NULL
-                                AND "Status" IN ('PendingCreate', 'CreateInProgress', 'CreateFailed'))
+                          AND ((@IsCreate AND "CreateJobId" = @JobId COLLATE "C"
+                                AND (("DeleteJobId" IS NULL
+                                      AND "Status" IN ('PendingCreate', 'CreateInProgress', 'CreateFailed'))
+                                  OR (@Terminal AND "HistoricalDataStoreId" IS NOT NULL
+                                      AND (("DeleteJobId" IS NULL AND "Status" = 'Created' AND "DataStoreId" IS NOT NULL)
+                                        OR ("DeleteJobId" IS NOT NULL
+                                            AND "Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed',
+                                                'DeleteError', 'Deleted'))))))
                             OR (NOT @IsCreate AND "DeleteJobId" = @JobId COLLATE "C"
-                                AND "Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed')))
+                                AND ("Status" IN ('PendingDelete', 'DeleteInProgress', 'DeleteFailed')
+                                  OR (@Terminal AND "Status" = 'Deleted' AND "DeletedAt" IS NOT NULL
+                                      AND "DataStoreId" IS NULL))))
                         FOR UPDATE;
                         """,
                         new
@@ -71,6 +85,7 @@ internal static class ManagedJobRetryOutcome
                             job.TenantId,
                             job.JobId,
                             IsCreate = isCreate,
+                            Terminal = terminal,
                         },
                         budget,
                         token
@@ -83,14 +98,18 @@ internal static class ManagedJobRetryOutcome
         {
             return null;
         }
-        if (job.AttemptCount <= 0 || job.AttemptCount < aggregate.LastAttempt)
+        if (
+            job.AttemptCount <= 0
+            || (IsOwnPhase(job.JobType, aggregate.Status) && job.AttemptCount < aggregate.LastAttempt)
+        )
         {
             throw new InvalidOperationException("The managed job attempt is inconsistent.");
         }
         return new(
             aggregate.Id,
             job.AttemptCount,
-            (isCreate ? "Create" : "Delete") + (terminal ? "Error" : "Failed")
+            (isCreate ? "Create" : "Delete") + (terminal ? "Error" : "Failed"),
+            IsCommittedSuccess(job.JobType, aggregate.Status)
         );
     }
 
@@ -252,7 +271,7 @@ internal static class ManagedJobRetryOutcome
                 aggregate =>
                     managedJobs[aggregate.JobId].AttemptCount <= 0
                     || (
-                        IsOwnPhase(managedJobs[aggregate.JobId], aggregate.Status)
+                        IsOwnPhase(managedJobs[aggregate.JobId].JobType, aggregate.Status)
                         && managedJobs[aggregate.JobId].AttemptCount < aggregate.LastAttempt
                     )
             )
@@ -261,11 +280,11 @@ internal static class ManagedJobRetryOutcome
             throw new InvalidOperationException("The managed job attempt is inconsistent.");
         }
         var settled = aggregates
-            .Where(aggregate => IsCommittedSuccess(managedJobs[aggregate.JobId], aggregate.Status))
+            .Where(aggregate => IsCommittedSuccess(managedJobs[aggregate.JobId].JobType, aggregate.Status))
             .Select(aggregate => aggregate.JobId)
             .ToArray();
         var unfinished = aggregates
-            .Where(aggregate => !IsCommittedSuccess(managedJobs[aggregate.JobId], aggregate.Status))
+            .Where(aggregate => !IsCommittedSuccess(managedJobs[aggregate.JobId].JobType, aggregate.Status))
             .ToArray();
         if (settled.Length > 0)
         {
@@ -346,13 +365,13 @@ internal static class ManagedJobRetryOutcome
         return settled.Length;
     }
 
-    private static bool IsCommittedSuccess(ExhaustedJob job, string status) =>
-        job.JobType == ManagedJobTypes.Create
+    private static bool IsCommittedSuccess(string jobType, string status) =>
+        jobType == ManagedJobTypes.Create
             ? status is not ("PendingCreate" or "CreateInProgress" or "CreateFailed")
             : status == "Deleted";
 
     // A create's attempt history is replaced when a delete is accepted.
-    private static bool IsOwnPhase(ExhaustedJob job, string status) =>
-        job.JobType != ManagedJobTypes.Create
+    private static bool IsOwnPhase(string jobType, string status) =>
+        jobType != ManagedJobTypes.Create
         || status is "PendingCreate" or "CreateInProgress" or "CreateFailed" or "Created";
 }

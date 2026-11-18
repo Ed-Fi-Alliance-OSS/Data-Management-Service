@@ -332,6 +332,23 @@ public partial class DmsDataStoreProvisioningStartupTests
                     "Host=db.example:5433",
                     "Host=db.example:5434;Port=${secret:port};Password=${secret:runtime}"
                 ),
+                // A secret port cannot reconcile different literal hosts, in either setting.
+                (
+                    "postgresql",
+                    "Host=db-a.example",
+                    "Host=db-b.example;Port=${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "postgresql",
+                    "Host=db-a.example;Port=${secret:port};Password=${secret:admin}",
+                    "Host=db-b.example;Port=5432"
+                ),
+                (
+                    "postgresql",
+                    "Host=db-a.example;Port=${secret:adminPort}",
+                    "Server=db-b.example;Port=${secret:runtimePort}"
+                ),
+                ("postgresql", "Host=db.example", "Host=/var/run/postgresql;Port=${secret:port}"),
                 (
                     "mssql",
                     "Server=tcp:admin-db.example,1433;User ID=admin;Password=admin-only",
@@ -355,6 +372,22 @@ public partial class DmsDataStoreProvisioningStartupTests
                     "mssql",
                     "Server=tcp:db.example,1433",
                     "Server=${secret:server};Data Source=tcp:other.example,1433;Password=${secret:runtime}"
+                ),
+                // A secret after the literal port or instance separator cannot change the host.
+                (
+                    "mssql",
+                    "Server=tcp:db-a.example,1433",
+                    "Server=tcp:db-b.example,${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db-a.example\\one",
+                    "Server=tcp:db-b.example\\${secret:instance};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db-a.example,${secret:port};Password=${secret:admin}",
+                    "Server=tcp:db-b.example,1433"
                 ),
             ];
             for (int index = 0; index < cases.Length; index++)
@@ -428,9 +461,22 @@ public partial class DmsDataStoreProvisioningStartupTests
                 ),
                 ("postgresql", "Host=${secret:host};Password=${secret:admin}", "Host=db.example;Port=5433"),
                 (
+                    "postgresql",
+                    "Host=db.example;Port=${secret:adminPort}",
+                    "Host=DB.EXAMPLE;Port=${secret:runtimePort}"
+                ),
+                // A reference inside a PostgreSQL host can add routing syntax (here an IPv6 address
+                // reaching the administrative host), so no part of that host is compared.
+                ("postgresql", "Host=fe80::1", "Host=fe80:${secret:rest};Password=${secret:runtime}"),
+                (
                     "mssql",
                     "Server=tcp:db.example,1434",
                     "Server=tcp:db.example,${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db.example,${secret:port};Password=${secret:admin}",
+                    "Server=tcp:DB.example,1434"
                 ),
                 (
                     "mssql",
@@ -470,9 +516,14 @@ public partial class DmsDataStoreProvisioningStartupTests
             Fake.GetCalls(resolver).Should().BeEmpty();
         }
 
-        [TestCase("postgresql"), TestCase("mssql")]
-        public void It_refuses_to_start_with_a_known_endpoint_mismatch(string target)
+        [Test]
+        public void It_refuses_to_start_with_a_known_endpoint_mismatch(
+            [Values("postgresql", "mssql")] string target,
+            [Values(false, true)] bool secretPort
+        )
         {
+            var resolver = A.Fake<ISecretResolver>();
+            string port = secretPort ? "${secret:port}" : "1";
             using var host = Host(
                 "true",
                 true,
@@ -481,9 +532,10 @@ public partial class DmsDataStoreProvisioningStartupTests
                 {
                     ["DataStoreManagement:RuntimeConnectionString"] =
                         target == "postgresql"
-                            ? "Host=runtime-db.example;Port=1;Username=runtime;Password=test-only"
-                            : "Server=tcp:runtime-db.example,1;User ID=runtime;Password=test-only",
-                }
+                            ? $"Host=runtime-db.example;Port={port};Username=runtime;Password=test-only"
+                            : $"Server=tcp:runtime-db.example,{port};User ID=runtime;Password=test-only",
+                },
+                configure: services => services.AddSingleton(resolver)
             );
             var error = StartupExceptionFor(host);
             error.Should().NotBeNull();
@@ -492,7 +544,9 @@ public partial class DmsDataStoreProvisioningStartupTests
                 .Should()
                 .Contain(EndpointMismatch)
                 .And.NotContain("runtime-db.example")
-                .And.NotContain("test-only");
+                .And.NotContain("test-only")
+                .And.NotContain("${secret");
+            Fake.GetCalls(resolver).Should().BeEmpty();
         }
 
         [TestCase("postgresql"), TestCase("mssql")]

@@ -601,6 +601,14 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 );
             }
 
+            // A terminal write for an operation whose exact CMS success already committed completes the job
+            // under the same ownership predicate instead, and leaves the aggregate as that success left it.
+            bool settled = retryTarget is { Settled: true };
+            if (settled)
+            {
+                guardedUpdateSql = CompleteSql;
+            }
+
             // Sample ownership again after any catalog gate or aggregate lock wait.
             guardedWriteSent = true;
             WrittenRow? written = await session.RunAsync(
@@ -617,7 +625,7 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
                 return new JobWriteResult.OwnershipLost();
             }
 
-            if (retryTarget is not null)
+            if (retryTarget is not null && !settled)
             {
                 await ManagedJobRetryOutcome.WriteAsync(
                     session,
@@ -639,7 +647,8 @@ public sealed class JobLeaseRepository(IOptions<DatabaseOptions> databaseOptions
             await MssqlJobSession.ExecuteAsync(session, "Commit", CommitStatement, budget, cancellationToken);
             return new JobWriteResult.Success(
                 written.LeaseExpiresAt is { } leaseExpiresAt ? AsUtc(leaseExpiresAt) : null,
-                AsUtc(written.DatabaseUtcNow)
+                AsUtc(written.DatabaseUtcNow),
+                settled
             );
         }
         catch (Exception exception)

@@ -291,8 +291,9 @@ public partial class Given_data_store_namespace_reservations
         var seed = await SeedPublication(provider: "mssql");
         await PublicationRepository().PublishCreateAsync(seed.Command, seed.Execution, default);
         await using var services = AcceptanceServices();
+        // The provisioner is ready for the seeded record's own target provider.
         (
-            await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
+            await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), readiness: ReadyFor("mssql"))
                 .AcceptDeleteAsync(seed.Command.Id, default)
         )
             .Should()

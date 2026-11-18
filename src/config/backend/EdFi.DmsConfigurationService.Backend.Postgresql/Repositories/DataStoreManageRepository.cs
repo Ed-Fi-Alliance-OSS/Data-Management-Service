@@ -304,10 +304,14 @@ public sealed partial class DataStoreManageRepository(
             await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
             await DataStoreCatalog.AcquireTenantGateAsync(transaction, tenantId, cancellationToken);
             var parameters = new { Id = id, TenantId = tenantId };
-            var row = await connection.QuerySingleOrDefaultAsync<(string? Status, int? DataStoreId)>(
+            var row = await connection.QuerySingleOrDefaultAsync<(
+                string? Status,
+                int? DataStoreId,
+                string? EndpointDescriptor
+            )>(
                 new CommandDefinition(
                     """
-                    SELECT "Status", "DataStoreId" FROM dmscs."DataStoreManage"
+                    SELECT "Status", "DataStoreId", "EndpointDescriptor" FROM dmscs."DataStoreManage"
                     WHERE "Id" = @Id AND ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL)) FOR UPDATE;
                     """,
                     parameters,
@@ -348,8 +352,14 @@ public sealed partial class DataStoreManageRepository(
             {
                 throw new InvalidOperationException("The current managed data store link is invalid.");
             }
-            // State/tenant outcomes take precedence. Check the latched gate immediately before writing.
-            if (readiness.Current is not DmsProvisionerReadiness.Ready)
+            // State/tenant outcomes take precedence. Check the latched gate immediately before writing: it must
+            // be Ready for this record's own target provider, which is independent of the CMS persistence
+            // provider. Execution still verifies the endpoint and ownership; this is not proof of the same host.
+            if (
+                readiness.Current is not DmsProvisionerReadiness.Ready ready
+                || ready.Provider
+                    != ManagedDataStoreEndpoint.FromCanonicalEncoding(row.EndpointDescriptor!).Provider
+            )
             {
                 return new DataStoreManageDeleteResult.ProvisioningUnavailable();
             }

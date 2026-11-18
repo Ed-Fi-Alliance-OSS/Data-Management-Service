@@ -855,6 +855,59 @@ public class JobExecutorTests
     }
 
     /// <summary>
+    /// A successor reclaims the final attempt of a job whose operation already committed, and the tenant
+    /// lookup fails before the handler runs. The terminal write finds that committed success and completes
+    /// the job instead, and the execution reports the completion the database holds.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_final_attempt_tenant_lookup_failure_after_the_operation_committed
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness(multiTenancy: true);
+            _harness.Tenants.Fails = true;
+            _harness.Leases.OutcomeResult = _ =>
+                Task.FromResult<JobWriteResult>(
+                    new JobWriteResult.Success(null, DateTime.UtcNow, SettledAsCompleted: true)
+                );
+            _result = await _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(attemptCount: ExecutorHarness.MaxAttempts, tenantId: 7, reclaimed: true),
+                CancellationToken.None
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_requests_the_terminal_write_without_running_the_handler()
+        {
+            _harness.Script.Resolutions.Should().Be(0);
+            _harness
+                .Leases.OutcomeWrites.Should()
+                .Equal(
+                    $"FailTerminal:{JobErrorCode.AttemptsExhausted.Code}:{JobErrorCode.AttemptsExhausted.Message}"
+                );
+        }
+
+        [Test]
+        public void It_reports_and_logs_a_completion()
+        {
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.Completed));
+            LogEntry outcome = _harness.Logger.Entries.Last();
+            outcome.EventId.Name.Should().Be("JobCompleted");
+            outcome.Level.Should().Be(LogLevel.Information);
+            outcome.Field("Outcome").Should().Be(JobExecutionOutcome.Completed);
+            outcome.Field("JobErrorCode").Should().BeNull();
+            _harness.Logger.Entries.Should().NotContain(entry => entry.EventId.Name == "JobFailed");
+        }
+    }
+
+    /// <summary>
     /// Settings that pass startup validation with no slack (12 + 12 + 1 + 5 + 6 + 10 = 46 s), and a lease the scripted
     /// repository models by time: a renewal succeeds only before the current expiry and then extends it.
     /// </summary>

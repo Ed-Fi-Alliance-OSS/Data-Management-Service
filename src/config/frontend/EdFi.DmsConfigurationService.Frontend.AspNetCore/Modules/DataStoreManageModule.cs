@@ -318,16 +318,26 @@ public static class DataStoreManageModule
             DataStoreManageDeleteResult.ProvisioningUnavailable => Unavailable(context),
             DataStoreManageDeleteResult.InvalidState invalid => Invalid(
                 context,
+                // One fixed message per blocked state. Failed work remains eligible for an automatic retry
+                // (which waits while provisioning is paused); Error work is terminal.
                 invalid.Status switch
                 {
-                    ManagedDataStoreStatus.PendingCreate or ManagedDataStoreStatus.CreateInProgress =>
-                        "The data store is still being created.",
-                    ManagedDataStoreStatus.CreateFailed or ManagedDataStoreStatus.CreateError =>
-                        "Data store creation has failed.",
-                    ManagedDataStoreStatus.PendingDelete or ManagedDataStoreStatus.DeleteInProgress =>
-                        "The data store is already being deleted.",
-                    ManagedDataStoreStatus.DeleteFailed or ManagedDataStoreStatus.DeleteError =>
-                        "Data store deletion has failed.",
+                    ManagedDataStoreStatus.PendingCreate =>
+                        "The data store is queued to be created (PendingCreate).",
+                    ManagedDataStoreStatus.CreateInProgress =>
+                        "The data store is being created (CreateInProgress).",
+                    ManagedDataStoreStatus.CreateFailed =>
+                        "Data store creation failed and is eligible for an automatic retry (CreateFailed).",
+                    ManagedDataStoreStatus.CreateError =>
+                        "Data store creation failed and will not be retried; operator investigation is required (CreateError).",
+                    ManagedDataStoreStatus.PendingDelete =>
+                        "The data store is queued to be deleted (PendingDelete).",
+                    ManagedDataStoreStatus.DeleteInProgress =>
+                        "The data store is being deleted (DeleteInProgress).",
+                    ManagedDataStoreStatus.DeleteFailed =>
+                        "Data store deletion failed and is eligible for an automatic retry (DeleteFailed).",
+                    ManagedDataStoreStatus.DeleteError =>
+                        "Data store deletion failed and will not be retried; operator investigation is required (DeleteError).",
                     _ => "The data store cannot be deleted in its current state.",
                 }
             ),

@@ -24,7 +24,7 @@ Use consistent settings on every replica; the management policy and readiness ar
 | `DmsDataStoreProvisioning:Enabled` | Set true when management is enabled. The standalone provisioner defaults to false. |
 | `DmsDataStoreProvisioning:Provider` | Select `postgresql` or `mssql` for the target. SQL ordinary registrations use the DMS routing token `sqlserver`. |
 | Provisioner administrative connection, artifact catalog, trust and compatibility settings | Supply the administrative endpoint/permissions and genuine compatible Minimal/Sample packages. Follow the [provisioner configuration](CONFIGURATION.md#dmsdatastoreprovisioning) and [platform setup](OPERATIONS.md#configuration-service-dms-data-store-provisioning), including PostgreSQL tools or SQL Server shared staging. |
-| `DataStoreManagement:RuntimeConnectionString` | Supply a separate operator-managed runtime credential for the same canonical target endpoint; startup rejects literal endpoints that differ, and secret-dependent endpoints are checked when each operation runs. CMS never substitutes the administrative connection. |
+| `DataStoreManagement:RuntimeConnectionString` | Supply a separate operator-managed runtime credential for the same canonical target endpoint; startup rejects endpoints whose literal parts differ (the host, and the port or named instance when both settings state it), and parts that depend on a secret are checked when each operation runs. CMS never substitutes the administrative connection. |
 | Runtime principal and access | Arrange authentication and permissions for newly provisioned databases before enabling submissions. Qualify the intended DMS workload using the published runtime connection. CMS creates no production principal or grant. |
 | CMS connection encryption and DMS decryption | Preserve the existing ordinary catalog encryption configuration and DMS access to its corresponding key. Publication uses that boundary once. |
 
@@ -112,8 +112,8 @@ accepting, with target reservation spanning tenants.
 | Pending/unlinked create | All three linked fields (`dataStoreId`, `dataStoreName`, `databaseName`) are explicitly null until publication, including failed/error creates. |
 | DELETE of Created | **202** with a `jobQueuedResult` body, `{"jobId": "…", "message": "The Data Store has been queued to be deleted."}`, no Location. This accepts asynchronous deletion; it does not mean the physical database has already disappeared. |
 | DELETE of absent/Deleted | **404**; GET still returns a Deleted tombstone. |
-| DELETE in another lifecycle state | State-specific **400**, with no state/job mutation. State/not-found checks take precedence over readiness. |
-| Closed readiness | **503**, `Managed data store provisioning is unavailable.` for POST or otherwise eligible DELETE; no Retry-After or readiness detail. |
+| DELETE in another lifecycle state | State-specific **400** naming the state, with no state/job mutation. `CreateFailed`/`DeleteFailed` remain eligible for an automatic retry; `CreateError`/`DeleteError` will not be retried and need operator investigation. State/not-found checks take precedence over readiness. |
+| Closed readiness | **503**, `Managed data store provisioning is unavailable.` for POST or otherwise eligible DELETE, including a DELETE whose record targets a different provider than the one the provisioner is ready for; no Retry-After or readiness detail. |
 | Management disabled | Authorized managed requests, including reads, return **400**, `Data store management is disabled by AppSettings:EnableDataStoreManagement.` |
 | Ordinary PUT/DELETE of a currently linked managed registration | Atomic **409** with an absolute management URL, including while management is disabled. Use the managed lifecycle; do not bypass the guard. |
 
@@ -133,9 +133,10 @@ education-organization refresh. Deleted records retain historical linked fields.
 
 The durable job and matching lifecycle retry/terminal outcome commit together, including failures
 before handler execution. When `Created` or `Deleted` committed but the worker stopped before
-acknowledging the job, recovery completes that job (on its last attempt, the exhaustion sweep does)
-without repeating physical work, so the job and the record report the same success; a later accepted
-DELETE does not change this. If attempts are exhausted before the CMS success transaction commits,
+acknowledging the job, recovery completes that job without repeating physical work, including on its
+last attempt (whether the exhaustion sweep reaches it or that attempt itself fails, for example before
+its handler runs), so the job and the record report the same success; a later accepted DELETE does not
+change this. If attempts are exhausted before the CMS success transaction commits,
 physical success alone does not establish completion: the job ends in `Error` and the managed record
 in `CreateError`/`DeleteError`. Earlier attempts remain eligible for reconciliation. A transient
 physical outage after acceptance uses the existing job backoff
@@ -170,8 +171,13 @@ the pinned package and required trust/compatibility material available for recov
 allowlist/catalog entry does not repin accepted work. Endpoint/provider changes cannot redirect an
 existing operation. Credential-only rotation on the same canonical endpoint can be used on a later
 resolved operation; each operation binds its resolved snapshot through cleanup. Rotating a secret
-does not rewrite an already-published encrypted runtime snapshot. Aliases and server
-moves are not automatically equivalent endpoints. Live two-server rollover has **not** been tested.
+does not rewrite an already-published encrypted runtime snapshot, and neither does changing
+`DataStoreManagement:RuntimeConnectionString`, cache expiry or a restart: the
+[SecretsSettings rotation timing](CONFIGURATION.md#secretssettings) applies only to stored connection
+strings that keep their secret references. No API updates the credential of an existing managed data
+store, so revoking the credential it was published with leaves DMS unable to connect to it. Aliases
+and server moves are not automatically equivalent endpoints. Live two-server rollover has **not**
+been tested.
 
 For an incident, collect managed ID, tenant partition, lifecycle state, UTC observation times and safe
 correlation/job identifiers through authorized diagnostics. If a job ID is known, its secured

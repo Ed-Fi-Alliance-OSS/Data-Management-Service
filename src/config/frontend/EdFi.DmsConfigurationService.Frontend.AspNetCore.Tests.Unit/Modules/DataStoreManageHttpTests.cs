@@ -453,19 +453,39 @@ public class Given_managed_data_store_HTTP
         using var delete = await client.DeleteAsync("/v3/dataStores/manage/99");
         get.StatusCode.Should().Be(HttpStatusCode.NotFound);
         delete.StatusCode.Should().Be(HttpStatusCode.NotFound);
-        foreach (
-            var (status, expectedMessage) in new[]
-            {
-                (ManagedDataStoreStatus.PendingCreate, "The data store is still being created."),
-                (ManagedDataStoreStatus.CreateInProgress, "The data store is still being created."),
-                (ManagedDataStoreStatus.CreateFailed, "Data store creation has failed."),
-                (ManagedDataStoreStatus.CreateError, "Data store creation has failed."),
-                (ManagedDataStoreStatus.PendingDelete, "The data store is already being deleted."),
-                (ManagedDataStoreStatus.DeleteInProgress, "The data store is already being deleted."),
-                (ManagedDataStoreStatus.DeleteFailed, "Data store deletion has failed."),
-                (ManagedDataStoreStatus.DeleteError, "Data store deletion has failed."),
-            }
-        )
+        var blocked = new[]
+        {
+            (ManagedDataStoreStatus.PendingCreate, "The data store is queued to be created (PendingCreate)."),
+            (ManagedDataStoreStatus.CreateInProgress, "The data store is being created (CreateInProgress)."),
+            (
+                ManagedDataStoreStatus.CreateFailed,
+                "Data store creation failed and is eligible for an automatic retry (CreateFailed)."
+            ),
+            (
+                ManagedDataStoreStatus.CreateError,
+                "Data store creation failed and will not be retried; operator investigation is required (CreateError)."
+            ),
+            (ManagedDataStoreStatus.PendingDelete, "The data store is queued to be deleted (PendingDelete)."),
+            (ManagedDataStoreStatus.DeleteInProgress, "The data store is being deleted (DeleteInProgress)."),
+            (
+                ManagedDataStoreStatus.DeleteFailed,
+                "Data store deletion failed and is eligible for an automatic retry (DeleteFailed)."
+            ),
+            (
+                ManagedDataStoreStatus.DeleteError,
+                "Data store deletion failed and will not be retried; operator investigation is required (DeleteError)."
+            ),
+        };
+        // Every blocked lifecycle state, retryable Failed and terminal Error included, is distinguishable.
+        blocked.Select(pair => pair.Item2).Should().OnlyHaveUniqueItems();
+        blocked
+            .Select(pair => pair.Item1)
+            .Should()
+            .BeEquivalentTo(
+                Enum.GetValues<ManagedDataStoreStatus>()
+                    .Except([ManagedDataStoreStatus.Created, ManagedDataStoreStatus.Deleted])
+            );
+        foreach (var (status, expectedMessage) in blocked)
         {
             _delete = new DataStoreManageDeleteResult.InvalidState(status);
             using var response = await client.DeleteAsync("/v3/dataStores/manage/17");

@@ -303,6 +303,13 @@ public sealed class JobExecutor(
 
         switch (result)
         {
+            case JobWriteResult.Success { SettledAsCompleted: true }:
+                // The failure write found that this operation's CMS success had already committed and
+                // completed the job instead: the completion is the outcome the database holds.
+                ownership.TryMarkFinalized();
+                JobExecutionResult completed = new(JobExecutionOutcome.Completed);
+                LogOutcome(JobCompleted, job, completed, started, decision.Diagnostic);
+                return completed;
             case JobWriteResult.Success:
                 ownership.TryMarkFinalized();
                 LogOutcome(written, job, ifWritten, started, decision.Diagnostic);
