@@ -82,7 +82,9 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
 
     /// <summary>
     /// Handles the discovery API request and returns metadata about the data store.
-    /// When multi-tenancy is enabled and a tenant is provided, validates the tenant exists.
+    /// When multi-tenancy is enabled and a tenant is provided, validates the tenant exists: a tenant
+    /// confirmed absent is a 404, and one whose existence the Configuration Service could not settle
+    /// is a 503, so a client can retry it.
     /// </summary>
     private static async Task BuildDiscoveryResponse(
         HttpContext httpContext,
@@ -100,8 +102,11 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             string? tenant = ExtractTenantFromRoute(httpContext);
             if (tenant != null)
             {
-                bool isValid = await tenantValidator.ValidateTenantAsync(tenant);
-                if (!isValid)
+                TenantExistence existence = await tenantValidator.DetermineTenantExistenceAsync(
+                    tenant,
+                    httpContext.RequestAborted
+                );
+                if (existence == TenantExistence.Absent)
                 {
                     httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
                     await httpContext.Response.WriteAsSerializedJsonAsync(
@@ -111,6 +116,21 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
                             type = "urn:ed-fi:api:not-found",
                             title = "Not Found",
                             status = 404,
+                        }
+                    );
+                    return;
+                }
+
+                if (existence == TenantExistence.Undetermined)
+                {
+                    httpContext.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                    await httpContext.Response.WriteAsSerializedJsonAsync(
+                        new
+                        {
+                            detail = "The service is temporarily unable to handle the request. Retry the request later.",
+                            type = "urn:ed-fi:api:service-unavailable",
+                            title = "Service Unavailable",
+                            status = 503,
                         }
                     );
                     return;
