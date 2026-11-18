@@ -617,7 +617,7 @@ attempt:
     pages++ > MaxPages ⇒ Permanent LimitExceeded
     pages > 1 && items is empty ⇒ Permanent MalformedResponse            // no empty continuation page
     nextCursor != null && items is empty ⇒ Permanent MalformedResponse
-    each item: discriminator ∈ four; name non-empty; id > previousId; parentId != id   else Permanent DataInvalid
+    each item: discriminator ∈ four; name non-empty; name and short name ≤ 75 Unicode scalar values; id > previousId; parentId != id   else Permanent DataInvalid
     items.Count > MaxItems ⇒ Permanent LimitExceeded
     nextCursor == null → return Success(items, version, pages, restarts)
     nextCursor == cursor || nextCursor ∈ seen ⇒ Permanent MalformedResponse; seen += nextCursor; cursor := nextCursor

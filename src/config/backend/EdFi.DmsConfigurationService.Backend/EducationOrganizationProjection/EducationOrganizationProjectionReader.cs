@@ -69,6 +69,11 @@ public sealed class EducationOrganizationProjectionReader(
     /// <summary>Items processed between two cancellation and deadline checks.</summary>
     internal const int CheckpointInterval = 1024;
 
+    /// <summary>
+    /// The contract's limit for <c>nameOfInstitution</c> and <c>shortNameOfInstitution</c>, in Unicode scalar values.
+    /// </summary>
+    internal const int MaxNameScalarValues = 75;
+
     private static readonly HashSet<string> _discriminators = new(StringComparer.Ordinal)
     {
         "edfi.StateEducationAgency",
@@ -336,6 +341,8 @@ public sealed class EducationOrganizationProjectionReader(
                 if (
                     !_discriminators.Contains(item.Discriminator)
                     || item.NameOfInstitution.Length == 0
+                    || ExceedsNameLimit(item.NameOfInstitution)
+                    || ExceedsNameLimit(item.ShortNameOfInstitution)
                     || item.EducationOrganizationId <= previousId
                     || item.ParentId == item.EducationOrganizationId
                 )
@@ -368,6 +375,36 @@ public sealed class EducationOrganizationProjectionReader(
             }
             cursor = page.NextCursor;
         }
+    }
+
+    /// <summary>
+    /// Whether a name has more than <see cref="MaxNameScalarValues"/> Unicode scalar values. A surrogate pair counts
+    /// once; counting stops as soon as the limit is passed. The parser has already refused malformed text.
+    /// </summary>
+    internal static bool ExceedsNameLimit(string? name)
+    {
+        // A string of at most MaxNameScalarValues UTF-16 code units cannot hold more scalar values than that.
+        if (name is null || name.Length <= MaxNameScalarValues)
+        {
+            return false;
+        }
+
+        int scalarValues = 0;
+        int index = 0;
+        while (index < name.Length)
+        {
+            bool surrogatePair =
+                char.IsHighSurrogate(name[index])
+                && index + 1 < name.Length
+                && char.IsLowSurrogate(name[index + 1]);
+            index += surrogatePair ? 2 : 1;
+
+            if (++scalarValues > MaxNameScalarValues)
+            {
+                return true;
+            }
+        }
+        return false;
     }
 
     /// <summary>

@@ -5,6 +5,7 @@
 
 using System.Net;
 using System.Text;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using FluentAssertions;
 using Microsoft.Extensions.Configuration;
@@ -623,6 +624,103 @@ public class EducationOrganizationProjectionReaderTests
         [Test]
         public void It_is_invalid_data() =>
             ShouldFailWith(_result, Code.DataInvalid, Stage.Page, 200, pagesRead: _pagesRead);
+    }
+
+    /// <summary>
+    /// <c>nameOfInstitution</c> and <c>shortNameOfInstitution</c> hold at most 75 Unicode scalar values (the contract's
+    /// <c>maxLength</c>), counted as scalar values rather than UTF-16 code units: a supplementary character is two code
+    /// units and one scalar value. Whitespace counts and is not trimmed.
+    /// </summary>
+    [TestFixture("name", "a", 75, true)]
+    [TestFixture("name", "a", 76, false)]
+    [TestFixture("name", " ", 75, true)]
+    [TestFixture("name", " ", 76, false)]
+    [TestFixture("name", "\U0001F600", 75, true)]
+    [TestFixture("name", "\U0001F600", 76, false)]
+    [TestFixture("short name", "a", 75, true)]
+    [TestFixture("short name", "a", 76, false)]
+    [TestFixture("short name", "\U0001F600", 75, true)]
+    [TestFixture("short name", "\U0001F600", 76, false)]
+    public class Given_names_around_the_length_limit(string member, string unit, int count, bool accepted)
+    {
+        private string _value = null!;
+        private EducationOrganizationProjectionReadResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _value = string.Concat(Enumerable.Repeat(unit, count));
+            JsonObject item = member == "name" ? Item(1, name: _value) : Item(1, shortName: _value);
+            _result = await ProjectionReaderHarness.Serving([() => Page(null, item)]).ReadAsync();
+        }
+
+        [Test]
+        public void It_accepts_only_up_to_75_scalar_values()
+        {
+            if (accepted)
+            {
+                EducationOrganizationProjectionItem read = ShouldSucceed(_result).Items.Single();
+                (member == "name" ? read.NameOfInstitution : read.ShortNameOfInstitution).Should().Be(_value);
+            }
+            else
+            {
+                ShouldFailWith(_result, Code.DataInvalid, Stage.Page, 200, pagesRead: 1);
+                ShouldFail(_result).Category.Should().Be(Category.Permanent);
+            }
+        }
+    }
+
+    /// <summary>
+    /// 74 BMP characters and one supplementary character: 76 UTF-16 code units but 75 scalar values, so a count of code
+    /// units would refuse names the contract allows.
+    /// </summary>
+    [TestFixture]
+    public class Given_names_of_75_scalar_values_in_76_code_units
+    {
+        private static readonly string _name = new string('a', 74) + char.ConvertFromUtf32(0x1F600);
+
+        [Test]
+        public async Task It_accepts_them()
+        {
+            EducationOrganizationProjectionReadResult result = await ProjectionReaderHarness
+                .Serving([() => Page(null, Item(1, name: _name, shortName: _name))])
+                .ReadAsync();
+
+            _name.Length.Should().Be(76);
+            EducationOrganizationProjectionItem item = ShouldSucceed(result).Items.Single();
+            (item.NameOfInstitution, item.ShortNameOfInstitution).Should().Be((_name, _name));
+        }
+    }
+
+    /// <summary>
+    /// An oversized name on a later page fails the whole read: the first page's valid items are not returned.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_oversized_name_after_a_valid_page
+    {
+        [Test]
+        public async Task It_fails_without_returning_the_items_already_read()
+        {
+            EducationOrganizationProjectionReadResult result = await ProjectionReaderHarness
+                .Serving([() => Page("c1", Schools(1)), () => Page(null, Item(2, name: new string('a', 76)))])
+                .ReadAsync();
+
+            ShouldFailWith(result, Code.DataInvalid, Stage.Page, 200, pagesRead: 2);
+        }
+    }
+
+    [TestFixture]
+    public class Given_a_null_short_name
+    {
+        [Test]
+        public async Task It_accepts_it()
+        {
+            EducationOrganizationProjectionReadResult result = await ProjectionReaderHarness
+                .Serving([() => Page(null, Item(1, shortName: null))])
+                .ReadAsync();
+
+            ShouldSucceed(result).Items.Single().ShortNameOfInstitution.Should().BeNull();
+        }
     }
 
     [TestFixture]

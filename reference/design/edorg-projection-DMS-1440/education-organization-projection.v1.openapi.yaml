@@ -487,8 +487,10 @@ components:
         nameOfInstitution:
           type: string
           minLength: 1
+          maxLength: 75
         shortNameOfInstitution:
           type: [string, 'null']
+          maxLength: 75
           description: '`null` when the education organization has no short name; may be the empty string.'
         discriminator:
           type: string
