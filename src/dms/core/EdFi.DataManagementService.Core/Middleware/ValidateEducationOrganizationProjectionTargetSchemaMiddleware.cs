@@ -118,7 +118,7 @@ internal class ValidateEducationOrganizationProjectionTargetSchemaMiddleware(
             read.Token.Invalidate();
 
             _logger.LogWarning(
-                "Projection target not provisioned (no dms.EffectiveSchema row) for {TargetKind} target of data store {DataStoreId} - {TraceId}",
+                "Projection target not provisioned for {TargetKind} target of data store {DataStoreId} - {TraceId}",
                 target.Kind,
                 dataStoreId,
                 LoggingSanitizer.SanitizeCorrelationId(request.TraceId.Value)

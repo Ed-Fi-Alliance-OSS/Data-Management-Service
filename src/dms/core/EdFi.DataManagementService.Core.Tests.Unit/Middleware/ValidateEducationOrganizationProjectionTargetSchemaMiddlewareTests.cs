@@ -17,6 +17,7 @@ using EdFi.DataManagementService.Core.Startup;
 using EdFi.DataManagementService.Core.Tests.Unit.TestSupport;
 using FakeItEasy;
 using FluentAssertions;
+using Microsoft.Extensions.Logging;
 using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware;
@@ -271,6 +272,28 @@ public abstract class ValidateEducationOrganizationProjectionTargetSchemaMiddlew
                 "Database Not Provisioned",
                 "The data store's database has not been provisioned."
             );
+
+        /// <summary>
+        /// The warning keeps the condition and the permitted identifiers (target kind, data store id
+        /// and trace id) and names no physical schema object.
+        /// </summary>
+        [Test]
+        public void It_logs_one_warning_with_the_condition_and_identifiers()
+        {
+            LogRecord warning = Logger.Records.Should().ContainSingle().Subject;
+            warning.Level.Should().Be(LogLevel.Warning);
+            warning.Message.Should().Contain("Projection target not provisioned");
+            warning.Properties["TargetKind"].Should().Be(Target.Kind);
+            warning.Properties.Should().ContainKeys("DataStoreId", "TraceId");
+        }
+
+        [Test]
+        public void It_logs_no_physical_schema_detail() =>
+            AssertNotLogged("EffectiveSchema", "dms.", ConnectionString);
+
+        [Test]
+        public void It_returns_no_physical_schema_detail() =>
+            AssertBodyDoesNotContain("EffectiveSchema", "dms.", ConnectionString);
 
         /// <summary>
         /// The verdict comes from the cache every endpoint shares, which retains a Primary verdict
