@@ -548,7 +548,8 @@ public class Given_Relational_Write_No_Profile_Persister
 
     /// <summary>
     /// A root whose identity bindings were marked unchanged sends the reduced update, which assigns every
-    /// other non-key column (unchanged ones included) and never the identity columns.
+    /// other non-key column (unchanged ones included) and never the identity columns, and binds only the
+    /// parameters that update references.
     /// </summary>
     [Test]
     public async Task It_sends_the_root_update_without_the_identity_columns_marked_unchanged()
@@ -592,6 +593,11 @@ public class Given_Relational_Write_No_Profile_Persister
 
                 """
             );
+        writeSession
+            .Commands[0]
+            .Parameters.Select(static parameter => parameter.Name)
+            .Should()
+            .BeEquivalentTo("@Name", "@ShortName", "@DocumentId");
         GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
         GetParameterValue(writeSession.Commands[0], "@Name").Should().Be("Lincoln High");
         GetParameterValue(writeSession.Commands[0], "@ShortName").Should().Be("LH");

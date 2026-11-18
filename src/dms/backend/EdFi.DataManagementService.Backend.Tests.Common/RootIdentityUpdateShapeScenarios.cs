@@ -81,6 +81,7 @@ internal static class RootIdentityUpdateShapeScenarios
     public const int SchoolYear = 2025;
     public const string SessionName = "Fall 2025";
     public const string RenamedSessionName = "Autumn 2025";
+    public const string MovedSessionName = "Winter 2025";
     public const string CourseCode = "ALG-1";
     public const string LocalCourseCode = "ALG-1-01";
     public const string SectionIdentifier = "SEC-01";
@@ -324,9 +325,10 @@ internal static class RootIdentityUpdateShapeScenarios
     }
 
     /// <summary>
-    /// Session allows identity updates. Renaming it uses the full SET list, the cascade carries the new
-    /// name into the CourseOffering and on into the Section, each document's ContentVersion advances, each
-    /// key change is tracked, and reference resolution follows the new identity.
+    /// Session allows identity updates. Renaming it under a claim related to its school is authorized and
+    /// uses the full SET list, the cascade carries the new name into the CourseOffering and on into the
+    /// Section, each document's ContentVersion advances, each key change is tracked, and reference resolution
+    /// follows the new identity.
     /// </summary>
     public static async Task AssertAllowedSessionIdentityChangeUsesFullShapeAndCascadesAsync(
         IRootIdentityUpdateShapeHarness harness
@@ -339,7 +341,9 @@ internal static class RootIdentityUpdateShapeScenarios
         var result = await harness.UpdateAsync(
             Session,
             SessionBody(AuthorizedSchoolId, RenamedSessionName),
-            SessionUuid
+            SessionUuid,
+            [ClaimEducationOrganizationId],
+            [RelationshipsWithEdOrgsOnly]
         );
 
         result.Should().BeOfType<UpdateResult.UpdateSuccess>();
@@ -550,6 +554,41 @@ internal static class RootIdentityUpdateShapeScenarios
         (await harness.ReadSideEffectStateAsync(Session, UnauthorizedSessionUuid))
             .Should()
             .BeEquivalentTo(sessionBefore);
+    }
+
+    /// <summary>
+    /// An identity-changing PUT is authorized against the proposed identity as well as the stored one. Moving
+    /// the Session from the claim's school to an unrelated school, under a new name so the move cannot collide
+    /// with that school's own Session, is denied and changes nothing: the Session, its CourseOffering and
+    /// Section, and change tracking are all left as they were. The proposed-side check travels in the same
+    /// command as the DML, ahead of it, so the recorded command text carries the root update either way and
+    /// only the persisted state shows that nothing was applied.
+    /// </summary>
+    public static async Task AssertUnauthorizedSessionIdentityMoveIsDeniedWithoutMutationAsync(
+        IRootIdentityUpdateShapeHarness harness
+    )
+    {
+        var sessionBefore = await harness.ReadSideEffectStateAsync(Session, SessionUuid);
+        var courseOfferingBefore = await harness.ReadSideEffectStateAsync(CourseOffering, CourseOfferingUuid);
+        var sectionBefore = await harness.ReadSideEffectStateAsync(Section, SectionUuid);
+
+        var result = await harness.UpdateAsync(
+            Session,
+            SessionBody(UnauthorizedSchoolId, MovedSessionName),
+            SessionUuid,
+            [ClaimEducationOrganizationId],
+            [RelationshipsWithEdOrgsOnly]
+        );
+
+        result.Should().BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>();
+        (await harness.ReadSideEffectStateAsync(Session, SessionUuid)).Should().BeEquivalentTo(sessionBefore);
+        (await harness.ReadSideEffectStateAsync(CourseOffering, CourseOfferingUuid))
+            .Should()
+            .BeEquivalentTo(courseOfferingBefore);
+        (await harness.ReadSideEffectStateAsync(Section, SectionUuid)).Should().BeEquivalentTo(sectionBefore);
+        (await harness.ReadTrackedChangesAsync(Session, SessionUuid)).Should().BeEmpty();
+        (await harness.ReadTrackedChangesAsync(CourseOffering, CourseOfferingUuid)).Should().BeEmpty();
+        (await harness.ReadTrackedChangesAsync(Section, SectionUuid)).Should().BeEmpty();
     }
 
     /// <summary>

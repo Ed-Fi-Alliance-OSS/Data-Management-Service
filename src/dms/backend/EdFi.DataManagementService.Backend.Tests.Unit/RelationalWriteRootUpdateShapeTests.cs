@@ -7,6 +7,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 using EdFi.DataManagementService.Core.External.Model;
 using FluentAssertions;
 using NUnit.Framework;
@@ -349,18 +350,6 @@ public class Given_A_Root_Update_Whose_Identity_Is_Unchanged(SqlDialect dialect)
     }
 
     [Test]
-    public void It_emits_the_same_reduced_set_list_for_batched_rows()
-    {
-        var batchSql = _statement.EmitBatchSql(2);
-
-        RelationalWriteRootUpdateShapeTestSupport
-            .AssignedColumns(batchSql)
-            .Should()
-            .Equal(Enumerable.Repeat(_reducedSetList, 2).SelectMany(static columns => columns));
-        batchSql.Should().Contain("@EndDate_0").And.Contain("@EndDate_1");
-    }
-
-    [Test]
     public void It_binds_the_unsuffixed_compiled_parameter_names_in_the_single_row_statement()
     {
         _statement.SingleRowSql.Should().Contain("= @EndDate").And.NotContain("@EndDate_0");
@@ -381,8 +370,7 @@ public class Given_A_Root_Update_Whose_Identity_Is_Unchanged(SqlDialect dialect)
             }
         )!;
 
-        otherStatement.SingleRowSql.Should().Be(_statement.SingleRowSql);
-        otherStatement.EmitBatchSql(2).Should().Be(_statement.EmitBatchSql(2));
+        otherStatement.SingleRowSql.Should().BeSameAs(_statement.SingleRowSql);
     }
 }
 
@@ -619,5 +607,66 @@ public class Given_A_Changed_Root_Row_That_Was_Not_Marked_By_The_Identity_Guard
             .StatementsInOrder.Single();
 
         statement.SingleRowSql.Should().Be(rootPlan.UpdateSql);
+    }
+}
+
+/// <summary>
+/// The reduced update is rendered by the emitter that compiles <see cref="TableWritePlan.UpdateSql"/>, once
+/// per plan, so the per-request planner only selects between two fixed texts.
+/// </summary>
+[TestFixture(SqlDialect.Pgsql)]
+[TestFixture(SqlDialect.Mssql)]
+[Parallelizable]
+public class Given_The_Reduced_Root_Update_Emitter(SqlDialect dialect)
+{
+    private TableWritePlan _rootPlan = null!;
+    private WritePlanBatchSqlEmitter _sut = null!;
+
+    [SetUp]
+    public void Setup()
+    {
+        var plan = RelationalWriteRootUpdateShapeTestSupport.CreateSessionPlan();
+        var setBindings = plan.ColumnBindings.Skip(1).ToArray();
+
+        _rootPlan = plan with
+        {
+            UpdateSql = new SimpleUpdateSqlEmitter(dialect).Emit(
+                plan.TableModel.Table,
+                [.. setBindings.Select(static binding => binding.Column.ColumnName)],
+                [.. setBindings.Select(static binding => binding.ParameterName)],
+                [new DbColumnName("DocumentId")],
+                ["DocumentId"]
+            ),
+        };
+        _sut = new WritePlanBatchSqlEmitter(dialect);
+    }
+
+    [Test]
+    public void It_reproduces_the_compiled_update_text_when_nothing_is_omitted()
+    {
+        _sut.EmitUpdate(_rootPlan, []).Should().Be(_rootPlan.UpdateSql);
+    }
+
+    [Test]
+    public void It_renders_the_text_once_per_plan_and_reuses_it_from_any_emitter()
+    {
+        var first = _sut.EmitUpdate(_rootPlan, [1, 2]);
+
+        new WritePlanBatchSqlEmitter(dialect).EmitUpdate(_rootPlan, [1, 2]).Should().BeSameAs(first);
+        RelationalWriteRootUpdateShapeTestSupport
+            .AssignedColumns(first)
+            .Should()
+            .Equal("School_DocumentId", "BeginDate", "EndDate", "TotalInstructionalDays");
+    }
+
+    [Test]
+    public void It_renders_a_different_omitted_set_rather_than_reusing_the_cached_text()
+    {
+        _sut.EmitUpdate(_rootPlan, [1, 2]);
+
+        RelationalWriteRootUpdateShapeTestSupport
+            .AssignedColumns(_sut.EmitUpdate(_rootPlan, [1]))
+            .Should()
+            .Equal("School_SchoolId", "School_DocumentId", "BeginDate", "EndDate", "TotalInstructionalDays");
     }
 }

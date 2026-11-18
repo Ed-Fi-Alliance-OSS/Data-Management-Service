@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
 
@@ -27,12 +28,17 @@ internal abstract record RelationalWriteRootDocumentIdSource
 /// </summary>
 internal static class RelationalWriteRowStatements
 {
+    /// <summary>
+    /// Binds one row to <paramref name="sql"/>, skipping the bindings at
+    /// <paramref name="omittedBindingIndexes"/> that a reduced statement never references.
+    /// </summary>
     public static RelationalCommand BuildRowCommand(
         TableWritePlan tableWritePlan,
         string sql,
         RelationalWriteMergedTableRow row,
         RelationalWriteRootDocumentIdSource rootDocumentId,
-        RelationalWriteCollectionItemIdBindings collectionItemIdBindings
+        RelationalWriteCollectionItemIdBindings collectionItemIdBindings,
+        ImmutableArray<int> omittedBindingIndexes = default
     )
     {
         ArgumentNullException.ThrowIfNull(tableWritePlan);
@@ -43,6 +49,11 @@ internal static class RelationalWriteRowStatements
 
         for (var bindingIndex = 0; bindingIndex < tableWritePlan.ColumnBindings.Length; bindingIndex++)
         {
+            if (!omittedBindingIndexes.IsDefault && omittedBindingIndexes.Contains(bindingIndex))
+            {
+                continue;
+            }
+
             var parameterName = NormalizeParameterName(
                 tableWritePlan.ColumnBindings[bindingIndex].ParameterName
             );

@@ -3,8 +3,8 @@
 Evidence and tooling for DMS-1565: when an existing document's identity is unchanged, the relational
 write path now leaves the root identity-projection columns out of the `UPDATE` SET list, so SQL Server
 no longer compiles and opens the incoming `ON UPDATE CASCADE` branches. An allowed identity change keeps
-the full SET list. Raw captures (plans, block JSON, logs) are kept outside the repository; this folder
-holds the report and the tooling that produced it.
+the full SET list. Raw captures (plans, replay SQL, block JSON, logs) are attached to the ticket (see
+[Evidence](#evidence)); this folder holds the report and the tooling that produced it.
 
 ## Results
 
@@ -89,8 +89,9 @@ removed and from a different revision; that difference is not explained here.
 - **Pool ownership.** The suite's stub data-store provider never publishes data-store ownership, so
   `MssqlConnectionAcquisition` treats every pool identity as retired and clears it when its last lease
   ends, costing fresh logins on every request. The fixture publishes ownership for the configured
-  primary once per host start, as `ConfigurationServiceDataStoreProvider` does in production. Without it
-  a GET by id took about 150 ms; with it, about 2.4 ms.
+  primary once per host start, as `ConfigurationServiceDataStoreProvider` does in production. In the
+  pilot's GET latency diagnostic, which is not part of the campaign, a GET by id took about 150 ms without
+  it and about 2.4 ms with it (`task3b/pilot/ladder.json` through `ladder6.json` in the evidence set).
 - **Data.** Before every block the published backup is restored into `dms1565_nr_run` (`WITH CHECKSUM`),
   set to recovery SIMPLE, owned by `sa`, given a new broker id, and has `SourceIdentity` rotated.
   Query Store is enabled (`READ_WRITE`, capture `ALL`, no size-based cleanup), cleared, and the database's
@@ -133,16 +134,28 @@ removed and from a different revision; that difference is not explained here.
    - Restore the backup once into a scratch database (as `run-block.sh` does) and run
      `./make-doclist.sh <database> "$DMS1565_WORK/doclist.json"`. The campaign's list has sha256
      `e231a71106f1b56109789f6166bc0dfb736ac946e994ef86fd5a2345b4924d3b`.
-4. Run `./run-campaign.sh <output-dir> 1`, then `./analyze_campaign.py <output-dir>`. The campaign refuses
-   to start unless both arms hold a byte-identical harness, every block log records the sha256 of its
-   harness, document list and `ApiSchema.json`, and the analysis refuses captures that fail validation.
+4. Run the two campaigns into the same output directory, then analyze all twelve blocks together:
+
+   ```sh
+   ./run-campaign.sh <output-dir> 1    # blocks 1-6: three baseline/changed pairs
+   ./run-campaign.sh <output-dir> 7    # blocks 7-12: the second run of three pairs
+   ./analyze_campaign.py <output-dir>  # reads every block-*.json in the directory
+   ```
+
+   Each campaign refuses to start unless both arms hold a byte-identical harness, every block log records
+   the sha256 of its harness, document list and `ApiSchema.json`, and the analysis refuses captures that
+   fail validation. `run-block.sh` connects the harness to the host port the SQL Server container
+   publishes, and fails if `DMS1565_PORT` names a different one. The published captures keep the two runs
+   in `task3b/run1/` and `task3b/run2/`, and `task3b/all12/` holds their combined analysis.
 
 ## Evidence
 
-The raw captures behind every number above are kept outside the repository in the DMS-1565 evidence
-set on the measuring host (location recorded in the pairing handoff), listed with sha256 in
-`evidence-manifest.sha256` (195 files; manifest sha256
-`1b1f94d686a074d7b69dd1e852fc98f3dc34ae5f8193d5ee4fe950269d0de0cd`):
+The raw captures behind every number above are attached to
+[DMS-1565](https://edfi.atlassian.net/browse/DMS-1565) as `DMS-1565-evidence.zip` (attachment 41420,
+sha256 `07eb6c49baa9a18c9b24e2a596839e5af26e278060b64381f793ec8edfbdc901`). The archive's
+`DMS-1565/evidence-manifest.sha256` lists every file with its sha256 (195 files; manifest sha256
+`1b1f94d686a074d7b69dd1e852fc98f3dc34ae5f8193d5ee4fe950269d0de0cd`), so
+`shasum -a 256 -c evidence-manifest.sha256` run in `DMS-1565/` verifies the set:
 
 - `task3b/run1/` and `task3b/run2/`: `block-<n>-<arm>.json` (every latency sample and the raw Query Store
   snapshots) and `block-<n>-<arm>.log` (restore, schema hash, database options, activity) for blocks
@@ -150,12 +163,19 @@ set on the measuring host (location recorded in the pairing handoff), listed wit
 - `task3b/all12/analysis.json` (sha256 `75900d6d…6c26`) and `block-medians.csv` (sha256 `15c1ef5c…4f32`):
   the analysis output reported here.
 - `task3b/validation/`: the analyzer's negative controls and a relative-output runner check.
-- `task3a/`: plan captures, the diagnostic replay, the restore and catalog comparison, and the SchemaTools
-  hash and DDL checksums for `efc9079a0`, `0fd5300f0` and `d1092362b`.
+- `task3a/plans/`: both arms' Session plans. `baseline/last-actual/000.sqlplan` and
+  `changed/last-actual/000.sqlplan` are the root `UPDATE [edfi].[Session]` actual plans; the
+  `query-store/` folders hold the compiled plans, `summary.json` and `analysis.json` the operator and
+  table counts per arm, and `recorded-commands-last-put.sql` each arm's last Session PUT.
+- `task3a/replay/`: the replayed root statements (`baseline.sql`, `changed.sql`), each run's
+  `SET STATISTICS XML` output, and `replay-summary.json` with the 300 and 13 operator counts.
+- `task3a/`, otherwise: the restore and catalog comparison, and the SchemaTools hash and DDL checksums for
+  `efc9079a0`, `0fd5300f0` and `d1092362b`.
 
-The results were produced with the executed copies of these scripts, kept in the evidence set; the
-committed versions add input validation and parameterized paths, and the harness differs only by
-formatting.
+The results were produced with the executed copies of these scripts, kept in the evidence set. The
+committed versions add input validation, parameterized paths and the container port check. The committed
+harness differs from the executed one by formatting and by dropping a GET latency diagnostic that the
+campaign never ran.
 
 ## Limitations and open items
 

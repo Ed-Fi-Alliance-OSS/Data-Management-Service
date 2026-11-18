@@ -12,7 +12,8 @@
 #   DMS1565_WORK            directory holding arm-baseline/, arm-changed/, apischema-core-only/, doclist.json
 #   DMS1565_SA_PASSWORD_FILE file containing the dedicated container's SA password (never echoed)
 #   DMS1565_CONTAINER       dedicated SQL Server container (default dms1565-nr-mssql)
-#   DMS1565_PORT            its host port (default 1437)
+#   DMS1565_PORT            optional; must equal the host port the container publishes for 1433, which is
+#                           what the harness connects to (default: that published port)
 #   DMS1565_BACKUP          backup path inside the container
 #                           (default /backup/EdFi_DMS_Northridge_v81_20261104_MSSQL.bak)
 set -euo pipefail
@@ -22,7 +23,6 @@ ARM=$1; BLOCK=$2; ORDER=$3; WARMUP=$4; MEASURED=$5
 WORK=${DMS1565_WORK:?set DMS1565_WORK}
 PASSWORD_FILE=${DMS1565_SA_PASSWORD_FILE:?set DMS1565_SA_PASSWORD_FILE}
 CONTAINER=${DMS1565_CONTAINER:-dms1565-nr-mssql}
-PORT=${DMS1565_PORT:-1437}
 BAK=${DMS1565_BACKUP:-/backup/EdFi_DMS_Northridge_v81_20261104_MSSQL.bak}
 DB=dms1565_nr_run
 HARNESS=src/dms/tests/EdFi.DataManagementService.Tests.Integration/Tests/Mssql/Given_A_Dms1565_Northridge_Put_Latency_Block.cs
@@ -37,6 +37,15 @@ SORTED_ORDER=$(echo "$ORDER" | tr ',' '\n' | LC_ALL=C sort | paste -sd, -)
 [ "$SORTED_ORDER" = "$EXPECTED_ORDER" ] || fail "resource order must list each of $EXPECTED_ORDER once, got '$ORDER'"
 WORK=$(cd "$WORK" 2>/dev/null && pwd) || fail "DMS1565_WORK does not exist"
 [ -r "$PASSWORD_FILE" ] || fail "DMS1565_SA_PASSWORD_FILE is not readable"
+# Absolute, because the harness reads it again after changing into the arm directory.
+PASSWORD_FILE="$(cd "$(dirname "$PASSWORD_FILE")" && pwd)/$(basename "$PASSWORD_FILE")"
+# The restore runs inside the container, and the harness connects to localhost; the port it connects to must
+# be the one that container publishes, or the PUTs would reach another server's copy of the database.
+PUBLISHED=$(docker port "$CONTAINER" 1433/tcp 2>/dev/null | head -1) || true
+[ -n "$PUBLISHED" ] || fail "container '$CONTAINER' is not running or does not publish 1433/tcp"
+PUBLISHED_PORT=${PUBLISHED##*:}
+PORT=${DMS1565_PORT:-$PUBLISHED_PORT}
+[ "$PORT" = "$PUBLISHED_PORT" ] || fail "DMS1565_PORT is $PORT, but '$CONTAINER' publishes 1433 on $PUBLISHED_PORT"
 [ -f "$WORK/arm-$ARM/$HARNESS" ] || fail "harness missing from $WORK/arm-$ARM"
 [ -f "$WORK/doclist.json" ] || fail "$WORK/doclist.json missing"
 [ -f "$WORK/apischema-core-only/bootstrap-api-schema-manifest.json" ] || fail "staged ApiSchema missing under $WORK"

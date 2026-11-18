@@ -1216,7 +1216,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                 statement.SingleRowSql,
                 statement.Rows[0],
                 probeSource,
-                collectionItemIdBindings
+                collectionItemIdBindings,
+                statement.SingleRowOmittedBindingIndexes
             )
         ).Parameters.Count;
 
@@ -1303,7 +1304,8 @@ internal sealed class CompositeRelationalWriteSecondCommand(
                     statement.SingleRowSql,
                     statement.Rows[rowOffset],
                     statementDocumentId.Source,
-                    collectionItemIdBindings
+                    collectionItemIdBindings,
+                    statement.SingleRowOmittedBindingIndexes
                 )
                 : RelationalWriteRowStatements.BuildBatchCommand(
                     statement.EmitBatchSql(rowCount),

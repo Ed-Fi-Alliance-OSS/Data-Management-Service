@@ -200,49 +200,6 @@ public class Given_A_Dms1565_Northridge_Put_Latency_Block : MssqlApiIntegrationT
         );
     }
 
-    /// <summary>Diagnostic only: per-layer request latency ladder in the same host, written to DMS1565_OUTPUT.</summary>
-    [Test]
-    public async Task It_reports_the_request_latency_ladder()
-    {
-        PublishPrimaryOwnership();
-        var ladder = new JsonObject();
-        var session = JsonNode.Parse(await File.ReadAllTextAsync(Required("DMS1565_DOCLIST")))!["sessions"]![
-            0
-        ]!.GetValue<string>();
-
-        foreach (var path in new[] { "/health", "/", $"/data/ed-fi/sessions/{session}" })
-        {
-            var samples = new List<double>();
-
-            for (
-                var i = 0;
-                i
-                    < int.Parse(
-                        Environment.GetEnvironmentVariable("DMS1565_LADDER_N") ?? "30",
-                        CultureInfo.InvariantCulture
-                    );
-                i++
-            )
-            {
-                var start = Stopwatch.GetTimestamp();
-                using var response = await Harness.HttpClient.GetAsync(path);
-                await response.Content.ReadAsByteArrayAsync();
-                Assert.That(response.IsSuccessStatusCode, Is.True, path);
-                samples.Add(Stopwatch.GetElapsedTime(start).TotalMilliseconds);
-            }
-
-            samples.Sort();
-            ladder[path] = new JsonObject
-            {
-                ["median"] = samples[samples.Count / 2],
-                ["min"] = samples[0],
-                ["max"] = samples[^1],
-            };
-        }
-
-        await File.WriteAllTextAsync(Required("DMS1565_OUTPUT"), ladder.ToJsonString());
-    }
-
     /// <summary>
     /// Publishes data-store ownership for the configured primary, as the production configuration-service
     /// provider does after each load. The harness's stub provider never publishes it, so without this every

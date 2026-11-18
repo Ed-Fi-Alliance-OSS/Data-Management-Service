@@ -101,6 +101,12 @@ public class Given_A_Mssql_Root_Identity_Update_Shape_With_The_Authoritative_Ds5
             _harness
         );
 
+    [Test]
+    public Task It_denies_moving_the_session_to_a_school_the_claim_is_not_related_to_without_mutation() =>
+        RootIdentityUpdateShapeScenarios.AssertUnauthorizedSessionIdentityMoveIsDeniedWithoutMutationAsync(
+            _harness
+        );
+
     private sealed class Harness(MssqlRelationalQueryAuthorizationTestContext context)
         : IRootIdentityUpdateShapeHarness
     {
