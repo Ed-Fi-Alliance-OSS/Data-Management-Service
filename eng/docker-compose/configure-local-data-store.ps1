@@ -900,22 +900,33 @@ function Invoke-ConfigureLocalDataStore {
     }
 
     Write-Information "Creating default route-unqualified data store." -InformationAction Continue
-    $addDataStoreArguments = @{
-        CmsUrl = $cmsUrl
-        AccessToken = $configToken
-        PostgresCredential = $postgresCredential
-        PostgresDbName = $postgresDbName
-        ConnectionString = $dataStoreConnectionString
-        DatabaseEngine = $DatabaseEngine
-        DataStoreType = "Development"
-        Tenant = $tenant
-    }
-    $dataStoreId = if ($restoreReuse) {
+    if ($restoreReuse) {
         # Only the restore handoff can meet a name its listing could not show.
-        Add-RestoreDataStoreRegistration -DataStores $dataStores -RegistrationName $registrationName -AddDataStoreArguments $addDataStoreArguments
+        $dataStoreId = Add-RestoreDataStoreRegistration `
+            -DataStores $dataStores `
+            -RegistrationName $registrationName `
+            -AddDataStoreArguments @{
+                CmsUrl = $cmsUrl
+                AccessToken = $configToken
+                PostgresCredential = $postgresCredential
+                PostgresDbName = $postgresDbName
+                ConnectionString = $dataStoreConnectionString
+                DatabaseEngine = $DatabaseEngine
+                DataStoreType = "Development"
+                Tenant = $tenant
+            }
     }
     else {
-        Add-DataStore @addDataStoreArguments -Name "Local Development Data Store"
+        $dataStoreId = Add-DataStore `
+            -CmsUrl $cmsUrl `
+            -AccessToken $configToken `
+            -PostgresCredential $postgresCredential `
+            -PostgresDbName $postgresDbName `
+            -ConnectionString $dataStoreConnectionString `
+            -DatabaseEngine $DatabaseEngine `
+            -Name "Local Development Data Store" `
+            -DataStoreType "Development" `
+            -Tenant $tenant
     }
 
     if ($AddSmokeTestCredentials) {
