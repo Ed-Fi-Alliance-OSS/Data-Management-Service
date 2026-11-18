@@ -134,6 +134,12 @@ public partial class DmsDataStoreProvisioningStartupTests
                 "Host=bad@${secret:host}",
                 "Host=db.example;Port=bad${secret:port}",
                 "Host=db.example;Port=65536${secret:port}",
+                // A literal DNS host proves the colon is a port separator; five digits cannot be an IPv6 group.
+                "Host=db.example:bad${secret:port}",
+                "Host=2001:12345${secret:rest}",
+                // Literal text after the reference that no IPv6 address or port can contain.
+                "Host=2001:db8${secret:rest}g",
+                "Host=2001:db8${secret:rest}12345",
             ];
             string[] mssql =
             [
@@ -212,6 +218,9 @@ public partial class DmsDataStoreProvisioningStartupTests
                 "Host=@${secret:socket}:directory",
                 "Host=${secret:root}/socket",
                 "Host=${secret:socketRoot}:directory",
+                "Host=2001:db8${secret:rest}",
+                "Host=db.example:${secret:port}",
+                "Host=2001:db8${secret:rest}1",
             ];
             string[] mssql =
             [
@@ -234,7 +243,11 @@ public partial class DmsDataStoreProvisioningStartupTests
                 {
                     yield return new TestCaseData(
                         provider,
-                        cases[index] + ";Password=${secret:runtime}"
+                        cases[index] + ";Password=${secret:runtime}",
+                        // A named-instance vector needs a named-instance partner: port addressing differs.
+                        cases[index].Contains('\\')
+                            ? "Server=tcp:db.example\\one;User ID=admin;Password=test-only"
+                            : MatchingAdmin(provider)
                     ).SetName(
                         $"It_accepts_secret_dependent_components_without_resolution_{provider}_{index}"
                     );
@@ -245,7 +258,8 @@ public partial class DmsDataStoreProvisioningStartupTests
         [TestCaseSource(nameof(ValidSecretBearingEndpoints))]
         public void It_accepts_secret_dependent_components_without_resolution(
             string target,
-            string connection
+            string connection,
+            string admin
         )
         {
             var resolver = A.Fake<ISecretResolver>();
@@ -255,7 +269,7 @@ public partial class DmsDataStoreProvisioningStartupTests
                 target,
                 overrides: new()
                 {
-                    [$"{Section}:AdminConnectionString"] = MatchingAdmin(target),
+                    [$"{Section}:AdminConnectionString"] = admin,
                     ["DataStoreManagement:RuntimeConnectionString"] = connection,
                 },
                 configure: services => services.AddSingleton(resolver)
@@ -389,6 +403,21 @@ public partial class DmsDataStoreProvisioningStartupTests
                     "Server=tcp:db-a.example,${secret:port};Password=${secret:admin}",
                     "Server=tcp:db-b.example,1433"
                 ),
+                // The literal separator fixes port or named-instance addressing, even when its value is a
+                // secret, and the two never name the same canonical endpoint.
+                ("mssql", "Server=tcp:db,1433", "Server=tcp:db\\${secret:instance}"),
+                ("mssql", "Server=tcp:db\\${secret:instance}", "Server=tcp:db,1433"),
+                ("mssql", "Server=tcp:db", "Server=tcp:db\\${secret:instance};Password=${secret:runtime}"),
+                ("mssql", "Server=tcp:db,${secret:port}", "Server=tcp:db\\${secret:instance}"),
+                // A literal DNS host before an inline secret port is known, in either setting, through an
+                // alias and over a literal Port the inline port overrides.
+                ("postgresql", "Host=db-a.example", "Host=db-b.example:${secret:port}"),
+                ("postgresql", "Host=db-b.example:${secret:port}", "Host=db-a.example"),
+                (
+                    "postgresql",
+                    "Host=db-a.example",
+                    "Server=db-b.example:${secret:port};Port=5432;Password=${secret:runtime}"
+                ),
             ];
             for (int index = 0; index < cases.Length; index++)
             {
@@ -489,6 +518,29 @@ public partial class DmsDataStoreProvisioningStartupTests
                     "Data Source=tcp:db.example,1433;Server=${secret:server};Password=${secret:runtime}"
                 ),
                 ("mssql", "Server=${secret:server};Password=${secret:admin}", "Server=tcp:db.example,1433"),
+                // The same addressing kind on the same literal host still depends on the secret.
+                (
+                    "mssql",
+                    "Server=tcp:db\\one",
+                    "Server=tcp:db\\${secret:instance};Password=${secret:runtime}"
+                ),
+                ("mssql", "Server=tcp:db", "Server=tcp:db,${secret:port};Password=${secret:runtime}"),
+                // The same literal DNS host with an unknown inline port, which overrides a literal Port.
+                (
+                    "postgresql",
+                    "Host=db-a.example",
+                    "Host=db-a.example:${secret:port};Password=${secret:runtime}"
+                ),
+                ("postgresql", "Host=db-a.example:5433", "Host=DB-A.example:${secret:port};Port=5432"),
+                // Up to four hex digits before the only colon may begin an IPv6 address
+                // (2001:db8${secret:rest} can resolve to 2001:db8::1), so the whole host is unknown.
+                (
+                    "postgresql",
+                    "Host=2001:db8::1",
+                    "Host=2001:db8${secret:rest};Password=${secret:runtime}"
+                ),
+                ("postgresql", "Host=2001:db8${secret:rest};Password=${secret:admin}", "Host=2001:db8::1"),
+                ("postgresql", "Host=db-a.example", "Host=2001:db8${secret:rest}"),
             ];
             foreach (var (kind, cases) in new[] { ("equivalent", equivalent), ("deferred", deferred) })
             {
@@ -547,6 +599,52 @@ public partial class DmsDataStoreProvisioningStartupTests
                 .And.NotContain("test-only")
                 .And.NotContain("${secret");
             Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        [TestCase("mssql", "Server=tcp:db,1433", "Server=tcp:db\\${secret:instance};User ID=runtime")]
+        [TestCase("mssql", "Server=tcp:db\\${secret:instance};User ID=admin", "Server=tcp:db,1433")]
+        [TestCase("postgresql", "Host=db-a.example", "Host=db-b.example:${secret:port};Username=runtime")]
+        [TestCase("postgresql", "Host=db-b.example:${secret:port};Username=admin", "Host=db-a.example")]
+        public void It_refuses_to_start_when_a_secret_suffix_cannot_reconcile_known_components(
+            string target,
+            string admin,
+            string runtime
+        )
+        {
+            var resolver = A.Fake<ISecretResolver>();
+            using var host = Host(
+                "true",
+                true,
+                target,
+                overrides: new()
+                {
+                    [$"{Section}:AdminConnectionString"] = admin + ";Password=${secret:admin}",
+                    ["DataStoreManagement:RuntimeConnectionString"] = runtime + ";Password=${secret:runtime}",
+                },
+                configure: services => services.AddSingleton(resolver)
+            );
+            var error = StartupExceptionFor(host);
+            error.Should().NotBeNull();
+            error!
+                .ToString()
+                .Should()
+                .Contain(EndpointMismatch)
+                .And.NotContain("db-b.example")
+                .And.NotContain("${secret");
+            Fake.GetCalls(resolver).Should().BeEmpty();
+        }
+
+        [Test]
+        public void It_uses_the_native_parser_to_accept_the_resolved_IPv6_template_value()
+        {
+            // The deferred template Host=2001:db8${secret:rest} with rest=::1.
+            new PostgresqlManagedRuntimeConnectionProvider()
+                .TryParse("Host=2001:db8::1;Password=resolved", out var endpoint)
+                .Should()
+                .BeTrue();
+            endpoint!.Host.Should().Be("2001:db8::1");
+            endpoint.Transport.Should().Be("tcp");
+            endpoint.Port.Should().Be(5432);
         }
 
         [TestCase("postgresql"), TestCase("mssql")]
@@ -689,6 +787,10 @@ public partial class DmsDataStoreProvisioningStartupTests
                     .NotBeNull();
                 scope
                     .ServiceProvider.GetRequiredService<ManagedDataStoreCreateAcceptance>()
+                    .Should()
+                    .NotBeNull();
+                scope
+                    .ServiceProvider.GetRequiredService<ManagedDataStoreDeleteAcceptance>()
                     .Should()
                     .NotBeNull();
             }

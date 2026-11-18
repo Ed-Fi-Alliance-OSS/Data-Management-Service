@@ -62,7 +62,15 @@ public interface IDataStoreManageRepository
         CancellationToken cancellationToken
     );
 
-    Task<DataStoreManageDeleteResult> AcceptDeleteAsync(int id, CancellationToken cancellationToken);
+    /// <summary>
+    /// Accepts deletion of a Created record only when <paramref name="current"/>, resolved by the caller before
+    /// this call, is the record's canonical endpoint.
+    /// </summary>
+    Task<DataStoreManageDeleteResult> AcceptDeleteAsync(
+        int id,
+        ManagedDataStoreAdminEndpoint current,
+        CancellationToken cancellationToken
+    );
 
     /// <summary>
     /// Finalizes catalog deletion through the execution's fence after physical ownership/absence has

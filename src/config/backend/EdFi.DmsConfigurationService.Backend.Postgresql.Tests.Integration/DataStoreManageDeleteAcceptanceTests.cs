@@ -10,8 +10,11 @@ using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Repositories;
+using FakeItEasy;
 using FluentAssertions;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -191,7 +194,7 @@ public partial class Given_data_store_namespace_reservations
         );
         var result = (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), tenant)
-                .AcceptDeleteAsync(seed.Id, default)
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>()
@@ -251,7 +254,7 @@ public partial class Given_data_store_namespace_reservations
             string ordinaryBefore = await OrdinarySnapshot(connection, seed.OrdinaryId);
             var accepted = (
                 await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), tenant)
-                    .AcceptDeleteAsync(seed.Id, default)
+                    .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default)
             )
                 .Should()
                 .BeOfType<DataStoreManageDeleteResult.Success>()
@@ -269,7 +272,7 @@ public partial class Given_data_store_namespace_reservations
             (_, _, _) => throw new AssertionException("Refused delete must not enqueue.")
         );
         var result = await ManagedRepository(enqueuer, tenant, CreateReadiness(readiness))
-            .AcceptDeleteAsync(seed.Id, default);
+            .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default);
         if (status == "Deleted")
         {
             result.Should().BeOfType<DataStoreManageDeleteResult.NotFound>();
@@ -304,10 +307,10 @@ public partial class Given_data_store_namespace_reservations
             (_, _, _) => throw new AssertionException("Missing delete must not enqueue.")
         );
         var repository = ManagedRepository(enqueuer, tenant, CreateReadiness(readiness));
-        (await repository.AcceptDeleteAsync(seed.Id, default))
+        (await repository.AcceptDeleteAsync(seed.Id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.NotFound>();
-        (await repository.AcceptDeleteAsync(int.MaxValue, default))
+        (await repository.AcceptDeleteAsync(int.MaxValue, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.NotFound>();
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
@@ -322,22 +325,12 @@ public partial class Given_data_store_namespace_reservations
         long? tenant = multitenant ? await Tenant("selected") : null;
         var seed = await SeedDeleteAcceptance(tenant);
         await using var connection = await Open();
+        var stored = storedProvider == "mssql" ? MssqlTarget : Endpoint;
         if (storedProvider == "mssql")
         {
             await connection.ExecuteAsync(
                 """UPDATE dmscs."DataStoreManage" SET "EndpointDescriptor" = @Endpoint WHERE "Id" = @Id;""",
-                new
-                {
-                    seed.Id,
-                    Endpoint = new ManagedDataStoreEndpoint(
-                        "mssql",
-                        "tcp",
-                        "db.example.test",
-                        1433,
-                        null,
-                        "master"
-                    ).CanonicalEncoding,
-                }
+                new { seed.Id, Endpoint = stored.CanonicalEncoding }
             );
         }
         string before = await DeleteAcceptanceSnapshot();
@@ -351,7 +344,7 @@ public partial class Given_data_store_namespace_reservations
                     tenant,
                     ReadyFor(storedProvider == "postgresql" ? "mssql" : "postgresql")
                 )
-                .AcceptDeleteAsync(seed.Id, default)
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(stored), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.ProvisioningUnavailable>();
@@ -365,7 +358,7 @@ public partial class Given_data_store_namespace_reservations
                     tenant,
                     ReadyFor(storedProvider)
                 )
-                .AcceptDeleteAsync(seed.Id, default)
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(stored), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>()
@@ -378,6 +371,39 @@ public partial class Given_data_store_namespace_reservations
         DmsDataStoreProvisionerReadiness readiness = new();
         readiness.Record(new DmsProvisionerReadiness.Ready(provider, DateTimeOffset.UtcNow));
         return readiness;
+    }
+
+    private static readonly ManagedDataStoreEndpoint MssqlTarget = new(
+        "mssql",
+        "tcp",
+        "db.example.test",
+        1433,
+        null,
+        "master"
+    );
+
+    /// <summary>The administrative endpoint a delete attempt resolved: by default the seeded record's own.</summary>
+    private static ManagedDataStoreAdminEndpoint AdminEndpoint(ManagedDataStoreEndpoint? endpoint = null) =>
+        new ManagedDataStoreAdminEndpoint.Resolved(endpoint ?? Endpoint);
+
+    /// <summary>Delete acceptance as the management route runs it, resolving through <paramref name="admin"/>.</summary>
+    private ManagedDataStoreDeleteAcceptance DeleteAcceptance(
+        IJobEnqueuer enqueuer,
+        long? tenantId,
+        IDmsAdminConnectionSource admin,
+        string provider = "postgresql"
+    )
+    {
+        var readiness = ReadyFor(provider);
+        return new(
+            readiness,
+            admin,
+            provider == "postgresql"
+                ? PostgresqlManagedEndpoint.TryParse
+                : (ManagedDataStoreEndpointParser)MssqlManagedEndpoint.TryParse,
+            ManagedRepository(enqueuer, tenantId, readiness),
+            JobClaimPolicy.All
+        );
     }
 
     [Test, Category("DataStoreManageDeleteAcceptance")]
@@ -408,7 +434,7 @@ public partial class Given_data_store_namespace_reservations
         using var services = AcceptanceServices(tenant);
         (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), tenant)
-                .AcceptDeleteAsync(seed.Id, default)
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.FailureUnknown>();
@@ -448,7 +474,7 @@ public partial class Given_data_store_namespace_reservations
                 );
             }
         );
-        var result = (await ManagedRepository(decorator).AcceptDeleteAsync(seed.Id, default))
+        var result = (await ManagedRepository(decorator).AcceptDeleteAsync(seed.Id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.EnqueueFailed>()
             .Subject;
@@ -463,7 +489,7 @@ public partial class Given_data_store_namespace_reservations
                 }
             );
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
-        (await ManagedRepository(real).AcceptDeleteAsync(seed.Id, default))
+        (await ManagedRepository(real).AcceptDeleteAsync(seed.Id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>();
     }
@@ -505,7 +531,8 @@ public partial class Given_data_store_namespace_reservations
                 throw new InvalidOperationException("delete-sensitive-sentinel");
             }
         );
-        var action = () => ManagedRepository(decorator).AcceptDeleteAsync(seed.Id, cancellation.Token);
+        var action = () =>
+            ManagedRepository(decorator).AcceptDeleteAsync(seed.Id, AdminEndpoint(), cancellation.Token);
         if (cancel)
         {
             await action.Should().ThrowAsync<OperationCanceledException>();
@@ -520,7 +547,7 @@ public partial class Given_data_store_namespace_reservations
                 .NotContain("delete-sensitive-sentinel");
         }
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
-        (await ManagedRepository(real).AcceptDeleteAsync(seed.Id, default))
+        (await ManagedRepository(real).AcceptDeleteAsync(seed.Id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>();
     }
@@ -552,7 +579,7 @@ public partial class Given_data_store_namespace_reservations
         try
         {
             var result = await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
-                .AcceptDeleteAsync(seed.Id, default);
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default);
             JobFailureDiagnostic diagnostic =
                 point == "job"
                     ? result
@@ -577,7 +604,7 @@ public partial class Given_data_store_namespace_reservations
         }
         (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
-                .AcceptDeleteAsync(seed.Id, default)
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>();
@@ -614,7 +641,7 @@ public partial class Given_data_store_namespace_reservations
                 return result;
             }
         );
-        (await ManagedRepository(decorator).AcceptDeleteAsync(seed.Id, default))
+        (await ManagedRepository(decorator).AcceptDeleteAsync(seed.Id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.FailureUnknown>();
         enqueued.Should().Be(failLink);
@@ -649,7 +676,7 @@ public partial class Given_data_store_namespace_reservations
                 return result;
             }
         );
-        var first = ManagedRepository(decorator, tenant).AcceptDeleteAsync(seed.Id, default);
+        var first = ManagedRepository(decorator, tenant).AcceptDeleteAsync(seed.Id, AdminEndpoint(), default);
         Task<DataStoreManageDeleteResult>? second = null;
         bool waited = false;
         try
@@ -657,7 +684,7 @@ public partial class Given_data_store_namespace_reservations
             await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
             string applicationName = "delete-competing-" + Guid.NewGuid().ToString("N");
             second = ManagedRepository(real, tenant, applicationName: applicationName)
-                .AcceptDeleteAsync(seed.Id, default);
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default);
             waited = await ObserveGateWait(applicationName, second);
         }
         finally
@@ -711,7 +738,7 @@ public partial class Given_data_store_namespace_reservations
                 services.GetRequiredService<IJobEnqueuer>(),
                 applicationName: applicationName
             )
-            .AcceptDeleteAsync(seed.Id, default);
+            .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default);
         bool waited = false;
         DateTime predecessor = default;
         try
@@ -768,7 +795,7 @@ public partial class Given_data_store_namespace_reservations
                 services.GetRequiredService<IJobEnqueuer>(),
                 applicationName: applicationName
             )
-            .AcceptDeleteAsync(seed.Id, cancellation.Token);
+            .AcceptDeleteAsync(seed.Id, AdminEndpoint(), cancellation.Token);
         bool waited = false;
         try
         {
@@ -835,5 +862,220 @@ public partial class Given_data_store_namespace_reservations
         }
         waited.Should().BeTrue();
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageDeleteAcceptance")]
+    public async Task It_refuses_delete_while_the_administrative_connection_names_another_server_without_mutation(
+        [Values(false, true)] bool multitenant,
+        [Values("postgresql", "mssql")] string storedProvider,
+        [Values("host", "port", "locator")] string change
+    )
+    {
+        long? tenant = multitenant ? await Tenant("selected") : null;
+        var seed = await SeedDeleteAcceptance(tenant);
+        await using var connection = await Open();
+        bool postgresql = storedProvider == "postgresql";
+        if (!postgresql)
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."DataStoreManage" SET "EndpointDescriptor" = @Endpoint WHERE "Id" = @Id;""",
+                new { seed.Id, Endpoint = MssqlTarget.CanonicalEncoding }
+            );
+        }
+        // The provider matches the record and the ready provisioner, so provider equality alone would admit it.
+        string admin = (postgresql, change) switch
+        {
+            (true, "host") => "Host=other.example.test;Username=admin;Password=admin-secret",
+            (true, "port") => "Host=db.example.test;Port=5433;Username=admin;Password=admin-secret",
+            (true, _) => "Host=db.example.test:5433;Username=admin;Password=admin-secret",
+            (false, "host") => "Server=tcp:other.example.test,1433;User ID=admin;Password=admin-secret",
+            (false, "port") => "Server=tcp:db.example.test,1434;User ID=admin;Password=admin-secret",
+            (false, _) => "Server=tcp:db.example.test\\inst;User ID=admin;Password=admin-secret",
+        };
+        var source = A.Fake<IDmsAdminConnectionSource>();
+        A.CallTo(() => source.ResolveAsync(A<CancellationToken>._))
+            .ReturnsLazily(() => new DmsAdminConnectionResolution.Resolved(new(admin)));
+        string before = await DeleteAcceptanceSnapshot();
+        var refusing = new EnqueuerDecorator(
+            (_, _, _) => throw new AssertionException("Refused delete must not enqueue.")
+        );
+        (await DeleteAcceptance(refusing, tenant, source, storedProvider).AcceptAsync(seed.Id, default))
+            .Should()
+            .BeOfType<DataStoreManageDeleteResult.ProvisioningUnavailable>();
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+        A.CallTo(() => source.ResolveAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+
+        // Naming the recorded server again admits the same Created record. Credentials, keyword aliases,
+        // letter case and an omitted default port need not repeat the original spelling.
+        admin = postgresql
+            ? "Server=DB.EXAMPLE.TEST;Username=rotated;Password=rotated-secret"
+            : "Data Source=TCP:DB.Example.Test;User ID=rotated;Password=rotated-secret";
+        using var services = AcceptanceServices(tenant);
+        var rowBefore = await DeleteRow(connection, seed.Id);
+        var accepted = (
+            await DeleteAcceptance(
+                    services.GetRequiredService<IJobEnqueuer>(),
+                    tenant,
+                    source,
+                    storedProvider
+                )
+                .AcceptAsync(seed.Id, default)
+        )
+            .Should()
+            .BeOfType<DataStoreManageDeleteResult.Success>()
+            .Subject;
+        await AssertAcceptedDelete(connection, seed.Id, tenant, accepted.JobId, rowBefore);
+    }
+
+    [Test, Category("DataStoreManageDeleteAcceptance")]
+    public async Task It_keeps_lifecycle_and_not_found_precedence_and_refuses_safely_when_the_endpoint_is_unresolvable(
+        [Values("failed", "unparseable", "throws")] string failure,
+        [Values("Created", "CreateError", "Deleted", "Absent")] string status
+    )
+    {
+        var seed = await SeedDeleteAcceptance();
+        await using var connection = await Open();
+        if (status is "CreateError" or "Deleted")
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."DataStoreManage" SET "Status" = @Status WHERE "Id" = @Id;""",
+                new { Status = status, seed.Id }
+            );
+        }
+        var source = A.Fake<IDmsAdminConnectionSource>();
+        var resolve = A.CallTo(() => source.ResolveAsync(A<CancellationToken>._));
+        if (failure == "failed")
+        {
+            resolve.Returns(
+                new DmsAdminConnectionResolution.Failed(
+                    new DmsProvisioningDiagnostic(
+                        "System.InvalidOperationException",
+                        null,
+                        DmsAdminConnectionSource.ResolverFailedStep
+                    )
+                )
+            );
+        }
+        else if (failure == "unparseable")
+        {
+            resolve.Returns(
+                new DmsAdminConnectionResolution.Resolved(
+                    new("Host=db.example.test,other.example.test;Password=admin-sensitive-sentinel")
+                )
+            );
+        }
+        else
+        {
+            resolve.ThrowsAsync(new InvalidOperationException("admin-sensitive-sentinel"));
+        }
+        string before = await DeleteAcceptanceSnapshot();
+        var refusing = new EnqueuerDecorator(
+            (_, _, _) => throw new AssertionException("Refused delete must not enqueue.")
+        );
+        var result = await DeleteAcceptance(refusing, null, source)
+            .AcceptAsync(status == "Absent" ? int.MaxValue : seed.Id, default);
+        if (status == "Created")
+        {
+            var diagnostic = result
+                .Should()
+                .BeOfType<DataStoreManageDeleteResult.FailureUnknown>()
+                .Subject.Diagnostic;
+            diagnostic
+                .Operation.Should()
+                .Be(
+                    failure switch
+                    {
+                        "failed" => DmsAdminConnectionSource.ResolverFailedStep,
+                        "unparseable" => "ParseManagedDataStoreEndpoint",
+                        _ => "ResolveManagedDataStoreEndpoint",
+                    }
+                );
+            diagnostic.ToString().Should().NotContain("admin-sensitive-sentinel");
+        }
+        else if (status == "CreateError")
+        {
+            result
+                .Should()
+                .BeOfType<DataStoreManageDeleteResult.InvalidState>()
+                .Subject.Status.Should()
+                .Be(ManagedDataStoreStatus.CreateError);
+        }
+        else
+        {
+            result.Should().BeOfType<DataStoreManageDeleteResult.NotFound>();
+        }
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+    }
+
+    [Test, Category("DataStoreManageDeleteAcceptance")]
+    public async Task It_resolves_the_administrative_endpoint_outside_the_catalog_locks_then_rereads_the_record(
+        [Values(false, true)] bool retargeted
+    )
+    {
+        var seed = await SeedDeleteAcceptance();
+        using var services = AcceptanceServices();
+        TaskCompletionSource entered = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource<DmsAdminConnectionResolution> resolved = new(
+            TaskCreationOptions.RunContinuationsAsynchronously
+        );
+        var source = A.Fake<IDmsAdminConnectionSource>();
+        A.CallTo(() => source.ResolveAsync(A<CancellationToken>._))
+            .Invokes(() => entered.TrySetResult())
+            .Returns(resolved.Task);
+        var pending = DeleteAcceptance(services.GetRequiredService<IJobEnqueuer>(), null, source)
+            .AcceptAsync(seed.Id, default);
+        try
+        {
+            await entered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            // While resolution is pending, another writer takes the gate, the aggregate and the ordinary row
+            // and commits within the deadline, so acceptance holds none of them yet.
+            await using var writer = await Open();
+            await using var transaction = await writer.BeginTransactionAsync();
+            using CancellationTokenSource deadline = new(TimeSpan.FromSeconds(5));
+            await DataStoreCatalog.AcquireTenantGateAsync(transaction, null, deadline.Token);
+            await writer.ExecuteAsync(
+                new CommandDefinition(
+                    """
+                    SELECT "Id" FROM dmscs."DataStoreManage" WHERE "Id" = @Id FOR UPDATE;
+                    SELECT "Id" FROM dmscs."DataStore" WHERE "Id" = @OrdinaryId FOR UPDATE;
+                    UPDATE dmscs."DataStoreManage" SET "EndpointDescriptor" = @Endpoint WHERE "Id" = @Id;
+                    """,
+                    new
+                    {
+                        seed.Id,
+                        seed.OrdinaryId,
+                        Endpoint = (
+                            retargeted ? Endpoint with { Host = "other.example.test" } : Endpoint
+                        ).CanonicalEncoding,
+                    },
+                    transaction,
+                    cancellationToken: deadline.Token
+                )
+            );
+            await transaction.CommitAsync(deadline.Token);
+        }
+        finally
+        {
+            resolved.TrySetResult(
+                new DmsAdminConnectionResolution.Resolved(new("Host=db.example.test;Password=admin-secret"))
+            );
+        }
+        // Acceptance reads the record after resolving, so it compares with the committed endpoint.
+        var result = await pending;
+        A.CallTo(() => source.ResolveAsync(A<CancellationToken>._)).MustHaveHappenedOnceExactly();
+        await using var connection = await Open();
+        var row = await DeleteRow(connection, seed.Id);
+        if (retargeted)
+        {
+            result.Should().BeOfType<DataStoreManageDeleteResult.ProvisioningUnavailable>();
+            row["Status"].Should().Be("Created");
+            row["DeleteJobId"].Should().BeNull();
+            await AssertAcceptanceCounts(1, 0);
+        }
+        else
+        {
+            result.Should().BeOfType<DataStoreManageDeleteResult.Success>();
+            row["Status"].Should().Be("PendingDelete");
+        }
     }
 }

@@ -121,7 +121,7 @@ public static class DataStoreManageModule
             .MapSecuredDelete("/{id}", Delete)
             .WithSummary("Accept managed data store deletion")
             .WithDescription(
-                "Only Created can be deleted. Returns 202 with a jobQueuedResult after durable acceptance, without Location; its jobId is readable through /v3/jobs/{jobId}. Absent or Deleted returns 404; other states return 400. Closed readiness returns 503 without changing Created."
+                "Only Created can be deleted. Returns 202 with a jobQueuedResult after durable acceptance, without Location; its jobId is readable through /v3/jobs/{jobId}. Absent or Deleted returns 404; other states return 400. Closed readiness, or an administrative connection that no longer names the store's server, returns 503 without changing Created."
             )
             .Produces<JobQueuedResponse>(202)
             .ProducesProblem(400)
@@ -306,8 +306,8 @@ public static class DataStoreManageModule
             return Invalid(context, "Id must be an int32 value.", "id");
         }
         return await services
-            .GetRequiredService<IDataStoreManageRepository>()
-            .AcceptDeleteAsync(manageId, context.RequestAborted) switch
+            .GetRequiredService<ManagedDataStoreDeleteAcceptance>()
+            .AcceptAsync(manageId, context.RequestAborted) switch
         {
             DataStoreManageDeleteResult.Success success => Queued(null, success.JobId, DeleteQueuedMessage),
             DataStoreManageDeleteResult.ManagementDisabled => Disabled(context),

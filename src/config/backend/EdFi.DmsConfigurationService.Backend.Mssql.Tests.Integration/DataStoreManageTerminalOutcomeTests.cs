@@ -298,7 +298,7 @@ public partial class Given_data_store_namespace_reservations
                             services.GetRequiredService<IJobEnqueuer>(),
                             readiness: ReadyFor("mssql")
                         )
-                        .AcceptDeleteAsync(id, default)
+                        .AcceptDeleteAsync(id, AdminEndpoint(creation.Command.Identity.Endpoint), default)
                 )
                     .Should()
                     .BeOfType<DataStoreManageDeleteResult.Success>();

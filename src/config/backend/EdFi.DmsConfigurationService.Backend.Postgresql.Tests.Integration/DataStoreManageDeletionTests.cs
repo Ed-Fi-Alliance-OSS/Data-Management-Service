@@ -42,7 +42,11 @@ public partial class Given_data_store_namespace_reservations
         // The provisioner is ready for the seeded record's own target provider.
         var accepted = (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), tenantId, ReadyFor(provider))
-                .AcceptDeleteAsync(published.Command.Id, default)
+                .AcceptDeleteAsync(
+                    published.Command.Id,
+                    AdminEndpoint(published.Command.Identity.Endpoint),
+                    default
+                )
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>()

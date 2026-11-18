@@ -27,15 +27,19 @@ public partial class Given_data_store_namespace_reservations
         Func<long?, IJobEnqueuer> enqueuer,
         bool multitenant = false,
         bool ready = true,
-        bool enabled = true
+        bool enabled = true,
+        Func<string>? adminConnection = null
     )
     {
         var readiness = CreateReadiness(ready ? "Ready" : "NotReady");
         var admin = A.Fake<IDmsAdminConnectionSource>();
+        // Read per request; by default the server the seeded records target.
         A.CallTo(() => admin.ResolveAsync(A<CancellationToken>._))
-            .Returns(
+            .ReturnsLazily(() =>
                 new DmsAdminConnectionResolution.Resolved(
-                    new DmsAdminConnectionString("Host=db.example;Username=admin;Password=test-only")
+                    new DmsAdminConnectionString(
+                        adminConnection?.Invoke() ?? "Host=db.example.test;Username=admin;Password=test-only"
+                    )
                 )
             );
         var policy = enabled ? JobClaimPolicy.All : JobClaimPolicy.ExcludeManagedDataStores;
@@ -56,6 +60,13 @@ public partial class Given_data_store_namespace_reservations
                     admin,
                     PostgresqlManagedEndpoint.TryParse,
                     ProtectedDatabaseNames.Create("cms", []),
+                    sp.GetRequiredService<IDataStoreManageRepository>(),
+                    policy
+                ));
+                services.AddScoped(sp => new ManagedDataStoreDeleteAcceptance(
+                    readiness,
+                    admin,
+                    PostgresqlManagedEndpoint.TryParse,
                     sp.GetRequiredService<IDataStoreManageRepository>(),
                     policy
                 ));
@@ -326,6 +337,39 @@ public partial class Given_data_store_namespace_reservations
             row["DeleteJobId"].Should().Be(jobId);
         }
         await AssertJobReadable(host, jobId, "api-a", "api-b");
+    }
+
+    [Test, Category("DataStoreManageHttp")]
+    public async Task It_returns_503_for_HTTP_delete_while_the_administrative_connection_names_another_server()
+    {
+        var seed = await SeedDeleteAcceptance();
+        using var services = AcceptanceServices();
+        string admin = "Host=other.example.test;Username=admin;Password=test-only";
+        await using var host = ManagedHttpHost(
+            _ => services.GetRequiredService<IJobEnqueuer>(),
+            adminConnection: () => admin
+        );
+        using var client = ManagedClient(host);
+        string before = await DeleteAcceptanceSnapshot();
+        using (var refused = await client.DeleteAsync($"/v3/dataStores/manage/{seed.Id}"))
+        {
+            string body = await refused.Content.ReadAsStringAsync();
+            refused.StatusCode.Should().Be(HttpStatusCode.ServiceUnavailable, body);
+            refused.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+            body.Should().NotContain("other.example.test").And.NotContain("test-only");
+        }
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+
+        // The recorded server again, with other credentials and spelling: the unchanged 202 contract.
+        admin = "Server=DB.EXAMPLE.TEST;Port=5432;Username=rotated;Password=rotated-only";
+        using var accepted = await client.DeleteAsync($"/v3/dataStores/manage/{seed.Id}");
+        accepted.StatusCode.Should().Be(HttpStatusCode.Accepted, await accepted.Content.ReadAsStringAsync());
+        accepted.Headers.Location.Should().BeNull();
+        string jobId = await QueuedJobId(accepted, "The Data Store has been queued to be deleted.");
+        await using var connection = await Open();
+        var row = await DeleteRow(connection, seed.Id);
+        row["Status"].Should().Be("PendingDelete");
+        row["DeleteJobId"].Should().Be(jobId);
     }
 
     [Test, Category("DataStoreManageHttp")]

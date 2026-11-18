@@ -287,9 +287,11 @@ public sealed partial class DataStoreManageRepository(
 
     public async Task<DataStoreManageDeleteResult> AcceptDeleteAsync(
         int id,
+        ManagedDataStoreAdminEndpoint current,
         CancellationToken cancellationToken
     )
     {
+        ArgumentNullException.ThrowIfNull(current);
         cancellationToken.ThrowIfCancellationRequested();
         if (claimPolicy.ExcludesManagedDataStores)
         {
@@ -355,14 +357,19 @@ public sealed partial class DataStoreManageRepository(
             }
             // State/tenant outcomes take precedence. Check the latched gate immediately before writing: it must
             // be Ready for this record's own target provider, which is independent of the CMS persistence
-            // provider. Execution still verifies the endpoint and ownership; this is not proof of the same host.
+            // provider, and this attempt's administrative endpoint must be the record's. Execution still
+            // verifies the endpoint and ownership, because the configuration can change after acceptance.
+            var recorded = ManagedDataStoreEndpoint.FromCanonicalEncoding(row.EndpointDescriptor!);
             if (
                 readiness.Current is not DmsProvisionerReadiness.Ready ready
-                || ready.Provider
-                    != ManagedDataStoreEndpoint.FromCanonicalEncoding(row.EndpointDescriptor!).Provider
+                || ready.Provider != recorded.Provider
             )
             {
                 return new DataStoreManageDeleteResult.ProvisioningUnavailable();
+            }
+            if (current.RefusalFor(recorded) is { } refusal)
+            {
+                return refusal;
             }
             int updated = await connection.ExecuteAsync(
                 new CommandDefinition(

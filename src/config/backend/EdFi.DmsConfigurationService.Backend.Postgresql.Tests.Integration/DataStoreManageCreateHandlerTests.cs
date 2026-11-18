@@ -293,7 +293,7 @@ public partial class Given_data_store_namespace_reservations
         await using var services = AcceptanceServices();
         (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>())
-                .AcceptDeleteAsync(seed.Command.Id, default)
+                .AcceptDeleteAsync(seed.Command.Id, AdminEndpoint(seed.Command.Identity.Endpoint), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>();

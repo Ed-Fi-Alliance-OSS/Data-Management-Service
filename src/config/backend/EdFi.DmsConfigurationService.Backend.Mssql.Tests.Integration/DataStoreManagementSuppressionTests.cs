@@ -40,10 +40,10 @@ public partial class Given_data_store_namespace_reservations
         (await disabled.AcceptCreateAsync(CreateCommand("Suppressed"), default))
             .Should()
             .BeOfType<DataStoreManageCreateResult.ManagementDisabled>();
-        (await disabled.AcceptDeleteAsync(id, default))
+        (await disabled.AcceptDeleteAsync(id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.ManagementDisabled>();
-        (await disabled.AcceptDeleteAsync(int.MaxValue, default))
+        (await disabled.AcceptDeleteAsync(int.MaxValue, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.ManagementDisabled>();
         (await DeleteAcceptanceSnapshot()).Should().Be(before);
@@ -53,7 +53,7 @@ public partial class Given_data_store_namespace_reservations
         (await enabled.AcceptCreateAsync(CreateCommand("Suppressed"), default))
             .Should()
             .BeOfType<DataStoreManageCreateResult.Success>();
-        (await enabled.AcceptDeleteAsync(id, default))
+        (await enabled.AcceptDeleteAsync(id, AdminEndpoint(), default))
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>();
     }

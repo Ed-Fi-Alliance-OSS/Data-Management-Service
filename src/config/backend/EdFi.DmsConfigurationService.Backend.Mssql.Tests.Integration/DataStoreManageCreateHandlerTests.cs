@@ -294,7 +294,7 @@ public partial class Given_data_store_namespace_reservations
         // The provisioner is ready for the seeded record's own target provider.
         (
             await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), readiness: ReadyFor("mssql"))
-                .AcceptDeleteAsync(seed.Command.Id, default)
+                .AcceptDeleteAsync(seed.Command.Id, AdminEndpoint(seed.Command.Identity.Endpoint), default)
         )
             .Should()
             .BeOfType<DataStoreManageDeleteResult.Success>();

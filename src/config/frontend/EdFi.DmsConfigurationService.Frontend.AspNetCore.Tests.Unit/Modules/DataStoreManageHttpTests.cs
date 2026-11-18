@@ -66,6 +66,15 @@ public class Given_managed_data_store_HTTP
                         policy
                     )
                 );
+                services.AddSingleton(
+                    new ManagedDataStoreDeleteAcceptance(
+                        _readiness,
+                        _admin,
+                        PostgresqlManagedEndpoint.TryParse,
+                        _repository,
+                        policy
+                    )
+                );
             },
             identity
         );
@@ -105,7 +114,13 @@ public class Given_managed_data_store_HTTP
                     return Task.FromResult(_create);
                 }
             );
-        A.CallTo(() => _repository.AcceptDeleteAsync(A<int>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _repository.AcceptDeleteAsync(
+                    A<int>._,
+                    A<ManagedDataStoreAdminEndpoint>._,
+                    A<CancellationToken>._
+                )
+            )
             .ReturnsLazily(() => Task.FromResult(_delete));
         A.CallTo(() => _repository.GetByIdAsync(A<int>._, A<CancellationToken>._))
             .ReturnsLazily(() => Task.FromResult(_get));
@@ -250,6 +265,17 @@ public class Given_managed_data_store_HTTP
         deleted.StatusCode.Should().Be(HttpStatusCode.Accepted);
         await AssertQueued(deleted, "accepted-delete-job", "The Data Store has been queued to be deleted.");
         deleted.Headers.Location.Should().BeNull();
+        // The route resolves the administrative endpoint once and hands acceptance only its canonical form.
+        A.CallTo(() =>
+                _repository.AcceptDeleteAsync(
+                    17,
+                    new ManagedDataStoreAdminEndpoint.Resolved(
+                        new("postgresql", "tcp", "db.example", 5432, null, "postgres")
+                    ),
+                    A<CancellationToken>._
+                )
+            )
+            .MustHaveHappenedOnceExactly();
     }
 
     [TestCase("{}"), TestCase("null"), TestCase("{"), TestCase("[]")]
@@ -678,6 +704,9 @@ public class Given_a_managed_data_store_request_whose_dependency_throws
     private const string ReadOnly = "edfi_admin_api/readonly_access";
 
     private readonly IDataStoreManageRepository _repository = A.Fake<IDataStoreManageRepository>();
+    private readonly IDmsAdminConnectionSource _admin = A.Fake<IDmsAdminConnectionSource>();
+    private readonly IDmsDataStoreProvisionerReadiness _readiness =
+        A.Fake<IDmsDataStoreProvisionerReadiness>();
     private readonly TokenRevocationStartupTests.StartupLogCapture _logs = new();
     private WebApplicationFactory<Program> _factory = null!;
     private bool _failRepositoryResolution;
@@ -716,6 +745,14 @@ public class Given_a_managed_data_store_request_whose_dependency_throws
                 Interlocked.Increment(ref _acceptanceResolutions);
                 throw DependencyFailure();
             });
+            // Delete acceptance resolves the repository the same way, so its failures surface there.
+            services.AddTransient(provider => new ManagedDataStoreDeleteAcceptance(
+                _readiness,
+                _admin,
+                PostgresqlManagedEndpoint.TryParse,
+                provider.GetRequiredService<IDataStoreManageRepository>(),
+                JobClaimPolicy.All
+            ));
         });
         // Starts the host; a startup resolution of either dependency would fail here.
         _ = _factory.Services;
@@ -728,6 +765,14 @@ public class Given_a_managed_data_store_request_whose_dependency_throws
     public void Reset()
     {
         Fake.Reset(_repository);
+        A.CallTo(() => _readiness.Current)
+            .Returns(new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UtcNow));
+        A.CallTo(() => _admin.ResolveAsync(A<CancellationToken>._))
+            .Returns(
+                new DmsAdminConnectionResolution.Resolved(
+                    new DmsAdminConnectionString("Host=db.example;Username=admin;Password=private-test-value")
+                )
+            );
         _failRepositoryResolution = false;
         Interlocked.Exchange(ref _acceptanceResolutions, 0);
         Interlocked.Exchange(ref _repositoryResolutions, 0);
@@ -836,7 +881,13 @@ public class Given_a_managed_data_store_request_whose_dependency_throws
     [Test]
     public async Task It_contains_a_faulted_repository_call()
     {
-        A.CallTo(() => _repository.AcceptDeleteAsync(A<int>._, A<CancellationToken>._))
+        A.CallTo(() =>
+                _repository.AcceptDeleteAsync(
+                    A<int>._,
+                    A<ManagedDataStoreAdminEndpoint>._,
+                    A<CancellationToken>._
+                )
+            )
             .ThrowsAsync(DependencyFailure);
         using var client = Client(Admin);
         await AssertContained(
@@ -844,7 +895,9 @@ public class Given_a_managed_data_store_request_whose_dependency_throws
             "DELETE",
             "/v3/dataStores/manage/17"
         );
-        A.CallTo(() => _repository.AcceptDeleteAsync(17, A<CancellationToken>._))
+        A.CallTo(() =>
+                _repository.AcceptDeleteAsync(17, A<ManagedDataStoreAdminEndpoint>._, A<CancellationToken>._)
+            )
             .MustHaveHappenedOnceExactly();
     }
 

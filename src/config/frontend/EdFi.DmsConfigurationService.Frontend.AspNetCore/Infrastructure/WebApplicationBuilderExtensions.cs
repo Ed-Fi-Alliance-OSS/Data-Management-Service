@@ -386,6 +386,9 @@ public static class WebApplicationBuilderExtensions
             ActivatorUtilities.CreateInstance<ManagedDataStoreCreateAcceptance>(provider)
         );
         services.AddTransient(provider =>
+            ActivatorUtilities.CreateInstance<ManagedDataStoreDeleteAcceptance>(provider)
+        );
+        services.AddTransient(provider =>
             ActivatorUtilities.CreateInstance<ManagedDataStoreRuntimeConnectionBuilder>(provider)
         );
         services.AddTransient(provider =>

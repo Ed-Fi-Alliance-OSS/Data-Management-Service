@@ -113,7 +113,7 @@ accepting, with target reservation spanning tenants.
 | DELETE of Created | **202** with a `jobQueuedResult` body, `{"jobId": "…", "message": "The Data Store has been queued to be deleted."}`, no Location. This accepts asynchronous deletion; it does not mean the physical database has already disappeared. |
 | DELETE of absent/Deleted | **404**; GET still returns a Deleted tombstone. |
 | DELETE in another lifecycle state | State-specific **400** naming the state, with no state/job mutation. `CreateFailed`/`DeleteFailed` remain eligible for an automatic retry; `CreateError`/`DeleteError` will not be retried and need operator investigation. State/not-found checks take precedence over readiness. |
-| Closed readiness | **503**, `Managed data store provisioning is unavailable.` for POST or otherwise eligible DELETE, including a DELETE whose record targets a different provider than the one the provisioner is ready for; no Retry-After or readiness detail. |
+| Closed readiness | **503**, `Managed data store provisioning is unavailable.` for POST or otherwise eligible DELETE, including a DELETE whose record targets a different provider than the one the provisioner is ready for, or a server (host and port, or named instance) other than the one the administrative connection now names; credentials may differ. No Retry-After or readiness detail. |
 | Management disabled | Authorized managed requests, including reads, return **400**, `Data store management is disabled by AppSettings:EnableDataStoreManagement.` |
 | Ordinary PUT/DELETE of a currently linked managed registration | Atomic **409** with an absolute management URL, including while management is disabled. Use the managed lifecycle; do not bypass the guard. |
 

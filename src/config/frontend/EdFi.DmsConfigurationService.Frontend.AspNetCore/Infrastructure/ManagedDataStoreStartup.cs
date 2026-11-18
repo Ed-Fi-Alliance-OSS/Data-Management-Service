@@ -62,13 +62,16 @@ public static class ManagedDataStoreStartup
     /// <summary>
     /// The statically known destination. When <paramref name="PortOrInstanceKnown"/> is false, the effective
     /// port or named instance depends on a secret and the endpoint carries only a parser representative for it.
+    /// Its literal separator still fixes whether it is a port or a named instance.
     /// </summary>
     private sealed record KnownEndpoint(ManagedDataStoreEndpoint Endpoint, bool PortOrInstanceKnown)
     {
         public bool ProvablyDiffersFrom(KnownEndpoint other) =>
             PortOrInstanceKnown && other.PortOrInstanceKnown
                 ? Endpoint != other.Endpoint
-                : WithoutPortOrInstance(Endpoint) != WithoutPortOrInstance(other.Endpoint);
+                // Port and named-instance addressing never canonicalize to the same endpoint.
+                : WithoutPortOrInstance(Endpoint) != WithoutPortOrInstance(other.Endpoint)
+                    || (Endpoint.Instance is null) != (other.Endpoint.Instance is null);
 
         // Representatives are never compared as real values.
         private static ManagedDataStoreEndpoint WithoutPortOrInstance(ManagedDataStoreEndpoint endpoint) =>
@@ -159,10 +162,10 @@ public static class ManagedDataStoreStartup
                 string locator = (string?)literalFields[routingField] ?? string.Empty;
                 // The native builder has applied aliases and last-assignment precedence to this template.
                 routingUnknown = SecretReferenceTokens.Find(locator).Count != 0;
-                if (routingUnknown && provider.Provider == "mssql" && HasLiteralServer(locator))
+                if (routingUnknown && HasLiteralServer(locator, provider.Provider == "postgresql"))
                 {
-                    // Only the port or instance after a literal "tcp:host" and its separator is unknown.
-                    // A reference inside a PostgreSQL host could add routing syntax, so none is compared.
+                    // Only the port or instance after a literal host and its separator is unknown. For
+                    // PostgreSQL this inline port also overrides any Port assignment.
                     routingUnknown = false;
                     suffixUnknown = true;
                 }
@@ -225,15 +228,30 @@ public static class ManagedDataStoreStartup
         );
 
     /// <summary>
-    /// SQL Server only: true when every reference follows the first port or instance separator, so the protocol
-    /// prefix and host before it are literal. <see cref="StaticLocator"/> still validates the whole locator.
+    /// True when every reference follows the first port or instance separator, so the SQL Server protocol
+    /// prefix and the host before it are literal. <see cref="StaticLocator"/> still validates the whole locator.
+    /// A PostgreSQL separator must be the only ':', after a host that is not a socket, a bracketed address or
+    /// text that could begin an IPv6 address.
     /// </summary>
-    private static bool HasLiteralServer(string locator)
+    private static bool HasLiteralServer(string locator, bool postgresql)
     {
         string masked = MaskReferences(locator).Trim();
+        if (postgresql)
+        {
+            int colon = masked.IndexOf(':');
+            return colon > 0
+                && colon == masked.LastIndexOf(':')
+                && masked[0] is not ('/' or '@' or '[')
+                && !masked[..colon].Contains(Unknown)
+                && !CouldBeIpv6Group(masked[..colon]);
+        }
         int separator = masked.IndexOfAny([',', '\\']);
         return separator > 0 && !masked[..separator].Contains(Unknown);
     }
+
+    /// <summary>At most four hex digits: text that could be one group of an IPv6 address.</summary>
+    private static bool CouldBeIpv6Group(string value) =>
+        value.Length <= 4 && value.All(char.IsAsciiHexDigit);
 
     private static string StaticLocator(string value, bool postgresql)
     {
@@ -277,6 +295,18 @@ public static class ManagedDataStoreStartup
             else if (value.Count(c => c == ':') == 1)
             {
                 port = value.IndexOf(':');
+                // When the text before the colon and every literal run after it are IPv6 groups, a reference
+                // may supply the rest of an address (2001:db8${secret:rest} can resolve to 2001:db8::1), so
+                // the host is unknown. Any other literal text is still validated as a port below.
+                string suffix = value[(port + 1)..];
+                if (
+                    suffix.Contains(Unknown)
+                    && CouldBeIpv6Group(value[..port])
+                    && Array.TrueForAll(suffix.Split(Unknown), CouldBeIpv6Group)
+                )
+                {
+                    return "static-validation.invalid";
+                }
             }
             if (port >= 0)
             {

@@ -443,6 +443,23 @@ function Resolve-RestoreSeparateConfigDataStore {
         return [pscustomobject]@{ DataStore = $matchingDataStores[0]; RegistrationName = $null }
     }
 
+    return [pscustomobject]@{ DataStore = $null; RegistrationName = (Get-RestoreRegistrationName -DataStores $DataStores) }
+}
+
+function Get-RestoreRegistrationName {
+    <#
+    .SYNOPSIS
+    The first of "Local Development Data Store", "Local Development Data Store (2)", ... that no listed
+    data store uses and the Configuration Service has not already refused in this run.
+    #>
+    param(
+        [object[]]
+        $DataStores,
+
+        [string[]]
+        $RefusedNames = @()
+    )
+
     # Match the catalog's fixed boundary-whitespace set while retaining the conservative case
     # comparison for these generated ASCII names. Stored display names remain unchanged.
     $nameBoundaryWhitespace = [char[]]@(
@@ -454,12 +471,113 @@ function Resolve-RestoreSeparateConfigDataStore {
     foreach ($dataStore in $DataStores) {
         $null = $registeredNames.Add(([string]$dataStore.name).Trim($nameBoundaryWhitespace))
     }
+    foreach ($name in $RefusedNames) {
+        $null = $registeredNames.Add($name.Trim($nameBoundaryWhitespace))
+    }
     $registrationName = "Local Development Data Store"
     for ($suffix = 2; $registeredNames.Contains($registrationName.Trim($nameBoundaryWhitespace)); $suffix++) {
         $registrationName = "Local Development Data Store ($suffix)"
     }
 
-    return [pscustomobject]@{ DataStore = $null; RegistrationName = $registrationName }
+    return $registrationName
+}
+
+function Test-IsDuplicateDataStoreNameResponse {
+    <#
+    .SYNOPSIS
+    True only for the ordinary data store API's duplicate-name refusal: a 400 data-validation problem
+    whose only validation error is the fixed Name message. Any other status, body or failure is not.
+    #>
+    param(
+        [Parameter(Mandatory)]
+        [System.Management.Automation.ErrorRecord]
+        $ErrorRecord
+    )
+
+    $response = Get-HttpErrorResponse -ErrorRecord $ErrorRecord
+    if ($response.StatusCode -ne 400 -or [string]::IsNullOrWhiteSpace($response.Body)) {
+        return $false
+    }
+    try {
+        $problem = $response.Body | ConvertFrom-Json -ErrorAction Stop
+    }
+    catch {
+        return $false
+    }
+    if ($problem -isnot [System.Management.Automation.PSCustomObject]) {
+        return $false
+    }
+
+    $type = $problem.PSObject.Properties["type"]
+    $validationErrors = $problem.PSObject.Properties["validationErrors"]
+    if ($null -eq $type -or
+        -not ([string]$type.Value).Equals("urn:ed-fi:management-api:bad-request:data", [System.StringComparison]::Ordinal) -or
+        $null -eq $validationErrors -or
+        $validationErrors.Value -isnot [System.Management.Automation.PSCustomObject]) {
+        return $false
+    }
+
+    $fields = @($validationErrors.Value.PSObject.Properties)
+    if ($fields.Count -ne 1 -or
+        -not $fields[0].Name.Equals("Name", [System.StringComparison]::Ordinal) -or
+        $fields[0].Value -isnot [array]) {
+        return $false
+    }
+
+    $messages = @($fields[0].Value)
+    return $messages.Count -eq 1 -and
+        $messages[0] -is [string] -and
+        $messages[0].Equals("A data store with this name already exists.", [System.StringComparison]::Ordinal)
+}
+
+function Add-RestoreDataStoreRegistration {
+    <#
+    .SYNOPSIS
+    Restore with -SeparateConfigDatabase: registers the restored target under the first name the
+    Configuration Service accepts, trying at most -MaximumAttempts names.
+
+    .DESCRIPTION
+    The listing shows ordinary data stores only, but the Configuration Service also refuses a name a
+    managed data store reserves, including one whose creation failed. Only that exact duplicate-name
+    refusal moves to the next name that no listed data store uses and no earlier attempt was refused;
+    any other failure ends the run, so an uncertain registration is never repeated under another name. A
+    refused name says nothing about the target, so nothing is reused because of it.
+    #>
+    param(
+        [AllowEmptyCollection()]
+        [object[]]
+        $DataStores,
+
+        [Parameter(Mandatory)]
+        [string]
+        $RegistrationName,
+
+        [Parameter(Mandatory)]
+        [hashtable]
+        $AddDataStoreArguments,
+
+        [int]
+        $MaximumAttempts = 10
+    )
+
+    $refusedNames = [System.Collections.Generic.List[string]]::new()
+    while ($true) {
+        try {
+            return Add-DataStore @AddDataStoreArguments -Name $RegistrationName
+        }
+        catch {
+            if (-not (Test-IsDuplicateDataStoreNameResponse -ErrorRecord $_)) {
+                throw
+            }
+        }
+
+        $refusedNames.Add($RegistrationName)
+        if ($refusedNames.Count -ge $MaximumAttempts) {
+            throw "Restore with -SeparateConfigDatabase could not register the restored target: the Configuration Service refused all $MaximumAttempts names this phase tried, '$($refusedNames[0])' through '$($refusedNames[$refusedNames.Count - 1])', because a data store its listing does not return, such as a managed data store's name reservation, already holds each one. No data store was registered; the target is restored and DMS was not started. Free one of these names, then rerun the restore."
+        }
+        $RegistrationName = Get-RestoreRegistrationName -DataStores $DataStores -RefusedNames $refusedNames
+        Write-Information "The Configuration Service already holds the name '$(Format-LogSafeText $refusedNames[$refusedNames.Count - 1])' for a data store its listing does not return; registering as '$(Format-LogSafeText $RegistrationName)'." -InformationAction Continue
+    }
 }
 
 function Invoke-ConfigureLocalDataStore {
@@ -782,19 +900,23 @@ function Invoke-ConfigureLocalDataStore {
     }
 
     Write-Information "Creating default route-unqualified data store." -InformationAction Continue
-    if (-not $restoreReuse) {
-        $registrationName = "Local Development Data Store"
+    $addDataStoreArguments = @{
+        CmsUrl = $cmsUrl
+        AccessToken = $configToken
+        PostgresCredential = $postgresCredential
+        PostgresDbName = $postgresDbName
+        ConnectionString = $dataStoreConnectionString
+        DatabaseEngine = $DatabaseEngine
+        DataStoreType = "Development"
+        Tenant = $tenant
     }
-    $dataStoreId = Add-DataStore `
-        -CmsUrl $cmsUrl `
-        -AccessToken $configToken `
-        -PostgresCredential $postgresCredential `
-        -PostgresDbName $postgresDbName `
-        -ConnectionString $dataStoreConnectionString `
-        -DatabaseEngine $DatabaseEngine `
-        -Name $registrationName `
-        -DataStoreType "Development" `
-        -Tenant $tenant
+    $dataStoreId = if ($restoreReuse) {
+        # Only the restore handoff can meet a name its listing could not show.
+        Add-RestoreDataStoreRegistration -DataStores $dataStores -RegistrationName $registrationName -AddDataStoreArguments $addDataStoreArguments
+    }
+    else {
+        Add-DataStore @addDataStoreArguments -Name "Local Development Data Store"
+    }
 
     if ($AddSmokeTestCredentials) {
         Import-Module "$PSScriptRoot/../smoke_test/modules/SmokeTest.psm1" -Force
