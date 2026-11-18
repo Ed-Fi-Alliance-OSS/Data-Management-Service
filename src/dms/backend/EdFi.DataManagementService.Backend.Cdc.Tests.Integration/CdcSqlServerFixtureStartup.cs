@@ -10,7 +10,7 @@ internal sealed record CdcSqlServerContainerState(string Status, int ExitCode, b
     public CdcSqlServerStartupLogEvidence Logs { get; init; } =
         CdcSqlServerStartupLogEvidence.Empty("NotObserved");
 
-    private bool HasCompleteStartupFailure =>
+    internal bool HasCompleteStartupFailure =>
         Status == "exited"
         && ExitCode == 1
         && !OomKilled
@@ -107,7 +107,7 @@ internal static class CdcSqlServerFixtureStartup
                 {
                     CdcSqlServerContainerState state = await inspectFailure(inspection.Token);
                     inspection.Token.ThrowIfCancellationRequested();
-                    recreate = attempt == 1 && !keepContainer && state.RecoverySignature != "None";
+                    recreate = attempt == 1 && !keepContainer && state.HasCompleteStartupFailure;
                     signature = state.RecoverySignature;
                     injected = state.Logs.InjectedFailure;
                     await retainFailure(attempt, state, recreate, inspection.Token);

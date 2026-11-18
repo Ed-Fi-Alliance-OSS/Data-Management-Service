@@ -12,6 +12,16 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
     private async Task StartSqlServerWithRecoveryAsync(CancellationToken cancellationToken)
     {
+        // The Contract lane also exercises this fixture with simulated Docker commands.
+        if (_docker is DockerCli { IsOffline: false })
+        {
+            await AttachSqlServerEvidenceAsync(
+                "fresh",
+                new { Stage = "unprovisioned-sql-fresh-start" },
+                "Fresh SQL Server fixture start",
+                cancellationToken
+            );
+        }
         CdcSqlServerStartupResult result = await CdcSqlServerFixtureStartup.RunAsync(
             StartSqlServerAttemptAsync,
             ReadFailedSqlServerContainerStateAsync,
@@ -27,25 +37,19 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         );
         if (result.Attempts > 1)
         {
-            string path = Path.Combine(
-                TestContext.CurrentContext.WorkDirectory,
-                "admission-evidence-sql-recovery-" + Guid.NewGuid().ToString("N") + ".json"
-            );
-            await File.WriteAllTextAsync(
-                path,
-                JsonSerializer.Serialize(
-                    new
-                    {
-                        Stage = "unprovisioned-sql-recovery",
-                        Outcome = "Ready",
-                        result.Attempts,
-                        result.Signature,
-                        result.Injected,
-                    }
-                ),
+            await AttachSqlServerEvidenceAsync(
+                "recovery",
+                new
+                {
+                    Stage = "unprovisioned-sql-recovery",
+                    Outcome = "Ready",
+                    result.Attempts,
+                    result.Signature,
+                    result.Injected,
+                },
+                "Sanitized SQL Server startup recovery outcome",
                 cancellationToken
             );
-            TestContext.AddTestAttachment(path, "Sanitized SQL Server startup recovery outcome");
         }
     }
 
@@ -84,33 +88,42 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         CancellationToken cancellationToken
     )
     {
-        string path = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
-            "admission-evidence-sql-startup-" + Guid.NewGuid().ToString("N") + ".json"
-        );
-        await File.WriteAllTextAsync(
-            path,
-            JsonSerializer.Serialize(
-                new
-                {
-                    Provider = Provider.ToString(),
-                    Stage = "unprovisioned-sql-startup",
-                    Attempt = attempt,
-                    ProbeCount = _sqlServerReadinessProbeCount,
-                    LastProbeState = _sqlServerReadinessState,
-                    Container = container,
-                    RecreationPermitted = recreationPermitted,
-                    Signature = container.RecoverySignature,
-                    Resources = await ReadSqlServerStartupResourcesAsync(
-                        _docker,
-                        _settings.ProviderImage,
-                        ProviderContainerName,
-                        cancellationToken
-                    ),
-                }
-            ),
+        await AttachSqlServerEvidenceAsync(
+            "startup",
+            new
+            {
+                Provider = Provider.ToString(),
+                Stage = "unprovisioned-sql-startup",
+                Attempt = attempt,
+                ProbeCount = _sqlServerReadinessProbeCount,
+                LastProbeState = _sqlServerReadinessState,
+                Container = container,
+                RecreationPermitted = recreationPermitted,
+                Signature = container.RecoverySignature,
+                Resources = await ReadSqlServerStartupResourcesAsync(
+                    _docker,
+                    _settings.ProviderImage,
+                    ProviderContainerName,
+                    cancellationToken
+                ),
+            },
+            "Sanitized SQL Server fixture startup attempt",
             cancellationToken
         );
-        TestContext.AddTestAttachment(path, "Sanitized SQL Server fixture startup attempt");
+    }
+
+    private static async Task AttachSqlServerEvidenceAsync(
+        string kind,
+        object evidence,
+        string description,
+        CancellationToken cancellationToken
+    )
+    {
+        string path = Path.Combine(
+            TestContext.CurrentContext.WorkDirectory,
+            $"admission-evidence-sql-{kind}-{Guid.NewGuid():N}.json"
+        );
+        await File.WriteAllTextAsync(path, JsonSerializer.Serialize(evidence), cancellationToken);
+        TestContext.AddTestAttachment(path, description);
     }
 }

@@ -154,6 +154,8 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         string directory = TestContext.CurrentContext.WorkDirectory;
         const string pattern = "admission-evidence-startup-*.json";
         string[] before = Directory.GetFiles(directory, pattern);
+        const string freshStarts = "admission-evidence-sql-fresh-*.json";
+        string[] freshStartsBefore = Directory.GetFiles(directory, freshStarts);
         const string privateDetails = "private-sql-command-output-and-credentials";
         using var cancellation = new CancellationTokenSource();
         var docker = new RecordingDockerCli(_ => null)
@@ -177,6 +179,7 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         );
 
         AssertCleanupCommandsWereRun(docker);
+        Directory.GetFiles(directory, freshStarts).Should().BeEquivalentTo(freshStartsBefore);
         string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
         string text = await File.ReadAllTextAsync(path);
         text.Should().NotContain(privateDetails).And.NotContain(ResourcePrefix);

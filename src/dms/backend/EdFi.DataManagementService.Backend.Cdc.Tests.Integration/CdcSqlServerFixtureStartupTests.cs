@@ -125,15 +125,22 @@ public sealed class Given_CdcSqlServerFixtureStartup
         _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
     }
 
-    [Test]
-    public async Task It_recovers_the_observed_reason_two_signature_and_returns_recovery_evidence()
+    [TestCase(11, "ReasonTwoErrnoEleven")]
+    [TestCase(2, "None")]
+    [TestCase(77, "None")]
+    public async Task It_recovers_a_fatal_exit_and_retains_its_diagnostic_signature(
+        int errno,
+        string signature
+    )
     {
         _state = _state with
         {
-            Logs = CdcSqlServerStartupLogClassifier.Parse(new(0, ReasonTwoFailureLog, "")),
+            Logs = CdcSqlServerStartupLogClassifier.Parse(
+                new(0, ReasonTwoFailureLog.Replace("Last errno: 11", $"Last errno: {errno}"), "")
+            ),
         };
         CdcSqlServerStartupResult result = await RunAsync(CancellationToken.None);
-        result.Should().Be(new CdcSqlServerStartupResult(2, "ReasonTwoErrnoEleven", false));
+        result.Should().Be(new CdcSqlServerStartupResult(2, signature, false));
         _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
     }
 
@@ -158,7 +165,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [TestCase("signal")]
     [TestCase("mapping")]
     [TestCase("running")]
-    public void It_rejects_near_matches_to_the_reason_two_signature(string mismatch)
+    public void It_leaves_near_matches_to_the_reason_two_signature_unclassified(string mismatch)
     {
         var logs = CdcSqlServerStartupLogClassifier.Parse(new(0, ReasonTwoFailureLog, ""));
         _state = _state with
@@ -176,8 +183,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
                 Signals = mismatch == "signal" ? ["SIGKILL"] : [],
             },
         };
-        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
-        _events.Should().Equal("start-1", "inspect", "retain-1-False");
+        _state.RecoverySignature.Should().Be("None");
     }
 
     [Test]
@@ -201,12 +207,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [TestCase("mapping")]
     [TestCase("sql-error")]
     [TestCase("signal")]
-    [TestCase("reason")]
-    [TestCase("errno")]
-    [TestCase("lsa-status")]
-    [TestCase("termination-status")]
-    [TestCase("missing-marker")]
-    [TestCase("contradictory-marker")]
+    [TestCase("missing-fatal-message")]
     public void It_does_not_recreate_other_or_incomplete_failures(string scenario)
     {
         _state = scenario switch
@@ -224,39 +225,59 @@ public sealed class Given_CdcSqlServerFixtureStartup
                     "mapping" => _state.Logs with { MappingMessage = true },
                     "sql-error" => _state.Logs with { SqlErrorNumbers = [701] },
                     "signal" => _state.Logs with { Signals = ["SIGKILL"] },
-                    "reason" => _state.Logs with { FatalReasonCodes = [6, 2] },
-                    "errno" => _state.Logs with { LastErrnos = [12] },
-                    _ => CdcSqlServerStartupLogClassifier.Parse(
-                        new(
-                            0,
-                            scenario switch
-                            {
-                                "tail-limit" => new string('\n', 400) + LsaFailureLog,
-                                "lsa-status" => LsaFailureLog.Replace(
-                                    "0xc0070102",
-                                    "0xc0070005",
-                                    StringComparison.Ordinal
-                                ),
-                                "termination-status" => LsaFailureLog.Replace(
-                                    "0xC0000001",
-                                    "0xC0000002",
-                                    StringComparison.Ordinal
-                                ),
-                                "missing-marker" => LsaFailureLog.Replace(
-                                    "AppLoader: Exiting with status=0xc0070102",
-                                    "",
-                                    StringComparison.Ordinal
-                                ),
-                                _ => LsaFailureLog + "\n** ERROR: [AppLoader] Failed to load LSA: 0xc0070005",
-                            },
-                            ""
-                        )
+                    "tail-limit" => CdcSqlServerStartupLogClassifier.Parse(
+                        new(0, new string('\n', 400) + LsaFailureLog, "")
                     ),
+                    _ => _state.Logs with { FatalMessage = false },
                 },
             },
         };
         Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
         _events.Should().Equal("start-1", "inspect", "retain-1-False");
+    }
+
+    [TestCase("reason")]
+    [TestCase("errno")]
+    [TestCase("lsa-status")]
+    [TestCase("termination-status")]
+    [TestCase("missing-marker")]
+    [TestCase("contradictory-marker")]
+    public void It_requires_exact_markers_and_codes_to_classify_the_lsa_timeout(string scenario)
+    {
+        _state = _state with
+        {
+            Logs = scenario switch
+            {
+                "reason" => _state.Logs with { FatalReasonCodes = [6, 2] },
+                "errno" => _state.Logs with { LastErrnos = [12] },
+                _ => CdcSqlServerStartupLogClassifier.Parse(
+                    new(
+                        0,
+                        scenario switch
+                        {
+                            "lsa-status" => LsaFailureLog.Replace(
+                                "0xc0070102",
+                                "0xc0070005",
+                                StringComparison.Ordinal
+                            ),
+                            "termination-status" => LsaFailureLog.Replace(
+                                "0xC0000001",
+                                "0xC0000002",
+                                StringComparison.Ordinal
+                            ),
+                            "missing-marker" => LsaFailureLog.Replace(
+                                "AppLoader: Exiting with status=0xc0070102",
+                                "",
+                                StringComparison.Ordinal
+                            ),
+                            _ => LsaFailureLog + "\n** ERROR: [AppLoader] Failed to load LSA: 0xc0070005",
+                        },
+                        ""
+                    )
+                ),
+            },
+        };
+        _state.RecoverySignature.Should().Be("None");
     }
 
     [Test]

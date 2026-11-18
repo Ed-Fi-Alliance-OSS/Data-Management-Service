@@ -65,6 +65,13 @@ function Invoke-CdcQualificationImagePull {
     throw "EnvironmentUnavailable: required image pull failed for $safeImage after $maxAttempts attempts (exit=$exitCode, category=$failureCategory); see image-pulls.jsonl."
 }
 
+function Get-CdcSqlCrashCode {
+    param($Codes)
+    # Multiple distinct values in the log cannot be paired unambiguously.
+    if ($Codes -is [array] -and $Codes.Count -eq 1 -and $Codes[0] -is [long]) { return $Codes[0] }
+    return 'unknown'
+}
+
 function Get-CdcQualificationReport {
     <# .SYNOPSIS
     Classifies complete TRX results without treating skipped or unavailable cases as evidence.
@@ -103,19 +110,29 @@ function Get-CdcQualificationReport {
     # Attachments survive passing tests too. Count observed failures separately from the
     # deliberate process exits used to qualify the recovery mechanism itself.
     $startupFailures = 0; $startupRecoveries = 0
+    $freshStarts = 0; $firstAttemptCrashes = 0
+    $crashCodes = @{}
     $injectedFailures = 0; $injectedRecoveries = 0
     $signatures = @{}
     # VSTest also copies attachments into its result hierarchy. The fixture assigns
     # each event a GUID filename; count that event once, not once per retained copy.
     foreach ($file in Get-ChildItem -LiteralPath (Split-Path -Parent $Path) -Filter 'admission-evidence-sql-*.json' -Recurse | Sort-Object -Property Name -Unique) {
         $evidence = Get-Content -LiteralPath $file.FullName -Raw | ConvertFrom-Json -AsHashtable
-        if ($evidence.Stage -eq 'unprovisioned-sql-startup') {
-            if ($evidence['Container']?['Logs']?['InjectedFailure'] -eq $true) { $injectedFailures++ }
+        if ($evidence.Stage -eq 'unprovisioned-sql-fresh-start') { $freshStarts++ }
+        elseif ($evidence.Stage -eq 'unprovisioned-sql-startup') {
+            $logs = $evidence['Container']?['Logs'] ?? @{}
+            if ($logs['InjectedFailure'] -eq $true) { $injectedFailures++ }
             else {
                 $startupFailures++
                 $signature = if ($evidence.Signature -in @('LsaInitializationTimeout', 'ReasonTwoErrnoEleven')) { $evidence.Signature } else { 'Other' }
                 if (-not $signatures.ContainsKey($signature)) { $signatures[$signature] = 0 }
                 $signatures[$signature]++
+                if ($evidence['Attempt'] -eq 1 -and $evidence['Container']?['Status'] -eq 'exited' -and $logs['FatalMessage'] -eq $true) {
+                    $firstAttemptCrashes++
+                    $reason = Get-CdcSqlCrashCode $logs['FatalReasonCodes']
+                    $errno = Get-CdcSqlCrashCode $logs['LastErrnos']
+                    $crashCodes["$reason/$errno"]++
+                }
             }
         }
         elseif ($evidence.Stage -eq 'unprovisioned-sql-recovery' -and $evidence.Outcome -eq 'Ready') {
@@ -142,6 +159,8 @@ function Get-CdcQualificationReport {
         Status = $status; Total = $results.Count; Passed = $passed; Failed = $failed
         Skipped = $skipped; EnvironmentFailures = $environmentFailures
         SqlStartupFailures = $startupFailures; SqlStartupRecoveries = $startupRecoveries
+        SqlFreshStarts = if ($freshStarts -gt 0) { $freshStarts } else { $null }
+        SqlFirstAttemptCrashes = $firstAttemptCrashes; SqlFirstAttemptCrashCodes = $crashCodes
         SqlStartupInjectedFailures = $injectedFailures; SqlStartupInjectedRecoveries = $injectedRecoveries
         SqlStartupFailureSignatures = $signatures
         ConnectReadinessFailures = $connectFailures; ConnectReadinessRecoveries = $connectRecoveries

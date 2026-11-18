@@ -15,10 +15,10 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
     [TestCase("0xc0070102", "0xc0070102", true)]
     [TestCase("0xc0000001", "0xc0000001", false)]
     [TestCase("0xc0070102", "0xc0000001", false)]
-    public void It_distinguishes_loader_statuses_without_broadening_startup_recovery(
+    public void It_uses_loader_statuses_to_classify_the_lsa_timeout_signature(
         string loadStatus,
         string exitStatus,
-        bool permitsRecovery
+        bool isLsaTimeout
     )
     {
         string log = Given_CdcSqlServerFixtureStartup
@@ -28,7 +28,7 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
         evidence.LsaLoadStatusCodes.Should().Equal(loadStatus.ToUpperInvariant());
         evidence.AppLoaderExitStatusCodes.Should().Equal(exitStatus.ToUpperInvariant());
         var state = new CdcSqlServerContainerState("exited", 1, false) { Logs = evidence };
-        state.RecoverySignature.Should().Be(permitsRecovery ? "LsaInitializationTimeout" : "None");
+        state.RecoverySignature.Should().Be(isLsaTimeout ? "LsaInitializationTimeout" : "None");
     }
 
     [Test]

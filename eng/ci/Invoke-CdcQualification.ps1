@@ -92,15 +92,18 @@ function Invoke-QualificationSuite {
         if ($env:GITHUB_STEP_SUMMARY) { "- $connectSummary" >> $env:GITHUB_STEP_SUMMARY }
     }
     if ($report.Contains('SqlStartupFailures') -and (
+            $null -ne $report.SqlFreshStarts -or
             $report.SqlStartupFailures -gt 0 -or
             $report.SqlStartupRecoveries -gt 0 -or
             $report.SqlStartupInjectedFailures -gt 0 -or
             $report.SqlStartupInjectedRecoveries -gt 0
         )) {
-        Write-Output "SQL startup: observed failures=$($report.SqlStartupFailures), recovered=$($report.SqlStartupRecoveries), injected failures=$($report.SqlStartupInjectedFailures), injected recoveries=$($report.SqlStartupInjectedRecoveries)"
-        if ($env:GITHUB_STEP_SUMMARY) {
-            "- $Name SQL startup: $($report.SqlStartupFailures) observed failures; $($report.SqlStartupRecoveries) recovered; $($report.SqlStartupInjectedRecoveries) injected recoveries." >> $env:GITHUB_STEP_SUMMARY
-        }
+        $pairs = ($report.SqlFirstAttemptCrashCodes.GetEnumerator() | Sort-Object Key | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ', '
+        $sqlSummary = "$Name SQL startup: fresh starts=$($report.SqlFreshStarts ?? 'unknown'), first-attempt crashes=$($report.SqlFirstAttemptCrashes)"
+        if ($pairs) { $sqlSummary += " (reason/errno: $pairs)" }
+        $sqlSummary += ", observed failures=$($report.SqlStartupFailures), recovered=$($report.SqlStartupRecoveries), injected failures=$($report.SqlStartupInjectedFailures), injected recoveries=$($report.SqlStartupInjectedRecoveries)"
+        Write-Output $sqlSummary
+        if ($env:GITHUB_STEP_SUMMARY) { "- $sqlSummary" >> $env:GITHUB_STEP_SUMMARY }
     }
     Write-Output "$Name`: $($report.Status), total=$($report.Total), passed=$($report.Passed), failed=$($report.Failed), skipped=$($report.Skipped)"
 }
