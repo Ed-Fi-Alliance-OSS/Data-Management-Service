@@ -38,10 +38,16 @@ internal static class SetPassHelpers
     /// <summary>
     /// Builds the lookup of concrete base resources that resource extensions are allowed to target.
     /// Standalone resources from extension projects are excluded so they do not collide with core resource names.
+    /// Optionally records excluded resource names for diagnostics when no eligible base matches.
     /// </summary>
+    /// <param name="context">The shared set-level builder context.</param>
+    /// <param name="entryFactory">Factory for lookup entries.</param>
+    /// <param name="excludedStandaloneResourceNames">Optional ordinal set that receives the names of excluded standalone resources.</param>
+    /// <returns>The lookup keyed by bare resource name.</returns>
     internal static Dictionary<string, List<TEntry>> BuildExtensionBaseResourceLookup<TEntry>(
         RelationalModelSetBuilderContext context,
-        Func<int, ConcreteResourceModel, TEntry> entryFactory
+        Func<int, ConcreteResourceModel, TEntry> entryFactory,
+        ISet<string>? excludedStandaloneResourceNames = null
     )
     {
         var standaloneExtensionResources = context
@@ -66,6 +72,7 @@ internal static class SetPassHelpers
 
             if (standaloneExtensionResources.Contains(resource))
             {
+                excludedStandaloneResourceNames?.Add(resource.ResourceName);
                 continue;
             }
 
@@ -137,9 +144,8 @@ internal static class SetPassHelpers
         var resourcesByKey = context
             .ConcreteResourcesInNameOrder.Select((model, index) => new ResourceEntry(index, model))
             .ToDictionary(entry => entry.Model.ResourceKey.Resource, entry => entry);
-        var baseResourcesByName = BuildExtensionBaseResourceLookup(
-            context,
-            static (index, model) => new ResourceEntry(index, model)
+        var baseResourcesByName = BuildExtensionBaseResourceLookup(context, static (index, model) =>
+            new ResourceEntry(index, model)
         );
         Dictionary<QualifiedResourceName, ResourceMutation> mutations = [];
 

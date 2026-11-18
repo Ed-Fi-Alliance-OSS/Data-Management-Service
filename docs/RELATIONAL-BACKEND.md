@@ -109,6 +109,14 @@ Provisioning is done with the **`api-schema-tools`** CLI
 deterministic and does not require a database for artifact generation — only `ddl provision`
 connects to one. See the CLI README for the full option tables; the essentials follow.
 
+Under the current MetaEd and API Schema contract, a resource-extension entry
+(`isResourceExtension: true`) can extend a concrete resource in the core project. A standalone
+resource defined in an extension project is modeled independently and is ineligible as a
+resource-extension base. If both projects define the same resource name, the extension attaches
+to the core resource. When the name matches only a standalone extension-project resource,
+relational model building reports the unsupported base, including during SchemaTools `ddl emit`
+and `ddl provision`.
+
 ### Compute the effective schema hash
 
 A provisioned database is keyed to one effective schema, identified by its hash. To see

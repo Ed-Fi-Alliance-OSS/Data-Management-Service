@@ -47,9 +47,11 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         ArgumentNullException.ThrowIfNull(context);
 
         var concreteResourceSchemas = context.EnumerateConcreteResourceSchemasInNameOrder().ToArray();
+        HashSet<string> excludedStandaloneResourceNames = new(StringComparer.Ordinal);
         var baseResourcesByName = SetPassHelpers.BuildExtensionBaseResourceLookup(
             context,
-            static (index, model) => new ResourceEntry(index, model)
+            static (index, model) => new ResourceEntry(index, model),
+            excludedStandaloneResourceNames
         );
         Dictionary<string, JsonObject> apiSchemaRootsByProjectEndpoint = new(StringComparer.Ordinal);
 
@@ -77,7 +79,8 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
                 resourceContext.ResourceName,
                 resource,
                 baseResourcesByName,
-                static entry => entry.Model.ResourceKey.Resource
+                static entry => entry.Model.ResourceKey.Resource,
+                excludedStandaloneResourceNames
             );
             var baseModel = context.ConcreteResourcesInNameOrder[baseEntry.Index];
             var baseSchemaContext = concreteResourceSchemas[baseEntry.Index];
@@ -173,8 +176,7 @@ public sealed class ExtensionTableDerivationPass : IRelationalModelSetPass
         ProjectSchemaInfo extensionProject
     )
     {
-        var jsonSchemaForInsert =
-            extensionContext.JsonSchemaForInsert
+        var jsonSchemaForInsert = extensionContext.JsonSchemaForInsert
             ?? throw new InvalidOperationException(
                 "JsonSchemaForInsert must be provided before deriving extension tables."
             );

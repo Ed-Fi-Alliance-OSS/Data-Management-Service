@@ -643,16 +643,27 @@ internal static class RelationalModelSetSchemaHelpers
     /// <param name="resource">The resource identifier for diagnostics.</param>
     /// <param name="baseResourcesByName">The lookup of base resources keyed by resource name.</param>
     /// <param name="entryResourceSelector">Selector for the resource identifier on each entry.</param>
+    /// <param name="excludedStandaloneResourceNames">Optional ordinal resource names excluded from the eligible lookup.</param>
     /// <returns>The matching base resource entry.</returns>
     internal static TEntry ResolveBaseResourceForExtension<TEntry>(
         string resourceName,
         QualifiedResourceName resource,
         IReadOnlyDictionary<string, List<TEntry>> baseResourcesByName,
-        Func<TEntry, QualifiedResourceName> entryResourceSelector
+        Func<TEntry, QualifiedResourceName> entryResourceSelector,
+        IReadOnlySet<string>? excludedStandaloneResourceNames = null
     )
     {
         if (!baseResourcesByName.TryGetValue(resourceName, out var baseEntries))
         {
+            if (excludedStandaloneResourceNames?.Contains(resourceName) is true)
+            {
+                throw new InvalidOperationException(
+                    $"Resource extension '{FormatResource(resource)}' matches the name of a standalone resource from an extension project. "
+                        + "Standalone extension-project resources are unsupported as resource-extension bases. "
+                        + "Select a core resource as the base."
+                );
+            }
+
             throw new InvalidOperationException(
                 $"Resource extension '{FormatResource(resource)}' did not match a concrete base resource."
             );
