@@ -187,6 +187,18 @@ public abstract class EducationOrganizationProjectionClaimTests
     }
 
     /// <summary>
+    /// Records resource-claim metadata without placing the claim in the stored hierarchy.
+    /// </summary>
+    protected async Task InsertResourceClaimAsync(string resourceName, string claimName)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync();
+        await connection.ExecuteAsync(
+            "INSERT INTO dmscs.ResourceClaim (ResourceName, ClaimName) VALUES (@ResourceName, @ClaimName);",
+            new { ResourceName = resourceName, ClaimName = claimName }
+        );
+    }
+
+    /// <summary>
     /// Runs the migration a second time by removing its journal entry, which is the only way DbUp
     /// re-executes a script that already ran.
     /// </summary>
@@ -694,6 +706,132 @@ public class Given_a_catalog_with_a_nested_case_variant_of_the_projection_claim
 {
     protected override string ExistingClaimName =>
         "http://ed-fi.org/identity/claims/services/educationorganizationprojection";
+}
+
+/// <summary>
+/// Upgrades a catalog whose resource-claim metadata already has a case variant of the projection
+/// claim while its stored hierarchy has no such claim. The migration keeps the metadata row and
+/// appends a hierarchy claim with exactly that spelling, so grant changes keep resolving claims.
+/// </summary>
+[TestFixture]
+[Category("MssqlIntegration")]
+public class Given_a_catalog_with_a_case_variant_metadata_row_and_no_projection_hierarchy_claim
+    : EducationOrganizationProjectionClaimTests
+{
+    private const string RetainedClaimName =
+        "http://ed-fi.org/identity/claims/services/EducationOrganizationProjection";
+    private const string RetainedResourceName = "EducationOrganizationProjection";
+    private const string VendorClaimSetName = "DMS-1440 Retained Spelling Vendor";
+
+    private List<ResourceClaimRow> _resourceClaimsBefore = [];
+    private List<ResourceClaimRow> _resourceClaimsAfter = [];
+    private HierarchyRow _hierarchyBefore = null!;
+    private HierarchyRow _hierarchyAfter = null!;
+    private int _vendorClaimSetId;
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        DeployThroughPreviousScript();
+        await LoadEmbeddedClaimsAsync();
+        await RemoveProjectionClaimAsync();
+        await InsertResourceClaimAsync(RetainedResourceName, RetainedClaimName);
+
+        _vendorClaimSetId = await InsertClaimSetAsync(VendorClaimSetName);
+        (await GrantReadAsync(_vendorClaimSetId, StudentClaimName))
+            .Should()
+            .BeOfType<ClaimSetResourceActionMutationResult.Success>();
+
+        _resourceClaimsBefore = await ResourceClaimsAsync();
+        _hierarchyBefore = await HierarchyAsync();
+
+        Database.DeployThrough(ProjectionClaimScript);
+
+        _resourceClaimsAfter = await ResourceClaimsAsync();
+        _hierarchyAfter = await HierarchyAsync();
+    }
+
+    [Test]
+    public void It_starts_with_the_metadata_row_and_no_projection_hierarchy_claim()
+    {
+        _resourceClaimsBefore
+            .Where(row => IsProjectionClaimName(row.ClaimName))
+            .Select(row => row.ClaimName)
+            .Should()
+            .Equal(RetainedClaimName);
+        AllClaims(Roots(_hierarchyBefore.Hierarchy))
+            .Should()
+            .NotContain(claim => IsProjectionClaimName(ClaimNameOf(claim)));
+    }
+
+    [Test]
+    public void It_keeps_the_metadata_row_identity_and_spelling()
+    {
+        _resourceClaimsAfter.Should().Equal(_resourceClaimsBefore);
+    }
+
+    [Test]
+    public void It_appends_a_claim_with_the_retained_spelling_and_no_grants()
+    {
+        JsonArray rootsAfter = Roots(_hierarchyAfter.Hierarchy);
+        JsonNode expected = ExpectedProjectionClaim;
+        expected["name"] = RetainedClaimName;
+
+        rootsAfter.Count.Should().Be(Roots(_hierarchyBefore.Hierarchy).Count + 1);
+        JsonNode.DeepEquals(rootsAfter[^1], expected).Should().BeTrue(rootsAfter[^1]!.ToJsonString());
+        AllClaims(rootsAfter)
+            .Select(ClaimNameOf)
+            .Where(IsProjectionClaimName)
+            .Should()
+            .Equal(RetainedClaimName);
+    }
+
+    [Test]
+    public void It_leaves_every_existing_claim_and_grant_unchanged()
+    {
+        JsonArray rootsBefore = Roots(_hierarchyBefore.Hierarchy);
+        JsonArray rootsAfter = Roots(_hierarchyAfter.Hierarchy);
+
+        for (int index = 0; index < rootsBefore.Count; index++)
+        {
+            JsonNode
+                .DeepEquals(rootsAfter[index], rootsBefore[index])
+                .Should()
+                .BeTrue(ClaimNameOf(rootsBefore[index]));
+        }
+    }
+
+    [Test]
+    public void It_advances_the_hierarchy_concurrency_token()
+    {
+        _hierarchyAfter.LastModifiedDate.Should().BeAfter(_hierarchyBefore.LastModifiedDate);
+    }
+
+    [Test]
+    public async Task It_allows_an_unrelated_grant_to_change_and_keeps_the_existing_one()
+    {
+        int claimSetId = await InsertClaimSetAsync("DMS-1440 Retained Spelling Student Reader");
+
+        (await GrantReadAsync(claimSetId, StudentClaimName))
+            .Should()
+            .BeOfType<ClaimSetResourceActionMutationResult.Success>();
+        (await ExportedResourceClaimsAsync(claimSetId))
+            .Should()
+            .ContainSingle(resourceClaim => resourceClaim.ClaimName == StudentClaimName);
+        (await ExportedResourceClaimsAsync(_vendorClaimSetId))
+            .Should()
+            .ContainSingle(resourceClaim => resourceClaim.ClaimName == StudentClaimName)
+            .Which.Actions!.Where(action => action.Enabled)
+            .Select(action => action.Name)
+            .Should()
+            .Equal("Read");
+    }
+
+    [Test]
+    public async Task It_changes_nothing_when_the_script_runs_again()
+    {
+        await AssertReplayChangesNothingAsync();
+    }
 }
 
 /// <summary>

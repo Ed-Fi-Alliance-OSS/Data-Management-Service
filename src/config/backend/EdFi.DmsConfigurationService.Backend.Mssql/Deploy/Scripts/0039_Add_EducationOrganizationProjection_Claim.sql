@@ -64,10 +64,33 @@ WHERE NOT EXISTS (
           = UPPER(v.ClaimName COLLATE Latin1_General_100_BIN2)
 );
 
+-- The claim appended below takes its name from the equivalent ResourceClaim row the statement
+-- above kept or inserted, so it keeps an operator's spelling and the hierarchy and the metadata
+-- name the claim identically, as claim-set grant changes require. The canonical spelling wins when
+-- several equivalent rows exist, and the lowest Id breaks any remaining tie.
+DECLARE @projectionClaimName NVARCHAR(255) = (
+    SELECT TOP (1) s.ClaimName
+    FROM dmscs.ResourceClaim s
+    WHERE s.ClaimName COLLATE Latin1_General_100_BIN2 NOT LIKE N'%[^ -~]%'
+      AND DATALENGTH(s.ClaimName)
+          = DATALENGTH(N'http://ed-fi.org/identity/claims/services/educationOrganizationProjection')
+      AND UPPER(s.ClaimName COLLATE Latin1_General_100_BIN2)
+          = UPPER(N'http://ed-fi.org/identity/claims/services/educationOrganizationProjection' COLLATE Latin1_General_100_BIN2)
+    ORDER BY
+        CASE
+            WHEN s.ClaimName COLLATE Latin1_General_100_BIN2
+                = N'http://ed-fi.org/identity/claims/services/educationOrganizationProjection' COLLATE Latin1_General_100_BIN2
+            THEN 0
+            ELSE 1
+        END,
+        s.Id
+);
+
 -- The claim is looked for at every depth, so a claim an operator already placed under another
 -- claim is not duplicated, and a hierarchy that already has it is not touched at all. When the
 -- claim is appended, LastModifiedDate, the hierarchy's concurrency token, advances so a writer
 -- holding the pre-upgrade hierarchy fails with a conflict instead of overwriting the claim.
+-- JSON_MODIFY sets and escapes the name.
 WITH HierarchyClaim AS (
     SELECT h.Id AS HierarchyId, c.[value] AS ClaimJson
     FROM dmscs.ClaimsHierarchy h
@@ -83,13 +106,18 @@ UPDATE h
 SET Hierarchy = JSON_MODIFY(
         h.Hierarchy,
         'append $',
-        JSON_QUERY(N'{"name":"http://ed-fi.org/identity/claims/services/educationOrganizationProjection","defaultAuthorization":{"actions":[{"name":"Read","authorizationStrategies":[{"name":"NoFurtherAuthorizationRequired"}]}]},"claimSets":[],"claims":[]}')
+        JSON_QUERY(JSON_MODIFY(
+            N'{"name":"","defaultAuthorization":{"actions":[{"name":"Read","authorizationStrategies":[{"name":"NoFurtherAuthorizationRequired"}]}]},"claimSets":[],"claims":[]}',
+            '$.name',
+            @projectionClaimName
+        ))
     ),
     LastModifiedDate = SYSUTCDATETIME(),
     LastModifiedAt = SYSUTCDATETIME(),
     ModifiedBy = N'0039_Add_EducationOrganizationProjection_Claim'
 FROM dmscs.ClaimsHierarchy h
-WHERE ISJSON(h.Hierarchy) = 1
+WHERE @projectionClaimName IS NOT NULL
+  AND ISJSON(h.Hierarchy) = 1
   AND LEFT(LTRIM(h.Hierarchy), 1) = N'['
   AND NOT EXISTS (
         SELECT 1 FROM HierarchyClaim hc

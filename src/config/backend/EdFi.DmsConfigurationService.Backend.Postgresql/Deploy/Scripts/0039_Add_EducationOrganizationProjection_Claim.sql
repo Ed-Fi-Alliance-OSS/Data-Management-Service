@@ -32,6 +32,12 @@ WHERE NOT EXISTS (
 -- claim is not duplicated, and a hierarchy that already has it is not touched at all. When the
 -- claim is appended, LastModifiedDate, the hierarchy's concurrency token, advances so a writer
 -- holding the pre-upgrade hierarchy fails with a conflict instead of overwriting the claim.
+--
+-- The appended claim takes its name from the equivalent ResourceClaim row the statement above
+-- kept or inserted, so it keeps an operator's spelling and the hierarchy and the metadata name the
+-- claim identically, as claim-set grant changes require. The canonical spelling wins when several
+-- equivalent rows exist, and the lowest Id breaks any remaining tie. jsonb_build_object escapes
+-- the name.
 WITH RECURSIVE "HierarchyClaim" AS (
     SELECT h."Id" AS "HierarchyId", c.value AS "Claim"
     FROM "dmscs"."ClaimsHierarchy" h
@@ -47,14 +53,37 @@ WITH RECURSIVE "HierarchyClaim" AS (
             ELSE '[]'::jsonb
         END
     ) c
+),
+"MetadataClaim" AS (
+    SELECT s."ClaimName"
+    FROM "dmscs"."ResourceClaim" s
+    WHERE (s."ClaimName" COLLATE "C") ~ '^[ -~]*$'
+      AND upper(s."ClaimName" COLLATE "C")
+          = upper('http://ed-fi.org/identity/claims/services/educationOrganizationProjection' COLLATE "C")
+    ORDER BY
+        CASE
+            WHEN (s."ClaimName" COLLATE "C")
+                = ('http://ed-fi.org/identity/claims/services/educationOrganizationProjection' COLLATE "C")
+            THEN 0
+            ELSE 1
+        END,
+        s."Id"
+    LIMIT 1
 )
 UPDATE "dmscs"."ClaimsHierarchy" AS h
 SET "Hierarchy" = h."Hierarchy" || jsonb_build_array(
-        '{"name":"http://ed-fi.org/identity/claims/services/educationOrganizationProjection","defaultAuthorization":{"actions":[{"name":"Read","authorizationStrategies":[{"name":"NoFurtherAuthorizationRequired"}]}]},"claimSets":[],"claims":[]}'::jsonb
+        jsonb_build_object(
+            'name', m."ClaimName",
+            'defaultAuthorization',
+            '{"actions":[{"name":"Read","authorizationStrategies":[{"name":"NoFurtherAuthorizationRequired"}]}]}'::jsonb,
+            'claimSets', '[]'::jsonb,
+            'claims', '[]'::jsonb
+        )
     ),
     "LastModifiedDate" = now(),
     "LastModifiedAt" = now() AT TIME ZONE 'UTC',
     "ModifiedBy" = '0039_Add_EducationOrganizationProjection_Claim'
+FROM "MetadataClaim" m
 WHERE jsonb_typeof(h."Hierarchy") = 'array'
   AND NOT EXISTS (
         SELECT 1 FROM "HierarchyClaim" hc
