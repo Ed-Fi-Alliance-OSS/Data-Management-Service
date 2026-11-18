@@ -816,6 +816,10 @@ public class EducationOrganizationProjectionReaderTests
             _harness.PageRequests.Select(request => Query(request, "limit")).Should().AllBe("2");
     }
 
+    /// <summary>
+    /// A three-page set: with <c>MaxPages</c> 2 the second page's cursor is refused before the third page is requested;
+    /// with <c>MaxPages</c> 3 the set ends exactly at the limit.
+    /// </summary>
     [TestFixture(2, true)]
     [TestFixture(3, false)]
     public class Given_a_page_limit(int maxPages, bool exceeded)
@@ -838,13 +842,125 @@ public class EducationOrganizationProjectionReaderTests
         {
             if (exceeded)
             {
-                ShouldFailWith(_result, Code.LimitExceeded, Stage.Page, 200, pagesRead: 3);
+                ShouldFailWith(_result, Code.LimitExceeded, Stage.Page, 200, pagesRead: 2);
             }
             else
             {
                 ShouldSucceed(_result).PageCount.Should().Be(3);
             }
         }
+
+        [Test]
+        public void It_requests_no_page_past_the_limit() =>
+            _harness.PageRequests.Should().HaveCount(exceeded ? 2 : 3);
+    }
+
+    /// <summary>
+    /// A valid page whose cursor would lead past <c>MaxPages</c> or <c>MaxItems</c> ends the read with a permanent
+    /// <c>LimitExceeded</c> before the next page is requested. The response the next request would have received is
+    /// never seen, so a 503 or a <c>projection-changed</c> there cannot turn the failure into a transient one or a
+    /// restart.
+    /// </summary>
+    [TestFixture("MaxPages", "page")]
+    [TestFixture("MaxPages", "503")]
+    [TestFixture("MaxPages", "projection-changed")]
+    [TestFixture("MaxItems", "page")]
+    [TestFixture("MaxItems", "503")]
+    [TestFixture("MaxItems", "projection-changed")]
+    public class Given_a_cursor_after_a_limit_is_exhausted(string limit, string unusedNextResponse)
+    {
+        private ProjectionReaderHarness _harness = null!;
+        private EducationOrganizationProjectionReadResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Func<HttpResponseMessage> next = unusedNextResponse switch
+            {
+                "page" => () => Page(null, Schools(5)),
+                "503" => Problem(HttpStatusCode.ServiceUnavailable, "urn:ed-fi:api:service-unavailable"),
+                _ => ProjectionChanged,
+            };
+            _harness = ProjectionReaderHarness.Serving(
+                [() => Page("c1", Schools(1, 2)), () => Page("c2", Schools(3, 4)), next],
+                settings =>
+                {
+                    settings.PageSize = 2;
+                    settings.MaxWalkRestarts = 3;
+                    if (limit == "MaxPages")
+                    {
+                        settings.MaxPages = 2;
+                    }
+                    else
+                    {
+                        settings.MaxItems = 4;
+                    }
+                }
+            );
+            _result = await _harness.ReadAsync();
+        }
+
+        [Test]
+        public void It_fails_permanently_with_limit_exceeded_and_no_restart()
+        {
+            ShouldFailWith(_result, Code.LimitExceeded, Stage.Page, 200, pagesRead: 2, restarts: 0);
+            ShouldFail(_result).Category.Should().Be(Category.Permanent);
+        }
+
+        [Test]
+        public void It_does_not_request_the_next_page() =>
+            _harness.PageRequests.Select(request => Query(request, "cursor")).Should().Equal(null, "c1");
+    }
+
+    /// <summary>
+    /// A set that reaches a limit only on its final page succeeds, and capacity smaller than a page is not taken as
+    /// overflow: the final page may be short.
+    /// </summary>
+    [TestFixture("MaxPages exactly", 4)]
+    [TestFixture("MaxItems exactly", 4)]
+    [TestFixture("short final page in the remaining capacity", 3)]
+    public class Given_a_set_that_ends_within_the_limits(string shape, int itemCount)
+    {
+        private ProjectionReaderHarness _harness = null!;
+        private EducationOrganizationProjectionReadResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = ProjectionReaderHarness.Serving(
+                [
+                    () => Page("c1", Schools(1, 2)),
+                    () => itemCount == 4 ? Page(null, Schools(3, 4)) : Page(null, Schools(3)),
+                ],
+                settings =>
+                {
+                    settings.PageSize = 2;
+                    switch (shape)
+                    {
+                        case "MaxPages exactly":
+                            settings.MaxPages = 2;
+                            break;
+                        case "MaxItems exactly":
+                            settings.MaxItems = 4;
+                            break;
+                        default:
+                            // After the first page one item of capacity remains, less than PageSize.
+                            settings.MaxItems = 3;
+                            break;
+                    }
+                }
+            );
+            _result = await _harness.ReadAsync();
+        }
+
+        [Test]
+        public void It_succeeds_with_every_item() =>
+            (ShouldSucceed(_result).Items.Count, ShouldSucceed(_result).PageCount)
+                .Should()
+                .Be((itemCount, 2));
+
+        [Test]
+        public void It_requests_each_page_once() => _harness.PageRequests.Should().HaveCount(2);
     }
 
     [TestFixture(3, true)]

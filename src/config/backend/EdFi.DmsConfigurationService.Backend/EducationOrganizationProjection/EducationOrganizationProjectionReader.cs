@@ -306,10 +306,6 @@ public sealed class EducationOrganizationProjectionReader(
             }
 
             pages++;
-            if (pages > _settings.MaxPages)
-            {
-                return Failed(Code.LimitExceeded, status);
-            }
 
             // A page never holds more than the limit, a page with a cursor holds exactly the limit, and only the first
             // page (of an empty set, so it has no cursor) can be empty. Nothing of a page that breaks these is kept.
@@ -372,6 +368,15 @@ public sealed class EducationOrganizationProjectionReader(
             if (!seen.Add(page.NextCursor))
             {
                 return Failed(Code.MalformedResponse, status);
+            }
+
+            // The page is valid and asks for another. A continuation page holds exactly PageSize items (at least
+            // one), so once MaxPages pages are read or MaxItems items are kept, following the cursor can only
+            // exceed a limit: refuse it here, without requesting that page. A set that ends exactly at a limit has
+            // no cursor and returned above.
+            if (pages >= _settings.MaxPages || items.Count >= _settings.MaxItems)
+            {
+                return Failed(Code.LimitExceeded, status);
             }
             cursor = page.NextCursor;
         }

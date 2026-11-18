@@ -962,7 +962,7 @@ here.
 | `409 projection-too-large` | `LimitExceeded` |
 | `409 projection-data-invalid` | `DataInvalid` |
 | Any other `409` or `4xx`; a `2xx` other than `200` | `UnexpectedResponse` |
-| `200` with a body over `MaxResponseBodyBytes`, or beyond `MaxPages` pages or `MaxItems` items | `LimitExceeded` |
+| `200` with a body over `MaxResponseBodyBytes`, or items beyond `MaxItems`; a `nextCursor` once `MaxPages` pages are read or `MaxItems` items are kept (the next page is not requested) | `LimitExceeded` |
 | `200` that breaks the contract: malformed JSON, a missing or unknown member, a wrong echo, a wrong page size, a repeated cursor, an empty continuation page | `MalformedResponse` |
 | `200` whose items are out of order or repeated, or have an unknown discriminator, an empty name, a name or short name of more than 75 Unicode scalar values, or a `parentId` equal to the item's own id; at the end of the set, a `parentId` naming no item | `DataInvalid` |
 

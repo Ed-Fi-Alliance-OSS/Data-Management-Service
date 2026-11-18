@@ -614,13 +614,15 @@ attempt:
       items' five members required (shortNameOfInstitution, parentId nullable but present);
       unknown members, duplicate properties, wrong types ⇒ Permanent MalformedResponse
     contractVersion == requested && dataStoreId == requested          else Permanent MalformedResponse
-    pages++ > MaxPages ⇒ Permanent LimitExceeded
+    pages++
     pages > 1 && items is empty ⇒ Permanent MalformedResponse            // no empty continuation page
     nextCursor != null && items is empty ⇒ Permanent MalformedResponse
     each item: discriminator ∈ four; name non-empty; name and short name ≤ 75 Unicode scalar values; id > previousId; parentId != id   else Permanent DataInvalid
     items.Count > MaxItems ⇒ Permanent LimitExceeded
     nextCursor == null → return Success(items, version, pages, restarts)
-    nextCursor == cursor || nextCursor ∈ seen ⇒ Permanent MalformedResponse; seen += nextCursor; cursor := nextCursor
+    nextCursor == cursor || nextCursor ∈ seen ⇒ Permanent MalformedResponse; seen += nextCursor
+    pages ≥ MaxPages || items.Count ≥ MaxItems ⇒ Permanent LimitExceeded   // refuse the cursor; the next page is never requested
+    cursor := nextCursor
 ```
 
 Limits `MaxPages`, `MaxItems`, `seen` are per attempt; `MaxWalkRestarts` bounds attempts; `TotalReadTimeoutSeconds` spans everything including Discovery and token calls. Caller cancellation is checked before classifying any timeout and propagates as `OperationCanceledException`. No partial item list is ever returned.
