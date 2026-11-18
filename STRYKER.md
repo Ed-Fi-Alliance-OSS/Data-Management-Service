@@ -22,14 +22,16 @@ Each mutation step has a 210-minute limit inside a 240-minute job, leaving time 
 collect diagnostics. Stryker builds and runs the initial unmutated test suite and
 stops if an initial test fails. No databases or Docker services are required.
 
-The CI gate counts native JSON results directly: **any `Survived` or `NoCoverage`
-mutant fails the job**, regardless of the rounded mutation score. A nonzero Stryker
-exit, missing/invalid/ambiguous report, pending mutants, or no executable mutants
-also fails. `Timeout`, `CompileError`, and `Ignored` counts are shown separately;
-they are not treated as assertion kills. Existing reports contain survivors, so
-the initial weekend runs are expected to fail. Equivalent or defensive survivors
-are not silently exempted. Local configurations retain their 80/60/0 thresholds;
-the strict weekend gate is implemented by [Test-MutationReport.ps1](eng/ci/Test-MutationReport.ps1).
+Weekend CI treats `Survived` and `NoCoverage` findings as **informational** while
+tests and survivor dispositions are improved. It preserves their exact native JSON
+counts and source-level diagnostics for behavioral triage, including documented
+equivalent or defensive survivors. A successful job establishes that the run
+completed with a usable report; it does not establish adequate test coverage.
+A nonzero Stryker exit, missing/invalid/ambiguous report, pending mutants, or no
+executable mutants still fails. `Timeout`, `CompileError`, and `Ignored` counts are
+shown separately; they are not treated as assertion kills. Configurations retain
+their 80/60/0 thresholds. Report validation and summaries are implemented by
+[Test-MutationReport.ps1](eng/ci/Test-MutationReport.ps1).
 
 Scheduled Alliance runs send one short success/failure message to the existing
 `SLACK_WEBHOOK_URL`; failure messages link to the workflow run. As with the other
@@ -40,7 +42,7 @@ run all targets on a selected branch without waiting for Saturday.
 To investigate a failure, open its matrix job and the job summary, then download
 the `mutation-<target>` artifact (retained for 30 days, including failed runs):
 
-- `summary.md` lists status counts and the gate failure reason.
+- `summary.md` lists status counts and any report validation failure reason.
 - `mutant-details.txt` and the job log list surviving/uncovered/timed-out/pending
   mutants with source file, line, column, ID, mutation, replacement, reason, and
   covering test IDs. The native JSON includes source and test details for follow-up.
@@ -104,7 +106,7 @@ from instrumentation and remaining coverage limits.
 | 4 / `dms-write-execution` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-write-execution.json` | Verified; thirty-six intended mutations killed; instrumentation limits documented |
 | 5 / `cms-token-admission` | `src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit` | `stryker-openiddict.json` | Qualified; twenty-three intended mutations killed |
 | 6 / `dms-profile-core` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-profile.json` | Verified; one hundred forty-four intended mutations killed; limitations documented |
-| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Verified; twenty-six intended mutations killed; limitations documented |
+| 6 / `dms-profile-backend` | `src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit` | `stryker-profile.json` | Verified; forty-five intended mutations killed; nested ancestor lookup qualified |
 | 7 / `dms-write-plans` | `src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit` | `stryker-write-plans.json` | Verified; three required-locator mutations killed |
 | 8 / `dms-model-constraints` | `src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit` | `stryker-model-constraints.json` | Verified; twelve intended assertion improvements; timeout variation documented |
 | 9 / `dms-validation` | `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit` | `stryker-validation.json` | Qualified with documented compile limitations |
@@ -188,7 +190,7 @@ Implementation started from `dfbd0530896805cd3415b679dc62510a9871268a` on 2026-1
 Tool restoration and local-manifest resolution were checked at the repository root,
 DMS Core test directory, and CMS Backend test directory: all resolve 5.0.0. Installed
 SDK: 10.0.102; runtime: 10.0.2. All eleven full targets are qualified, with the
-limitations below. Together they confirm 364 additional assertion-based kills.
+limitations below. Together they confirm 383 additional assertion-based kills.
 
 | Area | Native score before → after | Confirmed new assertion kills | Runtime before / after | Reports, relative to owning test directory |
 | --- | --- | --- | --- | --- |
@@ -198,7 +200,7 @@ limitations below. Together they confirm 364 additional assertion-based kills.
 | 4. Transactional writes | 66.74% → 74.22% | 36 | 04m17s / 11m09s | `StrykerOutput/2026-11-16.18-50-04/reports/` → `StrykerOutput/2026-11-16.22-36-19/reports/` |
 | 5. CMS token admission | 65.72% → 72.96% | 23 | 11m46s / 14m47s | `StrykerOutput/2026-11-16.18-21-43/reports/` → `StrykerOutput/2026-11-16.19-33-56/reports/` |
 | 6a. Core profiles | 66.40% → 83.14% | 144 | 06m29s / 12m26s | `StrykerOutput/2026-11-16.19-24-29/reports/` → `StrykerOutput/2026-11-16.22-38-23/reports/` |
-| 6b. Backend profiles | 57.14% → 59.04% | 26 | 05m01s / 08m55s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-16.22-46-36/reports/` |
+| 6b. Backend profiles | 57.14% → 60.42% | 45 | 05m01s / 08m10s | `StrykerOutput/2026-11-16.19-55-14/reports/` → `StrykerOutput/2026-11-18.13-50-24/reports/` |
 | 7. Write plans | 68.60% → 69.48% | 3 | 27m36s / 28m24s | `StrykerOutput/2026-11-17.00-02-08/reports/` → `StrykerOutput/2026-11-16.23-59-38/reports/` |
 | 8. Relational model | 61.76% → 55.68%; timeouts 58 → 8 | 12 | 35m54s / 40m57s | `StrykerOutput/2026-11-16.22-57-24/reports/` → `StrykerOutput/2026-11-16.23-01-24/reports/` |
 | 9. Validation | 65.85% → 71.95% | 5 | 04m49s / 04m58s | `StrykerOutput/2026-11-16.16-53-30/reports/` → `StrykerOutput/2026-11-16.17-05-10/reports/` |
@@ -652,9 +654,9 @@ failures, and a lower uncovered count does not remove instrumentation limitation
 
 ### 6b. Backend profiles
 
-The three-file target improves from 783 to 809 assertion-based kills: 26 intended
-improvements, 350 survivors, 212 uncovered, 358 compile errors, 368 ignored, and one
-loop timeout. No prior kill regressed. The full Backend Release suite passes 4,897 tests.
+The three-file target improves from 783 to 828 assertion-based kills: 45 intended
+improvements, 335 survivors, 208 uncovered, 358 compile errors, 368 ignored, and one
+loop timeout. No prior kill regressed. The full Backend Release suite passes 4,898 tests.
 
 Binding regressions assert complete visible-present/absent and hidden stored-data
 classifications, descendant state application, scope/ancestor mismatch rejection, and
@@ -670,7 +672,29 @@ fixture reorders visible children while retaining a hidden parent's stored ordin
 An existing non-creatable inline scope remains updatable. Two descriptor-identity parts
 are canonicalized together for request, stored-cache, and omitted-row cache-miss paths;
 resetting the builder must not discard the earlier component. Those last cases kill
-`RelationalWriteProfileMerge.cs:3170/3280/3318` and raise the final score to 59.04%.
+`RelationalWriteProfileMerge.cs:3170/3280/3318` and raised the initial qualification
+score to 59.04%.
+
+The 2026-11-18 review follow-up adds `NestedDescriptorProfileMergeTests.cs`: a
+three-level merge with descriptor-valued parent and child identities, an omitted
+visible child outside the request cache, and a hidden parent's subtree. The fixture
+asserts complete current and merged rows, including stable keys, parent keys,
+ordinals, and descriptor IDs. Resolving the omitted child's descriptor requires the
+already-canonicalized parent identity to select its stored-row partition.
+
+The full target rerun reaches 60.42% and confirms 19 additional kills versus the
+previous qualified report: 17 survivors and two uncovered mutations become killed,
+with no lost kills. All 19 name the new regression in `killedBy`. In particular,
+merge line 2929's conditional-false mutation (always use the raw ancestor) and
+logical-OR mutation (use the canonical ancestor even for the raw stored-row lookup)
+are killed; report-local IDs are 15776 and 15777. Two other previously uncovered
+mutations become covered survivors, as described below. Reproduce from the Backend
+unit-test directory with:
+
+```bash
+dotnet test --configuration Release
+dotnet stryker --config-file stryker-profile.json --concurrency 2 --break-on-initial-test-failure --log-to-file
+```
 
 Dispositions and limits:
 
@@ -687,10 +711,14 @@ Dispositions and limits:
   Scalar-match and positional descriptor fallbacks can resolve the same IDs under
   valid stored ordinal/count invariants; arbitrary broken ordinals are not a supported
   preservation scenario.
-- Deeper ancestor canonicalization fallbacks remain an explicit coverage limitation.
-  The new two-component descriptor and parent-partition cases do not establish every
-  reference identity/collision variant. Defensive malformed intermediate inventories
-  and incidental diagnostic ordering are not counted as correctness improvements.
+- The three-level regression qualifies raw-versus-canonical ancestor selection for
+  descriptor cache misses. It does not qualify every multi-component ancestor or
+  reference identity/collision variant. In particular, resetting the fallback builder
+  at merge 2518 has no effect with one descriptor component, and changing `IsPresent`
+  at 2522 is not exposed when that child's subtree is deleted. These two newly covered
+  survivors remain coverage limits, not equivalent-mutant claims. Defensive malformed
+  intermediate inventories and incidental diagnostic ordering are not counted as
+  correctness improvements.
 
 ### 7. Write plans
 

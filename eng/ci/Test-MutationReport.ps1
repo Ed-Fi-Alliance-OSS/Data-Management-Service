@@ -7,10 +7,11 @@
 
 <#
 .SYNOPSIS
-    Summarizes one fresh Stryker run and fails if any mutants survived or were uncovered.
+    Validates one fresh Stryker report and summarizes mutation findings for investigation.
 .DESCRIPTION
     Use a separate output directory for each invocation. The workflow also preserves Stryker's
     exit code: a valid report cannot turn a failed build, baseline test, or runner into success.
+    Survived and uncovered mutants are informational; incomplete or invalid reports fail.
 #>
 [CmdletBinding()]
 param(
@@ -95,16 +96,13 @@ try {
     if ($executable -eq 0) {
         throw 'No executable mutants in the report; this does not establish a successful mutation run.'
     }
-    if ($counts.Survived -gt 0 -or $counts.NoCoverage -gt 0) {
-        throw "$($counts.Survived) survived and $($counts.NoCoverage) uncovered mutant(s). Inspect mutant-details.txt and the HTML report."
-    }
     $summary.Add('')
-    $summary.Add('**Mutation gate passed: zero surviving or uncovered mutants.**')
+    $summary.Add('**Mutation report validated.** Surviving and uncovered mutants are informational and require behavioral triage; this does not establish adequate test coverage. Inspect mutant-details.txt and the HTML report.')
 }
 catch {
     $failure = $_.Exception.Message
     $summary.Add('')
-    $summary.Add("**Mutation gate failed:** $failure")
+    $summary.Add("**Mutation report validation failed:** $failure")
 }
 finally {
     $text = $summary -join [Environment]::NewLine

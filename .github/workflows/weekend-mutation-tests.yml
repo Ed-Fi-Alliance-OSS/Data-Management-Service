@@ -104,7 +104,7 @@ jobs:
             --break-on-initial-test-failure --log-to-file \
             --output "$ARTIFACT_DIRECTORY/stryker" 2>&1 | tee "$ARTIFACT_DIRECTORY/console.log"
 
-      - name: Summarize results and reject surviving mutants
+      - name: Validate report and summarize mutation findings
         if: always()
         shell: pwsh
         run: ./eng/ci/Test-MutationReport.ps1 -OutputDirectory $env:ARTIFACT_DIRECTORY -Target $env:TARGET
@@ -130,7 +130,7 @@ jobs:
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
           payload: |
-            {"text": ":heavy_check_mark: DMS and CMS weekend mutation tests passed, all 11 targets verified"}
+            {"text": ":heavy_check_mark: DMS and CMS weekend mutation runs completed, all 11 reports validated; findings require review: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"}
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 

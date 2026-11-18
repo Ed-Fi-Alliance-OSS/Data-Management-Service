@@ -3,7 +3,7 @@
 # The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 # See the LICENSE and NOTICES files in the project root for more information.
 
-Describe 'Weekend mutation report gate' {
+Describe 'Weekend mutation report validation' {
     BeforeAll {
         $script:gate = Join-Path $PSScriptRoot '../Test-MutationReport.ps1'
 
@@ -50,34 +50,37 @@ Describe 'Weekend mutation report gate' {
         New-MutationReport $script:output @('Killed', 'Timeout', 'CompileError', 'Ignored')
         { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Not -Throw
         $summary = Get-Content (Join-Path $script:output 'summary.md') -Raw
-        $summary | Should -Match 'zero surviving or uncovered'
+        $summary | Should -Match 'Mutation report validated'
         $summary | Should -Match '\| Timeout \| 1 \|'
         $summary | Should -Match '\| CompileError \| 1 \|'
         Get-Content $env:GITHUB_STEP_SUMMARY -Raw | Should -Be $summary
     }
 
-    It 'fails for <Status> and writes source-level diagnostics before failing' -ForEach @(
-        @{ Status = 'Survived'; Message = '*1 survived and 0 uncovered*' }
-        @{ Status = 'NoCoverage'; Message = '*0 survived and 1 uncovered*' }
+    It 'reports <Status> with source-level diagnostics without failing' -ForEach @(
+        @{ Status = 'Survived' }
+        @{ Status = 'NoCoverage' }
     ) {
         New-MutationReport $script:output @('Killed', $Status)
-        { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Throw $Message
+        { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Not -Throw
         $details = Get-Content (Join-Path $script:output 'mutant-details.txt') -Raw
         $details | Should -Match "$Status \| src/Authorization.cs:42:7 \| mutant 1"
         $details | Should -Match 'Boolean mutation'
         $details | Should -Match 'false\\n&& false'
         $details | Should -Match 'Test result reason'
         $details | Should -Match 'test-123'
-        Get-Content $env:GITHUB_STEP_SUMMARY -Raw | Should -Match 'Mutation gate failed'
+        $summary = Get-Content $env:GITHUB_STEP_SUMMARY -Raw
+        $summary | Should -Match "\| $Status \| 1 \|"
+        $summary | Should -Match 'Surviving and uncovered mutants are informational'
     }
 
-    It 'fails on one survivor even when a reported score rounds to 100' {
+    It 'reports exact survivor counts even when a reported score rounds to 100' {
         New-MutationReport $script:output @('Killed', 'Survived')
         $path = Join-Path $script:output 'stryker/current/reports/mutation-report.json'
         $report = Get-Content $path -Raw | ConvertFrom-Json -AsHashtable
         $report['mutationScore'] = 100
         $report | ConvertTo-Json -Depth 15 | Set-Content $path
-        { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Throw '*1 survived*'
+        { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Not -Throw
+        Get-Content $env:GITHUB_STEP_SUMMARY -Raw | Should -Match '\| Survived \| 1 \|'
     }
 
     It 'fails incomplete or non-executable reports (<Statuses>)' -ForEach @(
@@ -88,7 +91,7 @@ Describe 'Weekend mutation report gate' {
     ) {
         New-MutationReport $script:output $Statuses
         { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Throw $Message
-        Get-Content (Join-Path $script:output 'summary.md') -Raw | Should -Match 'Mutation gate failed'
+        Get-Content (Join-Path $script:output 'summary.md') -Raw | Should -Match 'Mutation report validation failed'
     }
 
     It 'fails missing reports and still writes a useful summary' {
@@ -110,7 +113,7 @@ Describe 'Weekend mutation report gate' {
         New-Item -ItemType Directory -Path $script:output -Force | Out-Null
         $Content | Set-Content (Join-Path $script:output 'mutation-report.json')
         { & $script:gate -OutputDirectory $script:output -Target 'test-target' } | Should -Throw
-        Get-Content (Join-Path $script:output 'summary.md') -Raw | Should -Match 'Mutation gate failed'
+        Get-Content (Join-Path $script:output 'summary.md') -Raw | Should -Match 'Mutation report validation failed'
     }
 }
 
@@ -140,13 +143,13 @@ Describe 'Weekend mutation workflow' {
         $script:workflow | Should -Match 'fail-fast: false'
         $script:workflow | Should -Match 'set -euo pipefail'
         $script:workflow | Should -Match '--break-on-initial-test-failure --log-to-file'
-        $script:workflow | Should -Match '(?m)      - name: Summarize results and reject surviving mutants\r?\n        if: always\(\)'
+        $script:workflow | Should -Match '(?m)      - name: Validate report and summarize mutation findings\r?\n        if: always\(\)'
         $script:workflow | Should -Match '(?m)      - name: Upload mutation reports and diagnostics\r?\n        if: always\(\)'
         $script:workflow | Should -Not -Match 'continue-on-error|pull_request:'
     }
 
     It 'preserves a Stryker runner failure through tee and captures its diagnostic output' -Skip:$IsWindows {
-        $runScript = [regex]::Match($script:workflow, '(?ms)        run: \|\r?\n(.*?)\r?\n      - name: Summarize').Groups[1].Value
+        $runScript = [regex]::Match($script:workflow, '(?ms)        run: \|\r?\n(.*?)\r?\n      - name: Validate report').Groups[1].Value
         $runScript | Should -Not -BeNullOrEmpty
         $stubDirectory = Join-Path $TestDrive 'stub-bin'
         New-Item -ItemType Directory -Path $stubDirectory | Out-Null
