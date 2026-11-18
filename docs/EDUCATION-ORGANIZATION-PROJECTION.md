@@ -807,6 +807,31 @@ created through the Configuration Service API, which registers the client with
 the identity provider. DMS checks the client-to-tenant binding against the
 Configuration Service, whichever provider issued the token.
 
+Restrict the projection client to machine use with the client-credentials
+grant, and keep the projection claim away from ordinary clients:
+
+- **Self-contained.** The Configuration Service token endpoint accepts only
+  `client_credentials` and answers any other grant type with
+  `unsupported_grant_type`, so no further setting applies.
+- **Keycloak or another external provider.** The Configuration Service enables
+  service accounts on the client it creates and does not set the client's other
+  flows. On the projection client, disable every interactive or user grant the
+  provider offers, such as Keycloak's Standard flow, Implicit flow and Direct
+  access grants (the password grant), and leave only client credentials (service
+  accounts), so no user can sign in through the client and receive its claim
+  set as a default scope.
+- Grant the projection claim only through the dedicated claim set above. Never
+  add it to a claim set used by vendor or other ordinary application clients.
+
+DMS authorizes the projection by the token's claim set and tenant, not by how
+the token was obtained, so the grant restriction is identity-provider
+configuration rather than a DMS check. The existing authorization tests show
+that a missing or unknown token is `401`, that a credential whose claim set
+lacks the projection claim (a resource or identity claim set) is `403`, that
+another tenant's projection credential is `401`, and that the projection
+credential itself is denied by the resource API. They do not show which grant
+issued a token.
+
 ### Credential rotation
 
 The reader caches one token per tenant and client id, and uses it until
