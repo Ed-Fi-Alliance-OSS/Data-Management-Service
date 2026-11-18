@@ -6,6 +6,7 @@
 using System.Data.Common;
 using System.Net;
 using System.Net.Sockets;
+using System.Text.Json.Nodes;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using FluentAssertions;
 using FailureCategory = EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection.EducationOrganizationProjectionFailureCategory;
@@ -276,6 +277,61 @@ public static class DmsProjectionReaderTests
 
         [Test]
         public void It_requests_no_page() => Host.Plan.Pages.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Discovery advertises the <c>districtId</c> qualifier, the catalog spells the store's context key
+    /// <c>DistrictId</c>, and the production reader resolves the URL from the catalog contexts as they are. DMS
+    /// pairs the key ignoring case as the reader does, so the read succeeds instead of failing as target not
+    /// found. The store is the second tenant's provisioned database, empty, under a route context of its own.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_store_whose_context_key_differs_from_the_qualifier_only_in_case : ReadFixture
+    {
+        private int _dataStoreId;
+
+        protected override async Task PrepareAsync()
+        {
+            _dataStoreId = await Fixture.Services.CreateDataStoreAsync(
+                ProjectionE2EFixture.SeededTenant,
+                "Projection Reader E2E differently cased context key",
+                Fixture.Environment.RouteThreeConnectionString,
+                new Dictionary<string, string> { ["DistrictId"] = "255901", ["schoolYear"] = "2096" }
+            );
+        }
+
+        protected override (string Tenant, int DataStoreId) Target() =>
+            (ProjectionE2EFixture.SeededTenant, _dataStoreId);
+
+        [Test]
+        public async Task It_reads_a_discovery_template_that_names_the_qualifier_districtId()
+        {
+            // The reader's own Discovery request: no credentials, the base path then the tenant.
+            using HttpClient http = new();
+            string root = Fixture.Environment.DmsBaseUrl.GetLeftPart(UriPartial.Path).TrimEnd('/');
+            JsonNode discovery = JsonNode.Parse(
+                await http.GetStringAsync($"{root}/{Uri.EscapeDataString(ProjectionE2EFixture.SeededTenant)}")
+            )!;
+
+            string template = discovery["urls"]!["educationOrganizationProjection"]!.GetValue<string>();
+            template.Should().Contain("{districtId}").And.NotContain("{DistrictId}");
+        }
+
+        [Test]
+        public async Task It_registers_the_catalog_context_key_as_DistrictId() =>
+            (await Fixture.Services.DataStoreContextsAsync(ProjectionE2EFixture.SeededTenant, _dataStoreId))
+                .Keys.Should()
+                .BeEquivalentTo("DistrictId", "schoolYear");
+
+        [Test]
+        public void It_succeeds_with_one_empty_page()
+        {
+            Success.Items.Should().BeEmpty();
+            Success.PageCount.Should().Be(1);
+        }
+
+        [Test]
+        public void It_requests_the_page_through_dms() => Host.Plan.Pages.Should().ContainSingle();
     }
 
     [TestFixture]

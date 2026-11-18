@@ -87,6 +87,13 @@ public abstract class ResolveEducationOrganizationProjectionTargetMiddlewareTest
     protected void StoreInCache(DataStore store) =>
         A.CallTo(() => DataStoreProvider.GetById(DataStoreId, Tenant)).Returns(store);
 
+    /// <summary>A catalog route context from <c>key=value</c> entries separated by <c>;</c>.</summary>
+    protected static Dictionary<RouteQualifierName, RouteQualifierValue> RouteContext(string entries) =>
+        entries
+            .Split(';')
+            .Select(entry => entry.Split('='))
+            .ToDictionary(pair => new RouteQualifierName(pair[0]), pair => new RouteQualifierValue(pair[1]));
+
     protected async Task Execute(
         SqlDialect? registeredDialect = SqlDialect.Pgsql,
         CancellationToken cancellationToken = default
@@ -414,6 +421,71 @@ public abstract class ResolveEducationOrganizationProjectionTargetMiddlewareTest
         public void It_does_not_reload_the_catalog_for_a_store_it_found() =>
             A.CallTo(() => DataStoreProvider.LoadDataStores(A<string?>._, A<CancellationToken>._))
                 .MustNotHaveHappened();
+    }
+
+    /// <summary>
+    /// The request's qualifiers are <c>districtId=255901</c> and <c>schoolYear=2025</c>. A context key
+    /// pairs with a qualifier exactly, else as the one key equal to it ignoring case, which is how the
+    /// Configuration Service fills the projection URL from the same catalog.
+    /// </summary>
+    [TestFixture("districtId=255901;schoolYear=2025")]
+    [TestFixture("DistrictId=255901;schoolYear=2025")]
+    [TestFixture("DISTRICTID=255901;SchoolYear=2025")]
+    [TestFixture("DistrictId=255901;SCHOOLYEAR=2025")]
+    public class Given_A_Route_Context_Whose_Keys_Match_The_Qualifiers(string routeContext)
+        : ResolveEducationOrganizationProjectionTargetMiddlewareTests
+    {
+        private DataStore _store = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _store = Store(routeContext: RouteContext(routeContext));
+            StoreInCache(_store);
+            await Execute();
+        }
+
+        [Test]
+        public void It_selects_the_store_and_continues() => AssertAccepted(_store);
+    }
+
+    /// <summary>
+    /// Against the same qualifiers: conflicting case variants, a missing or extra entry, a key that is
+    /// not a case variant, and a different value under an exact or a differently cased key. Each is the
+    /// one fixed target-not-found answer.
+    /// </summary>
+    [TestFixture("DistrictId=255901;DISTRICTID=255902")]
+    [TestFixture("DistrictId=255902;DISTRICTID=255901")]
+    [TestFixture("DistrictId=255901;districtId=255901")]
+    [TestFixture("districtId=255901;DistrictId=255902;schoolYear=2025")]
+    [TestFixture("DistrictId=255901;districtid=255901;schoolYear=2025")]
+    [TestFixture("districtId=255901")]
+    [TestFixture("DistrictId=255901")]
+    [TestFixture("districtId=255901;schoolYear=2025;sectionId=1")]
+    [TestFixture("district=255901;schoolYear=2025")]
+    [TestFixture("districtId=255902;schoolYear=2025")]
+    [TestFixture("DistrictId=255902;schoolYear=2025")]
+    [TestFixture("DistrictId=255901;SchoolYear=2024")]
+    public class Given_A_Route_Context_That_Does_Not_Pair_With_The_Qualifiers(string routeContext)
+        : ResolveEducationOrganizationProjectionTargetMiddlewareTests
+    {
+        [SetUp]
+        public async Task Setup()
+        {
+            StoreInCache(Store(routeContext: RouteContext(routeContext)));
+            await Execute();
+        }
+
+        [Test]
+        public void It_answers_target_not_found() => AssertTargetNotFound();
+
+        [Test]
+        public void It_logs_a_route_context_mismatch() =>
+            Logger
+                .Records.Should()
+                .ContainSingle(record =>
+                    Equals(record.Properties.GetValueOrDefault("TargetState"), "RouteContextMismatch")
+                );
     }
 
     [TestFixture]

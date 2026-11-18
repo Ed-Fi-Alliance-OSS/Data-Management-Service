@@ -7,6 +7,7 @@ using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Core.Configuration;
 using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using EdFi.DataManagementService.Core.External.Frontend;
+using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.Pipeline;
 using EdFi.DataManagementService.Core.Response;
 using EdFi.DataManagementService.Core.Utilities;
@@ -30,7 +31,8 @@ namespace EdFi.DataManagementService.Core.Middleware;
 /// from the Configuration Service exactly once; a failed reload is 503 <c>service-unavailable</c>,
 /// never a 404, because an outage says nothing about whether the store exists.</item>
 /// <item>A store that is still absent, or whose route context does not match the request's route
-/// qualifiers, is 404 <c>target-not-found</c> with one body, so the response does not say which.</item>
+/// qualifiers (see <see cref="RouteContextMatches"/>), is 404 <c>target-not-found</c> with one body,
+/// so the response does not say which.</item>
 /// <item>An unrecognized provider, or a recognized one other than the dialect this deployment
 /// registered, is 409 <c>target-provider-unsupported</c>. A legacy store with no provider token is
 /// served by the registered dialect, which is how ordinary routing already treats it.</item>
@@ -126,7 +128,7 @@ internal class ResolveEducationOrganizationProjectionTargetMiddleware(
             store = _dataStoreProvider.GetById(dataStoreId, request.Tenant);
         }
 
-        if (store is null || !RouteContextMatcher.IsMatch(store.RouteContext, request.RouteQualifiers))
+        if (store is null || !RouteContextMatches(store.RouteContext, request.RouteQualifiers))
         {
             _logger.LogInformation(
                 "Projection target {TargetState} for data store {DataStoreId}, tenant {Tenant} - {TraceId}",
@@ -190,6 +192,67 @@ internal class ResolveEducationOrganizationProjectionTargetMiddleware(
             .SetSelectedDataStore(store);
 
         await next();
+    }
+
+    /// <summary>
+    /// Whether the store's route context holds exactly the request's route qualifiers, with equal values.
+    /// Each qualifier pairs with the context entry whose key equals its name ordinally, else with the
+    /// one entry whose key equals it ignoring case: the rule the Configuration Service uses to fill the
+    /// projection URL from the same catalog, so a <c>DistrictId</c> context serves a <c>districtId</c>
+    /// qualifier. Several case variants and no exact key pair with nothing, rather than with whichever
+    /// comes first; a missing qualifier, an entry left unpaired and a different value (compared as
+    /// <see cref="RouteContextMatcher"/> compares values) are each a mismatch. Ordinary resource and
+    /// metadata routing keep <see cref="RouteContextMatcher"/>'s exact keys.
+    /// </summary>
+    private static bool RouteContextMatches(
+        Dictionary<RouteQualifierName, RouteQualifierValue> routeContext,
+        Dictionary<RouteQualifierName, RouteQualifierValue> requestQualifiers
+    )
+    {
+        if (routeContext.Count != requestQualifiers.Count)
+        {
+            return false;
+        }
+
+        // Equal counts and distinct pairs for every qualifier leave no context entry unpaired.
+        HashSet<RouteQualifierName> paired = [];
+        foreach ((RouteQualifierName name, RouteQualifierValue requestValue) in requestQualifiers)
+        {
+            if (
+                PairedContextKey(routeContext, name) is not RouteQualifierName key
+                || !paired.Add(key)
+                || !routeContext[key].Value.Equals(requestValue.Value, StringComparison.OrdinalIgnoreCase)
+            )
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// The context key equal to <paramref name="name"/> ordinally, else the only one equal to it ignoring
+    /// case; <c>null</c> when there is none or more than one.
+    /// </summary>
+    private static RouteQualifierName? PairedContextKey(
+        Dictionary<RouteQualifierName, RouteQualifierValue> routeContext,
+        RouteQualifierName name
+    )
+    {
+        if (routeContext.ContainsKey(name))
+        {
+            return name;
+        }
+
+        RouteQualifierName[] caseVariants =
+        [
+            .. routeContext
+                .Keys.Where(key => key.Value.Equals(name.Value, StringComparison.OrdinalIgnoreCase))
+                .Take(2),
+        ];
+
+        return caseVariants.Length == 1 ? caseVariants[0] : null;
     }
 
     /// <summary>
