@@ -101,15 +101,20 @@ public sealed class DmsDiscoveryClient(
             _cache[cacheKey] = entry;
         }
 
+        // The tenant mode is the request's own: a tenant name means Discovery was read for that tenant, and none
+        // means single-tenant mode, where {tenant} can only be an ordinary route qualifier.
+        bool multiTenant = tenantName is not null;
         ProjectionUrlResolution token = ProjectionUrlTemplateResolver.Resolve(
             entry.Document.TokenUrlTemplate,
             dataStoreContexts,
-            baseUrl
+            baseUrl,
+            multiTenant
         );
         ProjectionUrlResolution projection = ProjectionUrlTemplateResolver.Resolve(
             entry.Document.ProjectionUrlTemplate,
             dataStoreContexts,
-            baseUrl
+            baseUrl,
+            multiTenant
         );
 
         switch (token, projection)

@@ -49,6 +49,20 @@ public sealed record ProjectionRouteMode(
             new Dictionary<string, string> { ["districtId"] = "255901", ["schoolYear"] = "2025" }
         );
 
+    /// <summary>
+    /// A single-tenant deployment whose one route qualifier is named <c>tenant</c>: Discovery advertises
+    /// <c>{tenant}</c>, an ordinary qualifier here, which the client fills from the data store's context.
+    /// </summary>
+    public static ProjectionRouteMode SingleTenantWithTenantQualifier { get; } =
+        new(
+            "single-tenant with a route qualifier named tenant",
+            false,
+            "tenant",
+            "/Tenant_255901",
+            null,
+            new Dictionary<string, string> { ["tenant"] = "Tenant_255901" }
+        );
+
     public static ProjectionRouteMode MultiTenant { get; } =
         new("multi-tenant", true, "", "/Tenant_255901", "Tenant_255901", new Dictionary<string, string>());
 
@@ -63,7 +77,13 @@ public sealed record ProjectionRouteMode(
         );
 
     public static ProjectionRouteMode[] All { get; } =
-    [SingleTenant, SingleTenantWithQualifiers, MultiTenant, MultiTenantWithQualifiers];
+    [
+        SingleTenant,
+        SingleTenantWithQualifiers,
+        SingleTenantWithTenantQualifier,
+        MultiTenant,
+        MultiTenantWithQualifiers,
+    ];
 
     /// <summary>The path a client of this mode sends.</summary>
     public string ProjectionPath => $"{ConcretePrefix}{RouteSuffix}";
@@ -300,6 +320,42 @@ public class Given_The_Projection_Route_In_A_Route_Mode(ProjectionRouteMode mode
         enabled.Remove(EndpointMember).Should().BeTrue();
         JsonNode.DeepEquals(enabled, disabled).Should().BeTrue(disabled.ToJsonString());
     }
+}
+
+/// <summary>
+/// In single-tenant mode a route qualifier named <c>tenant</c> is an ordinary qualifier, so root Discovery
+/// advertises it as the <c>{tenant}</c> placeholder in both URLs a projection client reads.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class Given_A_Single_Tenant_Route_Qualifier_Named_Tenant
+{
+    private ProjectionFrontendHost _host = null!;
+    private JsonObject _discovery = null!;
+
+    [OneTimeSetUp]
+    public async Task Setup()
+    {
+        _host = new ProjectionFrontendHost(true, ProjectionRouteMode.SingleTenantWithTenantQualifier);
+        _discovery = await _host.Discovery("/");
+    }
+
+    [OneTimeTearDown]
+    public async Task TearDown() => await _host.DisposeAsync();
+
+    [Test]
+    public void It_advertises_the_tenant_placeholder_in_the_projection_and_oauth_urls() =>
+        (
+            _discovery["urls"]!["educationOrganizationProjection"]!.GetValue<string>(),
+            _discovery["urls"]!["oauth"]!.GetValue<string>()
+        )
+            .Should()
+            .Be(
+                (
+                    "http://localhost/{tenant}/management/education-organizations",
+                    "http://localhost/{tenant}/oauth/token"
+                )
+            );
 }
 
 /// <summary>

@@ -32,9 +32,10 @@ public abstract record ProjectionUrlResolution
 /// percent-encoded one. Otherwise <c>DiscoveryInvalid</c>.</item>
 /// <item>Substitution: each <c>{name}</c> becomes the store context whose key equals <c>name</c> (exactly, else the one
 /// value of the keys equal ignoring case), percent-encoded with <see cref="Uri.EscapeDataString(string)"/>. A missing,
-/// ambiguous, empty or malformed UTF-16 value, a <c>{tenant}</c> placeholder (the tenant comes from the Discovery path,
-/// never from a store context), or a segment the values turn into <c>.</c> or <c>..</c> is
-/// <c>TargetNotRoutable</c>.</item>
+/// ambiguous, empty or malformed UTF-16 value, a <c>{tenant}</c> placeholder in a multi-tenant request (the tenant
+/// comes from the Discovery path, never from a store context), or a segment the values turn into <c>.</c> or
+/// <c>..</c> is <c>TargetNotRoutable</c>. In a single-tenant request <c>{tenant}</c> is an ordinary route qualifier
+/// and is filled like any other.</item>
 /// <item>Containment, on the URL as <see cref="Uri"/> parses it: same origin again, and the base URL's path segments a
 /// prefix of the result's at segment boundaries (<c>/api</c> admits <c>/api/x</c>, not <c>/api-other</c>), comparing
 /// segments case-sensitively after decoding unreserved percent-escapes and upper-casing the others. Otherwise
@@ -45,7 +46,7 @@ public abstract record ProjectionUrlResolution
 /// </summary>
 public static class ProjectionUrlTemplateResolver
 {
-    /// <summary>The placeholder that is never filled from a store context.</summary>
+    /// <summary>The placeholder that is never filled from a store context in a multi-tenant request.</summary>
     public const string TenantPlaceholder = "tenant";
 
     private const char PathSeparator = '/';
@@ -61,10 +62,18 @@ public static class ProjectionUrlTemplateResolver
     /// <summary>One piece of a path segment: literal template text or a placeholder name.</summary>
     private readonly record struct Part(bool IsPlaceholder, string Text);
 
+    /// <param name="template">The Discovery URL template.</param>
+    /// <param name="dataStoreContexts">The data store's route qualifier values.</param>
+    /// <param name="baseUrl">The configured DMS base URL.</param>
+    /// <param name="multiTenant">
+    /// Whether the request names a tenant: <c>true</c> when Discovery was read for a tenant, <c>false</c> in
+    /// single-tenant mode.
+    /// </param>
     public static ProjectionUrlResolution Resolve(
         string template,
         IReadOnlyDictionary<string, string> dataStoreContexts,
-        Uri baseUrl
+        Uri baseUrl,
+        bool multiTenant
     )
     {
         if (template.IndexOfAny(['?', '#', '\\']) >= 0)
@@ -119,7 +128,7 @@ public static class ProjectionUrlTemplateResolver
                     continue;
                 }
 
-                string? value = ContextValue(dataStoreContexts, part.Text);
+                string? value = ContextValue(dataStoreContexts, part.Text, multiTenant);
                 if (value is null)
                 {
                     return _notRoutable;
@@ -207,13 +216,17 @@ public static class ProjectionUrlTemplateResolver
 
     /// <summary>
     /// The value to substitute: the context whose key equals <paramref name="name"/> exactly, else the one value shared
-    /// by the keys equal to it ignoring case. <c>null</c> for <see cref="TenantPlaceholder"/>, and for a missing,
-    /// ambiguous, empty or malformed UTF-16 value, which <see cref="Uri.EscapeDataString(string)"/> would otherwise
-    /// replace with U+FFFD and so route somewhere else.
+    /// by the keys equal to it ignoring case. <c>null</c> for <see cref="TenantPlaceholder"/> in a multi-tenant
+    /// request, and for a missing, ambiguous, empty or malformed UTF-16 value, which
+    /// <see cref="Uri.EscapeDataString(string)"/> would otherwise replace with U+FFFD and so route somewhere else.
     /// </summary>
-    private static string? ContextValue(IReadOnlyDictionary<string, string> dataStoreContexts, string name)
+    private static string? ContextValue(
+        IReadOnlyDictionary<string, string> dataStoreContexts,
+        string name,
+        bool multiTenant
+    )
     {
-        if (string.Equals(name, TenantPlaceholder, StringComparison.OrdinalIgnoreCase))
+        if (multiTenant && string.Equals(name, TenantPlaceholder, StringComparison.OrdinalIgnoreCase))
         {
             return null;
         }

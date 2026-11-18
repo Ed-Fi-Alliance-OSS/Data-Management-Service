@@ -208,6 +208,143 @@ public class DmsDiscoveryClientTests
                 );
     }
 
+    /// <summary>
+    /// A single-tenant DMS whose route qualifier is named <c>tenant</c> advertises <c>{tenant}</c> in both URLs; the
+    /// store context fills it like any other qualifier.
+    /// </summary>
+    [TestFixture("{tenant}", "tenant")]
+    [TestFixture("{tenant}", "TENANT")]
+    [TestFixture("{TENANT}", "tenant")]
+    public class Given_a_single_tenant_read_with_a_tenant_route_qualifier(
+        string placeholder,
+        string contextKey
+    )
+    {
+        private Harness _harness = null!;
+        private DmsDiscoveryResolution.Resolved _resolved = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new Harness(
+                FakeDmsHandler.Answering(() =>
+                    Ok(
+                        Document(
+                            root: BaseUrl,
+                            tokenUrl: $"{BaseUrl}/{placeholder}/oauth/token",
+                            projectionUrl: $"{BaseUrl}/{placeholder}/management/education-organizations"
+                        )
+                    )
+                )
+            );
+            _resolved = ShouldBeResolved(
+                await _harness.ResolveAsync(
+                    tenant: null,
+                    contexts: new Dictionary<string, string> { [contextKey] = "District A" }
+                )
+            );
+        }
+
+        [Test]
+        public void It_reads_the_root_discovery_document() =>
+            _harness
+                .Handler.Requests.Select(request => request.Uri.AbsoluteUri)
+                .Should()
+                .Equal(BaseUrl + "/");
+
+        [Test]
+        public void It_fills_the_qualifier_in_both_urls() =>
+            (_resolved.TokenUrl.AbsoluteUri, _resolved.ProjectionUrl.AbsoluteUri)
+                .Should()
+                .Be(
+                    (
+                        BaseUrl + "/District%20A/oauth/token",
+                        BaseUrl + "/District%20A/management/education-organizations"
+                    )
+                );
+    }
+
+    [TestFixture("missing")]
+    [TestFixture("ambiguous")]
+    [TestFixture("empty")]
+    public class Given_a_single_tenant_tenant_route_qualifier_no_context_fills(string contexts)
+    {
+        private DmsDiscoveryResolution _resolution = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            Harness harness = new(
+                FakeDmsHandler.Answering(() =>
+                    Ok(
+                        Document(
+                            root: BaseUrl,
+                            tokenUrl: BaseUrl + "/{tenant}/oauth/token",
+                            projectionUrl: BaseUrl + "/{tenant}/management/education-organizations"
+                        )
+                    )
+                )
+            );
+            _resolution = await harness.ResolveAsync(
+                tenant: null,
+                contexts: contexts switch
+                {
+                    "missing" => new Dictionary<string, string> { ["districtId"] = "255901" },
+                    "ambiguous" => new Dictionary<string, string> { ["Tenant"] = "a", ["TENANT"] = "b" },
+                    _ => new Dictionary<string, string> { ["tenant"] = "" },
+                }
+            );
+        }
+
+        [Test]
+        public void It_is_not_routable() => ShouldFailWith(_resolution, Code.TargetNotRoutable, null);
+    }
+
+    /// <summary>
+    /// In a multi-tenant read the tenant comes from the Discovery path, so a <c>{tenant}</c> placeholder left in either
+    /// URL is never filled from a store context, even one that supplies a <c>tenant</c> value.
+    /// </summary>
+    [TestFixture("{tenant}", "token")]
+    [TestFixture("{TENANT}", "token")]
+    [TestFixture("{tenant}", "projection")]
+    [TestFixture("{TENANT}", "projection")]
+    public class Given_a_multi_tenant_read_with_a_tenant_placeholder_in_a_url(string placeholder, string url)
+    {
+        private Harness _harness = null!;
+        private DmsDiscoveryResolution _resolution = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new Harness(
+                FakeDmsHandler.Answering(() =>
+                    Ok(
+                        Document(
+                            tokenUrl: url == "token" ? $"{TenantRoot}/{placeholder}/oauth/token" : null,
+                            projectionUrl: url == "projection"
+                                ? $"{TenantRoot}/{placeholder}/management/education-organizations"
+                                : null
+                        )
+                    )
+                )
+            );
+            _resolution = await _harness.ResolveAsync(
+                contexts: new Dictionary<string, string>(_contexts)
+                {
+                    ["tenant"] = Tenant,
+                    ["TENANT"] = Tenant,
+                }
+            );
+        }
+
+        [Test]
+        public void It_is_not_routable() => ShouldFailWith(_resolution, Code.TargetNotRoutable, null);
+
+        [Test]
+        public void It_reads_only_the_tenant_discovery_document() =>
+            _harness.Handler.Requests.Select(request => request.Uri.AbsoluteUri).Should().Equal(TenantRoot);
+    }
+
     [TestFixture("https://dms.example.org/api/", Tenant, "https://dms.example.org/api/Tenant_255901")]
     [TestFixture("https://dms.example.org/api/", null, "https://dms.example.org/api/")]
     [TestFixture("https://dms.example.org", Tenant, "https://dms.example.org/Tenant_255901")]

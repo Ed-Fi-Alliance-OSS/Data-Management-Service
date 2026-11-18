@@ -20,11 +20,14 @@ public class ProjectionUrlTemplateResolverTests
         ["schoolYear"] = "2026",
     };
 
+    // The templates under Root come from a multi-tenant Discovery document, so multi-tenant is the default.
     private static ProjectionUrlResolution Resolve(
         string template,
         IReadOnlyDictionary<string, string>? contexts = null,
-        string baseUrl = BaseUrl
-    ) => ProjectionUrlTemplateResolver.Resolve(template, contexts ?? _contexts, new Uri(baseUrl));
+        string baseUrl = BaseUrl,
+        bool multiTenant = true
+    ) =>
+        ProjectionUrlTemplateResolver.Resolve(template, contexts ?? _contexts, new Uri(baseUrl), multiTenant);
 
     private static string ResolvedUrl(ProjectionUrlResolution resolution) =>
         resolution.Should().BeOfType<ProjectionUrlResolution.Resolved>().Which.Url.AbsoluteUri;
@@ -136,8 +139,6 @@ public class ProjectionUrlTemplateResolverTests
         [TestCase(Root + "/{districtId}/x", "districtId", "a<low>b")]
         [TestCase(Root + "/{districtId}/x", "districtId", "a<low><high>b")]
         [TestCase(Root + "/{districtId}/x", "districtId", "ab<high>")]
-        [TestCase("https://dms.example.org/api/{tenant}/x", "tenant", "Tenant_255901")]
-        [TestCase("https://dms.example.org/api/{TENANT}/x", "TENANT", "Tenant_255901")]
         public void It_is_not_routable(string template, string key, string value) =>
             ShouldBeRejected(
                 Resolve(template, new Dictionary<string, string> { [key] = WithLoneSurrogates(value) }),
@@ -160,6 +161,82 @@ public class ProjectionUrlTemplateResolverTests
             ShouldBeRejected(
                 Resolve(Root + "/{a}{b}/x", new Dictionary<string, string> { ["a"] = ".", ["b"] = "." }),
                 Code.TargetNotRoutable
+            );
+    }
+
+    [TestFixture]
+    public class Given_a_tenant_placeholder_in_a_multi_tenant_request
+    {
+        [TestCase(BaseUrl + "/{tenant}/x", "tenant")]
+        [TestCase(BaseUrl + "/{TENANT}/x", "TENANT")]
+        [TestCase(BaseUrl + "/{tenant}/x", "TENANT")]
+        [TestCase(BaseUrl + "/{Tenant}/x", "tenant")]
+        public void It_is_not_routable_even_when_a_store_context_supplies_it(string template, string key) =>
+            ShouldBeRejected(
+                Resolve(
+                    template,
+                    new Dictionary<string, string> { [key] = "Tenant_255901" },
+                    multiTenant: true
+                ),
+                Code.TargetNotRoutable
+            );
+    }
+
+    [TestFixture]
+    public class Given_a_tenant_route_qualifier_in_a_single_tenant_request
+    {
+        private static ProjectionUrlResolution ResolveSingleTenant(
+            string template,
+            Dictionary<string, string> contexts
+        ) => Resolve(template, contexts, multiTenant: false);
+
+        [TestCase(BaseUrl + "/{tenant}/oauth/token", "tenant", BaseUrl + "/District_A/oauth/token")]
+        [TestCase(
+            BaseUrl + "/{tenant}/management/education-organizations",
+            "tenant",
+            BaseUrl + "/District_A/management/education-organizations"
+        )]
+        [TestCase(BaseUrl + "/{TENANT}/x", "tenant", BaseUrl + "/District_A/x")]
+        [TestCase(BaseUrl + "/{tenant}/x", "Tenant", BaseUrl + "/District_A/x")]
+        public void It_fills_it_like_any_other_qualifier(string template, string key, string expected) =>
+            ResolvedUrl(ResolveSingleTenant(template, new() { [key] = "District_A" })).Should().Be(expected);
+
+        [Test]
+        public void It_prefers_the_exactly_matching_key() =>
+            ResolvedUrl(
+                    ResolveSingleTenant(BaseUrl + "/{tenant}/x", new() { ["TENANT"] = "9", ["tenant"] = "1" })
+                )
+                .Should()
+                .Be(BaseUrl + "/1/x");
+
+        [Test]
+        public void It_escapes_the_value_as_one_segment() =>
+            ResolvedUrl(ResolveSingleTenant(BaseUrl + "/{tenant}/x", new() { ["tenant"] = "a/b" }))
+                .Should()
+                .Be(BaseUrl + "/a%2Fb/x");
+
+        [TestCase("districtId", "1")]
+        [TestCase("tenant", "")]
+        [TestCase("tenant", "..")]
+        [TestCase("tenant", "a<high>b")]
+        public void It_is_not_routable_without_a_usable_value(string key, string value) =>
+            ShouldBeRejected(
+                ResolveSingleTenant(BaseUrl + "/{tenant}/x", new() { [key] = WithLoneSurrogates(value) }),
+                Code.TargetNotRoutable
+            );
+
+        [Test]
+        public void It_is_not_routable_for_case_variant_keys_with_different_values() =>
+            ShouldBeRejected(
+                ResolveSingleTenant(BaseUrl + "/{tenant}/x", new() { ["Tenant"] = "1", ["TENANT"] = "2" }),
+                Code.TargetNotRoutable
+            );
+
+        [Test]
+        public void It_still_refuses_another_origin() =>
+            ShouldBeRejected(
+                ResolveSingleTenant("https://other.example.org/api/{tenant}/x", new() { ["tenant"] = "1" }),
+                Code.DiscoveryInvalid
             );
     }
 
