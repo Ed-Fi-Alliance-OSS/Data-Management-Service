@@ -192,7 +192,8 @@ internal sealed class RelationalWriteNoProfilePersister(
                         statement.SingleRowSql,
                         statement.Rows[batchStart],
                         rootDocumentId,
-                        collectionItemIdBindings
+                        collectionItemIdBindings,
+                        statement.SingleRowOmittedBindingIndexes
                     )
                     : RelationalWriteRowStatements.BuildBatchCommand(
                         statement.EmitBatchSql(batchCount),

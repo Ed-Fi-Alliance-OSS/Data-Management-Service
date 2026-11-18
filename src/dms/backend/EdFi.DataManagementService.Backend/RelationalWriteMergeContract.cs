@@ -46,6 +46,13 @@ internal sealed record RelationalWriteMergedTableState
     public ImmutableArray<RelationalWriteMergedTableRow> CurrentRows { get; init; }
 
     public ImmutableArray<RelationalWriteMergedTableRow> MergedRows { get; init; }
+
+    /// <summary>
+    /// The root table's reduced in-place update, attached by the identity guard when the write has established
+    /// that the merged identity-projection values equal the stored ones. Null, the default, assigns every
+    /// writable non-key binding through the compiled <see cref="TableWritePlan.UpdateSql"/>.
+    /// </summary>
+    public RelationalWriteReducedRootUpdate? ReducedRootUpdate { get; init; }
 }
 
 internal sealed record RelationalWriteMergeResult
