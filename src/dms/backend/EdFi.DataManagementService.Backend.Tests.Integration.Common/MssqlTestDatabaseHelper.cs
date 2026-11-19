@@ -594,14 +594,26 @@ public static class MssqlTestDatabaseHelper
             }
         }
 
+        // sp_cdc_drop_job documents 1 as failure, and it can return 1 without raising an error when its
+        // internal drop fails, so the status is checked rather than only the exceptions.
         foreach (var jobType in jobTypes)
         {
             await using SqlCommand dropCommand = connection.CreateCommand();
-            dropCommand.CommandText =
-                $"EXEC {QuoteIdentifier(databaseName)}.sys.sp_cdc_drop_job @job_type = @jobType;";
+            dropCommand.CommandText = $"""
+                DECLARE @status int;
+                EXEC @status = {QuoteIdentifier(databaseName)}.sys.sp_cdc_drop_job @job_type = @jobType;
+                SELECT @status;
+                """;
             dropCommand.CommandTimeout = commandTimeoutSeconds;
             dropCommand.Parameters.Add(new SqlParameter("@jobType", jobType));
-            await dropCommand.ExecuteNonQueryAsync();
+            var status = Convert.ToInt32(await dropCommand.ExecuteScalarAsync());
+
+            if (status != 0)
+            {
+                throw new InvalidOperationException(
+                    $"sys.sp_cdc_drop_job returned {status} for the '{jobType}' CDC job of SQL Server database '{databaseName}'."
+                );
+            }
         }
 
         if (jobTypes.Count == 0)

@@ -301,7 +301,7 @@ public class Given_MssqlCdcProviderArtifacts
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
         var executor = databaseExecutor ?? CreateSqlServerExecutor(connection);
 
-        return await service.SetupAsync(
+        var result = await service.SetupAsync(
             new CdcProviderSetupRequest(
                 provider: CdcProvider.SqlServer,
                 mode: mode,
@@ -326,6 +326,8 @@ public class Given_MssqlCdcProviderArtifacts
                 databaseExecutor: executor
             )
         );
+
+        return await LogProviderErrorsAsync(result);
     }
 
     internal static DbConnectionCdcProviderDatabaseExecutor CreateSqlServerExecutor(
@@ -1057,6 +1059,23 @@ public class Given_MssqlCdcProviderArtifacts
     private static bool IsSafeLsnObservation(string value) =>
         value == "none" || value.StartsWith("0x", StringComparison.Ordinal);
 
+    /// <summary>
+    /// Writes a setup's SQL errors to the live log, so their number, state and statement reach it
+    /// whichever assertion then fails, including during a OneTimeSetUp.
+    /// </summary>
+    internal static async Task<CdcProviderSetupResult> LogProviderErrorsAsync(CdcProviderSetupResult result)
+    {
+        if (result.Diagnostics.Any(diagnostic => diagnostic.ProviderErrorCode is not null))
+        {
+            await TestContext.Progress.WriteLineAsync(
+                $"{TestContext.CurrentContext.Test.FullName} CDC setup provider errors: "
+                    + DescribeDiagnostics(result.Diagnostics)
+            );
+        }
+
+        return result;
+    }
+
     internal static string DescribeDiagnostics(IReadOnlyList<CdcProviderDiagnostic> diagnostics) =>
         string.Join(
             "; ",
@@ -1257,7 +1276,7 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
     {
         var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
 
-        return await service.SetupAsync(
+        var result = await service.SetupAsync(
             new CdcProviderSetupRequest(
                 provider: CdcProvider.SqlServer,
                 mode: mode,
@@ -1288,6 +1307,8 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
                 databaseExecutor: Given_MssqlCdcProviderArtifacts.CreateSqlServerExecutor(connection)
             )
         );
+
+        return await Given_MssqlCdcProviderArtifacts.LogProviderErrorsAsync(result);
     }
 
     private static string[] DocumentColumnNames(IEnumerable<CdcSourceTableInventory> inventory) =>
