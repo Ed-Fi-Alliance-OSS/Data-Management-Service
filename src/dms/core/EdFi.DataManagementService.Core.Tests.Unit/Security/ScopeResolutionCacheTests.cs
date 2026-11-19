@@ -179,6 +179,7 @@ public class ScopeResolutionCacheTests
                 NullLogger<JwtAuthenticationMiddleware>.Instance
             );
             ServiceClaimAuthorizationMiddleware authorization = new(
+                ServiceClaimRequirement.Identity,
                 _claimSetProvider,
                 NullLogger<ServiceClaimAuthorizationMiddleware>.Instance
             );

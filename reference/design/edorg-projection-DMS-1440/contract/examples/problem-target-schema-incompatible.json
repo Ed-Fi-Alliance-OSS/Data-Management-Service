@@ -1,0 +1,9 @@
+{
+  "detail": "The data store's database schema is not compatible with this Ed-Fi API deployment.",
+  "type": "urn:ed-fi:api:education-organization-projection:target-schema-incompatible",
+  "title": "Target Schema Incompatible",
+  "status": 409,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

@@ -265,6 +265,20 @@ public abstract class ApiIntegrationTestBase
     protected abstract Task ReleaseAdditionalDatabaseAsync(string leasedConnectionString);
 
     /// <summary>
+    /// Leases one more database from the fixture's baseline while a test runs, for a scenario that
+    /// registers a data store after the host started. Released with the derivative leases, after the
+    /// host is disposed.
+    /// </summary>
+    protected async Task<string> LeaseScenarioDatabaseAsync()
+    {
+        string connectionString = await LeaseAdditionalDatabaseAsync(
+            _fixtureContext ?? throw new InvalidOperationException("The fixture has not been set up yet.")
+        );
+        _extraLeases.Add(connectionString);
+        return connectionString;
+    }
+
+    /// <summary>
     /// Switches a leased database's reachability at the server, for a fixture that proves a request
     /// never touched a target other than the one it selected.
     /// </summary>
@@ -309,6 +323,29 @@ public abstract class ApiIntegrationTestBase
             _extraLeases.Add(derivativeConnectionString);
         }
 
+        await StartHostAsync();
+    }
+
+    /// <summary>
+    /// Stops this test's host and starts a new one over the same leased databases, as a process restart
+    /// would: every singleton, cache and recorder of the host starts over, while the databases keep their
+    /// state.
+    /// </summary>
+    protected async Task RestartHostAsync()
+    {
+        await StopHostAsync();
+        await StartHostAsync();
+    }
+
+    /// <summary>Builds the host over the leased databases and the harness that drives it.</summary>
+    private async Task StartHostAsync()
+    {
+        FixtureContext fixtureContext =
+            _fixtureContext ?? throw new InvalidOperationException("The fixture context is not loaded.");
+        string leasedConnectionString =
+            _leasedConnectionString
+            ?? throw new InvalidOperationException("The test database is not leased.");
+
         _startupStatusFilePath = Path.Combine(Path.GetTempPath(), $"api-int-startup-{Guid.NewGuid():N}.json");
         _queryRecorder = CaptureQueryPlans ? new ApiIntegrationQueryRecorder() : null;
         _documentCacheReadAcquisitionFailureRecorder = ForceDocumentCacheReadLookupAdapterAcquisitionFailure
@@ -325,8 +362,6 @@ public abstract class ApiIntegrationTestBase
             ? null
             : new ApiIntegrationProviderFailureRecorder();
 
-        var fixtureContext = _fixtureContext;
-        var leasedConnectionString = _leasedConnectionString;
         var startupStatusFilePath = _startupStatusFilePath;
         var queryRecorder = _queryRecorder;
         var documentCacheReadAcquisitionFailureRecorder = _documentCacheReadAcquisitionFailureRecorder;
@@ -343,8 +378,8 @@ public abstract class ApiIntegrationTestBase
         MutableNamespacePrefixJwtValidationService? jwtValidationServiceOverride =
             CreateJwtValidationService();
         IDataStoreProvider? dataStoreProviderOverride = CreateDataStoreProvider(
-            _fixtureContext,
-            _leasedConnectionString
+            fixtureContext,
+            leasedConnectionString
         );
 
         _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
@@ -468,7 +503,7 @@ public abstract class ApiIntegrationTestBase
             });
         });
 
-        _assertionConnection = await OpenAssertionConnectionAsync(_leasedConnectionString);
+        _assertionConnection = await OpenAssertionConnectionAsync(leasedConnectionString);
         var httpClient = _factory.CreateClient();
         if (EnableDocumentCacheReadAcceleration)
         {
@@ -481,7 +516,7 @@ public abstract class ApiIntegrationTestBase
             httpClient,
             _factory.Services,
             _assertionConnection,
-            _fixtureContext,
+            fixtureContext,
             _queryRecorder,
             _providerFailureRecorder,
             _documentCacheReadAcquisitionFailureRecorder,
@@ -492,6 +527,31 @@ public abstract class ApiIntegrationTestBase
 
     [TearDown]
     public async Task ApiIntegrationTearDown()
+    {
+        await StopHostAsync();
+
+        if (_leasedConnectionString is not null)
+        {
+            await ReleaseDatabaseAsync(_leasedConnectionString);
+            _leasedConnectionString = null;
+        }
+
+        foreach (string extraLease in _extraLeases)
+        {
+            await ReleaseAdditionalDatabaseAsync(extraLease);
+        }
+
+        _extraLeases.Clear();
+        _leasedDerivativeConnectionStrings.Clear();
+
+        _fixtureContext = null;
+    }
+
+    /// <summary>
+    /// Disposes the harness, the assertion connection and the host, and drops the host's recorders and
+    /// startup status file. The leased databases stay leased.
+    /// </summary>
+    private async Task StopHostAsync()
     {
         if (Harness is not null)
         {
@@ -513,21 +573,6 @@ public abstract class ApiIntegrationTestBase
             _factory = null;
         }
 
-        if (_leasedConnectionString is not null)
-        {
-            await ReleaseDatabaseAsync(_leasedConnectionString);
-            _leasedConnectionString = null;
-        }
-
-        foreach (string extraLease in _extraLeases)
-        {
-            await ReleaseAdditionalDatabaseAsync(extraLease);
-        }
-
-        _extraLeases.Clear();
-        _leasedDerivativeConnectionStrings.Clear();
-
-        _fixtureContext = null;
         _queryRecorder = null;
         _providerFailureRecorder = null;
         _documentCacheReadAcquisitionFailureRecorder = null;

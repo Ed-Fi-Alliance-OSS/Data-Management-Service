@@ -84,7 +84,10 @@ public static class WebApplicationBuilderExtensions
             .Configure<IdentityManagementOptions>(
                 webAppBuilder.Configuration.GetSection(IdentityManagementOptions.SectionName)
             )
-            .Configure<ConfigurationServiceSettings>(
+            .AddOptions<EducationOrganizationProjectionSettings>()
+            .Bind(webAppBuilder.Configuration.GetSection(EducationOrganizationProjectionSettings.SectionName))
+            .ValidateOnStart()
+            .Services.Configure<ConfigurationServiceSettings>(
                 webAppBuilder.Configuration.GetSection("ConfigurationServiceSettings")
             )
             .Configure<ResourceLinksOptions>(
@@ -99,6 +102,10 @@ public static class WebApplicationBuilderExtensions
                 Frontend.AspNetCore.Configuration.AppSettingsValidator
             >()
             .AddSingleton<IValidateOptions<CoreAppSettings>, CoreAppSettingsValidator>()
+            .AddSingleton<
+                IValidateOptions<EducationOrganizationProjectionSettings>,
+                EducationOrganizationProjectionSettingsValidator
+            >()
             .AddSingleton<
                 IValidateOptions<ConfigurationServiceSettings>,
                 ConfigurationServiceSettingsValidator

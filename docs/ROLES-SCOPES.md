@@ -225,6 +225,33 @@ the shape of a vendor client whose API client row is gone (see
 the role is used only as an identity tag and does not enforce any
 specific access control logic.
 
+### Service Claims
+
+Some DMS endpoints are authorized by a **service claim** in the client's claim
+set, not by a role or a custom scope. The client is an ordinary CMS
+application: its token carries its claim set name as a scope value, as for any
+vendor application. DMS selects the claim set from the token's scopes exactly as
+for any other request
+([Claim-Set Selection from Token Scopes](#claim-set-selection-from-token-scopes))
+and checks that claim set for the service claim. A token whose scopes recognize
+no claim set, or more than one, is answered `403`; duplicate matching names in
+the metadata are `500` security configuration. No role or scope needs to be
+configured in either identity provider.
+
+| Endpoint | Service claim | Action | Authorization strategy |
+| --- | --- | --- | --- |
+| `GET {prefix}/management/education-organizations` | `http://ed-fi.org/identity/claims/services/educationOrganizationProjection` | `Read` | `NoFurtherAuthorizationRequired` |
+
+No shipped claim set grants the projection claim. Its client is an application
+with no data stores, whose claim set grants only this claim; in multi-tenant
+mode it must belong to the tenant in the route. A claim set without `Read` on
+the claim is answered `403`, and one that grants it with another strategy
+`500`. See
+[Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential).
+
+The `edfi_admin_api/*` scopes above are unrelated: they govern access to the
+Configuration Service's own API, not to DMS.
+
 ## Deployment Preflight for Claim-Set Names and Scope Shapes
 
 Before rolling out the scope and claim-set-name behavior above, operators must inventory

@@ -136,6 +136,7 @@ it is not slated for renaming.
 | --- | --- | --- | --- | --- | --- |
 | Claimset management endpoints (reload and view) | DMS | `AppSettings:ManagementEndpoints:Enabled` | Switch; also needs a valid `RequiredRole` | `false` | `AppSettings__ManagementEndpoints__Enabled` |
 | Identity management API (`/identity/v2`) | DMS | `DataManagement:IdentityManagement:Enabled` | Switch | `false` | `DataManagement__IdentityManagement__Enabled` |
+| Education-organization projection endpoint | DMS | `DataManagement:EducationOrganizationProjection:Enabled` | Switch | `true` | `DataManagement__EducationOrganizationProjection__Enabled` |
 | Resource links in responses | DMS | `DataManagement:ResourceLinks:Enabled` | Switch | `true` | `DataManagement__ResourceLinks__Enabled` |
 | DocumentCache projection | DMS | `DataManagement:DocumentCache:Targets` | Configured opt-in | empty | `DataManagement__DocumentCache__Targets__<n>__TenantKey`, `DataManagement__DocumentCache__Targets__<n>__DataStoreId` |
 | DocumentCache read acceleration | DMS | `DataManagement:DocumentCache:ReadAcceleration:Enabled` | Switch; also needs a matching `Targets` entry | `false` | `DataManagement__DocumentCache__ReadAcceleration__Enabled` |
@@ -250,6 +251,19 @@ is `false`. See the
 | Parameter | Description |
 | --- | --- |
 | Enabled | When `true`, maps the DMS-owned `/identity/v2/identities` routes and serves the identity OpenAPI document, its metadata listing entry, and the `identity` Discovery URL. When `false`, none of them exist and the identity routes fall through to the catch-all `404`. The operations themselves are performed by an identity provider plugin; with none registered, a request that passes authentication, tenant, client-binding and identity-claim checks answers `404` with `urn:ed-fi:api:identities:operation-not-supported`. With it `true`, CORS also exposes the `Location` response header to the one origin named by `Cors:SwaggerUIOrigin`, which a browser client needs to follow an asynchronous request; see [Cors](#cors). See [Identity Management](./IDENTITY-MANAGEMENT.md) for enabling it, the responses a client sees, and how quickly a change to a client or claim set takes effect. Environment override: `DataManagement__IdentityManagement__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_IDENTITY_MANAGEMENT`. Default: `false` |
+
+## DataManagement:EducationOrganizationProjection
+
+The switch and limits of the education-organization projection endpoint. Every limit is checked when the service starts, even when `Enabled` is `false`, and the service refuses to start with a value outside its range. See [Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md).
+
+| Parameter | Description |
+| --- | --- |
+| Enabled | When `true`, maps the education-organization projection endpoint (`GET {prefix}/management/education-organizations`) and advertises it in Discovery as `urls.educationOrganizationProjection` and the top-level `educationOrganizationProjection` object. When `false`, the route is not mapped and exactly those two Discovery members are absent; `urls.oauth` is unaffected. Environment override: `DataManagement__EducationOrganizationProjection__Enabled`; the shipped Docker Compose files map it from `DMS_ENABLE_EDUCATION_ORGANIZATION_PROJECTION`. Default: `true` |
+| MaximumPageSize | Upper bound for the projection endpoint's `limit` query parameter, and the page size applied when `limit` is omitted. Independent of `AppSettings:MaximumPageSize`. Must be between `1` and `10000`. Environment override: `DataManagement__EducationOrganizationProjection__MaximumPageSize`. Default: `2000` |
+| MaxProjectionRows | Largest projected set a data store may hold; a larger set is refused with `409 urn:ed-fi:api:education-organization-projection:projection-too-large` rather than paged. Must be between `1000` and `1000000`. Environment override: `DataManagement__EducationOrganizationProjection__MaxProjectionRows`. Default: `50000` |
+| CursorLifetimeMinutes | How long a projection continuation cursor stays valid, measured from the start of the walk that issued it. Must be between `1` and `1440`. Environment override: `DataManagement__EducationOrganizationProjection__CursorLifetimeMinutes`. Default: `60` |
+| ReadLockTimeoutSeconds | How long a projection page read waits for a database lock before failing. Must be between `1` and `60`. Environment override: `DataManagement__EducationOrganizationProjection__ReadLockTimeoutSeconds`. Default: `5` |
+| ReadCommandTimeoutSeconds | Command timeout for a projection page read. Must be between `5` and `600`. Environment override: `DataManagement__EducationOrganizationProjection__ReadCommandTimeoutSeconds`. Default: `60` |
 
 ## DataManagement:ResourceLinks
 
@@ -371,6 +385,36 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 | RetentionBatchSize   | Jobs one retention batch deletes.                                                                                                                        | `500`        | 1 – 2000                         |
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
+
+## DmsEducationOrganizationProjectionSettings
+
+The Configuration Service reads the DMS education-organization projection over HTTP (see [Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md)). These settings say where DMS is and which client credentials to use (`appsettings.json` section `DmsEducationOrganizationProjectionSettings`; environment override `DmsEducationOrganizationProjectionSettings__<Parameter>`, for example `DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientSecret`). The shipped section is empty: with no `DmsBaseUrl` the reader is not configured, nothing below is checked, and every read fails as not configured. When `DmsBaseUrl` is set, the service validates every value at startup and refuses to start, naming `DmsEducationOrganizationProjectionSettings:<Parameter>`, when one is invalid. Startup messages never contain the base URL or a credential value.
+
+| Parameter | Description | Default | Accepted values |
+| --- | --- | --- | --- |
+| DmsBaseUrl | The DMS root that the Discovery document is read from: `{DmsBaseUrl}/{tenant}` in multi-tenant mode, `{DmsBaseUrl}/` otherwise. The token and projection URLs Discovery advertises are used only when they have the same scheme, host and port as this URL and lie under its path. | unset | Absolute `http` or `https` URL, optionally with a base path; no user information, query or fragment |
+| Credentials:ClientId / Credentials:ClientSecret | The client-credentials pair used in single-tenant mode, and in multi-tenant mode for a tenant without its own entry. | unset | Both or neither |
+| TenantCredentials:&lt;tenant&gt;:ClientId / ClientSecret | The pair for one tenant; the tenant name matches in any letter case. The pair is sent to the token URL that DMS Discovery advertises, as HTTP Basic credentials with each value percent-encoded (RFC 6749 §2.3.1). | none | Both, in every entry |
+| ContractVersions | The projection contract versions this service may request. | `educationOrganizationProjection.v1` | Distinct values from `educationOrganizationProjection.v1` |
+| PageSize | Items requested per page (sent as `limit`). DMS refuses a `limit` above its own `DataManagement:EducationOrganizationProjection:MaximumPageSize`. | `2000` | 1 – 10000 |
+| DiscoveryTimeoutSeconds | Time limit for one Discovery request. | `10` | 1 – 300 |
+| TokenRequestTimeoutSeconds | Time limit for one token request. | `30` | 1 – 300 |
+| PageRequestTimeoutSeconds | Time limit for one page request. | `60` | 1 – 600 |
+| TotalReadTimeoutSeconds | Time limit for one complete read, including Discovery, token requests and restarts. | `600` | 1 – 86400 |
+| MaxPages | Pages one read attempt may fetch. | `2000` | 1 – 1000000 |
+| MaxItems | Items one read attempt may collect. | `500000` | 1 – 10000000 |
+| MaxResponseBodyBytes | Largest response body read. | `8388608` | At least `PageSize × 2048 + 1024` |
+| MaxWalkRestarts | Restarts from the first page after DMS reports that the projection changed during the read. | `3` | 0 – 10 |
+| TokenExpirySafetyMarginSeconds | How long before its expiry a cached token stops being used. Tokens are cached per tenant and client id, and the lifetime counts from when the token request started; a token whose lifetime does not exceed the margin is used for one page request only, so a multi-page read then requests a token per page. | `60` | 0 – 3600 |
+| DiscoveryCacheSeconds | How long a tenant's Discovery document is cached. `0` reads Discovery for every read. A failed Discovery read is never cached. | `300` | 0 – 86400 |
+
+At least one credential pair, shared or per tenant, is required when `DmsBaseUrl` is set. A shared pair with both values empty counts as absent, so an environment template that sets both to empty strings is accepted.
+
+`MaxResponseBodyBytes` must hold a full page of the largest items: 2048 bytes per item plus 1024 for the page envelope. The default fits the default `PageSize`; raising `PageSize` above 4095 requires raising `MaxResponseBodyBytes` too.
+
+The reader's HTTP client does not follow redirects, stores no cookies, and replaces the default `HttpClient` request logging with one record per request: method, path without query, status and elapsed time, or the exception type names for a failure. Headers, cursors, tokens, bodies and exception messages are never logged.
+
+Each credential is the `key` and `secret` of a Configuration Service application whose claim set grants only `Read` on the projection service claim and which has no data stores; in multi-tenant mode every tenant needs its own (see [Provisioning the Configuration Service credential](./EDUCATION-ORGANIZATION-PROJECTION.md#provisioning-the-configuration-service-credential), which also covers rotation). The settings are read at startup, so restart the service after changing a credential. With the self-contained identity provider, the reader's tokens count against that credential's own client id, not DMS's, under [`IdentitySettings.BearerTokenPerClientLimit`](#relevant-parameters-in-appsettingsjson-configuration-service). About two active tokens per Configuration Service instance is an estimate, not a bound: restarts and page `401` refreshes leave tokens counting until they expire (the reader never revokes one), and a token whose lifetime does not exceed `TokenExpirySafetyMarginSeconds` is never reused, so every read then requests a new one and frequent reads can reach the limit with a single instance. Keep the margin comfortably below the token lifetime; see [Token budget](./EDUCATION-ORGANIZATION-PROJECTION.md#token-budget).
 
 ## DmsDataStoreProvisioning
 

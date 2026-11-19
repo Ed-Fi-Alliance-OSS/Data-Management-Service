@@ -1,0 +1,14 @@
+{
+  "contractVersion": "educationOrganizationProjection.v1",
+  "dataStoreId": 3788,
+  "nextCursor": null,
+  "items": [
+    {
+      "educationOrganizationId": 900001,
+      "nameOfInstitution": "Independent Academy",
+      "shortNameOfInstitution": null,
+      "discriminator": "edfi.School",
+      "parentId": null
+    }
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "detail": "The caller could not be authenticated.",
+  "type": "urn:ed-fi:api:security:authentication",
+  "title": "Authentication Failed",
+  "status": 401,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "errors": [
+    "Authorization header is missing."
+  ]
+}

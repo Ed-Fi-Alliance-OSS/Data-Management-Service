@@ -144,6 +144,7 @@ public class ValidateClientTenantBindingMiddlewareTests
             _requestInfo = CreateRequestInfo(TenantB, _applicationContextProvider, _claimSetProvider);
 
             var serviceClaimAuthorizationMiddleware = new ServiceClaimAuthorizationMiddleware(
+                ServiceClaimRequirement.Identity,
                 _claimSetProvider,
                 NullLogger<ServiceClaimAuthorizationMiddleware>.Instance
             );

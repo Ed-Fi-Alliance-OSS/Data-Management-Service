@@ -175,3 +175,102 @@ Describe 'E2E identity settings survive startup cleanup and reach test child pro
         }
     }
 }
+
+Describe 'RunE2E runs the DMS projection reader Keycloak fixture after the tests when asked (DMS-1440)' {
+    BeforeAll {
+        $definition = $ast.Find({
+                param($node)
+                $node -is [Management.Automation.Language.FunctionDefinitionAst] -and
+                $node.Name -eq 'Invoke-WithDmsProjectionReaderKeycloakContext'
+            }, $true)
+        . ([scriptblock]::Create($definition.Extent.Text))
+
+        function RunDmsProjectionReaderE2E { param([string] $DatabaseEngine, [switch] $Keycloak) throw 'RunDmsProjectionReaderE2E must be mocked' }
+
+        $script:readerNames = @(
+            'KEYCLOAK_READER_E2E_DMS_BASE_URL', 'KEYCLOAK_READER_E2E_CONFIG_SERVICE_URL',
+            'KEYCLOAK_READER_E2E_CONFIG_ADMIN_CLIENT_ID', 'KEYCLOAK_READER_E2E_CONFIG_ADMIN_CLIENT_SECRET',
+            'KEYCLOAK_READER_E2E_EXPECTED_ISSUER', 'KEYCLOAK_READER_E2E_DATABASE_ENGINE',
+            'KEYCLOAK_READER_E2E_DATA_STORE_CONNECTION_STRING'
+        )
+    }
+
+    BeforeEach {
+        Mock Import-Module {}
+        $script:testsRan = $false
+        $script:originalEnvironment = @{}
+        foreach ($name in $script:identityNames + $script:readerNames) {
+            $script:originalEnvironment[$name] = @{
+                Exists = Test-Path -LiteralPath "Env:$name"
+                Value = [Environment]::GetEnvironmentVariable($name)
+            }
+            Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue
+        }
+    }
+
+    AfterEach {
+        foreach ($name in $script:identityNames + $script:readerNames) {
+            $original = $script:originalEnvironment[$name]
+            if ($original.Exists) { Set-Item -LiteralPath "Env:$name" -Value $original.Value }
+            else { Remove-Item -LiteralPath "Env:$name" -ErrorAction SilentlyContinue }
+        }
+    }
+
+    It 'runs the Keycloak fixture after the tests, with this run''s own values in a child, then restores the environment' {
+        Mock RunTests { $script:testsRan = $true }
+        Mock RunDmsProjectionReaderE2E {
+            $script:readerRanAfterTests = $script:testsRan
+            $script:observedReader = & pwsh -NoLogo -NoProfile -Command @'
+@{
+    DmsBaseUrl = $env:KEYCLOAK_READER_E2E_DMS_BASE_URL
+    ConfigServiceUrl = $env:KEYCLOAK_READER_E2E_CONFIG_SERVICE_URL
+    AdminClientId = $env:KEYCLOAK_READER_E2E_CONFIG_ADMIN_CLIENT_ID
+    AdminClientSecret = $env:KEYCLOAK_READER_E2E_CONFIG_ADMIN_CLIENT_SECRET
+    ExpectedIssuer = $env:KEYCLOAK_READER_E2E_EXPECTED_ISSUER
+    DatabaseEngine = $env:KEYCLOAK_READER_E2E_DATABASE_ENGINE
+    DataStoreConnectionString = $env:KEYCLOAK_READER_E2E_DATA_STORE_CONNECTION_STRING
+    TestProcessConnectionString = $env:AppSettings__DataStoreConnectionString
+} | ConvertTo-Json -Compress
+'@ | ConvertFrom-Json
+        }
+
+        RunE2E -TestFilter 'Category=MssqlRepresentative' -E2ETestSettings $script:testSettings -IdentityProvider keycloak -RunDmsProjectionReaderKeycloakE2E
+
+        Should -Invoke RunTests -Times 1 -Exactly
+        Should -Invoke RunDmsProjectionReaderE2E -Times 1 -Exactly -ParameterFilter { $Keycloak }
+        $script:readerRanAfterTests | Should -BeTrue
+        $script:observedReader.DmsBaseUrl | Should -Match '^http://localhost:8080/?$'
+        $script:observedReader.ConfigServiceUrl | Should -Match '^http://localhost:8081/?$'
+        $script:observedReader.AdminClientId | Should -BeExactly 'DmsConfigurationService'
+        $script:observedReader.AdminClientSecret | Should -Not -BeNullOrEmpty
+        $script:observedReader.ExpectedIssuer | Should -BeExactly 'http://custom-keycloak:8080/realms/custom' `
+            -Because 'the expected issuer is the DMS JWT authority the identity environment set for this run'
+        $script:observedReader.DatabaseEngine | Should -BeExactly 'postgresql'
+        $script:observedReader.DataStoreConnectionString | Should -BeExactly 'registration'
+        $script:observedReader.TestProcessConnectionString | Should -BeExactly 'registration' `
+            -Because 'the reader runs inside the same E2E test-process context'
+        foreach ($name in $script:readerNames) {
+            Test-Path -LiteralPath "Env:$name" | Should -BeFalse
+        }
+    }
+
+    It 'does not run the reader without the switch' {
+        Mock RunTests {}
+        Mock RunDmsProjectionReaderE2E {}
+
+        RunE2E -TestFilter 'Category=MssqlRepresentative' -E2ETestSettings $script:testSettings -IdentityProvider keycloak
+
+        Should -Invoke RunTests -Times 1 -Exactly
+        Should -Invoke RunDmsProjectionReaderE2E -Times 0 -Exactly
+    }
+
+    It 'does not run the reader when the tests fail' {
+        Mock RunTests { throw 'tests failed' }
+        Mock RunDmsProjectionReaderE2E {}
+
+        { RunE2E -TestFilter 'Category=MssqlRepresentative' -E2ETestSettings $script:testSettings -IdentityProvider keycloak -RunDmsProjectionReaderKeycloakE2E } |
+            Should -Throw '*tests failed*'
+
+        Should -Invoke RunDmsProjectionReaderE2E -Times 0 -Exactly
+    }
+}

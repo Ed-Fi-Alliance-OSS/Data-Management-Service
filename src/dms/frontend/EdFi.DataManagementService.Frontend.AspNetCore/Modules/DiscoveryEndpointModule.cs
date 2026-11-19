@@ -5,12 +5,14 @@
 
 using System.Net;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Core.EducationOrganizationProjection;
 using EdFi.DataManagementService.Core.External.Interface;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Frontend.AspNetCore.Configuration;
 using EdFi.DataManagementService.Frontend.AspNetCore.Content;
 using EdFi.DataManagementService.Frontend.AspNetCore.Infrastructure.Extensions;
 using Microsoft.Extensions.Options;
+using EducationOrganizationProjectionSettings = EdFi.DataManagementService.Core.Configuration.EducationOrganizationProjectionSettings;
 using IdentityManagementOptions = EdFi.DataManagementService.Core.Configuration.IdentityManagementOptions;
 
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Modules;
@@ -80,7 +82,9 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
 
     /// <summary>
     /// Handles the discovery API request and returns metadata about the data store.
-    /// When multi-tenancy is enabled and a tenant is provided, validates the tenant exists.
+    /// When multi-tenancy is enabled and a tenant is provided, validates the tenant exists: a tenant
+    /// confirmed absent is a 404, and one whose existence the Configuration Service could not settle
+    /// is a 503, so a client can retry it.
     /// </summary>
     private static async Task BuildDiscoveryResponse(
         HttpContext httpContext,
@@ -88,7 +92,8 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         IDataModelInfoProvider dataModelInfoProvider,
         IOptions<AppSettings> appSettings,
         ITenantValidator tenantValidator,
-        IOptions<IdentityManagementOptions> identityManagementOptions
+        IOptions<IdentityManagementOptions> identityManagementOptions,
+        IOptions<EducationOrganizationProjectionSettings> projectionOptions
     )
     {
         // Validate tenant if multi-tenancy is enabled and tenant is provided in route
@@ -97,8 +102,11 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
             string? tenant = ExtractTenantFromRoute(httpContext);
             if (tenant != null)
             {
-                bool isValid = await tenantValidator.ValidateTenantAsync(tenant);
-                if (!isValid)
+                TenantExistence existence = await tenantValidator.DetermineTenantExistenceAsync(
+                    tenant,
+                    httpContext.RequestAborted
+                );
+                if (existence == TenantExistence.Absent)
                 {
                     httpContext.Response.StatusCode = (int)HttpStatusCode.NotFound;
                     await httpContext.Response.WriteAsSerializedJsonAsync(
@@ -108,6 +116,21 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
                             type = "urn:ed-fi:api:not-found",
                             title = "Not Found",
                             status = 404,
+                        }
+                    );
+                    return;
+                }
+
+                if (existence == TenantExistence.Undetermined)
+                {
+                    httpContext.Response.StatusCode = (int)HttpStatusCode.ServiceUnavailable;
+                    await httpContext.Response.WriteAsSerializedJsonAsync(
+                        new
+                        {
+                            detail = "The service is temporarily unable to handle the request. Retry the request later.",
+                            type = "urn:ed-fi:api:service-unavailable",
+                            title = "Service Unavailable",
+                            status = 503,
                         }
                     );
                     return;
@@ -156,6 +179,21 @@ public class DiscoveryEndpointModule(IOptions<AppSettings> options) : IEndpointM
         if (identityManagementOptions.Value.Enabled)
         {
             response["urls"]!["identity"] = $"{rootUrl}{routeQualifierPrefix}/identity/v2/";
+        }
+
+        // DataManagement:EducationOrganizationProjection:Enabled adds exactly two members: the endpoint
+        // URL template and the top-level contract-version list. Turning it off removes only those
+        // two; urls.oauth, which a projection client also reads, is listed either way.
+        if (projectionOptions.Value.Enabled)
+        {
+            response["urls"]!["educationOrganizationProjection"] =
+                $"{rootUrl}{routeQualifierPrefix}{EducationOrganizationProjectionEndpointModule.RouteSuffix}";
+            response["educationOrganizationProjection"] = new JsonObject
+            {
+                ["contractVersions"] = new JsonArray([
+                    .. ProjectionContractVersions.Supported.Select(version => JsonValue.Create(version)),
+                ]),
+            };
         }
 
         await httpContext.Response.WriteAsSerializedJsonAsync(response);
