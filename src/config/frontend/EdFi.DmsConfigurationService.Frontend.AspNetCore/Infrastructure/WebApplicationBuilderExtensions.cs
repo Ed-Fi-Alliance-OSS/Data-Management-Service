@@ -133,23 +133,32 @@ public static class WebApplicationBuilderExtensions
 
         webApplicationBuilder.Services.AddSingleton(new JobRuntimeEnvironment(appSettings.MultiTenancy));
 
-        webApplicationBuilder.Services.AddHttpClient("KeycloakClient", client =>
-        {
-            client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
-        });
-
-        webApplicationBuilder
-            .Services.AddHttpClient(KeycloakTokenRevocationManager.HttpClientName, client =>
+        webApplicationBuilder.Services.AddHttpClient(
+            "KeycloakClient",
+            client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
-            })
+            }
+        );
+
+        webApplicationBuilder
+            .Services.AddHttpClient(
+                KeycloakTokenRevocationManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         webApplicationBuilder
-            .Services.AddHttpClient(KeycloakTokenIntrospectionManager.HttpClientName, client =>
-            {
-                client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
-            })
+            .Services.AddHttpClient(
+                KeycloakTokenIntrospectionManager.HttpClientName,
+                client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(appSettings.TokenRequestTimeoutSeconds);
+                }
+            )
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler { AllowAutoRedirect = false });
 
         webApplicationBuilder.Services.AddTransient<IClaimsHierarchyManager, ClaimsHierarchyManager>();
@@ -477,8 +486,8 @@ public static class WebApplicationBuilderExtensions
             logger.Error("Error reading IdentitySettings");
             throw new InvalidOperationException("Unable to read IdentitySettings from appsettings");
         }
-        var identityProvider = config.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant()
-            ?? "keycloak";
+        var identityProvider =
+            config.GetValue<string>("AppSettings:IdentityProvider")?.ToLowerInvariant() ?? "keycloak";
         webApplicationBuilder
             .Services.Configure<IdentitySettings>(config.GetSection("IdentitySettings"))
             .AddSingleton<IValidateOptions<IdentitySettings>, IdentitySettingsValidator>();
@@ -497,33 +506,36 @@ public static class WebApplicationBuilderExtensions
                         options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
                     }
                 })
-                .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
-                {
-                    options.Authority = identitySettings.Authority;
-                    options.MetadataAddress =
-                        $"{identitySettings.Authority}/.well-known/openid-configuration";
-                    options.SaveToken = true;
-                    options.Audience = identitySettings.Audience;
-                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                    options.TokenValidationParameters = new TokenValidationParameters
+                .AddJwtBearer(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
                     {
-                        ValidateAudience = true,
-                        ValidateIssuer = true,
-                        ValidateIssuerSigningKey = true,
-                        ValidIssuer = identitySettings.Authority,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                    };
-
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
-                        OnAuthenticationFailed = context =>
+                        options.Authority = identitySettings.Authority;
+                        options.MetadataAddress =
+                            $"{identitySettings.Authority}/.well-known/openid-configuration";
+                        options.SaveToken = true;
+                        options.Audience = identitySettings.Audience;
+                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                        options.TokenValidationParameters = new TokenValidationParameters
                         {
-                            logger.Error("Authentication failed: {Message}", context.Exception.Message);
-                            return Task.CompletedTask;
-                        },
-                    };
-                });
+                            ValidateAudience = true,
+                            ValidateIssuer = true,
+                            ValidateIssuerSigningKey = true,
+                            ValidIssuer = identitySettings.Authority,
+                            RoleClaimType = identitySettings.RoleClaimType,
+                        };
+
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
+                            OnAuthenticationFailed = context =>
+                            {
+                                logger.Error("Authentication failed: {Message}", context.Exception.Message);
+                                return Task.CompletedTask;
+                            },
+                        };
+                    }
+                );
 
             // Validation keys come from the shared signing-key snapshot through its configuration manager, and the
             // shared request boundary classifies dependency failures as 503 (spec D-2, D-3, step 3.1). The token-status
@@ -558,8 +570,13 @@ public static class WebApplicationBuilderExtensions
             webApplicationBuilder.Services.AddAuthorization(options =>
             {
                 options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
-                options.AddPolicy(SecurityConstants.ServicePolicy, policy =>
-                    policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy =>
+                        policy.RequireClaim(
+                            identitySettings.RoleClaimType,
+                            identitySettings.ConfigServiceRole
+                        )
                 );
 
                 AuthorizationScopePolicies.Add(options);
@@ -595,40 +612,48 @@ public static class WebApplicationBuilderExtensions
         {
             webApplicationBuilder
                 .Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-                .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
-                {
-                    options.MetadataAddress =
-                        $"{identitySettings.Authority}/.well-known/openid-configuration";
-                    options.Authority = identitySettings.Authority;
-                    options.Audience = identitySettings.Audience;
-                    options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
-                    options.TokenValidationParameters = new TokenValidationParameters
+                .AddJwtBearer(
+                    JwtBearerDefaults.AuthenticationScheme,
+                    options =>
                     {
-                        ValidateAudience = true,
-                        ValidAudience = identitySettings.Audience,
-                        ValidateIssuer = true,
-                        ValidIssuer = identitySettings.Authority,
-                        ValidateLifetime = true,
-                        RoleClaimType = identitySettings.RoleClaimType,
-                    };
-
-                    options.Events = new JwtBearerEvents
-                    {
-                        OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
-                        OnAuthenticationFailed = context =>
+                        options.MetadataAddress =
+                            $"{identitySettings.Authority}/.well-known/openid-configuration";
+                        options.Authority = identitySettings.Authority;
+                        options.Audience = identitySettings.Audience;
+                        options.RequireHttpsMetadata = identitySettings.RequireHttpsMetadata;
+                        options.TokenValidationParameters = new TokenValidationParameters
                         {
-                            Console.WriteLine($"Authentication failed: {context.Exception.Message}");
-                            return Task.CompletedTask;
-                        },
-                    };
-                });
+                            ValidateAudience = true,
+                            ValidAudience = identitySettings.Audience,
+                            ValidateIssuer = true,
+                            ValidIssuer = identitySettings.Authority,
+                            ValidateLifetime = true,
+                            RoleClaimType = identitySettings.RoleClaimType,
+                        };
+
+                        options.Events = new JwtBearerEvents
+                        {
+                            OnMessageReceived = BearerAuthenticationExemptMetadata.SkipOnMarkedEndpoint,
+                            OnAuthenticationFailed = context =>
+                            {
+                                Console.WriteLine($"Authentication failed: {context.Exception.Message}");
+                                return Task.CompletedTask;
+                            },
+                        };
+                    }
+                );
 
             // Add service policy for role validation
             webApplicationBuilder.Services.AddAuthorization(options =>
             {
                 options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
-                options.AddPolicy(SecurityConstants.ServicePolicy, policy =>
-                    policy.RequireClaim(identitySettings.RoleClaimType, identitySettings.ConfigServiceRole)
+                options.AddPolicy(
+                    SecurityConstants.ServicePolicy,
+                    policy =>
+                        policy.RequireClaim(
+                            identitySettings.RoleClaimType,
+                            identitySettings.ConfigServiceRole
+                        )
                 );
 
                 AuthorizationScopePolicies.Add(options);

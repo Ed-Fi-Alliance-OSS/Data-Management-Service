@@ -59,11 +59,13 @@ public class FrameworkErrorResponseTests
                             .Get<IdentitySettings>()!;
                         collection.AddAuthorization(options =>
                         {
-                            options.AddPolicy(SecurityConstants.ServicePolicy, policy =>
-                                policy.RequireClaim(
-                                    identitySettings.RoleClaimType,
-                                    requiredServiceRole ?? identitySettings.ConfigServiceRole
-                                )
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy =>
+                                    policy.RequireClaim(
+                                        identitySettings.RoleClaimType,
+                                        requiredServiceRole ?? identitySettings.ConfigServiceRole
+                                    )
                             );
                             AuthorizationScopePolicies.Add(options);
                         });
@@ -487,11 +489,13 @@ public class FrameworkErrorResponseTests
                             .Get<IdentitySettings>()!;
                         collection.AddAuthorization(options =>
                         {
-                            options.AddPolicy(SecurityConstants.ServicePolicy, policy =>
-                                policy.RequireClaim(
-                                    identitySettings.RoleClaimType,
-                                    identitySettings.ConfigServiceRole
-                                )
+                            options.AddPolicy(
+                                SecurityConstants.ServicePolicy,
+                                policy =>
+                                    policy.RequireClaim(
+                                        identitySettings.RoleClaimType,
+                                        identitySettings.ConfigServiceRole
+                                    )
                             );
                             AuthorizationScopePolicies.Add(options);
                         });
@@ -551,11 +555,13 @@ public class FrameworkErrorResponseTests
                         .Get<IdentitySettings>()!;
                     collection.AddAuthorization(options =>
                     {
-                        options.AddPolicy(SecurityConstants.ServicePolicy, policy =>
-                            policy.RequireClaim(
-                                identitySettings.RoleClaimType,
-                                identitySettings.ConfigServiceRole
-                            )
+                        options.AddPolicy(
+                            SecurityConstants.ServicePolicy,
+                            policy =>
+                                policy.RequireClaim(
+                                    identitySettings.RoleClaimType,
+                                    identitySettings.ConfigServiceRole
+                                )
                         );
                         AuthorizationScopePolicies.Add(options);
                     });
