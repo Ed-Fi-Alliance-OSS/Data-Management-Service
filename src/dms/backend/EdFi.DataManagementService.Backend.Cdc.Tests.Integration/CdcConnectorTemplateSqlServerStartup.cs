@@ -13,19 +13,19 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
     private async Task StartSqlServerWithRecoveryAsync(CancellationToken cancellationToken)
     {
         CdcSqlServerStartupResult result = await CdcSqlServerFixtureStartup.RunAsync(
-            LaunchSqlServerContainerAsync,
-            RecordFreshSqlServerStartAsync,
-            WaitForSqlServerAsync,
-            ReadFailedSqlServerContainerStateAsync,
-            RetainSqlServerStartupAttemptAsync,
-            async token =>
+            launchContainer: LaunchSqlServerContainerAsync,
+            recordFreshStart: RecordFreshSqlServerStartAsync,
+            waitForReadiness: WaitForSqlServerAsync,
+            inspectFailure: ReadFailedSqlServerContainerStateAsync,
+            retainFailure: RetainSqlServerStartupAttemptAsync,
+            removeContainer: async token =>
             {
                 // Only this unprovisioned provider is replaced. A failed removal aborts recovery.
                 await _docker.RunAsync(["rm", "-f", "-v", ProviderContainerName], token);
             },
-            _settings.KeepContainers,
-            cancellationToken,
-            CdcSqlServerStartupBudgets.Default
+            keepContainer: _settings.KeepContainers,
+            cancellationToken: cancellationToken,
+            budgets: CdcSqlServerStartupBudgets.Default
         );
         if (result.Attempts > 1)
         {
@@ -72,19 +72,13 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         );
     }
 
-    private async Task RecordFreshSqlServerStartAsync(CancellationToken cancellationToken)
-    {
-        // The Contract lane also exercises this fixture with simulated Docker commands.
-        if (_docker is DockerCli { IsOffline: false })
-        {
-            await AttachSqlServerEvidenceAsync(
-                "fresh",
-                new { Stage = "unprovisioned-sql-fresh-start" },
-                "Fresh SQL Server fixture start",
-                cancellationToken
-            );
-        }
-    }
+    private Task RecordFreshSqlServerStartAsync(CancellationToken cancellationToken) =>
+        AttachSqlServerEvidenceAsync(
+            "fresh",
+            new { Stage = "unprovisioned-sql-fresh-start" },
+            "Fresh SQL Server fixture start",
+            cancellationToken
+        );
 
     private async Task RetainSqlServerStartupAttemptAsync(
         int attempt,
@@ -117,13 +111,18 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         );
     }
 
-    private static async Task AttachSqlServerEvidenceAsync(
+    private async Task AttachSqlServerEvidenceAsync(
         string kind,
         object evidence,
         string description,
         CancellationToken cancellationToken
     )
     {
+        // The Contract lane also exercises this fixture with simulated Docker commands.
+        if (_docker is not DockerCli { IsOffline: false })
+        {
+            return;
+        }
         string path = Path.Combine(
             TestContext.CurrentContext.WorkDirectory,
             $"admission-evidence-sql-{kind}-{Guid.NewGuid():N}.json"

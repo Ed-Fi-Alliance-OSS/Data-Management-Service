@@ -228,7 +228,7 @@ The fixture retains the first failure, removes only the unprovisioned SQL Server
 
 - `SqlFirstAttemptCrashes / SqlFreshStarts` measures the frequency of observed initial exits with a SQL Server fatal message. Each successful initial launch contributes once to the denominator. A suite with no fresh-start records has a null denominator, including suites from older runs.
 - `SqlFirstAttemptCrashCodes` groups those crashes by decimal reason/errno (for example, `2/2` or `2/11`). A missing or ambiguous code is reported as `unknown`.
-- `SqlStartupFailures` counts all observed failed attempts, including failed replacements and readiness failures. `SqlStartupRecoveries` counts ready replacements. Injected failures and recoveries have separate counters. Each attachment counts once across NUnit and VSTest copies.
+- `SqlStartupFailures` counts all observed failed attempts, including failed replacements and readiness failures. In `qualification.json`, `SqlStartupFailureSignatures` groups those same attempts by signature (`LsaInitializationTimeout`, `ReasonTwoErrnoEleven`, or `Other`). `SqlStartupRecoveries` counts ready replacements. Each attachment counts once across NUnit and VSTest copies.
 
 Offline tests exercise recovery ordering, unfamiliar codes, and exclusions. Ordinary live suites exercise the same fixture. See the [coverage boundary](#permanent-live-coverage-reductions-dms-1577) for the dedicated forced-recreation tests.
 
