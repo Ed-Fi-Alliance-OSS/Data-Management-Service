@@ -157,6 +157,13 @@ public class EndpointAuthorizationTests
         }
 
         [Test]
+        public void It_keeps_the_probe_out_of_the_production_inventory()
+        {
+            _endpoints.Should().NotBeEmpty();
+            _endpoints.Should().NotContain(endpoint => endpoint.RoutePattern.RawText == ProbePath);
+        }
+
+        [Test]
         public void It_keeps_tenant_management_protected_and_configuration_gated()
         {
             _endpoints.Should().NotBeEmpty();
@@ -393,19 +400,6 @@ public class EndpointAuthorizationTests
             response.StatusCode.Should().Be(HttpStatusCode.OK);
             (await response.Content.ReadAsStringAsync()).Should().Be("probe reached");
             state.HandlerCalls.Should().Be(1);
-        }
-
-        [Test]
-        public async Task It_keeps_the_probe_out_of_the_production_inventory()
-        {
-            await using var factory = CreateFactory(identityProvider, multiTenancy);
-            using var client = factory.CreateClient();
-            var endpoints = factory
-                .Services.GetRequiredService<EndpointDataSource>()
-                .Endpoints.OfType<RouteEndpoint>()
-                .ToArray();
-            endpoints.Should().NotBeEmpty();
-            endpoints.Should().NotContain(endpoint => endpoint.RoutePattern.RawText == ProbePath);
         }
     }
 
