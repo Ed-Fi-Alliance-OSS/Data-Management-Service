@@ -414,7 +414,14 @@ function Start-Sleep {
     Add-Content -LiteralPath $env:PROMOTE_LOG -Value "sleep $Seconds"
 }
 
-& $env:PROMOTE_SCRIPT -Source 'example/api:dms-pre-8.2.0' -Tag 'example/api:8.2.0', 'example/api:8.2'
+# The message is written here, unwrapped: pwsh's own error view wraps it at the console width.
+try {
+    & $env:PROMOTE_SCRIPT -Source 'example/api:dms-pre-8.2.0' -Tag 'example/api:8.2.0', 'example/api:8.2'
+}
+catch {
+    Write-Output "PROMOTION ERROR: $($_.Exception.Message)"
+    exit 1
+}
 '@
 
         function script:Invoke-Promotion([string] $ExitCodes) {
@@ -457,8 +464,8 @@ function Start-Sleep {
     It 'fails the step after the last attempt fails' {
         $result = script:Invoke-Promotion '1'
 
-        $result.ExitCode | Should -Not -Be 0
+        $result.ExitCode | Should -Be 1
         $result.Calls | Should -Be @($script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall, 'sleep 40', $script:promoteCall)
-        $result.Output | Should -BeLike '*Failed to promote example/api:dms-pre-8.2.0 to example/api:8.2.0, example/api:8.2 after 4 attempt(s)*'
+        $result.Output | Should -BeLike '*PROMOTION ERROR: Failed to promote example/api:dms-pre-8.2.0 to example/api:8.2.0, example/api:8.2 after 4 attempt(s)*'
     }
 }
