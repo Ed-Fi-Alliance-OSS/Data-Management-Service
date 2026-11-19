@@ -31,7 +31,7 @@ public class JsonCharsetValidationMiddleware(RequestDelegate next)
 
     public async Task InvokeAsync(HttpContext context)
     {
-        if (DeclaresUnsupportedJsonCharset(context))
+        if (DeclaresJsonBody(context) && DeclaresUnsupportedJsonCharset(context))
         {
             await FailureResponseWriter.WriteAsync(
                 context,
@@ -44,15 +44,20 @@ public class JsonCharsetValidationMiddleware(RequestDelegate next)
         await _next(context);
     }
 
-    private static bool DeclaresUnsupportedJsonCharset(HttpContext context)
+    private static bool DeclaresJsonBody(HttpContext context)
     {
         // Only an endpoint that declares a JSON body runs the JSON body reader.
         IAcceptsMetadata? accepts = context.GetEndpoint()?.Metadata.GetMetadata<IAcceptsMetadata>();
-        if (accepts is null || !accepts.ContentTypes.Contains("application/json"))
-        {
-            return false;
-        }
+        return accepts is not null && accepts.ContentTypes.Contains("application/json");
+    }
 
+    /// <summary>
+    /// True when a request that can carry a body declares a JSON media type with a charset that is not a known
+    /// encoding. A handler that reads its JSON body itself, without routing content-type metadata, applies the
+    /// same rule.
+    /// </summary>
+    internal static bool DeclaresUnsupportedJsonCharset(HttpContext context)
+    {
         // A request without a body never reaches the charset decode, and its missing-body 400
         // takes precedence over the charset. This is the same body-detection feature the
         // framework's body reader consults.

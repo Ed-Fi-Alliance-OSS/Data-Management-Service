@@ -140,6 +140,10 @@ public partial class DmsDataStoreProvisioningStartupTests
                 // Literal text after the reference that no IPv6 address or port can contain.
                 "Host=2001:db8${secret:rest}g",
                 "Host=2001:db8${secret:rest}12345",
+                // A complete bracketed address leaves only a port, which literal text must still fit.
+                "Host=[2001:db8::1]x${secret:port}",
+                "Host=[2001:db8::1]:${secret:port}x",
+                "Host=[2001:db8::1]:70000${secret:port}",
             ];
             string[] mssql =
             [
@@ -541,6 +545,23 @@ public partial class DmsDataStoreProvisioningStartupTests
                 ),
                 ("postgresql", "Host=2001:db8${secret:rest};Password=${secret:admin}", "Host=2001:db8::1"),
                 ("postgresql", "Host=db-a.example", "Host=2001:db8${secret:rest}"),
+                // The same literal bracketed address, in any spelling, with an unknown port.
+                (
+                    "postgresql",
+                    "Host=[2001:db8::1]:5433",
+                    "Host=[2001:DB8:0::1]:${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "postgresql",
+                    "Host=[2001:db8::1]:${secret:port};Password=${secret:admin}",
+                    "Host=[2001:0db8::1]"
+                ),
+                // A reference inside the brackets can still supply the rest of the address.
+                (
+                    "postgresql",
+                    "Host=[2001:db8::2]",
+                    "Host=[2001:db8::${secret:rest}]:5432;Password=${secret:runtime}"
+                ),
             ];
             foreach (var (kind, cases) in new[] { ("equivalent", equivalent), ("deferred", deferred) })
             {
@@ -605,6 +626,16 @@ public partial class DmsDataStoreProvisioningStartupTests
         [TestCase("mssql", "Server=tcp:db\\${secret:instance};User ID=admin", "Server=tcp:db,1433")]
         [TestCase("postgresql", "Host=db-a.example", "Host=db-b.example:${secret:port};Username=runtime")]
         [TestCase("postgresql", "Host=db-b.example:${secret:port};Username=admin", "Host=db-a.example")]
+        [TestCase(
+            "postgresql",
+            "Host=[2001:db8::1]:5432",
+            "Host=[2001:db8::2]:${secret:port};Username=runtime"
+        )]
+        [TestCase(
+            "postgresql",
+            "Host=[2001:db8::2]:${secret:port};Username=admin",
+            "Host=[2001:db8::1]:5432"
+        )]
         public void It_refuses_to_start_when_a_secret_suffix_cannot_reconcile_known_components(
             string target,
             string admin,

@@ -199,7 +199,6 @@ public sealed partial class DataStoreManageRepository(
                 await DataStoreCatalog.HasTargetReservationAsync(
                     transaction,
                     tenantId,
-                    command.Endpoint,
                     command.TargetName,
                     cancellationToken
                 )
@@ -309,11 +308,12 @@ public sealed partial class DataStoreManageRepository(
             var row = await connection.QuerySingleOrDefaultAsync<(
                 string? Status,
                 int? DataStoreId,
-                string? EndpointDescriptor
+                string? EndpointDescriptor,
+                string? TargetDatabaseName
             )>(
                 new CommandDefinition(
                     """
-                    SELECT "Status", "DataStoreId", "EndpointDescriptor" FROM dmscs."DataStoreManage"
+                    SELECT "Status", "DataStoreId", "EndpointDescriptor", "TargetDatabaseName" FROM dmscs."DataStoreManage"
                     WHERE "Id" = @Id AND ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL)) FOR UPDATE;
                     """,
                     parameters,
@@ -369,6 +369,15 @@ public sealed partial class DataStoreManageRepository(
             if (current.RefusalFor(recorded) is { } refusal)
             {
                 return refusal;
+            }
+            // The worker restores the record against the current protected set and fails permanently when the
+            // target is now protected, so admit only a target it would accept; the record stays Created.
+            if (
+                DmsTargetDatabaseName.TryCreate(row.TargetDatabaseName, protectedNames, out _)
+                != DmsTargetNameValidation.Valid
+            )
+            {
+                return new DataStoreManageDeleteResult.ProvisioningUnavailable();
             }
             int updated = await connection.ExecuteAsync(
                 new CommandDefinition(

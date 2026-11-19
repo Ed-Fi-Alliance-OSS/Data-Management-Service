@@ -38,14 +38,16 @@ public sealed class DataStoreManageQuery
     {
         public Validator()
         {
-            RuleFor(x => x.Offset).GreaterThanOrEqualTo(0);
-            RuleFor(x => x.Limit).GreaterThan(0);
+            RuleFor(x => x.Offset)
+                .GreaterThanOrEqualTo(0)
+                .WithMessage("'offset' must be greater than or equal to 0.");
+            RuleFor(x => x.Limit).GreaterThan(0).WithMessage("'limit' must be greater than 0.");
             RuleFor(x => x.OrderBy)
                 .Must(IsSortField)
-                .WithMessage("OrderBy must be a managed data store field.");
+                .WithMessage("'orderBy' must be a managed data store field.");
             RuleFor(x => x.Direction)
                 .Must(value => value is "Ascending" or "Descending")
-                .WithMessage("Direction must be 'Ascending' or 'Descending'.");
+                .WithMessage("'direction' must be 'Ascending' or 'Descending'.");
         }
     }
 }

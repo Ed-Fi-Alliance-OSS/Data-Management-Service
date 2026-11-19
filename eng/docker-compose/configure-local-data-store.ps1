@@ -337,6 +337,10 @@ function Resolve-RestoreSeparateConfigDataStore {
         [string]
         $Tenant = "",
 
+        # Names the Configuration Service already refused in this run; a new registration never retries them.
+        [string[]]
+        $RefusedNames = @(),
+
         [int]
         $PageSize = 500
     )
@@ -443,7 +447,7 @@ function Resolve-RestoreSeparateConfigDataStore {
         return [pscustomobject]@{ DataStore = $matchingDataStores[0]; RegistrationName = $null }
     }
 
-    return [pscustomobject]@{ DataStore = $null; RegistrationName = (Get-RestoreRegistrationName -DataStores $DataStores) }
+    return [pscustomobject]@{ DataStore = $null; RegistrationName = (Get-RestoreRegistrationName -DataStores $DataStores -RefusedNames $RefusedNames) }
 }
 
 function Get-RestoreRegistrationName {
@@ -537,17 +541,17 @@ function Add-RestoreDataStoreRegistration {
     Configuration Service accepts, trying at most -MaximumAttempts names.
 
     .DESCRIPTION
-    The listing shows ordinary data stores only, but the Configuration Service also refuses a name a
-    managed data store reserves, including one whose creation failed. Only that exact duplicate-name
-    refusal moves to the next name that no listed data store uses and no earlier attempt was refused;
-    any other failure ends the run, so an uncertain registration is never repeated under another name. A
-    refused name says nothing about the target, so nothing is reused because of it.
+    The Configuration Service refuses a name already held either by a data store its listing does not
+    return (a managed data store's reservation, including one whose creation failed) or by one another
+    writer registered after this phase's listing, possibly for this same target. After that exact
+    duplicate-name refusal the phase lists the tenant's data stores again and repeats the full target
+    verification of Resolve-RestoreSeparateConfigDataStore: one verified registration for the target is
+    reused with no further POST, an unsafe or ambiguous listing is refused as on the first pass, and
+    otherwise the next name is one the fresh listing does not use and no earlier attempt was refused.
+    Any other failure ends the run, so an uncertain registration is never repeated under another name.
+    A refused name alone says nothing about the target, so nothing is reused because of it.
     #>
     param(
-        [AllowEmptyCollection()]
-        [object[]]
-        $DataStores,
-
         [Parameter(Mandatory)]
         [string]
         $RegistrationName,
@@ -555,6 +559,16 @@ function Add-RestoreDataStoreRegistration {
         [Parameter(Mandatory)]
         [hashtable]
         $AddDataStoreArguments,
+
+        # Get-DataStore arguments for the fresh listing after a refusal.
+        [Parameter(Mandatory)]
+        [hashtable]
+        $ListArguments,
+
+        # Resolve-RestoreSeparateConfigDataStore arguments other than -DataStores and -RefusedNames.
+        [Parameter(Mandatory)]
+        [hashtable]
+        $ResolveArguments,
 
         [int]
         $MaximumAttempts = 10
@@ -573,10 +587,18 @@ function Add-RestoreDataStoreRegistration {
 
         $refusedNames.Add($RegistrationName)
         if ($refusedNames.Count -ge $MaximumAttempts) {
-            throw "Restore with -SeparateConfigDatabase could not register the restored target: the Configuration Service refused all $MaximumAttempts names this phase tried, '$($refusedNames[0])' through '$($refusedNames[$refusedNames.Count - 1])', because a data store its listing does not return, such as a managed data store's name reservation, already holds each one. No data store was registered; the target is restored and DMS was not started. Free one of these names, then rerun the restore."
+            throw "Restore with -SeparateConfigDatabase could not register the restored target: the Configuration Service refused all $MaximumAttempts names this phase tried, '$($refusedNames[0])' through '$($refusedNames[$refusedNames.Count - 1])', because a data store already holds each one - one its listing does not return, such as a managed data store's name reservation, or one registered for another target meanwhile. No data store was registered; the target is restored and DMS was not started. Free one of these names, then rerun the restore."
         }
-        $RegistrationName = Get-RestoreRegistrationName -DataStores $DataStores -RefusedNames $refusedNames
-        Write-Information "The Configuration Service already holds the name '$(Format-LogSafeText $refusedNames[$refusedNames.Count - 1])' for a data store its listing does not return; registering as '$(Format-LogSafeText $RegistrationName)'." -InformationAction Continue
+        # Another writer may have just registered this target under the refused name, so verify the target
+        # again against a fresh listing before choosing another name.
+        $dataStores = @(Get-DataStore @ListArguments)
+        $selection = Resolve-RestoreSeparateConfigDataStore @ResolveArguments -DataStores $dataStores -RefusedNames $refusedNames.ToArray()
+        if ($null -ne $selection.DataStore) {
+            Write-Information "The Configuration Service refused the name '$(Format-LogSafeText $refusedNames[$refusedNames.Count - 1])', and its listing now shows data store id=$(Format-LogSafeText $selection.DataStore.id) serving the restored target; reusing it." -InformationAction Continue
+            return $selection.DataStore.id
+        }
+        $RegistrationName = $selection.RegistrationName
+        Write-Information "The Configuration Service already holds the name '$(Format-LogSafeText $refusedNames[$refusedNames.Count - 1])' for a data store that does not serve the restored target; registering as '$(Format-LogSafeText $RegistrationName)'." -InformationAction Continue
     }
 }
 
@@ -903,7 +925,6 @@ function Invoke-ConfigureLocalDataStore {
     if ($restoreReuse) {
         # Only the restore handoff can meet a name its listing could not show.
         $dataStoreId = Add-RestoreDataStoreRegistration `
-            -DataStores $dataStores `
             -RegistrationName $registrationName `
             -AddDataStoreArguments @{
                 CmsUrl = $cmsUrl
@@ -913,6 +934,13 @@ function Invoke-ConfigureLocalDataStore {
                 ConnectionString = $dataStoreConnectionString
                 DatabaseEngine = $DatabaseEngine
                 DataStoreType = "Development"
+                Tenant = $tenant
+            } `
+            -ListArguments @{ CmsUrl = $cmsUrl; AccessToken = $configToken; Tenant = $tenant; Limit = 500 } `
+            -ResolveArguments @{
+                DatabaseEngine = $DatabaseEngine
+                RestoreTargetDatabaseName = $RestoreTargetDatabaseName
+                EnvValues = $envValues
                 Tenant = $tenant
             }
     }

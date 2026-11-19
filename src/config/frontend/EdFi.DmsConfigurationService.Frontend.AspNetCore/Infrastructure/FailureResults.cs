@@ -86,6 +86,30 @@ internal static class FailureResults
         );
     }
 
+    /// <summary>
+    /// Structured 400 <c>urn:ed-fi:management-api:bad-request:parameter</c> response for a query or route
+    /// parameter failure: the contract <c>GlobalExceptionHandler</c> gives a <c>ParameterValidationException</c>.
+    /// Each error must be fixed, server-controlled text.
+    /// </summary>
+    public static IResult ParameterValidation(IEnumerable<string> errors, string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForParameterValidation([.. errors], correlationId),
+            contentType: _errorContentType,
+            statusCode: 400
+        );
+    }
+
+    /// <summary>Structured 415 <c>urn:ed-fi:management-api:unsupported-media-type</c> response.</summary>
+    public static IResult UnsupportedMediaType(string correlationId)
+    {
+        return Results.Json(
+            FailureResponse.ForUnsupportedMediaType(correlationId),
+            contentType: _errorContentType,
+            statusCode: 415
+        );
+    }
+
     public static IResult BadGateway(string detail, string correlationId)
     {
         var errors = GetIdentityErrorDetails(detail);

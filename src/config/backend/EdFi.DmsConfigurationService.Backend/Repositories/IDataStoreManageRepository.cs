@@ -64,7 +64,7 @@ public interface IDataStoreManageRepository
 
     /// <summary>
     /// Accepts deletion of a Created record only when <paramref name="current"/>, resolved by the caller before
-    /// this call, is the record's canonical endpoint.
+    /// this call, is the record's canonical endpoint and its persisted target is not in the current protected set.
     /// </summary>
     Task<DataStoreManageDeleteResult> AcceptDeleteAsync(
         int id,

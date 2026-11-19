@@ -589,20 +589,12 @@ public partial class Given_data_store_namespace_reservations
     }
 
     [Test]
-    public async Task It_preserves_cross_tenant_target_reservations_using_native_digest_and_target_keys()
+    public async Task It_reserves_a_physical_name_across_tenants_endpoints_and_deletion()
     {
         long tenant = await Tenant("selected");
         await using var holder = await Open();
         await using var transaction = await holder.BeginTransactionAsync();
-        (
-            await DataStoreCatalog.HasTargetReservationAsync(
-                transaction,
-                null,
-                Endpoint,
-                Target("Target_One"),
-                default
-            )
-        )
+        (await DataStoreCatalog.HasTargetReservationAsync(transaction, null, Target("Target_One"), default))
             .Should()
             .BeFalse();
         string applicationName = "namespace-" + Guid.NewGuid().ToString("N");
@@ -611,7 +603,6 @@ public partial class Given_data_store_namespace_reservations
         Task<bool> waiting = DataStoreCatalog.HasTargetReservationAsync(
             second,
             tenant,
-            Endpoint,
             Target("TARGET_ONE"),
             default
         );
@@ -634,34 +625,16 @@ public partial class Given_data_store_namespace_reservations
         }
         waited.Should().BeTrue("target reservations are shared across tenant gates");
         (await waiting).Should().BeTrue();
-        (
-            await DataStoreCatalog.HasTargetReservationAsync(
-                second,
-                tenant,
-                Endpoint with
-                {
-                    Host = "other.example.test",
-                },
-                Target("Target_One"),
-                default
-            )
-        )
-            .Should()
-            .BeFalse();
         await second.RollbackAsync();
+        // Deletion retires the physical name instead of releasing it (cached DMS routes can outlive deletion).
         await holder.ExecuteAsync("""UPDATE dmscs."DataStoreManage" SET "Status" = 'Deleted';""");
-        await using var released = await holder.BeginTransactionAsync();
-        (
-            await DataStoreCatalog.HasTargetReservationAsync(
-                released,
-                null,
-                Endpoint,
-                Target("target_one"),
-                default
-            )
-        )
+        await using var retired = await holder.BeginTransactionAsync();
+        (await DataStoreCatalog.HasTargetReservationAsync(retired, null, Target("target_one"), default))
             .Should()
-            .BeFalse();
+            .BeTrue();
+        (await DataStoreCatalog.HasTargetReservationAsync(retired, null, Target("Target_Two"), default))
+            .Should()
+            .BeFalse("only the retired physical name is reserved");
     }
 
     [Test]
@@ -672,31 +645,20 @@ public partial class Given_data_store_namespace_reservations
             .OrderBy(
                 target =>
                     Convert.ToHexString(
-                        SHA256.HashData(
-                            Encoding.UTF8.GetBytes(
-                                Endpoint.CanonicalEncoding + "\n" + target.Value.ToLowerInvariant()
-                            )
-                        )
+                        SHA256.HashData(Encoding.UTF8.GetBytes(target.Value.ToLowerInvariant()))
                     ),
                 StringComparer.Ordinal
             )
             .ToArray();
         await using var holder = await Open();
         await using var transaction = await holder.BeginTransactionAsync();
-        await DataStoreCatalog.AcquireTargetReservationsAsync(
-            transaction,
-            null,
-            Endpoint,
-            [ordered[0]],
-            default
-        );
+        await DataStoreCatalog.AcquireTargetReservationsAsync(transaction, null, [ordered[0]], default);
         string applicationName = "namespace-" + Guid.NewGuid().ToString("N");
         await using var contender = await Open(applicationName);
         await using var second = await contender.BeginTransactionAsync();
         Task waiting = DataStoreCatalog.AcquireTargetReservationsAsync(
             second,
             tenant,
-            Endpoint,
             ordered.Reverse(),
             default
         );

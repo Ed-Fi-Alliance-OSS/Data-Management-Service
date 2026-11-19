@@ -212,7 +212,6 @@ public partial class Given_data_store_namespace_reservations
             await DataStoreCatalog.HasTargetReservationAsync(
                 transaction,
                 tenant,
-                new("postgresql", "tcp", "db.example.test", 5432, null, "postgres"),
                 Target((string)after["TargetDatabaseName"]),
                 default
             )
@@ -1071,5 +1070,68 @@ public partial class Given_data_store_namespace_reservations
             result.Should().BeOfType<DataStoreManageDeleteResult.Success>();
             row["Status"].Should().Be("PendingDelete");
         }
+    }
+
+    [Test, Category("DataStoreManageDeleteAcceptance")]
+    public async Task It_refuses_delete_of_a_target_protected_after_publication_without_mutation_until_the_policy_is_restored(
+        [Values(false, true)] bool multitenant,
+        [Values("Created", "CreateError", "Deleted", "Absent", "OtherTenant")] string status
+    )
+    {
+        long selected = await Tenant("selected");
+        long? tenant = multitenant ? selected : null;
+        long? other = multitenant ? null : selected;
+        var seed = await SeedDeleteAcceptance(status == "OtherTenant" ? other : tenant);
+        await using var connection = await Open();
+        if (status is "CreateError" or "Deleted")
+        {
+            await connection.ExecuteAsync(
+                """UPDATE dmscs."DataStoreManage" SET "Status" = @Status WHERE "Id" = @Id;""",
+                new { Status = status, seed.Id }
+            );
+        }
+        // A restart added the published target, spelled in another case, to the protected set.
+        string target = (string)(await DeleteRow(connection, seed.Id))["TargetDatabaseName"];
+        var protectedNow = ProtectedDatabaseNames.Create("cms", [target.ToUpperInvariant()]);
+        string before = await DeleteAcceptanceSnapshot();
+        var refusing = new EnqueuerDecorator(
+            (_, _, _) => throw new AssertionException("Refused delete must not enqueue.")
+        );
+        var result = await ManagedRepository(refusing, tenant, protectedNames: protectedNow)
+            .AcceptDeleteAsync(status == "Absent" ? int.MaxValue : seed.Id, AdminEndpoint(), default);
+        // Not-found and lifecycle outcomes keep their precedence; only an otherwise eligible record is refused.
+        switch (status)
+        {
+            case "Created":
+                result.Should().BeOfType<DataStoreManageDeleteResult.ProvisioningUnavailable>();
+                break;
+            case "CreateError":
+                result
+                    .Should()
+                    .BeOfType<DataStoreManageDeleteResult.InvalidState>()
+                    .Subject.Status.Should()
+                    .Be(ManagedDataStoreStatus.CreateError);
+                break;
+            default:
+                result.Should().BeOfType<DataStoreManageDeleteResult.NotFound>();
+                break;
+        }
+        (await DeleteAcceptanceSnapshot()).Should().Be(before);
+        if (status != "Created")
+        {
+            return;
+        }
+
+        // Restoring the former policy admits the same untouched Created record exactly once.
+        using var services = AcceptanceServices(tenant);
+        var rowBefore = await DeleteRow(connection, seed.Id);
+        var accepted = (
+            await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), tenant)
+                .AcceptDeleteAsync(seed.Id, AdminEndpoint(), default)
+        )
+            .Should()
+            .BeOfType<DataStoreManageDeleteResult.Success>()
+            .Subject;
+        await AssertAcceptedDelete(connection, seed.Id, tenant, accepted.JobId, rowBefore);
     }
 }

@@ -10,7 +10,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
-using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using Microsoft.Data.SqlClient;
 
@@ -115,22 +114,18 @@ internal static class DataStoreCatalog
     internal static async Task AcquireTargetReservationsAsync(
         DbTransaction transaction,
         long? tenantId,
-        ManagedDataStoreEndpoint endpoint,
         IEnumerable<DmsTargetDatabaseName> targets,
         CancellationToken cancellationToken
     )
     {
         await AcquireTenantGateAsync(transaction, tenantId, cancellationToken);
-        // Target names have the provisioner's ASCII grammar, so the newline is an unambiguous separator.
+        // Keyed by the folded physical name alone, like the reservation itself, so creates that spell an
+        // endpoint differently still serialize on the same name.
         string[] resources = targets
             .Select(target =>
                 "dmscs:datastore-target:"
                 + Convert.ToHexString(
-                    SHA256.HashData(
-                        Encoding.UTF8.GetBytes(
-                            endpoint.CanonicalEncoding + "\n" + CatalogName.FoldAscii(target.Value)
-                        )
-                    )
+                    SHA256.HashData(Encoding.UTF8.GetBytes(CatalogName.FoldAscii(target.Value)))
                 )
             )
             .Distinct(StringComparer.Ordinal)
@@ -142,25 +137,28 @@ internal static class DataStoreCatalog
         }
     }
 
+    /// <summary>
+    /// True when any managed record in this CMS catalog, in any tenant, on any endpoint and in any status
+    /// (Deleted included), holds the folded physical name. A retired name is never provisioned again: DMS
+    /// routes cached for the deleted store, including tokens that still carry its data store ID, could
+    /// otherwise reach the replacement, indefinitely when cache refresh is disabled. Endpoint spelling is
+    /// deliberately not part of the key, so an alias of the same server cannot bypass retirement.
+    /// </summary>
     internal static async Task<bool> HasTargetReservationAsync(
         DbTransaction transaction,
         long? tenantId,
-        ManagedDataStoreEndpoint endpoint,
         DmsTargetDatabaseName target,
         CancellationToken cancellationToken
     )
     {
-        await AcquireTargetReservationsAsync(transaction, tenantId, endpoint, [target], cancellationToken);
+        await AcquireTargetReservationsAsync(transaction, tenantId, [target], cancellationToken);
         DynamicParameters parameters = new();
-        parameters.Add("Endpoint", endpoint.CanonicalEncoding, DbType.String, size: -1);
         parameters.Add("Target", CatalogName.FoldAscii(target.Value), DbType.String, size: -1);
         return await transaction.Connection!.ExecuteScalarAsync<bool>(
             new CommandDefinition(
                 """
                 SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dmscs."DataStoreManage"
-                    WHERE "Status" <> 'Deleted'
-                      AND "EndpointDigest" = HASHBYTES('SHA2_256', @Endpoint)
-                      AND "TargetDatabaseNameKey" = @Target COLLATE Latin1_General_100_BIN2) THEN 1 ELSE 0 END AS bit);
+                    WHERE "TargetDatabaseNameKey" = @Target COLLATE Latin1_General_100_BIN2) THEN 1 ELSE 0 END AS bit);
                 """,
                 parameters,
                 transaction,

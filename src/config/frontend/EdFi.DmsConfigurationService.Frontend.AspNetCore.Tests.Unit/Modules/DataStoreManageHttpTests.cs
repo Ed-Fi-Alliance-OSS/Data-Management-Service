@@ -249,6 +249,103 @@ public class Given_managed_data_store_HTTP
         Fake.GetCalls(_admin).Should().BeEmpty();
     }
 
+    /// <summary>A body-carrying POST with <paramref name="contentType"/>; null sends the body without the header.</summary>
+    private static HttpRequestMessage MediaTypePost(string? contentType, bool body = true)
+    {
+        HttpRequestMessage request = new(HttpMethod.Post, "/v3/dataStores/manage");
+        if (body)
+        {
+            ByteArrayContent content = new(
+                Encoding.UTF8.GetBytes("""{"name":"Store","databaseTemplate":"Minimal"}""")
+            );
+            if (contentType is not null)
+            {
+                content.Headers.Add("Content-Type", contentType);
+            }
+            request.Content = content;
+        }
+        return request;
+    }
+
+    [TestCase("keycloak"), TestCase("self-contained")]
+    public async Task It_enforces_the_media_type_after_authorization_and_the_disabled_gate(string identity)
+    {
+        await using var enabled = Host(identity);
+        await using var disabled = Host(identity, enabled: false);
+        foreach (
+            var (contentType, body) in new (string?, bool)[]
+            {
+                ("text/plain", true),
+                ("application/xml", true),
+                ("text/json", true),
+                (null, true),
+                (null, false),
+            }
+        )
+        {
+            foreach (var (host, management) in new[] { (enabled, true), (disabled, false) })
+            {
+                foreach (
+                    string? scope in new[]
+                    {
+                        null,
+                        "unrelated",
+                        "edfi_admin_api/readonly_access",
+                        "edfi_admin_api/full_access",
+                    }
+                )
+                {
+                    using var client = Client(host, scope);
+                    using var request = MediaTypePost(contentType, body);
+                    using var response = await client.SendAsync(request);
+                    var expected = (scope, management) switch
+                    {
+                        (null, _) => HttpStatusCode.Unauthorized,
+                        (not "edfi_admin_api/full_access", _) => HttpStatusCode.Forbidden,
+                        (_, true) => HttpStatusCode.UnsupportedMediaType,
+                        _ => HttpStatusCode.BadRequest,
+                    };
+                    string because =
+                        $"{identity} {contentType ?? "no-content-type"} body={body} {management} {scope}";
+                    response.StatusCode.Should().Be(expected, because);
+                    var problem = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+                    if (expected == HttpStatusCode.UnsupportedMediaType)
+                    {
+                        response
+                            .Content.Headers.ContentType!.MediaType.Should()
+                            .Be("application/problem+json");
+                        string correlationId = problem["correlationId"]!.GetValue<string>();
+                        correlationId.Should().NotBeNullOrEmpty();
+                        JsonNode
+                            .DeepEquals(problem, FailureResponse.ForUnsupportedMediaType(correlationId))
+                            .Should()
+                            .BeTrue(because);
+                    }
+                    else if (expected == HttpStatusCode.BadRequest)
+                    {
+                        problem["validationErrors"]!["dataStore"]![0]!
+                            .GetValue<string>()
+                            .Should()
+                            .Contain("EnableDataStoreManagement", because);
+                    }
+                }
+            }
+        }
+        Fake.GetCalls(_repository).Should().BeEmpty();
+        Fake.GetCalls(_admin).Should().BeEmpty();
+
+        // Supported JSON media types still reach acceptance.
+        foreach (
+            string contentType in new[] { "application/json", "application/vnd.example+json; charset=utf-8" }
+        )
+        {
+            using var client = Client(enabled);
+            using var request = MediaTypePost(contentType);
+            using var response = await client.SendAsync(request);
+            response.StatusCode.Should().Be(HttpStatusCode.Accepted, contentType);
+        }
+    }
+
     [TestCase(""), TestCase("/cms"), TestCase("/cms/")]
     public async Task It_returns_the_queued_job_and_absolute_location(string pathBase)
     {
@@ -295,16 +392,75 @@ public class Given_managed_data_store_HTTP
         (await response.Content.ReadAsStringAsync()).Should().NotContain("private-test-value");
     }
 
-    [TestCase("offset="), TestCase("offset=-1"), TestCase("limit=0"), TestCase("limit=2147483648")]
-    [TestCase("id=oops"), TestCase("id="), TestCase("orderBy=Name"), TestCase("orderBy=%20")]
-    [TestCase("direction="), TestCase("direction=DESC"), TestCase("limit=1&limit=2")]
-    public async Task It_rejects_invalid_query_binding_in_the_CMS_format(string query)
+    [TestCase("offset=", "'offset' must be an int32 value.")]
+    [TestCase("offset=-1", "'offset' must be greater than or equal to 0.")]
+    [TestCase("limit=0", "'limit' must be greater than 0.")]
+    [TestCase("limit=2147483648", "'limit' must be an int32 value.")]
+    [TestCase("id=oops", "'id' must be an int32 value.")]
+    [TestCase("id=", "'id' must be an int32 value.")]
+    [TestCase("orderBy=Name", "'orderBy' must be a managed data store field.")]
+    [TestCase("orderBy=%20", "'orderBy' must be a managed data store field.")]
+    [TestCase("direction=", "'direction' must be 'Ascending' or 'Descending'.")]
+    [TestCase("direction=DESC", "'direction' must be 'Ascending' or 'Descending'.")]
+    [TestCase("limit=1&limit=2", "'limit' must have exactly one value.")]
+    public async Task It_rejects_invalid_query_binding_in_the_CMS_format(string query, string error)
     {
         using var client = Client();
         using var response = await client.GetAsync("/v3/dataStores/manage?" + query);
+        await AssertParameterProblem(response, error);
+        Fake.GetCalls(_repository).Should().BeEmpty();
+    }
+
+    [TestCase("GET"), TestCase("DELETE")]
+    public async Task It_rejects_a_malformed_route_id_in_the_CMS_parameter_format(string method)
+    {
+        using var client = Client();
+        foreach (string id in new[] { "oops", "2147483648", "1.5", "%20" })
+        {
+            using var request = new HttpRequestMessage(new HttpMethod(method), "/v3/dataStores/manage/" + id);
+            using var response = await client.SendAsync(request);
+            await AssertParameterProblem(response, "'id' must be an int32 value.");
+        }
+        Fake.GetCalls(_repository).Should().BeEmpty();
+        Fake.GetCalls(_admin).Should().BeEmpty();
+
+        // A well-formed unmatched ID keeps its 404.
+        _get = new DataStoreManageGetResult.NotFound();
+        _delete = new DataStoreManageDeleteResult.NotFound();
+        using var unmatched = new HttpRequestMessage(
+            new HttpMethod(method),
+            "/v3/dataStores/manage/2147483647"
+        );
+        using var notFound = await client.SendAsync(unmatched);
+        notFound.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Test]
+    public async Task It_maps_a_repository_query_refusal_to_the_CMS_parameter_format()
+    {
+        _query = new DataStoreManageQueryResult.InvalidRequest();
+        using var client = Client();
+        using var response = await client.GetAsync("/v3/dataStores/manage");
+        await AssertParameterProblem(response, "Invalid managed data store query.");
+    }
+
+    /// <summary>
+    /// The parameter contract GlobalExceptionHandler gives a ParameterValidationException: the parameter type and
+    /// fixed errors, with no field-level validationErrors and no caller text.
+    /// </summary>
+    private static async Task AssertParameterProblem(HttpResponseMessage response, string error)
+    {
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
         response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
-        Fake.GetCalls(_repository).Should().BeEmpty();
+        var problem = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+        string correlationId = problem["correlationId"]!.GetValue<string>();
+        correlationId.Should().NotBeNullOrEmpty();
+        problem["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:bad-request:parameter");
+        problem["validationErrors"]!.AsObject().Should().BeEmpty();
+        JsonNode
+            .DeepEquals(problem, FailureResponse.ForParameterValidation([error], correlationId))
+            .Should()
+            .BeTrue(problem.ToJsonString());
     }
 
     [Test]

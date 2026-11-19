@@ -170,7 +170,8 @@ NULL tenants equal. Direct-storage Unicode test vectors establish common-key
 parity; they do not expand the managed API's ASCII name grammar. The generated key uses the same exact fixed-whitespace trim
 and ASCII fold as ordinary `DataStore`; display-name collation is not an input.
 Every non-NULL current ordinary link is unique. Only `Deleted` releases the name
-and target reservation; a retained failure or error continues to reserve them.
+reservation; a retained failure or error continues to reserve it. `Deleted` does
+**not** release the physical target name, which stays retired (below).
 
 The endpoint descriptor is the complete, fixed-order JSON array returned by
 `ManagedDataStoreEndpoint.CanonicalEncoding`: version, provider, transport, host,
@@ -194,6 +195,24 @@ must compare every descriptor field against the exact operation-bound administra
 snapshot, alongside the lifecycle/job fencing checks. Before publication, also
 validate the exact runtime snapshot used for encryption. A separately resolved
 pre-call comparison alone is insufficient (specification sections 5.6–5.7). The canonical name key itself is never hashed.
+
+**Retired physical names (review 0009).** Managed create acceptance treats a
+physical name as reserved when *any* managed record in the catalog holds the same
+ASCII-folded `TargetDatabaseNameKey`, in any tenant, status (`Deleted` included)
+or endpoint, under a target lock keyed by that folded name alone. This reverses
+the earlier rule that `Deleted` released the target. The reason is security, not
+convenience: DMS authorizes a request by the data store IDs in the client's token
+and routes it with a cached decrypted connection string, without verifying the
+physical database. Those routes can outlive deletion, indefinitely when cache
+refresh is disabled, so a reprovisioned name would let them reach the replacement.
+Endpoint spelling is excluded from the key because aliases of one server (DNS,
+address, port mapping) produce different descriptors. The unique index above is
+unchanged and still guards active rows. No migration is needed: tombstones
+written before this rule keep their key and are retired as soon as it ships.
+The guarantee is only that CMS managed provisioning never reuses a retired
+physical name within this CMS deployment. It is not request-time identity
+protection: databases replaced outside CMS, ordinary registrations that point at
+a replacement, and other CMS deployments on the same server are not covered.
 
 
 ### Managed migration replay and refusal

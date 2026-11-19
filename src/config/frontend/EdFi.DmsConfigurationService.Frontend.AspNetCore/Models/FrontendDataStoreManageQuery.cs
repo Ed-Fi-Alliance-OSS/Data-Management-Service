@@ -34,7 +34,7 @@ internal static class FrontendDataStoreManageQuery
             }
             if (values.Count != 1)
             {
-                errors.Add(new(field, "Supply exactly one value."));
+                errors.Add(new(field, $"'{field}' must have exactly one value."));
                 return null;
             }
             return values[0] ?? "";
@@ -51,7 +51,7 @@ internal static class FrontendDataStoreManageQuery
             {
                 return value;
             }
-            errors.Add(new(field, "Value must be an int32 value."));
+            errors.Add(new(field, $"'{field}' must be an int32 value."));
             return null;
         }
     }

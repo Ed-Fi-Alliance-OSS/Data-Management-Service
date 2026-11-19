@@ -12,6 +12,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using EdFi.DmsConfigurationService.DataModel.Model.Job;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Http.Extensions;
@@ -32,6 +33,12 @@ public static class DataStoreManageModule
 
     private static IResult Invalid(HttpContext context, string message, string field = "dataStore") =>
         FailureResults.DataValidation([new ValidationFailure(field, message)], context.TraceIdentifier);
+
+    /// <summary>A malformed query or route parameter: the CMS parameter contract, never field validation.</summary>
+    private static IResult InvalidParameter(HttpContext context, params string[] errors) =>
+        FailureResults.ParameterValidation(errors, context.TraceIdentifier);
+
+    private const string InvalidId = "'id' must be an int32 value.";
 
     /// <summary>The disabled-feature problem; the feature gate middleware returns it before body validation.</summary>
     internal static IResult Disabled(HttpContext context) =>
@@ -109,8 +116,12 @@ public static class DataStoreManageModule
             .WithDescription(
                 "Returns 202 with a jobQueuedResult after durable acceptance; its jobId is readable through /v3/jobs/{jobId}. Location is the absolute management resource URL. Disabled management returns 400; closed provisioner readiness returns 503 without acceptance."
             )
-            .Accepts<DataStoreManageInsertCommand>("application/json")
+            // No .Accepts: content-type routing metadata would let ASP.NET Core's AcceptsMatcherPolicy answer a
+            // non-JSON request with a synthetic 415 endpoint that carries neither the authorization policy nor the
+            // managed marker. The handler enforces the media type after both; DataStoreManageOpenApi.Create
+            // documents the application/json request body.
             .Produces<JobQueuedResponse>(202)
+            .ProducesProblem(415)
             .ProducesProblem(400)
             .ProducesProblem(401)
             .ProducesProblem(403)
@@ -146,14 +157,14 @@ public static class DataStoreManageModule
         var (query, errors) = FrontendDataStoreManageQuery.Parse(context.Request.Query);
         if (errors.Count != 0)
         {
-            return FailureResults.DataValidation(errors, context.TraceIdentifier);
+            return InvalidParameter(context, [.. errors.Select(error => error.ErrorMessage)]);
         }
         return await services
             .GetRequiredService<IDataStoreManageRepository>()
             .QueryAsync(query, context.RequestAborted) switch
         {
             DataStoreManageQueryResult.Success success => Results.Ok(success.DataStores),
-            DataStoreManageQueryResult.InvalidRequest => Invalid(
+            DataStoreManageQueryResult.InvalidRequest => InvalidParameter(
                 context,
                 "Invalid managed data store query."
             ),
@@ -180,7 +191,7 @@ public static class DataStoreManageModule
         }
         if (!int.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out int manageId))
         {
-            return Invalid(context, "Id must be an int32 value.", "id");
+            return InvalidParameter(context, InvalidId);
         }
         return await services
             .GetRequiredService<IDataStoreManageRepository>()
@@ -212,12 +223,16 @@ public static class DataStoreManageModule
             return Disabled(context);
         }
         DataStoreManageInsertCommand? command;
-        // Read after the feature check, so malformed input cannot bypass the disabled response.
-        // The DTO's unmapped-member rule is local to this request and does not tighten ordinary APIs.
-        if (!context.Request.HasJsonContentType())
+        // Checked after authorization and the feature check, so a media type cannot bypass either response.
+        // Every non-JSON or missing Content-Type is 415, as framework content negotiation answered it before.
+        if (
+            !context.Request.HasJsonContentType()
+            || JsonCharsetValidationMiddleware.DeclaresUnsupportedJsonCharset(context)
+        )
         {
-            return Invalid(context, "A JSON managed data store request is required.");
+            return FailureResults.UnsupportedMediaType(context.TraceIdentifier);
         }
+        // The DTO's unmapped-member rule is local to this request and does not tighten ordinary APIs.
         try
         {
             command = await context.Request.ReadFromJsonAsync<DataStoreManageInsertCommand>(
@@ -303,7 +318,7 @@ public static class DataStoreManageModule
         }
         if (!int.TryParse(id, NumberStyles.Integer, CultureInfo.InvariantCulture, out int manageId))
         {
-            return Invalid(context, "Id must be an int32 value.", "id");
+            return InvalidParameter(context, InvalidId);
         }
         return await services
             .GetRequiredService<ManagedDataStoreDeleteAcceptance>()

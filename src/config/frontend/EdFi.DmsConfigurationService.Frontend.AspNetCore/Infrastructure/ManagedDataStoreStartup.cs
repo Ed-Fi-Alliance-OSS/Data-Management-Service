@@ -230,18 +230,27 @@ public static class ManagedDataStoreStartup
     /// <summary>
     /// True when every reference follows the first port or instance separator, so the SQL Server protocol
     /// prefix and the host before it are literal. <see cref="StaticLocator"/> still validates the whole locator.
-    /// A PostgreSQL separator must be the only ':', after a host that is not a socket, a bracketed address or
-    /// text that could begin an IPv6 address.
+    /// A PostgreSQL separator is either the ':' directly after a complete, reference-free bracketed address, or
+    /// the only ':', after a host that is not a socket or text that could begin an IPv6 address.
     /// </summary>
     private static bool HasLiteralServer(string locator, bool postgresql)
     {
         string masked = MaskReferences(locator).Trim();
         if (postgresql)
         {
+            if (masked.StartsWith('['))
+            {
+                // The bracket ends the address, so a reference after it can only supply the port.
+                int closingBracket = masked.IndexOf(']');
+                return closingBracket > 1
+                    && !masked[..closingBracket].Contains(Unknown)
+                    && masked.Length > closingBracket + 1
+                    && masked[closingBracket + 1] == ':';
+            }
             int colon = masked.IndexOf(':');
             return colon > 0
                 && colon == masked.LastIndexOf(':')
-                && masked[0] is not ('/' or '@' or '[')
+                && masked[0] is not ('/' or '@')
                 && !masked[..colon].Contains(Unknown)
                 && !CouldBeIpv6Group(masked[..colon]);
         }

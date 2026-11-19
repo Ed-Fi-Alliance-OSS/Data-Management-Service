@@ -589,7 +589,13 @@ public partial class Given_data_store_namespace_reservations
         var second = command with
         {
             ExpectedSourceIdentity = Guid.NewGuid(),
-            Endpoint = command.Endpoint with { Host = "other.example" },
+            // Another endpoint alone no longer makes a target distinct; another physical name does.
+            Template = DmsDatabaseTemplate.Sample,
+            TargetName = ManagedDataStoreNameFormatter.Format(
+                "Store",
+                DmsDatabaseTemplate.Sample,
+                ProtectedDatabaseNames.Create("cms", [])
+            ),
         };
         (
             await ManagedRepository(secondServices.GetRequiredService<IJobEnqueuer>(), selected)

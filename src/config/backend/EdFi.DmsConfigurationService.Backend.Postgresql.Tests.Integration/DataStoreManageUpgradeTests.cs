@@ -640,12 +640,10 @@ public class Given_the_managed_DataStore_migration
             .Should()
             .Be(DmsTargetNameValidation.Valid);
         await using var transaction = await connection.BeginTransactionAsync();
-        (await DataStoreCatalog.HasTargetReservationAsync(transaction, null, endpoint, target, default))
+        // The reservation is keyed by the physical name alone, so every endpoint sees the migrated row.
+        (await DataStoreCatalog.HasTargetReservationAsync(transaction, null, target, default))
             .Should()
             .BeTrue();
-        (await DataStoreCatalog.HasTargetReservationAsync(transaction, null, Endpoint, target, default))
-            .Should()
-            .BeFalse();
         await transaction.RollbackAsync();
     }
 

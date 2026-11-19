@@ -161,7 +161,10 @@ public partial class Given_data_store_namespace_reservations
     [TestCase("/Var/Run/postgresql", "/var/run/postgresql")]
     [TestCase("@Postgresql[Socket]", "@postgresql[Socket]")]
     [Category("EndpointCanonicalAcceptance")]
-    public async Task It_preserves_distinct_case_sensitive_socket_reservations(string first, string second)
+    public async Task It_reserves_one_physical_name_across_case_distinct_socket_endpoints(
+        string first,
+        string second
+    )
     {
         long other = await Tenant("other-socket");
         using var firstServices = AcceptanceServices();
@@ -186,7 +189,86 @@ public partial class Given_data_store_namespace_reservations
                 .AcceptCreateAsync(command, default)
         )
             .Should()
+            .BeOfType<DataStoreManageCreateResult.TargetReserved>();
+        await AssertAcceptanceCounts(1, 1);
+        (
+            await ManagedRepository(otherServices.GetRequiredService<IJobEnqueuer>(), other)
+                .AcceptCreateAsync(CreateCommand("Other Store") with { Endpoint = command.Endpoint }, default)
+        )
+            .Should()
             .BeOfType<DataStoreManageCreateResult.Success>();
         await AssertAcceptanceCounts(2, 2);
+    }
+
+    /// <summary>
+    /// A deleted store's physical name stays retired: DMS routes and tokens cached for the deleted store can
+    /// outlive its deletion (indefinitely with cache refresh disabled), so CMS never provisions that name again
+    /// for any tenant or endpoint spelling. The tombstone is written directly, as an upgraded catalog holds it.
+    /// </summary>
+    [Test, Category("EndpointCanonicalAcceptance")]
+    public async Task It_refuses_to_reuse_a_retired_physical_name_without_rows_or_jobs(
+        [Values("same", "other", "unselected")] string caller,
+        [Values("recorded", "other-host", "address-alias", "other-provider")] string endpoint
+    )
+    {
+        long recordedTenant = await Tenant("retired");
+        long otherTenant = await Tenant("retired-other");
+        long? tenant = caller switch
+        {
+            "same" => recordedTenant,
+            "other" => otherTenant,
+            _ => null,
+        };
+        var command = CreateCommand("Retired Store") with
+        {
+            Endpoint = endpoint switch
+            {
+                "recorded" => new("postgresql", "tcp", "db.example.test", 5432, null, "postgres"),
+                "other-host" => new("postgresql", "tcp", "other.example.test", 5432, null, "postgres"),
+                "address-alias" => new("postgresql", "tcp", "127.0.0.1", 5432, null, "postgres"),
+                _ => new("mssql", "tcp", "db.example.test", 1433, null, "master"),
+            },
+        };
+        await using (var connection = await Open())
+        {
+            await Reserve(
+                connection,
+                "Retired Store",
+                recordedTenant,
+                "Deleted",
+                targetName: command.TargetName.Value.ToUpperInvariant()
+            );
+        }
+        using var services = AcceptanceServices(tenant);
+        var repository = ManagedRepository(
+            services.GetRequiredService<IJobEnqueuer>(),
+            tenant,
+            EndpointReadiness(command.Endpoint.Provider)
+        );
+
+        (await repository.AcceptCreateAsync(command, default))
+            .Should()
+            .BeOfType<DataStoreManageCreateResult.TargetReserved>();
+        await AssertAcceptanceCounts(1, 0);
+
+        // The same name and endpoint with another template is a genuinely different physical name.
+        (
+            await repository.AcceptCreateAsync(
+                CreateCommand("Retired Store") with
+                {
+                    Template = DmsDatabaseTemplate.Sample,
+                    TargetName = ManagedDataStoreNameFormatter.Format(
+                        "Retired Store",
+                        DmsDatabaseTemplate.Sample,
+                        ProtectedDatabaseNames.Create("cms", [])
+                    ),
+                    Endpoint = command.Endpoint,
+                },
+                default
+            )
+        )
+            .Should()
+            .BeOfType<DataStoreManageCreateResult.Success>();
+        await AssertAcceptanceCounts(2, 1);
     }
 }

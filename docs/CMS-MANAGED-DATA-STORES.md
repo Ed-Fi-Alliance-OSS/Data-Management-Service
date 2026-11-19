@@ -101,13 +101,14 @@ POST accepts only `name` and `databaseTemplate`. After boundary trim, names cont
 letters, digits, spaces or underscores; templates are exactly `Minimal` or `Sample`. The physical
 name is derived deterministically with the `EdFi_Ods_` prefix and template suffix; Sample selects
 the populated artifact. Do not infer physical ownership from a name. Different display names can
-derive the same target: CMS reserves both the tenant name and the canonical endpoint/target before
-accepting, with target reservation spanning tenants.
+derive the same target: CMS reserves both the tenant name and the physical database name before
+accepting. The physical name reservation spans tenants and endpoints, and deletion retires it rather
+than releasing it (see [retired physical names](#retired-physical-names)).
 
 | Request/outcome | Contract |
 | --- | --- |
 | Accepted POST | **202** with a `jobQueuedResult` body, `{"jobId": "…", "message": "The Data Store has been queued to be created."}`, and an absolute `Location` for the managed record, after aggregate/job linkage commits. `jobId` is the durable create job, readable through `/v3/jobs/{jobId}` in the same tenant. |
-| Duplicate name / reserved target | **400** with `A data store with this name already exists.` / `The requested target database is already reserved.` No accepted work. |
+| Duplicate name / reserved or retired target | **400** with `A data store with this name already exists.` / `The requested target database is already reserved.` No managed record, job or physical work. A name freed by a delete can be reused only when its name and template derive a physical name that no managed record, Deleted included, has held. |
 | GET collection/by ID | Nine public fields: `id`, `name`, `dataStoreId`, `dataStoreName`, `status`, `databaseTemplate`, `databaseName`, `lastRefreshed`, `lastModifiedDate`. Internal identity, pins, credentials and job linkage are not returned. |
 | Pending/unlinked create | All three linked fields (`dataStoreId`, `dataStoreName`, `databaseName`) are explicitly null until publication, including failed/error creates. |
 | DELETE of Created | **202** with a `jobQueuedResult` body, `{"jobId": "…", "message": "The Data Store has been queued to be deleted."}`, no Location. This accepts asynchronous deletion; it does not mean the physical database has already disappeared. |
@@ -151,8 +152,8 @@ is `NotReady`, its worker neither claims nor exhausts `ManagedDataStore.Create` 
 stays queued with its attempts, identity and pin unchanged, and resumes after remediation and a
 restart that reports Ready. This does not repair records that already ended in `CreateError` or
 `DeleteError`; those need operator investigation. There is no managed reset/retry endpoint;
-failed/error records retain their name and target reservation until successful managed deletion, and
-DELETE admits only Created.
+failed/error records retain their name reservation until successful managed deletion, every record
+keeps its physical name reserved permanently, and DELETE admits only Created.
 
 Physical work and CMS persistence cannot share a transaction. After physical create succeeds but
 publication fails, a later attempt reuses the recorded identity and artifact pin, reconciles the target
@@ -227,6 +228,36 @@ If refresh is disabled or TTL is nonpositive, plan an explicit cache reload/rest
 operations. A create may remain undiscoverable until refresh; a delete may leave stale routing to a
 database already gone. Coordinate client traffic with this window. Discovery also does not create
 client assignments or grant resource access.
+
+### Retired physical names
+
+A deleted managed data store keeps reserving its physical database name. DMS authorizes a request by
+the data store IDs in the client's token and routes it with the cached, decrypted connection string,
+without checking which physical database answers. A token or cached route for a deleted store can
+therefore outlive the deletion, for the token's lifetime and the cache window, or indefinitely when
+refresh is disabled. If that name could be provisioned again, those requests would reach the new
+database. This is a deliberate, security-driven change from the earlier rule that deletion released
+the target.
+
+The guarantee is narrow: **CMS managed provisioning never reuses a retired physical name within this
+CMS deployment.** The reservation uses the same ASCII-folded physical name the provisioner uses, in
+every tenant, for every endpoint spelling (host, alias, address, port or provider), and for records
+deleted before this rule shipped. A refused POST returns the reserved-target 400 before any record,
+job or physical work. Endpoint validation and the worker's ownership checks are unchanged. There is no
+purge or release API and no setting to turn this off. To provision again, choose a name or template
+that derives a different physical name.
+
+This is not request-time identity protection, and stale routes are not otherwise prevented. It does
+not cover:
+
+- a database dropped and recreated with the same name outside CMS (manually, by restore, or by other
+  tooling);
+- an ordinary `/v3/dataStores` registration whose connection string names a database that replaced a
+  deleted one;
+- another CMS deployment, with its own catalog, provisioning on the same server.
+
+Avoid those patterns for names a deleted store used. If one is unavoidable, let every token issued
+before the deletion expire and reload or restart DMS before the replacement serves data.
 
 Reviewed qualification includes both target engines, genuine Minimal/Sample recovery, both mixed
 CMS/target directions, real process termination, transient retries, external self-contained Minimal
