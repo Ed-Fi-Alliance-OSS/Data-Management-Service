@@ -224,9 +224,9 @@ Before database provisioning or scenario work, the pinned-image fixture permits 
 
 The fixture retains the first failure, removes only the unprovisioned SQL Server container, waits five seconds, and requires the replacement to pass SQL Server and Agent readiness. Both attempts share the existing 200-second overall deadline. A second failure, failed evidence retention/removal, caller cancellation, or `CDC_CONNECTOR_TEMPLATE_KEEP_CONTAINERS=true` prevents further recreation. Failures after provisioning and CDC assertions are never retried by this mechanism.
 
-`admission-evidence-sql-fresh-*.json` records one initial fixture start. The fixture writes a `sql-startup` attachment for each failed attempt and a `sql-recovery` attachment when a replacement reaches readiness. The suite's `qualification.json` and CI step summary include these counts even on passing runs.
+`admission-evidence-sql-fresh-*.json` records the initial container launch as soon as `docker run --detach` succeeds, before the first readiness probe. The fixture writes a `sql-startup` attachment for each failed attempt and a `sql-recovery` attachment when a replacement reaches readiness. The suite's `qualification.json` and CI step summary include these counts even on passing runs.
 
-- `SqlFirstAttemptCrashes / SqlFreshStarts` measures the frequency of observed initial exits with a SQL Server fatal message. Each fixture start contributes once to the denominator. Older artifacts without fresh-start records have a null denominator.
+- `SqlFirstAttemptCrashes / SqlFreshStarts` measures the frequency of observed initial exits with a SQL Server fatal message. Each successful initial launch contributes once to the denominator. A suite with no fresh-start records has a null denominator, including suites from older runs.
 - `SqlFirstAttemptCrashCodes` groups those crashes by decimal reason/errno (for example, `2/2` or `2/11`). A missing or ambiguous code is reported as `unknown`.
 - `SqlStartupFailures` counts all observed failed attempts, including failed replacements and readiness failures. `SqlStartupRecoveries` counts ready replacements. Injected failures and recoveries have separate counters. Each attachment counts once across NUnit and VSTest copies.
 

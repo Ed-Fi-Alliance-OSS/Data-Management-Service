@@ -64,6 +64,7 @@ internal static partial class CdcSqlServerStartupLogClassifier
             text.Contains("This program has encountered a fatal error", StringComparison.OrdinalIgnoreCase),
             text.Contains("out of memory", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("unable to allocate", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("cannot allocate memory", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("insufficient memory", StringComparison.OrdinalIgnoreCase)
                 || text.Contains("requires a minimum of 2000 megabytes", StringComparison.OrdinalIgnoreCase),
             text.Contains("invalid mapping of address", StringComparison.OrdinalIgnoreCase)
@@ -92,7 +93,7 @@ internal static partial class CdcSqlServerStartupLogClassifier
                 .ToArray(),
             Signals()
                 .Matches(text)
-                .Select(m => m.Groups[1].Value.ToUpperInvariant())
+                .Select(m => m.Groups[1].Success ? m.Groups[1].Value.ToUpperInvariant() : "Other")
                 .Distinct()
                 .Take(8)
                 .ToArray()
@@ -269,7 +270,7 @@ internal static partial class CdcSqlServerStartupLogClassifier
     private static partial Regex Errnos();
 
     [GeneratedRegex(
-        @"\bSignal:\s*(SIGABRT|SIGSEGV|SIGBUS|SIGILL|SIGFPE|SIGKILL)\b",
+        @"\bSignal:\s*(?:(SIGABRT|SIGSEGV|SIGBUS|SIGILL|SIGFPE|SIGKILL)\b)?",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
         100
     )]

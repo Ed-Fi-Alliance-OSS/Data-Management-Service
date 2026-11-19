@@ -194,7 +194,7 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
     }
 
     [Test]
-    public void It_discards_unknown_signals_addresses_and_oversized_codes()
+    public void It_redacts_unknown_signal_names_and_discards_addresses_and_oversized_codes()
     {
         const string text =
             "Reason: 0x123456789abcdef0\nLast errno: 123456\n"
@@ -203,7 +203,7 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
         var evidence = CdcSqlServerStartupLogClassifier.Parse(new(0, text, string.Empty));
         evidence.FatalReasonCodes.Should().BeEmpty();
         evidence.LastErrnos.Should().BeEmpty();
-        evidence.Signals.Should().BeEmpty();
+        evidence.Signals.Should().Equal("Other");
         evidence.SqlErrorNumbers.Should().BeEmpty();
         JsonSerializer.Serialize(evidence).Should().NotContain("private");
     }

@@ -12,18 +12,10 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
 {
     private async Task StartSqlServerWithRecoveryAsync(CancellationToken cancellationToken)
     {
-        // The Contract lane also exercises this fixture with simulated Docker commands.
-        if (_docker is DockerCli { IsOffline: false })
-        {
-            await AttachSqlServerEvidenceAsync(
-                "fresh",
-                new { Stage = "unprovisioned-sql-fresh-start" },
-                "Fresh SQL Server fixture start",
-                cancellationToken
-            );
-        }
         CdcSqlServerStartupResult result = await CdcSqlServerFixtureStartup.RunAsync(
-            StartSqlServerAttemptAsync,
+            LaunchSqlServerContainerAsync,
+            RecordFreshSqlServerStartAsync,
+            WaitForSqlServerAsync,
             ReadFailedSqlServerContainerStateAsync,
             RetainSqlServerStartupAttemptAsync,
             async token =>
@@ -53,7 +45,7 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
         }
     }
 
-    private async Task StartSqlServerAttemptAsync(CancellationToken cancellationToken)
+    private async Task LaunchSqlServerContainerAsync(CancellationToken cancellationToken)
     {
         _sqlServerReadinessProbeCount = 0;
         _sqlServerReadinessExitCode = 0;
@@ -78,7 +70,20 @@ internal sealed partial class CdcConnectorTemplatePinnedImageFixture
             ],
             cancellationToken
         );
-        await WaitForSqlServerAsync(cancellationToken);
+    }
+
+    private async Task RecordFreshSqlServerStartAsync(CancellationToken cancellationToken)
+    {
+        // The Contract lane also exercises this fixture with simulated Docker commands.
+        if (_docker is DockerCli { IsOffline: false })
+        {
+            await AttachSqlServerEvidenceAsync(
+                "fresh",
+                new { Stage = "unprovisioned-sql-fresh-start" },
+                "Fresh SQL Server fixture start",
+                cancellationToken
+            );
+        }
     }
 
     private async Task RetainSqlServerStartupAttemptAsync(

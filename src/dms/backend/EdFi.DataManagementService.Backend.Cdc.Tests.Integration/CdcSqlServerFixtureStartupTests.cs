@@ -27,6 +27,19 @@ public sealed class Given_CdcSqlServerFixtureStartup
         Last errno: 11
         """;
 
+    private static readonly string[] SuccessfulRecoveryEvents =
+    [
+        "start-1",
+        "fresh",
+        "probe-1",
+        "inspect",
+        "retain-1-True",
+        "remove",
+        "start-2",
+        "probe-2",
+        "ready",
+    ];
+
     private readonly List<string> _events = [];
     private CdcSqlServerContainerState _state = null!;
     private int _starts;
@@ -55,13 +68,10 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [Test]
     public async Task It_starts_once_without_inspection_when_initial_readiness_succeeds()
     {
-        int starts = 0;
         await CdcSqlServerFixtureStartup.RunAsync(
-            _ =>
-            {
-                starts++;
-                return Task.CompletedTask;
-            },
+            token => PhaseAsync("launch", token),
+            token => PhaseAsync("fresh", token),
+            token => PhaseAsync("ready", token),
             _ => throw new AssertionException("Healthy startup must not inspect failure state."),
             (_, _, _, _) => throw new AssertionException("Healthy startup has no failure attachment."),
             _ => throw new AssertionException("Healthy startup must not recreate a container."),
@@ -69,7 +79,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
             CancellationToken.None,
             _budgets
         );
-        starts.Should().Be(1);
+        _events.Should().Equal("launch", "fresh", "ready");
     }
 
     [TestCase("inspect")]
@@ -84,8 +94,10 @@ public sealed class Given_CdcSqlServerFixtureStartup
                 _ =>
                 {
                     starts++;
-                    throw new InvalidOperationException("startup failed");
+                    return Task.CompletedTask;
                 },
+                _ => Task.CompletedTask,
+                _ => throw new InvalidOperationException("readiness failed"),
                 _ =>
                 {
                     if (phase == "inspect")
@@ -122,7 +134,17 @@ public sealed class Given_CdcSqlServerFixtureStartup
     public async Task It_retains_failure_before_one_recreation_and_requires_replacement_readiness()
     {
         await RunAsync();
-        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+        _events.Should().Equal(SuccessfulRecoveryEvents);
+    }
+
+    [Test]
+    public void It_does_not_record_a_fresh_start_when_docker_rejects_the_launch()
+    {
+        _failedPhase = "start-1";
+        _state = new("NotObserved", 0, false);
+
+        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
+        _events.Should().Equal("start-1", "inspect", "retain-1-False");
     }
 
     [TestCase(11, "ReasonTwoErrnoEleven")]
@@ -141,7 +163,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
         };
         CdcSqlServerStartupResult result = await RunAsync(CancellationToken.None);
         result.Should().Be(new CdcSqlServerStartupResult(2, signature, false));
-        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+        _events.Should().Equal(SuccessfulRecoveryEvents);
     }
 
     [Test]
@@ -193,7 +215,18 @@ public sealed class Given_CdcSqlServerFixtureStartup
         Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
         _events
             .Should()
-            .Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "inspect", "retain-2-False");
+            .Equal(
+                "start-1",
+                "fresh",
+                "probe-1",
+                "inspect",
+                "retain-1-True",
+                "remove",
+                "start-2",
+                "probe-2",
+                "inspect",
+                "retain-2-False"
+            );
     }
 
     [TestCase("running")]
@@ -233,7 +266,28 @@ public sealed class Given_CdcSqlServerFixtureStartup
             },
         };
         Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
-        _events.Should().Equal("start-1", "inspect", "retain-1-False");
+        _events.Should().Equal("start-1", "fresh", "probe-1", "inspect", "retain-1-False");
+    }
+
+    [TestCase("Last errno: 12\nLast errno text: Cannot allocate memory")]
+    [TestCase("Signal: SIGTRAP")]
+    public void It_retains_a_fatal_exit_with_a_memory_or_signal_marker_without_removing_the_container(
+        string marker
+    )
+    {
+        _state = _state with
+        {
+            Logs = CdcSqlServerStartupLogClassifier.Parse(
+                new(
+                    0,
+                    $"This program has encountered a fatal error and cannot continue running.\n{marker}",
+                    ""
+                )
+            ),
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
+        _events.Should().Equal("start-1", "fresh", "probe-1", "inspect", "retain-1-False");
     }
 
     [TestCase("reason")]
@@ -316,10 +370,10 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [Test]
     public async Task It_can_inspect_an_attempt_timeout_within_the_remaining_overall_budget()
     {
-        _blockedPhase = "start-1";
+        _blockedPhase = "probe-1";
         _budgets = _budgets with { Attempt = TimeSpan.FromMilliseconds(100) };
         await RunAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+        _events.Should().Equal(SuccessfulRecoveryEvents);
     }
 
     [Test]
@@ -347,10 +401,15 @@ public sealed class Given_CdcSqlServerFixtureStartup
 
     private Task<CdcSqlServerStartupResult> RunAsync(CancellationToken token) =>
         CdcSqlServerFixtureStartup.RunAsync(
-            async cancellation =>
+            cancellation =>
             {
                 _starts++;
-                await PhaseAsync($"start-{_starts}", cancellation);
+                return PhaseAsync($"start-{_starts}", cancellation);
+            },
+            cancellation => PhaseAsync("fresh", cancellation),
+            async cancellation =>
+            {
+                await PhaseAsync($"probe-{_starts}", cancellation);
                 if (_starts == 1 || _failReplacement)
                 {
                     throw new InvalidOperationException("fixture startup failed");
