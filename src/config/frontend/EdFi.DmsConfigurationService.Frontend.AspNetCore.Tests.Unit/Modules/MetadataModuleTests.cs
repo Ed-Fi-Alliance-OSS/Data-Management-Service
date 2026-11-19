@@ -565,9 +565,12 @@ public class MetadataModuleTests
     /// through the real TenantResolutionMiddleware via TestServerHttpClientFactory, so this fails with a
     /// 500 if either path stops being tenant-agnostic.
     /// </summary>
-    [TestFixture("")]
-    [TestFixture("mt-config")]
+    [TestFixture("self-contained", "")]
+    [TestFixture("self-contained", "mt-config")]
+    [TestFixture("keycloak", "")]
+    [TestFixture("keycloak", "mt-config")]
     public class Given_MultiTenancy_Is_Enabled_And_A_Metadata_Discovery_Request_Without_A_Tenant_Header(
+        string identityProvider,
         string pathBase
     )
     {
@@ -577,7 +580,11 @@ public class MetadataModuleTests
         [SetUp]
         public async Task Setup()
         {
-            await using var factory = CreateFactory(multiTenancy: true, pathBase: pathBase);
+            await using var factory = CreateFactory(
+                multiTenancy: true,
+                pathBase: pathBase,
+                identityProvider: identityProvider
+            );
             using var client = factory.CreateClient();
 
             // No Tenant header and no credentials
@@ -849,12 +856,17 @@ public class MetadataModuleTests
         string? pathBase = null,
         ITenantRepository? tenantRepository = null,
         ICollection<Uri?>? recordedRequestUris = null,
-        string? identityAuthority = null
+        string? identityAuthority = null,
+        string? identityProvider = null
     )
     {
         return new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
             builder.UseEnvironment("Test");
+            if (identityProvider is not null)
+            {
+                builder.UseSetting("AppSettings:IdentityProvider", identityProvider);
+            }
             builder.ConfigureAppConfiguration(configuration =>
             {
                 var settings = new Dictionary<string, string?>
@@ -869,6 +881,11 @@ public class MetadataModuleTests
                 if (identityAuthority is not null)
                 {
                     settings["IdentitySettings:Authority"] = identityAuthority;
+                }
+
+                if (identityProvider is not null)
+                {
+                    settings["AppSettings:IdentityProvider"] = identityProvider;
                 }
 
                 configuration.AddInMemoryCollection(settings);

@@ -92,7 +92,7 @@ public class FrameworkErrorResponseTests
     )
     {
         response.StatusCode.Should().Be(status);
-        response.Content.Headers.ContentType?.MediaType.Should().Be("application/problem+json");
+        (response.Content.Headers.ContentType?.MediaType).Should().Be("application/problem+json");
         body["type"]!.GetValue<string>().Should().Be(type);
         body["title"]!.GetValue<string>().Should().Be(title);
         body["detail"]!.GetValue<string>().Should().Be(detail);
@@ -224,7 +224,7 @@ public class FrameworkErrorResponseTests
             );
     }
 
-    /// <summary>An unmatched, health-lookalike route proves there are no route/health exclusions.</summary>
+    /// <summary>An anonymous health-lookalike route is challenged by the production fallback.</summary>
     [TestFixture]
     public class Given_an_unknown_health_lookalike_route
     {
@@ -250,18 +250,18 @@ public class FrameworkErrorResponseTests
         }
 
         [Test]
-        public void It_returns_the_shaped_not_found_contract() =>
+        public void It_returns_the_shaped_authentication_contract() =>
             AssertShapedContract(
                 _response,
                 _body,
-                HttpStatusCode.NotFound,
-                "urn:ed-fi:management-api:not-found",
-                "Not Found",
-                "The requested resource could not be found."
+                HttpStatusCode.Unauthorized,
+                "urn:ed-fi:management-api:security:authentication",
+                "Authentication Failed",
+                "Authentication is required to access this resource."
             );
     }
 
-    /// <summary>A GET-only route hit with DELETE → routing 405 with an Allow header.</summary>
+    /// <summary>An authenticated DELETE on a GET-only route → routing 405 with an Allow header.</summary>
     [TestFixture]
     public class Given_a_wrong_http_method
     {
@@ -273,8 +273,9 @@ public class FrameworkErrorResponseTests
         [SetUp]
         public async Task Setup()
         {
-            _factory = CreateFactory(addTestAuthentication: false);
+            _factory = CreateFactory(addTestAuthentication: true);
             _client = _factory.CreateClient();
+            _client.DefaultRequestHeaders.Add("X-Test-Scope", "edfi_admin_api/full_access");
             _response = await _client.SendAsync(new HttpRequestMessage(HttpMethod.Delete, "/health"));
             _body = await ReadBodyAsync(_response);
         }
@@ -302,45 +303,51 @@ public class FrameworkErrorResponseTests
             _response.Content.Headers.Allow.Should().Contain("GET");
     }
 
-    /// <summary>An authenticated JSON endpoint receiving text/plain → negotiated 415.</summary>
+    /// <summary>A JSON endpoint receiving text/plain triggers a routing rejection.</summary>
     [TestFixture]
     public class Given_an_unsupported_media_type
     {
-        private WebApplicationFactory<Program> _factory = null!;
-        private HttpClient _client = null!;
-        private HttpResponseMessage _response = null!;
-        private JsonObject _body = null!;
-
-        [SetUp]
-        public async Task Setup()
+        private static async Task<HttpResponseMessage> PostUnsupportedContentAsync(HttpClient client)
         {
-            _factory = CreateFactory(addTestAuthentication: true);
-            _client = _factory.CreateClient();
-            _client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
-            _response = await _client.PostAsync(
-                "/management/upload-claims",
-                new StringContent("plain text", Encoding.UTF8, "text/plain")
-            );
-            _body = await ReadBodyAsync(_response);
-        }
-
-        [TearDown]
-        public void TearDown()
-        {
-            _client?.Dispose();
-            _factory?.Dispose();
+            using var content = new StringContent("plain text", Encoding.UTF8, "text/plain");
+            return await client.PostAsync("/management/upload-claims", content);
         }
 
         [Test]
-        public void It_returns_the_shaped_unsupported_media_type_contract() =>
+        public async Task It_returns_the_shaped_authentication_contract_for_an_anonymous_caller()
+        {
+            using var factory = CreateFactory(addTestAuthentication: false);
+            using var client = factory.CreateClient();
+            using var response = await PostUnsupportedContentAsync(client);
+
             AssertShapedContract(
-                _response,
-                _body,
+                response,
+                await ReadBodyAsync(response),
+                HttpStatusCode.Unauthorized,
+                "urn:ed-fi:management-api:security:authentication",
+                "Authentication Failed",
+                "Authentication is required to access this resource."
+            );
+            response.Headers.WwwAuthenticate.Select(header => header.Scheme).Should().Contain("Bearer");
+        }
+
+        [Test]
+        public async Task It_returns_the_shaped_unsupported_media_type_contract_for_an_authenticated_caller()
+        {
+            using var factory = CreateFactory(addTestAuthentication: true);
+            using var client = factory.CreateClient();
+            client.DefaultRequestHeaders.Add("X-Test-Scope", AuthorizationScopes.AdminScope.Name);
+            using var response = await PostUnsupportedContentAsync(client);
+
+            AssertShapedContract(
+                response,
+                await ReadBodyAsync(response),
                 HttpStatusCode.UnsupportedMediaType,
                 "urn:ed-fi:management-api:unsupported-media-type",
                 "Unsupported Media Type",
                 "The value specified in the 'Content-Type' header is not supported by this host."
             );
+        }
     }
 
     /// <summary>A module that already returns a structured 404 must not be clobbered.</summary>

@@ -573,6 +573,7 @@ public static class WebApplicationBuilderExtensions
             // Add authorization services for OpenIddict (same as Keycloak)
             webApplicationBuilder.Services.AddAuthorization(options =>
             {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
                 options.AddPolicy(
                     SecurityConstants.ServicePolicy,
                     policy =>
@@ -649,6 +650,7 @@ public static class WebApplicationBuilderExtensions
             // Add service policy for role validation
             webApplicationBuilder.Services.AddAuthorization(options =>
             {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder().RequireAuthenticatedUser().Build();
                 options.AddPolicy(
                     SecurityConstants.ServicePolicy,
                     policy =>

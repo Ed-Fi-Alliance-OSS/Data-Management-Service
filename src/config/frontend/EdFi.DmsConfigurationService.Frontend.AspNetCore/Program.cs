@@ -237,7 +237,7 @@ app.UseAuthorization();
 app.UseMiddleware<JsonCharsetValidationMiddleware>();
 
 app.MapRouteEndpoints();
-app.MapOpenApi();
+app.MapOpenApi().AllowAnonymous();
 await app.RunAsync();
 
 /// <summary>

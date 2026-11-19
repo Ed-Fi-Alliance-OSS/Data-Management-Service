@@ -106,10 +106,12 @@ A stock Swagger UI can therefore authorize against the Configuration Service in 
 
 ### `/connect/token` failures
 
-`/connect/token` answers every failure in the OAuth error format of RFC 6749 section 5.2.
+The `/connect/token` handler answers failures in the OAuth error format of RFC 6749 section 5.2.
 The body is `application/json` with exactly the root members `error` and `error_description`, written by the same writer as `/connect/revoke` and `/connect/introspect`.
 It covers every error the handler produces and every exception that escapes it.
-Responses produced before the endpoint is selected, such as the `405` for another HTTP method, keep their framework form.
+The source rate limiter also returns an OAuth `429` on a matched `/connect/token` route.
+Wrong-method routing rejections use Ed-Fi error shaping. When they reach authorization, anonymous
+callers receive `401` without `Allow` and authenticated callers retain `405` with `Allow`.
 
 | Condition | Status | `error` |
 | --- | --- | --- |
@@ -1644,12 +1646,36 @@ Scope requirements are applied per HTTP method via extension helpers:
 
 | Helper | Allowed scopes | Used for |
 | --- | --- | --- |
-| `MapSecuredGet` | `full_access` or `readonly_access` | All other GET endpoints |
-| `MapSecuredPost` | `full_access` only | All POST endpoints |
-| `MapSecuredPut` | `full_access` only | All PUT endpoints |
-| `MapSecuredDelete` | `full_access` only | All DELETE endpoints |
+| `MapSecuredGet` | `full_access` or `readonly_access` | Protected GET endpoints other than the limited-access routes |
+| `MapSecuredPost` | `full_access` only | Protected POST endpoints |
+| `MapSecuredPut` | `full_access` only | Protected PUT endpoints |
+| `MapSecuredDelete` | `full_access` only | Protected DELETE endpoints |
 | `MapLimitedAccess` | Any of the three scopes | Exactly these GET routes: `/v3/authorizationMetadata`, `/v3/claimSets/`, `/v3/apiClients/`, `/v3/apiClients/{id}`, `/v3/dataStores/`, `/v3/dataStores/{id}`, `/v3/dataStoreContexts/`, `/v3/dataStoreContexts/{id}`, `/v3/dataStoreDerivatives/`, `/v3/dataStoreDerivatives/{id}`, `/v3/applications/{id}`, `/v3/profiles/`, `/v3/profiles/{id}` |
-| `MapPublic` | Anonymous | Tenancy |
+| `MapPublicGet` | Anonymous | `/`, `/health`, `/tenancy`, `/metadata/specifications`, `/.well-known/openiddict-status`; self-contained only: `/.well-known/jwks.json`, `/.well-known/openid-configuration` |
+| `MapPublicPost` | Anonymous to framework authorization | `/connect/register/{**contextPath}`, `/connect/token/{**contextPath}`, `/connect/introspect/{**contextPath}`, `/connect/revoke/{**contextPath}`; handler client authentication is preserved |
+
+`MapPublic` remains a forwarding alias for `MapPublicGet`. The framework-owned `GET /openapi/{documentName}.json` mapping uses `MapOpenApi().AllowAnonymous()` explicitly. Public helpers retain chained OAuth, client-credential, bearer-exemption and rate-limit metadata.
+
+### Default policy
+
+Both identity providers configure an authentication-only fallback policy. Endpoints with no
+authorization metadata require an authenticated user, without an additional role or scope requirement.
+Protected endpoints still use the named service-role and scope policies in the helpers above.
+Use `MapPublicGet` or `MapPublicPost` for anonymous mappings, and update the independent anonymous
+method/template allow-list when adding one. Keep the explicit `MapOpenApi().AllowAnonymous()` exception.
+The inventory tests require exactly one authorization metadata kind on every production endpoint and
+the exact public method/template set across both providers and tenancy modes. Policy and real-pipeline
+behavior tests detect missing fallback. Named-helper usage is checked in review: equivalent raw mappings
+that preserve authorization metadata are outside the automated provenance guarantee.
+
+Tenant validation retains its earlier position: missing/invalid required tenants return `400` before
+authorization. With successful tenant resolution where required, an unknown path returns `401` for
+anonymous callers and `404` for authenticated callers. Wrong-method requests reaching authorization
+return `401` without `Allow` for anonymous callers and retain `405` with `Allow` for authenticated callers.
+Routing rejections for an unsupported `Content-Type` reaching authorization return `401` for anonymous
+callers and retain `415` for authenticated callers.
+Permitted CORS preflight and matched-handler errors, including feature-gate and missing-document `404`s,
+retain their contracts. No routing workaround or new tenant exemption is added.
 
 ## Roles
 

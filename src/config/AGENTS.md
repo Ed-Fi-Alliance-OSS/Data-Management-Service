@@ -14,16 +14,28 @@ against that policy and keep its entry-point descriptions current.
 
 ## Authorization Model
 
-Configuration Service has no fallback authorization policy: any plain `MapGet`/`MapPost` endpoint is
-anonymous. Map protected endpoints with the `MapSecured*` or `MapLimitedAccess` helpers
-in `Infrastructure/Authorization/EndpointBuilderExtensions.cs`; they compose the
-service-role and scope policies. Use `MapLimitedAccess` only for reads DMS performs.
+Configuration Service requires authentication by default in both identity provider modes.
+The fallback policy requires only an authenticated user. Map protected endpoints with
+`MapSecured*` or `MapLimitedAccess` in `Infrastructure/Authorization/EndpointBuilderExtensions.cs`;
+these helpers retain the service-role and scope requirements. Use `MapLimitedAccess` only for reads DMS performs.
 
-Anonymous endpoints (`/health`, `/`, `/tenancy`, metadata, `/.well-known/*`, and the
-OAuth `/connect/*` endpoints other than introspect and revoke) are intentional. Prefer `MapPublic` for new ones.
+Use `MapPublicGet` or `MapPublicPost` for intentional anonymous mappings. `MapPublic` remains
+an alias for `MapPublicGet`. The framework-owned OpenAPI mapping is the exception:
+`MapOpenApi().AllowAnonymous()`. Update the independent anonymous method/template allow-list in
+`EndpointAuthorizationTests` when adding an anonymous mapping. Review named-helper usage;
+the automated tests enforce metadata, fallback policy and behavior, not helper provenance.
 
-`/connect/introspect` and `/connect/revoke` authenticate the caller with client credentials inside the handler.
-In `keycloak` mode both delegate that check to Keycloak. Neither is mapped with `MapSecured*`.
+The public surface is `/`, `/health`, `/tenancy`, `/metadata/specifications`,
+`/.well-known/openiddict-status`, `/openapi/{documentName}.json`, and the four `/connect/*`
+POST templates. JWKS and OpenID configuration discovery are public in self-contained mode only.
+`/connect/introspect` and `/connect/revoke` still authenticate callers with client credentials
+inside the handler; in keycloak mode they delegate that check to Keycloak.
+Anonymous framework metadata does not remove handler-owned client authentication.
+
+Tenant resolution still runs first: missing/invalid required tenants retain 400. After successful
+tenant resolution where required, unknown paths return 401 to anonymous callers and 404 to authenticated
+callers. Wrong-method requests reaching authorization return 401 without Allow for anonymous callers;
+authenticated callers retain 405 with Allow. Preserve matched-handler errors and permitted CORS preflight.
 
 ## Tenancy Is Not Authorization
 

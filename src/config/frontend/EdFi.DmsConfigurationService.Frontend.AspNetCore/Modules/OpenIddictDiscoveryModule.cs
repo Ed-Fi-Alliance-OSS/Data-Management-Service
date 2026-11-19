@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using Microsoft.Extensions.Options;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
@@ -15,7 +16,7 @@ public class OpenIddictDiscoveryModule : IEndpointModule
 {
     public void MapEndpoints(IEndpointRouteBuilder endpoints)
     {
-        endpoints.MapGet("/.well-known/openiddict-status", GetOpenIddictStatus);
+        endpoints.MapPublicGet("/.well-known/openiddict-status", GetOpenIddictStatus);
     }
 
     private static IResult GetOpenIddictStatus(IOptions<IdentitySettings> identitySettings)

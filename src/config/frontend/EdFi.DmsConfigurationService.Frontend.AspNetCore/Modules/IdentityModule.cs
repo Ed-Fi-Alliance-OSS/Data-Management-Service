@@ -14,6 +14,7 @@ using EdFi.DmsConfigurationService.DataModel.Model.Register;
 using EdFi.DmsConfigurationService.DataModel.Model.Token;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Configuration;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
+using EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure.Authorization;
 using FluentValidation;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Mvc;
@@ -32,7 +33,7 @@ public class IdentityModule : IEndpointModule
         // Support dynamic route contexts: allows zero or more path segments after the endpoint
         // Examples: /connect/token, /connect/token/{districtId}, /connect/token/{districtId}/{schoolYear}
         endpoints
-            .MapPost("connect/register/{**contextPath}", RegisterClient)
+            .MapPublicPost("connect/register/{**contextPath}", RegisterClient)
             .DisableAntiforgery()
             .WithMetadata(OAuthEndpointMetadata.Instance, ConnectRateLimitMetadata.Instance);
         // The token endpoint answers every failure in the OAuth format (RFC 6749 §5.2, DMS-1491),
@@ -40,7 +41,7 @@ public class IdentityModule : IEndpointModule
         // exception logging, and, since it is the route where a client gets its first
         // credential-backed response, it has no authentication exemption or client-credential marker.
         endpoints
-            .MapPost("connect/token/{**contextPath}", GetClientAccessToken)
+            .MapPublicPost("connect/token/{**contextPath}", GetClientAccessToken)
             .DisableAntiforgery()
             .WithMetadata(
                 OAuthErrorContractMetadata.Token,
@@ -58,7 +59,7 @@ public class IdentityModule : IEndpointModule
         // resolves a manager whose construction can run plugin code, so an exception's text is not
         // under CMS control (DMS-1327 D-15, D-17).
         endpoints
-            .MapPost("connect/revoke/{**contextPath}", RevokeToken)
+            .MapPublicPost("connect/revoke/{**contextPath}", RevokeToken)
             .DisableAntiforgery()
             .WithMetadata(
                 OAuthErrorContractMetadata.Revocation,
@@ -77,7 +78,7 @@ public class IdentityModule : IEndpointModule
         // constructed by a plugin, so failures are logged by exception type names only
         // (DMS-1327 D-03, D-15, D-17, CS-AUTH.md).
         endpoints
-            .MapPost("connect/introspect/{**contextPath}", IntrospectToken)
+            .MapPublicPost("connect/introspect/{**contextPath}", IntrospectToken)
             .DisableAntiforgery()
             .WithMetadata(
                 OAuthErrorContractMetadata.Introspection,
