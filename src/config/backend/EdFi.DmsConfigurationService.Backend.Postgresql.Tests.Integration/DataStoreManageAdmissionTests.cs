@@ -470,7 +470,7 @@ public partial class Given_data_store_namespace_reservations
             (actual, token) => AdmitManagedOperation(created.Command, old.Execution, true, actual, token),
             default
         );
-        PublicationSeed replacement = created;
+        Guid replacementIdentity = Guid.NewGuid();
         try
         {
             await paused.Task.WaitAsync(TimeSpan.FromSeconds(30));
@@ -488,31 +488,7 @@ public partial class Given_data_store_namespace_reservations
                 .BeOfType<DmsDataStoreDeleteResult.Dropped>();
             await PublicationRepository().CompleteDeleteAsync(old.Command, execution, default);
             await CompleteAdmissionJob(claim);
-            replacement = await SeedPublication(
-                physical: created.Command with
-                {
-                    Identity = created.Command.Identity with { ExpectedSourceIdentity = Guid.NewGuid() },
-                }
-            );
-            (
-                await lane.Service.CreateAsync(
-                    AdmissionRequest(replacement),
-                    endpoint,
-                    (actual, token) =>
-                        AdmitManagedOperation(
-                            replacement.Command,
-                            replacement.Execution,
-                            false,
-                            actual,
-                            token
-                        ),
-                    default
-                )
-            )
-                .Should()
-                .BeOfType<DmsDataStoreCreateResult.Created>();
-            await PublicationRepository()
-                .PublishCreateAsync(replacement.Command, replacement.Execution, default);
+            await ReplaceRetiredTargetOutOfBandAsync(created, cleanup, replacementIdentity);
         }
         finally
         {
@@ -522,13 +498,12 @@ public partial class Given_data_store_namespace_reservations
         Func<Task> staleDelete = () => delayed;
         await staleDelete.Should().ThrowAsync<JobLeaseLostException>();
         lane.Engine.CountOf(nameof(IDmsTargetEngine.DropInstanceAsync)).Should().Be(1);
-        var present = (await Engine().InspectAsync(replacement.Command.Identity.TargetName, default))
+        var present = (await Engine().InspectAsync(created.Command.Identity.TargetName, default))
             .Should()
             .BeOfType<DmsLiveTargetState.Present>()
             .Subject;
         var opened = (
-            await Engine()
-                .OpenSessionAsync(replacement.Command.Identity.TargetName, present.Instance, default)
+            await Engine().OpenSessionAsync(created.Command.Identity.TargetName, present.Instance, default)
         )
             .Should()
             .BeOfType<DmsSessionOpenResult.Opened>()
@@ -537,9 +512,50 @@ public partial class Given_data_store_namespace_reservations
         {
             (await Engine().ReadIdentityAsync(opened, default))
                 .Should()
-                .Be(new DmsIdentityRead.Found(replacement.Command.Identity.ExpectedSourceIdentity));
+                .Be(new DmsIdentityRead.Found(replacementIdentity));
         }
         lane.OperationEntries.Should().BeEmpty();
+    }
+
+    /// <summary>
+    /// Managed provisioning refuses the deleted store's retired physical name without a record or job, so
+    /// only an explicit out-of-band replacement can occupy it: a DMS-shaped database with its own identity.
+    /// Stale delete work must still leave that replacement untouched.
+    /// </summary>
+    private async Task ReplaceRetiredTargetOutOfBandAsync(
+        PublicationSeed deleted,
+        TestDatabase target,
+        Guid replacementIdentity
+    )
+    {
+        using (var services = AcceptanceServices())
+        {
+            var ready = new DmsDataStoreProvisionerReadiness();
+            ready.Record(
+                new DmsProvisionerReadiness.Ready(
+                    deleted.Command.Identity.Endpoint.Provider,
+                    DateTimeOffset.UtcNow
+                )
+            );
+            (
+                await ManagedRepository(services.GetRequiredService<IJobEnqueuer>(), readiness: ready)
+                    .AcceptCreateAsync(
+                        deleted.Command.Identity with
+                        {
+                            ExpectedSourceIdentity = replacementIdentity,
+                        },
+                        default
+                    )
+            )
+                .Should()
+                .BeOfType<DataStoreManageCreateResult.TargetReserved>();
+        }
+        string name = deleted.Command.Identity.TargetName.Value;
+        await ExecuteOnServerAsync($"CREATE DATABASE {PostgresqlIdentifiers.Quote(name)};");
+        await target.ExecuteAsync(await File.ReadAllTextAsync(FixturePath("dms-shaped-database.sql")));
+        await target.ExecuteAsync(
+            $"UPDATE dms.\"DataStoreIdentity\" SET \"SourceIdentity\" = '{replacementIdentity:D}';"
+        );
     }
 
     [Test, Category("DataStoreManageAdmission")]
@@ -923,7 +939,7 @@ public partial class Given_data_store_namespace_reservations
             default
         );
         Task<DmsDataStoreDeleteResult>? second = null;
-        PublicationSeed replacement = created;
+        Guid replacementIdentity = Guid.NewGuid();
         DmsInstanceIdentity? replacementInstance = null;
         try
         {
@@ -953,31 +969,7 @@ public partial class Given_data_store_namespace_reservations
             (await second).Should().BeOfType<DmsDataStoreDeleteResult.Dropped>();
             await PublicationRepository().CompleteDeleteAsync(old.Command, execution, default);
             await CompleteAdmissionJob(claim);
-            replacement = await SeedPublication(
-                physical: created.Command with
-                {
-                    Identity = created.Command.Identity with { ExpectedSourceIdentity = Guid.NewGuid() },
-                }
-            );
-            (
-                await lane.Service.CreateAsync(
-                    AdmissionRequest(replacement),
-                    endpoint,
-                    (actual, token) =>
-                        AdmitManagedOperation(
-                            replacement.Command,
-                            replacement.Execution,
-                            false,
-                            actual,
-                            token
-                        ),
-                    default
-                )
-            )
-                .Should()
-                .BeOfType<DmsDataStoreCreateResult.Created>();
-            await PublicationRepository()
-                .PublishCreateAsync(replacement.Command, replacement.Execution, default);
+            await ReplaceRetiredTargetOutOfBandAsync(created, cleanup, replacementIdentity);
             replacementInstance = (await Engine().InspectAsync(request.TargetName, default))
                 .Should()
                 .BeOfType<DmsLiveTargetState.Present>()
@@ -1009,7 +1001,7 @@ public partial class Given_data_store_namespace_reservations
         {
             (await Engine().ReadIdentityAsync(opened, default))
                 .Should()
-                .Be(new DmsIdentityRead.Found(replacement.Command.Identity.ExpectedSourceIdentity));
+                .Be(new DmsIdentityRead.Found(replacementIdentity));
         }
         lane.Engine.CountOf(nameof(IDmsTargetEngine.DropInstanceAsync)).Should().Be(1);
         lane.OperationEntries.Should().BeEmpty();
