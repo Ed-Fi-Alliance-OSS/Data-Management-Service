@@ -92,7 +92,12 @@ public class Given_a_DataStore_name_comparison_key_migration(bool upgrade)
             );
         if (upgrade)
         {
-            _after.Except(_before).Should().ContainSingle();
+            // Another 0039 script (the projection claim) shares the number; only 0039 scripts run here.
+            _after
+                .Except(_before)
+                .Should()
+                .OnlyContain(name => name.Contains(".Scripts.0039_"))
+                .And.ContainSingle(name => name.EndsWith("0039_Add_DataStore_NameComparisonKey.sql"));
         }
         _database.DeployThrough(39);
         (await _database.JournalAsync()).Should().Equal(_after);
@@ -119,7 +124,10 @@ public class Given_a_DataStore_name_comparison_key_migration(bool upgrade)
 
         _database.DeployThrough(39);
 
-        (await _database.JournalAsync()).Should().Equal(_after);
+        // The recovered row is journaled again after the other 0039 script, so compare entries, not order.
+        (await _database.JournalAsync())
+            .Should()
+            .BeEquivalentTo(_after);
         (await _database.JournalAsync()).Count(name => name == script).Should().Be(1);
         var after = await connection.QuerySingleAsync<(int Id, string Name, byte[] Key)>(
             "SELECT Id, Name, NameComparisonKey FROM dmscs.DataStore WHERE Id = @Id;",
@@ -424,7 +432,14 @@ public class Given_existing_name_key_definitions_before_migration_replay
         (await connection.QuerySingleAsync<string>(ColumnDefinition)).Should().Be(columnBefore);
         (await connection.QueryAsync<(int Id, string Name, string Key)>(Rows)).Should().Equal(rowsBefore);
         (await _database.ConstraintAndIndexNamesAsync("DataStore")).Should().Equal(objectsBefore);
-        (await _database.JournalAsync()).Should().Equal(journalBefore.Append(ScriptName));
+        string[] journal = await _database.JournalAsync();
+        journal.Should().StartWith(journalBefore);
+        journal
+            .Except(journalBefore)
+            .Should()
+            .OnlyContain(name => name.Contains(".Scripts.0039_"))
+            .And.ContainSingle(name => name == ScriptName);
+        journal.Count(name => name == ScriptName).Should().Be(1);
     }
 
     [TestCase("helper_without_fold")]

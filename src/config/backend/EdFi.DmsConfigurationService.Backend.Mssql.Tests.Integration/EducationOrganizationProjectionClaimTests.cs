@@ -906,6 +906,8 @@ public class Given_a_catalog_that_ran_the_migration_under_its_former_number
             JobUpgradeTestDatabase.IdentifierUniquenessScriptName,
             JobUpgradeTestDatabase.NamespacePrefixWideningScriptName,
             JobUpgradeTestDatabase.ApiClientEducationOrganizationScriptName,
+            // The DataStore name-key migration shares number 0039 and sorts first.
+            "EdFi.DmsConfigurationService.Backend.Mssql.Deploy.Scripts.0039_Add_DataStore_NameComparisonKey.sql",
             ProjectionClaimScriptName,
         ];
 
