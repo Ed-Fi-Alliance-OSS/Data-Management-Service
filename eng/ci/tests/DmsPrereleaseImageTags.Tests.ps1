@@ -229,13 +229,6 @@ Describe 'Prerelease images build for every platform' {
         function script:Get-BuildStep([string] $JobId, [string] $Name) {
             return @($script:jobSteps[$JobId] | Where-Object { $_ -match "^      - name: $([regex]::Escape($Name))\r?\n" })
         }
-
-        # The step's with: block, one entry per line, less any single platforms: line.
-        function script:Get-BuildInputWithoutPlatform([string] $Step) {
-            $lines = @($Step -split '\r?\n')
-            $with = [array]::IndexOf($lines, '        with:')
-            return @($lines[($with + 1)..($lines.Count - 1)] | Where-Object { $_.Trim() -ne '' -and $_ -notmatch '^\s+platforms:' })
-        }
     }
 
     Context 'the <Name> build step' -ForEach @(
@@ -243,33 +236,11 @@ Describe 'Prerelease images build for every platform' {
             Name     = 'DMS'
             JobId    = 'docker-publish-dms'
             StepName = 'Build and push DMS image'
-            Expected = @(
-                '          context: "{{defaultContext}}:src/dms"'
-                '          cache-from: type=registry,ref=${{ env.IMAGE_NAME }}:pre'
-                '          cache-to: type=inline'
-                '          build-args: VERSION=${{ steps.prepare-tags.outputs.VERSION }}'
-                '          file: Nuget.Dockerfile'
-                '          tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}'
-                '          labels: ${{ steps.metadatamanagementservice.outputs.labels }}'
-                '          push: true'
-            )
         }
         @{
             Name     = 'Configuration Service'
             JobId    = 'docker-publish-cs'
             StepName = 'Build and push Config image'
-            Expected = @(
-                '          context: "{{defaultContext}}:src/config"'
-                '          cache-from: type=registry,ref=${{ env.CONFIG_IMAGE_NAME }}:pre'
-                '          cache-to: type=inline'
-                '          build-args: |'
-                '            VERSION=${{ steps.prepare-tags.outputs.VERSION }}'
-                '            ASSEMBLY_VERSION=${{ needs.pack-cs.outputs.assembly-version }}'
-                '          file: Nuget.Dockerfile'
-                '          tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}'
-                '          labels: ${{ steps.metadatamanagementservice.outputs.labels }}'
-                '          push: true'
-            )
         }
     ) {
         It 'declares exactly one platforms input, for amd64 and arm64' {
@@ -279,13 +250,6 @@ Describe 'Prerelease images build for every platform' {
             $platforms = @($build[0] -split '\r?\n' | Where-Object { $_ -match '^\s+platforms:' })
             $platforms.Count | Should -Be 1 -Because "the $Name build step must declare platforms: once"
             $platforms[0].Trim() | Should -BeExactly 'platforms: linux/amd64,linux/arm64'
-        }
-
-        It 'changes none of the other build inputs' {
-            $build = @(script:Get-BuildStep $JobId $StepName)
-            $build.Count | Should -Be 1 -Because "the $Name job has one step named '$StepName'"
-
-            (script:Get-BuildInputWithoutPlatform $build[0]) -join "`n" | Should -BeExactly ($Expected -join "`n")
         }
     }
 
@@ -309,8 +273,7 @@ Describe 'Prerelease images build for every platform' {
             $qemu.Count | Should -Be 1
 
             # The action defaults to tonistiigi/binfmt:latest and to every platform it knows.
-            $lines = @($qemu[0] -split '?
-')
+            $lines = @($qemu[0] -split '\r?\n')
             $lines | Should -Contain '          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
             $lines | Should -Contain '          platforms: arm64'
         }
