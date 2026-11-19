@@ -75,13 +75,12 @@ jobs:
         with:
           dotnet-version: "10.0.x"
 
-      - name: Cache Nuget packages
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore NuGet package cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.nuget/packages
-          key: ${{ runner.os }}-nuget-mutation-${{ matrix.target }}-${{ hashFiles('src/Directory.Packages.props', 'src/**/packages.lock.json', '**/dotnet-tools.json') }}
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
           restore-keys: |
-            ${{ runner.os }}-nuget-mutation-${{ matrix.target }}-
             ${{ runner.os }}-nuget-
 
       - name: Run full mutation target
@@ -130,7 +129,7 @@ jobs:
         uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
         with:
           payload: |
-            {"text": ":heavy_check_mark: DMS and CMS weekend mutation runs completed, all 11 reports validated; findings require review: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"}
+            {"text": ":heavy_check_mark: DMS and CMS weekend mutation reports passed validation. Review the findings in <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|the workflow run>."}
           webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
           webhook-type: incoming-webhook
 

@@ -13,6 +13,20 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 public class Given_Independent_Outputs_For_The_Same_Ddl_Fixture
 {
     [Test]
+    public void It_preserves_existing_files_in_a_nonempty_output_directory()
+    {
+        string fixture = Path.Combine(FixtureTestHelper.FindProjectRoot(), "Fixtures", "small", "minimal");
+        using var output = new GoldenFixtureOutputDirectory();
+        string existingSql = Path.Combine(output.DirectoryPath, "pgsql.sql");
+        File.WriteAllText(existingSql, "existing output");
+
+        Action run = () => FixtureRunner.Run(fixture, strict: false, outputDirectory: output.DirectoryPath);
+
+        run.Should().Throw<IOException>();
+        File.ReadAllText(existingSql).Should().Be("existing output");
+    }
+
+    [Test]
     public void It_keeps_each_run_and_comparison_independent()
     {
         string fixture = Path.Combine(FixtureTestHelper.FindProjectRoot(), "Fixtures", "small", "minimal");

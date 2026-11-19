@@ -798,7 +798,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             await CreateSut(NamespaceFailureExtractor(payloadIndex), validationExecutor)
                 .ResolveAsync(
                     request,
-                    CreateMergeResult(request),
+                    dmlMode ? CreateChangedMergeResult(request) : CreateMergeResult(request),
                     dmlMode
                         ? RelationalWriteSecondCommandMode.Dml
                         : RelationalWriteSecondCommandMode.AuthorizationOnly,
@@ -946,7 +946,7 @@ public class Given_The_Composite_Relational_Write_Proposed_Custom_View_Authoriza
             await CreateSut(RelationshipFailureExtractor(), validationExecutor)
                 .ResolveAsync(
                     request,
-                    CreateMergeResult(request),
+                    dmlMode ? CreateChangedMergeResult(request) : CreateMergeResult(request),
                     dmlMode
                         ? RelationalWriteSecondCommandMode.Dml
                         : RelationalWriteSecondCommandMode.AuthorizationOnly,
