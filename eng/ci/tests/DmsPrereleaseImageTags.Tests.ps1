@@ -309,6 +309,13 @@ Describe 'Release image promotion keeps every platform' {
             $steps = $script:jobSteps[$JobId]
             return @(0..($steps.Count - 1) | Where-Object { $steps[$_] -cmatch "^      - name: $([regex]::Escape($Name))\r?\n" })
         }
+
+        # Reads the raw step text rather than Get-WorkflowStepRun, which returns only a block scalar
+        # and so would miss a one-line run: command. Comments are dropped first.
+        function script:Test-StepRunsDockerCopy([string] $Step) {
+            $code = @($Step -split '\r?\n' | ForEach-Object { $_ -replace '(^|\s)#.*$', '' }) -join "`n"
+            return $code -match '\bdocker\s+(tag|push|pull)\b'
+        }
     }
 
     Context 'the <Name> job' -ForEach @(
@@ -338,7 +345,7 @@ Describe 'Release image promotion keeps every platform' {
 
             @($steps | Where-Object { $_ -cmatch '(?m)^        uses: \./\.github/actions/pull-ci-images\s*$' }).Count |
                 Should -Be 0 -Because "the $Name job must not pull the prerelease image through the local action"
-            @($steps | Where-Object { (Get-WorkflowStepRun $_) -match '\bdocker\s+(tag|push|pull)\b' }).Count |
+            @($steps | Where-Object { script:Test-StepRunsDockerCopy $_ }).Count |
                 Should -Be 0 -Because "the $Name job must not run docker pull, tag or push, which keeps one platform"
         }
 
@@ -350,6 +357,14 @@ Describe 'Release image promotion keeps every platform' {
             $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
             $login[0] | Should -BeLessThan $promote[0] -Because 'the registry rejects the copy unless the job is logged in first'
         }
+    }
+
+    It 'flags a docker push in a <Form> as a runner command: <Expected>' -ForEach @(
+        @{ Form = 'one-line run: command'; Expected = $true; Step = "      - name: Push`n        run: docker push example/image:1.0`n" }
+        @{ Form = 'block run: command'; Expected = $true; Step = "      - name: Push`n        run: |`n          docker push example/image:1.0`n" }
+        @{ Form = 'comment only'; Expected = $false; Step = "      # docker push is not used here`n      - name: Promote`n        run: ./promote.ps1 # not docker push`n" }
+    ) {
+        script:Test-StepRunsDockerCopy $Step | Should -Be $Expected
     }
 }
 
