@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Globalization;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
@@ -17,7 +18,10 @@ namespace EdFi.DataManagementService.Backend;
 /// <param name="Label">Diagnostic name, <c>kind:schema.table</c>, unique within one plan.</param>
 /// <param name="TableWritePlan">The table the rows belong to.</param>
 /// <param name="SingleRowSql">The compiled statement for exactly one row.</param>
-/// <param name="EmitBatchSql">Emits the same statement for a given row count.</param>
+/// <param name="EmitBatchSql">
+/// Emits the statement for a given row count greater than one. A non-collection update always carries one
+/// row, so its factory throws: only <paramref name="SingleRowSql"/> is ever sent for it.
+/// </param>
 /// <param name="Rows">
 /// The rows to apply, in order. Never empty. Splitting them into round trips belongs to the caller: the
 /// per-statement path splits at the table's bulk-insert row cap, the co-batched path packs against the
@@ -29,7 +33,14 @@ internal sealed record RelationalWriteDmlStatement(
     string SingleRowSql,
     Func<int, string> EmitBatchSql,
     IReadOnlyList<RelationalWriteMergedTableRow> Rows
-);
+)
+{
+    /// <summary>
+    /// Binding indexes <see cref="SingleRowSql"/> leaves out of a reduced update's SET list. The row binder
+    /// skips them, so both transports bind exactly the parameters the selected shape references.
+    /// </summary>
+    public ImmutableArray<int> SingleRowOmittedBindingIndexes { get; init; } = [];
+}
 
 /// <summary>
 /// Every data-modifying statement a write owes, already in the order the correctness invariants require,
@@ -383,17 +394,25 @@ internal static class RelationalWriteDmlStatementPlanner
             return;
         }
 
+        var updateSql =
+            tableWritePlan.UpdateSql
+            ?? throw new InvalidOperationException(
+                $"Table '{RelationalWriteFlattener.FormatTable(tableWritePlan)}' requires UpdateSql to "
+                    + "persist a changed non-collection row."
+            );
+        var reducedRootUpdate = tableState.ReducedRootUpdate;
+
+        // A table has at most two update shapes: the compiled full SET list, or the root's reduced update the
+        // identity guard attached. A non-collection scope carries one merged row, which both transports send
+        // as the single-row SQL, so the statement has no batch form.
         AddStatement(
             statements,
             "update-scope",
             tableWritePlan,
-            tableWritePlan.UpdateSql
-                ?? throw new InvalidOperationException(
-                    $"Table '{RelationalWriteFlattener.FormatTable(tableWritePlan)}' requires UpdateSql to "
-                        + "persist a changed non-collection row."
-                ),
-            rowCount => batchSqlEmitter.EmitUpdateBatch(tableWritePlan, rowCount),
-            [mergedRow]
+            reducedRootUpdate?.Sql ?? updateSql,
+            SingleRowOnly,
+            [mergedRow],
+            reducedRootUpdate?.OmittedBindingIndexes ?? []
         );
     }
 
@@ -569,13 +588,24 @@ internal static class RelationalWriteDmlStatementPlanner
     /// Records a statement unless it owes no rows, so a plan never carries a statement whose emitted SQL
     /// would apply to nothing.
     /// </summary>
+    /// <summary>
+    /// The batch factory of a statement that always carries exactly one row. The transports send a
+    /// one-row statement as its <see cref="RelationalWriteDmlStatement.SingleRowSql"/>, so this is never
+    /// called. If it were, a fail-fast beats emitting a shape that could differ from the single-row one.
+    /// </summary>
+    private static readonly Func<int, string> SingleRowOnly = rowCount =>
+        throw new InvalidOperationException(
+            $"A single-row statement was asked for a {rowCount}-row batch; only its single-row SQL is sent."
+        );
+
     private static void AddStatement(
         List<RelationalWriteDmlStatement> statements,
         string kind,
         TableWritePlan tableWritePlan,
         string singleRowSql,
         Func<int, string> emitBatchSql,
-        IReadOnlyList<RelationalWriteMergedTableRow> rows
+        IReadOnlyList<RelationalWriteMergedTableRow> rows,
+        ImmutableArray<int> singleRowOmittedBindingIndexes = default
     )
     {
         if (rows.Count == 0)
@@ -591,6 +621,11 @@ internal static class RelationalWriteDmlStatementPlanner
                 emitBatchSql,
                 rows
             )
+            {
+                SingleRowOmittedBindingIndexes = singleRowOmittedBindingIndexes.IsDefault
+                    ? []
+                    : singleRowOmittedBindingIndexes,
+            }
         );
     }
 

@@ -9,6 +9,8 @@ namespace EdFi.DataManagementService.Tests.E2E.Cdc;
 internal sealed class CdcAttachmentResources : IAsyncDisposable
 {
     private readonly Stack<Func<ValueTask>> _cleanup = new();
+    private bool _pendingFailure;
+    internal Task CleanupCompletion { get; private set; } = Task.CompletedTask;
 
     public void Add(IDisposable resource) =>
         _cleanup.Push(() =>
@@ -21,12 +23,24 @@ internal sealed class CdcAttachmentResources : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
+        if (_pendingFailure)
+        {
+            throw new InvalidOperationException("CDC_API_ATTACHMENT_DISPOSAL");
+        }
         bool failed = false;
         while (_cleanup.TryPop(out var dispose))
         {
             try
             {
                 await dispose();
+            }
+            catch (CdcPendingCleanupException pending)
+            {
+                // The outstanding processor still owns the transports, service provider and settings
+                // below its runtime in this stack. Retain them until it actually leaves those resources.
+                _pendingFailure = true;
+                CleanupCompletion = FinishPendingAsync(pending.Completion);
+                throw new InvalidOperationException("CDC_API_ATTACHMENT_DISPOSAL");
             }
             catch
             {
@@ -38,4 +52,33 @@ internal sealed class CdcAttachmentResources : IAsyncDisposable
             throw new InvalidOperationException("CDC_API_ATTACHMENT_DISPOSAL");
         }
     }
+
+    private async Task FinishPendingAsync(Task pending)
+    {
+        try
+        {
+            await pending;
+        }
+        catch
+        {
+            // Observe late faults. The original disposal remains failed regardless of late completion.
+        }
+        while (_cleanup.TryPop(out var dispose))
+        {
+            try
+            {
+                await dispose();
+            }
+            catch
+            {
+                // Cleanup continues; no late success can erase the already reported failure.
+            }
+        }
+    }
+}
+
+internal sealed class CdcPendingCleanupException(Task completion)
+    : TimeoutException("CDC_API_PROJECTION_DRAIN_TIMEOUT")
+{
+    internal Task Completion { get; } = completion;
 }

@@ -3,9 +3,11 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Immutable;
 using System.Text;
 using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.Backend.External.Plans;
+using EdFi.DataManagementService.Backend.Plans;
 
 namespace EdFi.DataManagementService.Backend;
 
@@ -16,6 +18,77 @@ namespace EdFi.DataManagementService.Backend;
 internal sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
 {
     private readonly SqlDialect _dialect = dialect;
+
+    /// <summary>
+    /// The single-row update of a table whose bindings at <paramref name="omittedBindingIndexes"/> are left
+    /// out of the SET list. It is rendered by the emitter that compiles <see cref="TableWritePlan.UpdateSql"/>,
+    /// so it differs from that text only by the omitted assignments. Callers cache it:
+    /// <see cref="RelationalWriteReducedRootUpdate"/> renders it once per root plan.
+    /// </summary>
+    public string EmitUpdate(TableWritePlan tableWritePlan, ImmutableArray<int> omittedBindingIndexes)
+    {
+        ArgumentNullException.ThrowIfNull(tableWritePlan);
+
+        var (keyColumnsInKeyOrder, setBindingsInOrder) = SelectUpdateColumns(
+            tableWritePlan,
+            omittedBindingIndexes,
+            sqlOperation: "update"
+        );
+        return new SimpleUpdateSqlEmitter(_dialect).Emit(
+            tableWritePlan.TableModel.Table,
+            setBindingsInOrder.Select(static binding => binding.Column.ColumnName).ToArray(),
+            setBindingsInOrder.Select(static binding => binding.ParameterName).ToArray(),
+            keyColumnsInKeyOrder,
+            ResolveRequiredParameterNamesInOrder(
+                tableWritePlan,
+                keyColumnsInKeyOrder,
+                BuildParameterNameByColumnMap(tableWritePlan),
+                sqlOperation: "update"
+            )
+        );
+    }
+
+    /// <summary>
+    /// The key columns in key order and the bindings an update assigns: every non-key binding, in binding
+    /// order, except those at <paramref name="omittedBindingIndexes"/>.
+    /// </summary>
+    private static (
+        DbColumnName[] KeyColumnsInKeyOrder,
+        WriteColumnBinding[] SetBindingsInOrder
+    ) SelectUpdateColumns(
+        TableWritePlan tableWritePlan,
+        ImmutableArray<int> omittedBindingIndexes,
+        string sqlOperation
+    )
+    {
+        if (tableWritePlan.UpdateSql is null)
+        {
+            throw new InvalidOperationException(
+                $"Table '{tableWritePlan.TableModel.Table}' does not expose {nameof(TableWritePlan.UpdateSql)} for {sqlOperation} emission."
+            );
+        }
+
+        var keyColumnsInKeyOrder = tableWritePlan
+            .TableModel.Key.Columns.Select(static keyColumn => keyColumn.ColumnName)
+            .ToArray();
+        var keyColumnNames = keyColumnsInKeyOrder.ToHashSet();
+        var setBindingsInOrder = tableWritePlan
+            .ColumnBindings.Where(
+                (binding, bindingIndex) =>
+                    !keyColumnNames.Contains(binding.Column.ColumnName)
+                    && !omittedBindingIndexes.Contains(bindingIndex)
+            )
+            .ToArray();
+
+        if (setBindingsInOrder.Length == 0)
+        {
+            throw new InvalidOperationException(
+                $"Table '{tableWritePlan.TableModel.Table}' does not expose writable non-key bindings for {sqlOperation} emission."
+            );
+        }
+
+        return (keyColumnsInKeyOrder, setBindingsInOrder);
+    }
 
     public string EmitInsertBatch(TableWritePlan tableWritePlan, int rowCount)
     {
@@ -43,27 +116,11 @@ internal sealed class WritePlanBatchSqlEmitter(SqlDialect dialect)
         ArgumentNullException.ThrowIfNull(tableWritePlan);
         WriteBatchSqlSupport.ValidateRowCount(rowCount);
 
-        if (tableWritePlan.UpdateSql is null)
-        {
-            throw new InvalidOperationException(
-                $"Table '{tableWritePlan.TableModel.Table}' does not expose {nameof(TableWritePlan.UpdateSql)} for batched update emission."
-            );
-        }
-
-        var keyColumnsInKeyOrder = tableWritePlan
-            .TableModel.Key.Columns.Select(static keyColumn => keyColumn.ColumnName)
-            .ToArray();
-        var keyColumnNames = keyColumnsInKeyOrder.ToHashSet();
-        var writableNonKeyBindingsInOrder = tableWritePlan
-            .ColumnBindings.Where(binding => !keyColumnNames.Contains(binding.Column.ColumnName))
-            .ToArray();
-
-        if (writableNonKeyBindingsInOrder.Length == 0)
-        {
-            throw new InvalidOperationException(
-                $"Table '{tableWritePlan.TableModel.Table}' does not expose writable non-key bindings for batched update emission."
-            );
-        }
+        var (keyColumnsInKeyOrder, writableNonKeyBindingsInOrder) = SelectUpdateColumns(
+            tableWritePlan,
+            [],
+            sqlOperation: "batched update"
+        );
 
         var parameterNameByColumn = BuildParameterNameByColumnMap(tableWritePlan);
         var orderedSetColumns = writableNonKeyBindingsInOrder

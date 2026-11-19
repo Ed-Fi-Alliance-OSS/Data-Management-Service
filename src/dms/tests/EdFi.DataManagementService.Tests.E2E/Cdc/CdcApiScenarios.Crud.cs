@@ -38,7 +38,7 @@ internal sealed partial class CdcApiScenarios
                 await _context.Provider.AssertCaptureInventoryAsync(ct);
                 await _context.Fences.AssertConnectorIncludeListAsync(ct);
                 await phase.Gate.WaitUntilIdleAsync(ct);
-                phase.Gate.Pause();
+                phase.Gate.Pause(phase.HoldToken);
                 try
                 {
                     await CdcAttachmentReadiness.StartAndWaitAsync(
@@ -90,7 +90,7 @@ internal sealed partial class CdcApiScenarios
                     // Publication acknowledgement can precede return from the item processor. Drain that
                     // call before rearming; no new work is submitted until the selected gate is armed.
                     await phase.Gate.WaitUntilIdleAsync(ct);
-                    phase.Gate.Pause(created.DocumentId);
+                    phase.Gate.Pause(phase.HoldToken, created.DocumentId);
                     body[updatedField] = "Updated";
                     await AwaitLaterSecondAsync(created.ContentCreatedAt, ct);
                     await _context.Api.PutAsync(resource, uuid, body, ct);

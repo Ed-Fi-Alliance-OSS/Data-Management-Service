@@ -1,0 +1,9 @@
+{
+  "detail": "The data store uses a database provider that this Ed-Fi API deployment does not serve.",
+  "type": "urn:ed-fi:api:education-organization-projection:target-provider-unsupported",
+  "title": "Target Provider Unsupported",
+  "status": 409,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": []
+}

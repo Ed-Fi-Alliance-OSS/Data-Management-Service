@@ -213,3 +213,27 @@ Describe "Build script zero-test guards (DMS-1301)" {
         }
     }
 }
+
+Describe "build-dms.ps1 refuses the DMS projection reader Keycloak run outside a Keycloak E2E run (DMS-1440)" {
+    # The reader's Keycloak fixture needs the single-tenant DMS E2E stack in Keycloak mode. The script checks the
+    # switch before any import or command, so a child run fails at once and starts nothing.
+    BeforeAll {
+        $script:buildScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../../build-dms.ps1"))
+    }
+
+    It "refuses -RunDmsProjectionReaderKeycloakE2E with <Arguments>" -ForEach @(
+        @{ Arguments = @('E2ETest') }
+        @{ Arguments = @('E2ETest', '-IdentityProvider', 'self-contained') }
+        @{ Arguments = @('InstanceE2ETest', '-IdentityProvider', 'keycloak') }
+        @{ Arguments = @('Build', '-IdentityProvider', 'keycloak') }
+    ) {
+        $output = & pwsh -NoLogo -NoProfile -File $script:buildScript @Arguments -RunDmsProjectionReaderKeycloakE2E 2>&1
+
+        $LASTEXITCODE | Should -Not -Be 0
+        # pwsh word-wraps an uncaught script error to the console width and starts each continuation line with
+        # "| ", so on a narrow runner console the message spans several lines. Rejoin them before matching.
+        $rendered = ($output | Out-String) -replace '\e\[[0-9;]*m', '' -replace '\s*\r?\n\s*\|\s*', ' '
+        $rendered | Should -Match ([regex]::Escape(
+                '-RunDmsProjectionReaderKeycloakE2E requires the E2ETest command with -IdentityProvider keycloak'))
+    }
+}

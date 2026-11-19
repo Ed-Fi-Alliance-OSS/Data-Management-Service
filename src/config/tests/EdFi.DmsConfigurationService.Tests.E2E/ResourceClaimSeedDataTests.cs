@@ -28,19 +28,18 @@ public class Given_resource_claim_seed_data
             "Claims",
             "authoritative-composition.json"
         );
-        string resourceClaimSeedPath = Path.Combine(
+        string deployScriptsPath = Path.Combine(
             repositoryRoot,
             "src",
             "config",
             "backend",
             "EdFi.DmsConfigurationService.Backend.Postgresql",
             "Deploy",
-            "Scripts",
-            "0009_Insert_ResourceClaim.sql"
+            "Scripts"
         );
 
         HashSet<string> hierarchyClaimNames = LoadHierarchyClaimNames(authoritativeCompositionPath);
-        HashSet<string> seededClaimNames = LoadSeededClaimNames(resourceClaimSeedPath);
+        HashSet<string> seededClaimNames = LoadSeededClaimNames(deployScriptsPath);
 
         _missingSeedClaimNames = hierarchyClaimNames
             .Where(claimName => !seededClaimNames.Contains(claimName))
@@ -116,11 +115,20 @@ public class Given_resource_claim_seed_data
         }
     }
 
-    private static HashSet<string> LoadSeededClaimNames(string path)
+    /// <summary>
+    /// Collects the claim names seeded by every deploy script that inserts resource claims: the
+    /// original seed lists explicit ids, while scripts added later let the identity assign them.
+    /// </summary>
+    private static HashSet<string> LoadSeededClaimNames(string deployScriptsPath)
     {
-        string seedSql = File.ReadAllText(path);
-        MatchCollection matches = Regex.Matches(seedSql, @"\(\d+,'[^']+','(?<claimName>[^']+)'\)");
-
-        return matches.Select(match => match.Groups["claimName"].Value).ToHashSet(StringComparer.Ordinal);
+        return Directory
+            .EnumerateFiles(deployScriptsPath, "*.sql")
+            .Select(File.ReadAllText)
+            .Where(seedSql =>
+                seedSql.Contains("INSERT INTO \"dmscs\".\"ResourceClaim\"", StringComparison.Ordinal)
+            )
+            .SelectMany(seedSql => Regex.Matches(seedSql, @"\((?:\d+,)?'[^']+','(?<claimName>[^']+)'\)"))
+            .Select(match => match.Groups["claimName"].Value)
+            .ToHashSet(StringComparer.Ordinal);
     }
 }

@@ -58,11 +58,7 @@ public sealed class MappingSetCache(
         }
         else
         {
-            _logger.LogDebug(
-                "Mapping set cache hit for EffectiveSchemaHash {EffectiveSchemaHash}, Dialect {Dialect}",
-                SanitizeInternalValueForLog(key.EffectiveSchemaHash),
-                key.Dialect
-            );
+            _logger.LogDebug("Mapping set cache hit for Dialect {Dialect}", key.Dialect);
         }
 
         return await cacheEntry.WaitAsync(cancellationToken).ConfigureAwait(false);

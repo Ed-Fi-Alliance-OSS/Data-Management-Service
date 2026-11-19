@@ -546,6 +546,67 @@ public class Given_Relational_Write_No_Profile_Persister
         GetParameterValue(writeSession.Commands[1], "@documentId").Should().Be(345L);
     }
 
+    /// <summary>
+    /// A root whose identity bindings were marked unchanged sends the reduced update, which assigns every
+    /// other non-key column (unchanged ones included) and never the identity columns, and binds only the
+    /// parameters that update references.
+    /// </summary>
+    [Test]
+    public async Task It_sends_the_root_update_without_the_identity_columns_marked_unchanged()
+    {
+        var rootPlan = CreateRootPlan(includeShortName: true);
+        var writePlan = CreateWritePlan([rootPlan]);
+        var request = CreateRequest(writePlan, RelationalWriteOperationKind.Put);
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [CreateRow(345L, 255901, "Lincoln High", "LHS")],
+                    [CreateRow(345L, 255901, "Lincoln High", "LH")]
+                )
+                {
+                    ReducedRootUpdate = RelationalWriteReducedRootUpdate.Create(
+                        rootPlan,
+                        request.MappingSet.Key.Dialect,
+                        [1]
+                    ),
+                },
+            ],
+            supportsGuardedNoOp: true
+        );
+        var writeSession = new RecordingRelationalWriteSession([
+            new CommandResponse(),
+            new CommandResponse(ScalarResult: 77L),
+        ]);
+
+        await _sut.PersistAsync(request, mergeResult, writeSession);
+
+        writeSession.Commands.Should().HaveCount(2);
+        writeSession
+            .Commands[0]
+            .CommandText.Should()
+            .Be(
+                """
+                UPDATE "edfi"."School"
+                SET
+                    "Name" = @Name,
+                    "ShortName" = @ShortName
+                WHERE
+                    ("DocumentId" = @DocumentId)
+                ;
+
+                """
+            );
+        writeSession
+            .Commands[0]
+            .Parameters.Select(static parameter => parameter.Name)
+            .Should()
+            .BeEquivalentTo("@Name", "@ShortName", "@DocumentId");
+        GetParameterValue(writeSession.Commands[0], "@DocumentId").Should().Be(345L);
+        GetParameterValue(writeSession.Commands[0], "@Name").Should().Be("Lincoln High");
+        GetParameterValue(writeSession.Commands[0], "@ShortName").Should().Be("LH");
+    }
+
     [Test]
     public async Task It_deletes_omitted_separate_table_rows_when_scope_becomes_absent()
     {

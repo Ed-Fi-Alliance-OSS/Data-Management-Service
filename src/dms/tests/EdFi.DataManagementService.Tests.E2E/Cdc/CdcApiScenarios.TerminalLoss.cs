@@ -169,7 +169,7 @@ internal sealed partial class CdcApiScenarios
                 await EventAsync("healthy-evidence-decorator-removed-real-offsets-Missing");
 
                 await phase.Gate.WaitUntilIdleAsync(ct);
-                phase.Gate.Pause(source.DocumentId);
+                phase.Gate.Pause(phase.HoldToken, source.DocumentId);
                 try
                 {
                     body["firstName"] = "AfterTerminalContainment";

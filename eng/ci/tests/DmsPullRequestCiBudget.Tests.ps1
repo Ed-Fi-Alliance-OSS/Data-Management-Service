@@ -802,11 +802,83 @@ Describe "on-dms-pullrequest.yml CI budget wiring" {
             foreach ($block in $functionBlock) {
                 $name = ($block -split '\s', 2)[0]
 
+                # The DMS projection reader project (DMS-1440) lives in the Configuration Service
+                # solution, which the shared artifact does not contain, so building it rebuilds
+                # nothing the artifact provides. The exemption is held to exactly that project.
+                if ($name -eq 'RunDmsProjectionReaderE2E') {
+                    ([regex]::Matches($block, '(?m)^\s*dotnet test\b')).Count | Should -Be 1
+                    $block | Should -Match '\$project = "\$PSScriptRoot/src/config/tests/EdFi\.DmsConfigurationService\.Tests\.DmsProjectionE2E/EdFi\.DmsConfigurationService\.Tests\.DmsProjectionE2E\.csproj"'
+                    $block | Should -Match '(?m)^\s*dotnet test \$project\b'
+                    continue
+                }
+
                 # The invocation and the flags can be separated by an argument array, so the
                 # function body as a whole is the unit, not the command line.
                 $block | Should -Match '--no-build' -Because "$name invokes dotnet test"
                 $block | Should -Match '--no-restore' -Because "$name invokes dotnet test"
             }
+        }
+
+        It "exempts only the DMS projection reader project from reusing the artifact" {
+            $buildScript = Get-Content -LiteralPath $script:buildScriptPath -Raw
+            $withoutPrebuiltFlags = [regex]::Split($buildScript, '(?m)^function ') |
+                Select-Object -Skip 1 |
+                Where-Object { $_ -match '(?m)^\s*dotnet test\b' -and $_ -notmatch '--no-restore' } |
+                ForEach-Object { ($_ -split '\s', 2)[0] }
+
+            $withoutPrebuiltFlags | Should -Be @('RunDmsProjectionReaderE2E')
+        }
+    }
+
+    Context "The DMS projection reader Keycloak run belongs to the Keycloak SQL Server entry only (DMS-1440)" {
+        # The switch is honored only with -IdentityProvider keycloak, so the workflow must add it for that
+        # matrix entry alone; and a run that silently skipped the reader would only skip its upload, so the
+        # entry also fails on a missing guard line.
+        BeforeAll {
+            $script:mssqlBlock = Get-JobBlock -JobName 'run-e2e-tests-mssql'
+        }
+
+        It "adds -RunDmsProjectionReaderKeycloakE2E only through the keycloak matrix expression on the E2E line" {
+            $runLine = @($script:mssqlBlock -split "`n" | Where-Object { $_ -match '\./build-dms\.ps1 E2ETest\b' })
+
+            $runLine.Count | Should -Be 1
+            $runLine[0] | Should -Match ([regex]::Escape(
+                    "`${{ matrix.identityprovider == 'keycloak' && '-RunDmsProjectionReaderKeycloakE2E' || '' }}"
+                ))
+            @($script:lines | Where-Object { $_ -match 'RunDmsProjectionReaderKeycloakE2E' }).Count | Should -Be 1 `
+                -Because "no other lane runs the Keycloak reader fixture"
+        }
+
+        It "fails the keycloak entry, after sanitization, when the setup log lacks the guard line the build script prints" {
+            $guardStep = [regex]::Match(
+                $script:mssqlBlock,
+                "(?ms)^      - name: Require the DMS Projection Reader Keycloak E2E Guard\s*$.*?(?=^      - name:)"
+            ).Value
+            $guardStep | Should -Not -BeNullOrEmpty
+            $guardStep | Should -Match ([regex]::Escape(
+                    "if: matrix.identityprovider == 'keycloak' && steps.e2e.outcome == 'success' && steps.sanitize.outcome == 'success'"
+                ))
+            $guardStep | Should -Match ([regex]::Escape("'DMS projection reader Keycloak E2E: '"))
+            $guardStep | Should -Match 'throw '
+            $guardStep | Should -Match ([regex]::Escape('Write-Host $guardLine.Line')) `
+                -Because "a successful job uploads no setup log, so the sanitized guard line is the evidence the run kept"
+
+            (Get-Content -LiteralPath $script:buildScriptPath -Raw) |
+                Should -Match ([regex]::Escape('Write-Output "DMS projection reader Keycloak E2E: ')) `
+                    -Because "the step searches for the line the Keycloak TRX guard prints"
+            $script:mssqlBlock.IndexOf('id: sanitize') |
+                Should -BeLessThan $script:mssqlBlock.IndexOf('Require the DMS Projection Reader Keycloak E2E Guard')
+        }
+
+        It "uploads the Keycloak reader TRX only after sanitization succeeded" {
+            $uploadStep = [regex]::Match(
+                $script:mssqlBlock,
+                "(?ms)^      - name: Upload DMS Projection Reader Keycloak E2E Results\s*$.*?(?=^      - name:)"
+            ).Value
+            $uploadStep | Should -Match ([regex]::Escape("steps.sanitize.outcome == 'success'"))
+            $uploadStep | Should -Match ([regex]::Escape(
+                    "path: TestResults/EdFi.DmsConfigurationService.Tests.DmsProjectionE2E.keycloak.trx"
+                ))
         }
     }
 

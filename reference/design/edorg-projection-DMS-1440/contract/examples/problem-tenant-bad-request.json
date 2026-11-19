@@ -1,0 +1,11 @@
+{
+  "detail": "The tenant identifier has an invalid format.",
+  "type": "urn:ed-fi:api:bad-request",
+  "title": "Bad Request",
+  "status": 400,
+  "correlationId": "0HNG2K7Q8V1M3:00000002",
+  "validationErrors": {},
+  "errors": [
+    "Tenant identifier must contain only alphanumeric characters, hyphens, and underscores."
+  ]
+}

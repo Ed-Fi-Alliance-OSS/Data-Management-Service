@@ -454,6 +454,55 @@ Describe 'CDC qualification result boundary' {
         Test-Path (Join-Path $safe 'appsettings.json') | Should -BeFalse
     }
 
+    It 'exports conflict and drain evidence after <Cause> while stripping private failure output' -ForEach @(
+        @{ Cause = 'CallerCancelled'; Primary = 'CallerCancellation' }
+        @{ Cause = 'DeadlineExpired'; Primary = 'ObservationTimeout' }
+    ) {
+        $raw = New-Item -ItemType Directory (Join-Path $TestDrive "timing-$Cause-raw")
+        $safe = Join-Path $TestDrive "timing-$Cause-published"
+        $mutation = 'cdc-controller-mutation-' + [guid]::NewGuid().ToString('N') + '.json'
+        $probe = 'cdc-controller-probe-' + [guid]::NewGuid().ToString('N') + '.json'
+        @{
+            Operation = 'ConfigurationUpdate'; Outcome = $Cause; TotalAttempts = 2
+            Attempts = @(@{ Attempt = 1; HttpStatusCode = 409; ResponseBody = 'unlabelled response' }, @{ Attempt = 2; HttpStatusCode = 409 })
+            Configuration = @{ 'tasks.max' = '2' }; Credentials = 'opaque credential'; RawException = 'unlabelled exception'
+        } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $raw $mutation)
+        @{
+            PrimaryFailure = $Primary; DrainFailure = 'Timeout'; ProbeCompletion = 'Pending'
+            RawException = 'unlabelled exception'; ResponseBody = 'unlabelled response'; Configuration = @{ key = 'value' }
+        } | ConvertTo-Json -Depth 10 | Set-Content (Join-Path $raw $probe)
+        @"
+<TestRun><Results><UnitTestResult testName="It_retains_timing_failure" outcome="Failed">
+<Output><ErrorInfo><Message>private assertion body</Message><StackTrace>unlabelled exception</StackTrace></ErrorInfo><StdOut>opaque credential</StdOut></Output>
+<ResultFiles><ResultFile path="host/$mutation"/><ResultFile path="host/$probe"/></ResultFiles>
+</UnitTestResult></Results><ResultSummary><Counters total="1" executed="1" failed="1" passed="0"/></ResultSummary></TestRun>
+"@ | Set-Content (Join-Path $raw 'timing.trx')
+        (Get-CdcQualificationReport (Join-Path $raw 'timing.trx') 1).Status | Should -Be Failed
+        Export-CdcQualificationEvidence $raw $safe
+        [xml] $trx = Get-Content (Join-Path $safe 'timing.trx') -Raw
+        $case = $trx.TestRun.Results.UnitTestResult
+        $case.outcome | Should -Be Failed
+        $case.SelectNodes('./Output').Count | Should -Be 0
+        @($case.ResultFiles.ResultFile.path).Count | Should -Be 2
+        foreach ($attachment in @($mutation, $probe)) {
+            @($case.ResultFiles.ResultFile.path) | Should -Contain $attachment
+            Test-Path (Join-Path $safe $attachment) | Should -BeTrue
+        }
+        $attempts = Get-Content (Join-Path $safe $mutation) -Raw | ConvertFrom-Json -AsHashtable
+        @($attempts.Keys | Sort-Object) | Should -Be @('Attempts', 'Operation', 'Outcome', 'TotalAttempts')
+        $attempts.Operation | Should -Be ConfigurationUpdate
+        $attempts.Outcome | Should -Be $Cause
+        $attempts.TotalAttempts | Should -Be 2
+        @($attempts.Attempts.Attempt) | Should -Be @(1, 2)
+        @($attempts.Attempts.HttpStatusCode) | Should -Be @(409, 409)
+        $failure = Get-Content (Join-Path $safe $probe) -Raw | ConvertFrom-Json -AsHashtable
+        @($failure.Keys | Sort-Object) | Should -Be @('DrainFailure', 'PrimaryFailure', 'ProbeCompletion')
+        $failure.PrimaryFailure | Should -Be $Primary
+        $failure.DrainFailure | Should -Be Timeout
+        $failure.ProbeCompletion | Should -Be Pending
+        (Get-ChildItem $safe -File | Get-Content -Raw) -join '' | Should -Not -Match 'private assertion|unlabelled|opaque credential|"(?:ResponseBody|Configuration|Credentials|RawException)"\s*:'
+    }
+
     It 'preserves generated history attachment links without allowing arbitrary sensitive paths' {
         $raw = New-Item -ItemType Directory (Join-Path $TestDrive 'history-raw')
         $safe = Join-Path $TestDrive 'history-published'

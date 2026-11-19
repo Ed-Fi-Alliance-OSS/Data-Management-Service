@@ -10,6 +10,21 @@ using Microsoft.Extensions.Logging;
 namespace EdFi.DataManagementService.Frontend.AspNetCore.Content;
 
 /// <summary>
+/// Whether a tenant exists, with a lookup that could not answer kept apart from a confirmed absence.
+/// </summary>
+public enum TenantExistence
+{
+    /// <summary>The tenant is cached, its data stores loaded, or it is in the tenant list.</summary>
+    Exists,
+
+    /// <summary>A successfully loaded tenant list does not contain the tenant.</summary>
+    Absent,
+
+    /// <summary>The Configuration Service could not be asked, so existence is unknown.</summary>
+    Undetermined,
+}
+
+/// <summary>
 /// Validates that a tenant exists in the system.
 /// </summary>
 public interface ITenantValidator
@@ -21,6 +36,14 @@ public interface ITenantValidator
     /// <param name="tenant">The tenant identifier to validate</param>
     /// <returns>True if the tenant exists, false otherwise</returns>
     Task<bool> ValidateTenantAsync(string tenant);
+
+    /// <summary>
+    /// Determines whether a tenant exists, answering <see cref="TenantExistence.Absent" /> only when
+    /// the Configuration Service's tenant list was loaded and lacks the tenant, and
+    /// <see cref="TenantExistence.Undetermined" /> when it could not be loaded. Cancellation of
+    /// <paramref name="cancellationToken" /> propagates as an <see cref="OperationCanceledException" />.
+    /// </summary>
+    Task<TenantExistence> DetermineTenantExistenceAsync(string tenant, CancellationToken cancellationToken);
 }
 
 /// <summary>
@@ -93,5 +116,78 @@ public class TenantValidator(IDataStoreProvider dataStoreProvider, ILogger<Tenan
             LoggingSanitizer.SanitizeInternalValueForLogging(tenant)
         );
         return false;
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// A cached tenant exists. On a cache miss the tenant's data stores are loaded, as
+    /// <see cref="ValidateTenantAsync" /> does, and success means the tenant exists. A failed load
+    /// cannot tell absence from an outage: the Configuration Service answers an unknown tenant with a
+    /// 400, and the provider wraps every HTTP failure, so neither the status nor the message is
+    /// evidence. The tenant list settles it. A tenant with no data stores is still in that list, so an
+    /// empty data-store list is never read as absence. Only exception types are logged, because the
+    /// provider's wrapped failure quotes the Configuration Service.
+    /// </remarks>
+    public async Task<TenantExistence> DetermineTenantExistenceAsync(
+        string tenant,
+        CancellationToken cancellationToken
+    )
+    {
+        if (string.IsNullOrEmpty(tenant))
+        {
+            return TenantExistence.Absent;
+        }
+
+        if (dataStoreProvider.TenantExists(tenant))
+        {
+            return TenantExistence.Exists;
+        }
+
+        string sanitizedTenant = LoggingSanitizer.SanitizeInternalValueForLogging(tenant);
+
+        try
+        {
+            await dataStoreProvider.LoadDataStores(tenant, cancellationToken);
+            return TenantExistence.Exists;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
+            logger.LogDebug(
+                "Data stores for tenant {Tenant} could not be loaded ({ExceptionType}); checking the tenant list",
+                sanitizedTenant,
+                ex.GetType().Name
+            );
+#pragma warning restore S6667
+        }
+
+        try
+        {
+            IList<string> tenants = await dataStoreProvider.LoadTenants(cancellationToken);
+
+            // The Configuration Service matches tenant names case-insensitively, as the cache does.
+            return tenants.Contains(tenant, StringComparer.OrdinalIgnoreCase)
+                ? TenantExistence.Exists
+                : TenantExistence.Absent;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+#pragma warning disable S6667 // Deliberate: the exception object is withheld so nothing it carries reaches the log
+            logger.LogWarning(
+                "Could not determine whether tenant {Tenant} exists: the Configuration Service tenant list could not be loaded ({ExceptionType})",
+                sanitizedTenant,
+                ex.GetType().Name
+            );
+#pragma warning restore S6667
+            return TenantExistence.Undetermined;
+        }
     }
 }
