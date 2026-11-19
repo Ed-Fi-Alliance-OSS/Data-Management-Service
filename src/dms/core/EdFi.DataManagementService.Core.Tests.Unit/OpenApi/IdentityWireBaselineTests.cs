@@ -154,10 +154,16 @@ public class IdentityWireBaselineTests
         [SetUp]
         public void Setup()
         {
-            using var output = new GoldenFixtureOutputDirectory();
-            string actualPath = Path.Combine(output.DirectoryPath, BaselineFileName);
+            // The prerelease workflow collects the served document from this directory after the test exits.
+            string actualDirectory = Path.Combine(
+                TestContext.CurrentContext.WorkDirectory,
+                "identity-v2-wire-baseline",
+                "actual"
+            );
+            string actualPath = Path.Combine(actualDirectory, BaselineFileName);
             string actualJson = SerializeCanonical(BuildNormalizedServedDocument(ServerUrl, TokenUrl));
 
+            Directory.CreateDirectory(actualDirectory);
             File.WriteAllText(actualPath, actualJson);
 
             if (GoldenFixtureTestHelpers.ShouldUpdateGoldens())
