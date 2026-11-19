@@ -368,7 +368,7 @@ public class Given_Relational_Model_Shared_Helpers
         IReadOnlySet<string> excludedNames = new HashSet<string>(StringComparer.Ordinal) { "School" };
 
         Action act = () =>
-            EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers.ResolveBaseResourceForExtension(
+            RelationalModelSetSchemaHelpers.ResolveBaseResourceForExtension(
                 "School",
                 resource,
                 baseResourcesByName,
@@ -394,7 +394,7 @@ public class Given_Relational_Model_Shared_Helpers
         >(StringComparer.Ordinal);
 
         Action act = () =>
-            EdFi.DataManagementService.Backend.RelationalModel.Schema.RelationalModelSetSchemaHelpers.ResolveBaseResourceForExtension(
+            RelationalModelSetSchemaHelpers.ResolveBaseResourceForExtension(
                 "School",
                 resource,
                 baseResourcesByName,
