@@ -16,6 +16,7 @@ using EdFi.DmsConfigurationService.Frontend.AspNetCore.Middleware;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Models;
 using FluentValidation.Results;
 using Microsoft.AspNetCore.Http.Extensions;
+using Microsoft.AspNetCore.Http.Features;
 
 namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Modules;
 
@@ -39,6 +40,8 @@ public static class DataStoreManageModule
         FailureResults.ParameterValidation(errors, context.TraceIdentifier);
 
     private const string InvalidId = "'id' must be an int32 value.";
+
+    private const string MissingRequest = "A managed data store request is required.";
 
     /// <summary>The disabled-feature problem; the feature gate middleware returns it before body validation.</summary>
     internal static IResult Disabled(HttpContext context) =>
@@ -232,6 +235,13 @@ public static class DataStoreManageModule
         {
             return FailureResults.UnsupportedMediaType(context.TraceIdentifier);
         }
+        // The JSON reader resolves the declared charset before it reads anything, so a request that cannot
+        // carry a body gets the missing-request 400 here instead of reaching it. A missing feature is not
+        // treated as proof that the body is absent.
+        if (context.Features.Get<IHttpRequestBodyDetectionFeature>()?.CanHaveBody == false)
+        {
+            return Invalid(context, MissingRequest);
+        }
         // The DTO's unmapped-member rule is local to this request and does not tighten ordinary APIs.
         try
         {
@@ -245,7 +255,7 @@ public static class DataStoreManageModule
         }
         if (command is null)
         {
-            return Invalid(context, "A managed data store request is required.");
+            return Invalid(context, MissingRequest);
         }
         var validation = new DataStoreManageInsertCommand.Validator().Validate(command);
         if (!validation.IsValid)

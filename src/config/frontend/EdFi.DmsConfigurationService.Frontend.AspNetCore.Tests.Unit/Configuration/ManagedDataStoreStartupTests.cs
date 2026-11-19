@@ -562,6 +562,24 @@ public partial class DmsDataStoreProvisioningStartupTests
                     "Host=[2001:db8::2]",
                     "Host=[2001:db8::${secret:rest}]:5432;Password=${secret:runtime}"
                 ),
+                // A secret SQL Server host with equal literal ports (in any spelling) leaves only the host
+                // unknown; without a literal port, or with a secret port, nothing about the port is known.
+                (
+                    "mssql",
+                    "Server=tcp:${secret:host},1433;Password=${secret:admin}",
+                    "Server=tcp:db.example,1433"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:${secret:adminHost},01433;Password=${secret:admin}",
+                    "Server=tcp:${secret:runtimeHost},1433;Password=${secret:runtime}"
+                ),
+                ("mssql", "Server=tcp:${secret:host};Password=${secret:admin}", "Server=tcp:db.example,1444"),
+                (
+                    "mssql",
+                    "Server=tcp:${secret:host},${secret:port};Password=${secret:admin}",
+                    "Server=tcp:db.example,1444"
+                ),
             ];
             foreach (var (kind, cases) in new[] { ("equivalent", equivalent), ("deferred", deferred) })
             {
@@ -636,6 +654,15 @@ public partial class DmsDataStoreProvisioningStartupTests
             "Host=[2001:db8::2]:${secret:port};Username=admin",
             "Host=[2001:db8::1]:5432"
         )]
+        // A secret SQL Server host cannot change the literal port after it, on either side or both.
+        [TestCase("mssql", "Server=tcp:${secret:host},1433;User ID=admin", "Server=tcp:db.example,1444")]
+        [TestCase("mssql", "Server=tcp:db.example,1433", "Server=tcp:${secret:host},1444;User ID=runtime")]
+        [TestCase(
+            "mssql",
+            "Server=tcp:${secret:adminHost},1433;User ID=admin",
+            "Server=tcp:${secret:runtimeHost},1444;User ID=runtime"
+        )]
+        [TestCase("mssql", "Server=tcp:${secret:host},1433;User ID=admin", "Server=tcp:db.example\\one")]
         public void It_refuses_to_start_when_a_secret_suffix_cannot_reconcile_known_components(
             string target,
             string admin,
@@ -661,6 +688,8 @@ public partial class DmsDataStoreProvisioningStartupTests
                 .Should()
                 .Contain(EndpointMismatch)
                 .And.NotContain("db-b.example")
+                .And.NotContain("db.example")
+                .And.NotContain("1444")
                 .And.NotContain("${secret");
             Fake.GetCalls(resolver).Should().BeEmpty();
         }

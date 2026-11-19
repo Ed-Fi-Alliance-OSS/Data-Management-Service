@@ -346,6 +346,97 @@ public class Given_managed_data_store_HTTP
         }
     }
 
+    /// <summary>A POST that sends <paramref name="contentType"/> with Content-Length 0, so no body can follow.</summary>
+    private static HttpRequestMessage BodylessPost(string contentType)
+    {
+        ByteArrayContent content = new([]);
+        content.Headers.Add("Content-Type", contentType);
+        return new(HttpMethod.Post, "/v3/dataStores/manage") { Content = content };
+    }
+
+    /// <summary>
+    /// The JSON reader resolves the declared charset before reading, so a JSON POST that cannot carry a body is
+    /// refused with the missing-request 400 first: never a 500, and after authorization, the disabled gate and
+    /// the media type. With a body, an unknown charset keeps its 415.
+    /// </summary>
+    [TestCase("keycloak"), TestCase("self-contained")]
+    public async Task It_refuses_a_bodyless_JSON_post_as_a_missing_request_after_the_earlier_outcomes(
+        string identity
+    )
+    {
+        await using var enabled = Host(identity);
+        await using var disabled = Host(identity, enabled: false);
+        foreach (
+            string contentType in new[]
+            {
+                "application/json; charset=not-an-encoding",
+                "application/json; charset=utf-8",
+                "application/json",
+            }
+        )
+        {
+            foreach (var (host, management) in new[] { (enabled, true), (disabled, false) })
+            {
+                foreach (
+                    string? scope in new[]
+                    {
+                        null,
+                        "edfi_admin_api/readonly_access",
+                        "edfi_admin_api/full_access",
+                    }
+                )
+                {
+                    using var client = Client(host, scope);
+                    using var request = BodylessPost(contentType);
+                    using var response = await client.SendAsync(request);
+                    var expected = scope switch
+                    {
+                        null => HttpStatusCode.Unauthorized,
+                        "edfi_admin_api/readonly_access" => HttpStatusCode.Forbidden,
+                        _ => HttpStatusCode.BadRequest,
+                    };
+                    string because = $"{identity} {contentType} {management} {scope}";
+                    response.StatusCode.Should().Be(expected, because);
+                    if (expected != HttpStatusCode.BadRequest)
+                    {
+                        continue;
+                    }
+                    response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+                    var problem = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
+                    problem["correlationId"]!.GetValue<string>().Should().NotBeNullOrEmpty();
+                    problem["type"]!
+                        .GetValue<string>()
+                        .Should()
+                        .Be("urn:ed-fi:management-api:bad-request:data", because);
+                    problem["validationErrors"]!["dataStore"]!
+                        .AsArray()
+                        .Select(value => value!.GetValue<string>())
+                        .Should()
+                        .Equal(
+                            new[]
+                            {
+                                management
+                                    ? "A managed data store request is required."
+                                    : "Data store management is disabled by AppSettings:EnableDataStoreManagement.",
+                            },
+                            because
+                        );
+                }
+            }
+        }
+
+        // A body that can be present keeps the unsupported-charset 415; an empty non-JSON POST keeps its 415.
+        using (var client = Client(enabled))
+        {
+            using var withBody = MediaTypePost("application/json; charset=not-an-encoding");
+            (await client.SendAsync(withBody)).StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+            using var emptyText = BodylessPost("text/plain");
+            (await client.SendAsync(emptyText)).StatusCode.Should().Be(HttpStatusCode.UnsupportedMediaType);
+        }
+        Fake.GetCalls(_repository).Should().BeEmpty();
+        Fake.GetCalls(_admin).Should().BeEmpty();
+    }
+
     [TestCase(""), TestCase("/cms"), TestCase("/cms/")]
     public async Task It_returns_the_queued_job_and_absolute_location(string pathBase)
     {

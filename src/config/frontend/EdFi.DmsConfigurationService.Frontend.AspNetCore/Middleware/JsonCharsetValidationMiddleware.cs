@@ -54,7 +54,8 @@ public class JsonCharsetValidationMiddleware(RequestDelegate next)
     /// <summary>
     /// True when a request that can carry a body declares a JSON media type with a charset that is not a known
     /// encoding. A handler that reads its JSON body itself, without routing content-type metadata, applies the
-    /// same rule.
+    /// same rule, and must itself refuse a request that cannot carry a body before calling the JSON reader:
+    /// that reader resolves the declared charset before reading, so this check alone does not protect it.
     /// </summary>
     internal static bool DeclaresUnsupportedJsonCharset(HttpContext context)
     {
