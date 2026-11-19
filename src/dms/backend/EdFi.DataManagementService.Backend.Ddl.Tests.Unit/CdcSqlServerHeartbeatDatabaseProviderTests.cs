@@ -2050,7 +2050,12 @@ public class Given_MssqlCdcPrincipalAccess_Initial_Setup
             CdcProviderSetupContractTestData.BuildSqlServerRequest(databaseExecutor: executor)
         );
         result.Outcome.Should().Be(CdcProviderSetupOutcome.Failed);
-        result.Diagnostics.Should().Contain(d => d.Code == "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE");
+        result
+            .Diagnostics.Should()
+            .ContainSingle(d => d.Code == "CDC_SQLSERVER_SETUP_PRINCIPAL_FAILURE")
+            .Which.ProviderStatement.Should()
+            .Be(marker, "the step runs several statements, so the diagnostic must name the one that failed");
+        result.ManifestPayload!.Json.Should().Contain($"\"provider_statement\": \"{marker}\"");
         System
             .Text.Json.JsonSerializer.Serialize(result.Diagnostics)
             .Should()

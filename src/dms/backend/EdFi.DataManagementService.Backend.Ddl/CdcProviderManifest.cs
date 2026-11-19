@@ -276,6 +276,7 @@ internal static class CdcProviderManifestEmitter
             WriteNullableString(writer, "provider_error_class", diagnostic.ProviderErrorClass);
             WriteOptionalString(writer, "provider_error_code", diagnostic.ProviderErrorCode);
             WriteOptionalString(writer, "provider_error_state", diagnostic.ProviderErrorState);
+            WriteOptionalString(writer, "provider_statement", diagnostic.ProviderStatement);
             writer.WriteString("classification", ClassificationToken(diagnostic.Classification));
             writer.WriteEndObject();
         }

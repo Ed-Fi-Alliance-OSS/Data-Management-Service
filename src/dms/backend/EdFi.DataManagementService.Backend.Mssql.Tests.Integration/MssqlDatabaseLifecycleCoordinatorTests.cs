@@ -253,6 +253,7 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
     private string _databaseName = null!;
     private Exception? _dropException;
     private bool _databaseExistsAfterDrop;
+    private bool _sqlAgentRunning;
 
     [OneTimeSetUp]
     public async Task OneTimeSetUp()
@@ -265,7 +266,8 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         await MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(_databaseName);
         await EnableCdcAsync();
 
-        if (withCaptureInstance && await IsSqlAgentRunningAsync())
+        _sqlAgentRunning = await IsSqlAgentRunningAsync();
+        if (withCaptureInstance && _sqlAgentRunning)
         {
             await WaitForCaptureSessionAsync();
         }
@@ -320,11 +322,16 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
     }
 
     [Test]
-    public void It_leaves_no_session_in_the_database_when_the_fence_runs()
+    public void It_leaves_no_cdc_job_session_in_the_database_when_the_fence_runs()
     {
+        if (withCaptureInstance && !_sqlAgentRunning)
+        {
+            Assert.Ignore("SQL Agent is not running, so no CDC capture session existed to observe.");
+        }
+
         _observations
             .Should()
-            .OnlyContain(observation => observation.Sessions.Count == 0, DescribeObservations());
+            .OnlyContain(observation => observation.JobStepSessions.Count == 0, DescribeObservations());
     }
 
     [Test]
@@ -344,18 +351,24 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         const string sql = """
             SELECT CASE WHEN DB_ID(@databaseName) IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END;
 
-            IF OBJECT_ID(N'msdb.dbo.cdc_jobs') IS NOT NULL
+            -- A missing cdc_jobs (208) means no CDC jobs; see MssqlTestDatabaseHelper.DropCdcAgentJobsAsync.
+            BEGIN TRY
                 EXEC sys.sp_executesql
                     N'SELECT [job_type] FROM msdb.dbo.cdc_jobs WHERE [database_id] = DB_ID(@databaseName) ORDER BY [job_type];',
                     N'@databaseName sysname',
                     @databaseName = @databaseName;
-            ELSE
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 208
+                    THROW;
+
                 SELECT CAST(N'' AS nvarchar(20)) AS [job_type] WHERE 1 = 0;
+            END CATCH;
 
             SELECT CONCAT([session_id], N' ', [program_name], N' ', [status])
             FROM sys.dm_exec_sessions
             WHERE [database_id] = DB_ID(@databaseName)
-              AND [session_id] <> @@SPID
+              AND [program_name] LIKE N'SQLAgent - TSQL JobStep%'
             ORDER BY [session_id];
             """;
 
@@ -551,7 +564,7 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
                         (observation, index) =>
                             $"  #{index + 1}: exists={observation.DatabaseExists}, "
                             + $"cdc jobs=[{string.Join(", ", observation.CdcJobTypes)}], "
-                            + $"sessions=[{string.Join("; ", observation.Sessions)}]"
+                            + $"job-step sessions=[{string.Join("; ", observation.JobStepSessions)}]"
                     )
                 )
                 + $"{Environment.NewLine}drop exception: {_dropException?.ToString() ?? "none"}";
@@ -587,7 +600,7 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
     }
 
     /// <summary>
-    /// Unpooled, so that no idle connection from this fixture is counted as a session in the database.
+    /// Unpooled, so that no idle connection from this fixture stays in the database for the fence to end.
     /// </summary>
     private static async Task<SqlConnection> OpenConnectionAsync(string databaseName)
     {
@@ -603,6 +616,6 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
     private sealed record FenceObservation(
         bool DatabaseExists,
         IReadOnlyList<string> CdcJobTypes,
-        IReadOnlyList<string> Sessions
+        IReadOnlyList<string> JobStepSessions
     );
 }

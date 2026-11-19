@@ -563,13 +563,21 @@ public static class MssqlTestDatabaseHelper
         int commandTimeoutSeconds
     )
     {
-        // msdb drops cdc_jobs together with the last job, so read every job type before dropping any.
+        // msdb creates cdc_jobs with the first CDC job and drops it with the last one, so read every job
+        // type before dropping any. Another process on the instance can drop the last job at any moment,
+        // so a missing table (208) is read as "no jobs" instead of checked for first: a check and a
+        // separate read could see the table vanish in between.
         const string readJobTypesSql = """
-            IF OBJECT_ID(N'msdb.dbo.cdc_jobs') IS NOT NULL
+            BEGIN TRY
                 EXEC sys.sp_executesql
                     N'SELECT [job_type] FROM msdb.dbo.cdc_jobs WHERE [database_id] = DB_ID(@databaseName);',
                     N'@databaseName sysname',
                     @databaseName = @databaseName;
+            END TRY
+            BEGIN CATCH
+                IF ERROR_NUMBER() <> 208
+                    THROW;
+            END CATCH;
             """;
 
         List<string> jobTypes = [];

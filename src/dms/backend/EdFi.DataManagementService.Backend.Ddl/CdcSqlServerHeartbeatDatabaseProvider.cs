@@ -696,6 +696,11 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         return observedParts;
     }
 
+    [System.Diagnostics.CodeAnalysis.SuppressMessage(
+        "Sonar",
+        "S1854",
+        Justification = "The catch paths use the current statement when a call throws."
+    )]
     private static async Task<CdcProviderSetupStepResult> ExecuteConnectorPrincipalAccessAsync(
         CdcProviderSetupStepContext context,
         CancellationToken cancellationToken
@@ -708,6 +713,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         var connectorPrincipal = context.Request.ConnectorPrincipal.SafePrincipalName;
 
+        // This step runs several statements, so a failure names the one that was running.
+        var statement = "cdc:sqlserver:connector-user-mapping";
         try
         {
             var mapping = await executor.QueryAsync(
@@ -734,10 +741,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
             if (userCreated)
             {
                 var identifier = _dialect.QuoteIdentifier(connectorPrincipal.Value);
+                statement = "cdc:sqlserver:create-connector-user";
                 await executor.ExecuteNonQueryAsync(
                     $"/* cdc:sqlserver:create-connector-user */ CREATE USER {identifier} FOR LOGIN {identifier};",
                     cancellationToken
                 );
+                statement = "cdc:sqlserver:connector-user-mapping";
                 mapping = await executor.QueryAsync(
                     ConnectorUserMappingSql(context.Request),
                     cancellationToken
@@ -762,6 +771,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 }
             }
 
+            statement = "cdc:sqlserver:connector-principal-access";
             var access = await InspectConnectorPrincipalAccessAsync(
                     executor,
                     context.Request,
@@ -775,10 +785,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 && context.Mode == CdcProviderSetupStepMode.CreateOrExactMatch
             )
             {
+                statement = "cdc:sqlserver:grant-connector-access";
                 await executor
                     .ExecuteNonQueryAsync(GrantConnectorPrivilegesSql(context.Request), cancellationToken)
                     .ConfigureAwait(false);
                 state = CdcProviderArtifactState.Created;
+                statement = "cdc:sqlserver:connector-principal-access";
                 access = await InspectConnectorPrincipalAccessAsync(
                         executor,
                         context.Request,
@@ -803,6 +815,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 return result;
             }
 
+            statement = "connector-principal-probe";
             var probeResult = await context
                 .Request.ConnectorPrincipalProbeFactory.ProbeAsync(context.Request, cancellationToken)
                 .ConfigureAwait(false);
@@ -819,7 +832,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 executor,
                 CdcProviderArtifactKind.Grant,
                 connectorPrincipal,
-                exception
+                exception,
+                statement
             );
         }
         catch (InvalidOperationException exception)
@@ -828,7 +842,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 executor,
                 CdcProviderArtifactKind.Grant,
                 connectorPrincipal,
-                exception
+                exception,
+                statement
             );
         }
     }
@@ -4813,7 +4828,8 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
         ICdcProviderDatabaseExecutor executor,
         CdcProviderArtifactKind artifactKind,
         CdcSafeName safeName,
-        Exception exception
+        Exception exception,
+        string? providerStatement = null
     )
     {
         var providerErrorIdentity = executor.TryMapProviderErrorIdentity(exception);
@@ -4836,6 +4852,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 {
                     ProviderErrorCode = providerErrorIdentity?.ProviderErrorCode,
                     ProviderErrorState = providerErrorIdentity?.ProviderErrorState,
+                    ProviderStatement = providerStatement,
                 },
             ]
         );
