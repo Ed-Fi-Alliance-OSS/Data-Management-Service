@@ -443,9 +443,14 @@ public class EndpointAuthorizationTests
                 multiTenancy ? "Tenant_A" : null
             );
             using var response = await client.SendAsync(request);
-            response.StatusCode.Should().Be(HttpStatusCode.NotFound);
-            var body = JsonNode.Parse(await response.Content.ReadAsStringAsync())!;
-            body["type"]!.GetValue<string>().Should().Be("urn:ed-fi:management-api:not-found");
+            await AssertFailure(
+                response,
+                state,
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:management-api:not-found",
+                "Not Found",
+                "The requested resource could not be found."
+            );
         }
 
         [TestCase("role-only")]

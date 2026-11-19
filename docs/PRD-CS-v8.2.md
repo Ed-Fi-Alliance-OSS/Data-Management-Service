@@ -65,6 +65,8 @@ Early draft of potential 8.2 requirements.
 
 - Unknown CMS paths return 401 for anonymous callers and 404 for authenticated callers after
   successful tenant resolution where required. Missing/invalid required tenants retain 400.
-- Wrong-method requests reaching authorization return 401 without Allow for anonymous callers;
-  authenticated callers retain 405 with Allow. Permitted CORS preflight and matched-handler errors
-  remain unchanged. Existing public routes and handler-owned OAuth client authentication are preserved.
+- Wrong-method requests reaching authorization return 401 without `Allow` for anonymous callers.
+  Authenticated callers retain 405 with `Allow`.
+- Routing rejections for an unsupported `Content-Type` reaching authorization return 401 for
+  anonymous callers and 415 for authenticated callers. Permitted CORS preflight, matched-handler errors,
+  existing public routes, and handler-owned OAuth client authentication retain their contracts.

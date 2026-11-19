@@ -113,8 +113,8 @@ Feature: OWASP critical attack path protections
              Then it should respond with 200 or 204
               And the response header "Access-Control-Allow-Origin" is not present
 
-        # Note: the bearer token is included by the step helper; TRACE rejection (404/405) is
-        # enforced at the routing layer regardless of auth state.
+        # The step helper includes a bearer token, so TRACE reaches the routing rejection (404/405).
+        # An anonymous caller reaching authorization receives 401.
         Scenario: 13 Unsupported TRACE method is not enabled
              When an "TRACE" request is made to "/v3/vendors" with headers
                   | Key    | Value |
@@ -177,7 +177,7 @@ Feature: OWASP critical attack path protections
                   | contactName         | Security Test         |
                   | contactEmailAddress | security@test.example |
                   | namespacePrefixes   | uri://ed-fi.org       |
-             Then it should respond with 401 or 415
+             Then it should respond with 401
 
         # The self-contained provider re-checks token status by jti on every request,
         # so a revoked token is rejected on reuse even though it is still well-formed

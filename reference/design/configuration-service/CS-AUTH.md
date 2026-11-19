@@ -106,10 +106,12 @@ A stock Swagger UI can therefore authorize against the Configuration Service in 
 
 ### `/connect/token` failures
 
-`/connect/token` answers every failure in the OAuth error format of RFC 6749 section 5.2.
+The `/connect/token` handler answers failures in the OAuth error format of RFC 6749 section 5.2.
 The body is `application/json` with exactly the root members `error` and `error_description`, written by the same writer as `/connect/revoke` and `/connect/introspect`.
 It covers every error the handler produces and every exception that escapes it.
-Requests rejected before a matching handler use the framework Ed-Fi error shaping rather than the handler OAuth contract. After tenant resolution where required, anonymous wrong-method callers receive `401` without `Allow`; authenticated wrong-method callers retain `405` with `Allow`.
+The source rate limiter also returns an OAuth `429` on a matched `/connect/token` route.
+Wrong-method routing rejections use Ed-Fi error shaping. When they reach authorization, anonymous
+callers receive `401` without `Allow` and authenticated callers retain `405` with `Allow`.
 
 | Condition | Status | `error` |
 | --- | --- | --- |
@@ -1670,6 +1672,8 @@ Tenant validation retains its earlier position: missing/invalid required tenants
 authorization. With successful tenant resolution where required, an unknown path returns `401` for
 anonymous callers and `404` for authenticated callers. Wrong-method requests reaching authorization
 return `401` without `Allow` for anonymous callers and retain `405` with `Allow` for authenticated callers.
+Routing rejections for an unsupported `Content-Type` reaching authorization return `401` for anonymous
+callers and retain `415` for authenticated callers.
 Permitted CORS preflight and matched-handler errors, including feature-gate and missing-document `404`s,
 retain their contracts. No routing workaround or new tenant exemption is added.
 
