@@ -586,16 +586,16 @@ function Add-RestoreDataStoreRegistration {
         }
 
         $refusedNames.Add($RegistrationName)
-        if ($refusedNames.Count -ge $MaximumAttempts) {
-            throw "Restore with -SeparateConfigDatabase could not register the restored target: the Configuration Service refused all $MaximumAttempts names this phase tried, '$($refusedNames[0])' through '$($refusedNames[$refusedNames.Count - 1])', because a data store already holds each one - one its listing does not return, such as a managed data store's name reservation, or one registered for another target meanwhile. No data store was registered; the target is restored and DMS was not started. Free one of these names, then rerun the restore."
-        }
         # Another writer may have just registered this target under the refused name, so verify the target
-        # again against a fresh listing before choosing another name.
+        # again against a fresh listing after every refusal, including the last, before choosing another name.
         $dataStores = @(Get-DataStore @ListArguments)
         $selection = Resolve-RestoreSeparateConfigDataStore @ResolveArguments -DataStores $dataStores -RefusedNames $refusedNames.ToArray()
         if ($null -ne $selection.DataStore) {
             Write-Information "The Configuration Service refused the name '$(Format-LogSafeText $refusedNames[$refusedNames.Count - 1])', and its listing now shows data store id=$(Format-LogSafeText $selection.DataStore.id) serving the restored target; reusing it." -InformationAction Continue
             return $selection.DataStore.id
+        }
+        if ($refusedNames.Count -ge $MaximumAttempts) {
+            throw "Restore with -SeparateConfigDatabase could not register the restored target: the Configuration Service refused all $MaximumAttempts names this phase tried, '$($refusedNames[0])' through '$($refusedNames[$refusedNames.Count - 1])', because a data store already holds each one - one its listing does not return, such as a managed data store's name reservation, or one registered for another target meanwhile. No data store was registered; the target is restored and DMS was not started. Free one of these names, then rerun the restore."
         }
         $RegistrationName = $selection.RegistrationName
         Write-Information "The Configuration Service already holds the name '$(Format-LogSafeText $refusedNames[$refusedNames.Count - 1])' for a data store that does not serve the restored target; registering as '$(Format-LogSafeText $RegistrationName)'." -InformationAction Continue

@@ -63,7 +63,8 @@ public static class ManagedDataStoreStartup
     /// The statically known destination. When <paramref name="PortOrInstanceKnown"/> is false, the effective
     /// port or named instance depends on a secret and the endpoint carries only a parser representative for it.
     /// Its literal separator still fixes whether it is a port or a named instance. When
-    /// <paramref name="HostKnown"/> is false, the host depends on a secret and only the literal port is known.
+    /// <paramref name="HostKnown"/> is false, the host depends on a secret; the literal separator after it still
+    /// fixes the addressing kind, and a literal port or named instance after that separator is known.
     /// </summary>
     private sealed record KnownEndpoint(
         ManagedDataStoreEndpoint Endpoint,
@@ -95,7 +96,8 @@ public static class ManagedDataStoreStartup
     }
 
     /// <returns>
-    /// The known endpoint, or null when the effective host depends on a secret and no literal port is fixed.
+    /// The known endpoint, or null when the effective host depends on a secret and no literal separator fixes
+    /// port or named-instance addressing.
     /// </returns>
     private static KnownEndpoint? ValidateConnection(
         string? value,
@@ -193,11 +195,12 @@ public static class ManagedDataStoreStartup
             }
             if (routingUnknown)
             {
-                // A SQL Server port written literally after the last comma stays fixed whatever the host secret
-                // holds: a substituted second port or a named instance would not parse. A PostgreSQL host can
-                // still supply an inline port or a socket, and a wholly secret locator any routing syntax.
-                return provider.Provider == "mssql" && HasLiteralTrailingPort(locator)
-                    ? new(endpoint, PortOrInstanceKnown: true, HostKnown: false)
+                // A PostgreSQL host can still supply an inline port or a socket, and a wholly secret locator any
+                // routing syntax.
+                return
+                    provider.Provider == "mssql"
+                    && HasLiteralSqlServerSeparator(locator, out bool suffixKnown)
+                    ? new(endpoint, PortOrInstanceKnown: suffixKnown, HostKnown: false)
                     : null;
             }
             if (suffixUnknown)
@@ -283,15 +286,18 @@ public static class ManagedDataStoreStartup
         value.Length <= 4 && value.All(char.IsAsciiHexDigit);
 
     /// <summary>
-    /// True when a SQL Server locator ends in a comma and a reference-free decimal port, with every reference
-    /// before that comma. <see cref="StaticLocator"/> still validates the whole locator.
+    /// True when a SQL Server locator has a literal ',' or '\' separator, which then fixes port or
+    /// named-instance addressing whatever its references hold: the native parser rejects a host, port or
+    /// instance that holds either separator.
+    /// <paramref name="suffixKnown"/> is true when the port or instance after it is reference-free.
+    /// <see cref="StaticLocator"/> has already validated the whole locator and rejects both separators together.
     /// </summary>
-    private static bool HasLiteralTrailingPort(string locator)
+    private static bool HasLiteralSqlServerSeparator(string locator, out bool suffixKnown)
     {
         string masked = MaskReferences(locator).Trim();
-        int comma = masked.LastIndexOf(',');
-        string port = comma < 0 ? string.Empty : masked[(comma + 1)..].Trim();
-        return port.Length > 0 && port.All(char.IsAsciiDigit);
+        int separator = masked.LastIndexOfAny([',', '\\']);
+        suffixKnown = separator >= 0 && !masked[(separator + 1)..].Contains(Unknown);
+        return separator >= 0;
     }
 
     private static string StaticLocator(string value, bool postgresql)

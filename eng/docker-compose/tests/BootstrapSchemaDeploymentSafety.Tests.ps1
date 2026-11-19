@@ -5725,6 +5725,52 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
                 @($posts.Body.name | Select-Object -Unique).Count | Should -Be 10
                 $posts[0].Body.name | Should -BeExactly "Local Development Data Store"
                 $posts[9].Body.name | Should -BeExactly "Local Development Data Store (10)"
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }).Count | Should -Be 11 -Because "the initial listing is followed by a fresh verification after every refusal, including the last"
+                Assert-ReuseRefusalSecretFree -Message $message
+            }
+
+            It "reuses the registration another writer made for the target that only the listing after the last refusal shows (<Engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                $raceEngine = $Engine
+                $raceWriter = {
+                    New-ReuseDataStore -Id 9100 -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine) -EncryptionKey $script:reuseCmsKey)
+                }
+                $answers = @(foreach ($attempt in 1..10) { $script:reuseDuplicateName })
+                $later = @(foreach ($attempt in 1..9) { {} }) + @($raceWriter)
+
+                $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses $answers -ReuseLaterListings $later
+
+                @($result.SelectedDataStoreIds) | Should -Be @(9100)
+                $posts = @(& $script:reuseDmsModule { $script:reusePosts })
+                $posts.Count | Should -Be 10 -Because "the verified registration is reused, not followed by an eleventh POST"
+                @($posts.Body.name | Select-Object -Unique).Count | Should -Be 10
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }).Count | Should -Be 11
+            }
+
+            It "refuses an ambiguous or unsafe listing after the last refusal through the target checks (<Engine>: <Case>)" -ForEach @(
+                foreach ($engine in @("postgresql", "mssql")) {
+                    @{ Engine = $engine; Case = "two registrations serve it"; Unsafe = $false; Expected = "*found 2 Configuration Service data stores*" }
+                    @{ Engine = $engine; Case = "a registration cannot be read"; Unsafe = $true; Expected = "*cannot tell whether Configuration Service data store id=9101*" }
+                }
+            ) {
+                $raceEngine = $Engine
+                $raceUnsafe = $Unsafe
+                $raceFresh = {
+                    $target = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine) -EncryptionKey $script:reuseCmsKey
+                    New-ReuseDataStore -Id 9100 -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString $target
+                    New-ReuseDataStore -Id 9101 -Name "Local Development Data Store (2)" -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString $(if ($raceUnsafe) { "not-a-protected-value" } else { $target })
+                }
+                $answers = @(foreach ($attempt in 1..10) { $script:reuseDuplicateName })
+                $later = @(foreach ($attempt in 1..9) { {} }) + @($raceFresh)
+
+                $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses $answers -ReuseLaterListings $later } | Should -Throw -PassThru
+                $message = $thrown.Exception.Message
+
+                $message | Should -BeLike $Expected
+                $message | Should -Not -BeLike "*could not register the restored target*"
+                @(& $script:reuseDmsModule { $script:reusePosts }).Count | Should -Be 10
                 Assert-ReuseRefusalSecretFree -Message $message
             }
 

@@ -413,6 +413,23 @@ public partial class DmsDataStoreProvisioningStartupTests
                 ("mssql", "Server=tcp:db\\${secret:instance}", "Server=tcp:db,1433"),
                 ("mssql", "Server=tcp:db", "Server=tcp:db\\${secret:instance};Password=${secret:runtime}"),
                 ("mssql", "Server=tcp:db,${secret:port}", "Server=tcp:db\\${secret:instance}"),
+                // The literal separator after a secret host fixes the addressing kind, whatever the secret
+                // host or port or instance value holds.
+                (
+                    "mssql",
+                    "Server=tcp:${secret:host}\\${secret:instance};Password=${secret:admin}",
+                    "Server=tcp:db.example,1433"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db.example\\one",
+                    "Server=tcp:${secret:host},${secret:port};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:${secret:adminHost}\\one;Password=${secret:admin}",
+                    "Server=tcp:${secret:runtimeHost},1433;Password=${secret:runtime}"
+                ),
                 // A literal DNS host before an inline secret port is known, in either setting, through an
                 // alias and over a literal Port the inline port overrides.
                 ("postgresql", "Host=db-a.example", "Host=db-b.example:${secret:port}"),
@@ -580,6 +597,36 @@ public partial class DmsDataStoreProvisioningStartupTests
                     "Server=tcp:${secret:host},${secret:port};Password=${secret:admin}",
                     "Server=tcp:db.example,1444"
                 ),
+                // Likewise a literal named instance behind a secret host, in any case, leaves only the host
+                // unknown. A secret instance value is never compared, even with a real instance named like
+                // the parser's representative.
+                (
+                    "mssql",
+                    "Server=tcp:db.example\\Reporting",
+                    "Server=tcp:${secret:host}\\reporting;Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:${secret:adminHost}\\REPORTING;Password=${secret:admin}",
+                    "Server=tcp:${secret:runtimeHost}\\Reporting;Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:db.example\\one",
+                    "Server=tcp:${secret:host}\\${secret:instance};Password=${secret:runtime}"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:${secret:host}\\${secret:instance};Password=${secret:admin}",
+                    "Server=tcp:db.example\\instance"
+                ),
+                (
+                    "mssql",
+                    "Server=tcp:${secret:adminHost}\\Reporting;Password=${secret:admin}",
+                    "Server=tcp:${secret:runtimeHost}\\Rep${secret:suffix};Password=${secret:runtime}"
+                ),
+                // A wholly secret locator fixes no addressing kind.
+                ("mssql", "Server=${secret:server};Password=${secret:admin}", "Server=tcp:db.example\\one"),
             ];
             foreach (var (kind, cases) in new[] { ("equivalent", equivalent), ("deferred", deferred) })
             {
@@ -663,6 +710,14 @@ public partial class DmsDataStoreProvisioningStartupTests
             "Server=tcp:${secret:runtimeHost},1444;User ID=runtime"
         )]
         [TestCase("mssql", "Server=tcp:${secret:host},1433;User ID=admin", "Server=tcp:db.example\\one")]
+        // A secret SQL Server host cannot change the literal named instance after it, on either side or both.
+        [TestCase("mssql", "Server=tcp:db\\Primary", "Server=tcp:${secret:host}\\Reporting;User ID=runtime")]
+        [TestCase("mssql", "Server=tcp:${secret:host}\\Reporting;User ID=admin", "Server=tcp:db\\Primary")]
+        [TestCase(
+            "mssql",
+            "Server=tcp:${secret:adminHost}\\Primary;User ID=admin",
+            "Server=tcp:${secret:runtimeHost}\\Reporting;User ID=runtime"
+        )]
         public void It_refuses_to_start_when_a_secret_suffix_cannot_reconcile_known_components(
             string target,
             string admin,
@@ -690,6 +745,8 @@ public partial class DmsDataStoreProvisioningStartupTests
                 .And.NotContain("db-b.example")
                 .And.NotContain("db.example")
                 .And.NotContain("1444")
+                .And.NotContain("Primary")
+                .And.NotContain("Reporting")
                 .And.NotContain("${secret");
             Fake.GetCalls(resolver).Should().BeEmpty();
         }
