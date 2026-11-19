@@ -312,7 +312,7 @@ jobs:
     environment: publishing
     runs-on: ubuntu-latest
     steps:
-      # Required so the release-tag validation below can import the module from the workspace.
+      # Required so the release-tag validation and the promote step below can run scripts from the workspace.
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -351,14 +351,16 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       # A local pull fetches only the runner's platform, so pull/tag/push would drop the others;
-      # the copy happens in the registry and keeps every platform.
+      # the copy happens in the registry and keeps every platform. The script retries transient
+      # registry failures, as the pull this replaced did.
       - name: Promote DMS Image
+        shell: pwsh
         env:
           PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
           RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
           RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker buildx imagetools create --tag "$RELEASE_MAJOR" --tag "$RELEASE_MINOR" "$PRE_IMAGE"
+          ./eng/ci/Invoke-ReleaseImagePromotion.ps1 -Source $env:PRE_IMAGE -Tag $env:RELEASE_MAJOR, $env:RELEASE_MINOR
 
   tag-cs-image:
     name: Release Tag Configuration Image
@@ -368,7 +370,7 @@ jobs:
     environment: publishing
     runs-on: ubuntu-latest
     steps:
-      # Required so the release-tag validation below can import the module from the workspace.
+      # Required so the release-tag validation and the promote step below can run scripts from the workspace.
       - name: Checkout the repo
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -407,11 +409,13 @@ jobs:
           password: ${{ secrets.DOCKER_HUB_TOKEN }}
 
       # A local pull fetches only the runner's platform, so pull/tag/push would drop the others;
-      # the copy happens in the registry and keeps every platform.
+      # the copy happens in the registry and keeps every platform. The script retries transient
+      # registry failures, as the pull this replaced did.
       - name: Promote Configuration Image
+        shell: pwsh
         env:
           PRE_IMAGE: ${{ steps.prepare-tags.outputs.PRE_IMAGE }}
           RELEASE_MAJOR: ${{ steps.prepare-tags.outputs.RELEASE_MAJOR }}
           RELEASE_MINOR: ${{ steps.prepare-tags.outputs.RELEASE_MINOR }}
         run: |
-          docker buildx imagetools create --tag "$RELEASE_MAJOR" --tag "$RELEASE_MINOR" "$PRE_IMAGE"
+          ./eng/ci/Invoke-ReleaseImagePromotion.ps1 -Source $env:PRE_IMAGE -Tag $env:RELEASE_MAJOR, $env:RELEASE_MINOR

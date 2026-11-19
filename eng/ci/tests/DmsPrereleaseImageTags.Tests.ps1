@@ -302,6 +302,18 @@ Describe 'Prerelease images build for every platform' {
             $buildx.Count | Should -Be 1
             $qemu[0] | Should -BeLessThan $buildx[0] -Because 'QEMU must be registered before Buildx creates its builder'
         }
+
+        It 'registers only arm64, from a binfmt image pinned to a digest' {
+            $steps = $script:jobSteps[$JobId]
+            $qemu = @($steps | Where-Object { $_ -match 'uses: docker/setup-qemu-action@' })
+            $qemu.Count | Should -Be 1
+
+            # The action defaults to tonistiigi/binfmt:latest and to every platform it knows.
+            $lines = @($qemu[0] -split '?
+')
+            $lines | Should -Contain '          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
+            $lines | Should -Contain '          platforms: arm64'
+        }
     }
 }
 
@@ -319,7 +331,7 @@ Describe 'Release image promotion keeps every platform' {
             'tag-cs-image'  = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'tag-cs-image'))
         }
 
-        $script:promoteCommand = 'docker buildx imagetools create --tag "$RELEASE_MAJOR" --tag "$RELEASE_MINOR" "$PRE_IMAGE"'
+        $script:promoteCommand = './eng/ci/Invoke-ReleaseImagePromotion.ps1 -Source $env:PRE_IMAGE -Tag $env:RELEASE_MAJOR, $env:RELEASE_MINOR'
 
         function script:Get-PromoteStep([string] $JobId) {
             return @($script:jobSteps[$JobId] | Where-Object { (Get-WorkflowStepRun $_).Trim() -ceq $script:promoteCommand })
@@ -345,6 +357,7 @@ Describe 'Release image promotion keeps every platform' {
             $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
 
             (Get-WorkflowStepRun $promote[0]) | Should -Not -Match '\$\{\{' -Because 'the promote script must read the tags from its environment, not from expressions expanded into the script'
+            $promote[0] | Should -Match '(?m)^        shell: pwsh\s*$' -Because 'the promote command reads $env: variables, which only PowerShell expands'
         }
 
         It 'maps the image names from the prepared tags into the promote step environment' {
@@ -374,5 +387,78 @@ Describe 'Release image promotion keeps every platform' {
             $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
             $login[0] | Should -BeLessThan $promote[0] -Because 'the registry rejects the copy unless the job is logged in first'
         }
+    }
+}
+
+Describe 'Invoke-ReleaseImagePromotion retry behavior' {
+    BeforeAll {
+        $script:promotionScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../Invoke-ReleaseImagePromotion.ps1'))
+
+        # The script runs in a child pwsh with docker and Start-Sleep replaced by functions that
+        # record each call, so no registry and no real wait is involved.
+        $script:harnessPath = Join-Path $TestDrive 'invoke-promotion-harness.ps1'
+        Set-Content -LiteralPath $script:harnessPath -Encoding utf8 -Value @'
+$global:dockerCallIndex = 0
+
+function docker {
+    $global:dockerCallIndex++
+    Add-Content -LiteralPath $env:PROMOTE_LOG -Value "docker $($args -join ' ')"
+
+    # One exit code per call; the last one repeats.
+    $codes = @($env:PROMOTE_EXIT_CODES -split ',' | ForEach-Object { [int] $_ })
+    $global:LASTEXITCODE = $codes[[Math]::Min($global:dockerCallIndex, $codes.Count) - 1]
+}
+
+function Start-Sleep {
+    param([int] $Seconds)
+    Add-Content -LiteralPath $env:PROMOTE_LOG -Value "sleep $Seconds"
+}
+
+& $env:PROMOTE_SCRIPT -Source 'example/api:dms-pre-8.2.0' -Tag 'example/api:8.2.0', 'example/api:8.2'
+'@
+
+        function script:Invoke-Promotion([string] $ExitCodes) {
+            $log = Join-Path $TestDrive "promotion-$([guid]::NewGuid().ToString('N')).log"
+            $env:PROMOTE_LOG = $log
+            $env:PROMOTE_EXIT_CODES = $ExitCodes
+            $env:PROMOTE_SCRIPT = $script:promotionScript
+            try {
+                $output = & pwsh -NoProfile -NonInteractive -File $script:harnessPath 2>&1
+                $exitCode = $LASTEXITCODE
+            }
+            finally {
+                Remove-Item Env:\PROMOTE_LOG, Env:\PROMOTE_EXIT_CODES, Env:\PROMOTE_SCRIPT -ErrorAction SilentlyContinue
+            }
+
+            return [pscustomobject]@{
+                ExitCode = $exitCode
+                Output   = ($output | Out-String)
+                Calls    = @(Get-Content -LiteralPath $log)
+            }
+        }
+
+        $script:promoteCall = 'docker buildx imagetools create --tag example/api:8.2.0 --tag example/api:8.2 example/api:dms-pre-8.2.0'
+    }
+
+    It 'promotes both tags in one registry-side copy when the first attempt succeeds' {
+        $result = script:Invoke-Promotion '0'
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:promoteCall)
+    }
+
+    It 'retries a transient failure with a doubling wait and then succeeds' {
+        $result = script:Invoke-Promotion '1,1,0'
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall)
+    }
+
+    It 'fails the step after the last attempt fails' {
+        $result = script:Invoke-Promotion '1'
+
+        $result.ExitCode | Should -Not -Be 0
+        $result.Calls | Should -Be @($script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall, 'sleep 40', $script:promoteCall)
+        $result.Output | Should -BeLike '*Failed to promote example/api:dms-pre-8.2.0 to example/api:8.2.0, example/api:8.2 after 4 attempt(s)*'
     }
 }

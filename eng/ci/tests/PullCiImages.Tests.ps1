@@ -553,8 +553,9 @@ Describe "pull-ci-images workflow wiring" {
     }
 
     It "checks out the repository before validating the release tag in each release image-tag job" {
-        # These jobs pull nothing, so the checkout exists only to let the validation step import
-        # ./eng/ci/release-classification.psm1 from the workspace; a dropped checkout would first
+        # These jobs pull nothing, so the checkout exists to let the validation step import
+        # ./eng/ci/release-classification.psm1 and the promote step run
+        # ./eng/ci/Invoke-ReleaseImagePromotion.ps1 from the workspace; a dropped checkout would first
         # fail during a release instead of on a pull request.
         $releaseLines = @(Get-Content -LiteralPath (Join-Path $script:workflowRoot "on-release.yml"))
 

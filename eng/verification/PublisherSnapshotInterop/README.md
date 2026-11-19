@@ -33,7 +33,7 @@ Every assertion goes to the run folder with its expected and observed values, an
 - Free host ports: 8080 for DMS, 8081 for the Configuration Service, and 5435 for PostgreSQL or 1435 for SQL Server.
   DMS can move to another port; see [A port is taken](#a-port-is-taken).
 - On an arm64 host, such as a Mac with Apple silicon, Docker must be able to run amd64 images.
-  The Publisher image and the SQL Server image are amd64 only, as are the Ed-Fi API and Configuration Service images published before 8.2, and they run under emulation there.
+  The Publisher image and the SQL Server image are amd64 only, as are Ed-Fi API and Configuration Service images published before multi-platform publishing began, such as the 8.0.0 and 8.1.0 release tags, and they run under emulation there.
   When an Ed-Fi API or Configuration Service image is not present locally, the harness pulls it for `linux/amd64`; an image already present is used as it is.
 - A checkout whose relational mapping matches the DMS image under test.
   The harness provisions every data store with the SchemaTools built from this checkout, so check out the image's source revision or a later commit with the same relational mapping.
@@ -51,7 +51,9 @@ The harness makes these changes itself and records each one in the run's non-def
 A release validation runs published images.
 A locally built image advertises the Discovery version that `src/dms/Directory.Build.props` pins (8.0.0), not the version being released.
 
-Images published before 8.2 (8.1 and earlier, such as the Ed-Fi API tag in the example below) are amd64 only, so pull them with `--platform linux/amd64`; on an arm64 host a plain pull fails with `no matching manifest for linux/arm64/v8`.
+Ed-Fi API and Configuration Service images published before multi-platform publishing began, such as the 8.0.0 and 8.1.0 release tags and the Ed-Fi API tag in the example below, are amd64 only, so pull them with `--platform linux/amd64`.
+On an arm64 host a plain pull of an 8.1 tag, which is an image index holding only `linux/amd64`, fails with `no matching manifest for linux/arm64/v8`; a plain pull of 8.0.0, which is a single-platform image, succeeds with a platform-mismatch warning and the image runs under emulation.
+Images published since then carry `linux/amd64` and `linux/arm64`, whatever version they carry; `docker buildx imagetools inspect <image>` lists the platforms a tag carries.
 
 1. Pick the `edfialliance/ed-fi-api` tag to validate, and read the source revision it was built from:
 
