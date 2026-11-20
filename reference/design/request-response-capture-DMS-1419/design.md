@@ -157,6 +157,7 @@ This rests on GitHub code search for `RequestResponseContentLog`, which indexes 
 | Routes | `/data` and `/composites` only. The token endpoint is never captured | The core data-plane pipelines only: resources, descriptors, change queries and partitions. Never token, identity, management, or CMS routes ([D4](#d4-credential-exclusion)) | R4, and DMS-1419's scope |
 | Fields | Date (log4net `RawTimeStampLayout`, local time, no zone), thread, correlation ID (client header or generated, `Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestCorrelationMiddleware.cs:25`), the numeric API client id (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/EdFiApiAuthenticationMiddleware.cs:123`; `Ed-Fi-ODS:Application/EdFi.Common/Security/ApiClientDetails.cs:79`), level, URL with the raw query string (`mw.cs:224`, 255 characters), method (10 characters), the raw profile content-type header (`Ed-Fi-ODS:Application/EdFi.Ods.Features/Profiles/ProfileContentTypeContextMiddleware.cs:84`, `:106`), full uncapped bodies, the status name or problem details as the message (`mw.cs:138-172`), and the exception (2000 characters) (`ODS docs:26-40`, `:95-187`) | Every column is classed server-generated or client-derived ([D4](#d4-credential-exclusion)). Adds the status code, duration, tenant, data store and grant. Stores the validated client key, the profile name DMS resolved, and the method as a server value. Stored bodies are capped and flagged ([D6](#d6-capture-store-and-retention)) | R6 and R12: BI tooling needs the status code and the tenant, and a capped body bounds one row |
 | Not captured | Headers other than the profile header, the status code, the tenant, the duration | See the row above | |
+| Correlation ID | Always stored (`NOT NULL` in the DDL) | Stored, but withheld with the other client-derived fields when the D4 rule fires ([D4](#d4-credential-exclusion)) | R4: it can come from a client header. A departure from R12, recorded for the gate |
 | Exception detail | log4net `ExceptionLayout`: the exception text, truncated to 2000 characters | The exception type plus a server-chosen description, never the message chain ([D4](#d4-credential-exclusion)) | R4: DMS exception chains can quote a connection string. A departure from R12's exception detail, recorded for the gate |
 | Redaction | None. Bodies and the query string are stored as sent | Credential withholding ([D4](#d4-credential-exclusion)) and the payload policy ([D5](#d5-payload-policy)) | R4, and the ticket's redaction question |
 | Retention | None. The table grows until an operator deletes rows | A hosted purge after `RetentionDays` ([D6](#d6-capture-store-and-retention)) | R11 |
@@ -211,7 +212,117 @@ Pending. Decides how the capture path is present at runtime when no grant exists
 
 ## D4: Credential Exclusion
 
-Pending. Decides how credentials and tokens are kept out of captured content (AC2, R4): the capture scope, the column classes and their provenance rule, the withholding rule, its trade-off and departures, and the R4 scope statement.
+**Decision: withhold, don't edit.**
+When a request shows any sign of carrying a credential, every client-derived field of its row is withheld, and the server-generated fields and the reason are kept.
+This is mandatory, and independent of the payload policy in [D5](#d5-payload-policy).
+
+### Capture Scope
+
+Capture covers only the core data-plane pipelines: resources, descriptors, change queries, partitions, and the 405 answer on a data route.
+It never covers the token, token-info, identity, discovery, metadata, health, or management routes, and never CMS.
+
+Every in-scope request body is JSON.
+The only route that reads a form body is token-info (`AspNetCoreFrontend.cs:974-987`), which is out of scope.
+
+No request header is stored except the correlation ID, as DMS normalized it.
+The profile is stored as the profile name DMS resolved, not the raw content-type header ODS stores.
+
+### Column Classes
+
+Every stored column is either *server-generated* or *client-derived*.
+
+**The provenance rule.**
+A column is server-generated only when DMS computes its value, or draws it from a closed, server-controlled set after validation.
+Any text copied from the request is client-derived.
+The raw verb of an unsupported-method request shows why the rule is needed: it is client text, any verb reaches the authenticated 405 pipeline, and the 405 body echoes it (see [Current State](#dms-logging-and-the-request-pipeline)).
+It is therefore not stored, and the method column holds the `RequestMethod` value, `UNSUPPORTED` for any other verb.
+
+The column list and its classes form one **capture-row contract**, owned by the credential-exclusion story.
+The store builds its table from that contract, and a test fails on any column the contract does not classify.
+The outline below is that contract's starting point; the story fixes the names and types.
+
+| Column | Class | Value |
+| --- | --- | --- |
+| Capture id, grant id, mode | Server-generated | Assigned by DMS, or copied from the grant |
+| Received at, duration | Server-generated | UTC timestamp and elapsed time, measured by DMS |
+| Method | Server-generated | The `RequestMethod` value; `UNSUPPORTED` for any other verb |
+| Status code | Server-generated | The status of the response DMS sent |
+| Client key | Server-generated | The `ClientId` that `JwtAuthentication` validated |
+| Tenant, data store | Server-generated | The validated tenant, and the data store DMS resolved |
+| Profile | Server-generated | The resolved profile name, or empty |
+| Body state, truncation flags | Server-generated | Whether a body was absent, retained, or not retained, and whether stored output was capped |
+| Withheld, withholding reason | Server-generated | Whether the rule fired, and which trigger, from a fixed set |
+| Exception type, exception description | Server-generated | The exception's type, and a description DMS chooses from a fixed set by type, never the message chain |
+| Path, query | Client-derived | The request path, and the raw query string with every repeated value |
+| Correlation ID | Client-derived | The normalized correlation ID, which comes from a client header when `CorrelationIdHeader` is set |
+| Request body, response body | Client-derived | The JSON as sent and as answered; a response can echo request content |
+
+### The Withholding Rule
+
+The rule examines every client-derived field before anything is stored.
+If any trigger below holds, every client-derived column is stored empty, `Withheld` is set, and the first trigger found is recorded as the reason.
+
+1. **A credential name.**
+   A listed name appears as a query parameter name, or as a JSON property name at any depth of the request body or the response body.
+2. **The bearer token.**
+   The request's bearer token appears anywhere in a client-derived field, compared in three forms: as stored, JSON-unescaped, and percent-decoded.
+   The decoders are lenient and never fail: an invalid escape or percent sequence is left as it is.
+3. **Incomplete discovery.**
+   - A request body fails to parse as JSON, and its text contains a listed name in any spelling the comparison below accepts.
+   - A body was sent to a route that does not read one (GET, DELETE, the change-query routes, and the 405 answer). DMS never reads that body, so the rule cannot examine it, and unexamined input fails closed. Such bodies are rare, and DMS ignores them.
+   - The examination stopped before finishing, for example at a depth or size bound.
+
+**The name comparison.**
+Names are compared after JSON unescaping, or percent-decoding for query names.
+Both sides are then lowercased with ordinal case folding and stripped of `_` and `-`.
+The comparison is whole-name equality, not a substring test, so a name that only contains a listed word, such as `customizationKey`, never triggers.
+
+**The credential-name list.**
+In normalized form:
+
+`clientsecret`, `clientassertion`, `password`, `passwd`, `secret`, `apikey`, `apisecret`, `accesstoken`, `refreshtoken`, `idtoken`, `token`, `bearer`, `authorization`, `privatekey`, `connectionstring`.
+
+These cover the OAuth client-credentials and token fields DMS and CMS use, and the common names for keys, passwords, and connection strings.
+The list is checked against every property name and query field name in the seven ApiSchema packages this repository references, all at `1.0.335`: DS 5.2 and DS 6.1, each with its Homograph and Sample variants, and DS 5.2 TPDM.
+None of the 3,370 distinct names matches a listed entry.
+Two candidates were dropped because they collide: `credential` and `credentials` are Ed-Fi resource and property names.
+`key` is not listed: it is generic, and in ODS client credentials the key is the public identifier, not the secret.
+The credential-exclusion story repeats the collision check as a test, so a new Data Standard cannot add a colliding name unnoticed.
+
+**Ordinary bearer authentication never triggers it.**
+The `Authorization` header is never stored, and trigger 2 looks only in client-derived fields.
+A request triggers only when the token appears somewhere the client put it on purpose or by mistake.
+
+**Precedence.**
+Withholding is decided over the full content, before anything is truncated.
+Truncation applies only to output that is stored, so a triggered body is withheld, not truncated.
+
+### Trade-off and Departures
+
+**The trade-off.**
+A request that legitimately carries a credential-named field loses its client content.
+Such requests are rare in Ed-Fi traffic: no Data Standard property bears a listed name.
+The server-generated columns still record that the request happened, its client, its status, and why its content was withheld.
+
+**Departures from R12, for gate approval.**
+- A withheld row loses its correlation ID, which is client-derived, so it can be matched to the logs only by time, client, and status. No third column class is added to avoid this, because a class that is client text but exempt from the rule is the gap the rule exists to close.
+- Exception detail is the type plus a server-chosen description, not the ODS exception text, because DMS exception chains can quote a connection string.
+
+Both are recorded in the [ODS Precedent](#ods-precedent) table.
+
+### The R4 Scope Statement
+
+For gate approval:
+captured content excludes the request's bearer token, and any credential recognized by name, in every client-derived field.
+It does not exclude a secret placed in a field whose name is not on the list, such as a password typed into a free-text comment.
+The credential-exclusion story's generative test, against an independent oracle, is strong evidence that the implementation meets this contract.
+No test can prove the absolute claim that no secret is ever captured.
+
+### Rejected Alternatives
+
+- **Rewriting the offending value in place.** Masking only the field or substring that matched keeps more content, but every new place a credential can hide becomes a new case to mask correctly. Whole-row withholding is one rule with one test.
+- **Storing the `Authorization` header masked.** It adds nothing a troubleshooter needs; the client key already identifies the caller.
+- **Substring matching on names.** It would trigger on Data Standard names such as `customizationKey`, `keyValues`, and `credentialStatusDescriptor`.
 
 ## D5: Payload Policy
 

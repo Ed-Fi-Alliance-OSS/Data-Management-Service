@@ -14,7 +14,7 @@ This file is the manifest.
 | AC | Criterion | Where | State |
 | --- | --- | --- | --- |
 | AC1 | Relationship to DMS-62 decided | [D1](./design.md#d1-relationship-to-dms-62) | Drafted: keep separate, `relates to` |
-| AC2 | Redaction requirements agreed for credentials and sensitive payload fields | [D4](./design.md#d4-credential-exclusion), [D5](./design.md#d5-payload-policy) | Pending |
+| AC2 | Redaction requirements agreed for credentials and sensitive payload fields | [D4](./design.md#d4-credential-exclusion), [D5](./design.md#d5-payload-policy) | Credentials drafted (D4); payload policy pending (D5) |
 | AC3 | Configuration surface and log sink chosen | [D2](./design.md#d2-control-surface), [D6](./design.md#d6-capture-store-and-retention) | Pending |
 | AC4 | Capture, configuration, redaction and documentation split into estimated stories | [Stories](./design.md#stories) | Pending |
 | AC5 | This placeholder is closed once those stories exist | [Disposition](./design.md#disposition) | Pending |
