@@ -2047,8 +2047,11 @@ Describe "Assert-InteropPublishedImage" {
         @($script:dockerCalls) | Should -Be @("image inspect $script:pulledImage", "pull $script:pulledImage")
     }
 
-    It "retries once for linux/amd64 when the tag has no manifest for the host's platform" {
-        $script:dockerReplies["pull $script:pulledImage"] = @{ ExitCode = 1; Output = "no matching manifest for linux/arm64/v8 in the manifest list entries" }
+    It "retries once for linux/amd64 when Docker reports <Report>" -ForEach @(
+        @{ Report = "no matching manifest for"; Message = "no matching manifest for linux/arm64/v8 in the manifest list entries" }
+        @{ Report = "no match for platform in manifest"; Message = "Error response from daemon: no match for platform in manifest: not found" }
+    ) {
+        $script:dockerReplies["pull $script:pulledImage"] = @{ ExitCode = 1; Output = $Message }
         $script:dockerReplies["pull --platform linux/amd64 $script:pulledImage"] = @{ ExitCode = 0; Output = "Status: Downloaded newer image" }
 
         Assert-InteropPublishedImage -Image $script:pulledImage

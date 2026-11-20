@@ -1843,7 +1843,10 @@ function Assert-InteropPublishedImage {
         $null = Invoke-InteropDocker -Argument @("pull", $Image)
     }
     catch {
-        if ($_.Exception.Message -notlike "*no matching manifest for*") {
+        # Docker reports the platform mismatch as "no matching manifest for"; older Docker versions
+        # with the containerd image store report it as "no match for platform in manifest".
+        $message = $_.Exception.Message
+        if ($message -notlike "*no matching manifest for*" -and $message -notlike "*no match for platform in manifest*") {
             throw
         }
 

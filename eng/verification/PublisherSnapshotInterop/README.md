@@ -34,7 +34,7 @@ Every assertion goes to the run folder with its expected and observed values, an
   DMS can move to another port; see [A port is taken](#a-port-is-taken).
 - On an arm64 host, such as a Mac with Apple silicon, Docker must be able to run amd64 images.
   The Publisher image and the SQL Server image are amd64 only, as are Ed-Fi API and Configuration Service images published before multi-platform publishing began, such as the 8.0.0 and 8.1.0 release tags, and they run under emulation there.
-  When an Ed-Fi API or Configuration Service image is not present locally, the harness pulls it for the host's platform, and retries for `linux/amd64` only when Docker reports `no matching manifest` for the host's platform; an image already present is used as it is.
+  When an Ed-Fi API or Configuration Service image is not present locally, the harness pulls it for the host's platform, and retries for `linux/amd64` only when Docker reports `no matching manifest for` (or, on older Docker versions with the containerd image store, `no match for platform in manifest`) for the host's platform; an image already present is used as it is.
 - A checkout whose relational mapping matches the DMS image under test.
   The harness provisions every data store with the SchemaTools built from this checkout, so check out the image's source revision or a later commit with the same relational mapping.
 

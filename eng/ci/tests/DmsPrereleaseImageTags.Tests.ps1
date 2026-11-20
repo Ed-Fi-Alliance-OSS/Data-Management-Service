@@ -376,15 +376,31 @@ Describe 'Invoke-ReleaseImagePromotion retry behavior' {
         # record each call, so no registry and no real wait is involved.
         $script:harnessPath = Join-Path $TestDrive 'invoke-promotion-harness.ps1'
         Set-Content -LiteralPath $script:harnessPath -Encoding utf8 -Value @'
-$global:dockerCallIndex = 0
+$global:inspectCallIndex = 0
+$global:createCallIndex = 0
 
 function docker {
-    $global:dockerCallIndex++
     Add-Content -LiteralPath $env:PROMOTE_LOG -Value "docker $($args -join ' ')"
 
+    # One reply per resolution; the last one repeats. A later reply stands for the tag having moved
+    # in the registry, and "fail" for a failed inspect.
+    if ($args[1] -eq 'imagetools' -and $args[2] -eq 'inspect') {
+        $global:inspectCallIndex++
+        $replies = @($env:PROMOTE_INSPECT_REPLIES -split ',')
+        $reply = $replies[[Math]::Min($global:inspectCallIndex, $replies.Count) - 1]
+        if ($reply -eq 'fail') {
+            $global:LASTEXITCODE = 1
+            return
+        }
+
+        $global:LASTEXITCODE = 0
+        return $reply
+    }
+
     # One exit code per call; the last one repeats.
+    $global:createCallIndex++
     $codes = @($env:PROMOTE_EXIT_CODES -split ',' | ForEach-Object { [int] $_ })
-    $global:LASTEXITCODE = $codes[[Math]::Min($global:dockerCallIndex, $codes.Count) - 1]
+    $global:LASTEXITCODE = $codes[[Math]::Min($global:createCallIndex, $codes.Count) - 1]
 }
 
 function Start-Sleep {
@@ -394,7 +410,7 @@ function Start-Sleep {
 
 # The message is written here, unwrapped: pwsh's own error view wraps it at the console width.
 try {
-    & $env:PROMOTE_SCRIPT -Source 'example/api:dms-pre-8.2.0' -Tag 'example/api:8.2.0', 'example/api:8.2'
+    & $env:PROMOTE_SCRIPT -Source $env:PROMOTE_SOURCE -Tag 'example/api:8.2.0', 'example/api:8.2'
 }
 catch {
     Write-Output "PROMOTION ERROR: $($_.Exception.Message)"
@@ -402,48 +418,85 @@ catch {
 }
 '@
 
-        function script:Invoke-Promotion([string] $ExitCodes) {
+        $script:source = 'example/api:dms-pre-8.2.0'
+        $script:digest = "sha256:$('a' * 64)"
+        $script:movedDigest = "sha256:$('b' * 64)"
+
+        # By default every resolution after the first returns another digest, so a script that
+        # resolved the tag again for a later attempt would promote different content.
+        function script:Invoke-Promotion(
+            [string] $ExitCodes,
+            [string] $InspectReplies = "$script:digest,$script:movedDigest",
+            [string] $Source = $script:source
+        ) {
             $log = Join-Path $TestDrive "promotion-$([guid]::NewGuid().ToString('N')).log"
             $env:PROMOTE_LOG = $log
             $env:PROMOTE_EXIT_CODES = $ExitCodes
+            $env:PROMOTE_INSPECT_REPLIES = $InspectReplies
+            $env:PROMOTE_SOURCE = $Source
             $env:PROMOTE_SCRIPT = $script:promotionScript
             try {
                 $output = & pwsh -NoProfile -NonInteractive -File $script:harnessPath 2>&1
                 $exitCode = $LASTEXITCODE
             }
             finally {
-                Remove-Item Env:\PROMOTE_LOG, Env:\PROMOTE_EXIT_CODES, Env:\PROMOTE_SCRIPT -ErrorAction SilentlyContinue
+                Remove-Item Env:\PROMOTE_LOG, Env:\PROMOTE_EXIT_CODES, Env:\PROMOTE_INSPECT_REPLIES, Env:\PROMOTE_SOURCE, Env:\PROMOTE_SCRIPT -ErrorAction SilentlyContinue
             }
 
             return [pscustomobject]@{
                 ExitCode = $exitCode
                 Output   = ($output | Out-String)
-                Calls    = @(Get-Content -LiteralPath $log)
+                Calls    = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)
             }
         }
 
-        $script:promoteCall = 'docker buildx imagetools create --tag example/api:8.2.0 --tag example/api:8.2 example/api:dms-pre-8.2.0'
+        $script:inspectCall = 'docker buildx imagetools inspect example/api:dms-pre-8.2.0 --format {{.Manifest.Digest}}'
+        $script:pinnedSource = "example/api:dms-pre-8.2.0@$script:digest"
+        $script:promoteCall = "docker buildx imagetools create --tag example/api:8.2.0 --tag example/api:8.2 $script:pinnedSource"
     }
 
-    It 'promotes both tags in one registry-side copy when the first attempt succeeds' {
+    It 'resolves the source once and promotes that digest to both tags in one registry-side copy' {
         $result = script:Invoke-Promotion '0'
 
         $result.ExitCode | Should -Be 0
-        $result.Calls | Should -Be @($script:promoteCall)
+        $result.Calls | Should -Be @($script:inspectCall, $script:promoteCall)
     }
 
-    It 'retries a transient failure with a doubling wait and then succeeds' {
+    It 'retries a transient failure with a doubling wait, promoting the first resolved digest every time' {
         $result = script:Invoke-Promotion '1,1,0'
 
         $result.ExitCode | Should -Be 0
-        $result.Calls | Should -Be @($script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall)
+        $result.Calls | Should -Be @($script:inspectCall, $script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall)
     }
 
-    It 'fails the step after the last attempt fails' {
+    It 'fails the step after the last attempt fails, naming the pinned source' {
         $result = script:Invoke-Promotion '1'
 
         $result.ExitCode | Should -Be 1
-        $result.Calls | Should -Be @($script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall, 'sleep 40', $script:promoteCall)
-        $result.Output | Should -BeLike '*PROMOTION ERROR: Failed to promote example/api:dms-pre-8.2.0 to example/api:8.2.0, example/api:8.2 after 4 attempt(s)*'
+        $result.Calls | Should -Be @($script:inspectCall, $script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall, 'sleep 40', $script:promoteCall)
+        $result.Output | Should -BeLike "*PROMOTION ERROR: Failed to promote $script:pinnedSource to example/api:8.2.0, example/api:8.2 after 4 attempt(s)*"
+        $result.Output | Should -BeLike "*check which digest example/api:dms-pre-8.2.0 and each release tag now point at*"
+    }
+
+    It 'writes nothing when the source cannot be resolved: <Case>' -ForEach @(
+        @{ Case = 'inspect fails'; Reply = 'fail'; Expected = '*exited with code 1. Nothing was promoted*' }
+        @{ Case = 'inspect prints no digest'; Reply = 'not-a-digest'; Expected = "*printed 'not-a-digest'. Nothing was promoted*" }
+    ) {
+        $result = script:Invoke-Promotion '0' -InspectReplies $Reply
+
+        $result.ExitCode | Should -Be 1
+        $result.Calls | Should -Be @($script:inspectCall)
+        $result.Output | Should -BeLike "*PROMOTION ERROR: Could not resolve example/api:dms-pre-8.2.0 to a digest*"
+        $result.Output | Should -BeLike $Expected
+    }
+
+    It 'replaces a digest already in the source with the resolved one' {
+        $result = script:Invoke-Promotion '0' -Source "example/api:dms-pre-8.2.0@$script:movedDigest" -InspectReplies $script:digest
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @(
+            "docker buildx imagetools inspect example/api:dms-pre-8.2.0@$script:movedDigest --format {{.Manifest.Digest}}",
+            $script:promoteCall
+        )
     }
 }

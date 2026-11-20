@@ -15,12 +15,18 @@
 
         The release jobs used to pull the prerelease image through the pull-ci-images action, which
         retried transient registry failures. This script keeps a bounded retry around the one
-        registry call that replaced that pull. A retry after a partial failure is safe: with a single
+        registry call that replaced that pull.
+
+        Source is usually a tag, which the registry can move between attempts. Before anything is
+        written, the script resolves Source once to its top-level index digest, and every attempt
+        promotes that digest. A retry after a partial failure is therefore safe: with a single
         source, imagetools writes the source index unchanged, so a tag an earlier attempt already
-        wrote is rewritten with the same digest. When the last attempt fails, the script throws, and
-        that fails the step.
+        wrote is rewritten with the same digest. A new run of the job resolves Source again and can
+        get a different digest. When the last attempt fails, the script throws, and that fails the
+        step.
     .PARAMETER Source
-        The prerelease image reference to promote.
+        The prerelease image reference to promote. A tag is resolved to its digest before the first
+        attempt.
     .PARAMETER Tag
         The release tags to create from Source.
     .PARAMETER MaxAttempts
@@ -55,28 +61,47 @@ $ErrorActionPreference = "Stop"
 # A failed attempt has to reach the retry loop as an exit code, not as a terminating error.
 $PSNativeCommandUseErrorActionPreference = $false
 
+# The tag in Source is resolved once, so a tag that moves between attempts cannot make one attempt
+# promote different content from another. .Manifest.Digest is the digest of the top-level
+# descriptor, which is the image index of a multi-platform image.
+$resolved = docker buildx imagetools inspect $Source --format "{{.Manifest.Digest}}"
+$inspectExitCode = $LASTEXITCODE
+$digest = ($resolved | Out-String).Trim()
+
+if ($inspectExitCode -ne 0) {
+    throw "Could not resolve $Source to a digest; docker buildx imagetools inspect exited with code $inspectExitCode. Nothing was promoted."
+}
+
+if ($digest -cnotmatch '^sha256:[0-9a-f]{64}$') {
+    throw "Could not resolve $Source to a digest; docker buildx imagetools inspect printed '$digest'. Nothing was promoted."
+}
+
+# name[:tag]@digest is a valid reference, and a digest already in Source is replaced by the
+# resolved one, so the reference never carries two.
+$pinnedSource = "$(($Source -split '@', 2)[0])@$digest"
+
 $arguments = @("buildx", "imagetools", "create")
 foreach ($name in $Tag) {
     $arguments += @("--tag", $name)
 }
-$arguments += $Source
+$arguments += $pinnedSource
 
 $tagList = $Tag -join ", "
 
 for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-    Write-Output "Promoting $Source to $tagList (attempt $attempt of $MaxAttempts)."
+    Write-Output "Promoting $pinnedSource to $tagList (attempt $attempt of $MaxAttempts)."
 
     # Not captured, so the registry's error reaches the job log.
     docker @arguments
     $exitCode = $LASTEXITCODE
 
     if ($exitCode -eq 0) {
-        Write-Output "Promoted $Source to $tagList on attempt $attempt of $MaxAttempts."
+        Write-Output "Promoted $pinnedSource to $tagList on attempt $attempt of $MaxAttempts."
         return
     }
 
     if ($attempt -eq $MaxAttempts) {
-        throw "Failed to promote $Source to $tagList after $MaxAttempts attempt(s); the last exit code was $exitCode. A tag may already have been written; rerunning the job rewrites it with the same digest."
+        throw "Failed to promote $pinnedSource to $tagList after $MaxAttempts attempt(s); the last exit code was $exitCode. A release tag may already point at $digest. A new run of the job resolves $Source again and can get a different digest, so before rerunning, check which digest $Source and each release tag now point at."
     }
 
     $delaySeconds = [int] ($InitialDelaySeconds * [Math]::Pow(2, $attempt - 1))

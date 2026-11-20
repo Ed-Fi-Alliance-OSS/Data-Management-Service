@@ -546,7 +546,9 @@ try {
 
         # create, never run. The entrypoint is not executed: this reads files, and starting a
         # database-backed API to list its own assemblies would be both slower and wrong.
-        $containerId = (Invoke-Docker -Arguments @("create", $inspectedReference)).Output
+        # The platform is named so the files come from the image whose platform was just read:
+        # docker create honors DOCKER_DEFAULT_PLATFORM, and docker image inspect does not.
+        $containerId = (Invoke-Docker -Arguments @("create", "--platform", $inspectedPlatform, $inspectedReference)).Output
 
         if ([string]::IsNullOrWhiteSpace($containerId)) {
             throw "docker create returned no container id for $inspectedReference."

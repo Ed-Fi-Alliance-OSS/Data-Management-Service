@@ -868,7 +868,9 @@ Describe "New-HostAssemblyManifest inspected platform" {
 
         # Stands in for docker, which the generator reaches by name, so the image parameter set runs
         # against the fixture directory. arm64 rather than the runner's own platform, so the row can
-        # only come from what this shim reports.
+        # only come from what this shim reports. DOCKER_DEFAULT_PLATFORM names another platform,
+        # which real docker create would pick when no --platform is given, so only a create that
+        # names the inspected platform is accepted.
         function docker {
             $global:LASTEXITCODE = 0
             $line = $args -join " "
@@ -877,7 +879,7 @@ Describe "New-HostAssemblyManifest inspected platform" {
             if ($line -like "image inspect * {{index .RepoDigests 0}}") { return $indexDigest }
             if ($line -like "image inspect * {{json .Config.Env}}") { return '["PATH=/usr/bin"]' }
             if ($line -like "image inspect * {{.Os}}/{{.Architecture}}*") { return "linux/arm64" }
-            if ($line -like "create *") { return "fixture-container" }
+            if ($line -ceq "create --platform linux/arm64 $indexDigest") { return "fixture-container" }
             if ($line -like "cp fixture-container:/app *") {
                 Copy-Item -LiteralPath (Join-Path $fixtureRoot "app") -Destination $args[2] -Recurse
                 return
@@ -891,11 +893,18 @@ Describe "New-HostAssemblyManifest inspected platform" {
             return "unexpected docker call: $line"
         }
 
-        & $script:generator `
-            -Image "example/ed-fi-api:dms-pre-8.2.0" `
-            -EntryAssemblyName $script:entryAssemblyName `
-            -DockerfilePath $fixture.Dockerfile `
-            -OutputPath $fixture.OutputPath | Out-Null
+        $savedDefaultPlatform = $env:DOCKER_DEFAULT_PLATFORM
+        $env:DOCKER_DEFAULT_PLATFORM = "linux/amd64"
+        try {
+            & $script:generator `
+                -Image "example/ed-fi-api:dms-pre-8.2.0" `
+                -EntryAssemblyName $script:entryAssemblyName `
+                -DockerfilePath $fixture.Dockerfile `
+                -OutputPath $fixture.OutputPath | Out-Null
+        }
+        finally {
+            $env:DOCKER_DEFAULT_PLATFORM = $savedDefaultPlatform
+        }
 
         $manifest = [System.IO.File]::ReadAllText($fixture.OutputPath) -split "`n"
 
