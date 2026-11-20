@@ -32,6 +32,18 @@ internal static class DataStoreCatalog
         CancellationToken cancellationToken
     ) => AcquireAsync(transaction, TenantGateResource(tenantId), cancellationToken);
 
+    /// <summary>
+    /// The tenant gate in shared mode, held to the end of the transaction under the same 5-second bound. Shared
+    /// holders are compatible with one another and exclude every catalog writer, which takes the gate exclusively.
+    /// The PostgreSQL tenant aggregate does not take it, because it reads one snapshot; this mirrors the SQL Server
+    /// catalog, whose aggregate read does.
+    /// </summary>
+    internal static Task AcquireSharedTenantGateAsync(
+        DbTransaction transaction,
+        long? tenantId,
+        CancellationToken cancellationToken
+    ) => AcquireResourcesAsync(transaction, [TenantGateResource(tenantId)], true, cancellationToken);
+
     internal static Task AcquireTenantGatesAsync(
         DbTransaction transaction,
         IEnumerable<long?> tenantIds,
@@ -40,6 +52,7 @@ internal static class DataStoreCatalog
         AcquireResourcesAsync(
             transaction,
             tenantIds.Distinct().Order().Select(TenantGateResource).ToArray(),
+            false,
             cancellationToken
         );
 
@@ -172,11 +185,12 @@ internal static class DataStoreCatalog
         DbTransaction transaction,
         string resource,
         CancellationToken cancellationToken
-    ) => AcquireResourcesAsync(transaction, [resource], cancellationToken);
+    ) => AcquireResourcesAsync(transaction, [resource], false, cancellationToken);
 
     private static async Task AcquireResourcesAsync(
         DbTransaction transaction,
         string[] resources,
+        bool shared,
         CancellationToken cancellationToken
     )
     {
@@ -212,9 +226,9 @@ internal static class DataStoreCatalog
             .ToArray();
         await connection.ExecuteAsync(
             new CommandDefinition(
-                """
+                $"""
                 SELECT set_config('lock_timeout', @Timeout, true);
-                SELECT pg_advisory_xact_lock(gate.key)
+                SELECT {(shared ? "pg_advisory_xact_lock_shared" : "pg_advisory_xact_lock")}(gate.key)
                 FROM (SELECT key FROM unnest(@Keys) WITH ORDINALITY AS gates(key, position)
                       ORDER BY position OFFSET 0) gate;
                 SELECT set_config('lock_timeout', @Previous, true);

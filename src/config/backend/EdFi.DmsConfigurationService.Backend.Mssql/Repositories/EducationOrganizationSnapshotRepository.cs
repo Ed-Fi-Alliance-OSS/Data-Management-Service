@@ -119,6 +119,20 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     private int LeaseMilliseconds => (int)LeaseDuration.TotalMilliseconds;
 
+    // The SQL Server read models are not implemented yet; nothing calls these reads.
+    public Task<SnapshotRefreshTargetsResult> GetRefreshTargetsAsync(
+        int? dataStoreId,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("SQL Server snapshot reads are not available.");
+
+    public Task<SnapshotDataStoreExistsResult> DataStoreExistsAsync(
+        int dataStoreId,
+        CancellationToken cancellationToken
+    ) => throw new NotSupportedException("SQL Server snapshot reads are not available.");
+
+    public Task<SnapshotTenantAggregateResult> GetTenantAggregateAsync(CancellationToken cancellationToken) =>
+        throw new NotSupportedException("SQL Server snapshot reads are not available.");
+
     public Task<SnapshotAcquireResult> AcquireAsync(
         int dataStoreId,
         string leaseOwner,

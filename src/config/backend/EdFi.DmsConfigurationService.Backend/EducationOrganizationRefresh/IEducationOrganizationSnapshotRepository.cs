@@ -41,6 +41,30 @@ namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 public interface IEducationOrganizationSnapshotRepository
 {
     /// <summary>
+    /// The current tenant's ordinary data stores with their contexts, ordered by identifier: all of them, or only
+    /// <paramref name="dataStoreId"/> when it is given. Connection strings are never read, so a data store whose
+    /// connection string cannot be decrypted is still listed.
+    /// </summary>
+    Task<SnapshotRefreshTargetsResult> GetRefreshTargetsAsync(
+        int? dataStoreId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>Whether the ordinary data store exists in the current tenant.</summary>
+    Task<SnapshotDataStoreExistsResult> DataStoreExistsAsync(
+        int dataStoreId,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// The current tenant's ordinary data stores, each with its linked management record and the organizations of
+    /// its published snapshot, followed by the tenant's management records linked to no data store. The whole result
+    /// is read at one consistent point: a data store, management or publication change that commits concurrently is
+    /// either wholly included or wholly absent.
+    /// </summary>
+    Task<SnapshotTenantAggregateResult> GetTenantAggregateAsync(CancellationToken cancellationToken);
+
+    /// <summary>
     /// Takes the lease of the data store's target for <paramref name="leaseOwner"/> and allocates the next
     /// generation, creating the target on its first refresh. The data store must exist in the current tenant.
     /// A live lease held by any execution makes the result <see cref="SnapshotAcquireResult.Busy"/>, with nothing

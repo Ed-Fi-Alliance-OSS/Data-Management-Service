@@ -42,6 +42,12 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 /// with a 4-second lock wait. Every other operation has the lease duration, with a 5-second lock wait. Activation
 /// runs in the job fence's transaction, under the fence's lock wait and deadline.
 /// </para>
+/// <para>
+/// The reads run in read-only transactions. The tenant aggregate's transaction is <c>REPEATABLE READ</c>, so its
+/// three statements, the data stores (a), the organizations of their active generations (b) and the unlinked
+/// management records (c), all see the snapshot taken by the first one. It takes no row lock or advisory lock and
+/// blocks no writer; a change that commits after the snapshot is absent from the whole result.
+/// </para>
 /// </remarks>
 public sealed class EducationOrganizationSnapshotRepository(
     IOptions<DatabaseOptions> databaseOptions,
@@ -54,6 +60,9 @@ public sealed class EducationOrganizationSnapshotRepository(
     private static readonly TimeSpan _lockWait = JobLeaseTimings.WriteLockWait;
     private static readonly TimeSpan _releaseTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _deadlineHeadroom = TimeSpan.FromSeconds(1);
+
+    private const string ReadOnly = "SET TRANSACTION READ ONLY;";
+    private const string ConsistentReadOnly = "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY;";
 
     // The data store was found in the current tenant under a key-share lock, so the target takes its tenant.
     private const string InsertTargetSql = """
@@ -79,6 +88,124 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     private TimeSpan RenewalTimeout => jobOptions.Value.RenewalTimeout;
 
+    public Task<SnapshotRefreshTargetsResult> GetRefreshTargetsAsync(
+        int? dataStoreId,
+        CancellationToken cancellationToken
+    )
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotRefreshTargetsResult>(
+            "GetRefreshTargets",
+            LeaseDuration,
+            _lockWait,
+            ReadOnly,
+            async (session, deadline) =>
+            {
+                IEnumerable<TargetContextRow> rows = await QueryAsync<TargetContextRow>(
+                    session,
+                    "ReadTargets",
+                    RefreshTargetsSql(tenant),
+                    new { DataStoreId = dataStoreId, tenant.TenantId },
+                    deadline,
+                    cancellationToken
+                );
+                return Outcome.Commit<SnapshotRefreshTargetsResult>(
+                    new SnapshotRefreshTargetsResult.Success(RefreshTargets(rows))
+                );
+            },
+            diagnostic => new SnapshotRefreshTargetsResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
+    public Task<SnapshotDataStoreExistsResult> DataStoreExistsAsync(
+        int dataStoreId,
+        CancellationToken cancellationToken
+    )
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotDataStoreExistsResult>(
+            "DataStoreExists",
+            LeaseDuration,
+            _lockWait,
+            ReadOnly,
+            async (session, deadline) =>
+                Outcome.Commit<SnapshotDataStoreExistsResult>(
+                    await ScalarAsync<bool>(
+                        session,
+                        "ReadDataStore",
+                        DataStoreExistsSql(tenant),
+                        new { DataStoreId = dataStoreId, tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                        ? new SnapshotDataStoreExistsResult.Found()
+                        : new SnapshotDataStoreExistsResult.NotFound()
+                ),
+            diagnostic => new SnapshotDataStoreExistsResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
+    public Task<SnapshotTenantAggregateResult> GetTenantAggregateAsync(CancellationToken cancellationToken)
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTenantAggregateResult>(
+            "GetTenantAggregate",
+            LeaseDuration,
+            _lockWait,
+            ConsistentReadOnly,
+            async (session, deadline) =>
+            {
+                List<TenantAggregateDataStoreRow> dataStores = (
+                    await QueryAsync<TenantAggregateDataStoreRow>(
+                        session,
+                        "ReadDataStores",
+                        AggregateDataStoresSql(tenant),
+                        new { tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                ).AsList();
+                TenantAggregateDataStoreRow[] published = dataStores
+                    .Where(row => row.ActiveGeneration is not null)
+                    .ToArray();
+                List<TenantAggregateOrganizationRow> organizations = (
+                    await QueryAsync<TenantAggregateOrganizationRow>(
+                        session,
+                        "ReadOrganizations",
+                        AggregateOrganizationsSql(tenant),
+                        new
+                        {
+                            tenant.TenantId,
+                            DataStoreIds = published.Select(row => row.Id).ToArray(),
+                            Generations = published.Select(row => row.ActiveGeneration!.Value).ToArray(),
+                        },
+                        deadline,
+                        cancellationToken
+                    )
+                ).AsList();
+                List<TenantAggregateUnlinkedManageRow> unlinked = (
+                    await QueryAsync<TenantAggregateUnlinkedManageRow>(
+                        session,
+                        "ReadUnlinkedManages",
+                        AggregateUnlinkedManagesSql(tenant),
+                        new { tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                ).AsList();
+                return Outcome.Commit<SnapshotTenantAggregateResult>(
+                    new SnapshotTenantAggregateResult.Success(
+                        TenantAggregateAssembler.Assemble(dataStores, organizations, unlinked)
+                    )
+                );
+            },
+            diagnostic => new SnapshotTenantAggregateResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
     public Task<SnapshotAcquireResult> AcquireAsync(
         int dataStoreId,
         string leaseOwner,
@@ -95,6 +222,7 @@ public sealed class EducationOrganizationSnapshotRepository(
             "Acquire",
             LeaseDuration,
             _lockWait,
+            null,
             async (session, deadline) =>
             {
                 if (
@@ -341,6 +469,7 @@ public sealed class EducationOrganizationSnapshotRepository(
             "Prune",
             LeaseDuration,
             _lockWait,
+            null,
             async (session, deadline) =>
                 Outcome.Commit<SnapshotTargetResult>(
                     new SnapshotTargetResult.Success(
@@ -370,6 +499,7 @@ public sealed class EducationOrganizationSnapshotRepository(
             "Release",
             _releaseTimeout,
             _releaseTimeout - _deadlineHeadroom,
+            null,
             async (session, deadline) =>
                 Outcome.Commit<SnapshotTargetResult>(
                     new SnapshotTargetResult.Success(
@@ -415,6 +545,7 @@ public sealed class EducationOrganizationSnapshotRepository(
             operation,
             budget,
             lockWait,
+            null,
             async (session, deadline) =>
             {
                 if (
@@ -458,12 +589,14 @@ public sealed class EducationOrganizationSnapshotRepository(
     /// <summary>
     /// Runs <paramref name="body"/> in one transaction whose lock waits are bounded by <paramref name="lockWait"/>,
     /// and the whole operation, its commit and rollback included, by <paramref name="budget"/>. A failure, the
-    /// deadline included, becomes <paramref name="failure"/>; cancellation of the caller's token propagates.
+    /// deadline included, becomes <paramref name="failure"/>; cancellation of the caller's token propagates. A
+    /// <paramref name="transactionMode"/> statement runs first, before any statement that takes a snapshot.
     /// </summary>
     private async Task<T> InTransactionAsync<T>(
         string operation,
         TimeSpan budget,
         TimeSpan lockWait,
+        string? transactionMode,
         Func<JobDatabaseSession, JobDeadline, Task<Outcome<T>>> body,
         Func<JobFailureDiagnostic, T> failure,
         CancellationToken cancellationToken
@@ -479,6 +612,17 @@ public sealed class EducationOrganizationSnapshotRepository(
         {
             await PostgresqlJobSession.OpenAsync(session, deadline, cancellationToken);
             await PostgresqlJobSession.BeginAsync(session, deadline, cancellationToken);
+            if (transactionMode is not null)
+            {
+                await PostgresqlJobSession.ExecuteAsync(
+                    session,
+                    "SetTransactionMode",
+                    transactionMode,
+                    deadline,
+                    cancellationToken
+                );
+            }
+
             await PostgresqlJobSession.ExecuteAsync(
                 session,
                 "SetLockWait",
@@ -543,6 +687,68 @@ public sealed class EducationOrganizationSnapshotRepository(
             context is TenantContext.Multitenant multitenant ? multitenant.TenantId : null
         );
     }
+
+    // Never selects the connection string. Context keys are unique per data store.
+    private static string RefreshTargetsSql(TenantScope tenant) =>
+        $"""
+            SELECT ds."Id" AS "DataStoreId", c."ContextKey", c."ContextValue"
+            FROM dmscs."DataStore" AS ds
+            LEFT JOIN dmscs."DataStoreContext" AS c ON c."DataStoreId" = ds."Id"
+            WHERE {tenant.Where("ds")} AND (@DataStoreId::integer IS NULL OR ds."Id" = @DataStoreId::integer)
+            ORDER BY ds."Id", c."ContextKey" COLLATE "C";
+            """;
+
+    private static string DataStoreExistsSql(TenantScope tenant) =>
+        $"""
+            SELECT EXISTS (SELECT 1 FROM dmscs."DataStore" WHERE "Id" = @DataStoreId AND {tenant.Where()});
+            """;
+
+    // (a) The link is one-to-one and same-tenant; the joined tables are filtered by tenant all the same.
+    private static string AggregateDataStoresSql(TenantScope tenant) =>
+        $"""
+            SELECT ds."Id", ds."Name", ds."DataStoreType", m."Id" AS "DataStoreManageId", m."Status", m."Template",
+                m."TargetDatabaseName", m."HistoricalDataStoreId", t."ActiveGeneration"
+            FROM dmscs."DataStore" AS ds
+            LEFT JOIN dmscs."DataStoreManage" AS m ON m."DataStoreId" = ds."Id" AND {tenant.Where("m")}
+            LEFT JOIN dmscs."EducationOrganizationSnapshotTarget" AS t
+                ON t."DataStoreId" = ds."Id" AND {tenant.Where("t")}
+            WHERE {tenant.Where("ds")}
+            ORDER BY ds."Id";
+            """;
+
+    // (b) Only the generations statement (a) found active.
+    private static string AggregateOrganizationsSql(TenantScope tenant) =>
+        $"""
+            SELECT s."DataStoreId", s."EducationOrganizationId", s."NameOfInstitution", s."ShortNameOfInstitution",
+                s."Discriminator", s."ParentId"
+            FROM unnest(@DataStoreIds::integer[], @Generations::bigint[]) AS active ("DataStoreId", "Generation")
+            JOIN dmscs."EducationOrganizationSnapshot" AS s
+                ON s."DataStoreId" = active."DataStoreId" AND s."Generation" = active."Generation"
+            WHERE {tenant.Where("s")}
+            ORDER BY s."DataStoreId", s."EducationOrganizationId";
+            """;
+
+    // (c) Every status, Deleted included. A linked record never dangles, so these are all the unlinked ones.
+    private static string AggregateUnlinkedManagesSql(TenantScope tenant) =>
+        $"""
+            SELECT "Id", "Name", "Status", "Template", "TargetDatabaseName", "HistoricalDataStoreId"
+            FROM dmscs."DataStoreManage"
+            WHERE "DataStoreId" IS NULL AND {tenant.Where()}
+            ORDER BY "Id";
+            """;
+
+    /// <summary>Groups the ordered rows by data store, keeping the order.</summary>
+    private static List<EducationOrganizationRefreshTarget> RefreshTargets(
+        IEnumerable<TargetContextRow> rows
+    ) =>
+        rows.GroupBy(row => row.DataStoreId)
+            .Select(group => new EducationOrganizationRefreshTarget(
+                group.Key,
+                group
+                    .Where(row => row.ContextKey is not null)
+                    .ToDictionary(row => row.ContextKey!, row => row.ContextValue!, StringComparer.Ordinal)
+            ))
+            .ToList();
 
     private static string LockDataStoreSql(TenantScope tenant) =>
         $"""
@@ -738,6 +944,24 @@ public sealed class EducationOrganizationSnapshotRepository(
             cancellationToken
         );
 
+    private static Task<IEnumerable<T>> QueryAsync<T>(
+        JobDatabaseSession session,
+        string name,
+        string sql,
+        object parameters,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    ) =>
+        session.RunAsync(
+            name,
+            token =>
+                session.Connection.QueryAsync<T>(
+                    PostgresqlJobSession.Command(session, sql, parameters, deadline, token)
+                ),
+            deadline,
+            cancellationToken
+        );
+
     private static Task<int> ExecuteAsync(
         JobDatabaseSession session,
         string name,
@@ -763,6 +987,9 @@ public sealed class EducationOrganizationSnapshotRepository(
     {
         public string Where(string? tableAlias = null) => Context.TenantWhereClause(tableAlias);
     }
+
+    /// <summary>A data store and one of its contexts, or null context columns when it has none.</summary>
+    private sealed record TargetContextRow(int DataStoreId, string? ContextKey, string? ContextValue);
 
     /// <summary>A transaction body's result and whether the transaction commits.</summary>
     private readonly record struct Outcome<T>(T Result, bool Commit);
