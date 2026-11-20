@@ -154,6 +154,8 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         string directory = TestContext.CurrentContext.WorkDirectory;
         const string pattern = "admission-evidence-startup-*.json";
         string[] before = Directory.GetFiles(directory, pattern);
+        const string freshStarts = "admission-evidence-sql-fresh-*.json";
+        string[] freshStartsBefore = Directory.GetFiles(directory, freshStarts);
         const string privateDetails = "private-sql-command-output-and-credentials";
         using var cancellation = new CancellationTokenSource();
         var docker = new RecordingDockerCli(_ => null)
@@ -177,6 +179,7 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         );
 
         AssertCleanupCommandsWereRun(docker);
+        Directory.GetFiles(directory, freshStarts).Should().BeEquivalentTo(freshStartsBefore);
         string path = Directory.GetFiles(directory, pattern).Except(before).Should().ContainSingle().Subject;
         string text = await File.ReadAllTextAsync(path);
         text.Should().NotContain(privateDetails).And.NotContain(ResourcePrefix);
@@ -185,6 +188,53 @@ public sealed class Given_PinnedImageFixtureStartupFailureCleanup
         readiness.GetProperty("Attempts").GetInt32().Should().Be(1);
         readiness.GetProperty("LastExitCode").GetInt32().Should().Be(exitCode);
         readiness.GetProperty("State").GetString().Should().Be(expectedState);
+    }
+
+    [Test]
+    [NonParallelizable]
+    public async Task It_recovers_a_simulated_sql_startup_crash_without_publishing_qualification_evidence()
+    {
+        string directory = TestContext.CurrentContext.WorkDirectory;
+        const string pattern = "admission-evidence-sql-*.json";
+        string[] before = Directory.GetFiles(directory, pattern);
+        int launches = 0;
+        List<int> probedLaunches = [];
+        var docker = new RecordingDockerCli(arguments =>
+        {
+            if (arguments[0] == "run" && arguments.Contains($"{ResourcePrefix}-provider"))
+            {
+                launches++;
+            }
+            return null;
+        })
+        {
+            ProviderProbe = _ =>
+            {
+                probedLaunches.Add(launches);
+                return launches == 1 ? new(1, "", "Container is not running") : new(0, "", "");
+            },
+            ProviderInspect = _ =>
+                Task.FromResult(
+                    new DockerCommandResult(0, """{"Status":"exited","ExitCode":1,"OOMKilled":false}""", "")
+                ),
+            ProviderLogs = _ =>
+                Task.FromResult(
+                    new DockerCommandResult(0, Given_CdcSqlServerFixtureStartup.ReasonTwoFailureLog, "")
+                ),
+        };
+
+        await using var fixture = await CdcConnectorTemplatePinnedImageFixture.StartAsync(
+            CdcProvider.SqlServer,
+            BuildSettings(),
+            docker,
+            ResourcePrefix,
+            CancellationToken.None,
+            applyPrerequisitePolicy: false,
+            waitForConnect: (_, _) => Task.CompletedTask
+        );
+
+        probedLaunches.Should().Equal(1, 2);
+        Directory.GetFiles(directory, pattern).Should().BeEquivalentTo(before);
     }
 
     [TestCase("exited")]

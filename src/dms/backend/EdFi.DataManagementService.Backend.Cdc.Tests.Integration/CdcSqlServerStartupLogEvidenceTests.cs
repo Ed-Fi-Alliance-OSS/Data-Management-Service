@@ -15,10 +15,10 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
     [TestCase("0xc0070102", "0xc0070102", true)]
     [TestCase("0xc0000001", "0xc0000001", false)]
     [TestCase("0xc0070102", "0xc0000001", false)]
-    public void It_distinguishes_loader_statuses_without_broadening_startup_recovery(
+    public void It_uses_loader_statuses_to_classify_the_lsa_timeout_signature(
         string loadStatus,
         string exitStatus,
-        bool permitsRecovery
+        bool isLsaTimeout
     )
     {
         string log = Given_CdcSqlServerFixtureStartup
@@ -28,7 +28,7 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
         evidence.LsaLoadStatusCodes.Should().Equal(loadStatus.ToUpperInvariant());
         evidence.AppLoaderExitStatusCodes.Should().Equal(exitStatus.ToUpperInvariant());
         var state = new CdcSqlServerContainerState("exited", 1, false) { Logs = evidence };
-        state.RecoverySignature.Should().Be(permitsRecovery ? "LsaInitializationTimeout" : "None");
+        state.RecoverySignature.Should().Be(isLsaTimeout ? "LsaInitializationTimeout" : "None");
     }
 
     [Test]
@@ -194,7 +194,7 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
     }
 
     [Test]
-    public void It_discards_unknown_signals_addresses_and_oversized_codes()
+    public void It_redacts_unknown_signal_names_and_discards_addresses_and_oversized_codes()
     {
         const string text =
             "Reason: 0x123456789abcdef0\nLast errno: 123456\n"
@@ -203,7 +203,7 @@ public sealed class Given_CdcSqlServerStartupLogEvidence
         var evidence = CdcSqlServerStartupLogClassifier.Parse(new(0, text, string.Empty));
         evidence.FatalReasonCodes.Should().BeEmpty();
         evidence.LastErrnos.Should().BeEmpty();
-        evidence.Signals.Should().BeEmpty();
+        evidence.Signals.Should().Equal("Other");
         evidence.SqlErrorNumbers.Should().BeEmpty();
         JsonSerializer.Serialize(evidence).Should().NotContain("private");
     }

@@ -27,6 +27,19 @@ public sealed class Given_CdcSqlServerFixtureStartup
         Last errno: 11
         """;
 
+    private static readonly string[] SuccessfulRecoveryEvents =
+    [
+        "start-1",
+        "fresh",
+        "probe-1",
+        "inspect",
+        "retain-1-True",
+        "remove",
+        "start-2",
+        "probe-2",
+        "ready",
+    ];
+
     private readonly List<string> _events = [];
     private CdcSqlServerContainerState _state = null!;
     private int _starts;
@@ -55,13 +68,10 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [Test]
     public async Task It_starts_once_without_inspection_when_initial_readiness_succeeds()
     {
-        int starts = 0;
         await CdcSqlServerFixtureStartup.RunAsync(
-            _ =>
-            {
-                starts++;
-                return Task.CompletedTask;
-            },
+            token => PhaseAsync("launch", token),
+            token => PhaseAsync("fresh", token),
+            token => PhaseAsync("ready", token),
             _ => throw new AssertionException("Healthy startup must not inspect failure state."),
             (_, _, _, _) => throw new AssertionException("Healthy startup has no failure attachment."),
             _ => throw new AssertionException("Healthy startup must not recreate a container."),
@@ -69,7 +79,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
             CancellationToken.None,
             _budgets
         );
-        starts.Should().Be(1);
+        _events.Should().Equal("launch", "fresh", "ready");
     }
 
     [TestCase("inspect")]
@@ -84,8 +94,10 @@ public sealed class Given_CdcSqlServerFixtureStartup
                 _ =>
                 {
                     starts++;
-                    throw new InvalidOperationException("startup failed");
+                    return Task.CompletedTask;
                 },
+                _ => Task.CompletedTask,
+                _ => throw new InvalidOperationException("readiness failed"),
                 _ =>
                 {
                     if (phase == "inspect")
@@ -122,19 +134,36 @@ public sealed class Given_CdcSqlServerFixtureStartup
     public async Task It_retains_failure_before_one_recreation_and_requires_replacement_readiness()
     {
         await RunAsync();
-        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+        _events.Should().Equal(SuccessfulRecoveryEvents);
     }
 
     [Test]
-    public async Task It_recovers_the_observed_reason_two_signature_and_returns_recovery_evidence()
+    public void It_does_not_record_a_fresh_start_when_docker_rejects_the_launch()
+    {
+        _failedPhase = "start-1";
+        _state = new("NotObserved", 0, false);
+
+        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
+        _events.Should().Equal("start-1", "inspect", "retain-1-False");
+    }
+
+    [TestCase(11, "ReasonTwoErrnoEleven")]
+    [TestCase(2, "None")]
+    [TestCase(77, "None")]
+    public async Task It_recovers_a_fatal_exit_and_retains_its_diagnostic_signature(
+        int errno,
+        string signature
+    )
     {
         _state = _state with
         {
-            Logs = CdcSqlServerStartupLogClassifier.Parse(new(0, ReasonTwoFailureLog, "")),
+            Logs = CdcSqlServerStartupLogClassifier.Parse(
+                new(0, ReasonTwoFailureLog.Replace("Last errno: 11", $"Last errno: {errno}"), "")
+            ),
         };
         CdcSqlServerStartupResult result = await RunAsync(CancellationToken.None);
-        result.Should().Be(new CdcSqlServerStartupResult(2, "ReasonTwoErrnoEleven", false));
-        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+        result.Should().Be(new CdcSqlServerStartupResult(2, signature, false));
+        _events.Should().Equal(SuccessfulRecoveryEvents);
     }
 
     [Test]
@@ -158,7 +187,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [TestCase("signal")]
     [TestCase("mapping")]
     [TestCase("running")]
-    public void It_rejects_near_matches_to_the_reason_two_signature(string mismatch)
+    public void It_leaves_near_matches_to_the_reason_two_signature_unclassified(string mismatch)
     {
         var logs = CdcSqlServerStartupLogClassifier.Parse(new(0, ReasonTwoFailureLog, ""));
         _state = _state with
@@ -176,8 +205,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
                 Signals = mismatch == "signal" ? ["SIGKILL"] : [],
             },
         };
-        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
-        _events.Should().Equal("start-1", "inspect", "retain-1-False");
+        _state.RecoverySignature.Should().Be("None");
     }
 
     [Test]
@@ -187,7 +215,18 @@ public sealed class Given_CdcSqlServerFixtureStartup
         Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
         _events
             .Should()
-            .Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "inspect", "retain-2-False");
+            .Equal(
+                "start-1",
+                "fresh",
+                "probe-1",
+                "inspect",
+                "retain-1-True",
+                "remove",
+                "start-2",
+                "probe-2",
+                "inspect",
+                "retain-2-False"
+            );
     }
 
     [TestCase("running")]
@@ -201,12 +240,7 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [TestCase("mapping")]
     [TestCase("sql-error")]
     [TestCase("signal")]
-    [TestCase("reason")]
-    [TestCase("errno")]
-    [TestCase("lsa-status")]
-    [TestCase("termination-status")]
-    [TestCase("missing-marker")]
-    [TestCase("contradictory-marker")]
+    [TestCase("missing-fatal-message")]
     public void It_does_not_recreate_other_or_incomplete_failures(string scenario)
     {
         _state = scenario switch
@@ -224,39 +258,80 @@ public sealed class Given_CdcSqlServerFixtureStartup
                     "mapping" => _state.Logs with { MappingMessage = true },
                     "sql-error" => _state.Logs with { SqlErrorNumbers = [701] },
                     "signal" => _state.Logs with { Signals = ["SIGKILL"] },
-                    "reason" => _state.Logs with { FatalReasonCodes = [6, 2] },
-                    "errno" => _state.Logs with { LastErrnos = [12] },
-                    _ => CdcSqlServerStartupLogClassifier.Parse(
-                        new(
-                            0,
-                            scenario switch
-                            {
-                                "tail-limit" => new string('\n', 400) + LsaFailureLog,
-                                "lsa-status" => LsaFailureLog.Replace(
-                                    "0xc0070102",
-                                    "0xc0070005",
-                                    StringComparison.Ordinal
-                                ),
-                                "termination-status" => LsaFailureLog.Replace(
-                                    "0xC0000001",
-                                    "0xC0000002",
-                                    StringComparison.Ordinal
-                                ),
-                                "missing-marker" => LsaFailureLog.Replace(
-                                    "AppLoader: Exiting with status=0xc0070102",
-                                    "",
-                                    StringComparison.Ordinal
-                                ),
-                                _ => LsaFailureLog + "\n** ERROR: [AppLoader] Failed to load LSA: 0xc0070005",
-                            },
-                            ""
-                        )
+                    "tail-limit" => CdcSqlServerStartupLogClassifier.Parse(
+                        new(0, new string('\n', 400) + LsaFailureLog, "")
                     ),
+                    _ => _state.Logs with { FatalMessage = false },
                 },
             },
         };
         Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
-        _events.Should().Equal("start-1", "inspect", "retain-1-False");
+        _events.Should().Equal("start-1", "fresh", "probe-1", "inspect", "retain-1-False");
+    }
+
+    [TestCase("Last errno: 12\nLast errno text: Cannot allocate memory")]
+    [TestCase("Signal: SIGTRAP")]
+    public void It_retains_a_fatal_exit_with_a_memory_or_signal_marker_without_removing_the_container(
+        string marker
+    )
+    {
+        _state = _state with
+        {
+            Logs = CdcSqlServerStartupLogClassifier.Parse(
+                new(
+                    0,
+                    $"This program has encountered a fatal error and cannot continue running.\n{marker}",
+                    ""
+                )
+            ),
+        };
+
+        Assert.ThrowsAsync<InvalidOperationException>(RunAsync);
+        _events.Should().Equal("start-1", "fresh", "probe-1", "inspect", "retain-1-False");
+    }
+
+    [TestCase("reason")]
+    [TestCase("errno")]
+    [TestCase("lsa-status")]
+    [TestCase("termination-status")]
+    [TestCase("missing-marker")]
+    [TestCase("contradictory-marker")]
+    public void It_requires_exact_markers_and_codes_to_classify_the_lsa_timeout(string scenario)
+    {
+        _state = _state with
+        {
+            Logs = scenario switch
+            {
+                "reason" => _state.Logs with { FatalReasonCodes = [6, 2] },
+                "errno" => _state.Logs with { LastErrnos = [12] },
+                _ => CdcSqlServerStartupLogClassifier.Parse(
+                    new(
+                        0,
+                        scenario switch
+                        {
+                            "lsa-status" => LsaFailureLog.Replace(
+                                "0xc0070102",
+                                "0xc0070005",
+                                StringComparison.Ordinal
+                            ),
+                            "termination-status" => LsaFailureLog.Replace(
+                                "0xC0000001",
+                                "0xC0000002",
+                                StringComparison.Ordinal
+                            ),
+                            "missing-marker" => LsaFailureLog.Replace(
+                                "AppLoader: Exiting with status=0xc0070102",
+                                "",
+                                StringComparison.Ordinal
+                            ),
+                            _ => LsaFailureLog + "\n** ERROR: [AppLoader] Failed to load LSA: 0xc0070005",
+                        },
+                        ""
+                    )
+                ),
+            },
+        };
+        _state.RecoverySignature.Should().Be("None");
     }
 
     [Test]
@@ -295,10 +370,10 @@ public sealed class Given_CdcSqlServerFixtureStartup
     [Test]
     public async Task It_can_inspect_an_attempt_timeout_within_the_remaining_overall_budget()
     {
-        _blockedPhase = "start-1";
+        _blockedPhase = "probe-1";
         _budgets = _budgets with { Attempt = TimeSpan.FromMilliseconds(100) };
         await RunAsync().WaitAsync(TimeSpan.FromSeconds(5));
-        _events.Should().Equal("start-1", "inspect", "retain-1-True", "remove", "start-2", "ready");
+        _events.Should().Equal(SuccessfulRecoveryEvents);
     }
 
     [Test]
@@ -326,10 +401,15 @@ public sealed class Given_CdcSqlServerFixtureStartup
 
     private Task<CdcSqlServerStartupResult> RunAsync(CancellationToken token) =>
         CdcSqlServerFixtureStartup.RunAsync(
-            async cancellation =>
+            cancellation =>
             {
                 _starts++;
-                await PhaseAsync($"start-{_starts}", cancellation);
+                return PhaseAsync($"start-{_starts}", cancellation);
+            },
+            cancellation => PhaseAsync("fresh", cancellation),
+            async cancellation =>
+            {
+                await PhaseAsync($"probe-{_starts}", cancellation);
                 if (_starts == 1 || _failReplacement)
                 {
                     throw new InvalidOperationException("fixture startup failed");

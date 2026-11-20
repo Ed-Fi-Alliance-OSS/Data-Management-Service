@@ -10,7 +10,7 @@ internal sealed record CdcSqlServerContainerState(string Status, int ExitCode, b
     public CdcSqlServerStartupLogEvidence Logs { get; init; } =
         CdcSqlServerStartupLogEvidence.Empty("NotObserved");
 
-    private bool HasCompleteStartupFailure =>
+    internal bool HasCompleteStartupFailure =>
         Status == "exited"
         && ExitCode == 1
         && !OomKilled
@@ -68,7 +68,9 @@ internal sealed record CdcSqlServerStartupResult(int Attempts, string Signature,
 internal static class CdcSqlServerFixtureStartup
 {
     internal static async Task<CdcSqlServerStartupResult> RunAsync(
-        Func<CancellationToken, Task> startAndWait,
+        Func<CancellationToken, Task> launchContainer,
+        Func<CancellationToken, Task> recordFreshStart,
+        Func<CancellationToken, Task> waitForReadiness,
         Func<CancellationToken, Task<CdcSqlServerContainerState>> inspectFailure,
         Func<int, CdcSqlServerContainerState, bool, CancellationToken, Task> retainFailure,
         Func<CancellationToken, Task> removeContainer,
@@ -89,7 +91,12 @@ internal static class CdcSqlServerFixtureStartup
             startup.CancelAfter(budgets.Attempt);
             try
             {
-                await startAndWait(startup.Token);
+                await launchContainer(startup.Token);
+                if (attempt == 1)
+                {
+                    await recordFreshStart(startup.Token);
+                }
+                await waitForReadiness(startup.Token);
                 startup.Token.ThrowIfCancellationRequested();
                 return new(attempt, signature, injected);
             }
@@ -107,7 +114,7 @@ internal static class CdcSqlServerFixtureStartup
                 {
                     CdcSqlServerContainerState state = await inspectFailure(inspection.Token);
                     inspection.Token.ThrowIfCancellationRequested();
-                    recreate = attempt == 1 && !keepContainer && state.RecoverySignature != "None";
+                    recreate = attempt == 1 && !keepContainer && state.HasCompleteStartupFailure;
                     signature = state.RecoverySignature;
                     injected = state.Logs.InjectedFailure;
                     await retainFailure(attempt, state, recreate, inspection.Token);

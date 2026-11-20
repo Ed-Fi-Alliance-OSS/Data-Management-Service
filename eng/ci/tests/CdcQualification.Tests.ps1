@@ -271,8 +271,8 @@ Describe 'CDC qualification result boundary' {
     BeforeAll {
         Import-Module (Join-Path $PSScriptRoot '../cdc-qualification.psm1') -Force
         function Write-Report {
-            param([string] $Outcome = 'Passed', [string] $Message = '', [int] $Total = 1)
-            $script:report = Join-Path $TestDrive 'report.trx'
+            param([string] $Outcome = 'Passed', [string] $Message = '', [int] $Total = 1, [string] $Directory = $TestDrive)
+            $script:report = Join-Path $Directory 'report.trx'
             $passed = if ($Outcome -eq 'Passed') { 1 } else { 0 }
             @"
 <TestRun xmlns="http://microsoft.com/schemas/VisualStudio/TeamTest/2010"><Results>
@@ -293,35 +293,80 @@ Describe 'CDC qualification result boundary' {
         Write-Report
         (Get-CdcQualificationReport $script:report 0).Status | Should -Be 'Passed'
     }
-    It 'reports recovered startup failures without hiding them or counting injected failures as flakes' {
-        try {
-            Write-Report
-            '{"Stage":"unprovisioned-sql-startup","Signature":"ReasonTwoErrnoEleven","Container":{"Logs":{"InjectedFailure":false}}}' |
-                Set-Content (Join-Path $TestDrive 'admission-evidence-sql-startup-real.json')
-            '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":false}' |
-                Set-Content (Join-Path $TestDrive 'admission-evidence-sql-recovery-real.json')
-            '{"Stage":"unprovisioned-sql-startup","Signature":"LsaInitializationTimeout","Container":{"Logs":{"InjectedFailure":true}}}' |
-                Set-Content (Join-Path $TestDrive 'admission-evidence-sql-startup-injected.json')
-            '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":true}' |
-                Set-Content (Join-Path $TestDrive 'admission-evidence-sql-recovery-injected.json')
-            # VSTest copies NUnit attachments beneath the TRX directory while the
-            # original remains beside the report. Each GUID-named attachment is one event.
-            $attachments = Join-Path $TestDrive 'trx-attachments'
-            $null = New-Item -ItemType Directory -Path $attachments
-            Copy-Item (Join-Path $TestDrive 'admission-evidence-sql-*.json') $attachments
+    Context 'SQL Server startup evidence' {
+        BeforeEach {
+            $script:sql = New-Item -ItemType Directory (Join-Path $TestDrive ([guid]::NewGuid()))
+            Write-Report -Directory $sql
+        }
+        It 'reports an unknown denominator for older evidence and counts a clean fresh start' {
             $result = Get-CdcQualificationReport $script:report 0
-            $result.Status | Should -Be 'Passed'
+            $result.Contains('SqlFreshStarts') | Should -BeTrue
+            $result.SqlFreshStarts | Should -BeNullOrEmpty
+            '{"Stage":"unprovisioned-sql-fresh-start"}' | Set-Content (Join-Path $sql 'admission-evidence-sql-fresh-1.json')
+
+            $result = Get-CdcQualificationReport $script:report 0
+            $result.Status | Should -Be Passed
+            $result.SqlFreshStarts | Should -Be 1
+            $result.SqlFirstAttemptCrashes | Should -Be 0
+            $result.SqlFirstAttemptCrashCodes.Count | Should -Be 0
+        }
+
+        It 'counts a recovered first-attempt crash on a passing run and separates injected failures' {
+            foreach ($id in 1, 2) {
+                '{"Stage":"unprovisioned-sql-fresh-start"}' | Set-Content (Join-Path $sql "admission-evidence-sql-fresh-$id.json")
+            }
+            '{"Stage":"unprovisioned-sql-startup","Attempt":1,"Signature":"None","Container":{"Status":"exited","Logs":{"FatalMessage":true,"FatalReasonCodes":[2],"LastErrnos":[2],"InjectedFailure":false}}}' |
+                Set-Content (Join-Path $sql 'admission-evidence-sql-startup-real.json')
+            '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":false}' |
+                Set-Content (Join-Path $sql 'admission-evidence-sql-recovery-real.json')
+            '{"Stage":"unprovisioned-sql-startup","Attempt":1,"Signature":"LsaInitializationTimeout","Container":{"Status":"exited","Logs":{"FatalMessage":true,"FatalReasonCodes":[6],"LastErrnos":[2],"InjectedFailure":true}}}' |
+                Set-Content (Join-Path $sql 'admission-evidence-sql-startup-injected.json')
+            '{"Stage":"unprovisioned-sql-recovery","Outcome":"Ready","Injected":true}' |
+                Set-Content (Join-Path $sql 'admission-evidence-sql-recovery-injected.json')
+            $copies = New-Item -ItemType Directory (Join-Path $sql 'trx-attachments')
+            Copy-Item (Join-Path $sql 'admission-evidence-sql-*.json') $copies
+
+            $result = Get-CdcQualificationReport $script:report 0
+            $result.Status | Should -Be Passed
+            $result.SqlFreshStarts | Should -Be 2
+            $result.SqlFirstAttemptCrashes | Should -Be 1
+            $result.SqlFirstAttemptCrashCodes.Count | Should -Be 1
+            $result.SqlFirstAttemptCrashCodes['2/2'] | Should -Be 1
             $result.SqlStartupFailures | Should -Be 1
             $result.SqlStartupRecoveries | Should -Be 1
             $result.SqlStartupInjectedFailures | Should -Be 1
             $result.SqlStartupInjectedRecoveries | Should -Be 1
-            $result.SqlStartupFailureSignatures.ReasonTwoErrnoEleven | Should -Be 1
-            Write-Report -Outcome Failed -Message 'Expected ready CDC evidence'
-            (Get-CdcQualificationReport $script:report 1).Status | Should -Be 'Failed'
+            $result.SqlStartupFailureSignatures.Other | Should -Be 1
         }
-        finally {
-            Remove-Item (Join-Path $TestDrive 'admission-evidence-sql-*.json')
-            Remove-Item (Join-Path $TestDrive 'trx-attachments') -Recurse -ErrorAction SilentlyContinue
+
+        It 'counts the replacement crash only in the all-attempt failure count' {
+            Write-Report -Outcome Failed -Directory $sql
+            '{"Stage":"unprovisioned-sql-fresh-start"}' | Set-Content (Join-Path $sql 'admission-evidence-sql-fresh-1.json')
+            foreach ($attempt in 1, 2) {
+                @{ Stage = 'unprovisioned-sql-startup'; Attempt = $attempt; Signature = 'ReasonTwoErrnoEleven'
+                    Container = @{ Status = 'exited'; Logs = @{ FatalMessage = $true; FatalReasonCodes = @(2); LastErrnos = @(11) } }
+                } | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $sql "admission-evidence-sql-startup-$attempt.json")
+            }
+            $result = Get-CdcQualificationReport $script:report 1
+            $result.Status | Should -Be Failed
+            $result.SqlFreshStarts | Should -Be 1
+            $result.SqlFirstAttemptCrashes | Should -Be 1
+            $result.SqlFirstAttemptCrashCodes['2/11'] | Should -Be 1
+            $result.SqlStartupFailures | Should -Be 2
+            $result.SqlStartupFailureSignatures.ReasonTwoErrnoEleven | Should -Be 2
+            $result.SqlStartupRecoveries | Should -Be 0
+        }
+
+        It 'keeps ambiguous crash codes and unrelated readiness failures distinct in older artifacts' {
+            '{"Stage":"unprovisioned-sql-startup","Attempt":1,"Signature":"None","Container":{"Status":"exited","Logs":{"FatalMessage":true,"FatalReasonCodes":[2,6],"LastErrnos":[]}}}' |
+                Set-Content (Join-Path $sql 'admission-evidence-sql-startup-fatal.json')
+            '{"Stage":"unprovisioned-sql-startup","Attempt":1,"Signature":"None","Container":{"Status":"running","Logs":{"FatalMessage":false}}}' |
+                Set-Content (Join-Path $sql 'admission-evidence-sql-startup-readiness.json')
+            $result = Get-CdcQualificationReport $script:report 1
+            $result.SqlFreshStarts | Should -BeNullOrEmpty
+            $result.SqlStartupFailures | Should -Be 2
+            $result.SqlFirstAttemptCrashes | Should -Be 1
+            $result.SqlFirstAttemptCrashCodes['unknown/unknown'] | Should -Be 1
         }
     }
 
