@@ -53,11 +53,18 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 /// </para>
 /// <para>
 /// Organization rows are inserted with ordinary <c>INSERT … WITH (ROWLOCK)</c> statements that read their rows
-/// from a JSON parameter, so the foreign key and check constraints are enforced and stay trusted, and only the new
-/// rows are locked. A bulk copy is not used: without a table lock it loads by page and holds exclusive page locks,
-/// which block other data stores whose rows share those pages. Inserts and deletes run in batches of
-/// <see cref="BatchSize"/> rows, each its own statement, below the 5,000-lock threshold at which one statement
-/// escalates to a table lock that would block the snapshots of other data stores.
+/// from a JSON parameter, so the foreign key and check constraints are enforced and stay trusted; reclaim and
+/// prune delete <c>WITH (ROWLOCK)</c> rows whose keys a <c>FORCESEEK</c> subquery chooses within the data store's
+/// key range, reaching them by nested loops on the full primary key. A scan plan, which the optimizer chose for a
+/// plain batched delete, reads past other data stores' rows and waits for any that another transaction holds, and
+/// SQL Server refuses <c>FORCESEEK</c> on a delete's target. The statements that lock or read a target or data
+/// store row seek for the same reason. A bulk copy is not used: without a table lock
+/// it loads by page and holds exclusive page locks, which block other data stores whose rows share those pages.
+/// <c>ROWLOCK</c> sets only the initial lock granularity; SQL Server can still escalate to a table lock, for
+/// example under lock-memory pressure. Inserts and deletes therefore run in statements of at most
+/// <see cref="BatchSize"/> rows, all in the operation's transaction, below the 5,000-lock threshold at which one
+/// statement escalates, which reduces that risk without ruling it out. An operation of another data store that
+/// meets such a lock waits at most its lock wait and fails like any other lock wait.
 /// </para>
 /// </remarks>
 public sealed class EducationOrganizationSnapshotRepository(
@@ -69,8 +76,8 @@ public sealed class EducationOrganizationSnapshotRepository(
     internal const int BatchSize = 4_000;
 
     private const int LeaseOwnerMaxLength = 32;
-    private const string UpdateLock = "UPDLOCK, HOLDLOCK, ROWLOCK";
-    private const string ShareLock = "HOLDLOCK, ROWLOCK";
+    private const string UpdateLock = "UPDLOCK, HOLDLOCK, ROWLOCK, FORCESEEK";
+    private const string ShareLock = "HOLDLOCK, ROWLOCK, FORCESEEK";
 
     private static readonly TimeSpan _lockWait = JobLeaseTimings.WriteLockWait;
     private static readonly TimeSpan _releaseTimeout = TimeSpan.FromSeconds(5);
@@ -469,8 +476,8 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     /// <summary>
     /// Inserts <paramref name="items"/> as the organizations of <paramref name="generation"/> in
-    /// <paramref name="transaction"/>, in statements of at most <see cref="BatchSize"/> rows that lock only the rows
-    /// they insert, each bounded by the time left on <paramref name="deadline"/>. Returns the rows inserted.
+    /// <paramref name="transaction"/>, in statements of at most <see cref="BatchSize"/> rows that request row locks,
+    /// each bounded by the time left on <paramref name="deadline"/>. Returns the rows inserted.
     /// </summary>
     internal static async Task<int> InsertOrganizationsAsync(
         DbConnection connection,
@@ -694,7 +701,7 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     private static string LockDataStoreSql(TenantScope tenant) =>
         $"""
-            SELECT 1 FROM dmscs.DataStore WITH (HOLDLOCK, ROWLOCK)
+            SELECT 1 FROM dmscs.DataStore WITH (HOLDLOCK, ROWLOCK, FORCESEEK)
             WHERE Id = @DataStoreId AND {tenant.Where()};
             """;
 
@@ -709,7 +716,7 @@ public sealed class EducationOrganizationSnapshotRepository(
         $"""
             SELECT TenantId, LastGeneration, ActiveGeneration, LeaseOwner, LeaseGeneration, LeaseExpiresAt,
                 SYSUTCDATETIME() AS DatabaseUtcNow
-            FROM dmscs.EducationOrganizationSnapshotTarget
+            FROM dmscs.EducationOrganizationSnapshotTarget WITH (FORCESEEK)
             WHERE DataStoreId = @DataStoreId AND {tenant.Where()};
             """;
 
@@ -765,23 +772,52 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     // Keeps the lease's own generation and the active one; an absent active generation keeps nothing else.
     private static string ReclaimSql(TenantScope tenant) =>
-        $"""
-            DELETE TOP (@BatchSize) FROM dmscs.EducationOrganizationSnapshot
-            WHERE DataStoreId = @DataStoreId AND {tenant.Where()}
-              AND Generation <> @Generation
-              AND (@ActiveGeneration IS NULL OR Generation <> @ActiveGeneration);
-            """;
+        DeleteBatchSql(
+            $"""
+            SELECT TOP (@BatchSize) k.DataStoreId, k.Generation, k.EducationOrganizationId
+            FROM dmscs.EducationOrganizationSnapshot AS k WITH (ROWLOCK, FORCESEEK)
+            WHERE k.DataStoreId = @DataStoreId AND {tenant.Where("k")}
+                  AND k.Generation <> @Generation
+                  AND (@ActiveGeneration IS NULL OR k.Generation <> @ActiveGeneration)
+            """
+        );
 
     private static string PruneSql(TenantScope tenant) =>
+        DeleteBatchSql(
+            $"""
+            SELECT TOP (@BatchSize) k.DataStoreId, k.Generation, k.EducationOrganizationId
+            FROM dmscs.EducationOrganizationSnapshotTarget AS t WITH (FORCESEEK)
+            INNER JOIN dmscs.EducationOrganizationSnapshot AS k WITH (ROWLOCK, FORCESEEK)
+                ON k.DataStoreId = t.DataStoreId
+            WHERE t.DataStoreId = @DataStoreId AND k.DataStoreId = @DataStoreId
+              AND {tenant.Where("t")} AND {tenant.Where("k")}
+              AND k.Generation < t.ActiveGeneration
+            """
+        );
+
+    /// <summary>
+    /// One batched delete of the rows whose keys <paramref name="batchSelect"/> returns. SQL Server refuses
+    /// <c>FORCESEEK</c> on a <c>DELETE</c>'s target, so the keys are chosen by a separate reference that seeks
+    /// within the data store's key range, and the target is reached through nested loops on its full primary key,
+    /// so no plan scans past other data stores' rows.
+    /// </summary>
+    private static string DeleteBatchSql(string batchSelect) =>
         $"""
-            DELETE TOP (@BatchSize) s
-            FROM dmscs.EducationOrganizationSnapshot AS s
-            INNER JOIN dmscs.EducationOrganizationSnapshotTarget AS t ON t.DataStoreId = s.DataStoreId
-            WHERE t.DataStoreId = @DataStoreId AND {tenant.Where("t")} AND {tenant.Where("s")}
-              AND s.Generation < t.ActiveGeneration;
+            DELETE s
+            FROM dmscs.EducationOrganizationSnapshot AS s WITH (ROWLOCK)
+            INNER JOIN (
+                {batchSelect}
+            ) AS batch
+                ON s.DataStoreId = batch.DataStoreId
+                AND s.Generation = batch.Generation
+                AND s.EducationOrganizationId = batch.EducationOrganizationId
+            OPTION (LOOP JOIN);
             """;
 
-    /// <summary>Runs a <c>DELETE TOP (@BatchSize)</c> statement until a batch deletes fewer rows; returns the total.</summary>
+    /// <summary>
+    /// Runs a <c>DELETE TOP (@BatchSize)</c> statement, in the session's transaction, until a batch deletes fewer
+    /// rows; returns the total.
+    /// </summary>
     private static async Task<int> DeleteInBatchesAsync(
         JobDatabaseSession session,
         string name,

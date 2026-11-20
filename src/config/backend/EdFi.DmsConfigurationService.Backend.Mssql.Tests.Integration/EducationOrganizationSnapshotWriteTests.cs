@@ -545,11 +545,14 @@ public class EducationOrganizationSnapshotWriteTests
     }
 
     /// <summary>
-    /// Staging checks the foreign key and check constraints, so they stay trusted, and large stages and prunes lock
-    /// only rows, never a page or the table, so they do not block another data store's snapshot.
+    /// Staging checks the foreign key and check constraints, so they stay trusted. Large stages, reclaims and prunes
+    /// request row locks in batched statements; paused before their commit, they hold only intent locks at page and
+    /// table level in these fixtures, and another data store completes a refresh meanwhile. Escalation remains
+    /// possible in general (for example under lock-memory pressure), so this is evidence for these operations, not
+    /// a guarantee.
     /// </summary>
     [TestFixture]
-    public class Given_bulk_snapshot_writes : EducationOrganizationSnapshotWriteTestBase
+    public class Given_large_snapshot_writes : EducationOrganizationSnapshotWriteTestBase
     {
         [Test]
         public async Task It_keeps_the_snapshot_constraints_trusted_after_staging()
@@ -593,7 +596,7 @@ public class EducationOrganizationSnapshotWriteTests
                 .Be(ForeignKeyOrCheckViolation);
             if (transaction.Connection is not null)
             {
-                // The failed bulk copy can already have ended the transaction.
+                // The failed insert can already have ended the transaction.
                 await transaction.RollbackAsync();
             }
             (await UntrustedConstraintsAsync()).Should().BeEmpty();
@@ -621,7 +624,7 @@ public class EducationOrganizationSnapshotWriteTests
                 await pause.Reached;
                 (await CoarseSnapshotLocksAsync(applicationName))
                     .Should()
-                    .Equal(["OBJECT:IX", "PAGE:IX"], "the stage locks only the rows it inserts");
+                    .Equal(["OBJECT:IX", "PAGE:IX"], "the stage holds only intent locks above row level");
 
                 // The other data store's whole refresh runs while the large stage holds its locks.
                 await PublishAsync(other, [Item(1), Item(2)]);
@@ -654,7 +657,7 @@ public class EducationOrganizationSnapshotWriteTests
                 await pause.Reached;
                 (await CoarseSnapshotLocksAsync(applicationName))
                     .Should()
-                    .Equal(["OBJECT:IX", "PAGE:IX"], "the prune locks only the rows it deletes");
+                    .Equal(["OBJECT:IX", "PAGE:IX"], "the prune holds only intent locks above row level");
 
                 await PublishAsync(other, [Item(1)]);
             }
@@ -665,6 +668,52 @@ public class EducationOrganizationSnapshotWriteTests
 
             (await pruning).Should().Be(new SnapshotTargetResult.Success(50_000));
             (await GenerationsAsync(large)).Should().Equal(2);
+            (await ActiveIdsAsync(other)).Should().Equal(1);
+        }
+
+        [Test]
+        public async Task It_reclaims_a_large_generation_without_blocking_another_data_stores_snapshot()
+        {
+            int large = await InsertDataStoreAsync("large-reclaim");
+            int other = await InsertDataStoreAsync("other-reclaim");
+            EducationOrganizationSnapshotRepository repository = Repository();
+            EducationOrganizationSnapshotLease abandoned = await AcquiredAsync(repository, large);
+            (
+                await repository.StageAsync(
+                    abandoned,
+                    Given_a_target_refreshed_from_one_set_to_another.LargeSet(50_000),
+                    ContractVersion,
+                    CancellationToken.None
+                )
+            )
+                .Should()
+                .Be(new SnapshotTargetResult.Success(50_000));
+            await SetLeaseExpiryAsync(large, -1);
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(repository, large);
+            string applicationName = NewApplicationName();
+            CommitPause pause = new(TimeSpan.FromMinutes(2));
+            Task<SnapshotTargetResult> reclaiming = Repository(
+                    NamedOptions(applicationName),
+                    hooks: pause.Hooks
+                )
+                .ReclaimAsync(lease, CancellationToken.None);
+
+            try
+            {
+                await pause.Reached;
+                (await CoarseSnapshotLocksAsync(applicationName))
+                    .Should()
+                    .Equal(["OBJECT:IX", "PAGE:IX"], "the reclaim holds only intent locks above row level");
+
+                await PublishAsync(other, [Item(1)]);
+            }
+            finally
+            {
+                pause.Release();
+            }
+
+            (await reclaiming).Should().Be(new SnapshotTargetResult.Success(50_000));
+            (await GenerationsAsync(large)).Should().BeEmpty();
             (await ActiveIdsAsync(other)).Should().Equal(1);
         }
 
@@ -1317,8 +1366,7 @@ public class EducationOrganizationSnapshotWriteTests
 
     /// <summary>
     /// A trigger raises an error inside each operation's write. The operations report it as a database failure
-    /// carrying only the error number and the operation name, and roll back. Bulk copies fire no triggers, so
-    /// staging failures are covered by the lock-timeout and constraint fixtures.
+    /// carrying only the error number and the operation name, and roll back.
     /// </summary>
     [TestFixture]
     public class Given_a_forced_database_error : EducationOrganizationSnapshotWriteTestBase
@@ -1339,11 +1387,22 @@ public class EducationOrganizationSnapshotWriteTests
                 AFTER INSERT, UPDATE AS THROW 50001, N'snapshot-test', 1;
                 """
             );
+            await Connection!.ExecuteAsync(
+                """
+                CREATE TRIGGER dmscs.raise_snapshot_test_rows ON dmscs.EducationOrganizationSnapshot
+                AFTER INSERT AS THROW 50001, N'snapshot-test', 1;
+                """
+            );
         }
 
         [TearDown]
-        public async Task DropTrigger() =>
-            await Connection!.ExecuteAsync("DROP TRIGGER IF EXISTS dmscs.raise_snapshot_test_target;");
+        public async Task DropTriggers() =>
+            await Connection!.ExecuteAsync(
+                """
+                DROP TRIGGER IF EXISTS dmscs.raise_snapshot_test_target;
+                DROP TRIGGER IF EXISTS dmscs.raise_snapshot_test_rows;
+                """
+            );
 
         [Test]
         public async Task It_classifies_the_first_acquisition_failure()
@@ -1377,6 +1436,16 @@ public class EducationOrganizationSnapshotWriteTests
 
             AssertFailure(await Repository().ReleaseAsync(_lease, CancellationToken.None), "Release");
             (await TargetAsync(_id)).Should().Be(before);
+        }
+
+        [Test]
+        public async Task It_classifies_the_staging_failure()
+        {
+            AssertFailure(
+                await Repository().StageAsync(_lease, [Item(1)], ContractVersion, CancellationToken.None),
+                "Stage"
+            );
+            (await OrganizationCountAsync(_id)).Should().Be(0);
         }
 
         [Test]

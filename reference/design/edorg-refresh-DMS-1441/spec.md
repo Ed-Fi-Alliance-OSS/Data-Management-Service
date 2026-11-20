@@ -1,6 +1,6 @@
 # DMS-1441 — CMS education-organization refresh, snapshots, and tenant aggregate
 
-Specification **v4** (approved by the architect on 2026-11-20, with the step 1.2 reclaim and staging checkpoint clarification).
+Specification **v4** (approved by the architect on 2026-11-20, with the step 1.2 reclaim and staging checkpoint clarification and the step 1.3 SQL Server staging change in §6.2 step 7).
 
 - Written against `main` at `df7b857fc`. Every code citation (file:line) refers to that commit.
 - Three earlier review rounds (v1 to v3) are summarized in §0. Their full text is not committed.
@@ -316,6 +316,7 @@ Status: **P** = provided by a dependency (verified and re-tested), **Part** = pa
      AND Generation <> @g
      AND (ActiveGeneration IS NULL OR Generation <> ActiveGeneration)  -- ActiveGeneration read from the locked row
      ```
+   - On SQL Server the `DELETE` runs `WITH (ROWLOCK)` in statements of at most 4,000 rows, all in this transaction (see step 7). Each statement chooses its keys with a `FORCESEEK` subquery inside the data store's key range and reaches the target rows by nested loops on the full primary key (`OPTION (LOOP JOIN)`). A plain batched delete got a clustered index scan plan, which waited on another data store's locked rows, and SQL Server refuses `FORCESEEK` on a delete's target. The statements that lock or read a target or data store row also use `FORCESEEK`.
    - No other execution can publish those generations: every stage and activation requires the live lease.
 4. **Admission.** A strict renewal using LTV, in one transaction with a lock timeout of `R/2`:
    - Lock the row.
@@ -338,7 +339,8 @@ Status: **P** = provided by a dependency (verified and re-tested), **Part** = pa
 7. **Stage.** One transaction, using LTV:
    - Share-lock the target row (PG `FOR SHARE`, MS `HOLDLOCK, ROWLOCK`).
    - Then require the live lease, as in step 3, with a fresh clock.
-   - Insert the items: PG `unnest` typed arrays; MS `SqlBulkCopy` with `CheckConstraints` on the transaction.
+   - Insert the items: PG `unnest` typed arrays; MS `INSERT … WITH (ROWLOCK) SELECT … FROM OPENJSON(@Items)` statements of at most 4,000 rows, all in the staging transaction. JSON identifiers are read as `BIGINT` and text as `nvarchar(max)`, so an over-long value fails the insert instead of being truncated. Foreign key and check constraints are enforced as for any insert and stay trusted.
+   - **SQL Server staging change (approved during step 1.3).** `SqlBulkCopy` was replaced. Without a table lock it loads by page: a paused 50,000-row bulk copy held about 3,200 exclusive page locks, which blocked another data store's reclaim until its lock timeout (`1222`). `ROWLOCK` sets only the initial lock granularity; SQL Server can still escalate to a table lock, for example under lock-memory pressure. Statements of at most 4,000 rows stay below the per-statement escalation threshold, which reduces that risk without ruling it out. Contention ends in the bounded lock waits and failure handling of §6.12.
    - The share lock blocks any takeover until commit, because takeover needs the update/X lock, so staging cannot interleave with another owner's reclaim. If the lease passes expiry during staging, the next owner takes over after the commit and reclaims these rows, and this execution's activation is refused.
    - An empty set stages nothing.
 8. **Activate.** Inside `context.Fence.ExecuteAsync`, O(1), using LTV:
@@ -346,7 +348,7 @@ Status: **P** = provided by a dependency (verified and re-tested), **Part** = pa
    - Missing row → `DataStoreRemoved`.
    - Then, with a fresh clock in a separate statement: lease mismatch or expiry → `LeaseLost`.
    - Otherwise `ActiveGeneration = g`, `RefreshedAt = clock`, `SourceContractVersion`, and the lease is cleared.
-9. **Prune.** Own transaction, best effort: delete rows with `Generation < ActiveGeneration`. A failure is logged and never changes the outcome.
+9. **Prune.** Own transaction, best effort: delete rows with `Generation < ActiveGeneration`. A failure is logged and never changes the outcome. On SQL Server it deletes like reclaim (step 3), in statements of at most 4,000 rows, all in this transaction.
 10. **Release.** On every exit after `Acquired` without activation; best effort, with `CancellationToken.None` and a 5 s timeout. Clears the lease where `LeaseOwner = token`.
 
 **Guarantees:**
@@ -693,11 +695,12 @@ A rejected step gets a focused follow-up commit.
 - Files: MS repository, MS DI branch, MS write tests.
 - Depends on: 1.2.
 - Validation: the 1.2 list, including the lock-wait expiry tests and the exact retained-generation-ID tests, plus:
-  - `SqlBulkCopy` rejects an invalid parent and the FK stays trusted;
+  - the batched `OPENJSON` insert rejects an invalid parent or generation, and the foreign key and check constraints stay trusted;
+  - a paused 50,000-row stage, reclaim and prune each hold only intent locks at page and table level on the snapshot table while another data store completes a refresh;
   - two concurrent acquisitions of an absent target: one `Acquired`, one `Busy`, no duplicate-key error (key-range);
   - forced `1205`/`1222` → classified.
 - Done when: MS green.
-- Risks: `HOLDLOCK` escalation (row locks requested); `SqlBulkCopy` enlistment.
+- Risks: `HOLDLOCK` escalation (row locks requested); lock escalation of large inserts and deletes, for example under lock-memory pressure (batches reduce the risk; contention is bounded by lock waits).
 
 **1.4 PostgreSQL read models and aggregate boundary**
 - Objective: §6.7 on PG.
