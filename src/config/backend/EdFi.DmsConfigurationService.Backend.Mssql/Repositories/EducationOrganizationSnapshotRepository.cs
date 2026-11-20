@@ -1,0 +1,931 @@
+// SPDX-License-Identifier: Apache-2.0
+// Licensed to the Ed-Fi Alliance under one or more agreements.
+// The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+// See the LICENSE and NOTICES files in the project root for more information.
+
+using System.Data;
+using System.Data.Common;
+using System.Text.Json;
+using Dapper;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
+using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
+using EdFi.DmsConfigurationService.Backend.Services;
+using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.Options;
+
+namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
+
+/// <summary>
+/// SQL Server education organization snapshots and their target leases.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Each operation is one transaction. A lease decision locks the target row first (<c>UPDLOCK, HOLDLOCK</c>, or
+/// <c>HOLDLOCK</c> alone while staging), then reads <c>SYSUTCDATETIME()</c> with the locked row in a separate
+/// statement, because SQL Server reads <c>SYSUTCDATETIME()</c> once when a statement starts, so a statement that
+/// waited for the lock would judge the lease by time read before the wait. The write then uses that clock value,
+/// passed back as <c>datetime2</c>. Acquisition first takes a shared lock, held to commit, on the data store row,
+/// so a concurrent delete either finishes first, and the data store is not found, or waits until the acquisition
+/// commits and then cascades. The target lock's key-range part covers a target that does not exist yet, so two
+/// first acquisitions serialize: the second waits, then finds the first one's live lease.
+/// </para>
+/// <para>
+/// A staging transaction holds a shared lock on the target row. An acquisition's update lock is compatible with it,
+/// so a takeover can decide while staging runs, but its write needs an exclusive lock and waits until the staging
+/// commits; the new owner then removes those rows when it reclaims.
+/// </para>
+/// <para>
+/// Each operation reads the tenant context once and filters every statement it issues, lookups and writes alike,
+/// by that tenant's <c>TenantId</c>, so a target of another partition behaves as absent. This keeps partitions
+/// apart; it is not an authorization boundary.
+/// </para>
+/// <para>
+/// Every wait runs through a <see cref="JobDatabaseSession"/> under a deadline. A renewal's deadline is
+/// <c>JobSettings:RenewalInterval / 2</c> and its <c>LOCK_TIMEOUT</c> one second shorter, so a lock wait normally
+/// ends in the lock-timeout error (<c>1222</c>); when the deadline ends the wait first, the session is handed over
+/// and the operation fails in the same way, with a <see cref="TimeoutException"/> diagnostic. Release has 5 seconds,
+/// with a 4-second lock wait. Every other operation has the lease duration, with a 5-second lock wait.
+/// <c>LOCK_TIMEOUT</c> is session-scoped, so every session is ended, within its deadline, by rolling back any open
+/// transaction and resetting it to <c>-1</c>. Activation runs in the job fence's transaction, under the fence's
+/// lock wait and deadline.
+/// </para>
+/// <para>
+/// Organization rows are inserted with ordinary <c>INSERT … WITH (ROWLOCK)</c> statements that read their rows
+/// from a JSON parameter, so the foreign key and check constraints are enforced and stay trusted, and only the new
+/// rows are locked. A bulk copy is not used: without a table lock it loads by page and holds exclusive page locks,
+/// which block other data stores whose rows share those pages. Inserts and deletes run in batches of
+/// <see cref="BatchSize"/> rows, each its own statement, below the 5,000-lock threshold at which one statement
+/// escalates to a table lock that would block the snapshots of other data stores.
+/// </para>
+/// </remarks>
+public sealed class EducationOrganizationSnapshotRepository(
+    IOptions<DatabaseOptions> databaseOptions,
+    IOptions<JobOptions> jobOptions,
+    ITenantContextProvider tenantContextProvider
+) : IEducationOrganizationSnapshotRepository
+{
+    internal const int BatchSize = 4_000;
+
+    private const int LeaseOwnerMaxLength = 32;
+    private const string UpdateLock = "UPDLOCK, HOLDLOCK, ROWLOCK";
+    private const string ShareLock = "HOLDLOCK, ROWLOCK";
+
+    private static readonly TimeSpan _lockWait = JobLeaseTimings.WriteLockWait;
+    private static readonly TimeSpan _releaseTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan _deadlineHeadroom = TimeSpan.FromSeconds(1);
+
+    private const string ReadClockSql = "SELECT SYSUTCDATETIME();";
+
+    // The data store was found in the current tenant under a shared lock, so the new target takes its tenant.
+    private const string InsertTargetSql = """
+        INSERT INTO dmscs.EducationOrganizationSnapshotTarget
+            (DataStoreId, TenantId, LastGeneration, LeaseOwner, LeaseGeneration, LeaseExpiresAt, LastModifiedAt)
+        VALUES (@DataStoreId, @TenantId, 1, @Owner, 1, DATEADD(millisecond, @LeaseMilliseconds, @Now), @Now);
+        """;
+
+    // The text columns are read as nvarchar(max), so a value longer than its column fails the insert instead of
+    // being cut short.
+    private const string InsertOrganizationsSql = """
+        INSERT INTO dmscs.EducationOrganizationSnapshot WITH (ROWLOCK)
+            (DataStoreId, Generation, TenantId, EducationOrganizationId, NameOfInstitution, ShortNameOfInstitution,
+            Discriminator, ParentId, RefreshedAt, SourceContractVersion)
+        SELECT @DataStoreId, @Generation, @TenantId, item.Id, item.Name, item.ShortName, item.Discriminator,
+            item.ParentId, @Now, @SourceContractVersion
+        FROM OPENJSON(@Items)
+            WITH (
+                Id BIGINT '$.Id',
+                Name NVARCHAR(MAX) '$.Name',
+                ShortName NVARCHAR(MAX) '$.ShortName',
+                Discriminator NVARCHAR(MAX) '$.Discriminator',
+                ParentId BIGINT '$.ParentId'
+            ) AS item;
+        """;
+
+    /// <summary>Test seam: hooks into every session this repository opens.</summary>
+    internal JobDatabaseSessionHooks? SessionHooks { get; init; }
+
+    private TimeSpan LeaseDuration => jobOptions.Value.LeaseDuration;
+
+    private TimeSpan RenewalTimeout => jobOptions.Value.RenewalTimeout;
+
+    private int LeaseMilliseconds => (int)LeaseDuration.TotalMilliseconds;
+
+    public Task<SnapshotAcquireResult> AcquireAsync(
+        int dataStoreId,
+        string leaseOwner,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentException.ThrowIfNullOrEmpty(leaseOwner);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(leaseOwner.Length, LeaseOwnerMaxLength);
+
+        TenantScope tenant = CurrentTenant();
+        var keys = new { DataStoreId = dataStoreId, tenant.TenantId };
+
+        return InTransactionAsync<SnapshotAcquireResult>(
+            "Acquire",
+            LeaseDuration,
+            _lockWait,
+            async (session, deadline) =>
+            {
+                if (
+                    await ScalarAsync<int?>(
+                        session,
+                        "LockDataStore",
+                        LockDataStoreSql(tenant),
+                        keys,
+                        deadline,
+                        cancellationToken
+                    )
+                    is null
+                )
+                {
+                    return Outcome.Rollback<SnapshotAcquireResult>(
+                        new SnapshotAcquireResult.DataStoreNotFound()
+                    );
+                }
+
+                var lease = new EducationOrganizationSnapshotLease(dataStoreId, leaseOwner, 1);
+                if (
+                    await ScalarAsync<int?>(
+                        session,
+                        "LockTarget",
+                        LockTargetSql(tenant, UpdateLock),
+                        keys,
+                        deadline,
+                        cancellationToken
+                    )
+                    is null
+                )
+                {
+                    // The key-range lock on the missing key holds back any concurrent first acquisition.
+                    DateTime now = await ScalarAsync<DateTime>(
+                        session,
+                        "ReadClock",
+                        ReadClockSql,
+                        new { },
+                        deadline,
+                        cancellationToken
+                    );
+                    await ExecuteAsync(
+                        session,
+                        "InsertTarget",
+                        InsertTargetSql,
+                        Parameters(
+                            new
+                            {
+                                DataStoreId = dataStoreId,
+                                tenant.TenantId,
+                                Owner = leaseOwner,
+                                LeaseMilliseconds,
+                            },
+                            now
+                        ),
+                        deadline,
+                        cancellationToken
+                    );
+                    return Outcome.Commit<SnapshotAcquireResult>(new SnapshotAcquireResult.Acquired(lease));
+                }
+
+                TargetRow row = await ReadTargetAsync(
+                    session,
+                    tenant,
+                    dataStoreId,
+                    deadline,
+                    cancellationToken
+                );
+                if (row.LeaseIsLive)
+                {
+                    return Outcome.Rollback<SnapshotAcquireResult>(new SnapshotAcquireResult.Busy());
+                }
+
+                long generation = await ScalarAsync<long>(
+                    session,
+                    "TakeLease",
+                    TakeLeaseSql(tenant),
+                    Parameters(
+                        new
+                        {
+                            DataStoreId = dataStoreId,
+                            tenant.TenantId,
+                            Owner = leaseOwner,
+                            LeaseMilliseconds,
+                        },
+                        row.DatabaseUtcNow
+                    ),
+                    deadline,
+                    cancellationToken
+                );
+                return Outcome.Commit<SnapshotAcquireResult>(
+                    new SnapshotAcquireResult.Acquired(lease with { Generation = generation })
+                );
+            },
+            diagnostic => new SnapshotAcquireResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
+    public Task<SnapshotTargetResult> ReclaimAsync(
+        EducationOrganizationSnapshotLease lease,
+        CancellationToken cancellationToken
+    ) =>
+        UnderLeaseAsync(
+            "Reclaim",
+            lease,
+            LeaseDuration,
+            _lockWait,
+            UpdateLock,
+            (session, tenant, deadline, row) =>
+                DeleteInBatchesAsync(
+                    session,
+                    "DeleteUnpublished",
+                    ReclaimSql(tenant),
+                    new
+                    {
+                        lease.DataStoreId,
+                        tenant.TenantId,
+                        lease.Generation,
+                        row.ActiveGeneration,
+                        BatchSize,
+                    },
+                    deadline,
+                    cancellationToken
+                ),
+            cancellationToken
+        );
+
+    public Task<SnapshotTargetResult> RenewAsync(
+        EducationOrganizationSnapshotLease lease,
+        CancellationToken cancellationToken
+    ) =>
+        UnderLeaseAsync(
+            "Renew",
+            lease,
+            RenewalTimeout,
+            RenewalTimeout - Min(_deadlineHeadroom, RenewalTimeout / 2),
+            UpdateLock,
+            (session, tenant, deadline, row) =>
+                ExecuteAsync(
+                    session,
+                    "ExtendLease",
+                    RenewSql(tenant),
+                    Parameters(
+                        new
+                        {
+                            lease.DataStoreId,
+                            tenant.TenantId,
+                            lease.Owner,
+                            lease.Generation,
+                            LeaseMilliseconds,
+                        },
+                        row.DatabaseUtcNow
+                    ),
+                    deadline,
+                    cancellationToken
+                ),
+            cancellationToken
+        );
+
+    public Task<SnapshotTargetResult> StageAsync(
+        EducationOrganizationSnapshotLease lease,
+        IReadOnlyList<EducationOrganizationProjectionItem> items,
+        string sourceContractVersion,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(items);
+        ArgumentException.ThrowIfNullOrEmpty(sourceContractVersion);
+
+        // The rows take the TenantId of the target row, which was read under the current tenant's filter.
+        return UnderLeaseAsync(
+            "Stage",
+            lease,
+            LeaseDuration,
+            _lockWait,
+            ShareLock,
+            (session, _, deadline, row) =>
+                items.Count == 0
+                    ? Task.FromResult(0)
+                    : session.RunAsync(
+                        "InsertOrganizations",
+                        token =>
+                            InsertOrganizationsAsync(
+                                session.Connection,
+                                session.Transaction!,
+                                new StagedGeneration(
+                                    lease.DataStoreId,
+                                    lease.Generation,
+                                    row.TenantId,
+                                    row.DatabaseUtcNow,
+                                    sourceContractVersion
+                                ),
+                                items,
+                                deadline,
+                                token
+                            ),
+                        deadline,
+                        cancellationToken
+                    ),
+            cancellationToken
+        );
+    }
+
+    public async Task<SnapshotTargetResult> ActivateAsync(
+        DbTransaction transaction,
+        EducationOrganizationSnapshotLease lease,
+        string sourceContractVersion,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        ArgumentException.ThrowIfNullOrEmpty(sourceContractVersion);
+        DbConnection connection = ActiveTransactionConnection(transaction, cancellationToken);
+        TenantScope tenant = CurrentTenant();
+
+        try
+        {
+            if (
+                await connection.ExecuteScalarAsync<int?>(
+                    new CommandDefinition(
+                        LockTargetSql(tenant, UpdateLock),
+                        new { lease.DataStoreId, tenant.TenantId },
+                        transaction,
+                        cancellationToken: cancellationToken
+                    )
+                )
+                is null
+            )
+            {
+                return new SnapshotTargetResult.DataStoreRemoved();
+            }
+
+            TargetRow row = await connection.QuerySingleAsync<TargetRow>(
+                new CommandDefinition(
+                    ReadTargetSql(tenant),
+                    new { lease.DataStoreId, tenant.TenantId },
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            );
+            if (row.LossFor(lease) is { } reason)
+            {
+                return new SnapshotTargetResult.LeaseLost(reason);
+            }
+
+            DynamicParameters parameters = Parameters(
+                new
+                {
+                    lease.DataStoreId,
+                    tenant.TenantId,
+                    lease.Owner,
+                    lease.Generation,
+                    SourceContractVersion = sourceContractVersion,
+                },
+                row.DatabaseUtcNow
+            );
+            int rows = await connection.ExecuteAsync(
+                new CommandDefinition(
+                    ActivateSql(tenant),
+                    parameters,
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            );
+            return new SnapshotTargetResult.Success(rows);
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            throw new SnapshotStoreException(MssqlJobDiagnostics.From(exception, "Activate"));
+        }
+    }
+
+    public Task<SnapshotTargetResult> PruneAsync(int dataStoreId, CancellationToken cancellationToken)
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTargetResult>(
+            "Prune",
+            LeaseDuration,
+            _lockWait,
+            async (session, deadline) =>
+                Outcome.Commit<SnapshotTargetResult>(
+                    new SnapshotTargetResult.Success(
+                        await DeleteInBatchesAsync(
+                            session,
+                            "DeleteSuperseded",
+                            PruneSql(tenant),
+                            new
+                            {
+                                DataStoreId = dataStoreId,
+                                tenant.TenantId,
+                                BatchSize,
+                            },
+                            deadline,
+                            cancellationToken
+                        )
+                    )
+                ),
+            diagnostic => new SnapshotTargetResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
+    public Task<SnapshotTargetResult> ReleaseAsync(
+        EducationOrganizationSnapshotLease lease,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTargetResult>(
+            "Release",
+            _releaseTimeout,
+            _releaseTimeout - _deadlineHeadroom,
+            async (session, deadline) =>
+                Outcome.Commit<SnapshotTargetResult>(
+                    new SnapshotTargetResult.Success(
+                        await ExecuteAsync(
+                            session,
+                            "ClearLease",
+                            ReleaseSql(tenant),
+                            new
+                            {
+                                lease.DataStoreId,
+                                tenant.TenantId,
+                                lease.Owner,
+                                lease.Generation,
+                            },
+                            deadline,
+                            cancellationToken
+                        )
+                    )
+                ),
+            diagnostic => new SnapshotTargetResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Inserts <paramref name="items"/> as the organizations of <paramref name="generation"/> in
+    /// <paramref name="transaction"/>, in statements of at most <see cref="BatchSize"/> rows that lock only the rows
+    /// they insert, each bounded by the time left on <paramref name="deadline"/>. Returns the rows inserted.
+    /// </summary>
+    internal static async Task<int> InsertOrganizationsAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        StagedGeneration generation,
+        IReadOnlyList<EducationOrganizationProjectionItem> items,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    )
+    {
+        int inserted = 0;
+        foreach (EducationOrganizationProjectionItem[] batch in items.Chunk(BatchSize))
+        {
+            DynamicParameters parameters = new(
+                new
+                {
+                    generation.DataStoreId,
+                    generation.Generation,
+                    generation.TenantId,
+                    generation.SourceContractVersion,
+                }
+            );
+            parameters.Add("Now", generation.RefreshedAt, DbType.DateTime2);
+            parameters.Add(
+                "Items",
+                JsonSerializer.Serialize(
+                    batch.Select(item => new StagedItem(
+                        item.EducationOrganizationId,
+                        item.NameOfInstitution,
+                        item.ShortNameOfInstitution,
+                        item.Discriminator,
+                        item.ParentId
+                    ))
+                ),
+                DbType.String,
+                size: -1
+            );
+            inserted += await connection.ExecuteAsync(
+                new CommandDefinition(
+                    InsertOrganizationsSql,
+                    parameters,
+                    transaction,
+                    deadline.CommandTimeoutSeconds,
+                    cancellationToken: cancellationToken
+                )
+            );
+        }
+
+        return inserted;
+    }
+
+    /// <summary>
+    /// Lock, then validate, then write: locks the current tenant's target row with <paramref name="lockHints"/>,
+    /// reads it with a fresh clock in a separate statement, and runs <paramref name="write"/> only while
+    /// <paramref name="lease"/> is live.
+    /// </summary>
+    private Task<SnapshotTargetResult> UnderLeaseAsync(
+        string operation,
+        EducationOrganizationSnapshotLease lease,
+        TimeSpan budget,
+        TimeSpan lockWait,
+        string lockHints,
+        Func<JobDatabaseSession, TenantScope, JobDeadline, TargetRow, Task<int>> write,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTargetResult>(
+            operation,
+            budget,
+            lockWait,
+            async (session, deadline) =>
+            {
+                if (
+                    await ScalarAsync<int?>(
+                        session,
+                        "LockTarget",
+                        LockTargetSql(tenant, lockHints),
+                        new { lease.DataStoreId, tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                    is null
+                )
+                {
+                    return Outcome.Rollback<SnapshotTargetResult>(
+                        new SnapshotTargetResult.DataStoreRemoved()
+                    );
+                }
+
+                TargetRow row = await ReadTargetAsync(
+                    session,
+                    tenant,
+                    lease.DataStoreId,
+                    deadline,
+                    cancellationToken
+                );
+                if (row.LossFor(lease) is { } reason)
+                {
+                    return Outcome.Rollback<SnapshotTargetResult>(new SnapshotTargetResult.LeaseLost(reason));
+                }
+
+                return Outcome.Commit<SnapshotTargetResult>(
+                    new SnapshotTargetResult.Success(await write(session, tenant, deadline, row))
+                );
+            },
+            diagnostic => new SnapshotTargetResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
+
+    /// <summary>
+    /// Runs <paramref name="body"/> in one API transaction whose lock waits are bounded by
+    /// <paramref name="lockWait"/>, and the whole operation, its commit and session cleanup included, by
+    /// <paramref name="budget"/>. A failure, the deadline included, becomes <paramref name="failure"/>; cancellation
+    /// of the caller's token propagates. The session always ends by rolling back an open transaction and resetting
+    /// <c>LOCK_TIMEOUT</c>.
+    /// </summary>
+    private async Task<T> InTransactionAsync<T>(
+        string operation,
+        TimeSpan budget,
+        TimeSpan lockWait,
+        Func<JobDatabaseSession, JobDeadline, Task<Outcome<T>>> body,
+        Func<JobFailureDiagnostic, T> failure,
+        CancellationToken cancellationToken
+    )
+    {
+        JobDeadline deadline = JobDeadline.Start(budget);
+        JobDatabaseSession session = new(
+            new SqlConnection(databaseOptions.Value.DatabaseConnection),
+            SessionHooks
+        );
+        try
+        {
+            await MssqlJobSession.OpenAsync(session, deadline, cancellationToken);
+            await MssqlJobSession.BeginAsync(session, deadline, cancellationToken);
+            await MssqlJobSession.ExecuteAsync(
+                session,
+                "SetLockWait",
+                $"SET LOCK_TIMEOUT {(long)lockWait.TotalMilliseconds};",
+                deadline,
+                cancellationToken
+            );
+            Outcome<T> outcome = await body(session, deadline);
+            if (outcome.Commit)
+            {
+                await MssqlJobSession.ExecuteAsync(
+                    session,
+                    "Commit",
+                    MssqlJobSession.CommitTransaction,
+                    deadline,
+                    cancellationToken
+                );
+            }
+
+            return outcome.Result;
+        }
+        catch (Exception exception)
+            when (exception is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
+        {
+            return failure(MssqlJobDiagnostics.From(exception, operation));
+        }
+        finally
+        {
+            await session.EndAsync(
+                deadline,
+                MssqlJobSession.EndSessionWith(session, deadline, MssqlJobSession.EndSession)
+            );
+        }
+    }
+
+    /// <summary>
+    /// The open connection of a caller's active SQL Server transaction. A completed or disposed transaction is
+    /// rejected, by reading <c>IsolationLevel</c>, before any statement runs, so the activation can never run
+    /// outside it.
+    /// </summary>
+    private static DbConnection ActiveTransactionConnection(
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(transaction);
+        if (transaction is not SqlTransaction)
+        {
+            throw new ArgumentException(
+                "The supplied transaction must be a SQL Server transaction.",
+                nameof(transaction)
+            );
+        }
+
+        _ = transaction.IsolationLevel;
+        if (transaction.Connection is not SqlConnection { State: ConnectionState.Open } connection)
+        {
+            throw new InvalidOperationException("The supplied transaction must have an open connection.");
+        }
+
+        return connection;
+    }
+
+    private TenantScope CurrentTenant()
+    {
+        TenantContext context = tenantContextProvider.Context;
+        return new TenantScope(
+            context,
+            context is TenantContext.Multitenant multitenant ? multitenant.TenantId : null
+        );
+    }
+
+    /// <summary>
+    /// The parameters of a write that uses the clock value read after the row lock, typed <c>datetime2</c> so it
+    /// is written back exactly rather than rounded to <c>datetime</c>.
+    /// </summary>
+    private static DynamicParameters Parameters(object values, DateTime now)
+    {
+        DynamicParameters parameters = new(values);
+        parameters.Add("Now", now, DbType.DateTime2);
+        return parameters;
+    }
+
+    private static string LockDataStoreSql(TenantScope tenant) =>
+        $"""
+            SELECT 1 FROM dmscs.DataStore WITH (HOLDLOCK, ROWLOCK)
+            WHERE Id = @DataStoreId AND {tenant.Where()};
+            """;
+
+    private static string LockTargetSql(TenantScope tenant, string lockHints) =>
+        $"""
+            SELECT 1 FROM dmscs.EducationOrganizationSnapshotTarget WITH ({lockHints})
+            WHERE DataStoreId = @DataStoreId AND {tenant.Where()};
+            """;
+
+    // Read after the row lock is held, so the clock sample postdates any wait for it.
+    private static string ReadTargetSql(TenantScope tenant) =>
+        $"""
+            SELECT TenantId, LastGeneration, ActiveGeneration, LeaseOwner, LeaseGeneration, LeaseExpiresAt,
+                SYSUTCDATETIME() AS DatabaseUtcNow
+            FROM dmscs.EducationOrganizationSnapshotTarget
+            WHERE DataStoreId = @DataStoreId AND {tenant.Where()};
+            """;
+
+    // Assignments read the row's values from before the update, so the lease takes the new LastGeneration.
+    private static string TakeLeaseSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs.EducationOrganizationSnapshotTarget
+            SET LastGeneration = LastGeneration + 1,
+                LeaseOwner = @Owner,
+                LeaseGeneration = LastGeneration + 1,
+                LeaseExpiresAt = DATEADD(millisecond, @LeaseMilliseconds, @Now),
+                LastModifiedAt = @Now
+            OUTPUT inserted.LeaseGeneration
+            WHERE DataStoreId = @DataStoreId AND {tenant.Where()};
+            """;
+
+    private static string LeasePredicate(TenantScope tenant) =>
+        $"""
+            DataStoreId = @DataStoreId AND {tenant.Where()}
+                AND LeaseOwner = @Owner AND LeaseGeneration = @Generation
+            """;
+
+    private static string RenewSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs.EducationOrganizationSnapshotTarget
+            SET LeaseExpiresAt = DATEADD(millisecond, @LeaseMilliseconds, @Now),
+                LastModifiedAt = @Now
+            WHERE {LeasePredicate(tenant)};
+            """;
+
+    private static string ActivateSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs.EducationOrganizationSnapshotTarget
+            SET ActiveGeneration = @Generation,
+                RefreshedAt = @Now,
+                SourceContractVersion = @SourceContractVersion,
+                LeaseOwner = NULL,
+                LeaseGeneration = NULL,
+                LeaseExpiresAt = NULL,
+                LastModifiedAt = @Now
+            WHERE {LeasePredicate(tenant)};
+            """;
+
+    private static string ReleaseSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs.EducationOrganizationSnapshotTarget
+            SET LeaseOwner = NULL,
+                LeaseGeneration = NULL,
+                LeaseExpiresAt = NULL,
+                LastModifiedAt = SYSUTCDATETIME()
+            WHERE {LeasePredicate(tenant)};
+            """;
+
+    // Keeps the lease's own generation and the active one; an absent active generation keeps nothing else.
+    private static string ReclaimSql(TenantScope tenant) =>
+        $"""
+            DELETE TOP (@BatchSize) FROM dmscs.EducationOrganizationSnapshot
+            WHERE DataStoreId = @DataStoreId AND {tenant.Where()}
+              AND Generation <> @Generation
+              AND (@ActiveGeneration IS NULL OR Generation <> @ActiveGeneration);
+            """;
+
+    private static string PruneSql(TenantScope tenant) =>
+        $"""
+            DELETE TOP (@BatchSize) s
+            FROM dmscs.EducationOrganizationSnapshot AS s
+            INNER JOIN dmscs.EducationOrganizationSnapshotTarget AS t ON t.DataStoreId = s.DataStoreId
+            WHERE t.DataStoreId = @DataStoreId AND {tenant.Where("t")} AND {tenant.Where("s")}
+              AND s.Generation < t.ActiveGeneration;
+            """;
+
+    /// <summary>Runs a <c>DELETE TOP (@BatchSize)</c> statement until a batch deletes fewer rows; returns the total.</summary>
+    private static async Task<int> DeleteInBatchesAsync(
+        JobDatabaseSession session,
+        string name,
+        string sql,
+        object parameters,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    )
+    {
+        int total = 0;
+        int deleted;
+        do
+        {
+            deleted = await ExecuteAsync(session, name, sql, parameters, deadline, cancellationToken);
+            total += deleted;
+        } while (deleted == BatchSize);
+
+        return total;
+    }
+
+    private static Task<TargetRow> ReadTargetAsync(
+        JobDatabaseSession session,
+        TenantScope tenant,
+        int dataStoreId,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    ) =>
+        session.RunAsync(
+            "ReadTarget",
+            token =>
+                session.Connection.QuerySingleAsync<TargetRow>(
+                    MssqlJobSession.Command(
+                        session,
+                        ReadTargetSql(tenant),
+                        new { DataStoreId = dataStoreId, tenant.TenantId },
+                        deadline,
+                        token
+                    )
+                ),
+            deadline,
+            cancellationToken
+        );
+
+    private static Task<T?> ScalarAsync<T>(
+        JobDatabaseSession session,
+        string name,
+        string sql,
+        object parameters,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    ) =>
+        session.RunAsync(
+            name,
+            token =>
+                session.Connection.ExecuteScalarAsync<T>(
+                    MssqlJobSession.Command(session, sql, parameters, deadline, token)
+                ),
+            deadline,
+            cancellationToken
+        );
+
+    private static Task<int> ExecuteAsync(
+        JobDatabaseSession session,
+        string name,
+        string sql,
+        object parameters,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    ) =>
+        session.RunAsync(
+            name,
+            token =>
+                session.Connection.ExecuteAsync(
+                    MssqlJobSession.Command(session, sql, parameters, deadline, token)
+                ),
+            deadline,
+            cancellationToken
+        );
+
+    private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
+
+    /// <summary>The generation an insert writes: its data store, tenant, staging time and contract version.</summary>
+    internal sealed record StagedGeneration(
+        int DataStoreId,
+        long Generation,
+        long? TenantId,
+        DateTime RefreshedAt,
+        string SourceContractVersion
+    );
+
+    /// <summary>One organization as serialized into the insert's JSON parameter.</summary>
+    private sealed record StagedItem(
+        long Id,
+        string Name,
+        string? ShortName,
+        string Discriminator,
+        long? ParentId
+    );
+
+    /// <summary>The tenant context one operation captured, and its <c>TenantId</c> parameter value.</summary>
+    private sealed record TenantScope(TenantContext Context, long? TenantId)
+    {
+        public string Where(string? tableAlias = null) => Context.TenantWhereClause(tableAlias);
+    }
+
+    /// <summary>A transaction body's result and whether the transaction commits.</summary>
+    private readonly record struct Outcome<T>(T Result, bool Commit);
+
+    private static class Outcome
+    {
+        public static Outcome<T> Commit<T>(T result) => new(result, true);
+
+        public static Outcome<T> Rollback<T>(T result) => new(result, false);
+    }
+
+    /// <summary>
+    /// The locked target row and the database clock read after the lock was held. The times are UTC in
+    /// <c>DATETIME2</c> columns, which SqlClient reads as <see cref="DateTimeKind.Unspecified"/>; they are only
+    /// compared with each other and written back.
+    /// </summary>
+    private sealed record TargetRow(
+        long? TenantId,
+        long LastGeneration,
+        long? ActiveGeneration,
+        string? LeaseOwner,
+        long? LeaseGeneration,
+        DateTime? LeaseExpiresAt,
+        DateTime DatabaseUtcNow
+    )
+    {
+        public bool LeaseIsLive => LeaseOwner is not null && LeaseExpiresAt > DatabaseUtcNow;
+
+        /// <summary>Why <paramref name="lease"/> does not authorize its holder, or null while it is live.</summary>
+        public SnapshotLeaseLossReason? LossFor(EducationOrganizationSnapshotLease lease)
+        {
+            if (
+                !string.Equals(LeaseOwner, lease.Owner, StringComparison.Ordinal)
+                || LeaseGeneration != lease.Generation
+            )
+            {
+                return SnapshotLeaseLossReason.Taken;
+            }
+
+            return LeaseExpiresAt > DatabaseUtcNow ? null : SnapshotLeaseLossReason.Expired;
+        }
+    }
+}

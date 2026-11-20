@@ -286,6 +286,7 @@ public class JobOptionsStartupTests
     {
         private WebApplicationFactory<Program> _factory = null!;
         private readonly List<Type> _registered = [];
+        private Type _snapshotRepository = null!;
 
         [SetUp]
         public void Act()
@@ -310,6 +311,9 @@ public class JobOptionsStartupTests
             {
                 _registered.Add(scope.ServiceProvider.GetRequiredService(service).GetType());
             }
+            _snapshotRepository = scope
+                .ServiceProvider.GetRequiredService<IEducationOrganizationSnapshotRepository>()
+                .GetType();
         }
 
         [TearDown]
@@ -323,6 +327,12 @@ public class JobOptionsStartupTests
                 .And.OnlyContain(type =>
                     type.Namespace!.StartsWith("EdFi.DmsConfigurationService.Backend.Mssql")
                 );
+
+        [Test]
+        public void It_registers_the_sql_server_snapshot_repository() =>
+            _snapshotRepository
+                .Should()
+                .Be<Backend.Mssql.Repositories.EducationOrganizationSnapshotRepository>();
     }
 
     [TestFixture]
