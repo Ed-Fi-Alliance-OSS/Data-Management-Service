@@ -204,11 +204,120 @@ The `relates to` link records that adjacency, and it answers the epic's own note
 
 ## D2: Control Surface
 
-Pending. Decides the operator control for R1, R2, R3, R8 and R9 (AC3): the CMS grant model, how every replica learns of a change, its freshness bound, the in-flight boundary, and the rejected alternatives.
+**Decision: capture grants in CMS, polled by every DMS replica.**
+An operator enables capture for one API client by creating a grant in CMS.
+Each DMS replica polls CMS for the active grants and decides capture from that local snapshot, with no CMS call on the request path.
+
+### The Grant
+
+A grant is a new sub-resource of the API client, following the `reset-credential` precedent (`ApiClientModule.cs:159`).
+
+| Endpoint | Authorization | Effect |
+| --- | --- | --- |
+| `POST /v3/apiClients/{id}/requestCapture` | `MapSecuredPost` (admin scope) | Creates a grant: a mode, `Failures` by default or `All`, and a duration. Refused with 409 if the client already has an active grant |
+| `DELETE /v3/apiClients/{id}/requestCapture` | `MapSecuredDelete` (admin scope) | Ends the client's active grant early. 404 if there is none |
+| `GET /v3/apiClients/{id}/requestCapture` | `MapSecuredGet` | The client's grant history, newest first |
+| `GET /v3/requestCaptureGrants/active` | `MapLimitedAccess` | The active-grants read DMS polls, scoped by the `Tenant` header like every other DMS read |
+
+It is backed by `dmscs.RequestCaptureGrant`, created by DbUp scripts for both engines.
+
+| Column | Value |
+| --- | --- |
+| Id | The grant id |
+| ApiClientId | The CMS API client, with a foreign key that cascades on the client's deletion |
+| Mode | `Failures` or `All` |
+| StartsAt | Set by CMS at creation. A grant starts when it is created; there is no scheduled start, because the ticket asks only for on, off, and timed expiry |
+| ExpiresAt | `StartsAt` plus the requested duration |
+| CreatedBy | The caller's identity, through `IAuditContext` |
+| EndedAt, EndedBy | Set only when an operator ends the grant early |
+
+**The duration is bounded.**
+The request must give a duration, and CMS refuses one above a configured maximum, proposed as 24 hours.
+So capture cannot be left on by accident (R3): a grant that is never ended expires on its own.
+
+**Rows are never overwritten.**
+Ending a grant sets `EndedAt` and `EndedBy` on a row that has none, and nothing else ever changes a row.
+Changing the mode means ending the grant and creating another.
+So the table is the history R8 asks for: who enabled capture, for which client, when, and who ended it.
+CMS also emits a structured log event when a grant is created and when it is ended, carrying the grant id, the client, the mode, the window, and the caller.
+A client's deletion removes its grants with it; long-term audit retention is out of scope, and the log events remain.
+
+**The active-grants read contract.**
+For each grant that is active now (not ended, and `ExpiresAt` in the future), it returns:
+
+- the grant id
+- the client key: the CMS `ApiClient.ClientId` that DMS's `JwtAuthentication` validates, not the CMS row id in the sub-resource path
+- the tenant
+- the mode
+- `StartsAt` and `ExpiresAt`
+
+Story 1 builds this read and story 4 consumes it.
+If [D5](#d5-payload-policy) chooses a masking mode per grant, the grant gains that field and this read returns it.
+
+### How Every Replica Learns of a Change
+
+Each DMS replica runs a background poller, on the precedent of the backend's hosted services (`DocumentCacheProjectionSupervisor`).
+It calls the active-grants read for each tenant the replica has loaded (`ConfigurationServiceDataStoreProvider.GetLoadedTenantKeys`, `:350`), through the existing CMS client and token handler.
+The result replaces an immutable snapshot keyed by tenant and client key.
+A request's capture decision is a lookup in that snapshot, so the per-request cost is a dictionary read and no CMS call.
+
+### Freshness
+
+Three values bound how current the snapshot is:
+
+- `I`, the poll interval, proposed as 30 seconds as an operational target, not a ticket criterion
+- `T`, the poll timeout
+- `A`, the maximum snapshot age, about `2I + T`, which tolerates one failed poll
+
+**The rules.**
+- A snapshot's age is counted from the start of the poll that produced it, on the monotonic clock, so a slow response cannot make old data look new.
+- A response from an older poll that arrives after a newer one is discarded.
+- A snapshot older than `A` is stale, and a stale snapshot captures nothing: the control fails closed.
+- `ExpiresAt` is also enforced locally between polls. It assumes DMS and CMS clocks are synchronized, as JWT validation already does.
+
+**What an operator can rely on, which the documentation states:**
+
+| Condition | Enable | Disable |
+| --- | --- | --- |
+| CMS reachable | Takes effect on every replica within `A` | Takes effect on every replica within `A` |
+| CMS unreachable | Waits for the next successful poll | Still takes effect within `A`, because a stale snapshot captures nothing |
+
+### The In-Flight Boundary
+
+A request's capture decision is made once, at **authenticated selection**.
+
+- When the frontend reads a request, it checks only whether some grant for the tenant could apply, to decide whether to keep a raw copy of the body. That check is provisional: the client is not authenticated yet.
+- The selection step runs after `JwtAuthentication`. It looks up the validated client key in the current snapshot and freezes the decision for that request.
+- A disable that lands before selection prevents capture.
+- A disable that lands after selection does not cancel the request: it is captured, and rows already queued for writing are written.
+
+### Rejected Alternatives
+
+- **Carrying the grant on `GET v3/apiClients/{clientId}`.** That read is cached for 600 seconds per replica, and DMS fetches it only for POST, ownership-based authorization, and profile resolution, so most GETs would never see a grant change.
+- **A control table in DMS.** DMS has no database of its own, only a `dms` schema per data store.
+- **Configuration reload.** DMS disables it (`Program.cs:26-29`), it is per process rather than per deployment, and an edited file records no one who changed it.
 
 ## D3: Readiness
 
-Pending. Decides how the capture path is present at runtime when no grant exists (R2, R5), and the idle benchmark that proves R5.
+**Decision: no readiness flag.**
+The capture store is configured at deployment, by giving DMS its connection string ([D6](#d6-capture-store-and-retention)).
+
+- With a store configured, the control path is always registered: the poller, and the selection and finalization steps. With no grants, which is the default, nothing is captured.
+- With no store configured, nothing is registered, and the request pipeline is the one DMS runs today.
+
+So an operator enables capture for a client without a restart (R2), and a deployment that never configures a store pays nothing (R5).
+
+**The idle benchmark is an implementation gate.**
+R5 asks for no measurable overhead when capture is off.
+The capture-pipeline story must show that a deployment with a store configured and no grants is indistinguishable from one with no store, and the story is not done until it does.
+
+**The fallback, if the benchmark fails.**
+A `RequestResponseCapture:Enabled` flag would register the control path only when set, so its first enablement needs a one-time restart.
+That gives up part of R2, so adopting it needs the renewed approval of the DMS-1419 owner.
+It is not designed further here.
+
+**Rejected alternative.**
+A pre-filing prototype to measure the overhead before choosing was considered and not chosen: the benchmark gates the implementation instead, which costs nothing if it passes.
 
 ## D4: Credential Exclusion
 
