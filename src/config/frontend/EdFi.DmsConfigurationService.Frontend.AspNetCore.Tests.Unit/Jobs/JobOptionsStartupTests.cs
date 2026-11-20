@@ -5,6 +5,7 @@
 
 using System.Collections.Generic;
 using System.Net;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
@@ -192,6 +193,7 @@ public class JobOptionsStartupTests
         private JobLeaseTimings _timings = null!;
         private JobRuntimeEnvironment _environment = null!;
         private readonly Dictionary<Type, Type> _registered = [];
+        private Type _snapshotRepository = null!;
         private int _jobServices;
 
         [SetUp]
@@ -225,6 +227,9 @@ public class JobOptionsStartupTests
             {
                 _registered[service] = scope.ServiceProvider.GetRequiredService(service).GetType();
             }
+            _snapshotRepository = scope
+                .ServiceProvider.GetRequiredService<IEducationOrganizationSnapshotRepository>()
+                .GetType();
         }
 
         [TearDown]
@@ -268,6 +273,12 @@ public class JobOptionsStartupTests
                 .OnlyContain(type =>
                     type.Namespace!.StartsWith("EdFi.DmsConfigurationService.Backend.Postgresql")
                 );
+
+        [Test]
+        public void It_registers_the_postgresql_snapshot_repository() =>
+            _snapshotRepository
+                .Should()
+                .Be<Backend.Postgresql.Repositories.EducationOrganizationSnapshotRepository>();
     }
 
     [TestFixture]
