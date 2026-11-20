@@ -617,17 +617,115 @@ public class Given_Extension_Table_Derivation_With_Standalone_Extension_Project_
         edFiSchool
             .RelationalModel.TablesInDependencyOrder.Should()
             .Contain(table => table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension");
+
+        var standaloneSchool = _result.ConcreteResourcesInNameOrder.Single(model =>
+            model.ResourceKey.Resource.ProjectName == "Homograph"
+            && model.ResourceKey.Resource.ResourceName == "School"
+        );
+
+        standaloneSchool
+            .RelationalModel.TablesInDependencyOrder.Should()
+            .NotContain(table =>
+                table.Table.Schema.Value == "sample" && table.Table.Name == "SchoolExtension"
+            );
+    }
+}
+
+/// <summary>
+/// Test fixture for diagnostics when a resource extension has no eligible base resource.
+/// </summary>
+[TestFixture]
+public class Given_Extension_Table_Derivation_Without_An_Eligible_Base
+{
+    [Test]
+    public void It_should_explain_why_a_standalone_extension_resource_is_ineligible()
+    {
+        var schemaSet = BuildSchemaSet();
+        var builder = CreateBuilder();
+
+        Action act = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        act.Should()
+            .ThrowExactly<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be(
+                "Resource extension 'TPDM:School' matches the name of a standalone resource from an extension project. "
+                    + "Standalone extension-project resources are unsupported as resource-extension bases. "
+                    + "Select a core resource as the base."
+            );
     }
 
     [Test]
-    public void It_should_preserve_the_standalone_extension_project_resource()
+    public void It_should_keep_the_missing_base_diagnostic_for_a_case_only_misspelling()
     {
-        _result
-            .ConcreteResourcesInNameOrder.Should()
-            .Contain(model =>
-                model.ResourceKey.Resource.ProjectName == "Homograph"
-                && model.ResourceKey.Resource.ResourceName == "School"
-            );
+        var tpdmProjectSchema = ExtensionTableTestSchemaBuilder.BuildTpdmExtensionProjectSchema();
+        ((JsonObject)tpdmProjectSchema["resourceSchemas"]!["schools"]!)["resourceName"] = "SchooL";
+        var schemaSet = BuildSchemaSet(tpdmProjectSchema);
+        var builder = CreateBuilder();
+
+        Action act = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        act.Should()
+            .ThrowExactly<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be("Resource extension 'TPDM:SchooL' did not match a concrete base resource.");
+    }
+
+    [Test]
+    public void It_should_validate_the_declaring_project_before_resolving_the_base()
+    {
+        var coreProjectSchema = ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema();
+        var coreResources = (JsonObject)coreProjectSchema["resourceSchemas"]!;
+        coreResources["schools"] = ExtensionTableTestSchemaBuilder.BuildTpdmExtensionProjectSchema()[
+            "resourceSchemas"
+        ]!["schools"]!.DeepClone();
+        var homographProjectSchema =
+            ExtensionTableTestSchemaBuilder.BuildHomographStandaloneSchoolProjectSchema();
+        var schemaSet = CreateSchemaSet((coreProjectSchema, false), (homographProjectSchema, true));
+        var builder = CreateBuilder();
+
+        Action act = () => builder.Build(schemaSet, SqlDialect.Pgsql, new PgsqlDialectRules());
+
+        act.Should()
+            .ThrowExactly<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be("Resource extension 'Ed-Fi:School' must be defined in an extension project.");
+    }
+
+    private static EffectiveSchemaSet BuildSchemaSet(JsonObject? tpdmProjectSchema = null)
+    {
+        var coreProjectSchema = ExtensionTableTestSchemaBuilder.BuildCoreProjectSchema();
+        ((JsonObject)coreProjectSchema["resourceSchemas"]!).Remove("schools");
+
+        return CreateSchemaSet(
+            (coreProjectSchema, false),
+            (ExtensionTableTestSchemaBuilder.BuildHomographStandaloneSchoolProjectSchema(), true),
+            (tpdmProjectSchema ?? ExtensionTableTestSchemaBuilder.BuildTpdmExtensionProjectSchema(), true)
+        );
+    }
+
+    private static EffectiveSchemaSet CreateSchemaSet(
+        params (JsonObject ProjectSchema, bool IsExtensionProject)[] projects
+    )
+    {
+        return EffectiveSchemaSetFixtureBuilder.CreateEffectiveSchemaSet(
+            projects
+                .Select(project =>
+                    EffectiveSchemaSetFixtureBuilder.CreateEffectiveProjectSchema(
+                        project.ProjectSchema,
+                        isExtensionProject: project.IsExtensionProject
+                    )
+                )
+                .ToArray()
+        );
+    }
+
+    private static DerivedRelationalModelSetBuilder CreateBuilder()
+    {
+        return new DerivedRelationalModelSetBuilder([
+            new BaseTraversalAndDescriptorBindingPass(),
+            new ExtensionTableDerivationPass(),
+        ]);
     }
 }
 

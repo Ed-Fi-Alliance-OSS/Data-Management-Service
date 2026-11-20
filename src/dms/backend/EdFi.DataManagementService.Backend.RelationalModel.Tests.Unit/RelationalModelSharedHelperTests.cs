@@ -353,6 +353,60 @@ public class Given_Relational_Model_Shared_Helpers
             .WithMessage("Expected x-nullable to be a boolean at $.field.");
     }
 
+    [Test]
+    public void It_should_report_sorted_eligible_base_ambiguity_before_consulting_exclusions()
+    {
+        var resource = new QualifiedResourceName("Sample", "School");
+        Dictionary<string, List<QualifiedResourceName>> baseResourcesByName = new(StringComparer.Ordinal)
+        {
+            ["School"] =
+            [
+                new QualifiedResourceName("Zeta", "School"),
+                new QualifiedResourceName("Alpha", "School"),
+            ],
+        };
+        IReadOnlySet<string> excludedNames = new HashSet<string>(StringComparer.Ordinal) { "School" };
+
+        Action act = () =>
+            RelationalModelSetSchemaHelpers.ResolveBaseResourceForExtension(
+                "School",
+                resource,
+                baseResourcesByName,
+                static entry => entry,
+                excludedNames
+            );
+
+        act.Should()
+            .ThrowExactly<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be(
+                "Resource extension 'Sample:School' matched multiple concrete resources: Alpha:School, Zeta:School."
+            );
+    }
+
+    [Test]
+    public void It_should_keep_the_missing_base_diagnostic_when_exclusion_evidence_is_omitted()
+    {
+        var resource = new QualifiedResourceName("Sample", "School");
+        IReadOnlyDictionary<string, List<QualifiedResourceName>> baseResourcesByName = new Dictionary<
+            string,
+            List<QualifiedResourceName>
+        >(StringComparer.Ordinal);
+
+        Action act = () =>
+            RelationalModelSetSchemaHelpers.ResolveBaseResourceForExtension(
+                "School",
+                resource,
+                baseResourcesByName,
+                static entry => entry
+            );
+
+        act.Should()
+            .ThrowExactly<InvalidOperationException>()
+            .Which.Message.Should()
+            .Be("Resource extension 'Sample:School' did not match a concrete base resource.");
+    }
+
     private static DbTableModel CreateTable(string tableName, DbTableIdentityMetadata identityMetadata)
     {
         return new DbTableModel(
