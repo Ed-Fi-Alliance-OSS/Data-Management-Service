@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
@@ -29,10 +30,17 @@ namespace EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 /// waits until the acquisition commits and then cascades.
 /// </para>
 /// <para>
-/// Every wait runs through a <see cref="JobDatabaseSession"/> under a deadline: a renewal's is
-/// <c>JobSettings:RenewalInterval / 2</c> and its server-side lock wait one second less, so a lock wait ends in the
-/// lock-timeout error; release has 5 seconds; every other operation has the lease duration, with a 5-second lock
-/// wait. Activation runs in the job fence's transaction, under the fence's lock wait and deadline.
+/// Each operation reads the tenant context once and filters every statement it issues, lookups and writes alike,
+/// by that tenant's <c>TenantId</c>, so a target of another partition behaves as absent. This keeps partitions
+/// apart; it is not an authorization boundary.
+/// </para>
+/// <para>
+/// Every wait runs through a <see cref="JobDatabaseSession"/> under a deadline. A renewal's deadline is
+/// <c>JobSettings:RenewalInterval / 2</c> and its server-side lock wait one second shorter, so a lock wait normally
+/// ends in the lock-timeout error (<c>55P03</c>); when the deadline ends the wait first, the session is handed over
+/// and the operation fails in the same way, with a <see cref="TimeoutException"/> diagnostic. Release has 5 seconds,
+/// with a 4-second lock wait. Every other operation has the lease duration, with a 5-second lock wait. Activation
+/// runs in the job fence's transaction, under the fence's lock wait and deadline.
 /// </para>
 /// </remarks>
 public sealed class EducationOrganizationSnapshotRepository(
@@ -47,78 +55,11 @@ public sealed class EducationOrganizationSnapshotRepository(
     private static readonly TimeSpan _releaseTimeout = TimeSpan.FromSeconds(5);
     private static readonly TimeSpan _deadlineHeadroom = TimeSpan.FromSeconds(1);
 
+    // The data store was found in the current tenant under a key-share lock, so the target takes its tenant.
     private const string InsertTargetSql = """
         INSERT INTO dmscs."EducationOrganizationSnapshotTarget" ("DataStoreId", "TenantId", "LastGeneration")
         VALUES (@DataStoreId, @TenantId, 0)
         ON CONFLICT ("DataStoreId") DO NOTHING;
-        """;
-
-    private const string LockTargetForUpdateSql = """
-        SELECT 1 FROM dmscs."EducationOrganizationSnapshotTarget" WHERE "DataStoreId" = @DataStoreId FOR UPDATE;
-        """;
-
-    private const string LockTargetForShareSql = """
-        SELECT 1 FROM dmscs."EducationOrganizationSnapshotTarget" WHERE "DataStoreId" = @DataStoreId FOR SHARE;
-        """;
-
-    // Read after the row lock is held, so the clock sample postdates any wait for it.
-    private const string ReadTargetSql = """
-        SELECT "TenantId", "LastGeneration", "ActiveGeneration", "LeaseOwner", "LeaseGeneration", "LeaseExpiresAt",
-            (clock_timestamp() AT TIME ZONE 'UTC') AS "DatabaseUtcNow"
-        FROM dmscs."EducationOrganizationSnapshotTarget"
-        WHERE "DataStoreId" = @DataStoreId;
-        """;
-
-    // Assignments read the row's values from before the update, so the lease takes the new LastGeneration.
-    private const string TakeLeaseSql = """
-        UPDATE dmscs."EducationOrganizationSnapshotTarget"
-        SET "LastGeneration" = "LastGeneration" + 1,
-            "LeaseOwner" = @Owner,
-            "LeaseGeneration" = "LastGeneration" + 1,
-            "LeaseExpiresAt" = @Now + @LeaseMilliseconds * interval '1 millisecond',
-            "LastModifiedAt" = @Now
-        WHERE "DataStoreId" = @DataStoreId
-        RETURNING "LeaseGeneration";
-        """;
-
-    private const string LeasePredicate = """
-        "DataStoreId" = @DataStoreId AND "LeaseOwner" = @Owner AND "LeaseGeneration" = @Generation
-        """;
-
-    private const string RenewSql = $"""
-        UPDATE dmscs."EducationOrganizationSnapshotTarget"
-        SET "LeaseExpiresAt" = @Now + @LeaseMilliseconds * interval '1 millisecond',
-            "LastModifiedAt" = @Now
-        WHERE {LeasePredicate};
-        """;
-
-    private const string ActivateSql = $"""
-        UPDATE dmscs."EducationOrganizationSnapshotTarget"
-        SET "ActiveGeneration" = @Generation,
-            "RefreshedAt" = @Now,
-            "SourceContractVersion" = @SourceContractVersion,
-            "LeaseOwner" = NULL,
-            "LeaseGeneration" = NULL,
-            "LeaseExpiresAt" = NULL,
-            "LastModifiedAt" = @Now
-        WHERE {LeasePredicate};
-        """;
-
-    private const string ReleaseSql = $"""
-        UPDATE dmscs."EducationOrganizationSnapshotTarget"
-        SET "LeaseOwner" = NULL,
-            "LeaseGeneration" = NULL,
-            "LeaseExpiresAt" = NULL,
-            "LastModifiedAt" = (clock_timestamp() AT TIME ZONE 'UTC')
-        WHERE {LeasePredicate};
-        """;
-
-    // Keeps the lease's own generation and the active one; an absent active generation keeps nothing else.
-    private const string ReclaimSql = """
-        DELETE FROM dmscs."EducationOrganizationSnapshot"
-        WHERE "DataStoreId" = @DataStoreId
-          AND "Generation" <> @Generation
-          AND (@ActiveGeneration::bigint IS NULL OR "Generation" <> @ActiveGeneration::bigint);
         """;
 
     private const string StageSql = """
@@ -129,14 +70,6 @@ public sealed class EducationOrganizationSnapshotRepository(
             item.parent_id, @Now, @SourceContractVersion
         FROM unnest(@Ids, @Names, @ShortNames, @Discriminators, @ParentIds)
             AS item (id, name, short_name, discriminator, parent_id);
-        """;
-
-    private const string PruneSql = """
-        DELETE FROM dmscs."EducationOrganizationSnapshot" AS s
-        USING dmscs."EducationOrganizationSnapshotTarget" AS t
-        WHERE t."DataStoreId" = @DataStoreId
-          AND s."DataStoreId" = t."DataStoreId"
-          AND s."Generation" < t."ActiveGeneration";
         """;
 
     /// <summary>Test seam: hooks into every session this repository opens.</summary>
@@ -155,12 +88,8 @@ public sealed class EducationOrganizationSnapshotRepository(
         ArgumentException.ThrowIfNullOrEmpty(leaseOwner);
         ArgumentOutOfRangeException.ThrowIfGreaterThan(leaseOwner.Length, LeaseOwnerMaxLength);
 
-        TenantContext tenant = tenantContextProvider.Context;
-        long? tenantId = tenant is TenantContext.Multitenant multitenant ? multitenant.TenantId : null;
-        string lockDataStoreSql = $"""
-            SELECT 1 FROM dmscs."DataStore" WHERE "Id" = @DataStoreId AND {tenant.TenantWhereClause()} FOR KEY SHARE;
-            """;
-        var keys = new { DataStoreId = dataStoreId, TenantId = tenantId };
+        TenantScope tenant = CurrentTenant();
+        var keys = new { DataStoreId = dataStoreId, tenant.TenantId };
 
         return InTransactionAsync<SnapshotAcquireResult>(
             "Acquire",
@@ -172,7 +101,7 @@ public sealed class EducationOrganizationSnapshotRepository(
                     await ScalarAsync<int?>(
                         session,
                         "LockDataStore",
-                        lockDataStoreSql,
+                        LockDataStoreSql(tenant),
                         keys,
                         deadline,
                         cancellationToken
@@ -196,12 +125,18 @@ public sealed class EducationOrganizationSnapshotRepository(
                 await ScalarAsync<int?>(
                     session,
                     "LockTarget",
-                    LockTargetForUpdateSql,
+                    LockTargetSql(tenant, "UPDATE"),
                     keys,
                     deadline,
                     cancellationToken
                 );
-                TargetRow row = await ReadTargetAsync(session, dataStoreId, deadline, cancellationToken);
+                TargetRow row = await ReadTargetAsync(
+                    session,
+                    tenant,
+                    dataStoreId,
+                    deadline,
+                    cancellationToken
+                );
                 if (row.LeaseIsLive)
                 {
                     return Outcome.Rollback<SnapshotAcquireResult>(new SnapshotAcquireResult.Busy());
@@ -210,10 +145,11 @@ public sealed class EducationOrganizationSnapshotRepository(
                 long generation = await ScalarAsync<long>(
                     session,
                     "TakeLease",
-                    TakeLeaseSql,
+                    TakeLeaseSql(tenant),
                     new
                     {
                         DataStoreId = dataStoreId,
+                        tenant.TenantId,
                         Owner = leaseOwner,
                         Now = row.DatabaseUtcNow,
                         LeaseMilliseconds = LeaseDuration.TotalMilliseconds,
@@ -241,15 +177,16 @@ public sealed class EducationOrganizationSnapshotRepository(
             lease,
             LeaseDuration,
             _lockWait,
-            LockTargetForUpdateSql,
-            (session, deadline, row) =>
+            "UPDATE",
+            (session, tenant, deadline, row) =>
                 ExecuteAsync(
                     session,
                     "DeleteUnpublished",
-                    ReclaimSql,
+                    ReclaimSql(tenant),
                     new
                     {
                         lease.DataStoreId,
+                        tenant.TenantId,
                         lease.Generation,
                         row.ActiveGeneration,
                     },
@@ -268,15 +205,16 @@ public sealed class EducationOrganizationSnapshotRepository(
             lease,
             RenewalTimeout,
             RenewalTimeout - Min(_deadlineHeadroom, RenewalTimeout / 2),
-            LockTargetForUpdateSql,
-            (session, deadline, row) =>
+            "UPDATE",
+            (session, tenant, deadline, row) =>
                 ExecuteAsync(
                     session,
                     "ExtendLease",
-                    RenewSql,
+                    RenewSql(tenant),
                     new
                     {
                         lease.DataStoreId,
+                        tenant.TenantId,
                         lease.Owner,
                         lease.Generation,
                         Now = row.DatabaseUtcNow,
@@ -298,13 +236,14 @@ public sealed class EducationOrganizationSnapshotRepository(
         ArgumentNullException.ThrowIfNull(items);
         ArgumentException.ThrowIfNullOrEmpty(sourceContractVersion);
 
+        // The rows take the TenantId of the target row, which was read under the current tenant's filter.
         return UnderLeaseAsync(
             "Stage",
             lease,
             LeaseDuration,
             _lockWait,
-            LockTargetForShareSql,
-            (session, deadline, row) =>
+            "SHARE",
+            (session, _, deadline, row) =>
                 items.Count == 0
                     ? Task.FromResult(0)
                     : session.RunAsync(
@@ -335,19 +274,18 @@ public sealed class EducationOrganizationSnapshotRepository(
         CancellationToken cancellationToken
     )
     {
-        ArgumentNullException.ThrowIfNull(transaction);
+        ArgumentNullException.ThrowIfNull(lease);
         ArgumentException.ThrowIfNullOrEmpty(sourceContractVersion);
-        DbConnection connection =
-            transaction.Connection
-            ?? throw new InvalidOperationException("The fence transaction has no connection.");
+        DbConnection connection = ActiveTransactionConnection(transaction, cancellationToken);
+        TenantScope tenant = CurrentTenant();
 
         try
         {
             if (
                 await connection.ExecuteScalarAsync<int?>(
                     new CommandDefinition(
-                        LockTargetForUpdateSql,
-                        new { lease.DataStoreId },
+                        LockTargetSql(tenant, "UPDATE"),
+                        new { lease.DataStoreId, tenant.TenantId },
                         transaction,
                         cancellationToken: cancellationToken
                     )
@@ -360,8 +298,8 @@ public sealed class EducationOrganizationSnapshotRepository(
 
             TargetRow row = await connection.QuerySingleAsync<TargetRow>(
                 new CommandDefinition(
-                    ReadTargetSql,
-                    new { lease.DataStoreId },
+                    ReadTargetSql(tenant),
+                    new { lease.DataStoreId, tenant.TenantId },
                     transaction,
                     cancellationToken: cancellationToken
                 )
@@ -373,10 +311,11 @@ public sealed class EducationOrganizationSnapshotRepository(
 
             int rows = await connection.ExecuteAsync(
                 new CommandDefinition(
-                    ActivateSql,
+                    ActivateSql(tenant),
                     new
                     {
                         lease.DataStoreId,
+                        tenant.TenantId,
                         lease.Owner,
                         lease.Generation,
                         Now = row.DatabaseUtcNow,
@@ -395,8 +334,10 @@ public sealed class EducationOrganizationSnapshotRepository(
         }
     }
 
-    public Task<SnapshotTargetResult> PruneAsync(int dataStoreId, CancellationToken cancellationToken) =>
-        InTransactionAsync<SnapshotTargetResult>(
+    public Task<SnapshotTargetResult> PruneAsync(int dataStoreId, CancellationToken cancellationToken)
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTargetResult>(
             "Prune",
             LeaseDuration,
             _lockWait,
@@ -406,8 +347,8 @@ public sealed class EducationOrganizationSnapshotRepository(
                         await ExecuteAsync(
                             session,
                             "DeleteSuperseded",
-                            PruneSql,
-                            new { DataStoreId = dataStoreId },
+                            PruneSql(tenant),
+                            new { DataStoreId = dataStoreId, tenant.TenantId },
                             deadline,
                             cancellationToken
                         )
@@ -416,12 +357,16 @@ public sealed class EducationOrganizationSnapshotRepository(
             diagnostic => new SnapshotTargetResult.DbFailure(diagnostic),
             cancellationToken
         );
+    }
 
     public Task<SnapshotTargetResult> ReleaseAsync(
         EducationOrganizationSnapshotLease lease,
         CancellationToken cancellationToken
-    ) =>
-        InTransactionAsync<SnapshotTargetResult>(
+    )
+    {
+        ArgumentNullException.ThrowIfNull(lease);
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTargetResult>(
             "Release",
             _releaseTimeout,
             _releaseTimeout - _deadlineHeadroom,
@@ -431,10 +376,11 @@ public sealed class EducationOrganizationSnapshotRepository(
                         await ExecuteAsync(
                             session,
                             "ClearLease",
-                            ReleaseSql,
+                            ReleaseSql(tenant),
                             new
                             {
                                 lease.DataStoreId,
+                                tenant.TenantId,
                                 lease.Owner,
                                 lease.Generation,
                             },
@@ -446,22 +392,25 @@ public sealed class EducationOrganizationSnapshotRepository(
             diagnostic => new SnapshotTargetResult.DbFailure(diagnostic),
             cancellationToken
         );
+    }
 
     /// <summary>
-    /// Lock, then validate, then write: locks the target row with <paramref name="lockSql"/>, reads it with a fresh
-    /// clock in a separate statement, and runs <paramref name="write"/> only while <paramref name="lease"/> is live.
+    /// Lock, then validate, then write: locks the current tenant's target row <c>FOR</c>
+    /// <paramref name="lockMode"/>, reads it with a fresh clock in a separate statement, and runs
+    /// <paramref name="write"/> only while <paramref name="lease"/> is live.
     /// </summary>
     private Task<SnapshotTargetResult> UnderLeaseAsync(
         string operation,
         EducationOrganizationSnapshotLease lease,
         TimeSpan budget,
         TimeSpan lockWait,
-        string lockSql,
-        Func<JobDatabaseSession, JobDeadline, TargetRow, Task<int>> write,
+        string lockMode,
+        Func<JobDatabaseSession, TenantScope, JobDeadline, TargetRow, Task<int>> write,
         CancellationToken cancellationToken
     )
     {
         ArgumentNullException.ThrowIfNull(lease);
+        TenantScope tenant = CurrentTenant();
         return InTransactionAsync<SnapshotTargetResult>(
             operation,
             budget,
@@ -472,8 +421,8 @@ public sealed class EducationOrganizationSnapshotRepository(
                     await ScalarAsync<int?>(
                         session,
                         "LockTarget",
-                        lockSql,
-                        new { lease.DataStoreId },
+                        LockTargetSql(tenant, lockMode),
+                        new { lease.DataStoreId, tenant.TenantId },
                         deadline,
                         cancellationToken
                     )
@@ -487,6 +436,7 @@ public sealed class EducationOrganizationSnapshotRepository(
 
                 TargetRow row = await ReadTargetAsync(
                     session,
+                    tenant,
                     lease.DataStoreId,
                     deadline,
                     cancellationToken
@@ -497,7 +447,7 @@ public sealed class EducationOrganizationSnapshotRepository(
                 }
 
                 return Outcome.Commit<SnapshotTargetResult>(
-                    new SnapshotTargetResult.Success(await write(session, deadline, row))
+                    new SnapshotTargetResult.Success(await write(session, tenant, deadline, row))
                 );
             },
             diagnostic => new SnapshotTargetResult.DbFailure(diagnostic),
@@ -555,6 +505,133 @@ public sealed class EducationOrganizationSnapshotRepository(
             await session.EndAsync(deadline, committed ? null : PostgresqlJobSession.Rollback(session));
         }
     }
+
+    /// <summary>
+    /// The open connection of a caller's active PostgreSQL transaction. Npgsql keeps <c>Connection</c> set after a
+    /// commit or rollback and would run a command on that transaction in autocommit, so a completed or disposed
+    /// transaction is rejected, by reading <c>IsolationLevel</c>, before any statement runs.
+    /// </summary>
+    private static DbConnection ActiveTransactionConnection(
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(transaction);
+        if (transaction is not NpgsqlTransaction)
+        {
+            throw new ArgumentException(
+                "The supplied transaction must be a PostgreSQL transaction.",
+                nameof(transaction)
+            );
+        }
+
+        _ = transaction.IsolationLevel;
+        if (transaction.Connection is not NpgsqlConnection { State: ConnectionState.Open } connection)
+        {
+            throw new InvalidOperationException("The supplied transaction must have an open connection.");
+        }
+
+        return connection;
+    }
+
+    private TenantScope CurrentTenant()
+    {
+        TenantContext context = tenantContextProvider.Context;
+        return new TenantScope(
+            context,
+            context is TenantContext.Multitenant multitenant ? multitenant.TenantId : null
+        );
+    }
+
+    private static string LockDataStoreSql(TenantScope tenant) =>
+        $"""
+            SELECT 1 FROM dmscs."DataStore" WHERE "Id" = @DataStoreId AND {tenant.Where()} FOR KEY SHARE;
+            """;
+
+    private static string LockTargetSql(TenantScope tenant, string lockMode) =>
+        $"""
+            SELECT 1 FROM dmscs."EducationOrganizationSnapshotTarget"
+            WHERE "DataStoreId" = @DataStoreId AND {tenant.Where()}
+            FOR {lockMode};
+            """;
+
+    // Read after the row lock is held, so the clock sample postdates any wait for it.
+    private static string ReadTargetSql(TenantScope tenant) =>
+        $"""
+            SELECT "TenantId", "LastGeneration", "ActiveGeneration", "LeaseOwner", "LeaseGeneration", "LeaseExpiresAt",
+                (clock_timestamp() AT TIME ZONE 'UTC') AS "DatabaseUtcNow"
+            FROM dmscs."EducationOrganizationSnapshotTarget"
+            WHERE "DataStoreId" = @DataStoreId AND {tenant.Where()};
+            """;
+
+    // Assignments read the row's values from before the update, so the lease takes the new LastGeneration.
+    private static string TakeLeaseSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs."EducationOrganizationSnapshotTarget"
+            SET "LastGeneration" = "LastGeneration" + 1,
+                "LeaseOwner" = @Owner,
+                "LeaseGeneration" = "LastGeneration" + 1,
+                "LeaseExpiresAt" = @Now + @LeaseMilliseconds * interval '1 millisecond',
+                "LastModifiedAt" = @Now
+            WHERE "DataStoreId" = @DataStoreId AND {tenant.Where()}
+            RETURNING "LeaseGeneration";
+            """;
+
+    private static string LeasePredicate(TenantScope tenant) =>
+        $"""
+            "DataStoreId" = @DataStoreId AND {tenant.Where()}
+                AND "LeaseOwner" = @Owner AND "LeaseGeneration" = @Generation
+            """;
+
+    private static string RenewSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs."EducationOrganizationSnapshotTarget"
+            SET "LeaseExpiresAt" = @Now + @LeaseMilliseconds * interval '1 millisecond',
+                "LastModifiedAt" = @Now
+            WHERE {LeasePredicate(tenant)};
+            """;
+
+    private static string ActivateSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs."EducationOrganizationSnapshotTarget"
+            SET "ActiveGeneration" = @Generation,
+                "RefreshedAt" = @Now,
+                "SourceContractVersion" = @SourceContractVersion,
+                "LeaseOwner" = NULL,
+                "LeaseGeneration" = NULL,
+                "LeaseExpiresAt" = NULL,
+                "LastModifiedAt" = @Now
+            WHERE {LeasePredicate(tenant)};
+            """;
+
+    private static string ReleaseSql(TenantScope tenant) =>
+        $"""
+            UPDATE dmscs."EducationOrganizationSnapshotTarget"
+            SET "LeaseOwner" = NULL,
+                "LeaseGeneration" = NULL,
+                "LeaseExpiresAt" = NULL,
+                "LastModifiedAt" = (clock_timestamp() AT TIME ZONE 'UTC')
+            WHERE {LeasePredicate(tenant)};
+            """;
+
+    // Keeps the lease's own generation and the active one; an absent active generation keeps nothing else.
+    private static string ReclaimSql(TenantScope tenant) =>
+        $"""
+            DELETE FROM dmscs."EducationOrganizationSnapshot"
+            WHERE "DataStoreId" = @DataStoreId AND {tenant.Where()}
+              AND "Generation" <> @Generation
+              AND (@ActiveGeneration::bigint IS NULL OR "Generation" <> @ActiveGeneration::bigint);
+            """;
+
+    private static string PruneSql(TenantScope tenant) =>
+        $"""
+            DELETE FROM dmscs."EducationOrganizationSnapshot" AS s
+            USING dmscs."EducationOrganizationSnapshotTarget" AS t
+            WHERE t."DataStoreId" = @DataStoreId AND {tenant.Where("t")}
+              AND s."DataStoreId" = t."DataStoreId" AND {tenant.Where("s")}
+              AND s."Generation" < t."ActiveGeneration";
+            """;
 
     private static NpgsqlCommand StageCommand(
         JobDatabaseSession session,
@@ -622,6 +699,7 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     private static Task<TargetRow> ReadTargetAsync(
         JobDatabaseSession session,
+        TenantScope tenant,
         int dataStoreId,
         JobDeadline deadline,
         CancellationToken cancellationToken
@@ -632,8 +710,8 @@ public sealed class EducationOrganizationSnapshotRepository(
                 session.Connection.QuerySingleAsync<TargetRow>(
                     PostgresqlJobSession.Command(
                         session,
-                        ReadTargetSql,
-                        new { DataStoreId = dataStoreId },
+                        ReadTargetSql(tenant),
+                        new { DataStoreId = dataStoreId, tenant.TenantId },
                         deadline,
                         token
                     )
@@ -679,6 +757,12 @@ public sealed class EducationOrganizationSnapshotRepository(
         );
 
     private static TimeSpan Min(TimeSpan first, TimeSpan second) => first < second ? first : second;
+
+    /// <summary>The tenant context one operation captured, and its <c>TenantId</c> parameter value.</summary>
+    private sealed record TenantScope(TenantContext Context, long? TenantId)
+    {
+        public string Where(string? tableAlias = null) => Context.TenantWhereClause(tableAlias);
+    }
 
     /// <summary>A transaction body's result and whether the transaction commits.</summary>
     private readonly record struct Outcome<T>(T Result, bool Commit);

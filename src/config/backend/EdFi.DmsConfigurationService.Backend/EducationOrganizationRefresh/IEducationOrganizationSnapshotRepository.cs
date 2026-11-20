@@ -28,6 +28,11 @@ namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 /// <c>JobSettings:RenewalInterval / 2</c>; the other operations wait at most 5 seconds.
 /// </para>
 /// <para>
+/// Every operation is confined to the targets of the current tenant, read once per call: a target of another
+/// partition behaves as absent, and nothing of it is read or changed. This keeps partitions apart; it is not an
+/// authorization boundary.
+/// </para>
+/// <para>
 /// A database failure is returned as <c>DbFailure</c> with a diagnostic that carries no message or value, except in
 /// <see cref="ActivateAsync"/>, which throws <see cref="SnapshotStoreException"/> so that the fence rolls back.
 /// Cancellation of the caller's token propagates as <see cref="OperationCanceledException"/>.
@@ -80,7 +85,9 @@ public interface IEducationOrganizationSnapshotRepository
     /// <summary>
     /// In <paramref name="transaction"/>, the job fence's, publishes the lease's generation as the active one,
     /// records the refresh time and contract version, and clears the lease. Nothing is written unless the lease is
-    /// live. A database failure throws <see cref="SnapshotStoreException"/>.
+    /// live. A transaction of another provider, or one that has completed or been disposed, is rejected before any
+    /// statement runs, so the activation can never run outside it. A database failure throws
+    /// <see cref="SnapshotStoreException"/>.
     /// </summary>
     Task<SnapshotTargetResult> ActivateAsync(
         DbTransaction transaction,
@@ -148,7 +155,9 @@ public abstract record SnapshotTargetResult
     /// <summary>The lease does not authorize the caller; nothing was written.</summary>
     public sealed record LeaseLost(SnapshotLeaseLossReason Reason) : SnapshotTargetResult;
 
-    /// <summary>The target no longer exists because its data store was deleted.</summary>
+    /// <summary>
+    /// The current tenant has no such target: its data store was deleted, or belongs to another partition.
+    /// </summary>
     public sealed record DataStoreRemoved : SnapshotTargetResult;
 
     public sealed record DbFailure(JobFailureDiagnostic Diagnostic) : SnapshotTargetResult;

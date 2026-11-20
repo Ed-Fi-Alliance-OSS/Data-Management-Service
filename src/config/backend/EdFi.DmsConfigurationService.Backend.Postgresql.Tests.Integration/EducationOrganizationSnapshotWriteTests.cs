@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data.Common;
 using System.Diagnostics;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
@@ -10,6 +11,7 @@ using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
 using FakeItEasy;
@@ -51,11 +53,12 @@ public abstract class EducationOrganizationSnapshotWriteTestBase : DatabaseTest
     protected static EducationOrganizationSnapshotRepository Repository(
         IOptions<DatabaseOptions>? databaseOptions = null,
         TenantContext? tenant = null,
-        JobDatabaseSessionHooks? hooks = null
+        JobDatabaseSessionHooks? hooks = null,
+        IOptions<JobOptions>? jobOptions = null
     ) =>
         new(
             databaseOptions ?? Configuration.DatabaseOptions,
-            LeaseOptions,
+            jobOptions ?? LeaseOptions,
             new TenantContextProvider { Context = tenant ?? new TenantContext.NotMultitenant() }
         )
         {
@@ -161,10 +164,11 @@ public abstract class EducationOrganizationSnapshotWriteTestBase : DatabaseTest
     protected async Task<EducationOrganizationSnapshotLease> PublishAsync(
         int dataStoreId,
         IReadOnlyList<EducationOrganizationProjectionItem> items,
-        bool prune = true
+        bool prune = true,
+        EducationOrganizationSnapshotRepository? repository = null
     )
     {
-        EducationOrganizationSnapshotRepository repository = Repository();
+        repository ??= Repository();
         EducationOrganizationSnapshotLease lease = await AcquiredAsync(repository, dataStoreId);
         (await repository.ReclaimAsync(lease, CancellationToken.None))
             .Should()
@@ -185,6 +189,24 @@ public abstract class EducationOrganizationSnapshotWriteTestBase : DatabaseTest
 
         return lease;
     }
+
+    /// <summary>The target row and every organization row of a data store, for before-and-after comparison.</summary>
+    protected async Task<(TargetState Target, List<string> Rows)> StateAsync(int dataStoreId) =>
+        (
+            await TargetAsync(dataStoreId),
+            (
+                await Connection!.QueryAsync<string>(
+                    """
+                    SELECT concat_ws('|', "Generation", "EducationOrganizationId", "TenantId", "NameOfInstitution",
+                        "RefreshedAt", "SourceContractVersion")
+                    FROM dmscs."EducationOrganizationSnapshot"
+                    WHERE "DataStoreId" = @Id
+                    ORDER BY "Generation", "EducationOrganizationId";
+                    """,
+                    new { Id = dataStoreId }
+                )
+            ).ToList()
+        );
 
     /// <summary>Sets the lease to expire <paramref name="seconds"/> from database time (negative: in the past).</summary>
     protected Task SetLeaseExpiryAsync(int dataStoreId, double seconds) =>
@@ -1166,6 +1188,296 @@ public class EducationOrganizationSnapshotWriteTests
                 .BeOfType<SnapshotTargetResult.DbFailure>()
                 .Subject.Diagnostic;
             (diagnostic.ProviderErrorCode, diagnostic.Operation).Should().Be((sqlState, operation));
+        }
+    }
+
+    /// <summary>
+    /// A target of another partition, with two published generations and a live lease that has staged rows. A
+    /// repository of a different partition uses that real lease. Every operation behaves as if the target were
+    /// absent, and the target row and its organization rows stay exactly as they were.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_target_of_another_partition : EducationOrganizationSnapshotWriteTestBase
+    {
+        [Test]
+        public async Task It_neither_reads_nor_changes_the_foreign_target(
+            [Values("another-tenant", "single-tenant-caller", "multitenant-caller")] string mismatch
+        )
+        {
+            long owningTenant = await InsertTenantAsync();
+            long callerTenant = await InsertTenantAsync();
+            (TenantContext owner, TenantContext caller, long? storeTenant) = mismatch switch
+            {
+                "another-tenant" => (
+                    new TenantContext.Multitenant(owningTenant, "owning"),
+                    new TenantContext.Multitenant(callerTenant, "caller"),
+                    owningTenant
+                ),
+                "single-tenant-caller" => (
+                    new TenantContext.Multitenant(owningTenant, "owning"),
+                    new TenantContext.NotMultitenant(),
+                    owningTenant
+                ),
+                _ => (
+                    (TenantContext)new TenantContext.NotMultitenant(),
+                    (TenantContext)new TenantContext.Multitenant(callerTenant, "caller"),
+                    (long?)null
+                ),
+            };
+            int id = await InsertDataStoreAsync("partition-" + mismatch, storeTenant);
+            EducationOrganizationSnapshotRepository owning = Repository(tenant: owner);
+            await PublishAsync(id, [Item(1), Item(2)], prune: false, repository: owning);
+            await PublishAsync(id, [Item(2), Item(3)], prune: false, repository: owning);
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(owning, id);
+            (await owning.StageAsync(lease, [Item(4)], ContractVersion, CancellationToken.None))
+                .Should()
+                .Be(new SnapshotTargetResult.Success(1));
+            (TargetState Target, List<string> Rows) before = await StateAsync(id);
+            before.Target.ActiveGeneration.Should().Be(2);
+            (await GenerationsAsync(id)).Should().Equal(1, 2, 3);
+
+            EducationOrganizationSnapshotRepository foreign = Repository(tenant: caller);
+            SnapshotTargetResult absent = new SnapshotTargetResult.DataStoreRemoved();
+            (await foreign.AcquireAsync(id, NewOwner(), CancellationToken.None))
+                .Should()
+                .Be(new SnapshotAcquireResult.DataStoreNotFound());
+            (await foreign.ReclaimAsync(lease, CancellationToken.None)).Should().Be(absent);
+            (await foreign.RenewAsync(lease, CancellationToken.None)).Should().Be(absent);
+            (await foreign.StageAsync(lease, [Item(5)], ContractVersion, CancellationToken.None))
+                .Should()
+                .Be(absent);
+            (await ActivateAsync(foreign, Fence, lease)).Should().Be(absent);
+            (await foreign.ReleaseAsync(lease, CancellationToken.None))
+                .Should()
+                .Be(new SnapshotTargetResult.Success(0));
+            (await foreign.PruneAsync(id, CancellationToken.None))
+                .Should()
+                .Be(new SnapshotTargetResult.Success(0));
+
+            (TargetState Target, List<string> Rows) after = await StateAsync(id);
+            after.Target.Should().Be(before.Target);
+            after.Rows.Should().Equal(before.Rows);
+            (await owning.RenewAsync(lease, CancellationToken.None))
+                .Should()
+                .Be(new SnapshotTargetResult.Success(1), "the owning partition's lease is intact");
+        }
+    }
+
+    /// <summary>
+    /// Npgsql keeps a completed transaction's connection and would run commands on it in autocommit. Activation must
+    /// refuse such a transaction before any statement, so it can never publish outside the transaction it was given.
+    /// The lease is live and staged, so an activation that ran would publish.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_activation_with_an_unusable_transaction : EducationOrganizationSnapshotWriteTestBase
+    {
+        [Test]
+        public async Task It_rejects_a_completed_or_disposed_transaction_before_any_statement(
+            [Values("committed", "rolled-back", "disposed")] string state
+        )
+        {
+            int id = await InsertDataStoreAsync("transaction-" + state);
+            EducationOrganizationSnapshotRepository repository = Repository();
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(repository, id);
+            await repository.StageAsync(lease, [Item(1)], ContractVersion, CancellationToken.None);
+            (TargetState Target, List<string> Rows) before = await StateAsync(id);
+
+            await using NpgsqlConnection connection = await DataSource!.OpenConnectionAsync();
+            NpgsqlTransaction transaction = await connection.BeginTransactionAsync();
+            switch (state)
+            {
+                case "committed":
+                    await transaction.CommitAsync();
+                    break;
+                case "rolled-back":
+                    await transaction.RollbackAsync();
+                    break;
+                default:
+                    await transaction.DisposeAsync();
+                    break;
+            }
+
+            Func<Task> activation = () =>
+                repository.ActivateAsync(transaction, lease, ContractVersion, CancellationToken.None);
+
+            await activation.Should().ThrowAsync<InvalidOperationException>();
+            (TargetState Target, List<string> Rows) after = await StateAsync(id);
+            after.Target.Should().Be(before.Target, "nothing was published");
+            after.Rows.Should().Equal(before.Rows);
+            await transaction.DisposeAsync();
+        }
+
+        [Test]
+        public async Task It_rejects_a_transaction_of_another_provider()
+        {
+            int id = await InsertDataStoreAsync("transaction-provider");
+            EducationOrganizationSnapshotRepository repository = Repository();
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(repository, id);
+            TargetState before = await TargetAsync(id);
+
+            Func<Task> activation = () =>
+                repository.ActivateAsync(
+                    A.Fake<DbTransaction>(),
+                    lease,
+                    ContractVersion,
+                    CancellationToken.None
+                );
+
+            await activation.Should().ThrowAsync<ArgumentException>();
+            (await TargetAsync(id)).Should().Be(before);
+        }
+    }
+
+    /// <summary>
+    /// A renewal is bounded by <c>RenewalInterval / 2</c> (here 2 seconds, with a 1-second lock wait) and a release
+    /// by 5 seconds. A commit that stays pending past the bound ends in the deadline; a held target lock ends in the
+    /// lock wait or, if it comes first, the deadline. Either way the operation returns within its bound with a
+    /// failure diagnostic, its cleanup completes, and the lease and publication state stay unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_an_operation_that_outlasts_its_bound : EducationOrganizationSnapshotWriteTestBase
+    {
+        private static readonly IOptions<JobOptions> _shortRenewal = Options.Create(
+            new JobOptions
+            {
+                LeaseDuration = TimeSpan.FromMinutes(5),
+                RenewalInterval = TimeSpan.FromSeconds(4),
+            }
+        );
+
+        [Test]
+        public async Task It_bounds_a_renewal_whose_commit_stays_pending()
+        {
+            int id = await InsertDataStoreAsync("renew-deadline");
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(Repository(), id);
+            (TargetState Target, List<string> Rows) before = await StateAsync(id);
+            JobLeaseRepositoryTests.PendingOperation pending = new("Commit", TimeSpan.FromSeconds(3));
+
+            long started = Stopwatch.GetTimestamp();
+            SnapshotTargetResult result = await Repository(hooks: pending.Hooks, jobOptions: _shortRenewal)
+                .RenewAsync(lease, CancellationToken.None);
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
+
+            elapsed.Should().BeLessThan(TimeSpan.FromSeconds(2.7), "the commit stays pending for 3 s");
+            AssertDeadline(result, "Renew");
+            (await pending.CleanupAsync())
+                .Should()
+                .NotBeNull("the commit ran with its token already cancelled");
+            (await StateAsync(id)).Target.Should().Be(before.Target, "the pending commit never committed");
+        }
+
+        [Test]
+        public async Task It_bounds_a_release_whose_commit_stays_pending()
+        {
+            int id = await InsertDataStoreAsync("release-deadline");
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(Repository(), id);
+            TargetState before = await TargetAsync(id);
+            JobLeaseRepositoryTests.PendingOperation pending = new("Commit", TimeSpan.FromSeconds(6));
+
+            long started = Stopwatch.GetTimestamp();
+            SnapshotTargetResult result = await Repository(hooks: pending.Hooks)
+                .ReleaseAsync(lease, CancellationToken.None);
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
+
+            elapsed.Should().BeLessThan(TimeSpan.FromSeconds(5.7), "the commit stays pending for 6 s");
+            AssertDeadline(result, "Release");
+            (await pending.CleanupAsync())
+                .Should()
+                .NotBeNull("the commit ran with its token already cancelled");
+            (await TargetAsync(id)).Should().Be(before, "the lease is still held");
+        }
+
+        [Test]
+        public async Task It_bounds_a_renewal_blocked_by_a_held_target_lock()
+        {
+            int id = await InsertDataStoreAsync("renew-lock-wait");
+            EducationOrganizationSnapshotLease lease = await AcquiredAsync(Repository(), id);
+            TargetState before = await TargetAsync(id);
+            await using NpgsqlConnection holder = await DataSource!.OpenConnectionAsync();
+            await using NpgsqlTransaction hold = await holder.BeginTransactionAsync();
+            await HoldTargetAsync(holder, hold, id);
+
+            long started = Stopwatch.GetTimestamp();
+            SnapshotTargetResult result = await Repository(jobOptions: _shortRenewal)
+                .RenewAsync(lease, CancellationToken.None);
+            TimeSpan elapsed = Stopwatch.GetElapsedTime(started);
+            await hold.RollbackAsync();
+
+            elapsed
+                .Should()
+                .BeLessThan(TimeSpan.FromSeconds(2.7), "the lock is held until the renewal returns");
+            JobFailureDiagnostic diagnostic = result
+                .Should()
+                .BeOfType<SnapshotTargetResult.DbFailure>()
+                .Subject.Diagnostic;
+            diagnostic.Operation.Should().Be("Renew");
+            (
+                diagnostic.ProviderErrorCode == "55P03"
+                || diagnostic.ExceptionTypeChain.StartsWith(
+                    "System.TimeoutException",
+                    StringComparison.Ordinal
+                )
+            )
+                .Should()
+                .BeTrue("either the lock wait or the deadline ends the wait, and both are failures");
+            (await TargetAsync(id)).Should().Be(before);
+        }
+
+        [Test]
+        public async Task It_propagates_cancellation_while_an_acquisition_is_pending()
+        {
+            int id = await InsertDataStoreAsync("acquire-cancelled");
+            TaskCompletionSource reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            List<Task<JobDatabaseSessionCleanup>> cleanups = [];
+            JobDatabaseSessionHooks hooks = new()
+            {
+                // The lease write is held, ignoring its own cancellation, after the target row was inserted.
+                BeforeOperation = async (operation, _) =>
+                {
+                    if (operation == "TakeLease")
+                    {
+                        reached.TrySetResult();
+                        await release.Task.WaitAsync(TimeSpan.FromSeconds(15), CancellationToken.None);
+                    }
+                },
+                HandedOver = cleanup =>
+                {
+                    lock (cleanups)
+                    {
+                        cleanups.Add(cleanup);
+                    }
+                },
+            };
+            using CancellationTokenSource cancellation = new();
+            Task<SnapshotAcquireResult> acquiring = Repository(hooks: hooks)
+                .AcquireAsync(id, NewOwner(), cancellation.Token);
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(10));
+
+            long started = Stopwatch.GetTimestamp();
+            await cancellation.CancelAsync();
+            Func<Task> awaitAcquisition = () => acquiring;
+            await awaitAcquisition.Should().ThrowAsync<OperationCanceledException>();
+            Stopwatch.GetElapsedTime(started).Should().BeLessThan(TimeSpan.FromSeconds(1));
+
+            release.TrySetResult();
+            Task<JobDatabaseSessionCleanup> handedOver;
+            lock (cleanups)
+            {
+                handedOver = cleanups.Should().ContainSingle().Subject;
+            }
+            await handedOver.WaitAsync(TimeSpan.FromSeconds(15));
+            (await TargetCountAsync(id)).Should().Be(0, "the uncommitted target insert is rolled back");
+        }
+
+        private static void AssertDeadline(SnapshotTargetResult result, string operation)
+        {
+            JobFailureDiagnostic diagnostic = result
+                .Should()
+                .BeOfType<SnapshotTargetResult.DbFailure>()
+                .Subject.Diagnostic;
+            (diagnostic.Operation, diagnostic.ProviderErrorCode).Should().Be((operation, (string?)null));
+            diagnostic.ExceptionTypeChain.Should().StartWith("System.TimeoutException");
         }
     }
 }
