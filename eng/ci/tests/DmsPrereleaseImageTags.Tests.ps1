@@ -478,16 +478,34 @@ catch {
         $result.Output | Should -BeLike "*check which digest example/api:dms-pre-8.2.0 and each release tag now point at*"
     }
 
-    It 'writes nothing when the source cannot be resolved: <Case>' -ForEach @(
-        @{ Case = 'inspect fails'; Reply = 'fail'; Expected = '*exited with code 1. Nothing was promoted*' }
-        @{ Case = 'inspect prints no digest'; Reply = 'not-a-digest'; Expected = "*printed 'not-a-digest'. Nothing was promoted*" }
-    ) {
-        $result = script:Invoke-Promotion '0' -InspectReplies $Reply
+    It 'retries a failed lookup and then promotes the digest it resolves to both tags' {
+        $result = script:Invoke-Promotion '0' -InspectReplies "fail,$script:digest,$script:movedDigest"
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:inspectCall, 'sleep 10', $script:inspectCall, $script:promoteCall)
+    }
+
+    It 'spends one attempt budget on lookups and copies, and never resolves again once a digest is pinned' {
+        $result = script:Invoke-Promotion '1,0' -InspectReplies "fail,$script:digest,$script:movedDigest"
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:inspectCall, 'sleep 10', $script:inspectCall, $script:promoteCall, 'sleep 20', $script:promoteCall)
+    }
+
+    It 'fails the step without writing when every lookup fails' {
+        $result = script:Invoke-Promotion '0' -InspectReplies 'fail'
+
+        $result.ExitCode | Should -Be 1
+        $result.Calls | Should -Be @($script:inspectCall, 'sleep 10', $script:inspectCall, 'sleep 20', $script:inspectCall, 'sleep 40', $script:inspectCall)
+        $result.Output | Should -BeLike '*PROMOTION ERROR: Could not resolve example/api:dms-pre-8.2.0 to a digest after 4 attempt(s); docker buildx imagetools inspect last exited with code 1. Nothing was promoted.*'
+    }
+
+    It 'fails at once without writing when the lookup prints no digest' {
+        $result = script:Invoke-Promotion '0' -InspectReplies 'not-a-digest'
 
         $result.ExitCode | Should -Be 1
         $result.Calls | Should -Be @($script:inspectCall)
-        $result.Output | Should -BeLike "*PROMOTION ERROR: Could not resolve example/api:dms-pre-8.2.0 to a digest*"
-        $result.Output | Should -BeLike $Expected
+        $result.Output | Should -BeLike "*PROMOTION ERROR: Could not resolve example/api:dms-pre-8.2.0 to a digest; docker buildx imagetools inspect printed 'not-a-digest'. Nothing was promoted.*"
     }
 
     It 'replaces a digest already in the source with the resolved one' {
