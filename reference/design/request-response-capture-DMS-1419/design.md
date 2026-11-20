@@ -395,6 +395,7 @@ If any trigger below holds, every client-derived column is stored empty, `Withhe
    - A request body fails to parse as JSON, and its text contains a listed name in any spelling the comparison below accepts.
    - A request body fails to parse as JSON, and it contains a NUL byte. UTF-16 or UTF-32 text, and compressed content such as a gzip body, which DMS does not decompress, hide listed names from the text comparison. JSON text never carries a raw NUL byte, so one marks a body the rule cannot read. This also keeps U+0000 out of PostgreSQL `text` columns, which reject it.
    - A body was sent to a route that does not read one (GET, DELETE, the change-query routes, and the 405 answer). DMS never reads that body, so the rule cannot examine it, and unexamined input fails closed. Such bodies are rare, and DMS ignores them.
+   - A body was read but not kept: its state is `NotRetained`, because the client's grant became visible after extraction ([D6](#placement-in-the-request-path)). The rule cannot examine that body either, so it fails closed in the same way.
    - The examination stopped before finishing, for example at a depth or size bound.
 
 **The name comparison.**
@@ -515,7 +516,7 @@ The body state is one of:
 | `NoBody` | The route reads no body, and none was sent; or an empty body was sent |
 | `Unread` | A body was sent to a route that does not read one. [D4](#the-withholding-rule) trigger 3 withholds the row |
 | `Retained` | The body was read, and a raw copy of its bytes was kept |
-| `NotRetained` | The body was read, but no copy was kept, because no grant could apply when it was read |
+| `NotRetained` | The body was read, but no copy was kept, because no grant could apply when it was read. If selection still captures the request, [D4](#the-withholding-rule) trigger 3 withholds the row |
 
 The raw copy is taken before the frontend clears its buffer, and only when a grant could apply.
 It is the bytes as sent, so a malformed body, a duplicate property, or a value that coercion later changes is stored as the client sent it.
@@ -524,9 +525,16 @@ The raw query string is kept because `FromRequest` keeps only the last value of 
 **Narrowing the raw copy: decided yes.**
 The frontend reads the `client_id` claim from the bearer token without validating it, and keeps a raw copy only when that client has an active grant for the tenant.
 This is safe in both directions.
-For a valid token, the unvalidated claim equals the validated one, provided the frontend takes the first `client_id` claim as `JwtAuthentication` does (`Security/JwtValidationService.cs:303-306`), so no request that selection would capture loses its body.
+For a valid token, the unvalidated claim equals the validated one, provided the frontend takes the first `client_id` claim as `JwtAuthentication` does (`Security/JwtValidationService.cs:303-306`), so narrowing never costs a selected request its body.
 For an invalid token, authentication fails and the request is never captured, so the claim's value cannot add a capture.
 The decode runs only when the tenant has an active grant, and without it every request of a granted tenant would pay for a copy.
+
+**A grant that appears between the two reads.**
+Extraction and selection read the snapshot at different moments.
+A grant that becomes visible between them, either a new grant or a stale tenant entry that was refreshed, selects a request whose body was not kept.
+That request is captured with body state `NotRetained`, and [D4](#the-withholding-rule) trigger 3 withholds its row.
+The window comes from deciding the copy before authentication, not from narrowing: a per-tenant copy check would have it too.
+The stored request body is only ever the raw copy, never rebuilt from the parsed body, which coercion has changed.
 
 **2. Selection, after `JwtAuthentication`.**
 A new step looks up the validated client key in the current snapshot ([D2](#the-in-flight-boundary)) and freezes the decision on the request.

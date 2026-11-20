@@ -41,7 +41,7 @@ Unprefixed paths are relative to the repository root.
 - When no trigger holds, every client-derived field is stored as given, subject only to the cap.
 - Trigger 1: a listed name is a query parameter name, or a JSON property name at any depth of the request or response body.
 - Trigger 2: the request's bearer token appears in a client-derived field as stored, JSON-unescaped, or percent-decoded. The decoders never throw, and leave an invalid sequence as it is.
-- Trigger 3: an unparseable request body contains a listed name, or contains a NUL byte; the body state is `Unread`; or the examination stopped at a depth or size bound.
+- Trigger 3: an unparseable request body contains a listed name, or contains a NUL byte; the body state is `Unread` or `NotRetained`; or the examination stopped at a depth or size bound.
 - Names are compared after unescaping or percent-decoding, with ordinal case folding and `_` and `-` removed, as whole names.
 - The credential-name list is the one in design.md ("### The Withholding Rule").
 
@@ -58,7 +58,7 @@ Unprefixed paths are relative to the repository root.
 **The generative proof**
 
 - A CsCheck 5.0.1 test in `src/dms/core/EdFi.DataManagementService.Core.Tests.Unit/` follows `docs/property-based-testing/`.
-- Its generator produces request and response JSON, malformed bodies, UTF-16 and gzip-encoded bodies, and query strings with repeated and mixed-case names. It plants credential names and the token in every client-derived field, in random decoded forms.
+- Its generator produces request and response JSON, malformed bodies, UTF-16 and gzip-encoded bodies, every body state, and query strings with repeated and mixed-case names. It plants credential names and the token in every client-derived field, in random decoded forms.
 - An independent oracle implements D4 exactly, and the properties hold:
     - a trigger means every client-derived field is withheld and every server-generated field is present
     - no trigger means every field is stored as given, capped
@@ -74,6 +74,7 @@ Each is an example test:
 - a malformed body naming a credential
 - a UTF-16 body and a gzip body, each naming a credential, that are withheld
 - a GET or DELETE carrying a body
+- a `NotRetained` body with `?note=alpha` in the query: withheld, and `alpha` appears in no field
 - repeated and mixed-case credential names in the query
 - a look-alike name, such as `customizationKey`, that is stored
 - an over-cap triggered body that is withheld, not truncated

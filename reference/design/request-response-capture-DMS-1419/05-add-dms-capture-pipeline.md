@@ -66,7 +66,8 @@ Unprefixed paths are relative to the repository root.
 
 - Units use FakeItEasy, fake time, and explicit signals, never delays, and cover:
     - selection matches the granted client and not another
-    - a grant changed between extraction and selection is honored at selection
+    - a grant removed between extraction and selection: the request is not captured
+    - a grant published between extraction and selection, for a POST whose malformed body is `{"password":"alpha",` and whose query is `?note=alpha`: the request is captured with body state `NotRetained`, `Withheld` is set with the incomplete-discovery reason, and `alpha` appears in no field. Extraction runs against a snapshot without the grant, the test then publishes the grant, and selection runs after that, with no delays
     - a disable after selection still captures that request, and queued rows are written
     - a bodyless route is captured with `NoBody`
     - a client-supplied correlation ID fills only the correlation ID column, and a generated one only the trace ID column
