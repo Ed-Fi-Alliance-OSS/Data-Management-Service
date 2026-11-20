@@ -46,8 +46,9 @@ internal static class RuntimePlanCompilationGoldenFixtureTestHelper
             "expected",
             ManifestFileName
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             fixtureRootFolderName,
             fixtureFolderName,
             "actual",

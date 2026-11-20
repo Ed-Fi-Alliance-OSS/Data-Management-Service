@@ -966,6 +966,47 @@ public class Given_RelationshipAuthorizationPlannerTests
     }
 
     [Test]
+    public void It_should_report_update_missing_people_views_once_before_value_specific_planning()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
+        var mappingSet = CreatePeopleSubjectMappingSet(resource, SecurableElementKind.Student);
+
+        var result = CreatePlanner()
+            .PlanUpdateValues(
+                mappingSet,
+                resource,
+                CreateConfiguredAuthorizationStrategies(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+                new RelationalAuthorizationContext([42L], []),
+                CreateWritePlan(mappingSet, resource, AuthNames.StudentDocumentId)
+            );
+
+        var failure = result.SecurityConfigurationFailures.Should().ContainSingle().Which;
+        failure
+            .FailureKind.Should()
+            .Be(RelationshipAuthorizationFailureKind.MissingPeopleAuthViewAssociations);
+        failure.ValueSource.Should().BeNull();
+        failure
+            .AuthObject.Should()
+            .Be(
+                RelationshipAuthorizationAuthObject.CreatePerson(
+                    RelationshipAuthorizationPersonAuthViewKind.Student
+                )
+            );
+        result
+            .StoredValues.Should()
+            .BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+            .Which.Failures.Should()
+            .Equal(failure);
+        result
+            .ProposedValues.Should()
+            .BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+            .Which.Failures.Should()
+            .Equal(failure);
+    }
+
+    [Test]
     public void It_should_plan_people_auth_views_when_auth_hierarchy_and_required_associations_are_present()
     {
         var resource = new QualifiedResourceName("Ed-Fi", "StudentAuthorizationResource");
@@ -1688,6 +1729,39 @@ public class Given_RelationshipAuthorizationPlannerTests
             .Be(subject.PersonMetadata.ProposedAnchor.Binding);
     }
 
+    [Test]
+    public void It_should_reject_missing_transitive_first_hop_bindings()
+    {
+        var resource = new QualifiedResourceName("Ed-Fi", "CourseTranscript");
+        var mappingSet = CreateTransitiveCourseTranscriptStudentMappingSet(resource);
+        var writePlan = CreateWritePlan(mappingSet, resource, _documentId);
+
+        var result = CreatePlanner()
+            .PlanProposedValues(
+                mappingSet,
+                resource,
+                CreateConfiguredAuthorizationStrategies(
+                    AuthorizationStrategyNameConstants.RelationshipsWithStudentsOnly
+                ),
+                new RelationalAuthorizationContext([42L], []),
+                writePlan
+            );
+
+        var failure = result
+            .Should()
+            .BeOfType<RelationshipAuthorizationResult.SecurityConfigurationError>()
+            .Which.Failures.Should()
+            .ContainSingle()
+            .Which;
+        failure.FailureKind.Should().Be(RelationshipAuthorizationFailureKind.MissingProposedRootBinding);
+        failure.ValueSource.Should().Be(RelationshipAuthorizationValueSource.Proposed);
+        failure.Location!.Table.Should().Be(Table("CourseTranscript"));
+        failure.Location.Column.Should().Be(Col("StudentAcademicRecord_DocumentId"));
+        failure
+            .PersonMetadata!.Path!.Kind.Should()
+            .Be(RelationshipAuthorizationPersonSubjectPathKind.TransitiveJoinPath);
+    }
+
     [TestCaseSource(nameof(SelfPersonExistingResourceCases))]
     public void It_should_plan_existing_resource_self_person_proposed_specs_with_target_document_id_anchors(
         SecurableElementKind securableElementKind,
@@ -1767,6 +1841,9 @@ public class Given_RelationshipAuthorizationPlannerTests
                 RelationshipAuthorizationSubjectIneligibilityReason.SelfPersonDocumentIdUnavailableForCreateNew
             );
         failure.Hint.Should().Contain("SelfPersonDocumentIdUnavailableForCreateNew");
+        failure.PersonMetadata.Should().NotBeNull();
+        failure.PersonMetadata!.PersonKind.Should().Be(RelationshipAuthorizationPersonKind.Student);
+        failure.PersonMetadata.Path.Should().Be(failure.IneligibleSubjects[0].Subject.PersonMetadata!.Path);
     }
 
     [Test]
@@ -2265,8 +2342,15 @@ public class Given_RelationshipAuthorizationPlannerTests
             );
     }
 
-    [Test]
-    public void It_should_return_security_configuration_errors_before_known_but_not_enabled_staging_when_supported_subject_planning_fails()
+    [TestCase(
+        AuthorizationStrategyNameConstants.OwnershipBased,
+        RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
+    )]
+    [TestCase("UnknownStrategy", RelationshipAuthorizationFailureKind.InvalidAuthorizationStrategy)]
+    public void It_should_preserve_supported_subject_failures_alongside_classification_failures(
+        string otherStrategy,
+        RelationshipAuthorizationFailureKind otherFailureKind
+    )
     {
         var resource = new QualifiedResourceName("Ed-Fi", "School");
         var planner = CreatePlanner();
@@ -2276,7 +2360,7 @@ public class Given_RelationshipAuthorizationPlannerTests
             resource,
             CreateConfiguredAuthorizationStrategies(
                 AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.OwnershipBased
+                otherStrategy
             ),
             new RelationalAuthorizationContext([42L], [])
         );
@@ -2290,17 +2374,11 @@ public class Given_RelationshipAuthorizationPlannerTests
         securityConfigurationErrorResult
             .Failures.Select(static failure => failure.FailureKind)
             .Should()
-            .Equal(
-                RelationshipAuthorizationFailureKind.NoApplicableRootSubject,
-                RelationshipAuthorizationFailureKind.KnownButNotEnabledStrategy
-            );
+            .Equal(RelationshipAuthorizationFailureKind.NoApplicableRootSubject, otherFailureKind);
         securityConfigurationErrorResult
             .Failures.Select(static failure => failure.ConfiguredStrategy?.StrategyName)
             .Should()
-            .Equal(
-                AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
-                AuthorizationStrategyNameConstants.OwnershipBased
-            );
+            .Equal(AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly, otherStrategy);
         securityConfigurationErrorResult
             .Failures.Select(static failure => failure.RelationshipLocalOrder)
             .Should()

@@ -30,8 +30,9 @@ public class Given_PlanSqlFoundations_GoldenFixture
             "minimal",
             "expected"
         );
+        using var goldenOutput = new GoldenFixtureOutputDirectory();
         var actualRoot = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            goldenOutput.DirectoryPath,
             "plan-sql-foundations",
             "minimal",
             "actual"

@@ -12,6 +12,45 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 
 public abstract class ProfileVisibilityClassifierTests
 {
+    [TestFixture]
+    public class Given_Extensions_And_Missing_Filter_Values : ProfileVisibilityClassifierTests
+    {
+        [Test]
+        public void It_includes_extension_names_in_the_explicit_child_contract()
+        {
+            var classifier = new ProfileVisibilityClassifier(
+                ProfileTestFixtures.BuildExtensionProfile(),
+                ProfileTestFixtures.ExtensionFixtureScopes
+            );
+
+            classifier.GetExplicitChildMemberNames("$").Should().BeEquivalentTo("classPeriods", "sample");
+            classifier.GetExplicitChildMemberNames("$.classPeriods[*]").Should().BeEquivalentTo("sample");
+            classifier.GetExplicitChildMemberNames("$._ext.sample").Should().BeEmpty();
+        }
+
+        [TestCase(false)]
+        [TestCase(true)]
+        public void It_rejects_missing_include_filter_values_and_accepts_missing_exclude_filter_values(
+            bool explicitNull
+        )
+        {
+            JsonNode item = explicitNull
+                ? new JsonObject { ["addressTypeDescriptor"] = null, ["city"] = "Austin" }
+                : new JsonObject { ["city"] = "Austin" };
+            var included = new ProfileVisibilityClassifier(
+                BuildAddressesProfileWithIncludeOnlyFilter(),
+                AddressesFixtureScopes
+            );
+            var excluded = new ProfileVisibilityClassifier(
+                BuildAddressesProfileWithExcludeOnlyFilter(),
+                AddressesFixtureScopes
+            );
+
+            included.PassesCollectionItemFilter("$.addresses[*]", item).Should().BeFalse();
+            excluded.PassesCollectionItemFilter("$.addresses[*]", item).Should().BeTrue();
+        }
+    }
+
     // Shared scope catalogs from ProfileTestFixtures
     protected static IReadOnlyList<CompiledScopeDescriptor> SharedFixtureScopes =>
         ProfileTestFixtures.SharedFixtureScopes;

@@ -159,6 +159,63 @@ public class ProvideAuthorizationFiltersMiddlewareTests
             AuthorizationStrategyNameConstants.RelationshipsWithEdOrgsOnly,
         ];
 
+        [TestCase(true, false)]
+        [TestCase(false, true)]
+        [TestCase(true, true)]
+        public async Task It_preserves_each_actions_independent_policy(
+            bool createPermitted,
+            bool updatePermitted
+        )
+        {
+            RequestInfo requestInfo = CreateAuthorizedRequestInfo();
+            requestInfo.ResourceActionAuthStrategies = [];
+            string[] createStrategies = [AuthorizationStrategyNameConstants.OwnershipBased];
+            requestInfo.UpsertActionPolicies = new UpsertActionPolicies(
+                Evidence("Create", createPermitted, createStrategies),
+                Evidence("Update", updatePermitted, _updateStrategies)
+            );
+            int nextCalls = 0;
+
+            await Execute(requestInfo, () => nextCalls++);
+
+            nextCalls.Should().Be(1);
+            requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            requestInfo.AuthorizationStrategyEvaluators.Should().BeEmpty();
+            AssertPolicy(requestInfo.UpsertActionAuthorization!.Create, createPermitted, createStrategies);
+            AssertPolicy(requestInfo.UpsertActionAuthorization.Update, updatePermitted, _updateStrategies);
+        }
+
+        private static UpsertActionPolicyEvidence Evidence(
+            string action,
+            bool permitted,
+            string[] strategies
+        ) =>
+            permitted
+                ? new UpsertActionPolicyEvidence.Permitted(action, strategies)
+                : new UpsertActionPolicyEvidence.Denied(action, "Student", "TestClaimSet");
+
+        private static void AssertPolicy(UpsertActionPolicy policy, bool permitted, string[] strategies)
+        {
+            if (!permitted)
+            {
+                policy.Should().BeSameAs(UpsertActionPolicy.NotPermitted.Instance);
+                return;
+            }
+
+            policy
+                .Should()
+                .BeOfType<UpsertActionPolicy.Permitted>()
+                .Which.Evaluators.Should()
+                .BeEquivalentTo(
+                    strategies.Select(name => new AuthorizationStrategyEvaluator(
+                        name,
+                        [],
+                        FilterOperator.Or
+                    )),
+                    options => options.WithStrictOrdering()
+                );
+        }
+
         [TestCase(true)]
         [TestCase(false)]
         public async Task It_passes_each_permitted_list_in_order_and_refuses_the_other_action(

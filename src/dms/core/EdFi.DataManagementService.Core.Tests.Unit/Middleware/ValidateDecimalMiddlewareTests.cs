@@ -65,6 +65,96 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Middleware
         }
 
         [TestFixture]
+        [SetCulture("en-US")]
+        public class Given_Decimal_Range_Boundaries : ValidateDecimalMiddlewareTests
+        {
+            [TestCase("999.99")]
+            [TestCase("-999.99")]
+            public async Task It_continues_exactly_once_at_an_allowed_endpoint(string value)
+            {
+                var requestInfo = RequestWithValue(value);
+                int nextCalls = 0;
+
+                await Middleware()
+                    .Execute(
+                        requestInfo,
+                        () =>
+                        {
+                            nextCalls++;
+                            return Task.CompletedTask;
+                        }
+                    );
+
+                nextCalls.Should().Be(1);
+                requestInfo.FrontendResponse.Should().Be(No.FrontendResponse);
+            }
+
+            [TestCase("999.991")]
+            [TestCase("-999.991")]
+            public async Task It_rejects_an_outside_value_without_continuing(string value)
+            {
+                var requestInfo = RequestWithValue(value);
+                int nextCalls = 0;
+
+                await Middleware()
+                    .Execute(
+                        requestInfo,
+                        () =>
+                        {
+                            nextCalls++;
+                            return Task.CompletedTask;
+                        }
+                    );
+
+                nextCalls.Should().Be(0);
+                requestInfo.FrontendResponse.StatusCode.Should().Be(400);
+                requestInfo.FrontendResponse.Headers.Should().BeEmpty();
+                JsonNode
+                    .DeepEquals(
+                        requestInfo.FrontendResponse.Body,
+                        JsonNode.Parse(
+                            """
+                            {
+                              "detail":"Data validation failed. See 'validationErrors' for details.",
+                              "type":"urn:ed-fi:api:bad-request:data-validation-failed",
+                              "title":"Data Validation Failed",
+                              "status":400,
+                              "correlationId":"boundary-test",
+                              "validationErrors":{
+                                "$.yearsOfPriorProfessionalExperience":[
+                                  "yearsOfPriorProfessionalExperience must be between -999.99 and 999.99."
+                                ]
+                              },
+                              "errors":[]
+                            }
+                            """
+                        )
+                    )
+                    .Should()
+                    .BeTrue();
+            }
+
+            private RequestInfo RequestWithValue(string value)
+            {
+                string body = "{\"yearsOfPriorProfessionalExperience\":" + value + "}";
+                var requestInfo = Context(
+                    new FrontendRequest(
+                        "ed-fi/staffs",
+                        Body: body,
+                        Form: null,
+                        Headers: [],
+                        QueryParameters: [],
+                        TraceId: new("boundary-test"),
+                        RouteQualifiers: []
+                    ),
+                    RequestMethod.POST
+                );
+                requestInfo.ParsedBody = JsonNode.Parse(body)!;
+                return requestInfo;
+            }
+        }
+
+        [TestFixture]
         [Parallelizable]
         public class Given_A_Valid_Body : ValidateDecimalMiddlewareTests
         {

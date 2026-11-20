@@ -13,8 +13,9 @@ using NUnit.Framework;
 
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 
-[TestFixture]
-public class Given_descendant_inlined_scope_under_RootExtension
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_descendant_inlined_scope_under_RootExtension(bool includeSeparateSiblingTable)
 {
     private ProfileSeparateScopeDescendantStates _result;
     private ResourceWritePlan _plan = null!;
@@ -30,6 +31,28 @@ public class Given_descendant_inlined_scope_under_RootExtension
             descendantBindingRelativePath: "$._ext.sample.detail.someField"
         );
         _extensionTable = _plan.TablePlansInDependencyOrder[1];
+        if (includeSeparateSiblingTable)
+        {
+            // A later, longer sibling scope must not steal ownership of the inlined
+            // detail scope and discard the metadata that protects its hidden values.
+            var siblingPlan = ProfileTestDoubles
+                .BuildRootPlusRootExtensionWithSeparateChildTablePlan(
+                    childScopeRelativePath: "$._ext.sample.otherDetail"
+                )
+                .TablePlansInDependencyOrder[2];
+            _plan = _plan with
+            {
+                Model = _plan.Model with
+                {
+                    TablesInDependencyOrder =
+                    [
+                        .. _plan.Model.TablesInDependencyOrder,
+                        siblingPlan.TableModel,
+                    ],
+                },
+                TablePlansInDependencyOrder = [.. _plan.TablePlansInDependencyOrder, siblingPlan],
+            };
+        }
 
         var directScopeAddress = new ScopeInstanceAddress("$._ext.sample", []);
         var request = ProfileTestDoubles.CreateRequest(
@@ -66,8 +89,15 @@ public class Given_descendant_inlined_scope_under_RootExtension
     public void It_collects_one_descendant_stored_state() => _result.StoredScopes.Should().HaveCount(1);
 
     [Test]
-    public void It_collects_the_correct_descendant_stored_scope() =>
-        _result.StoredScopes[0].Address.JsonScope.Should().Be("$._ext.sample.detail");
+    public void It_collects_the_complete_descendant_stored_scope() =>
+        _result
+            .StoredScopes.Should()
+            .ContainSingle()
+            .Which.Should()
+            .BeEquivalentTo(
+                ProfileTestDoubles.StoredVisiblePresentScope("$._ext.sample.detail", "someField"),
+                options => options.ComparingByMembers<StoredScopeState>()
+            );
 }
 
 [TestFixture]

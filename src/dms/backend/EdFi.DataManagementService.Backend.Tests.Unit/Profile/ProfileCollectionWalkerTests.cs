@@ -3143,11 +3143,14 @@ public class Given_a_descriptor_backed_parent_collection_with_nested_children
 /// (raw URI parent + raw "C1" child in its ancestor chain) and contributes hidden member
 /// path <c>endDate</c>. After the walker constructs its visible-stored index, the C1
 /// row in the canonical bucket must carry <c>period.endDate</c> in
-/// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>; C2 must not.
+/// <see cref="VisibleStoredCollectionRow.HiddenMemberPaths"/>; C2 must not. The second
+/// case also hides C2's <c>period.startDate</c> to verify that expanding a later row
+/// retains the earlier row's hidden paths.
 /// </para>
 /// </summary>
-[TestFixture]
-public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_member
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_member(bool multipleRows)
 {
     private const long DocumentId = 345L;
     private const long ParentItemId = 100L;
@@ -3236,10 +3239,33 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
             HiddenMemberPaths: ["endDate"]
         );
 
+        var siblingDescendantState = inlinedDescendantState with
+        {
+            Address = inlinedDescendantState.Address with
+            {
+                AncestorCollectionInstances =
+                [
+                    inlinedDescendantState.Address.AncestorCollectionInstances[0],
+                    new AncestorCollectionInstance(
+                        DescriptorBackedNestedTopologyBuilders.ChildrenScope,
+                        [
+                            new SemanticIdentityPart(
+                                "$.identityField0",
+                                JsonValue.Create("C2"),
+                                IsPresent: true
+                            ),
+                        ]
+                    ),
+                ],
+            },
+            HiddenMemberPaths = ["startDate"],
+        };
         var context = new ProfileAppliedWriteContext(
             request,
             new JsonObject(),
-            ImmutableArray.Create(inlinedDescendantState),
+            multipleRows
+                ? ImmutableArray.Create(inlinedDescendantState, siblingDescendantState)
+                : ImmutableArray.Create(inlinedDescendantState),
             storedRows
         );
 
@@ -3318,8 +3344,8 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
         );
         c1Row
             .HiddenMemberPaths.Should()
-            .Contain(
-                "period.endDate",
+            .Equal(
+                ["period.endDate"],
                 "the inlined descendant scope state targeting C1 must fold its hidden member path "
                     + "onto C1's canonical row in the index. The expander reconstructs C1's address "
                     + "from the descendant state's raw URI ancestor chain, so the expansion must run "
@@ -3360,6 +3386,7 @@ public class Given_a_descriptor_backed_parent_with_inlined_descendant_hidden_mem
                 "the descendant state targets C1's identity only — the full structural address "
                     + "match must still discriminate C1 from its sibling C2"
             );
+        c2Row.HiddenMemberPaths.Should().Equal(multipleRows ? ["period.startDate"] : Array.Empty<string>());
     }
 }
 
@@ -6747,8 +6774,11 @@ internal static class CompositeDescriptorScalarDocumentReferenceBackedNestedTopo
 /// <c>ParentItemId</c> at slot 0. Expected: the children table state aggregates four merged
 /// rows - two under <c>ParentAItemId</c> and two under <c>ParentBItemId</c>.</para>
 /// </summary>
-[TestFixture]
-public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a_child_collection
+[TestFixture(false)]
+[TestFixture(true)]
+public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a_child_collection(
+    bool hideSecondAlignedScope
+)
 {
     private const long DocumentId = 345L;
     private const long ParentAItemId = 100L;
@@ -6805,6 +6835,11 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
             ),
         };
 
+        if (hideSecondAlignedScope)
+        {
+            body["parents"]![1]!.AsObject().Remove("_ext");
+        }
+
         // Each aligned scope carries a CandidateAttachedAlignedScopeData whose
         // CollectionCandidates supplies the two child candidates. CP3 Task 21 retired the
         // constructor fence on AttachedAlignedScopeData.CollectionCandidates so this is now
@@ -6853,7 +6888,7 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
             parentsPlan,
             "B",
             1,
-            attachedAlignedScopeData: [attachedB]
+            attachedAlignedScopeData: hideSecondAlignedScope ? [] : [attachedB]
         );
 
         var request = AlignedExtensionScopeTopologyBuilders.BuildRequest(
@@ -6873,18 +6908,23 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
                     parentArrayIndex: 0,
                     childArrayIndex: 1
                 ),
-                AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildRequestItem(
-                    parentSemanticIdentity: "B",
-                    childIdentity: "B1",
-                    parentArrayIndex: 1,
-                    childArrayIndex: 0
-                ),
-                AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildRequestItem(
-                    parentSemanticIdentity: "B",
-                    childIdentity: "B2",
-                    parentArrayIndex: 1,
-                    childArrayIndex: 1
-                ),
+                .. hideSecondAlignedScope
+                    ? []
+                    : new[]
+                    {
+                        AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildRequestItem(
+                            parentSemanticIdentity: "B",
+                            childIdentity: "B1",
+                            parentArrayIndex: 1,
+                            childArrayIndex: 0
+                        ),
+                        AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildRequestItem(
+                            parentSemanticIdentity: "B",
+                            childIdentity: "B2",
+                            parentArrayIndex: 1,
+                            childArrayIndex: 1
+                        ),
+                    },
             ],
             [
                 AlignedExtensionScopeTopologyBuilders.BuildRequestScopeState(
@@ -6894,8 +6934,10 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
                 ),
                 AlignedExtensionScopeTopologyBuilders.BuildRequestScopeState(
                     "B",
-                    ProfileVisibilityKind.VisiblePresent,
-                    creatable: true
+                    hideSecondAlignedScope
+                        ? ProfileVisibilityKind.Hidden
+                        : ProfileVisibilityKind.VisiblePresent,
+                    creatable: !hideSecondAlignedScope
                 ),
             ]
         );
@@ -6913,14 +6955,19 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
                     parentSemanticIdentity: "A",
                     childIdentity: "A2"
                 ),
-                AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildStoredRow(
-                    parentSemanticIdentity: "B",
-                    childIdentity: "B1"
-                ),
-                AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildStoredRow(
-                    parentSemanticIdentity: "B",
-                    childIdentity: "B2"
-                ),
+                .. hideSecondAlignedScope
+                    ? []
+                    : new[]
+                    {
+                        AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildStoredRow(
+                            parentSemanticIdentity: "B",
+                            childIdentity: "B1"
+                        ),
+                        AlignedExtensionScopeWithChildrenTopologyBuilders.BuildAlignedChildStoredRow(
+                            parentSemanticIdentity: "B",
+                            childIdentity: "B2"
+                        ),
+                    },
             ],
             [
                 AlignedExtensionScopeTopologyBuilders.BuildStoredScopeState(
@@ -6929,7 +6976,9 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
                 ),
                 AlignedExtensionScopeTopologyBuilders.BuildStoredScopeState(
                     "B",
-                    ProfileVisibilityKind.VisiblePresent
+                    hideSecondAlignedScope
+                        ? ProfileVisibilityKind.Hidden
+                        : ProfileVisibilityKind.VisiblePresent
                 ),
             ]
         );
@@ -7012,6 +7061,41 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
             .BeTrue("the recursion must visit the children scope under the aligned parent");
         var state = builder.Build();
         state.MergedRows.Length.Should().Be(4);
+        state
+            .CurrentRows.Select(row =>
+                row.Values.Select(value => value.Should().BeOfType<FlattenedWriteValue.Literal>().Which.Value)
+                    .ToArray()
+            )
+            .Should()
+            .BeEquivalentTo(
+                new object?[][]
+                {
+                    [ChildA1ItemId, ParentAItemId, 1, "A1"],
+                    [ChildA2ItemId, ParentAItemId, 2, "A2"],
+                    [ChildB1ItemId, ParentBItemId, 1, "B1"],
+                    [ChildB2ItemId, ParentBItemId, 2, "B2"],
+                },
+                options => options.WithStrictOrdering()
+            );
+        // Visible children are merged in request order. Preserving the stored rows instead
+        // would keep the same row count and parent keys but retain the wrong ordinals.
+        // A hidden aligned scope instead preserves all descendants with their stored ordinals.
+        state
+            .MergedRows.Select(row =>
+                row.Values.Select(value => value.Should().BeOfType<FlattenedWriteValue.Literal>().Which.Value)
+                    .ToArray()
+            )
+            .Should()
+            .BeEquivalentTo(
+                new object?[][]
+                {
+                    [ChildA1ItemId, ParentAItemId, 0, "A1"],
+                    [ChildA2ItemId, ParentAItemId, 1, "A2"],
+                    [ChildB1ItemId, ParentBItemId, hideSecondAlignedScope ? 1 : 0, "B1"],
+                    [ChildB2ItemId, ParentBItemId, hideSecondAlignedScope ? 2 : 1, "B2"],
+                },
+                options => options.WithStrictOrdering()
+            );
     }
 
     [Test]
@@ -7050,6 +7134,16 @@ public class Given_a_collection_row_with_an_aligned_extension_scope_containing_a
     {
         currentRowProjection.Should().NotBeNull("each aligned scope has a stored row");
         var currentRow = currentRowProjection!.ProjectedRow;
+
+        if (requestScope is { Visibility: ProfileVisibilityKind.Hidden })
+        {
+            buffer.Should().BeNull();
+            scopedRequestNode.Should().BeNull();
+            return SeparateScopeSynthesisResult.Table(
+                ProfileSeparateTableMergeOutcome.Preserve,
+                new RelationalWriteMergedTableState(tablePlan, [currentRow], [currentRow])
+            );
+        }
 
         // Update outcome: synthesize a merged row whose values carry the parent's
         // ParentItemId at slot 0 (same as currentRow.Values[0]) and the request's

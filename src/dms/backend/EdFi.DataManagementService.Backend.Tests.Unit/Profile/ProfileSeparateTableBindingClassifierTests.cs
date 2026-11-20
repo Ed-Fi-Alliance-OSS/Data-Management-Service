@@ -15,6 +15,177 @@ using NUnit.Framework;
 namespace EdFi.DataManagementService.Backend.Tests.Unit.Profile;
 
 [TestFixture]
+internal class Given_Separate_Table_Binding_Contracts
+{
+    private const string Scope = "$.parents[*]._ext.sample";
+
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_applies_absent_or_hidden_descendant_state_without_reclassifying_the_parent(bool hidden)
+    {
+        var plan = ProfileTestDoubles.BuildRootPlusRootExtensionPlanWithInlinedDescendantScope();
+        var directAddress = new ScopeInstanceAddress("$._ext.sample", []);
+        var descendantAddress = new ScopeInstanceAddress("$._ext.sample.detail", []);
+        var request = new RequestScopeState(directAddress, ProfileVisibilityKind.VisiblePresent, false);
+        var descendantRequest = new RequestScopeState(
+            descendantAddress,
+            ProfileVisibilityKind.VisibleAbsent,
+            false
+        );
+        var descendants = new ProfileSeparateScopeDescendantStates(
+            [descendantRequest],
+            hidden
+                ?
+                [
+                    new StoredScopeState(
+                        descendantAddress,
+                        ProfileVisibilityKind.VisiblePresent,
+                        ["someField"]
+                    ),
+                ]
+                : []
+        );
+
+        var result = new ProfileSeparateTableBindingClassifier().Classify(
+            plan,
+            plan.TablePlansInDependencyOrder[1],
+            directAddress,
+            request,
+            null,
+            descendants
+        );
+
+        result
+            .BindingsByIndex.Should()
+            .Equal(
+                RootBindingDisposition.StorageManaged,
+                RootBindingDisposition.VisibleWritable,
+                hidden ? RootBindingDisposition.HiddenPreserved : RootBindingDisposition.ClearOnVisibleAbsent
+            );
+    }
+
+    private static ResourceWritePlan CreatePlan() =>
+        ProfileTestDoubles.BuildRootPlusRootExtensionPlan(
+            extensionJsonScope: Scope,
+            extensionBindings: new ProfileTestDoubles.RootExtensionBindingSpec(
+                "FavoriteColor",
+                ProfileTestDoubles.RootExtensionBindingKind.Scalar,
+                RelativePath: Scope + ".favoriteColor"
+            )
+        );
+
+    private static ScopeInstanceAddress Address(string parentCode, string scope = Scope) =>
+        new(
+            scope,
+            [
+                new AncestorCollectionInstance(
+                    "$.parents[*]",
+                    [new SemanticIdentityPart("parentCode", JsonValue.Create(parentCode), true)]
+                ),
+            ]
+        );
+
+    [TestCase(false, false, RootBindingDisposition.VisibleWritable)]
+    [TestCase(true, false, RootBindingDisposition.ClearOnVisibleAbsent)]
+    [TestCase(false, true, RootBindingDisposition.HiddenPreserved)]
+    [TestCase(true, true, RootBindingDisposition.HiddenPreserved)]
+    public void It_clears_only_visible_absent_values_and_preserves_hidden_stored_values(
+        bool absent,
+        bool hidden,
+        RootBindingDisposition expected
+    )
+    {
+        var plan = CreatePlan();
+        var address = Address("A");
+        var request = new RequestScopeState(
+            address,
+            absent ? ProfileVisibilityKind.VisibleAbsent : ProfileVisibilityKind.VisiblePresent,
+            false
+        );
+        var stored = new StoredScopeState(
+            address,
+            ProfileVisibilityKind.VisiblePresent,
+            hidden ? ["favoriteColor"] : []
+        );
+
+        var result = new ProfileSeparateTableBindingClassifier().Classify(
+            plan,
+            plan.TablePlansInDependencyOrder[1],
+            address,
+            request,
+            stored,
+            default
+        );
+
+        result.BindingsByIndex.Should().Equal(RootBindingDisposition.StorageManaged, expected);
+    }
+
+    [TestCase(true, false)]
+    [TestCase(false, false)]
+    [TestCase(true, true)]
+    [TestCase(false, true)]
+    public void It_rejects_scope_state_from_a_different_scope_or_ancestor_instance(
+        bool mismatchedRequest,
+        bool differentScope
+    )
+    {
+        var plan = CreatePlan();
+        var address = Address("A");
+        var other = differentScope ? Address("A", "$.parents[*]._ext.other") : Address("B");
+        var request = new RequestScopeState(
+            mismatchedRequest ? other : address,
+            ProfileVisibilityKind.VisiblePresent,
+            false
+        );
+        var stored = new StoredScopeState(
+            mismatchedRequest ? address : other,
+            ProfileVisibilityKind.VisiblePresent,
+            ["favoriteColor"]
+        );
+
+        Action act = () =>
+            new ProfileSeparateTableBindingClassifier().Classify(
+                plan,
+                plan.TablePlansInDependencyOrder[1],
+                address,
+                request,
+                stored,
+                default
+            );
+
+        string parameter = mismatchedRequest ? "requestScope" : "storedScope";
+        act.Should()
+            .Throw<ArgumentException>()
+            .WithMessage(
+                $"The supplied {parameter} address does not match the separate scope instance address '{Scope}'.*"
+            )
+            .Which.ParamName.Should()
+            .Be(parameter);
+    }
+
+    [Test]
+    public void It_rejects_hidden_metadata_that_has_no_binding_on_the_separate_table()
+    {
+        var plan = CreatePlan();
+        var address = Address("A");
+        var request = new RequestScopeState(address, ProfileVisibilityKind.VisiblePresent, false);
+        var stored = new StoredScopeState(address, ProfileVisibilityKind.VisiblePresent, ["unknownMember"]);
+
+        Action act = () =>
+            new ProfileSeparateTableBindingClassifier().Classify(
+                plan,
+                plan.TablePlansInDependencyOrder[1],
+                address,
+                request,
+                stored,
+                default
+            );
+
+        act.Should().Throw<InvalidOperationException>().WithMessage("*unknownMember*does not resolve*");
+    }
+}
+
+[TestFixture]
 public class Given_SeparateTableClassifier_instance_aware_overload_for_sibling_scope_instances
 {
     private const string ParentScope = "$.parents[*]";

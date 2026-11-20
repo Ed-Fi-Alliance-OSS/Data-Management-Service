@@ -1,0 +1,32 @@
+{
+  "stryker-config": {
+    "solution": "../../EdFi.DataManagementService.sln",
+    "project": "EdFi.DataManagementService.Backend.Ddl.csproj",
+    "configuration": "Release",
+    "target-framework": "net10.0",
+    "test-runner": "vstest",
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "additional-timeout": 100000,
+    "timeout-ratio": 3.0,
+    "reporters": [
+      "html",
+      "json",
+      "progress"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 0
+    },
+    "mutate": [
+      "TrackedChangeTriggerBodyEmitter.cs",
+      "AuthTriggerBodyEmitter.cs",
+      "MssqlDialect.cs",
+      "PgsqlDialect.cs",
+      "!**/Properties/AssemblyInfo.cs",
+      "!**/bin/**",
+      "!**/obj/**"
+    ]
+  }
+}

@@ -254,15 +254,22 @@ public class DataStoreConnectionStringValidatorTests
     [TestFixture]
     public class Given_any_rejected_value : DataStoreConnectionStringValidatorTests
     {
-        private static IEnumerable<string> RejectedValues()
+        private static IEnumerable<TestCaseData> RejectedValues()
         {
-            yield return StoredValueFor("Server=localhost;Database=TestDb;");
-            yield return StoredValueFor("host=localhost;database=edfi_datamanagementservice");
-            yield return "not-a-connection-string";
-            yield return "host=localhost;port=5432;username=postgres;password=p;database=edfi_dms";
-            yield return "Data Source=localhost;Initial Catalog=edfi;";
-            yield return "Server=;Database=";
-            yield return "bogus=";
+            // Encryption uses a fresh nonce. Keep test identities stable across discovery and execution.
+            yield return new TestCaseData(
+                StoredValueFor("Server=localhost;Database=TestDb;")
+            ).SetArgDisplayNames("encrypted-sql-server");
+            yield return new TestCaseData(
+                StoredValueFor("host=localhost;database=edfi_datamanagementservice")
+            ).SetArgDisplayNames("encrypted-postgresql");
+            yield return new TestCaseData("not-a-connection-string");
+            yield return new TestCaseData(
+                "host=localhost;port=5432;username=postgres;password=p;database=edfi_dms"
+            );
+            yield return new TestCaseData("Data Source=localhost;Initial Catalog=edfi;");
+            yield return new TestCaseData("Server=;Database=");
+            yield return new TestCaseData("bogus=");
         }
 
         [TestCaseSource(nameof(RejectedValues))]

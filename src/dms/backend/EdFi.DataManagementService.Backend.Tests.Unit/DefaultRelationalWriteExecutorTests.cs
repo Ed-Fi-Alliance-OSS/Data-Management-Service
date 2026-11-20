@@ -8874,7 +8874,7 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static RelationshipAuthorizationResult.NoClaims CreateStoredSchoolIdNoClaimsAuthorization(
+    internal static RelationshipAuthorizationResult.NoClaims CreateStoredSchoolIdNoClaimsAuthorization(
         RelationalWriteExecutorInput request
     )
     {
@@ -9195,7 +9195,7 @@ public class Given_Default_Relational_Write_Executor
         );
     }
 
-    private static BackendProfileWriteContext BuildVisiblePresentRootProfileWriteContext(
+    internal static BackendProfileWriteContext BuildVisiblePresentRootProfileWriteContext(
         JsonNode writableBody,
         ResourceWritePlan writePlan
     )

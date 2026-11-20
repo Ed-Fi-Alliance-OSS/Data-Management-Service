@@ -37,6 +37,45 @@ public class ResourceQueryFilterValidatorTests
         ];
 
     [TestFixture]
+    [NonParallelizable]
+    [Platform(Exclude = "Win")]
+    public class Given_An_Unzoned_Date_Time_On_A_Non_Utc_Host : ResourceQueryFilterValidatorTests
+    {
+        [Test]
+        public void It_interprets_the_value_as_utc_independently_of_the_host_time_zone()
+        {
+            string? originalTimeZone = Environment.GetEnvironmentVariable("TZ");
+            try
+            {
+                // TZ is process-global on Unix, so this fixture must not overlap other tests.
+                Environment.SetEnvironmentVariable("TZ", "Etc/GMT+7");
+                TimeZoneInfo.ClearCachedData();
+                TimeZoneInfo.Local.BaseUtcOffset.Should().Be(TimeSpan.FromHours(-7));
+
+                var result = ResourceQueryFilterValidator.Validate(
+                    new Dictionary<string, string> { ["createDate"] = "2026-11-16T12:34:56" },
+                    Fields(),
+                    [],
+                    []
+                );
+
+                result
+                    .Should()
+                    .BeOfType<ResourceQueryFilterResult.Valid>()
+                    .Which.QueryElements.Should()
+                    .ContainSingle()
+                    .Which.Value.Should()
+                    .Be("2026-11-16T12:34:56Z");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("TZ", originalTimeZone);
+                TimeZoneInfo.ClearCachedData();
+            }
+        }
+    }
+
+    [TestFixture]
     [Parallelizable]
     public class Given_Only_Recognized_Filters : ResourceQueryFilterValidatorTests
     {

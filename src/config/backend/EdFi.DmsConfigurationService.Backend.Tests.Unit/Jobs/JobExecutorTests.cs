@@ -257,6 +257,7 @@ public class JobExecutorTests
                 Task.FromResult<JobWriteResult>(new JobWriteResult.OwnershipLost());
             _harness.Script.Run = async (context, _, token) =>
             {
+                TaskCompletionSource callbackFinished = ScriptedLeaseRepository.NewSignal();
                 // A consumer's callback that blocks until a fence with its own token finishes. Were the renewal
                 // loop to run callbacks while it holds the gate, this fence could never enter it.
                 using CancellationTokenRegistration registration = token.Register(() =>
@@ -272,8 +273,15 @@ public class JobExecutorTests
                     {
                         _callbackFence = exception;
                     }
+                    finally
+                    {
+                        callbackFinished.TrySetResult();
+                    }
                 });
-                await Task.Delay(Timeout.Infinite, token);
+                // Waiting on a canceled delay can resume the handler and dispose this registration before
+                // cancellation invokes it. Keep the registration alive until the callback has observed the fence.
+                await callbackFinished.Task;
+                token.ThrowIfCancellationRequested();
             };
 
             Task<JobExecutionResult> running = _harness.Executor.ExecuteAsync(

@@ -1,0 +1,37 @@
+{
+  "stryker-config": {
+    "solution": "../../EdFi.DataManagementService.sln",
+    "project": "EdFi.DataManagementService.Backend.csproj",
+    "configuration": "Release",
+    "target-framework": "net10.0",
+    "test-runner": "vstest",
+    "mutation-level": "Standard",
+    "coverage-analysis": "perTest",
+    "reporters": [
+      "html",
+      "json",
+      "progress"
+    ],
+    "thresholds": {
+      "high": 80,
+      "low": 60,
+      "break": 0
+    },
+    "mutate": [
+      "DefaultRelationalWriteExecutor.cs",
+      "RelationalWriteFirstPhase.cs",
+      "RelationalWriteSecondCommandPhase.cs",
+      "RelationalWriteGuardedNoOp.cs",
+      "Etag/DocumentCacheMaterializerStreamEtagComposer.cs",
+      "Etag/EtagComposer.cs",
+      "Etag/EtagMatchProjection.cs",
+      "Etag/EtagPreconditionEvaluator.cs",
+      "Etag/ProfileVariantCode.cs",
+      "Etag/ServedEtagComposer.cs",
+      "Etag/VariantKey.cs",
+      "!**/Properties/AssemblyInfo.cs",
+      "!**/bin/**",
+      "!**/obj/**"
+    ]
+  }
+}

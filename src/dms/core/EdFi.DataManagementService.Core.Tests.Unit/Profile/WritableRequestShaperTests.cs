@@ -12,6 +12,403 @@ namespace EdFi.DataManagementService.Core.Tests.Unit.Profile;
 
 public abstract class WritableRequestShaperTests
 {
+    [TestFixture]
+    public class Given_Absent_Descendants_Under_A_Collection_Item : WritableRequestShaperTests
+    {
+        [TestCase("null")]
+        [TestCase("omitted")]
+        [TestCase("hidden")]
+        public void It_retains_descendant_scope_states_for_each_parent_identity(string submitted)
+        {
+            const string parentScope = "$.parents[*]";
+            const string detailScope = parentScope + ".detail";
+            const string childScope = detailScope + ".child";
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                new("$", ScopeKind.Root, null, [], [], []),
+                new(parentScope, ScopeKind.Collection, "$", [], ["code"], ["code"]),
+                new(detailScope, ScopeKind.NonCollection, parentScope, [parentScope], [], []),
+                new(childScope, ScopeKind.NonCollection, detailScope, [parentScope], [], ["value"]),
+            ];
+            bool hidden = submitted == "hidden";
+            var profile = new ContentTypeDefinition(
+                MemberSelection.IncludeAll,
+                [],
+                [],
+                [
+                    new CollectionRule(
+                        "parents",
+                        hidden ? MemberSelection.IncludeOnly : MemberSelection.IncludeAll,
+                        null,
+                        [new PropertyRule("code")],
+                        null,
+                        null,
+                        null,
+                        null
+                    ),
+                ],
+                []
+            );
+            var request = JsonNode.Parse(
+                """{"parents":[{"code":"P","detail":{"child":{"value":"first"}}},{"code":"Q","detail":{"child":{"value":"second"}}}]}"""
+            )!;
+            if (submitted == "null")
+            {
+                request["parents"]![0]!["detail"] = null;
+            }
+            else if (submitted == "omitted")
+            {
+                request["parents"]![0]!.AsObject().Remove("detail");
+            }
+            var original = request.DeepClone();
+
+            var result = BuildShaper(profile, scopes).Shape(request);
+
+            var firstVisibility = hidden ? ProfileVisibilityKind.Hidden : ProfileVisibilityKind.VisibleAbsent;
+            var secondVisibility = hidden
+                ? ProfileVisibilityKind.Hidden
+                : ProfileVisibilityKind.VisiblePresent;
+            result
+                .RequestScopeStates.Select(state =>
+                    (
+                        state.Address.JsonScope,
+                        Parent: state.Address.AncestorCollectionInstances.IsEmpty
+                            ? ""
+                            : state
+                                .Address.AncestorCollectionInstances.Single()
+                                .SemanticIdentityInOrder.Single()
+                                .Value!.GetValue<string>(),
+                        state.Visibility,
+                        state.Creatable
+                    )
+                )
+                .Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        ("$", "", ProfileVisibilityKind.VisiblePresent, false),
+                        (detailScope, "P", firstVisibility, false),
+                        (childScope, "P", firstVisibility, false),
+                        (detailScope, "Q", secondVisibility, false),
+                        (childScope, "Q", secondVisibility, false),
+                    }
+                );
+            var expected = JsonNode.Parse(
+                hidden
+                    ? """{"parents":[{"code":"P"},{"code":"Q"}]}"""
+                    : """{"parents":[{"code":"P"},{"code":"Q","detail":{"child":{"value":"second"}}}]}"""
+            );
+            JsonNode.DeepEquals(result.WritableRequestBody, expected).Should().BeTrue();
+            result
+                .VisibleRequestCollectionItems.Select(item => item.RequestJsonPath)
+                .Should()
+                .Equal("$.parents[0]", "$.parents[1]");
+            result.ValidationFailures.Should().BeEmpty();
+            JsonNode.DeepEquals(request, original).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Collections_Below_Object_And_Extension_Scopes : WritableRequestShaperTests
+    {
+        [TestCase("object")]
+        [TestCase("collection")]
+        [TestCase("extension")]
+        public void It_retains_nested_filtering_and_complete_collection_request_paths(string container)
+        {
+            var rowsRule = new CollectionRule(
+                "rows",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("code")],
+                null,
+                null,
+                null,
+                null
+            );
+            ContentTypeDefinition profile;
+            List<CompiledScopeDescriptor> scopes = [new("$", ScopeKind.Root, null, [], [], [])];
+            string parentScope;
+            string[] ancestors;
+            string sourceJson;
+            string expectedJson;
+            string[] expectedPaths;
+            switch (container)
+            {
+                case "object":
+                    parentScope = "$.parent";
+                    ancestors = [];
+                    scopes.Add(new(parentScope, ScopeKind.NonCollection, "$", [], [], []));
+                    profile = new(
+                        MemberSelection.IncludeAll,
+                        [],
+                        [
+                            new ObjectRule(
+                                "parent",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                null,
+                                [rowsRule],
+                                null
+                            ),
+                        ],
+                        [],
+                        []
+                    );
+                    sourceJson = """{ "parent": { "rows": [{ "code": "A", "secret": "hidden" }] } }""";
+                    expectedJson = """{ "parent": { "rows": [{ "code": "A" }] } }""";
+                    expectedPaths = ["$.parent.rows[0]"];
+                    break;
+                case "collection":
+                    parentScope = "$.parents[*].detail";
+                    ancestors = ["$.parents[*]"];
+                    scopes.Add(
+                        new("$.parents[*]", ScopeKind.Collection, "$", [], ["parentCode"], ["parentCode"])
+                    );
+                    scopes.Add(
+                        new(parentScope, ScopeKind.NonCollection, "$.parents[*]", [.. ancestors], [], [])
+                    );
+                    profile = new(
+                        MemberSelection.IncludeAll,
+                        [],
+                        [],
+                        [
+                            new CollectionRule(
+                                "parents",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                [
+                                    new ObjectRule(
+                                        "detail",
+                                        MemberSelection.IncludeAll,
+                                        null,
+                                        null,
+                                        null,
+                                        [rowsRule],
+                                        null
+                                    ),
+                                ],
+                                null,
+                                null,
+                                null
+                            ),
+                        ],
+                        []
+                    );
+                    sourceJson =
+                        """{ "parents": [{ "parentCode": "P", "detail": { "rows": [{ "code": "A", "secret": "hidden" }] } }] }""";
+                    expectedJson =
+                        """{ "parents": [{ "parentCode": "P", "detail": { "rows": [{ "code": "A" }] } }] }""";
+                    expectedPaths = ["$.parents[0]", "$.parents[0].detail.rows[0]"];
+                    break;
+                default:
+                    parentScope = "$._ext.sample";
+                    ancestors = [];
+                    scopes.Add(new(parentScope, ScopeKind.NonCollection, "$", [], [], []));
+                    profile = new(
+                        MemberSelection.IncludeAll,
+                        [],
+                        [],
+                        [],
+                        [
+                            new ExtensionRule(
+                                "sample",
+                                MemberSelection.IncludeAll,
+                                null,
+                                null,
+                                null,
+                                [rowsRule]
+                            ),
+                        ]
+                    );
+                    sourceJson =
+                        """{ "_ext": { "sample": { "rows": [{ "code": "A", "secret": "hidden" }] } } }""";
+                    expectedJson = """{ "_ext": { "sample": { "rows": [{ "code": "A" }] } } }""";
+                    expectedPaths = ["$._ext.sample.rows[0]"];
+                    break;
+            }
+            string rowScope = parentScope + ".rows[*]";
+            scopes.Add(
+                new(rowScope, ScopeKind.Collection, parentScope, [.. ancestors], ["code"], ["code", "secret"])
+            );
+            JsonNode source = JsonNode.Parse(sourceJson)!;
+
+            var result = BuildShaper(profile, scopes).Shape(source);
+
+            JsonNode
+                .DeepEquals(result.WritableRequestBody, JsonNode.Parse(expectedJson))
+                .Should()
+                .BeTrue(result.WritableRequestBody.ToJsonString());
+            result.VisibleRequestCollectionItems.Select(i => i.RequestJsonPath).Should().Equal(expectedPaths);
+            var row = result.VisibleRequestCollectionItems.Single(i => i.Address.JsonScope == rowScope);
+            row.Address.SemanticIdentityInOrder.Should()
+                .ContainSingle()
+                .Which.RelativePath.Should()
+                .Be("code");
+            row.Address.SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("A");
+            row.Address.SemanticIdentityInOrder[0].IsPresent.Should().BeTrue();
+            row.Address.ParentAddress.JsonScope.Should().Be(parentScope);
+            row.Address.ParentAddress.AncestorCollectionInstances.Should().HaveCount(ancestors.Length);
+            if (container == "collection")
+            {
+                var ancestor = row.Address.ParentAddress.AncestorCollectionInstances.Single();
+                ancestor.JsonScope.Should().Be("$.parents[*]");
+                ancestor
+                    .SemanticIdentityInOrder.Should()
+                    .ContainSingle()
+                    .Which.RelativePath.Should()
+                    .Be("parentCode");
+                ancestor.SemanticIdentityInOrder[0].Value!.GetValue<string>().Should().Be("P");
+            }
+            result.ValidationFailures.Should().BeEmpty();
+            JsonNode.DeepEquals(source, JsonNode.Parse(sourceJson)).Should().BeTrue();
+        }
+    }
+
+    [TestFixture]
+    public class Given_Extension_Scope_State_Contracts : WritableRequestShaperTests
+    {
+        [TestCase("omitted", false)]
+        [TestCase("null", false)]
+        [TestCase("empty", false)]
+        [TestCase("populated", false)]
+        [TestCase("omitted", true)]
+        [TestCase("null", true)]
+        [TestCase("empty", true)]
+        [TestCase("populated", true)]
+        public void It_emits_exact_scope_states_with_ancestor_identity_and_no_premature_creatability(
+            string submitted,
+            bool hidden
+        )
+        {
+            IReadOnlyList<CompiledScopeDescriptor> scopes =
+            [
+                .. ProfileTestFixtures.ExtensionFixtureScopes,
+                new("$._ext.sample.detail", ScopeKind.NonCollection, "$._ext.sample", [], [], ["value"]),
+                new(
+                    "$.classPeriods[*]._ext.sample.detail",
+                    ScopeKind.NonCollection,
+                    "$.classPeriods[*]._ext.sample",
+                    ["$.classPeriods[*]"],
+                    [],
+                    ["value"]
+                ),
+            ];
+            var profile = hidden
+                ? new ContentTypeDefinition(
+                    MemberSelection.IncludeOnly,
+                    [],
+                    [],
+                    [
+                        new CollectionRule(
+                            "classPeriods",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            [new PropertyRule("classPeriodName")],
+                            null,
+                            null,
+                            null,
+                            null
+                        ),
+                    ],
+                    []
+                )
+                : ProfileTestFixtures.BuildIncludeAllProfile();
+            JsonNode request = JsonNode.Parse(
+                """{ "classPeriods": [{ "classPeriodName": "One" }, { "classPeriodName": "Two" }] }"""
+            )!;
+            if (submitted != "omitted")
+            {
+                JsonNode? extension = submitted switch
+                {
+                    "null" => null,
+                    "empty" => new JsonObject(),
+                    _ => JsonNode.Parse("""{ "detail": { "value": "visible" } }"""),
+                };
+                request["_ext"] = new JsonObject { ["sample"] = extension?.DeepClone() };
+                request["classPeriods"]![0]!["_ext"] = new JsonObject { ["sample"] = extension };
+            }
+            JsonNode original = request.DeepClone();
+
+            var result = BuildShaper(profile, scopes).Shape(request);
+
+            var extensionVisibility = (hidden, submitted) switch
+            {
+                (true, _) => ProfileVisibilityKind.Hidden,
+                (false, "empty" or "populated") => ProfileVisibilityKind.VisiblePresent,
+                _ => ProfileVisibilityKind.VisibleAbsent,
+            };
+            var detailVisibility = (hidden, submitted) switch
+            {
+                (true, _) => ProfileVisibilityKind.Hidden,
+                (false, "populated") => ProfileVisibilityKind.VisiblePresent,
+                _ => ProfileVisibilityKind.VisibleAbsent,
+            };
+            var absentVisibility = hidden
+                ? ProfileVisibilityKind.Hidden
+                : ProfileVisibilityKind.VisibleAbsent;
+            result
+                .RequestScopeStates.Select(s =>
+                    (
+                        s.Address.JsonScope,
+                        Ancestor: s.Address.AncestorCollectionInstances.IsEmpty
+                            ? ""
+                            : s
+                                .Address.AncestorCollectionInstances.Single()
+                                .SemanticIdentityInOrder.Single()
+                                .Value!.GetValue<string>(),
+                        s.Visibility,
+                        s.Creatable
+                    )
+                )
+                .Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        ("$", "", ProfileVisibilityKind.VisiblePresent, false),
+                        ("$._ext.sample", "", extensionVisibility, false),
+                        ("$._ext.sample.detail", "", detailVisibility, false),
+                        ("$.classPeriods[*]._ext.sample", "One", extensionVisibility, false),
+                        ("$.classPeriods[*]._ext.sample.detail", "One", detailVisibility, false),
+                        ("$.classPeriods[*]._ext.sample", "Two", absentVisibility, false),
+                        ("$.classPeriods[*]._ext.sample.detail", "Two", absentVisibility, false),
+                    }
+                );
+            result.VisibleRequestCollectionItems.Should().HaveCount(2);
+            result
+                .VisibleRequestCollectionItems.Select(i => i.RequestJsonPath)
+                .Should()
+                .Equal("$.classPeriods[0]", "$.classPeriods[1]");
+            result.VisibleRequestCollectionItems.Should().OnlyContain(i => !i.Creatable);
+            result.ValidationFailures.Should().BeEmpty();
+            JsonNode expected = JsonNode.Parse(
+                (hidden, submitted) switch
+                {
+                    (true, _) or (false, "omitted" or "null") =>
+                        """{ "classPeriods": [{ "classPeriodName": "One" }, { "classPeriodName": "Two" }] }""",
+                    (false, "empty") => """
+                    { "_ext": { "sample": {} }, "classPeriods": [
+                        { "classPeriodName": "One", "_ext": { "sample": {} } }, { "classPeriodName": "Two" }
+                    ] }
+                    """,
+                    _ => """
+                    { "_ext": { "sample": { "detail": { "value": "visible" } } }, "classPeriods": [
+                        { "classPeriodName": "One", "_ext": { "sample": { "detail": { "value": "visible" } } } },
+                        { "classPeriodName": "Two" }
+                    ] }
+                    """,
+                }
+            )!;
+            JsonNode
+                .DeepEquals(result.WritableRequestBody, expected)
+                .Should()
+                .BeTrue(result.WritableRequestBody.ToJsonString());
+            JsonNode.DeepEquals(request, original).Should().BeTrue();
+        }
+    }
+
     // -----------------------------------------------------------------------
     //  Shared helper
     // -----------------------------------------------------------------------

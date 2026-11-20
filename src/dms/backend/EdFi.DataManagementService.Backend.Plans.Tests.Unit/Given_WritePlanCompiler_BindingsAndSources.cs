@@ -14,6 +14,70 @@ namespace EdFi.DataManagementService.Backend.Plans.Tests.Unit;
 [TestFixture]
 public class Given_WritePlanCompiler_BindingsAndSources : WritePlanCompilerTestBase
 {
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_retains_required_locator_bindings_when_their_columns_are_marked_nonwritable(
+        SqlDialect dialect
+    )
+    {
+        var model = CreateFocusedStableKeyFixtureResourceModel(dialect);
+        var original = new WritePlanCompiler(dialect).Compile(model);
+        var alteredTables = model
+            .TablesInDependencyOrder.Select(table =>
+            {
+                var locators = table
+                    .IdentityMetadata.RootScopeLocatorColumns.Concat(
+                        table.IdentityMetadata.ImmediateParentScopeLocatorColumns
+                    )
+                    .ToHashSet();
+                return table with
+                {
+                    Columns =
+                    [
+                        .. table.Columns.Select(column =>
+                            locators.Contains(column.ColumnName) ? column with { IsWritable = false } : column
+                        ),
+                    ],
+                };
+            })
+            .ToArray();
+        var altered = model with
+        {
+            Root = alteredTables.Single(table => table.Table == model.Root.Table),
+            TablesInDependencyOrder = alteredTables,
+        };
+
+        var result = new WritePlanCompiler(dialect).Compile(altered);
+
+        result
+            .TablePlansInDependencyOrder.Select(plan => plan.TableModel.Table)
+            .Should()
+            .Equal(original.TablePlansInDependencyOrder.Select(plan => plan.TableModel.Table));
+        for (var index = 0; index < original.TablePlansInDependencyOrder.Length; index++)
+        {
+            var expected = original.TablePlansInDependencyOrder[index];
+            var actual = result.TablePlansInDependencyOrder[index];
+            actual
+                .ColumnBindings.Select(binding =>
+                    (binding.Column.ColumnName, binding.ParameterName, binding.Source)
+                )
+                .Should()
+                .BeEquivalentTo(
+                    expected.ColumnBindings.Select(binding =>
+                        (binding.Column.ColumnName, binding.ParameterName, binding.Source)
+                    ),
+                    options => options.WithStrictOrdering()
+                );
+            actual.InsertSql.Should().Be(expected.InsertSql);
+            actual.UpdateSql.Should().Be(expected.UpdateSql);
+            actual.DeleteByParentSql.Should().Be(expected.DeleteByParentSql);
+            actual
+                .CollectionKeyPreallocationPlan.Should()
+                .BeEquivalentTo(expected.CollectionKeyPreallocationPlan);
+            actual.CollectionMergePlan.Should().BeEquivalentTo(expected.CollectionMergePlan);
+        }
+    }
+
     [Test]
     public void It_should_compile_stored_column_bindings_in_model_order_with_deterministic_parameter_names()
     {

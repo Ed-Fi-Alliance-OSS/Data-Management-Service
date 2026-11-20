@@ -846,6 +846,7 @@
           "EdFi.DmsConfigurationService.Backend.Mssql": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.OpenIddict": "[1.0.0, )",
           "EdFi.DmsConfigurationService.Backend.Postgresql": "[1.0.0, )",
+          "EdFi.DmsConfigurationService.Claims": "[1.0.0, )",
           "FakeItEasy": "[8.3.0, )",
           "FluentAssertions": "[6.12.1, )",
           "Microsoft.Extensions.TimeProvider.Testing": "[10.3.0, )",

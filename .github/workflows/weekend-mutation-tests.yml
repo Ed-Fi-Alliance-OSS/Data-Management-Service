@@ -1,0 +1,143 @@
+# SPDX-License-Identifier: Apache-2.0
+# Licensed to the Ed-Fi Alliance under one or more agreements.
+# The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
+# See the LICENSE and NOTICES files in the project root for more information.
+
+name: DMS and CMS Weekend Mutation Tests
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 8 * * 6" # Saturday at 08:00 UTC, alongside the DMS weekend build.
+
+permissions:
+  contents: read
+
+jobs:
+  mutation-tests:
+    name: Mutation tests (${{ matrix.target }})
+    # Forks inherit schedules but not the Alliance Slack webhook. Manual runs work anywhere.
+    if: github.event_name != 'schedule' || github.repository_owner == 'Ed-Fi-Alliance-OSS'
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - target: dms-request-auth
+            directory: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit
+            config: stryker-request-auth.json
+          - target: cms-permission-inheritance
+            directory: src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit
+            config: stryker-claims.json
+          - target: dms-query-auth
+            directory: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit
+            config: stryker-query-auth.json
+          - target: dms-write-execution
+            directory: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit
+            config: stryker-write-execution.json
+          - target: cms-token-admission
+            directory: src/config/backend/EdFi.DmsConfigurationService.Backend.Tests.Unit
+            config: stryker-openiddict.json
+          - target: dms-profile-core
+            directory: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit
+            config: stryker-profile.json
+          - target: dms-profile-backend
+            directory: src/dms/backend/EdFi.DataManagementService.Backend.Tests.Unit
+            config: stryker-profile.json
+          - target: dms-write-plans
+            directory: src/dms/backend/EdFi.DataManagementService.Backend.Plans.Tests.Unit
+            config: stryker-write-plans.json
+          - target: dms-model-constraints
+            directory: src/dms/backend/EdFi.DataManagementService.Backend.RelationalModel.Tests.Unit
+            config: stryker-model-constraints.json
+          - target: dms-validation
+            directory: src/dms/core/EdFi.DataManagementService.Core.Tests.Unit
+            config: stryker-validation.json
+          - target: dms-ddl
+            directory: src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit
+            config: stryker-ddl.json
+    env:
+      TARGET: ${{ matrix.target }}
+      CONFIG_FILE: ${{ matrix.config }}
+      ARTIFACT_DIRECTORY: ${{ github.workspace }}/artifacts/mutation/${{ matrix.target }}
+      DOTNET_NOLOGO: true
+      DOTNET_CLI_TELEMETRY_OPTOUT: true
+    steps:
+      - name: Checkout the repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup dotnet
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore NuGet package cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/Directory.Packages.props') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
+
+      - name: Run full mutation target
+        id: mutation
+        # Leave time for the always-run diagnostics and upload after a step timeout.
+        timeout-minutes: 210
+        working-directory: ${{ matrix.directory }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          unset UPDATE_GOLDENS
+          mkdir -p "$ARTIFACT_DIRECTORY"
+          cp "$CONFIG_FILE" "$ARTIFACT_DIRECTORY/run-config.json"
+          printf 'Target: %s\nCommit: %s\nDirectory: %s\nConfig: %s\nConcurrency: 2\n' \
+            "$TARGET" "$GITHUB_SHA" "$PWD" "$CONFIG_FILE" | tee "$ARTIFACT_DIRECTORY/run-info.txt"
+          dotnet --info | tee "$ARTIFACT_DIRECTORY/dotnet-info.txt"
+          dotnet tool restore 2>&1 | tee "$ARTIFACT_DIRECTORY/tool-restore.log"
+          dotnet tool list --local | tee "$ARTIFACT_DIRECTORY/tools.txt"
+          dotnet stryker --config-file "$CONFIG_FILE" --concurrency 2 \
+            --break-on-initial-test-failure --log-to-file \
+            --output "$ARTIFACT_DIRECTORY/stryker" 2>&1 | tee "$ARTIFACT_DIRECTORY/console.log"
+
+      - name: Validate report and summarize mutation findings
+        if: always()
+        shell: pwsh
+        run: ./eng/ci/Test-MutationReport.ps1 -OutputDirectory $env:ARTIFACT_DIRECTORY -Target $env:TARGET
+
+      - name: Upload mutation reports and diagnostics
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: mutation-${{ matrix.target }}
+          path: ${{ env.ARTIFACT_DIRECTORY }}
+          retention-days: 30
+          if-no-files-found: error
+
+  notify-results:
+    name: Notify Results
+    runs-on: ubuntu-latest
+    needs: mutation-tests
+    # Match the other weekend runs: one scheduled notification; manual runs stay quiet.
+    if: always() && github.event_name == 'schedule' && github.repository_owner == 'Ed-Fi-Alliance-OSS'
+    steps:
+      - name: Notify Slack on success
+        if: needs.mutation-tests.result == 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {"text": ":heavy_check_mark: DMS and CMS weekend mutation reports passed validation. Review the findings in <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|the workflow run>."}
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+
+      - name: Notify Slack on failure
+        if: needs.mutation-tests.result != 'success'
+        uses: slackapi/slack-github-action@485a9d42d3a73031f12ec201c457e2162c45d02d # v2.0.0
+        with:
+          payload: |
+            {"text": ":x: DMS and CMS weekend mutation tests failed (result: ${{ needs.mutation-tests.result }}): <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View run>"}
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook

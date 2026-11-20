@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Data;
 using System.Data.Common;
 using System.Text.Json.Nodes;
 using EdFi.DataManagementService.Backend.Composite;
@@ -32,6 +33,135 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
     private static readonly DocumentUuid CreatedDocumentUuid = new(
         Guid.Parse("dddddddd-4444-5555-6666-eeeeeeeeeeee")
     );
+
+    [Test]
+    public async Task It_authorizes_structured_claims_before_emitting_dml_on_the_same_session()
+    {
+        long[] claimIds = [.. Enumerable.Range(1, 2000).Select(id => (long)id)];
+        var input = CreateInput(
+            new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),
+            dialect: SqlDialect.Mssql
+        );
+        input = input with
+        {
+            ProposedRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateProposedSchoolIdRelationshipAuthorization(
+                    input,
+                    claimIds
+                ),
+        };
+        var request = input.Resolve(
+            new RelationalWriteTargetContext.ExistingDocument(345L, ExistingDocumentUuid, 44L)
+        );
+        var session = new ScriptedWriteSession(
+            CreateReader(Authorized()),
+            CreateReader(Sentinel(0), PersistObservation(77L))
+        )
+        {
+            Dialect = SqlDialect.Mssql,
+        };
+
+        var resolution = await CreateSut()
+            .ResolveAsync(
+                request,
+                CreateChangedRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.ContentVersion.Should().Be(77L);
+        session.Commands.Should().HaveCount(2);
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("UPDATE ");
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("INSERT ");
+        session.Commands[0].CommandText.Should().NotContainEquivalentOf("DELETE ");
+        var claimTable = (DataTable)
+            session.Commands[0].Parameters.Single(parameter => parameter.Value is DataTable).Value!;
+        claimTable
+            .Columns.Cast<DataColumn>()
+            .Select(column => (column.ColumnName, column.DataType))
+            .Should()
+            .Equal(("Id", typeof(long)));
+        claimTable.Rows.Cast<DataRow>().Select(row => (long)row[0]).Should().Equal(claimIds);
+        session.Commands[1].CommandText.Should().ContainEquivalentOf("UPDATE ");
+        session.Commands[1].Parameters.Should().NotContain(parameter => parameter.Value is DataTable);
+    }
+
+    [TestCase(null)]
+    [TestCaseSource(nameof(MissingDocumentIdValues))]
+    public async Task It_rejects_a_document_insert_that_returns_no_document_id(object? documentId)
+    {
+        var request = CreateCreatedTargetRequest();
+        var session = new ScriptedWriteSession(
+            CreateReader(Scalar(documentId), Sentinel(1), PersistObservation(1L))
+        );
+
+        var resolve = () =>
+            CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateNewRootMergeResult(request),
+                    RelationalWriteSecondCommandMode.Dml,
+                    session
+                );
+
+        await resolve
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Document insert for resource 'ed-fi.School' did not return a DocumentId.");
+        session.Commands.Should().ContainSingle();
+    }
+
+    private static IEnumerable<object> MissingDocumentIdValues => [DBNull.Value];
+
+    [Test]
+    public async Task It_rejects_a_missing_persisted_target_observation()
+    {
+        var request = CreateExistingTargetRequest();
+        IReadOnlyList<object?[]> missingObservation = [];
+        var session = new ScriptedWriteSession(CreateReader(Sentinel(0), missingObservation));
+
+        var resolve = () =>
+            CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateChangedRootMergeResult(request),
+                    RelationalWriteSecondCommandMode.Dml,
+                    session
+                );
+
+        await resolve
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage(
+                "Relational write persistence found no ContentVersion for committed document id 345."
+            );
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_rejects_multiple_persisted_target_observations()
+    {
+        var request = CreateExistingTargetRequest();
+        var session = new ScriptedWriteSession(
+            CreateReader(Sentinel(0), [.. PersistObservation(77L), .. PersistObservation(78L)])
+        );
+
+        var resolve = () =>
+            CreateSut()
+                .ResolveAsync(
+                    request,
+                    CreateChangedRootMergeResult(request),
+                    RelationalWriteSecondCommandMode.Dml,
+                    session
+                );
+
+        await resolve
+            .Should()
+            .ThrowAsync<InvalidOperationException>()
+            .WithMessage("Relational write persistence returned more than one persisted-target observation.");
+        session.Commands.Should().ContainSingle();
+    }
 
     [Test]
     public async Task It_co_batches_the_root_update_and_the_content_version_read_into_one_command()
@@ -234,6 +364,61 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         boundNames.Distinct(StringComparer.Ordinal).Should().ContainSingle();
     }
 
+    [TestCase(5)]
+    [TestCase(6)]
+    public async Task It_reserves_space_for_the_created_document_uuid_when_splitting_commands(int budget)
+    {
+        var request = CreateCreatedTargetRequest();
+        var session =
+            budget == 5
+                ? new ScriptedWriteSession(
+                    CreateReader(Scalar(900L)),
+                    CreateReader(Sentinel(0), PersistObservation(81L))
+                )
+                : new ScriptedWriteSession(
+                    CreateReader(Scalar(900L), Sentinel(1)),
+                    CreateReader(PersistObservation(81L))
+                );
+
+        var resolution = await CreateSut(new RelationalCommandBudget(budget, 1000))
+            .ResolveAsync(
+                request,
+                CreateNewRootMergeResult(request),
+                RelationalWriteSecondCommandMode.Dml,
+                session
+            );
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.DocumentId.Should().Be(900L);
+        resolution.PersistResult.ContentVersion.Should().Be(81L);
+        session.Commands.Should().HaveCount(2);
+        session.Commands.Should().OnlyContain(command => command.Parameters.Count <= budget);
+        session
+            .Commands.Select(command => command.Parameters.Count)
+            .Should()
+            .Equal(budget == 5 ? [3, 5] : [6, 3]);
+
+        // Each command that derives the new id needs its own UUID binding. Within that
+        // command, the root insert and version read must share the same binding.
+        foreach (
+            var command in session.Commands.Where(command =>
+                command.CommandText.Contains(CreatedDocumentIdSubqueryPrefix, StringComparison.Ordinal)
+            )
+        )
+        {
+            var parameterName = SubqueryParameterNames(command.CommandText)
+                .Distinct(StringComparer.Ordinal)
+                .Should()
+                .ContainSingle()
+                .Subject;
+            command
+                .Parameters.Should()
+                .ContainSingle(parameter => parameter.Name == parameterName)
+                .Which.Value.Should()
+                .Be(CreatedDocumentUuid.Value);
+        }
+    }
+
     [Test]
     public async Task It_emits_the_proposed_authorization_statements_before_the_document_insert()
     {
@@ -434,6 +619,86 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                         StringComparison.OrdinalIgnoreCase
                     )
             );
+    }
+
+    [Test]
+    public async Task It_budgets_for_mixed_inlined_and_reserved_collection_keys()
+    {
+        var rootPlan = Given_Relational_Write_No_Profile_Persister.CreateRootPlan();
+        var collectionPlan = Given_Relational_Write_No_Profile_Persister.CreateCollectionPlan();
+        var scopePlan = Given_Relational_Write_No_Profile_Persister.CreateCollectionExtensionScopePlan();
+        var request = Given_Relational_Write_No_Profile_Persister.CreateRequest(
+            // Dependency order deliberately places the aligned scope ahead of the collection it hangs off,
+            // so the emitted statement order cannot come from this order alone.
+            Given_Relational_Write_No_Profile_Persister.CreateWritePlan([
+                rootPlan,
+                scopePlan,
+                collectionPlan,
+            ]),
+            RelationalWriteOperationKind.Put
+        );
+        var addressCollectionItemId = Given_Relational_Write_No_Profile_Persister.NewCollectionItemId();
+        var mergeResult = new RelationalWriteMergeResult(
+            [
+                new RelationalWriteMergedTableState(
+                    rootPlan,
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(345L, 255901, "Lincoln High")],
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(345L, 255901, "Lincoln High")]
+                ),
+                new RelationalWriteMergedTableState(
+                    scopePlan,
+                    [],
+                    [Given_Relational_Write_No_Profile_Persister.CreateRow(addressCollectionItemId, "Blue")]
+                ),
+                new RelationalWriteMergedTableState(
+                    collectionPlan,
+                    [],
+                    [
+                        Given_Relational_Write_No_Profile_Persister.CreateRow(
+                            Given_Relational_Write_No_Profile_Persister.NewCollectionItemId(),
+                            345L,
+                            0,
+                            "Work"
+                        ),
+                        Given_Relational_Write_No_Profile_Persister.CreateRow(
+                            addressCollectionItemId,
+                            345L,
+                            1,
+                            "Home"
+                        ),
+                    ]
+                ),
+            ],
+            supportsGuardedNoOp: true
+        );
+        var session = new ScriptedWriteSession(
+            Reserved(910L),
+            CreateReader(Sentinel(0)),
+            CreateReader(Sentinel(0), Sentinel(1)),
+            CreateReader(PersistObservation(80L))
+        );
+
+        var resolution = await CreateSut(commandBudget: new RelationalCommandBudget(6, 1000))
+            .ResolveAsync(request, mergeResult, RelationalWriteSecondCommandMode.Dml, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.PersistResult!.ContentVersion.Should().Be(80L);
+        session.Commands.Should().HaveCount(4);
+        session.Commands[0].CommandText.Should().Contain("CollectionItemIdSequence");
+        session.Commands.Skip(1).Should().OnlyContain(command => command.Parameters.Count <= 6);
+        session
+            .Commands[1]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Contain("Work")
+            .And.NotContain("Home");
+        session
+            .Commands[2]
+            .Parameters.Select(parameter => parameter.Value)
+            .Should()
+            .Contain("Home")
+            .And.Contain(910L);
+        session.Commands[2].CommandText.Should().Contain("SchoolExtensionAddress");
     }
 
     [Test]
@@ -1034,7 +1299,8 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
 
     private static RelationalWriteExecutorInput CreateInput(
         RelationalWriteTargetRequest targetRequest,
-        bool withProposedAuthorization = false
+        bool withProposedAuthorization = false,
+        SqlDialect dialect = SqlDialect.Pgsql
     )
     {
         var rootPlan = Given_Default_Relational_Write_Executor.CreateRootPlan();
@@ -1045,7 +1311,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
         var mappingSet = Given_Default_Relational_Write_Executor.CreateMappingSet(
             resourceModel,
             [rootPlan],
-            SqlDialect.Pgsql
+            dialect
         );
         var input = new RelationalWriteExecutorInput(
             mappingSet,
@@ -1054,7 +1320,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                 : RelationalWriteOperationKind.Put,
             targetRequest,
             writePlan,
-            Given_Default_Relational_Write_Executor.CreateReadPlan(resourceModel, SqlDialect.Pgsql),
+            Given_Default_Relational_Write_Executor.CreateReadPlan(resourceModel, dialect),
             JsonNode.Parse("""{"schoolId":255901,"name":"Lincoln High"}""")!,
             allowIdentityUpdates: false,
             new TraceId("composite-dml-test"),
@@ -1079,11 +1345,7 @@ public class Given_The_Composite_Relational_Write_Second_Command_In_Dml_Mode
                         new DbColumnName("Name")
                     ),
                 ],
-                NamespacePrefixParameterizationFactory.Create(
-                    SqlDialect.Pgsql,
-                    ["Lincoln"],
-                    "namespacePrefixes"
-                )
+                NamespacePrefixParameterizationFactory.Create(dialect, ["Lincoln"], "namespacePrefixes")
             ),
         };
 

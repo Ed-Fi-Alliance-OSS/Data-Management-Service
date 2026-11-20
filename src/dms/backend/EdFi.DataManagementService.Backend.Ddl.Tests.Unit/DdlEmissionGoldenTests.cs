@@ -18,6 +18,13 @@ namespace EdFi.DataManagementService.Backend.Ddl.Tests.Unit;
 public abstract class DdlEmissionGoldenTestBase
 {
     private const string _csprojFileName = "EdFi.DataManagementService.Backend.Ddl.Tests.Unit.csproj";
+    private GoldenFixtureOutputDirectory _output = null!;
+
+    [OneTimeSetUp]
+    public void CreateOutputDirectory() => _output = new GoldenFixtureOutputDirectory();
+
+    [OneTimeTearDown]
+    public void CleanupOutput() => _output.Dispose();
 
     protected static string FindProjectRoot(string startDirectory) =>
         GoldenFixtureTestHelpers.FindProjectRoot(startDirectory, _csprojFileName);
@@ -30,7 +37,7 @@ public abstract class DdlEmissionGoldenTestBase
     /// <summary>
     /// Emits DDL and writes the actual output file. Call this in SetUp (arrange + act).
     /// </summary>
-    protected static GoldenTestPaths EmitDdl(
+    protected GoldenTestPaths EmitDdl(
         string fixtureName,
         SqlDialect dialect,
         DerivedRelationalModelSet modelSet
@@ -46,7 +53,7 @@ public abstract class DdlEmissionGoldenTestBase
         };
         var expectedPath = Path.Combine(fixtureRoot, "expected", dialectName, $"{fixtureName}.sql");
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            _output.DirectoryPath,
             "ddl-emission",
             dialectName,
             $"{fixtureName}.sql"
@@ -171,7 +178,7 @@ public abstract class DdlEmissionGoldenTestBase
     /// from a stable fixture key. This keeps full DDL emission coverage aligned with the runtime
     /// provisioning contract without coupling snapshot tests to production fingerprint generation logic.
     /// </remarks>
-    protected static GoldenTestPaths EmitDdlManifest(
+    protected GoldenTestPaths EmitDdlManifest(
         string fixtureName,
         Func<SqlDialect, DerivedRelationalModelSet> buildModelSet
     )
@@ -180,7 +187,7 @@ public abstract class DdlEmissionGoldenTestBase
         var fixtureRoot = Path.Combine(projectRoot, "Fixtures", "ddl-emission");
         var expectedPath = Path.Combine(fixtureRoot, "expected", "ddl-manifest", $"{fixtureName}.json");
         var actualPath = Path.Combine(
-            TestContext.CurrentContext.WorkDirectory,
+            _output.DirectoryPath,
             "ddl-emission",
             "ddl-manifest",
             $"{fixtureName}.json"

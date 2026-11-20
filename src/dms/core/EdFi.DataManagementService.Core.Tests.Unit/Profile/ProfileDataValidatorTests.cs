@@ -274,6 +274,202 @@ public class ProfileDataValidatorTests
             A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
         }
 
+        [TestCase("object", MemberSelection.IncludeOnly, false, "property")]
+        [TestCase("object", MemberSelection.ExcludeOnly, true, "property")]
+        [TestCase("collection", MemberSelection.IncludeOnly, true, "property")]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false, "property")]
+        [TestCase("extension", MemberSelection.IncludeOnly, false, "property")]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true, "property")]
+        [TestCase("object", MemberSelection.IncludeOnly, false, "serverGenerated")]
+        [TestCase("object", MemberSelection.ExcludeOnly, true, "serverGenerated")]
+        [TestCase("collection", MemberSelection.IncludeOnly, true, "serverGenerated")]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false, "serverGenerated")]
+        [TestCase("extension", MemberSelection.IncludeOnly, false, "serverGenerated")]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true, "serverGenerated")]
+        [TestCase("object", MemberSelection.IncludeOnly, false, "extension")]
+        [TestCase("object", MemberSelection.ExcludeOnly, true, "extension")]
+        [TestCase("collection", MemberSelection.IncludeOnly, true, "extension")]
+        [TestCase("collection", MemberSelection.ExcludeOnly, false, "extension")]
+        [TestCase("extension", MemberSelection.IncludeOnly, false, "extension")]
+        [TestCase("extension", MemberSelection.ExcludeOnly, true, "extension")]
+        public void It_reports_nested_member_failures_with_their_full_paths_and_content_type(
+            string container,
+            MemberSelection memberSelection,
+            bool writable,
+            string invalidKind
+        )
+        {
+            JsonNode parentSchema = JsonNode.Parse(
+                """
+                { "type": "object", "properties": {
+                    "child": { "type": "object", "properties": { "known": { "type": "string" } } },
+                    "rows": { "type": "array", "items": { "type": "object",
+                        "properties": { "known": { "type": "string" } } } }
+                } }
+                """
+            )!;
+            bool serverGenerated = invalidKind == "serverGenerated";
+            bool unknownExtension = invalidKind == "extension";
+            string memberName = serverGenerated ? "link" : "missing";
+            string memberPath = unknownExtension ? "_ext.missing" : memberName;
+            IReadOnlyList<ExtensionRule>? extensions = unknownExtension
+                ? [new ExtensionRule("missing", MemberSelection.IncludeAll, null, null, null, null)]
+                : null;
+            var child = new ObjectRule(
+                "child",
+                memberSelection,
+                null,
+                unknownExtension ? null : [new PropertyRule(memberName)],
+                null,
+                null,
+                extensions
+            );
+            var rows = new CollectionRule(
+                "rows",
+                memberSelection,
+                null,
+                unknownExtension ? null : [new PropertyRule(memberName)],
+                null,
+                null,
+                extensions,
+                null
+            );
+            ContentTypeDefinition content;
+            JsonObject schemaProperties;
+            string prefix;
+            switch (container)
+            {
+                case "object":
+                    content = new(
+                        MemberSelection.IncludeOnly,
+                        [],
+                        [
+                            new ObjectRule(
+                                "parent",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                null,
+                                [child],
+                                [rows],
+                                null
+                            ),
+                        ],
+                        [],
+                        []
+                    );
+                    schemaProperties = new JsonObject { ["parent"] = parentSchema };
+                    prefix = "parent.";
+                    break;
+                case "collection":
+                    content = new(
+                        MemberSelection.IncludeOnly,
+                        [],
+                        [],
+                        [
+                            new CollectionRule(
+                                "parents",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                null,
+                                [child],
+                                [rows],
+                                null,
+                                null
+                            ),
+                        ],
+                        []
+                    );
+                    schemaProperties = new JsonObject
+                    {
+                        ["parents"] = new JsonObject { ["type"] = "array", ["items"] = parentSchema },
+                    };
+                    prefix = "parents[].";
+                    break;
+                default:
+                    content = new(
+                        MemberSelection.IncludeOnly,
+                        [],
+                        [],
+                        [],
+                        [
+                            new ExtensionRule(
+                                "sample",
+                                MemberSelection.IncludeOnly,
+                                null,
+                                null,
+                                [child],
+                                [rows]
+                            ),
+                        ]
+                    );
+                    schemaProperties = new JsonObject
+                    {
+                        ["_ext"] = new JsonObject
+                        {
+                            ["type"] = "object",
+                            ["properties"] = new JsonObject { ["sample"] = parentSchema },
+                        },
+                    };
+                    prefix = "_ext.sample.";
+                    break;
+            }
+            var resourceNode = _apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new("Student"));
+            resourceNode!["jsonSchemaForInsert"] = new JsonObject
+            {
+                ["type"] = "object",
+                ["properties"] = schemaProperties,
+            };
+            var resourceProfile = new ResourceProfile(
+                "Student",
+                null,
+                writable ? null : content,
+                writable ? content : null
+            );
+            var profile = new ProfileDefinition("TestProfile", [resourceProfile]);
+
+            var result = new ProfileDataValidator(_logger).Validate(profile, _effectiveApiSchemaProvider);
+
+            var severity =
+                serverGenerated || memberSelection == MemberSelection.IncludeOnly
+                    ? ValidationSeverity.Error
+                    : ValidationSeverity.Warning;
+            string contentType = writable ? "write" : "read";
+            string? sharedMessage = invalidKind switch
+            {
+                "extension" =>
+                    $"Extension 'missing' in {contentType} content type does not exist in resource 'Student'.",
+                "serverGenerated" =>
+                    $"Property 'link' in {contentType} content type is a server-generated field and is not profile-addressable.",
+                _ => null,
+            };
+            result
+                .Failures.Should()
+                .BeEquivalentTo(
+                    new[]
+                    {
+                        new ValidationFailure(
+                            severity,
+                            "TestProfile",
+                            "Student",
+                            prefix + "child." + memberPath,
+                            sharedMessage
+                                ?? $"Property 'missing' in object 'child' ({contentType} content type) does not exist."
+                        ),
+                        new ValidationFailure(
+                            severity,
+                            "TestProfile",
+                            "Student",
+                            prefix + "rows[]." + memberPath,
+                            sharedMessage
+                                ?? $"Property 'missing' in collection 'rows' ({contentType} content type) does not exist."
+                        ),
+                    }
+                );
+            result.HasErrors.Should().Be(serverGenerated || memberSelection == MemberSelection.IncludeOnly);
+        }
+
         [Test]
         public void Should_construct_successfully()
         {
@@ -1884,6 +2080,224 @@ public class ProfileDataValidatorTests
                 .Failures.Should()
                 .ContainSingle(f =>
                     f.Severity == ValidationSeverity.Warning && f.MemberName == "_ext.Nonexistent"
+                );
+        }
+
+        [TestCase(true, false, MemberSelection.IncludeAll)]
+        [TestCase(false, false, MemberSelection.IncludeAll)]
+        [TestCase(true, true, MemberSelection.IncludeAll)]
+        [TestCase(false, true, MemberSelection.IncludeAll)]
+        [TestCase(true, false, MemberSelection.IncludeOnly)]
+        [TestCase(false, false, MemberSelection.IncludeOnly)]
+        [TestCase(true, true, MemberSelection.IncludeOnly)]
+        [TestCase(false, true, MemberSelection.IncludeOnly)]
+        public void It_validates_members_of_a_known_extension_inside_a_selected_child(
+            bool readable,
+            bool collection,
+            MemberSelection parentSelection
+        )
+        {
+            _apiSchemaDocuments = collection
+                ? CreateSchemaWithCollection("Student", "children", "childId")
+                : CreateSchemaWithReferenceObject("Student", "children", "childId");
+            var resource = _apiSchemaDocuments
+                .GetCoreProjectSchema()
+                .FindResourceSchemaNodeByResourceName(new("Student"))!;
+            var childSchema = resource["jsonSchemaForInsert"]!["properties"]!["children"]!;
+            var childProperties = (collection ? childSchema["items"] : childSchema)![
+                "properties"
+            ]!.AsObject();
+            childProperties["_ext"] = JsonNode.Parse(
+                """
+                {"type":"object","properties":{"sample":{"type":"object","properties":{"known":{"type":"string"}}}}}
+                """
+            );
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+
+            var extension = new ExtensionRule(
+                "sample",
+                MemberSelection.IncludeOnly,
+                null,
+                [new PropertyRule("missing")],
+                null,
+                null
+            );
+            var contentType = new ContentTypeDefinition(
+                parentSelection,
+                [],
+                collection
+                    ? []
+                    :
+                    [
+                        new ObjectRule(
+                            "children",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            null,
+                            null,
+                            null,
+                            [extension]
+                        ),
+                    ],
+                collection
+                    ?
+                    [
+                        new CollectionRule(
+                            Name: "children",
+                            MemberSelection: MemberSelection.IncludeOnly,
+                            LogicalSchema: null,
+                            Properties: null,
+                            NestedObjects: null,
+                            NestedCollections: null,
+                            Extensions: [extension],
+                            ItemFilter: null
+                        ),
+                    ]
+                    : [],
+                []
+            );
+            var profile = new ProfileDefinition(
+                "NestedExtension",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        readable ? contentType : null,
+                        readable ? null : contentType
+                    ),
+                ]
+            );
+
+            var result = new ProfileDataValidator(_logger).Validate(profile, _effectiveApiSchemaProvider);
+
+            result.IsValid.Should().BeFalse();
+            result.HasWarnings.Should().BeFalse();
+            var path = collection ? "children[]._ext.sample.missing" : "children._ext.sample.missing";
+            var contentName = readable ? "read" : "write";
+            result
+                .Failures.Should()
+                .Equal(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        "NestedExtension",
+                        "Student",
+                        path,
+                        $"Property 'missing' in extension 'sample' ({contentName} content type) does not exist."
+                    )
+                );
+        }
+
+        [Test]
+        public void It_reports_unknown_members_inside_each_selected_container(
+            [Values("object", "collection", "extension")] string container,
+            [Values("property", "object", "collection")] string missingKind,
+            [Values(false, true)] bool readable,
+            [Values(MemberSelection.IncludeAll, MemberSelection.IncludeOnly)] MemberSelection parentSelection
+        )
+        {
+            _apiSchemaDocuments = container switch
+            {
+                "object" => CreateSchemaWithReferenceObject("Student", "children", "childId"),
+                "collection" => CreateSchemaWithCollection("Student", "children", "childId"),
+                "extension" => CreateSchemaWithExtension("Student", "sample", "childId"),
+                _ => throw new ArgumentOutOfRangeException(nameof(container)),
+            };
+            A.CallTo(() => _effectiveApiSchemaProvider.Documents).Returns(_apiSchemaDocuments);
+            PropertyRule[] properties = missingKind == "property" ? [new("missing")] : [];
+            ObjectRule[] objects =
+                missingKind == "object"
+                    ? [new("missing", MemberSelection.IncludeOnly, null, null, null, null, null)]
+                    : [];
+            CollectionRule[] collections =
+                missingKind == "collection"
+                    ? [new("missing", MemberSelection.IncludeOnly, null, null, null, null, null, null)]
+                    : [];
+            var contentType = new ContentTypeDefinition(
+                parentSelection,
+                [],
+                container == "object"
+                    ?
+                    [
+                        new ObjectRule(
+                            "children",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            properties,
+                            objects,
+                            collections,
+                            null
+                        ),
+                    ]
+                    : [],
+                container == "collection"
+                    ?
+                    [
+                        new CollectionRule(
+                            "children",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            properties,
+                            objects,
+                            collections,
+                            null,
+                            null
+                        ),
+                    ]
+                    : [],
+                container == "extension"
+                    ?
+                    [
+                        new ExtensionRule(
+                            "sample",
+                            MemberSelection.IncludeOnly,
+                            null,
+                            properties,
+                            objects,
+                            collections
+                        ),
+                    ]
+                    : []
+            );
+            var profile = new ProfileDefinition(
+                "NestedMembers",
+                [
+                    new ResourceProfile(
+                        "Student",
+                        null,
+                        readable ? contentType : null,
+                        readable ? null : contentType
+                    ),
+                ]
+            );
+
+            var result = new ProfileDataValidator(_logger).Validate(profile, _effectiveApiSchemaProvider);
+
+            string prefix = container switch
+            {
+                "object" => "children.",
+                "collection" => "children[].",
+                _ => "_ext.sample.",
+            };
+            string memberLabel = missingKind switch
+            {
+                "property" => "Property",
+                "object" => "Nested object",
+                _ => "Collection",
+            };
+            var containerName = container == "extension" ? "sample" : "children";
+            var contentName = readable ? "read" : "write";
+            result.IsValid.Should().BeFalse();
+            result.HasWarnings.Should().BeFalse();
+            result
+                .Failures.Should()
+                .Equal(
+                    new ValidationFailure(
+                        ValidationSeverity.Error,
+                        "NestedMembers",
+                        "Student",
+                        prefix + "missing",
+                        $"{memberLabel} 'missing' in {container} '{containerName}' ({contentName} content type) does not exist."
+                    )
                 );
         }
 

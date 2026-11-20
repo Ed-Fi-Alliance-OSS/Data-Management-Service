@@ -3026,6 +3026,89 @@ public class Given_SingleRecordRelationshipAuthorizationSqlCompiler
         secondPlan.Should().BeSameAs(firstPlan);
     }
 
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public void It_should_cache_zero_emitted_auth1_indexes(SqlDialect dialect, bool useExecutableShape)
+    {
+        var mappingSet = CreateCacheMappingSet(dialect);
+        var spec = CreateSingleSubjectStoredSqlSpec(CreateSingleClaimParameterization(dialect)) with
+        {
+            EmittedAuth1Index = 0,
+        };
+        var expected = new SingleRecordRelationshipAuthorizationSqlCompiler(dialect).Compile(spec);
+        var shape = RelationshipAuthorizationExecutableShape.Create(spec.CheckSpecs);
+
+        SingleRecordRelationshipAuthorizationSqlPlan Compile() =>
+            useExecutableShape
+                ? SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+                    mappingSet,
+                    shape,
+                    spec.ClaimEducationOrganizationIdParameterization,
+                    0
+                )
+                : SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(mappingSet, spec);
+
+        var first = Compile();
+        first.Should().BeEquivalentTo(expected);
+        Compile().Should().BeSameAs(first);
+    }
+
+    [TestCase(SqlDialect.Pgsql)]
+    [TestCase(SqlDialect.Mssql)]
+    public void It_should_reject_negative_cached_emitted_auth1_indexes(SqlDialect dialect)
+    {
+        var mappingSet = CreateCacheMappingSet(dialect);
+        var spec = CreateSingleSubjectStoredSqlSpec(CreateSingleClaimParameterization(dialect)) with
+        {
+            EmittedAuth1Index = -1,
+        };
+
+        var compile = () => SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(mappingSet, spec);
+
+        compile
+            .Should()
+            .Throw<ArgumentOutOfRangeException>()
+            .WithParameterName("spec")
+            .WithMessage("Emitted AUTH1 index cannot be negative.*");
+    }
+
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Mssql, true)]
+    public void It_should_reuse_cached_plans_for_equivalent_reserved_names(SqlDialect dialect, bool useLists)
+    {
+        var mappingSet = CreateCacheMappingSet(dialect);
+        const string reservedName = "relationshipAuthorization_0_0_schoolId";
+        IReadOnlyList<string> firstNames = useLists
+            ? new List<string> { reservedName }
+            : new[] { reservedName };
+        IReadOnlyList<string> secondNames = useLists
+            ? new List<string> { reservedName }
+            : new[] { reservedName };
+        var spec = CreateSingleSubjectProposedSqlSpec(
+            CreateSingleClaimParameterization(dialect),
+            reservedParameterNames: firstNames
+        );
+
+        var first = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(mappingSet, spec);
+        var second = SingleRecordRelationshipAuthorizationSqlCompiler.CompileCached(
+            mappingSet,
+            spec with
+            {
+                ReservedParameterNames = secondNames,
+            }
+        );
+
+        second.Should().BeSameAs(first);
+        AssertSingleProposedValueParameterName(second, reservedName + "_2");
+        second
+            .Should()
+            .BeEquivalentTo(new SingleRecordRelationshipAuthorizationSqlCompiler(dialect).Compile(spec));
+    }
+
     [Test]
     public void It_should_reuse_cached_postgresql_plans_for_structurally_equivalent_stored_check_specs()
     {

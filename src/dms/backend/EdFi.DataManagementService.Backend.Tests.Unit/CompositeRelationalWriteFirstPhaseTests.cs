@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Unit.Composite;
 using EdFi.DataManagementService.Backend.Tests.Unit.TestSupport;
 using EdFi.DataManagementService.Core.External.Backend;
 using EdFi.DataManagementService.Core.External.Model;
+using FakeItEasy;
 using FluentAssertions;
 using NUnit.Framework;
 
@@ -73,11 +74,130 @@ public class Given_The_Composite_Relational_Write_First_Phase
         session.Commands.Should().ContainSingle();
     }
 
+    [TestCase(false, false)]
+    [TestCase(true, false)]
+    [TestCase(false, true)]
+    [TestCase(true, true)]
+    public async Task It_hydrates_descriptor_uris_for_profiles_or_deferred_etag_checks(
+        bool profiled,
+        bool deferredPrecondition
+    )
+    {
+        const string descriptorUri = "uri://ed-fi.org/GradeLevelDescriptor#Eleventh grade";
+        var readPlan = Given_Relational_Write_Current_State_Loader.CreateReadPlanWithDescriptor();
+        var descriptorPlan = readPlan.DescriptorProjectionPlansInOrder.Single() with
+        {
+            SelectBySingleDocumentSql = """
+                SELECT d."DescriptorId", d."Namespace" || '#' || d."CodeValue" AS "Uri"
+                FROM dms."Descriptor" d
+                JOIN edfi."School" s ON s."EntryGradeLevelDescriptor_DescriptorId" = d."DescriptorId"
+                WHERE s."DocumentId" = @DocumentId
+                """,
+        };
+        readPlan = readPlan with { DescriptorProjectionPlansInOrder = [descriptorPlan] };
+        var rootPlan = Given_Relational_Write_Current_State_Loader.CreateRootPlanWithDescriptor(
+            new QualifiedResourceName("Ed-Fi", "GradeLevelDescriptor")
+        );
+        var writePlan = new ResourceWritePlan(readPlan.Model, [rootPlan]);
+        var mappingSet = Given_Default_Relational_Write_Executor.CreateMappingSet(readPlan.Model, [rootPlan]);
+        var body = JsonNode.Parse($$"""{"entryGradeLevelDescriptor":"{{descriptorUri}}"}""")!;
+        var input = new RelationalWriteExecutorInput(
+            mappingSet,
+            RelationalWriteOperationKind.Put,
+            new RelationalWriteTargetRequest.Put(ExistingDocumentUuid),
+            writePlan,
+            readPlan,
+            body,
+            allowIdentityUpdates: false,
+            new TraceId("composite-descriptor-hydration"),
+            new ReferenceResolverRequest(mappingSet, readPlan.Model.Resource, [], []),
+            profileWriteContext: profiled
+                ? Given_Default_Relational_Write_Executor.BuildVisiblePresentRootProfileWriteContext(
+                    body,
+                    writePlan
+                )
+                : null,
+            writePrecondition: new WritePrecondition.IfMatch("\"44-schema.j._.l.i\""),
+            proposedRelationshipAuthorization: deferredPrecondition
+                ? new RelationshipAuthorizationResult.NoAuthorizationRequired([])
+                : null
+        );
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var rootRows = new DataTable();
+        rootRows.Columns.Add("DocumentId", typeof(long));
+        rootRows.Columns.Add("EntryGradeLevelDescriptor_DescriptorId", typeof(int));
+        rootRows.Rows.Add(345L, 601);
+        List<DataTable> resultSets =
+        [
+            CreateCaptureTable(target),
+            CreateDocumentMetadataTable(target, 44L),
+            rootRows,
+        ];
+        if (profiled || deferredPrecondition)
+        {
+            var descriptors = new DataTable();
+            descriptors.Columns.Add("DescriptorId", typeof(int));
+            descriptors.Columns.Add("Uri", typeof(string));
+            descriptors.Rows.Add(601, descriptorUri);
+            resultSets.Add(descriptors);
+        }
+        var session = new ScriptedWriteSession(CreateReader(resultSets.ToArray()));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        var currentState = resolution.Outcome!.CurrentState!;
+        currentState.DocumentMetadata.ContentVersion.Should().Be(44L);
+        currentState
+            .TableRowsInDependencyOrder.Should()
+            .ContainSingle()
+            .Which.Rows.Should()
+            .ContainSingle()
+            .Which.Should()
+            .Equal(345L, 601);
+        var commandText = session.Commands.Should().ContainSingle().Which.CommandText;
+        commandText.Should().NotContainEquivalentOf("CREATE TEMP TABLE");
+        if (profiled || deferredPrecondition)
+        {
+            currentState
+                .DescriptorRowsInPlanOrder.Should()
+                .ContainSingle()
+                .Which.Rows.Should()
+                .ContainSingle()
+                .Which.Should()
+                .Be(new DescriptorUriRow(601, descriptorUri));
+            commandText.Should().Contain("d.\"Namespace\" || '#' || d.\"CodeValue\"");
+        }
+        else
+        {
+            currentState.DescriptorRowsInPlanOrder.Should().ContainSingle().Which.Rows.Should().BeEmpty();
+            commandText.Should().NotContain("FROM dms.\"Descriptor\"");
+        }
+    }
+
     [Test]
     public async Task It_returns_missing_put_without_decoding_absent_hydration_as_current_state()
     {
         var input = CreateInput(RelationalWriteOperationKind.Put);
         var session = new ScriptedWriteSession(CreateCompositeReader(target: null));
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution
+            .ImmediateResult.Should()
+            .Be(new RelationalWriteExecutorResult.Update(new UpdateResult.UpdateFailureNotExists()));
+        resolution.Outcome.Should().BeNull();
+        session.Commands.Should().ContainSingle();
+    }
+
+    [Test]
+    public async Task It_returns_missing_put_before_a_deferred_relationship_denial_in_the_segmented_path()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put) with
+        {
+            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        var session = new ScriptedWriteSession(CreateCaptureReader(target: null));
 
         var resolution = await CreateSut().ResolveAsync(input, session);
 
@@ -717,6 +837,8 @@ public class Given_The_Composite_Relational_Write_First_Phase
     [Test]
     public async Task It_binds_the_decoded_target_to_a_structured_relationship_fallback()
     {
+        long[] claimIds = [.. Enumerable.Range(1, 2000).Select(static value => (long)value)];
+        var configurator = A.Fake<IRelationalParameterConfigurator>();
         var input = CreateInput(
             RelationalWriteOperationKind.Put,
             includeReadPlan: true,
@@ -727,7 +849,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             StoredRelationshipAuthorization =
                 Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
                     input,
-                    Enumerable.Range(1, 2000).Select(static value => (long)value).ToArray()
+                    claimIds
                 ),
         };
         var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
@@ -737,7 +859,7 @@ public class Given_The_Composite_Relational_Write_First_Phase
             CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target))
         );
 
-        var resolution = await CreateSut().ResolveAsync(input, session);
+        var resolution = await CreateSut(parameterConfigurator: configurator).ResolveAsync(input, session);
 
         resolution.ImmediateResult.Should().BeNull();
         resolution.Outcome!.LockedTarget!.IsHeldBy(session).Should().BeTrue();
@@ -750,6 +872,60 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Value.Should()
             .Be(target.DocumentId);
         session.Commands[1].CommandText.Should().NotContain("@dms_composite_target_documentid");
+        var structuredParameter = session
+            .Commands[1]
+            .Parameters.Single(parameter => parameter.Value is DataTable);
+        var table = (DataTable)structuredParameter.Value!;
+        table
+            .Columns.Cast<DataColumn>()
+            .Select(column => (column.ColumnName, column.DataType))
+            .Should()
+            .Equal(("Id", typeof(long)));
+        table.Rows.Cast<DataRow>().Select(row => (long)row[0]).Should().Equal(claimIds);
+        var providerParameter = new ScriptedDbParameter();
+        structuredParameter.ConfigureParameter.Should().NotBeNull();
+        structuredParameter.ConfigureParameter!(providerParameter);
+        A.CallTo(() =>
+                configurator.ConfigureParameter(
+                    providerParameter,
+                    A<QuerySqlParameter>.That.Matches(parameter =>
+                        parameter.Binding.Kind == QuerySqlParameterBindingKind.MssqlStructured
+                        && parameter.Binding.StructuredTypeName == "dms.BigIntTable"
+                        && parameter.Binding.StructuredColumnName == "Id"
+                    )
+                )
+            )
+            .MustHaveHappenedOnceExactly();
+    }
+
+    [Test]
+    public async Task It_retains_an_authorized_stored_relationship_result_in_the_composite_path()
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Put);
+        input = input with
+        {
+            StoredRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
+                    input,
+                    [255901L]
+                ),
+        };
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        var session = new ScriptedWriteSession(
+            CreateReader(
+                CreateCaptureTable(target),
+                CreateStoredRelationshipAuthorizationTable(target),
+                CreateDocumentMetadataTable(target, 44L),
+                CreateRootTable(target)
+            )
+        );
+
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.Outcome!.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
+        resolution.Outcome.LockedTarget!.IsHeldBy(session).Should().BeTrue();
+        session.Commands.Should().ContainSingle().Which.CommandText.Should().Contain("AUTH1");
     }
 
     [Test]
@@ -952,6 +1128,69 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Equal(DescriptorReferenceFailureReason.Missing);
     }
 
+    [TestCase(SqlDialect.Pgsql, 3, true)]
+    [TestCase(SqlDialect.Pgsql, 2, false)]
+    [TestCase(SqlDialect.Mssql, 3, true)]
+    [TestCase(SqlDialect.Mssql, 2, false)]
+    public async Task It_runs_stored_relationship_authorization_when_capture_consumes_the_remaining_budget(
+        SqlDialect dialect,
+        int parameterBudget,
+        bool expectComposite
+    )
+    {
+        var input = CreateInput(RelationalWriteOperationKind.Post, includeReadPlan: true, dialect: dialect);
+        input = input with
+        {
+            StoredRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateStoredSchoolIdRelationshipAuthorization(
+                    input,
+                    [255901L]
+                ),
+        };
+        var target = new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value);
+        object[] scripts = expectComposite
+            ?
+            [
+                CreateReader(
+                    CreateCaptureTable(target),
+                    CreateStoredRelationshipAuthorizationTable(target),
+                    CreateDocumentMetadataTable(target, 44L),
+                    CreateRootTable(target)
+                ),
+            ]
+            :
+            [
+                CreateCaptureReader(target),
+                CreateReader(CreateStoredRelationshipAuthorizationTable(target)),
+                CreateReader(CreateDocumentMetadataTable(target, 44L), CreateRootTable(target)),
+            ];
+        var session = new ScriptedWriteSession(scripts);
+
+        var resolution = await CreateSut(
+                commandBudget: new RelationalCommandBudget(parameterBudget, MaxRowsPerStatement: 1000)
+            )
+            .ResolveAsync(input, session);
+
+        resolution.ImmediateResult.Should().BeNull();
+        resolution.Outcome!.CurrentState!.DocumentMetadata.ContentVersion.Should().Be(44L);
+        resolution.Outcome.LockedTarget!.IsHeldBy(session).Should().BeTrue();
+        session.Commands.Should().HaveCount(expectComposite ? 1 : 3);
+        session.Commands.Should().OnlyContain(command => command.Parameters.Count <= parameterBudget);
+        session.Commands[expectComposite ? 0 : 1].CommandText.Should().Contain("AUTH1");
+        if (!expectComposite)
+        {
+            // Authorization runs against the captured document on the same session before hydration.
+            session
+                .Commands[1]
+                .Parameters.Single(parameter =>
+                    parameter.Name.Equals("@DocumentId", StringComparison.OrdinalIgnoreCase)
+                )
+                .Value.Should()
+                .Be(target.DocumentId);
+            session.Commands[1].CommandText.Should().NotContain("@dms_composite_target_documentid");
+        }
+    }
+
     [TestCase(SqlDialect.Pgsql)]
     [TestCase(SqlDialect.Mssql)]
     public async Task It_resolves_unequal_descriptor_and_document_ids_from_one_composite_command(
@@ -993,10 +1232,13 @@ public class Given_The_Composite_Relational_Write_First_Phase
             .Contain(dialect is SqlDialect.Pgsql ? "unnest(@" : "OPENJSON(@");
     }
 
-    [TestCase(SqlDialect.Pgsql)]
-    [TestCase(SqlDialect.Mssql)]
+    [TestCase(SqlDialect.Pgsql, false)]
+    [TestCase(SqlDialect.Mssql, false)]
+    [TestCase(SqlDialect.Pgsql, true)]
+    [TestCase(SqlDialect.Mssql, true)]
     public async Task It_classifies_an_unmatchable_descriptor_as_missing_without_sending_a_lookup(
-        SqlDialect dialect
+        SqlDialect dialect,
+        bool segmented
     )
     {
         // No stored URI is this long, so the value is never bound and the attempt sends no lookup statement.
@@ -1008,7 +1250,16 @@ public class Given_The_Composite_Relational_Write_First_Phase
             dialect: dialect,
             descriptorReferences: [reference]
         );
-        var session = new ScriptedWriteSession(CreateCompositeReader(target: null));
+        if (segmented)
+        {
+            input = input with
+            {
+                StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+            };
+        }
+        var session = new ScriptedWriteSession(
+            segmented ? CreateCaptureReader(target: null) : CreateCompositeReader(target: null)
+        );
 
         var resolution = await CreateSut(new ThrowingNaturalKeyLookupCommandBuilder())
             .ResolveAsync(input, session);
@@ -1025,11 +1276,13 @@ public class Given_The_Composite_Relational_Write_First_Phase
         IRelationshipAuthorizationProviderFailureExtractor? providerFailureExtractor = null,
         RelationalCommandBudget? commandBudget = null,
         IRelationalCommandExecutor? customViewValidationCommandExecutor = null,
-        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null
+        IRelationalWriteExceptionClassifier? writeExceptionClassifier = null,
+        IRelationalParameterConfigurator? parameterConfigurator = null
     ) =>
         new(
             lookupCommandBuilder ?? new ThrowingNaturalKeyLookupCommandBuilder(),
             new ResolvedDocumentReferenceMapFactory(),
+            relationalParameterConfigurator: parameterConfigurator,
             relationshipAuthorizationProviderFailureExtractor: providerFailureExtractor,
             commandBudget: commandBudget,
             customViewValidationCommandExecutor: customViewValidationCommandExecutor,
@@ -1313,7 +1566,11 @@ public class Given_The_Composite_Relational_Write_First_Phase
                 ("SchoolWithAnEarlyTag", 0),
                 ("SchoolWithALateTag", 2)
             ),
-            StoredRelationshipAuthorization = new RelationshipAuthorizationResult.NoClaims([], []),
+        };
+        input = input with
+        {
+            StoredRelationshipAuthorization =
+                Given_Default_Relational_Write_Executor.CreateStoredSchoolIdNoClaimsAuthorization(input),
         };
         var session = new ScriptedWriteSession(
             CreateCaptureReader(new CapturedTarget(345L, 44L, ExistingDocumentUuid.Value)),
@@ -1322,7 +1579,22 @@ public class Given_The_Composite_Relational_Write_First_Phase
             CreateReader(CreateAuthorizationTable())
         );
 
-        await CreateSut().ResolveAsync(input, session);
+        var resolution = await CreateSut().ResolveAsync(input, session);
+
+        var failure = resolution
+            .ImmediateResult.Should()
+            .BeOfType<RelationalWriteExecutorResult.Update>()
+            .Which.Result.Should()
+            .BeOfType<UpdateResult.UpdateFailureRelationshipNotAuthorized>()
+            .Which.RelationshipFailure;
+        failure.ValueSource.Should().Be(RelationshipAuthorizationFailureValueSource.Stored);
+        failure.ClaimEducationOrganizationIds.Should().BeEmpty();
+        failure
+            .FailedStrategies.Should()
+            .ContainSingle()
+            .Which.StrategyName.Should()
+            .Be("RelationshipsWithEdOrgsOnly");
+        resolution.Outcome.Should().BeNull();
 
         session.Commands.Should().HaveCount(4);
         session.Commands[0].CommandText.Should().NotContain("SchoolWith");

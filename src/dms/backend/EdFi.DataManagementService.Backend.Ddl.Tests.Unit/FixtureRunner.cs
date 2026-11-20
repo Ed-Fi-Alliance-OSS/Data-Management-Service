@@ -26,18 +26,22 @@ public static class FixtureRunner
     /// <param name="strict">Forwarded to <see cref="DdlPipelineHelpers.BuildDdlForDialect"/>; defaults to
     /// <see langword="true"/> so authoritative fixtures use the production-strict pass set, and synthetic
     /// fixtures opt out via the test base.</param>
+    /// <param name="outputDirectory">An absent or empty output directory. When omitted, the fixture's actual/ directory is replaced.</param>
     /// <returns>The absolute path to the actual/ output directory.</returns>
-    public static string Run(string fixtureDirectory, bool strict = true)
+    public static string Run(string fixtureDirectory, bool strict = true, string? outputDirectory = null)
     {
         var config = FixtureConfigReader.Read(fixtureDirectory);
-        var actualDir = Path.Combine(fixtureDirectory, "actual");
+        var actualDir = outputDirectory ?? Path.Combine(fixtureDirectory, "actual");
 
-        // Clean and recreate actual/ to avoid stale artifacts
-        if (Directory.Exists(actualDir))
+        if (outputDirectory is null && Directory.Exists(actualDir))
         {
             Directory.Delete(actualDir, recursive: true);
         }
         Directory.CreateDirectory(actualDir);
+        if (Directory.EnumerateFileSystemEntries(actualDir).Any())
+        {
+            throw new IOException($"Fixture output directory must be empty: {actualDir}");
+        }
 
         // Build the dialect-independent EffectiveSchemaSet
         var effectiveSchemaSet = EffectiveSchemaFixtureLoader.LoadEffectiveSchemaSet(

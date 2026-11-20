@@ -238,6 +238,97 @@ public class Given_ProfileSynthesizer_for_ExistingDocument_with_visible_absent_i
 }
 
 [TestFixture]
+public class Given_A_NonCreatable_Inlined_Scope_In_An_Existing_Document
+{
+    [TestCase(false)]
+    [TestCase(true)]
+    public void It_allows_only_a_scope_that_already_exists(bool scopeExists)
+    {
+        var plan = BuildSingleScalarBindingRootPlan(scalarRelativePath: "$.birthData.birthCity");
+        var rootPlan = plan.TablePlansInDependencyOrder[0];
+        var rootBinding = BuildSingleScalarBindingRootPlan().TablePlansInDependencyOrder[0].ColumnBindings[0];
+        rootBinding = rootBinding with
+        {
+            Column = rootBinding.Column with { ColumnName = new DbColumnName("Name") },
+            ParameterName = "Name",
+        };
+        var rootModel = rootPlan.TableModel with
+        {
+            Columns = [.. rootPlan.TableModel.Columns, rootBinding.Column],
+        };
+        rootPlan = rootPlan with
+        {
+            TableModel = rootModel,
+            ColumnBindings = [.. rootPlan.ColumnBindings, rootBinding],
+            BulkInsertBatching = new BulkInsertBatchingInfo(1000, 2, 65535),
+        };
+        plan = new ResourceWritePlan(
+            plan.Model with
+            {
+                Root = rootModel,
+                TablesInDependencyOrder = [rootModel],
+            },
+            [rootPlan]
+        );
+        var body = JsonNode.Parse("""{"firstName":"Ada","birthData":{"birthCity":"Austin"}}""")!;
+        var request = CreateRequest(
+            body,
+            rootResourceCreatable: true,
+            RequestVisiblePresentScope("$"),
+            RequestVisiblePresentScope("$.birthData", creatable: false)
+        );
+        var context = CreateContext(
+            request,
+            visibleStoredBody: null,
+            StoredVisiblePresentScope("$"),
+            scopeExists ? StoredVisiblePresentScope("$.birthData") : StoredVisibleAbsentScope("$.birthData")
+        );
+
+        var outcome = BuildProfileSynthesizer()
+            .Synthesize(
+                new RelationalWriteProfileMergeRequest(
+                    plan,
+                    BuildFlattenedWriteSetFrom(plan, "Austin", "Ada"),
+                    body,
+                    BuildCurrentStateWithSingleRootRow(plan, scopeExists ? "Dallas" : null, "Ada"),
+                    request,
+                    context,
+                    EmptyResolvedReferenceSet()
+                )
+            );
+
+        outcome.IsRejection.Should().Be(!scopeExists);
+        outcome.ValidationFailure.Should().BeNull();
+        if (scopeExists)
+        {
+            outcome.CreatabilityRejection.Should().BeNull();
+            var root = outcome.MergeResult!.TablesInDependencyOrder.Should().ContainSingle().Subject;
+            root.CurrentRows.Should()
+                .ContainSingle()
+                .Subject.Values.Should()
+                .Equal(new FlattenedWriteValue.Literal("Dallas"), new FlattenedWriteValue.Literal("Ada"));
+            root.MergedRows.Should()
+                .ContainSingle()
+                .Subject.Values.Should()
+                .Equal(new FlattenedWriteValue.Literal("Austin"), new FlattenedWriteValue.Literal("Ada"));
+        }
+        else
+        {
+            outcome.MergeResult.Should().BeNull();
+            outcome.AuthorizationRootTableState.Should().BeNull();
+            outcome
+                .CreatabilityRejection.Should()
+                .Be(
+                    new ProfileCreatabilityRejection(
+                        "$.birthData",
+                        "Profile forbids creation of new visible scope '$.birthData'."
+                    )
+                );
+        }
+    }
+}
+
+[TestFixture]
 public class Given_ProfileSynthesizer_with_HiddenPreserved_binding_and_null_CurrentState
 {
     private Action _act = null!;
@@ -4080,8 +4171,20 @@ public class Given_top_level_collection_with_document_reference_backed_semantic_
     public void It_returns_success() => _outcome.IsRejection.Should().BeFalse();
 
     [Test]
-    public void It_produces_one_merged_collection_row() =>
-        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+    public void It_preserves_the_matched_row_identity_and_complete_bound_values() =>
+        _outcome
+            .MergeResult!.TablesInDependencyOrder[1]
+            .MergedRows.Should()
+            .ContainSingle()
+            .Subject.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(1L),
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal(DocumentReferenceCanonicalizeBuilders.SchoolDocumentId),
+                new FlattenedWriteValue.Literal(DocumentReferenceCanonicalizeBuilders.SchoolId),
+                new FlattenedWriteValue.Literal(DocumentReferenceCanonicalizeBuilders.EducationOrganizationId)
+            );
 
     [Test]
     public void It_tracks_one_current_collection_row() =>
@@ -4541,8 +4644,18 @@ public class Given_top_level_collection_with_descriptor_backed_semantic_identity
     public void It_has_merge_result() => _outcome.MergeResult.Should().NotBeNull();
 
     [Test]
-    public void It_produces_one_merged_collection_row() =>
-        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+    public void It_preserves_the_matched_row_identity_and_complete_bound_values() =>
+        _outcome
+            .MergeResult!.TablesInDependencyOrder[1]
+            .MergedRows.Should()
+            .ContainSingle()
+            .Subject.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(1L),
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal(DescriptorCanonicalizeBuilders.AddressTypeId)
+            );
 
     [Test]
     public void It_keeps_the_compact_descriptor_value_in_the_matched_row() =>
@@ -5768,8 +5881,19 @@ public class Given_top_level_collection_with_mixed_identity_and_cache_miss_resol
     /// Only Austin/Physical is in the plan sequence (Dallas/Mailing was omitted → delete-by-absence).
     /// </summary>
     [Test]
-    public void It_produces_one_merged_collection_row() =>
-        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+    public void It_preserves_the_matched_row_identity_and_complete_bound_values() =>
+        _outcome
+            .MergeResult!.TablesInDependencyOrder[1]
+            .MergedRows.Should()
+            .ContainSingle()
+            .Subject.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(1L),
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Austin"),
+                new FlattenedWriteValue.Literal(MixedIdentityBuilders.PhysicalId)
+            );
 
     /// <summary>
     /// Both current rows are tracked so the persister can delete Dallas/Mailing by absence.
@@ -5933,8 +6057,19 @@ public class Given_top_level_collection_with_mixed_identity_and_duplicate_scalar
     /// stored row's descriptor id without throwing.
     /// </summary>
     [Test]
-    public void It_produces_one_merged_collection_row() =>
-        _outcome.MergeResult!.TablesInDependencyOrder[1].MergedRows.Length.Should().Be(1);
+    public void It_preserves_the_matched_row_identity_and_complete_bound_values() =>
+        _outcome
+            .MergeResult!.TablesInDependencyOrder[1]
+            .MergedRows.Should()
+            .ContainSingle()
+            .Subject.Values.Should()
+            .Equal(
+                new FlattenedWriteValue.Literal(1L),
+                new FlattenedWriteValue.Literal(345L),
+                new FlattenedWriteValue.Literal(0),
+                new FlattenedWriteValue.Literal("Dallas"),
+                new FlattenedWriteValue.Literal(MixedIdentityBuilders.PhysicalId)
+            );
 
     /// <summary>
     /// Both current rows are tracked so the persister can delete Dallas/Mailing by absence.
