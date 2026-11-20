@@ -28,6 +28,7 @@ public class Given_CMS_PostgreSQL_database_shape
         "DataStore",
         "DataStoreContext",
         "DataStoreDerivative",
+        "DataStoreManage",
         "Job",
         "JobSchedule",
         "OpenIddictApplication",
@@ -107,7 +108,7 @@ public class Given_CMS_PostgreSQL_database_shape
             false
         ),
         new("CK_DataStoreDerivative_DerivativeType", "DataStoreDerivative", "c", ["DerivativeType"], false),
-        new("UX_DataStore_TenantId_Name", "DataStore", "u", ["TenantId", "Name"], true),
+        new("UX_DataStore_TenantId_Name", "DataStore", "u", ["TenantId", "NameComparisonKey"], true),
         new("UX_ApiClient_ApplicationId_Name", "ApiClient", "u", ["ApplicationId", "Name"], false),
         new("UX_ApiClient_ClientId", "ApiClient", "u", ["ClientId"], false),
         new("UX_ApiClient_ClientUuid", "ApiClient", "u", ["ClientUuid"], false),
@@ -169,6 +170,7 @@ public class Given_CMS_PostgreSQL_database_shape
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("DataStoreManage", "TenantId"),
         ("Job", "FencingToken"),
         ("Job", "Id"),
         ("Job", "SourceScheduleId"),
@@ -227,10 +229,14 @@ public class Given_CMS_PostgreSQL_database_shape
     /// tenant schedules on (TenantId, ScheduleType) and single-tenant schedules, whose TenantId is
     /// NULL and so would never collide in a plain unique index, on ScheduleType alone. Job keys a
     /// scheduled occurrence on (SourceScheduleId, ScheduledOccurrence) only when both are set, so
-    /// manual jobs, which leave both NULL, never collide.
+    /// manual jobs, which leave both NULL, never collide. DataStoreManage reserves names and targets
+    /// only for non-deleted rows and enforces unique catalog links only when DataStoreId is set.
     /// </summary>
     private static readonly string[] ExpectedPartialUniqueIndexNames =
     [
+        "UX_DataStoreManage_ActiveTarget",
+        "UX_DataStoreManage_DataStoreId",
+        "UX_DataStoreManage_TenantId_Name",
         "UX_Job_SourceScheduleId_ScheduledOccurrence",
         "UX_JobSchedule_SingleTenant_Type",
         "UX_JobSchedule_Tenant_Type",

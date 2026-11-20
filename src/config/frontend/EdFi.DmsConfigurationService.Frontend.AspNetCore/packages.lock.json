@@ -572,7 +572,7 @@
           "EdFi.DmsConfigurationService.Backend.OpenIddict": "[1.0.0, )",
           "EdFi.DmsConfigurationService.DataModel": "[1.0.0, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.1, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.Extensions.Resilience": "[10.1.0, )",
           "Microsoft.IdentityModel.JsonWebTokens": "[8.12.0, )",
           "Microsoft.IdentityModel.Protocols": "[8.12.0, )",
@@ -706,9 +706,9 @@
       },
       "Microsoft.Data.SqlClient": {
         "type": "CentralTransitive",
-        "requested": "[6.1.4, )",
-        "resolved": "6.1.4",
-        "contentHash": "lQcSog5LLImg4yNEuuG6ccvdzXnCvER8Rms9Ngk9zB4Q8na4f+S7/abSoC7gnEltBg4e5xTnLAWmMLIOtLg4pg==",
+        "requested": "[6.1.5, )",
+        "resolved": "6.1.5",
+        "contentHash": "SFnZgy9RzV1gSEeihd6MXIfZOsRaH5QRwOBMuwCo17sDtobWGtwb2vxfxyr3kGPNA7vP6STUVcypK9qrDB1dsw==",
         "dependencies": {
           "Azure.Core": "1.50.0",
           "Azure.Identity": "1.17.1",

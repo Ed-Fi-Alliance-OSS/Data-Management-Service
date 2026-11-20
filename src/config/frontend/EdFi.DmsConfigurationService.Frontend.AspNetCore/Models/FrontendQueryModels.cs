@@ -133,12 +133,19 @@ public class FrontendOwnershipTokenQuery : FrontendPagingQuery
 public class FrontendDataStoreQuery : FrontendPagingQuery
 {
     [FromQuery(Name = "id")]
+    [Description(
+        "Filter by exact data store identifier; all supplied filters combine with AND before paging."
+    )]
     public int? Id { get; set; }
 
     [FromQuery(Name = "name")]
+    [Description(
+        "Filter by name after trimming Unicode White_Space edges and folding ASCII A-Z to a-z. Accents and other Unicode characters remain distinct. An empty value is an equality filter."
+    )]
     public string? Name { get; set; }
 
     [FromQuery(Name = "dataStoreType")]
+    [Description("Filter by exact, case-sensitive data store type, including leading and trailing spaces.")]
     public string? DataStoreType { get; set; }
 
     public DataStoreQuery ToQuery() =>

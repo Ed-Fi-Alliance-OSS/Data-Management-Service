@@ -9,8 +9,9 @@ namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 /// Carries a classified <see cref="DmsProvisioningFailure"/> from an orchestration step to the operation
 /// boundary, where it becomes the operation's failure result together with the cleanup report. It is
 /// control flow between the steps that classify failures (the orchestrator's own steps and the catalog's
-/// artifact extraction) and <see cref="DmsDataStoreProvisioningService"/>, which catches it; it never
-/// escapes the provisioner. The message is the failure's fixed summary; the inner exception, when present,
+/// artifact extraction) and <see cref="DmsDataStoreProvisioningService"/>, which catches its own step
+/// failures. An exception supplied by a caller's admission callback propagates unchanged. The message is
+/// the failure's fixed summary; the inner exception, when present,
 /// is the engine or framework exception the step classified, kept for the log, never for the result.
 /// </summary>
 public sealed class DmsProvisioningFailedException : Exception

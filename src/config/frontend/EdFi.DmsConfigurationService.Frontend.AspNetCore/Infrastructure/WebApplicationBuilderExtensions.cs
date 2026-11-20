@@ -16,6 +16,7 @@ using EdFi.DmsConfigurationService.Backend.Deploy;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Keycloak;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Models.ClaimsHierarchy;
 using EdFi.DmsConfigurationService.Backend.Mssql;
 using EdFi.DmsConfigurationService.Backend.Mssql.OpenIddict;
@@ -125,6 +126,7 @@ public static class WebApplicationBuilderExtensions
         );
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureDmsDataStoreProvisioning(webApplicationBuilder, logger);
+        ConfigureManagedDataStores(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
         ConfigureIdentityProvider(webApplicationBuilder, logger);
 
         var settingsSection = webApplicationBuilder.Configuration.GetSection("AppSettings");
@@ -248,6 +250,10 @@ public static class WebApplicationBuilderExtensions
             webAppBuilder.Services.AddTransient<IClaimsDocumentRepository, ClaimsDocumentRepository>();
             webAppBuilder.Services.AddTransient<IDataStoreContextRepository, DataStoreContextRepository>();
             webAppBuilder.Services.AddTransient<IDataStoreRepository, DataStoreRepository>();
+            webAppBuilder.Services.AddTransient<DataStoreRepository>();
+            webAppBuilder.Services.AddTransient<IDataStoreManageRepository>(provider =>
+                ActivatorUtilities.CreateInstance<DataStoreManageRepository>(provider)
+            );
             webAppBuilder.Services.AddTransient<
                 IDataStoreDerivativeRepository,
                 DataStoreDerivativeRepository
@@ -269,6 +275,12 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("Injecting MSSQL as the primary backend datastore");
             webAppBuilder.Services.AddMssqlDatastore();
+            webAppBuilder.Services.AddTransient<Backend.Mssql.Repositories.DataStoreRepository>();
+            webAppBuilder.Services.AddTransient<IDataStoreManageRepository>(provider =>
+                ActivatorUtilities.CreateInstance<Backend.Mssql.Repositories.DataStoreManageRepository>(
+                    provider
+                )
+            );
             webAppBuilder.Services.AddSingleton<IDatabaseDeploy, Backend.Mssql.Deploy.DatabaseDeploy>();
             AddMssqlJobs(webAppBuilder.Services);
         }
@@ -346,11 +358,60 @@ public static class WebApplicationBuilderExtensions
         {
             logger.Information("DMS data store provisioning is enabled for target provider postgresql");
             webAppBuilder.Services.AddPostgresqlDmsTargetEngine();
+            webAppBuilder.Services.AddSingleton<
+                IManagedDataStoreRuntimeConnectionProvider,
+                Backend.Postgresql.ManagedDataStores.PostgresqlManagedRuntimeConnectionProvider
+            >();
+            webAppBuilder.Services.AddSingleton<ManagedDataStoreEndpointParser>(
+                Backend.Postgresql.DataStoreProvisioning.PostgresqlManagedEndpoint.TryParse
+            );
             return;
         }
 
         logger.Information("DMS data store provisioning is enabled for target provider mssql");
         webAppBuilder.Services.AddMssqlDmsTargetEngine();
+        webAppBuilder.Services.AddSingleton<
+            IManagedDataStoreRuntimeConnectionProvider,
+            Backend.Mssql.ManagedDataStores.MssqlManagedRuntimeConnectionProvider
+        >();
+        webAppBuilder.Services.AddSingleton<ManagedDataStoreEndpointParser>(
+            Backend.Mssql.DataStoreProvisioning.MssqlManagedEndpoint.TryParse
+        );
+    }
+
+    private static void ConfigureManagedDataStores(IServiceCollection services, IConfiguration configuration)
+    {
+        services
+            .AddOptions<ManagedDataStoreRuntimeOptions>()
+            .Bind(configuration.GetSection(ManagedDataStoreRuntimeOptions.SectionName));
+        // Disabled deployments need no provisioning dependencies. Factories defer those dependencies
+        // until an enabled request/worker resolves them, including with DI ValidateOnBuild enabled.
+        services.AddTransient(provider =>
+            ActivatorUtilities.CreateInstance<ManagedDataStoreCreateAcceptance>(provider)
+        );
+        services.AddTransient(provider =>
+            ActivatorUtilities.CreateInstance<ManagedDataStoreDeleteAcceptance>(provider)
+        );
+        services.AddTransient(provider =>
+            ActivatorUtilities.CreateInstance<ManagedDataStoreRuntimeConnectionBuilder>(provider)
+        );
+        services.AddTransient(provider =>
+            ActivatorUtilities.CreateInstance<CreateManagedDataStoreHandler>(provider)
+        );
+        services.AddTransient(provider =>
+            ActivatorUtilities.CreateInstance<DeleteManagedDataStoreHandler>(provider)
+        );
+        // Retain metadata while disabled; the exact-type claim/enqueue/exhaustion policy suppresses work.
+        services.AddJobHandler<
+            CreateManagedDataStoreHandler,
+            CreateManagedDataStorePayload,
+            CreateManagedDataStorePayloadValidator
+        >(ManagedJobTypes.Create, ManagedJobTypes.PayloadVersion);
+        services.AddJobHandler<
+            DeleteManagedDataStoreHandler,
+            DeleteManagedDataStorePayload,
+            DeleteManagedDataStorePayloadValidator
+        >(ManagedJobTypes.Delete, ManagedJobTypes.PayloadVersion);
     }
 
     /// <summary>
@@ -389,6 +450,16 @@ public static class WebApplicationBuilderExtensions
     /// </summary>
     private static void ConfigureJobOptions(IServiceCollection services, IConfiguration configuration)
     {
+        // Resolved once by the startup gate after configuration is complete, before any workers start.
+        // Configuration reloads must not change job eligibility.
+        services.AddSingleton(_ =>
+            configuration.GetSection("AppSettings").Get<DataStoreManagementOptions>() ?? new()
+        );
+        services.AddSingleton(provider =>
+            provider.GetRequiredService<DataStoreManagementOptions>().EnableDataStoreManagement
+                ? JobClaimPolicy.All
+                : JobClaimPolicy.ExcludeManagedDataStores
+        );
         services.AddSingleton<IValidateOptions<JobOptions>, JobOptionsValidator>();
         services
             .AddOptions<JobOptions>()

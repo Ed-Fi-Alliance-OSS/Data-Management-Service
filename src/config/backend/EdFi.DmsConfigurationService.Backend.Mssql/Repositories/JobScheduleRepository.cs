@@ -6,6 +6,7 @@
 using System.Data.Common;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.DataModel.Infrastructure;
@@ -117,13 +118,18 @@ public sealed class JobScheduleRepository(
 
     // D-8 (1): one due schedule, skipping row-locked schedules. The statement's time is read when it starts; a wait
     // on a page lock only makes the choice conservative, and the advance validates with its own fresh time. An
-    // expired lease counts as free (defensive recovery); a live one does not.
+    // expired lease counts as free (defensive recovery); a live one does not. A schedule of an excluded managed job
+    // type is never selected, so it is neither leased nor advanced and enqueues nothing; the exact-type comparison,
+    // binary and length-guarded, is the one the claim uses.
     private const string LockDueSql = """
         SELECT TOP (1) Id, NextRunAt, ScheduleType
         FROM dmscs.JobSchedule WITH (UPDLOCK, READPAST, ROWLOCK)
         WHERE Enabled = 1
           AND NextRunAt <= SYSUTCDATETIME()
           AND (LeaseExpiresAt IS NULL OR LeaseExpiresAt <= SYSUTCDATETIME())
+          AND (@ExcludeManagedJobs = 0 OR (
+              NOT (JobType COLLATE Latin1_General_100_BIN2 = @ManagedCreate AND DATALENGTH(JobType) = DATALENGTH(@ManagedCreate))
+              AND NOT (JobType COLLATE Latin1_General_100_BIN2 = @ManagedDelete AND DATALENGTH(JobType) = DATALENGTH(@ManagedDelete))))
         ORDER BY NextRunAt, Id;
         """;
 
@@ -412,12 +418,14 @@ public sealed class JobScheduleRepository(
         string owner,
         int leaseSeconds,
         string newJobId,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     )
     {
         ArgumentException.ThrowIfNullOrEmpty(owner);
         ArgumentException.ThrowIfNullOrEmpty(newJobId);
         ArgumentOutOfRangeException.ThrowIfLessThan(leaseSeconds, 1);
+        ArgumentNullException.ThrowIfNull(policy);
 
         JobDeadline budget = JobDeadline.Start(MaterializationTimeout);
         JobDatabaseSession session = NewSession();
@@ -431,7 +439,18 @@ public sealed class JobScheduleRepository(
                 "LockDue",
                 token =>
                     session.Connection.QuerySingleOrDefaultAsync<DueRow>(
-                        MssqlJobSession.Command(session, LockDueSql, null, budget, token)
+                        MssqlJobSession.Command(
+                            session,
+                            LockDueSql,
+                            new
+                            {
+                                ExcludeManagedJobs = policy.ExcludesManagedDataStores,
+                                ManagedCreate = ManagedJobTypes.Create,
+                                ManagedDelete = ManagedJobTypes.Delete,
+                            },
+                            budget,
+                            token
+                        )
                     ),
                 budget,
                 cancellationToken

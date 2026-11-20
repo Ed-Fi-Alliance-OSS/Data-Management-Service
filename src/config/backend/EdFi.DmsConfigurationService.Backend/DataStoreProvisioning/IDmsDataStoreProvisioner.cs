@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
+
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
 /// <summary>
@@ -39,6 +41,30 @@ public interface IDmsDataStoreProvisioner
     /// </summary>
     Task<DmsDataStoreDeleteResult> DeleteAsync(
         DmsDataStoreDeleteRequest request,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Requires the persisted endpoint to match the snapshot and actual lock connection, then invokes
+    /// admission exactly once under that lock before target work (including an absent delete).
+    /// Ownership, cancellation and infrastructure exceptions from admission propagate unchanged.
+    /// </summary>
+    public Task<DmsDataStoreCreateResult> CreateAsync(
+        DmsDataStoreCreateRequest request,
+        ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
+        CancellationToken cancellationToken
+    );
+
+    /// <summary>
+    /// Requires the persisted endpoint to match the snapshot and actual lock connection, then invokes
+    /// admission exactly once under that lock before target work (including an absent delete).
+    /// Ownership, cancellation and infrastructure exceptions from admission propagate unchanged.
+    /// </summary>
+    public Task<DmsDataStoreDeleteResult> DeleteAsync(
+        DmsDataStoreDeleteRequest request,
+        ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
         CancellationToken cancellationToken
     );
 }

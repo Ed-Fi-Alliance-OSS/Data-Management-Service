@@ -5,6 +5,7 @@
 
 using System.Data;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
@@ -201,23 +202,24 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
         ArgumentNullException.ThrowIfNull(logger);
 
         SqlConnection connection;
+        ManagedDataStoreEndpoint? endpoint = null;
         try
         {
             connection = openBound is { } bound
                 ? await DmsBoundedConnectionOpen.OpenAsync(
                     token =>
-                        adminConnection.OpenAsync(
-                            MssqlAdminConnection.MaintenanceDatabaseName,
+                        adminConnection.OpenHolderAsync(
                             operation.HolderApplicationName,
+                            captured => endpoint = captured,
                             token
                         ),
                     bound,
                     timeProvider,
                     cancellationToken
                 )
-                : await adminConnection.OpenAsync(
-                    MssqlAdminConnection.MaintenanceDatabaseName,
+                : await adminConnection.OpenHolderAsync(
                     operation.HolderApplicationName,
+                    captured => endpoint = captured,
                     cancellationToken
                 );
         }
@@ -264,7 +266,7 @@ internal sealed class MssqlTargetLockSession : DmsTargetLockHolder
             );
             held = true;
             holder.StartHeartbeat();
-            return new DmsTargetLockResult.Acquired(holder);
+            return new DmsTargetLockResult.Acquired(holder, endpoint);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

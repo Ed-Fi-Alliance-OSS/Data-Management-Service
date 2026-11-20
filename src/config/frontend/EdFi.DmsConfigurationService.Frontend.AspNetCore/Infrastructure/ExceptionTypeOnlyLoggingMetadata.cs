@@ -9,9 +9,10 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Infrastructure;
 /// Endpoint metadata marking a route whose failures are logged by exception type names only.
 /// <c>RequestLoggingMiddleware</c> writes the route's <c>HttpRequestFailed</c> event without the exception
 /// object, and replaces an exception it rethrows, so no exception message, inner exception or
-/// <c>Data</c> reaches a logger. Only <c>/connect/revoke</c> and <c>/connect/introspect</c> carry it
-/// (DMS-1327 D-15, D-17): their handlers resolve implementations a plugin can supply, and their exceptions
-/// can carry anything.
+/// <c>Data</c> reaches a logger. <c>/connect/revoke</c> and <c>/connect/introspect</c> carry it
+/// (DMS-1327 D-15, D-17), because their handlers resolve implementations a plugin can supply, and so do
+/// the <c>/v3/dataStores/manage</c> routes, because their handlers resolve repositories and connection
+/// sources that handle connection strings and secrets. Exceptions from either can carry anything.
 /// </summary>
 internal sealed class ExceptionTypeOnlyLoggingMetadata
 {

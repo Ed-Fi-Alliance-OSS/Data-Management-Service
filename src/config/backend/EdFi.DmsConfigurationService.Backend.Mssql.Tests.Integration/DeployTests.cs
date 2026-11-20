@@ -29,6 +29,7 @@ public class DeployTests : DatabaseTestBase
         ("ClaimSet", "TenantId"),
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
+        ("DataStoreManage", "TenantId"),
         ("Job", "FencingToken"),
         ("Job", "Id"),
         ("Job", "SourceScheduleId"),
@@ -255,7 +256,7 @@ public class DeployTests : DatabaseTestBase
             "UX_DataStore_TenantId_Name"
         );
 
-        keyColumns.Should().Equal("TenantId", "Name");
+        keyColumns.Should().Equal("TenantId", "NameComparisonKey");
         backingIndexIsUnique.Should().BeTrue();
     }
 

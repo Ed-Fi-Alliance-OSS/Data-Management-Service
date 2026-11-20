@@ -9,6 +9,7 @@ using System.Globalization;
 using System.Security.Cryptography;
 using System.Text;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -189,23 +190,24 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
         ArgumentNullException.ThrowIfNull(logger);
 
         NpgsqlConnection connection;
+        ManagedDataStoreEndpoint? endpoint = null;
         try
         {
             connection = openBound is { } bound
                 ? await DmsBoundedConnectionOpen.OpenAsync(
                     token =>
-                        adminConnection.OpenAsync(
-                            PostgresqlAdminConnection.MaintenanceDatabaseName,
+                        adminConnection.OpenHolderAsync(
                             operation.HolderApplicationName,
+                            captured => endpoint = captured,
                             token
                         ),
                     bound,
                     timeProvider,
                     cancellationToken
                 )
-                : await adminConnection.OpenAsync(
-                    PostgresqlAdminConnection.MaintenanceDatabaseName,
+                : await adminConnection.OpenHolderAsync(
                     operation.HolderApplicationName,
+                    captured => endpoint = captured,
                     cancellationToken
                 );
         }
@@ -243,7 +245,7 @@ internal sealed class PostgresqlTargetLockSession : DmsTargetLockHolder
             );
             held = true;
             holder.StartHeartbeat();
-            return new DmsTargetLockResult.Acquired(holder);
+            return new DmsTargetLockResult.Acquired(holder, endpoint);
         }
         catch (Exception exception) when (exception is not OperationCanceledException)
         {

@@ -602,7 +602,7 @@
           "EdFi.DataManagementService.Backend.Plans": "[1.0.0, )",
           "EdFi.DataManagementService.Core": "[1.0.0, )",
           "Microsoft.CodeAnalysis": "[4.12.0, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
         }
       },
@@ -612,7 +612,7 @@
           "EdFi.DataManagementService.Backend.Ddl": "[1.0.0, )",
           "EdFi.DataManagementService.Backend.RelationalModel": "[1.0.0, )",
           "EdFi.DataManagementService.Core.External": "[1.0.0, )",
-          "Microsoft.Data.SqlClient": "[6.1.4, )",
+          "Microsoft.Data.SqlClient": "[6.1.5, )",
           "Microsoft.Extensions.Logging.Abstractions": "[10.0.1, )",
           "Microsoft.Extensions.Options": "[10.0.1, )",
           "System.Security.Cryptography.Pkcs": "[9.0.21, )"
@@ -722,9 +722,9 @@
       },
       "Microsoft.Data.SqlClient": {
         "type": "CentralTransitive",
-        "requested": "[6.1.4, )",
-        "resolved": "6.1.4",
-        "contentHash": "lQcSog5LLImg4yNEuuG6ccvdzXnCvER8Rms9Ngk9zB4Q8na4f+S7/abSoC7gnEltBg4e5xTnLAWmMLIOtLg4pg==",
+        "requested": "[6.1.5, )",
+        "resolved": "6.1.5",
+        "contentHash": "SFnZgy9RzV1gSEeihd6MXIfZOsRaH5QRwOBMuwCo17sDtobWGtwb2vxfxyr3kGPNA7vP6STUVcypK9qrDB1dsw==",
         "dependencies": {
           "Azure.Core": "1.50.0",
           "Azure.Identity": "1.17.1",

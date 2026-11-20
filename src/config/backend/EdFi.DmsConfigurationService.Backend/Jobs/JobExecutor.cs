@@ -232,6 +232,19 @@ public sealed class JobExecutor(
 
             return new Decision.Complete();
         }
+        catch (ManagedDataStores.ManagedDataStoreProvisioningException failed)
+        {
+            // The wrapper has no inner exception; the provisioning diagnostic already holds only safe fields.
+            DataStoreProvisioning.DmsProvisioningDiagnostic diagnostic = failed.Failure.Diagnostic;
+            return new Decision.ManagedFailure(
+                ManagedDataStores.ManagedDataStoreFailure.FromProvisioner(failed.Failure),
+                new JobFailureDiagnostic(
+                    diagnostic.ExceptionTypeChain,
+                    diagnostic.ProviderErrorCode,
+                    diagnostic.Operation
+                )
+            );
+        }
         catch (JobPermanentException permanent)
         {
             JobErrorCode errorCode = errorCodes.TryGet(permanent.ErrorCode.Code, out JobErrorCode? registered)
@@ -290,6 +303,13 @@ public sealed class JobExecutor(
 
         switch (result)
         {
+            case JobWriteResult.Success { SettledAsCompleted: true }:
+                // The failure write found that this operation's CMS success had already committed and
+                // completed the job instead: the completion is the outcome the database holds.
+                ownership.TryMarkFinalized();
+                JobExecutionResult completed = new(JobExecutionOutcome.Completed);
+                LogOutcome(JobCompleted, job, completed, started, decision.Diagnostic);
+                return completed;
             case JobWriteResult.Success:
                 ownership.TryMarkFinalized();
                 LogOutcome(written, job, ifWritten, started, decision.Diagnostic);
@@ -330,6 +350,7 @@ public sealed class JobExecutor(
         long token = job.FencingToken;
         return decision switch
         {
+            Decision.ManagedFailure managed => ManagedFailure(managed),
             Decision.Complete => (
                 () => leaseRepository.Complete(job.Id, owner, token, CancellationToken.None),
                 new JobExecutionResult(JobExecutionOutcome.Completed),
@@ -364,6 +385,44 @@ public sealed class JobExecutor(
                 "The execution reached finalization without a decision."
             ),
         };
+
+        (Func<Task<JobWriteResult>>, JobExecutionResult, EventId) ManagedFailure(
+            Decision.ManagedFailure decision
+        )
+        {
+            bool transient =
+                decision.Failure.Category == DataStoreProvisioning.DmsProvisioningFailureCategory.Transient;
+            bool retry = transient && job.AttemptCount < Settings.MaxAttempts;
+            var failure =
+                transient && !retry
+                    ? ManagedDataStores.ManagedDataStoreFailure.FromJob(JobErrorCode.AttemptsExhausted)
+                    : decision.Failure;
+            int? backoff = retry
+                ? RetryBackoff.SecondsFor(
+                    job.AttemptCount,
+                    Settings.RetryBackoffBase,
+                    Settings.RetryBackoffMaximum
+                )
+                : null;
+            string errorCode = transient
+                ? JobErrorCode.AttemptsExhausted.Code
+                : JobErrorCode.HandlerFailed.Code;
+            return (
+                () =>
+                    leaseRepository.FailManaged(
+                        job.Id,
+                        owner,
+                        token,
+                        failure,
+                        backoff,
+                        CancellationToken.None
+                    ),
+                retry
+                    ? new(JobExecutionOutcome.RetryScheduled)
+                    : new(JobExecutionOutcome.Failed, ErrorCode: errorCode),
+                retry ? JobRetryScheduled : JobFailed
+            );
+        }
 
         (Func<Task<JobWriteResult>>, JobExecutionResult, EventId) Terminal(JobErrorCode errorCode) =>
             (
@@ -472,6 +531,11 @@ public sealed class JobExecutor(
     /// <summary>What the execution decided before finalization, with the diagnostic of any failure.</summary>
     private abstract record Decision(JobFailureDiagnostic? Diagnostic)
     {
+        public sealed record ManagedFailure(
+            ManagedDataStores.ManagedDataStoreFailure Failure,
+            JobFailureDiagnostic Detail
+        ) : Decision(Detail);
+
         public sealed record Run(JobHandlerRegistration Registration, object Payload, TenantContext Tenant)
             : Decision((JobFailureDiagnostic?)null);
 

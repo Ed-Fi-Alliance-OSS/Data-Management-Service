@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Data.Common;
 using Dapper;
 using EdFi.DmsConfigurationService.Backend.Repositories;
 using EdFi.DmsConfigurationService.Backend.Services;
@@ -11,6 +12,7 @@ using EdFi.DmsConfigurationService.DataModel.Infrastructure;
 using EdFi.DmsConfigurationService.DataModel.Model;
 using EdFi.DmsConfigurationService.DataModel.Model.Application;
 using EdFi.DmsConfigurationService.DataModel.Model.DataStore;
+using EdFi.DmsConfigurationService.DataModel.Model.DataStoreManage;
 using Microsoft.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -34,29 +36,199 @@ public class DataStoreRepository(
 
     private const string DuplicateNameConstraint = "UX_DataStore_TenantId_Name";
 
+    public async Task<int> InsertDataStore(
+        DataStoreInsertCommand command,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        _ = GetTransactionConnection(transaction, cancellationToken);
+        if (
+            await DataStoreCatalog.HasManagedNameReservationAsync(
+                transaction,
+                TenantId,
+                command.Name,
+                null,
+                cancellationToken
+            )
+        )
+        {
+            throw new DataStoreCatalog.NameReservedException();
+        }
+        return await InsertDataStoreRow(command, transaction, cancellationToken);
+    }
+
+    /// <summary>Requires admission minted by managed publication under the supplied fence and tenant gate.</summary>
+    internal async Task<int> InsertManagedDataStore(
+        DataStoreManageRepository.PublicationAdmission admission,
+        string runtimeConnectionString,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        if (TenantId != admission.TenantId)
+        {
+            throw new InvalidOperationException(
+                "The ordinary repository publication partition does not match."
+            );
+        }
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, admission.TenantId, cancellationToken);
+        DynamicParameters parameters = new(new { admission.Id, admission.TenantId });
+        parameters.Add("Name", CatalogName.Canonicalize(admission.Name), DbType.String, size: -1);
+        if (
+            await connection.ExecuteScalarAsync<bool>(
+                new CommandDefinition(
+                    """
+                    SELECT CAST(CASE WHEN EXISTS (SELECT 1 FROM dmscs."DataStore" WHERE ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL)) AND "NameComparisonKey" = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)
+                        UNION ALL
+                        SELECT 1 FROM dmscs."DataStoreManage"
+                        WHERE ("TenantId" = @TenantId OR ("TenantId" IS NULL AND @TenantId IS NULL)) AND "NameComparisonKey" = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)
+                            AND "Status" <> 'Deleted' AND "Id" <> @Id) THEN 1 ELSE 0 END AS bit);
+                    """,
+                    parameters,
+                    transaction,
+                    cancellationToken: cancellationToken
+                )
+            )
+        )
+        {
+            throw new DataStoreCatalog.NameReservedException();
+        }
+        return await InsertDataStoreRow(
+            new DataStoreInsertCommand
+            {
+                Name = admission.Name,
+                DataStoreType = "Shared",
+                Provider = admission.Provider,
+                ConnectionString = runtimeConnectionString,
+            },
+            transaction,
+            cancellationToken
+        );
+    }
+
+    private async Task<int> InsertDataStoreRow(
+        DataStoreInsertCommand command,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        var sql = """
+            INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
+            OUTPUT INSERTED.Id
+            VALUES (@DataStoreType, @Name, @Provider, @ConnectionString, @CreatedBy, @TenantId);
+            """;
+
+        var parameters = new
+        {
+            command.DataStoreType,
+            command.Name,
+            command.Provider,
+            ConnectionString = encryptionService.Encrypt(command.ConnectionString),
+            CreatedBy = auditContext.GetCurrentUser(),
+            TenantId,
+        };
+
+        return await connection.ExecuteScalarAsync<int>(
+            new CommandDefinition(sql, parameters, transaction, cancellationToken: cancellationToken)
+        );
+    }
+
+    private static DbConnection GetTransactionConnection(
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        ArgumentNullException.ThrowIfNull(transaction);
+        if (transaction is not SqlTransaction)
+        {
+            throw new ArgumentException(
+                "The supplied transaction must be a SQL Server transaction.",
+                nameof(transaction)
+            );
+        }
+
+        // Reading IsolationLevel rejects completed or disposed transactions before any side effects.
+        _ = transaction.IsolationLevel;
+        if (transaction.Connection is not SqlConnection { State: ConnectionState.Open } connection)
+        {
+            throw new InvalidOperationException("The supplied transaction must have an open connection.");
+        }
+        return connection;
+    }
+
+    /// <summary>
+    /// Removes the ordinary row for provider-local managed lifecycle persistence. The caller must hold
+    /// the job fence and clear the managed aggregate's link in this same transaction before removal.
+    /// Exceptions, including absence and cancellation, must propagate to the owner for rollback;
+    /// this method neither commits nor rolls back the caller's transaction.
+    /// </summary>
+    internal async Task DeleteManagedDataStore(
+        int id,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        if (await DeleteDataStoreRows(id, transaction, cancellationToken) == 0)
+        {
+            throw new InvalidOperationException("The data store does not exist in the selected tenant.");
+        }
+    }
+
+    // Admission is issued only after the managed repository verifies the locked recorded operation.
+    internal async Task DeleteManagedDataStore(
+        DataStoreManageRepository.DeletionAdmission admission,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        if (admission.TenantId != TenantId)
+        {
+            throw new InvalidOperationException("The managed deletion partition has changed.");
+        }
+        int removed = await DeleteDataStoreRows(admission.DataStoreId, transaction, cancellationToken);
+        if (removed != (admission.AlreadyAbsent ? 0 : 1))
+        {
+            throw new InvalidOperationException("The verified ordinary data store has changed.");
+        }
+    }
+
+    private async Task<int> DeleteDataStoreRows(
+        int id,
+        DbTransaction transaction,
+        CancellationToken cancellationToken
+    )
+    {
+        DbConnection connection = GetTransactionConnection(transaction, cancellationToken);
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, TenantId, cancellationToken);
+        var sql = $"DELETE FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
+        return await connection.ExecuteAsync(
+            new CommandDefinition(
+                sql,
+                new { Id = id, TenantId },
+                transaction,
+                cancellationToken: cancellationToken
+            )
+        );
+    }
+
     public async Task<DataStoreInsertResult> InsertDataStore(DataStoreInsertCommand command)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = """
-                INSERT INTO dmscs.DataStore (DataStoreType, Name, Provider, ConnectionString, CreatedBy, TenantId)
-                OUTPUT INSERTED.Id
-                VALUES (@DataStoreType, @Name, @Provider, @ConnectionString, @CreatedBy, @TenantId);
-                """;
-
-            var parameters = new
-            {
-                command.DataStoreType,
-                command.Name,
-                command.Provider,
-                ConnectionString = encryptionService.Encrypt(command.ConnectionString),
-                CreatedBy = auditContext.GetCurrentUser(),
-                TenantId,
-            };
-
-            var id = await connection.ExecuteScalarAsync<int>(sql, parameters);
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            int id = await InsertDataStore(command, transaction, CancellationToken.None);
+            await transaction.CommitAsync();
             return new DataStoreInsertResult.Success(id);
+        }
+        catch (DataStoreCatalog.NameReservedException)
+        {
+            return new DataStoreInsertResult.FailureDuplicateName();
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
         {
@@ -76,15 +248,21 @@ public class DataStoreRepository(
     >(StringComparer.OrdinalIgnoreCase)
     {
         ["id"] = "Id",
-        ["dataStoreType"] = "DataStoreType",
-        ["name"] = "Name",
+        ["dataStoreType"] =
+            "CONVERT(varbinary(200), CONVERT(varchar(200), DataStoreType COLLATE Latin1_General_100_BIN2_UTF8))",
+        // The equality key contains a four-byte length and UTF-16 payload. Decode the text,
+        // then encode UTF-8 for lexical ordering; ordering the equality key would sort by length.
+        ["name"] =
+            "CONVERT(varbinary(1024), CONVERT(varchar(1024), CONVERT(nvarchar(256), SUBSTRING(NameComparisonKey, 5, 512)) COLLATE Latin1_General_100_BIN2_UTF8))",
     };
 
     private static string BuildOrderByClause(DataStoreQuery query)
     {
         if (query.OrderBy is not null && OrderByColumns.TryGetValue(query.OrderBy, out var col))
         {
-            return $"ORDER BY {col} {(query.IsDescending ? "DESC" : "ASC")}";
+            string direction = query.IsDescending ? "DESC" : "ASC";
+            string tieBreaker = col == "Id" ? string.Empty : $", Id {direction}";
+            return $"ORDER BY {col} {direction}{tieBreaker}";
         }
         return "ORDER BY Id";
     }
@@ -98,11 +276,17 @@ public class DataStoreRepository(
         }
         if (query.Name is not null)
         {
-            conditions.Add("Name = @Name");
+            // @Name is already canonical and unbounded. The column's nvarchar(256) helper
+            // must not truncate a longer filter into a matching stored-name prefix.
+            conditions.Add(
+                "NameComparisonKey = CONVERT(binary(4), DATALENGTH(@Name)) + CONVERT(varbinary(max), @Name)"
+            );
         }
         if (query.DataStoreType is not null)
         {
-            conditions.Add("DataStoreType = @DataStoreType");
+            conditions.Add(
+                "CONVERT(varbinary(max), DataStoreType) = CONVERT(varbinary(max), @DataStoreType) AND DATALENGTH(DataStoreType) = DATALENGTH(@DataStoreType)"
+            );
         }
         return conditions.Count > 0 ? " AND " + string.Join(" AND ", conditions) : string.Empty;
     }
@@ -122,6 +306,24 @@ public class DataStoreRepository(
                 {query.BuildSqlServerPagingClause()};
                 """;
 
+            var parameters = new DynamicParameters(
+                new
+                {
+                    query.Limit,
+                    query.Offset,
+                    TenantId,
+                    query.Id,
+                }
+            );
+            // Explicit nvarchar(max) parameters preserve overlength and trailing-space inputs.
+            parameters.Add(
+                "Name",
+                query.Name is null ? null : CatalogName.Canonicalize(query.Name),
+                DbType.String,
+                size: -1
+            );
+            parameters.Add("DataStoreType", query.DataStoreType, DbType.String, size: -1);
+
             var results = await connection.QueryAsync<(
                 int Id,
                 string DataStoreType,
@@ -129,18 +331,7 @@ public class DataStoreRepository(
                 string? Provider,
                 byte[]? ConnectionString,
                 long? TenantId
-            )>(
-                sql,
-                new
-                {
-                    query.Limit,
-                    query.Offset,
-                    TenantId,
-                    query.Id,
-                    query.Name,
-                    query.DataStoreType,
-                }
-            );
+            )>(sql, parameters);
 
             var dataStoreList = results.ToList();
             if (!dataStoreList.Any())
@@ -294,11 +485,56 @@ public class DataStoreRepository(
         }
     }
 
+    // The tenant gate precedes every mutable read and is held with the row lock through commit.
+    // Publication/unlinking must use the same gate so a current link cannot appear after this guard.
+    private async Task<bool> LockDataStore(int id, DbTransaction transaction)
+    {
+        DbConnection connection = GetTransactionConnection(transaction, CancellationToken.None);
+        await DataStoreCatalog.AcquireTenantGateAsync(transaction, TenantId, CancellationToken.None);
+        return await connection.QuerySingleOrDefaultAsync<int?>(
+            $"""SELECT Id FROM dmscs.DataStore WITH (UPDLOCK, HOLDLOCK) WHERE Id = @Id AND {TenantContext.TenantWhereClause()};""",
+            new { Id = id, TenantId },
+            transaction
+        )
+            is not null;
+    }
+
+    private Task<int?> FindManagedLink(int id, DbTransaction transaction) =>
+        GetTransactionConnection(transaction, CancellationToken.None)
+            .QuerySingleOrDefaultAsync<int?>(
+                $"""SELECT Id FROM dmscs.DataStoreManage WHERE DataStoreId = @Id AND {TenantContext.TenantWhereClause()};""",
+                new { Id = id, TenantId },
+                transaction
+            );
+
     public async Task<DataStoreUpdateResult> UpdateDataStore(DataStoreUpdateCommand command)
     {
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            if (!await LockDataStore(command.Id, transaction))
+            {
+                return new DataStoreUpdateResult.FailureNotExists();
+            }
+            if (await FindManagedLink(command.Id, transaction) is int manageId)
+            {
+                return new DataStoreUpdateResult.FailureManaged(manageId);
+            }
+            if (
+                await DataStoreCatalog.HasManagedNameReservationAsync(
+                    transaction,
+                    TenantId,
+                    command.Name,
+                    command.Id,
+                    CancellationToken.None
+                )
+            )
+            {
+                return new DataStoreUpdateResult.FailureDuplicateName();
+            }
+
             bool preserveConnectionString = ConnectionStringWrite.PreservesExistingValue(
                 command.ConnectionString
             );
@@ -340,11 +576,12 @@ public class DataStoreRepository(
                 );
             }
 
-            var affectedRows = await connection.ExecuteAsync(sql, parameters);
+            var affectedRows = await connection.ExecuteAsync(sql, parameters, transaction);
             if (affectedRows == 0)
             {
                 return new DataStoreUpdateResult.FailureNotExists();
             }
+            await transaction.CommitAsync();
             return new DataStoreUpdateResult.Success();
         }
         catch (SqlException ex) when (ex.IsUniqueViolation(DuplicateNameConstraint))
@@ -364,11 +601,20 @@ public class DataStoreRepository(
         await using var connection = new SqlConnection(databaseOptions.Value.DatabaseConnection);
         try
         {
-            var sql = $"DELETE FROM dmscs.DataStore WHERE Id = @Id AND {TenantContext.TenantWhereClause()};";
-
-            var affectedRows = await connection.ExecuteAsync(sql, new { Id = id, TenantId });
+            await connection.OpenAsync();
+            await using var transaction = await connection.BeginTransactionAsync();
+            if (!await LockDataStore(id, transaction))
+            {
+                return new DataStoreDeleteResult.FailureNotExists();
+            }
+            if (await FindManagedLink(id, transaction) is int manageId)
+            {
+                return new DataStoreDeleteResult.FailureManaged(manageId);
+            }
+            int affectedRows = await DeleteDataStoreRows(id, transaction, CancellationToken.None);
             if (affectedRows > 0)
             {
+                await transaction.CommitAsync();
                 return new DataStoreDeleteResult.Success();
             }
             return new DataStoreDeleteResult.FailureNotExists();

@@ -120,12 +120,14 @@ public class JobScheduleRepositoryTests
 
         protected static Task<JobScheduleMaterializeResult> MaterializeAsync(
             JobScheduleRepository? repository = null,
-            string? jobId = null
+            string? jobId = null,
+            JobClaimPolicy? policy = null
         ) =>
             (repository ?? Repository()).MaterializeNextDue(
                 Owner,
                 LeaseSeconds,
                 jobId ?? NewJobId(),
+                policy ?? JobClaimPolicy.All,
                 CancellationToken.None
             );
 
@@ -150,7 +152,8 @@ public class JobScheduleRepositoryTests
             bool enabled = true,
             string? leaseOwner = null,
             double? leaseOffset = null,
-            long fencingToken = 0
+            long fencingToken = 0,
+            string jobType = ScheduledJobType
         ) =>
             await Connection!.ExecuteScalarAsync<long>(
                 """
@@ -168,7 +171,7 @@ public class JobScheduleRepositoryTests
                 {
                     TenantId = tenantId,
                     ScheduleType = scheduleType ?? NewScheduleType(),
-                    JobType = ScheduledJobType,
+                    JobType = jobType,
                     Payload = SeededPayload,
                     IntervalMinutes = intervalMinutes,
                     Enabled = enabled,
@@ -1549,7 +1552,7 @@ public class JobScheduleRepositoryTests
             await cancelled.CancelAsync();
 
             _materialize = await Repository()
-                .MaterializeNextDue(Owner, LeaseSeconds, NewJobId(), cancelled.Token);
+                .MaterializeNextDue(Owner, LeaseSeconds, NewJobId(), JobClaimPolicy.All, cancelled.Token);
             _upsert = await Repository().Upsert(Command(NewScheduleType()), cancelled.Token);
         }
 
@@ -1653,7 +1656,13 @@ public class JobScheduleRepositoryTests
                 repository.ListByType("", CancellationToken.None)
             );
             _thrown["lease"] = await ThrownByAsync(() =>
-                repository.MaterializeNextDue(Owner, 0, NewJobId(), CancellationToken.None)
+                repository.MaterializeNextDue(
+                    Owner,
+                    0,
+                    NewJobId(),
+                    JobClaimPolicy.All,
+                    CancellationToken.None
+                )
             );
         }
 

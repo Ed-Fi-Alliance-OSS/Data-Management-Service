@@ -27,12 +27,14 @@ public interface IJobScheduleRepository
     /// <summary>
     /// Materializes the next due occurrence of one schedule in a single bounded transaction: it leases the
     /// schedule, inserts the occurrence as job <paramref name="newJobId"/> unless the schedule's previous job is
-    /// still active, and advances the schedule.
+    /// still active, and advances the schedule. A schedule whose job type <paramref name="policy"/> excludes is
+    /// not selected: it stays exactly as stored, and other due schedules are materialized past it.
     /// </summary>
     Task<JobScheduleMaterializeResult> MaterializeNextDue(
         string owner,
         int leaseSeconds,
         string newJobId,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     );
 }

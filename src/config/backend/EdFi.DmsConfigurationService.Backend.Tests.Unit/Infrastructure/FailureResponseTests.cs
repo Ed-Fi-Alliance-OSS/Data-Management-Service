@@ -542,6 +542,13 @@ public class FailureResponseTests
         private static readonly FactoryCase[] _factoryCases =
         [
             new(
+                nameof(FailureResponse.ForServiceUnavailable),
+                () => FailureResponse.ForServiceUnavailable("Service unavailable", CorrelationId),
+                "urn:ed-fi:management-api:service-unavailable",
+                503,
+                "Service Unavailable"
+            ),
+            new(
                 nameof(FailureResponse.ForUnauthorized),
                 () => FailureResponse.ForUnauthorized("Unauthorized", "Access denied", CorrelationId),
                 "urn:ed-fi:management-api:security:authentication",

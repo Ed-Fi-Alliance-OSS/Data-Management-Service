@@ -5049,7 +5049,16 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
 
                     [hashtable]$ReuseParameters = @{},
 
-                    [switch]$ReuseRealAddDataStore
+                    [switch]$ReuseRealAddDataStore,
+
+                    # Answers to the registration POSTs, in order: an id for success, a hashtable with
+                    # Status and Body for an HTTP refusal, or @{ Transport = $true } for a failure with no
+                    # response. The real Add-DataStore and Invoke-Api run; only Invoke-RestMethod is replaced.
+                    [object[]]$ReuseRegistrationResponses = $null,
+
+                    # Listings for the second and later Get-DataStore calls, in order; each runs when its call
+                    # arrives. Without one, a later call repeats the previous listing.
+                    [scriptblock[]]$ReuseLaterListings = @()
                 )
 
                 . $script:repo.ConfigureScript
@@ -5057,6 +5066,8 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
                 $script:reuseTrace = [System.Collections.Generic.List[string]]::new()
                 $script:reuseRegisteredName = $null
                 $script:reuseStores = @(& $ReuseStoreFactory)
+                $script:reuseLaterListings = [System.Collections.Generic.Queue[scriptblock]]::new([scriptblock[]]$ReuseLaterListings)
+                $script:reuseListingCalls = 0
 
                 $script:reuseAuthority = $null
                 function Assert-MssqlTopologyPhysicalConsistency {
@@ -5073,9 +5084,40 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
                 function Get-DataStore {
                     param($CmsUrl, $AccessToken, $Offset, $Limit, $Tenant)
                     $script:reuseTrace.Add("Get-DataStore limit=$Limit")
+                    if ($script:reuseListingCalls++ -gt 0 -and $script:reuseLaterListings.Count -gt 0) {
+                        $script:reuseStores = @(& $script:reuseLaterListings.Dequeue())
+                    }
                     return $script:reuseStores
                 }
-                if (-not $ReuseRealAddDataStore) {
+                if ($null -ne $ReuseRegistrationResponses) {
+                    $script:reuseDmsModule = @(Get-Module -Name Dms-Management |
+                            Where-Object { $_.Path -like "$($script:repo.RepoRoot)*" })[0]
+                    $script:reuseDmsModule | Should -Not -BeNullOrEmpty
+                    & $script:reuseDmsModule {
+                        param([object[]]$Responses)
+                        $script:reusePosts = [System.Collections.Generic.List[object]]::new()
+                        $script:reuseResponses = [System.Collections.Generic.Queue[object]]::new($Responses)
+                        Set-Item function:script:Invoke-RestMethod {
+                            param($Uri, $Method, $ContentType, $Headers, $Body)
+                            $script:reusePosts.Add([pscustomobject]@{
+                                    Tenant = [string]$Headers["Tenant"]
+                                    Body = $Body | ConvertFrom-Json
+                                })
+                            $answer = $script:reuseResponses.Dequeue()
+                            if ($answer -is [int]) {
+                                return [pscustomobject]@{ id = $answer }
+                            }
+                            if ($answer.ContainsKey("Transport")) {
+                                throw [System.Net.Http.HttpRequestException]::new("registration-transport-sentinel")
+                            }
+                            # Thrown as Invoke-RestMethod throws it: the live response, whose body Invoke-Api reads.
+                            $response = [System.Net.Http.HttpResponseMessage]::new([System.Net.HttpStatusCode][int]$answer.Status)
+                            $response.Content = [System.Net.Http.StringContent]::new([string]$answer.Body, [System.Text.Encoding]::UTF8, "application/problem+json")
+                            throw [Microsoft.PowerShell.Commands.HttpResponseException]::new("Response status code does not indicate success: $($answer.Status).", $response)
+                        }
+                    } $ReuseRegistrationResponses
+                }
+                elseif (-not $ReuseRealAddDataStore) {
                     function Add-DataStore {
                         param($CmsUrl, $DataStoreType, $Name, $PostgresCredential, $PostgresDbName, $PostgresHost, $PostgresPort, $ConnectionString, $DatabaseEngine, $AccessToken, $Tenant)
                         $script:reuseTrace.Add("Add-DataStore")
@@ -5194,6 +5236,82 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             $script:reuseTrace | Should -Contain "Add-DataStore"
             $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store (2)" -Because "the new registration must not collide with the preserved one's name"
             @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty -Because "the other target's registration is neither updated nor deleted"
+        }
+
+        It "skips fixed-whitespace and case aliases of the base and suffix (<Engine>: U+<CodePointLabel>)" -Tag "RegistrationNameComparison" -ForEach @(
+            foreach ($engine in @("postgresql", "mssql")) {
+                foreach ($codePoint in @(
+                    0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x0085, 0x00A0, 0x1680,
+                    0x2000, 0x2001, 0x2002, 0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008,
+                    0x2009, 0x200A, 0x2028, 0x2029, 0x202F, 0x205F, 0x3000
+                )) {
+                    @{ Engine = $engine; CodePoint = $codePoint; CodePointLabel = $codePoint.ToString("X4") }
+                }
+            }
+        ) {
+            $baseName = [string][char]$CodePoint + "LOCAL DEVELOPMENT DATA STORE"
+            $suffixName = "local development data store (2)" + [char]$CodePoint
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $connection = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $Engine -DatabaseName "edfi_other") -EncryptionKey $script:reuseCmsKey
+                $provider = Get-ReuseProvider -Engine $Engine
+                New-ReuseDataStore -Id 41 -Name $baseName -Provider $provider -ConnectionString $connection
+                New-ReuseDataStore -Id 42 -Name $suffixName -Provider $provider -ConnectionString $connection
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store (3)"
+            @($script:reuseStores.name) | Should -BeExactly @($baseName, $suffixName) -Because "name comparison must not rewrite stored display names"
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+        }
+
+        It "preserves characters outside the fixed boundary set and embedded spacing (<Engine>: <Case>)" -Tag "RegistrationNameComparison" -ForEach @(
+            foreach ($engine in @("postgresql", "mssql")) {
+                foreach ($codePoint in @(0x0008, 0x000E, 0x001C, 0x001F, 0x180E, 0x200B, 0xFEFF)) {
+                    @{
+                        Engine = $engine
+                        Case = "boundary U+" + $codePoint.ToString("X4")
+                        ExistingName = [string][char]$codePoint + "Local Development Data Store" + [char]$codePoint
+                    }
+                }
+                @{ Engine = $engine; Case = "embedded ASCII space"; ExistingName = "Local  Development Data Store" }
+                @{ Engine = $engine; Case = "embedded nonbreaking space"; ExistingName = "Local" + [char]0x00A0 + "Development Data Store" }
+            }
+        ) {
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $connection = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $Engine -DatabaseName "edfi_other") -EncryptionKey $script:reuseCmsKey
+                New-ReuseDataStore -Id 41 -Name $ExistingName -Provider (Get-ReuseProvider -Engine $Engine) -ConnectionString $connection
+            }
+
+            @($result.SelectedDataStoreIds) | Should -Be @(9001)
+            $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store"
+            $script:reuseStores[0].name | Should -BeExactly $ExistingName
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
+        }
+
+        It "uses target identity for accented display names without rewriting them (<Engine>: <Case>)" -Tag "RegistrationNameComparison" -ForEach @(
+            @{ Engine = "postgresql"; Case = "same target"; SameTarget = $true }
+            @{ Engine = "postgresql"; Case = "unrelated target"; SameTarget = $false }
+            @{ Engine = "mssql"; Case = "same target"; SameTarget = $true }
+            @{ Engine = "mssql"; Case = "unrelated target"; SameTarget = $false }
+        ) {
+            $displayName = [string][char]0x00A0 + "Local Development Data St" + [char]0x00F3 + "re" + [char]0x2003
+            $databaseName = if ($SameTarget) { $script:reuseTarget } else { "edfi_other" }
+            $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory {
+                $connection = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $Engine -DatabaseName $databaseName) -EncryptionKey $script:reuseCmsKey
+                New-ReuseDataStore -Id 41 -Name $displayName -Provider (Get-ReuseProvider -Engine $Engine) -ConnectionString $connection
+            }
+
+            if ($SameTarget) {
+                @($result.SelectedDataStoreIds) | Should -Be @(41)
+                $script:reuseTrace | Should -Not -Contain "Add-DataStore"
+            }
+            else {
+                @($result.SelectedDataStoreIds) | Should -Be @(9001)
+                $script:reuseTrace | Should -Contain "Add-DataStore"
+                $script:reuseRegisteredName | Should -BeExactly "Local Development Data Store" -Because "accents stay distinct and another target cannot be adopted by name"
+            }
+            $script:reuseStores[0].name | Should -BeExactly $displayName
+            @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty
         }
 
         It "selects each target's own registration across repeated single-target restores A, B, A, B (<engine>)" -ForEach @(
@@ -5516,7 +5634,7 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             @($script:reuseTrace) | Should -BeNullOrEmpty -Because "a malformed handoff must not reach CMS"
         }
 
-        It "leaves the non-restore separate-topology registration unchanged: no listing, one registration (<engine>)" -ForEach @(
+            It "leaves the non-restore separate-topology registration unchanged: no listing, one registration (<engine>)" -ForEach @(
             @{ Engine = "postgresql" }
             @{ Engine = "mssql" }
         ) {
@@ -5527,6 +5645,232 @@ CONFIGURATION_SERVICE_DATABASE_ENCRYPTION_KEY=TestEncryptionKey12345678901234567
             @($result.SelectedDataStoreIds) | Should -Be @(9001)
             @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }) | Should -BeNullOrEmpty
             $script:reuseTrace | Should -Contain "Add-DataStore"
+        }
+
+        Context "a name the ordinary listing cannot show" {
+            # A managed data store reserves its name in the shared catalog namespace while not Deleted,
+            # including after a failed create, but the ordinary listing never returns it. CMS then refuses
+            # the registration with the ordinary duplicate-name response.
+            BeforeAll {
+                function script:New-ReuseProblemBody {
+                    param(
+                        [string]$Type = "urn:ed-fi:management-api:bad-request:data",
+
+                        [string]$ValidationErrors = '{"Name":["A data store with this name already exists."]}'
+                    )
+
+                    # FailureResponse.ForDataValidation, as DataStoreModule returns it for a duplicate name.
+                    return '{"detail":"Data validation failed. See ''validationErrors'' for details.","type":"' + $Type + '","title":"Data Validation Failed","status":400,"correlationId":"reuse-correlation","validationErrors":' + $ValidationErrors + ',"errors":[]}'
+                }
+
+                $script:reuseDuplicateName = @{ Status = 400; Body = (New-ReuseProblemBody) }
+            }
+
+            It "registers under the next free name and reuses that registration on the next restore (<Engine>: <Case>)" -ForEach @(
+                foreach ($engine in @("postgresql", "mssql")) {
+                    @{ Engine = $engine; Case = "no listed data store"; Tenant = ""; Occupied = $false; Expected = "Local Development Data Store (2)" }
+                    @{ Engine = $engine; Case = "another target listed under (2), tenant selected"; Tenant = "district-a"; Occupied = $true; Expected = "Local Development Data Store (3)" }
+                }
+            ) {
+                $engine = $Engine
+                $occupied = $Occupied
+                $envFile = New-ReuseEnvFile -Engine $Engine
+                if ($Tenant) {
+                    Add-Content -LiteralPath $envFile -Value "DMS_CONFIGURATION_SERVICE_TENANT=$Tenant"
+                }
+                $listing = {
+                    if ($occupied) {
+                        New-ReuseDataStore -Id 41 -Name "Local Development Data Store (2)" -Provider (Get-ReuseProvider -Engine $engine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $engine -DatabaseName "edfi_other") -EncryptionKey $script:reuseCmsKey)
+                    }
+                }
+
+                $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseStoreFactory $listing -ReuseRegistrationResponses @($script:reuseDuplicateName, 9002)
+
+                @($result.SelectedDataStoreIds) | Should -Be @(9002)
+                $posts = @(& $script:reuseDmsModule { $script:reusePosts })
+                @($posts.Body.name) | Should -BeExactly @("Local Development Data Store", $Expected)
+                @($posts.Body.connectionString | Select-Object -Unique).Count | Should -Be 1 -Because "only the name changes between attempts"
+                @($posts.Body.provider) | Should -BeExactly @((Get-ReuseProvider -Engine $Engine), (Get-ReuseProvider -Engine $Engine))
+                @($posts.Body.dataStoreType | Select-Object -Unique) | Should -BeExactly @("Development")
+                @($posts.Tenant) | Should -BeExactly @($Tenant, $Tenant)
+                $builder = [System.Data.Common.DbConnectionStringBuilder]::new()
+                $builder.set_ConnectionString([string]$posts[1].Body.connectionString)
+                $builder.get_Item("database") | Should -BeExactly $script:reuseTarget
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }) | Should -Be @("Get-DataStore limit=500", "Get-DataStore limit=500") -Because "the refusal is followed by one fresh listing"
+                @($script:reuseTrace | Where-Object { $_ -like "Invoke-Api*" }) | Should -BeNullOrEmpty -Because "no other registration is updated or deleted"
+
+                # The next restore of this target verifies that registration's stored target and reuses it,
+                # although CMS still refuses the base name; nothing is posted.
+                $registered = $posts[1].Body
+                $stored = New-ReuseDataStore -Id 9002 -Name ([string]$registered.name) -Provider ([string]$registered.provider) -ConnectionString (New-CmsEncryptedConnectionString -PlainText ([string]$registered.connectionString) -EncryptionKey $script:reuseCmsKey)
+                $again = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseEnvFile $envFile -ReuseStoreFactory { & $listing; $stored } -ReuseRegistrationResponses @()
+
+                @($again.SelectedDataStoreIds) | Should -Be @(9002)
+                @(& $script:reuseDmsModule { $script:reusePosts }).Count | Should -Be 0
+            }
+
+            It "refuses after a bounded number of duplicate-name refusals, never trying a name twice (<Engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                $answers = @(foreach ($attempt in 1..10) { $script:reuseDuplicateName })
+
+                $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses $answers } | Should -Throw -PassThru
+                $message = $thrown.Exception.Message
+
+                $message | Should -BeLike "Restore with -SeparateConfigDatabase could not register the restored target:*"
+                $message | Should -BeLike "*No data store was registered*"
+                $posts = @(& $script:reuseDmsModule { $script:reusePosts })
+                $posts.Count | Should -Be 10
+                @($posts.Body.name | Select-Object -Unique).Count | Should -Be 10
+                $posts[0].Body.name | Should -BeExactly "Local Development Data Store"
+                $posts[9].Body.name | Should -BeExactly "Local Development Data Store (10)"
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }).Count | Should -Be 11 -Because "the initial listing is followed by a fresh verification after every refusal, including the last"
+                Assert-ReuseRefusalSecretFree -Message $message
+            }
+
+            It "reuses the registration another writer made for the target that only the listing after the last refusal shows (<Engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                $raceEngine = $Engine
+                $raceWriter = {
+                    New-ReuseDataStore -Id 9100 -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine) -EncryptionKey $script:reuseCmsKey)
+                }
+                $answers = @(foreach ($attempt in 1..10) { $script:reuseDuplicateName })
+                $later = @(foreach ($attempt in 1..9) { {} }) + @($raceWriter)
+
+                $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses $answers -ReuseLaterListings $later
+
+                @($result.SelectedDataStoreIds) | Should -Be @(9100)
+                $posts = @(& $script:reuseDmsModule { $script:reusePosts })
+                $posts.Count | Should -Be 10 -Because "the verified registration is reused, not followed by an eleventh POST"
+                @($posts.Body.name | Select-Object -Unique).Count | Should -Be 10
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }).Count | Should -Be 11
+            }
+
+            It "refuses an ambiguous or unsafe listing after the last refusal through the target checks (<Engine>: <Case>)" -ForEach @(
+                foreach ($engine in @("postgresql", "mssql")) {
+                    @{ Engine = $engine; Case = "two registrations serve it"; Unsafe = $false; Expected = "*found 2 Configuration Service data stores*" }
+                    @{ Engine = $engine; Case = "a registration cannot be read"; Unsafe = $true; Expected = "*cannot tell whether Configuration Service data store id=9101*" }
+                }
+            ) {
+                $raceEngine = $Engine
+                $raceUnsafe = $Unsafe
+                $raceFresh = {
+                    $target = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine) -EncryptionKey $script:reuseCmsKey
+                    New-ReuseDataStore -Id 9100 -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString $target
+                    New-ReuseDataStore -Id 9101 -Name "Local Development Data Store (2)" -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString $(if ($raceUnsafe) { "not-a-protected-value" } else { $target })
+                }
+                $answers = @(foreach ($attempt in 1..10) { $script:reuseDuplicateName })
+                $later = @(foreach ($attempt in 1..9) { {} }) + @($raceFresh)
+
+                $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses $answers -ReuseLaterListings $later } | Should -Throw -PassThru
+                $message = $thrown.Exception.Message
+
+                $message | Should -BeLike $Expected
+                $message | Should -Not -BeLike "*could not register the restored target*"
+                @(& $script:reuseDmsModule { $script:reusePosts }).Count | Should -Be 10
+                Assert-ReuseRefusalSecretFree -Message $message
+            }
+
+            It "stops at the first registration failure that is not that refusal (<Engine>: <Case>)" -ForEach @(
+                $data = "urn:ed-fi:management-api:bad-request:data"
+                $duplicate = '{"Name":["A data store with this name already exists."]}'
+                foreach ($engine in @("postgresql", "mssql")) {
+                    @{ Engine = $engine; Case = "another Name validation message"; Status = 400; Type = $data; Errors = '{"Name":["''Name'' must not be empty."]}'; Raw = $null }
+                    @{ Engine = $engine; Case = "the message under another field"; Status = 400; Type = $data; Errors = '{"ConnectionString":["A data store with this name already exists."]}'; Raw = $null }
+                    @{ Engine = $engine; Case = "a second validation error"; Status = 400; Type = $data; Errors = '{"Name":["A data store with this name already exists."],"DataStoreType":["Invalid."]}'; Raw = $null }
+                    @{ Engine = $engine; Case = "a second Name message"; Status = 400; Type = $data; Errors = '{"Name":["A data store with this name already exists.","Invalid."]}'; Raw = $null }
+                    @{ Engine = $engine; Case = "another problem type"; Status = 400; Type = "urn:ed-fi:management-api:bad-request"; Errors = $duplicate; Raw = $null }
+                    @{ Engine = $engine; Case = "a body that is not a problem"; Status = 400; Type = $data; Errors = $duplicate; Raw = "A data store with this name already exists." }
+                    @{ Engine = $engine; Case = "no body"; Status = 400; Type = $data; Errors = $duplicate; Raw = "" }
+                    @{ Engine = $engine; Case = "an authorization failure"; Status = 403; Type = $data; Errors = $duplicate; Raw = $null }
+                    @{ Engine = $engine; Case = "a server error"; Status = 500; Type = $data; Errors = $duplicate; Raw = $null }
+                    @{ Engine = $engine; Case = "no response"; Status = 0; Type = $data; Errors = $duplicate; Raw = $null }
+                }
+            ) {
+                $answer = if ($Status -eq 0) {
+                    @{ Transport = $true }
+                }
+                elseif ($null -ne $Raw) {
+                    @{ Status = $Status; Body = $Raw }
+                }
+                else {
+                    @{ Status = $Status; Body = (New-ReuseProblemBody -Type $Type -ValidationErrors $Errors) }
+                }
+
+                { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses @($answer, 9002) } | Should -Throw
+
+                @(& $script:reuseDmsModule { $script:reusePosts }).Count | Should -Be 1 -Because "an uncertain or other failure is never retried under another name"
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }).Count | Should -Be 1 -Because "only the duplicate-name refusal lists again"
+            }
+
+            It "reuses the registration another writer made for the target after the listing, with no second POST (<Engine>)" -ForEach @(
+                @{ Engine = "postgresql" }
+                @{ Engine = "mssql" }
+            ) {
+                $raceEngine = $Engine
+                $raceWriter = {
+                    New-ReuseDataStore -Id 9100 -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine) -EncryptionKey $script:reuseCmsKey)
+                }
+
+                $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses @($script:reuseDuplicateName) -ReuseLaterListings @($raceWriter)
+
+                @($result.SelectedDataStoreIds) | Should -Be @(9100)
+                $posts = @(& $script:reuseDmsModule { $script:reusePosts })
+                @($posts.Body.name) | Should -BeExactly @("Local Development Data Store") -Because "the verified registration is reused, not duplicated"
+                @($script:reuseTrace | Where-Object { $_ -like "Get-DataStore*" }).Count | Should -Be 2
+
+                # The next restore finds exactly that one registration, so it is not an ambiguous duplicate.
+                $again = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseStoreFactory $raceWriter -ReuseRegistrationResponses @()
+                @($again.SelectedDataStoreIds) | Should -Be @(9100)
+                @(& $script:reuseDmsModule { $script:reusePosts }).Count | Should -Be 0
+            }
+
+            It "moves past a refused name that a fresh listing shows for another target or still cannot show (<Engine>: <Case>)" -ForEach @(
+                foreach ($engine in @("postgresql", "mssql")) {
+                    @{ Engine = $engine; Case = "another target took the name"; Fresh = @("Local Development Data Store"); Expected = "Local Development Data Store (2)" }
+                    @{ Engine = $engine; Case = "the name stays invisible and another target took (2)"; Fresh = @("Local Development Data Store (2)"); Expected = "Local Development Data Store (3)" }
+                }
+            ) {
+                $raceEngine = $Engine
+                $raceNames = $Fresh
+                $raceOther = {
+                    $id = 300
+                    foreach ($raceName in $raceNames) {
+                        New-ReuseDataStore -Id ($id++) -Name $raceName -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString (New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine -DatabaseName "edfi_other") -EncryptionKey $script:reuseCmsKey)
+                    }
+                }
+
+                $result = Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses @($script:reuseDuplicateName, 9002) -ReuseLaterListings @($raceOther)
+
+                @($result.SelectedDataStoreIds) | Should -Be @(9002)
+                $posts = @(& $script:reuseDmsModule { $script:reusePosts })
+                @($posts.Body.name) | Should -BeExactly @("Local Development Data Store", $Expected) -Because "the refused name is never tried again and the fresh listing's names are skipped"
+            }
+
+            It "refuses a fresh listing that is ambiguous or unsafe for the target, without another POST (<Engine>: <Case>)" -ForEach @(
+                foreach ($engine in @("postgresql", "mssql")) {
+                    @{ Engine = $engine; Case = "two registrations serve it"; Unsafe = $false; Expected = "*found 2 Configuration Service data stores*" }
+                    @{ Engine = $engine; Case = "a registration cannot be read"; Unsafe = $true; Expected = "*cannot tell whether Configuration Service data store id=9101*" }
+                }
+            ) {
+                $raceEngine = $Engine
+                $raceUnsafe = $Unsafe
+                $raceFresh = {
+                    $target = New-CmsEncryptedConnectionString -PlainText (New-ReusePlainConnectionString -Engine $raceEngine) -EncryptionKey $script:reuseCmsKey
+                    New-ReuseDataStore -Id 9100 -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString $target
+                    New-ReuseDataStore -Id 9101 -Name "Local Development Data Store (2)" -Provider (Get-ReuseProvider -Engine $raceEngine) -ConnectionString $(if ($raceUnsafe) { "not-a-protected-value" } else { $target })
+                }
+
+                $thrown = { Invoke-ReuseConfigure -ReuseEngine $Engine -ReuseRegistrationResponses @($script:reuseDuplicateName, 9002) -ReuseLaterListings @($raceFresh) } | Should -Throw -PassThru
+                $message = $thrown.Exception.Message
+
+                $message | Should -BeLike $Expected
+                @(& $script:reuseDmsModule { $script:reusePosts }).Count | Should -Be 1 -Because "an unproven target is never registered under another name"
+                Assert-ReuseRefusalSecretFree -Message $message
+            }
         }
     }
 

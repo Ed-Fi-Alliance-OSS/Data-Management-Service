@@ -72,6 +72,8 @@ services:
       # When enabled, every line without a default must be set, and the trust policy, artifact
       # directory and (SQL Server) staging directory must be mounted. Optional settings are not
       # passed here because an empty value is not the same as an omitted one; set them in an overlay.
+      AppSettings__EnableDataStoreManagement: ${CONFIGURATION_SERVICE_DATA_STORE_MANAGEMENT_ENABLED:-false}
+      DataStoreManagement__RuntimeConnectionString: ${CONFIGURATION_SERVICE_DATA_STORE_RUNTIME_CONNECTION_STRING:-}
       DmsDataStoreProvisioning__Enabled: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ENABLED:-false}
       DmsDataStoreProvisioning__Provider: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_PROVIDER:-}
       DmsDataStoreProvisioning__AdminConnectionString: ${CONFIGURATION_SERVICE_DMSDATASTOREPROVISIONING_ADMIN_CONNECTION_STRING:-}

@@ -46,6 +46,15 @@
         <Using Include="NUnit.Framework" />
     </ItemGroup>
     <ItemGroup>
+        <!-- External provisioning uses the same genuine-package trust setup as the provider lanes. -->
+        <Compile
+            Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\DataStoreProvisioning\Packaging\RealTemplatePackage.cs"
+            Link="ManagedDataStores\RealTemplatePackage.cs"
+        />
+        <Compile
+            Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\DataStoreProvisioning\Trust\EphemeralAttestationSigner.cs"
+            Link="ManagedDataStores\EphemeralAttestationSigner.cs"
+        />
         <!-- The timing evidence collectors share one recorder with the backend unit tests. -->
         <Compile
             Include="..\..\backend\EdFi.DmsConfigurationService.Backend.Tests.Unit\TimingEvidenceRecorder.cs"

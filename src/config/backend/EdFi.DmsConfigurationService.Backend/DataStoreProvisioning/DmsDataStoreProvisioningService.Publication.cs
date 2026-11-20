@@ -6,6 +6,7 @@
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Extensions.Logging;
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
@@ -59,7 +60,9 @@ public sealed partial class DmsDataStoreProvisioningService
         StagedArtifact stagedArtifact,
         StagingCleanup cleanup,
         Publication publication,
-        CancellationToken cancellationToken
+        ManagedDataStoreEndpoint? expectedEndpoint,
+        CancellationToken cancellationToken,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         DmsDataStoreCreateResult? result = null;
@@ -111,7 +114,9 @@ public sealed partial class DmsDataStoreProvisioningService
                     return await PublishAsync(scope, request, artifact, candidate, publication);
                 },
                 static (failure, report) => new DmsDataStoreCreateResult.Failure(failure, report),
-                cancellationToken
+                cancellationToken,
+                expectedEndpoint,
+                authorize
             );
         }
         catch (OperationCanceledException canceled) when (publication.State != PublicationState.None)

@@ -386,6 +386,64 @@ For how jobs run, recover, and are observed, see [Configuration Service Backgrou
 
 The lease must also leave room for a late renewal. Startup also requires `RenewalInterval + 2 × 6 s + FenceTimeout + 5 s + RenewalInterval / 2 + SafetyMargin <= LeaseDuration`. The 2 × 6 s term is the fixed fence acquisition timeout, which a fence can use twice while a renewal waits for it: once to open its connection and transaction, and once to lock and check the job row. The 5 s term is the fixed lock wait of a renewal. It already falls within `RenewalInterval / 2` and is counted again as extra allowance. `SafetyMargin` is the larger of 10 s and `LeaseDuration / 6`. With the defaults this is 60 + 12 + 10 + 5 + 30 + 50 = 167 s, within 300 s. When it fails, the startup message lists each term's value.
 
+## Managed data store lifecycle
+
+See [CMS managed data stores](CMS-MANAGED-DATA-STORES.md) for credential prerequisites, migration
+compatibility, pause/recovery procedures, retention and DMS cache visibility.
+
+`AppSettings:EnableDataStoreManagement` has a **code default of true**, captured once at startup.
+The base appsettings does not override it: omitting the setting in the normal configuration stack
+enables management and an unconfigured upgrade fails startup. Compose examples and the dedicated
+Test environment explicitly set it to **false**. Other deployments must explicitly opt out if they
+are not configured for management. This flag applies to both secured `/v3/dataStores/manage` routes and exactly
+the `ManagedDataStore.Create` / `ManagedDataStore.Delete` job types; unrelated jobs and ordinary
+catalog routes remain available when it is false.
+
+| Management | Provisioning | Startup and requests |
+| --- | --- | --- |
+| Omitted or true | Omitted or false | Startup fails before database deployment or workers start. |
+| Omitted or true | True, invalid static settings | Startup fails with setting names, without secret values. |
+| Omitted or true | True, valid static settings, Ready | Managed acceptance, reads and workers are active. |
+| Omitted or true | True, valid static settings, NotReady | Host runs; new create/delete acceptance returns 503 without mutation; reads remain available. |
+| False | Omitted or false | No managed provisioning settings required; managed routes return 400. |
+| False | True | Standalone provisioning retains its existing validation and readiness behavior. |
+
+Enable `DmsDataStoreProvisioning:Enabled` and configure its administrative credentials, trusted
+artifact catalog, allowlist and target adapter below. Also set
+`DataStoreManagement:RuntimeConnectionString` with **separate DMS runtime credentials**, using the
+same target endpoint and only the permissions DMS requires. It is never replaced by the admin
+connection. The managed handler supplies the database name, resolves one runtime snapshot,
+verifies its endpoint, and persists it through the ordinary catalog's single encryption boundary.
+Secret references use the existing `${secret:<name>}` grammar and require a secrets plugin.
+Static validation does not contact a vault or target server. Runtime secret availability and
+permissions are not proven by static validation; qualify DMS access before rollout.
+
+The target provider comes from `DmsDataStoreProvisioning:Provider`; it is independent of
+`AppSettings:Datastore`, which selects CMS persistence. Compose exposes the management switch as
+`CONFIGURATION_SERVICE_DATA_STORE_MANAGEMENT_ENABLED` and the runtime connection as
+`CONFIGURATION_SERVICE_DATA_STORE_RUNTIME_CONNECTION_STRING`. Supply credentials privately; do
+not put them in committed examples or logs.
+
+Readiness is latched for the process. Remediate environmental failures and restart to probe again.
+While readiness is closed, the worker neither claims nor exhausts previously accepted, nonterminal
+`ManagedDataStore.Create` and `ManagedDataStore.Delete` jobs: they keep their attempts, identity and
+artifact pin, and remediation plus a restart that reports Ready resumes the original jobs. Jobs that
+already ended in `Error`, and records already in `CreateError`/`DeleteError`, are not revived.
+Transient failures discovered after Ready acceptance retain normal durable retry behavior; this
+includes an allowlisted package or attestation that is temporarily missing for an accepted create,
+which retries with every trust, hash, manifest and pin check and exhausts normally if it stays
+missing. Disabling management suppresses new acceptance, enqueue, schedule materialization, claim and
+exhaustion for these two exact job types; it does not cancel an already executing physical
+operation. Drain workers before coordinated changes and use the same flags/configuration on every
+replica.
+
+Before upgrading, follow the [canonical-name migration preflight and rollback qualification](../reference/design/managed-data-stores-DMS-1439/catalog-name-uniqueness-rollout.md).
+Inventory custom residual unique indexes on ordinary display `Name`: these can still reject names
+allowed by the canonical key. The ordinary name/filter/sort compatibility changes apply even with
+management disabled; do not mix old and new writers during the migration. CMS owns lifecycle
+state; DMS continues routing from the ordinary catalog and sees publications/deletions only after
+its normal cache refresh. Snapshot persistence and cleanup belong to DMS-1441, not this feature.
+
 ## DmsEducationOrganizationProjectionSettings
 
 The Configuration Service reads the DMS education-organization projection over HTTP (see [Education Organization Projection](./EDUCATION-ORGANIZATION-PROJECTION.md)). These settings say where DMS is and which client credentials to use (`appsettings.json` section `DmsEducationOrganizationProjectionSettings`; environment override `DmsEducationOrganizationProjectionSettings__<Parameter>`, for example `DmsEducationOrganizationProjectionSettings__TenantCredentials__Tenant1__ClientSecret`). The shipped section is empty: with no `DmsBaseUrl` the reader is not configured, nothing below is checked, and every read fails as not configured. When `DmsBaseUrl` is set, the service validates every value at startup and refuses to start, naming `DmsEducationOrganizationProjectionSettings:<Parameter>`, when one is invalid. Startup messages never contain the base URL or a credential value.
@@ -419,7 +477,7 @@ Each credential is the `key` and `secret` of a Configuration Service application
 ## DmsDataStoreProvisioning
 
 The Configuration Service can create and delete DMS data store databases from signed template packages
-(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The feature is off by default. While
+(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The provisioner is off by default. While
 `Enabled` is `false`, nothing in this section is read or validated, and every provisioning call is refused as
 `FeatureDisabled`. For topologies, server privileges, trust setup, readiness, and recovery, see
 [DMS data store provisioning](./OPERATIONS.md#configuration-service-dms-data-store-provisioning) in the
@@ -491,6 +549,8 @@ A stored data store or derivative connection string may name a secret instead of
 **Writing a connection string can direct any secret the plugin can reach.** Nothing restricts which name a reference uses, and the value of every string keyword is resolved, not only `Password`; a typed keyword such as `Port` refuses a reference when the value is written. A client allowed to create or update data stores or derivatives (`edfi_admin_api/full_access`), in any existing tenant, since a request names its tenant in the `Tenant` header, can therefore store a connection string such as `Host=<a server it controls>;Username=${secret:<any name>}`. The Configuration Service resolves it, and DMS sends the resolved value to that server when it connects, which it does at startup for every data store it loads, whether or not an application is bound to it; nothing checks the host. Without secret resolution, that client could replace a stored password but never read one. A value resolved into a keyword other than `Password`, such as a username or database name, can also appear in DMS's own error logs, because the database driver repeats it in a failed-login or unknown-database message and DMS logs that exception; the Configuration Service's logs never carry a resolved value, but DMS's are outside that rule. Grant write access to data stores accordingly, and scope the vault identity the plugin uses to the secrets the Configuration Service is meant to serve; that narrows what such a client can reach but does not close the path.
 
 **A rotation reaches DMS within the sum of two windows.** A secret rotated in the store is seen by the Configuration Service within `CacheExpirationSeconds`, and by a running DMS within its own `CacheSettings:DataStoreCacheExpirationSeconds` after that (see [CacheSettings](#cachesettings)). On the defaults that is up to 300 + 600 seconds, about fifteen minutes. For that whole window DMS keeps using the previous value, so write the new credential first and revoke the old one only after the window has elapsed. Both windows are measured on the system clock, so allow longer if a host's clock may have been stepped back during it. Nothing pushes a rotation sooner; to apply one immediately, restart both the Configuration Service and DMS. When DMS's `DataStoreCacheRefreshEnabled` is `false` or its `DataStoreCacheExpirationSeconds` is not positive, DMS keeps the value it loaded until it restarts.
+
+**This rotation does not reach managed data stores.** It applies to stored connection strings that keep their `${secret:<name>}` references, which the Configuration Service resolves on each read. A data store registered by [managed data-store creation](./CMS-MANAGED-DATA-STORES.md#retry-recovery-and-operator-investigation) stores instead the runtime connection string already resolved, as an encrypted snapshot. Rotating a secret, changing `DataStoreManagement:RuntimeConnectionString`, letting either cache expire or restarting the Configuration Service or DMS does not change that snapshot, and no API updates the credential of an existing managed data store. Revoking the credential a managed data store was registered with leaves DMS unable to connect to it.
 
 ## Reverse Proxy and Forwarded Headers
 

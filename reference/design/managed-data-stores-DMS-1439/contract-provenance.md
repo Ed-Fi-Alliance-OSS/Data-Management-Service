@@ -1,0 +1,242 @@
+# DMS-1439 selected contract and fixture provenance
+
+This record states the selected DMS-1439 API, query, lifecycle and catalog-compatibility
+decisions and the accessible sources they rest on; applying them does not require any
+document outside this repository and the linked Jira issue. It was first written with the
+conformance fixtures (step 1.1). Later decisions are dated where they supersede earlier
+ones, and sentences that describe tests or implementation as future work date from step
+1.1; the [acceptance audit](step-6.1-acceptance-audit.md) maps the implemented behavior to
+its recorded evidence.
+
+The accompanying `conformance-fixtures.json` is reusable expected data, not an
+implementation. Its unit tests check fixture integrity and selected source-contract
+assertions. Passing these tests does not establish product conformance, provider
+parity or completion of any lifecycle acceptance criterion.
+
+The JSON `models` are independent state snapshots, not a sequential transition
+trace: their order does not authorize transitions from CreateError to Created or
+DeleteError to Deleted. `timestampEvents` records event rules separately. Query
+`expectedIds` refer only to the adjacent ordinary `rows` dataset. Naming and
+canonical-name vectors are expected outputs for future production tests; no
+formatter, normalizer or query evaluator is recreated in fixture tests.
+
+## Sources and pins
+
+* Requirements: [DMS-1439](https://edfi.atlassian.net/browse/DMS-1439) (description, 17
+  acceptance criteria and comment 99313, see [Q1](#q1--acceptance-responses)) and its checked-in
+  [original story](../../spikes/DMS-1334/DMS-1439-managed-data-store-lifecycle.md).
+  The original issue and story are unchanged, including their original AC9 wording;
+  [Q4](#q4--authorized-ac9-clarification) records the decision that governs AC9 here.
+* Historical design provenance: these decisions were first recorded from revision 9 of
+  the DMS-1439 implementation specification (active sections 1–10; SHA-256
+  `0deda56ca66aecffb4e184cb7acc1c4d770ee7dfc3248e07ab47bfb2792098ac`), which the
+  architectural reviewer approved, including the ordinary catalog compatibility changes
+  in [Q5](#q5--strict-parity-and-approved-compatibility-impact). That specification is a
+  locally retained working document, not distributed with this repository; the hash
+  identifies the revision but does not make it retrievable. This record carries the
+  decisions needed to apply the contract. Earlier proposals are not governing contracts.
+* Inspected DMS baseline: `cc5704e004068251ed03483de8c76adc86513688`.
+* [Pinned OpenAPI](../jobs-DMS-1437/admin-api-v3-ed115fd8.yaml) and
+  [generation provenance](../jobs-DMS-1437/admin-api-v3-provenance.md): upstream
+  `Ed-Fi-Alliance-OSS/ODS-Admin-API` commit
+  `ed115fd8c0cb3e17dcfefc86966582c74e39f277`; YAML SHA-256
+  `f0735ae1c7517b3534f31635fdc387b0665ff28679a98b2008103c7557b9466b`.
+  Relevant anchors: `/v3/dataStores/manage` (line 1118), by-ID route (1235),
+  `addDataStoreManageRequest` (3612), `dataStoreManageModel` (3982).
+  This existing evidence is reused without editing or regenerating it.
+
+The following upstream source at that same pin was inspected when the contract was
+selected. These links preserve that evidence trail; the generated YAML alone does
+not prove runtime timestamps, sorting or tombstone behavior:
+
+| Evidence | Pinned source under `Application/EdFi.Ods.AdminApi.V3` |
+| --- | --- |
+| Naming | [DataStoreManageDatabaseNameFormatter.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Features/DataStores/Manage/DataStoreManageDatabaseNameFormatter.cs) |
+| Projection | [DataStoreManageMapper.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Features/DataStores/Manage/DataStoreManageMapper.cs) |
+| List runtime | [ReadDataStoreManage.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Features/DataStores/Manage/ReadDataStoreManage.cs), [GetDataStoreManagesQuery.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Infrastructure/Database/Queries/GetDataStoreManagesQuery.cs) |
+| Acceptance timestamps/nulls | [AddDataStoreManageCommand.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Infrastructure/Database/Commands/AddDataStoreManageCommand.cs), [DeleteDataStoreManageCommand.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Infrastructure/Database/Commands/DeleteDataStoreManageCommand.cs) |
+| Worker timestamps and retained values | [CreateInstanceJob.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Infrastructure/Services/Jobs/CreateInstanceJob.cs), [DeleteInstanceJob.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Infrastructure/Services/Jobs/DeleteInstanceJob.cs) |
+| Deleted remains readable | [GetDataStoreManageByIdQuery.cs](https://github.com/Ed-Fi-Alliance-OSS/ODS-Admin-API/blob/ed115fd8c0cb3e17dcfefc86966582c74e39f277/Application/EdFi.Ods.AdminApi.V3/Infrastructure/Database/Queries/GetDataStoreManageByIdQuery.cs) |
+
+## Q1 — acceptance responses
+
+**Current decision (2026-11-16, superseding the earlier choice below).** Jira comment
+99313 on DMS-1439 states that the new CMS POST and DELETE endpoints follow Admin API's
+`jobQueuedResult`, and [ADMINAPI-1523](https://edfi.atlassian.net/browse/ADMINAPI-1523)
+requires `jobId`/`message` for both operations and 202 for DELETE. That clarification
+governs AC4/AC8:
+
+- POST returns **202** with `{"jobId", "message"}` and the absolute managed-resource
+  `Location` (scheme, host/port, PathBase, canonical route). Message:
+  `The Data Store has been queued to be created.` (the Jira example text).
+- DELETE returns **202** with `{"jobId", "message"}` and no Location. Message:
+  `The Data Store has been queued to be deleted.` (ADMINAPI-1523 requires only a
+  similar message; this is the corresponding wording, not an upstream literal).
+- `jobId` is the durable job the acceptance transaction committed, readable through
+  `/v3/jobs/{jobId}` in the same tenant partition. The endpoint never generates or
+  enqueues another one. The managed GET model stays at its nine fields.
+
+Superseded earlier decision, kept for history: written AC4/AC8 were kept (POST 202
+and DELETE 204, both with zero body bytes), and comment 99313/ADMINAPI-1523 at upstream
+commit `bc4199b50409cbc4b71b5271af24bc1dfbf97518` were treated as conflicting later
+evidence. Results recorded against that contract validate the empty-body responses
+only, not the current ones.
+
+## Q2 — managed query contract
+
+Default offset 0, limit 25, orderBy `id`, direction `Descending`. Pagination binds
+as int32; offset must be nonnegative, limit positive, with no smaller maximum.
+Omitted or exactly empty orderBy selects `id`; otherwise only the exact nine
+camelCase public field names are accepted. Direction is exactly `Ascending` or
+`Descending`; supplied empty values and abbreviations are invalid. ID is optional
+int32 equality (nonpositive unmatched IDs produce `[]`). Name uses Q5 equality;
+empty/whitespace matches no valid managed name. Combine filters and tenant before
+paging; invalid values return validation 400.
+
+NULLS LAST in either direction, then requested value order, then Id in the same
+direction. Strings use ASCII-folded ordinal comparisons; numbers and UTC timestamps
+use their respective orders. No snapshot guarantee across requests. The pinned
+runtime's Id-ascending behavior is intentionally not copied: AC5's advertised
+sorting governs. Real provider/pipeline tests remain future work.
+
+## Q4 — authorized AC9 clarification
+
+This assignment rests on an explicit instruction from the person directing the DMS-1439
+implementation, given after design revision 6 and carried into the approved revision 9.
+It is not a Jira change and has no separate public approval record:
+
+> ok, keep snapshot persistence and cleanup in DMS-1441. update the spec to remove that dependency from 1439 and make the AC9 clarification explicit […]
+
+The selected wording is:
+
+> Delete execution transitions through DeleteInProgress, verifies and drops the DMS-1438-owned physical target, then atomically removes the linked ordinary catalog row, retains the management tombstone, and marks Deleted in a single CMS transaction. Education-organization snapshot persistence and cleanup on ordinary or managed catalog deletion are delivered and verified by DMS-1441.
+
+Original AC9 said “atomically removes its snapshot and linked ordinary catalog
+row.” Its snapshot portion is explicitly assigned to DMS-1441. DMS-1439 owns
+physical-delete reconciliation, current-link clearing, ordinary catalog removal
+with existing assignment/context/derivative-registration cascades, retained history
+and Deleted in one CMS transaction. It does not physically delete derivative DBs.
+The [sequencing material](../../spikes/DMS-1334/candidate-implementation-stories.md)
+assigns G13 to DMS-1441 and G22 to DMS-1441 integrated with DMS-1439.
+
+DMS-1441 owns real snapshot persistence and integration tests for atomic cleanup,
+rollback and refresh/deletion races. Its schema, owner, delivery or tests are not a
+DMS-1439 prerequisite. Add no speculative snapshot table, cleanup interface or no-op
+hook. No snapshot criterion is claimed implemented or tested by DMS-1439.
+
+## Q5 — strict parity and approved compatibility impact
+
+AC17 remains strict: PostgreSQL and SQL Server must exhibit identical observable
+API/state behavior. Strict parity was kept and the design revised accordingly.
+The architectural reviewer's revision-9 approval explicitly includes the following compatibility changes;
+they are **recorded here, not implemented in step 1.1**.
+
+Canonical name equality trims only U+0009–000D, U+0020, U+0085, U+00A0, U+1680,
+U+2000–200A, U+2028, U+2029, U+202F, U+205F, U+3000 at the edges, then folds ASCII
+A–Z to a–z. All other code points are preserved; ordinal equality uses no accent
+removal, Unicode normalization, general case folding or locale-dependent LOWER.
+Managed display names are trimmed before the 1–46 ASCII validation; ordinary
+display strings are not rewritten. `Store`/`store` conflict on both providers;
+`café`/`cafe` coexist on both, including an accent-insensitive display Name column.
+
+The later schema work replaces ordinary `(TenantId, Name)` uniqueness with a
+database-generated common-key constraint and null-equal tenants. No residual
+linguistic Name uniqueness veto is allowed. PostgreSQL uses generated text with
+deterministic C equality; SQL Server uses a persisted computed bounded binary key
+with a four-byte length prefix and normalized NVARCHAR bytes. These encodings need
+equivalent logical equality, not identical bytes. Direct SQL writes recompute keys.
+
+Approved consequences and rollout requirements:
+
+* Existing PostgreSQL ASCII-case/edge-space duplicates can block preflight. SQL
+  Server linguistic equivalents outside this policy can become distinct. Preserve
+  names, IDs, connections and tenants; never automatically rename/delete/deduplicate.
+  Fail with bounded row-ID diagnostics and leave legacy uniqueness intact on failure.
+* Ordinary name filtering uses canonical equality. Accent aliases cease matching
+  on SQL Server; ASCII-case/edge-space aliases start matching on PostgreSQL. Type
+  filtering is exact, case-sensitive and untrimmed on both providers.
+* Ordinary name sorting uses unsigned UTF-8 lexical order of canonical text; type
+  sorting uses exact UTF-8 text. Both use numeric Id ties in the requested direction.
+  Do not sort by the length-prefixed equality key. Paging occurs after SQL filtering
+  and sorting. Page positions can change; external clients are not certified.
+* Preserve ordinary whitelist `id`/`name`/`dataStoreType`, case-insensitive validation,
+  existing asc/ascending/desc/descending parsing, default Id ascending and no implicit
+  limit (including offset-only). These differ intentionally from managed defaults.
+* Fix bootstrap registration-name suffix selection to trim the fixed whitespace
+  set; retain target-identity selection/refusal. DMS unfiltered ID-based caching and
+  operational offset/limit callers keep their existing contracts.
+* SQL Server query expressions require SQL Server 2019+ and the selected UTF-8
+  collation. Preflight this even with management disabled. Drain serving binaries
+  and writers, deploy corrected reads/caller and schema together, qualify constraint
+  inventory and HTTP behavior before restart. No old CMS read binary may serve the
+  new schema. Rollback requires legacy-collision preflight or planned restore.
+* Management false does not restore old uniqueness/filter/sort semantics. Both
+  providers still need real migration, direct-write, API, Unicode/paging, race and
+  publication evidence; fixture tests cannot provide it.
+
+## Q8 — request, output and lifecycle observations
+
+POST permits only `name` and `databaseTemplate`; reject unknown properties locally.
+Trim using Q5, require 1–46 ASCII characters matching `^[A-Za-z0-9 _]+$`, and exact
+`Minimal` or `Sample`. Sample remains public even though provisioning maps it to
+Populated. Naming follows the pinned formatter: spaces to underscores, trim edge
+underscores, remove repeated leading `^(?:(?:edfi_+ods)(?:_+|$))+` matches ignoring
+case/culture, trim underscores again, emit `EdFi_Ods_{remaining}_{template}` or
+`EdFi_Ods_{template}`. Validate final names with DMS-1438, including its 63-character
+ASCII/protected-name checks. Do not truncate or add suffixes. Different names that
+produce one physical target collide before provisioning.
+
+Public models have exactly nine fields: `id`, `name`, `dataStoreId`, `dataStoreName`,
+`status`, `databaseTemplate`, `databaseName`, `lastRefreshed`, `lastModifiedDate`.
+Emit null explicitly. All three linked fields are null in every unlinked
+PendingCreate/CreateInProgress/CreateFailed/CreateError response. This intentionally
+differs from upstream CreateInProgress databaseName exposure. Publish all three
+together; Deleted retains their historical values while the current internal FK is
+cleared. Collection and by-ID reads include tombstones; history does not authorize
+a current-link operation.
+
+Acceptance initializes both timestamps to the same UTC instant. Delete acceptance
+changes only lastModifiedDate. In-progress/success/failure observations and terminal
+exhaustion advance both timestamps. lastRefreshed is a lifecycle observation, not
+an education-organization refresh. Fixture timestamps are fixed illustrative
+instants; future database tests must prove this mapping using database UTC.
+
+## Selected status and readiness expectations
+
+Only Created admits DELETE; Deleted/absent is 404, every other state gets a distinct
+safe validation 400. Created with closed readiness yields 503. Closed readiness
+also refuses POST before acceptance with zero aggregate/reservation/job changes,
+no lifecycle/timestamp/link changes and no physical call. The early closed POST path
+does not resolve secrets. The fixed 503 problem has type
+`urn:ed-fi:management-api:service-unavailable`, title `Service Unavailable`, detail
+`Managed data store provisioning is unavailable.`, current correlationId, empty
+validationErrors and errors. No Location, Retry-After, job ID or readiness details.
+
+Authentication/authorization and tenant middleware precede feature validation.
+Disabled authorized managed routes return existing validation 400; reads remain
+available under closed readiness when enabled. Tenant selection is partitioning,
+not an authorization boundary. Linked ordinary PUT/DELETE will return 409 with an
+absolute managed URL, including when management is disabled. Exact error mappings,
+pipeline ordering, physical effects and durable no-write guarantees are future
+production tests, not behavior simulated by these fixtures.
+
+## Qualification records
+
+The [closure review](step-6.1-closure-review.md), [qualification matrix](step-6.1-qualification.md)
+and [17-criterion audit](step-6.1-acceptance-audit.md) are historical records of the
+2026-11-15 qualification, with later corrections noted in the audit. They preserve the
+tested boundaries, unresolved failures/skips, retained target and deployment obligations.
+The architectural review of closure assessment `8a3cf892d` accepted them at the reviewed
+qualification boundaries without rerunning tests; that is not a product/API amendment or
+a claim of full validation. Their raw run artifacts were retained locally and are not
+distributed with this repository, so the recorded counts and hashes identify those runs
+but cannot be independently verified from a checkout. The
+[operations guide](../../../docs/CMS-MANAGED-DATA-STORES.md) covers default-true rollout,
+ordinary catalog compatibility, credential and permission prerequisites, recovery,
+retention and eventual cache visibility.
+
+Those records change no frozen fixture, pinned spec/OpenAPI hash or governing decision.
+In particular, Q4's explicit user-authorized AC9 clarification still assigns snapshot
+persistence/cleanup to DMS-1441; original Jira wording is unchanged. Q5's strict parity
+and approved ordinary catalog compatibility changes remain in effect, with custom-index
+inventory a deployment obligation.

@@ -98,6 +98,7 @@ public sealed class RecordingScheduleRepository : IJobScheduleRepository
         string owner,
         int leaseSeconds,
         string newJobId,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     ) => throw new NotSupportedException();
 }

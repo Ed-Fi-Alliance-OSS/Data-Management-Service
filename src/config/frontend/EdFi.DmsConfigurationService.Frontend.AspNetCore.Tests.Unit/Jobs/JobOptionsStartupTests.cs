@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
@@ -24,6 +25,36 @@ namespace EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Jobs;
 /// </summary>
 public class JobOptionsStartupTests
 {
+    [TestFixture]
+    public class Given_restart_scoped_management_enablement
+    {
+        // The Test environment explicitly opts out; omitted/default-true startup is covered
+        // with the required provisioner dependencies in Given_managed_data_store_startup.
+        [TestCase(null, true)]
+        [TestCase("false", true)]
+        public void It_captures_the_management_switch_without_disabling_other_job_types(
+            string? value,
+            bool excludesManaged
+        )
+        {
+            Dictionary<string, string> hostSettings = [];
+            if (value is not null)
+            {
+                hostSettings["AppSettings:EnableDataStoreManagement"] = value;
+            }
+            using var factory = CreateFactory([], hostSettings);
+            using var client = factory.CreateClient();
+            var policy = factory.Services.GetRequiredService<JobClaimPolicy>();
+            policy.ExcludesManagedDataStores.Should().Be(excludesManaged);
+            policy.Allows("DataStore.RefreshEducationOrganizations").Should().BeTrue();
+            var configuration = factory.Services.GetRequiredService<IConfiguration>();
+            configuration["AppSettings:EnableDataStoreManagement"] = excludesManaged ? "true" : "false";
+            ((IConfigurationRoot)configuration).Reload();
+            factory.Services.GetRequiredService<JobClaimPolicy>().Should().BeSameAs(policy);
+            policy.ExcludesManagedDataStores.Should().Be(excludesManaged);
+        }
+    }
+
     /// <summary>
     /// <paramref name="settings"/> reach the options binders; <paramref name="hostSettings"/> go through
     /// <c>UseSetting</c>, because the datastore and the tenancy mode are read while the services are registered, before
@@ -31,7 +62,8 @@ public class JobOptionsStartupTests
     /// </summary>
     private static WebApplicationFactory<Program> CreateFactory(
         Dictionary<string, string?> settings,
-        Dictionary<string, string>? hostSettings = null
+        Dictionary<string, string>? hostSettings = null,
+        Action<IServiceCollection>? testServices = null
     ) =>
         new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
         {
@@ -43,6 +75,10 @@ public class JobOptionsStartupTests
             builder.ConfigureAppConfiguration(
                 (_, configuration) => configuration.AddInMemoryCollection(settings)
             );
+            if (testServices is not null)
+            {
+                builder.ConfigureTestServices(testServices);
+            }
         });
 
     /// <summary>
@@ -341,5 +377,70 @@ public class JobOptionsStartupTests
 
         [Test]
         public void It_registers_the_executor() => _executor.Should().NotBeNull();
+    }
+
+    [TestFixture]
+    public class Given_the_scheduler_while_data_store_management_is_disabled
+    {
+        [Test]
+        public async Task It_materializes_due_schedules_under_the_feature_policy()
+        {
+            RecordingScheduleRepository schedules = new();
+            using var factory = CreateFactory(
+                [],
+                new Dictionary<string, string>
+                {
+                    ["AppSettings:EnableDataStoreManagement"] = "false",
+                    ["JobSettings:SchedulerEnabled"] = "true",
+                },
+                services => services.AddScoped<IJobScheduleRepository>(_ => schedules)
+            );
+            _ = factory.Services;
+
+            (await schedules.FirstPolicy.WaitAsync(TimeSpan.FromSeconds(30)))
+                .Should()
+                .BeSameAs(JobClaimPolicy.ExcludeManagedDataStores);
+        }
+
+        private sealed class RecordingScheduleRepository : IJobScheduleRepository
+        {
+            private readonly TaskCompletionSource<JobClaimPolicy> _firstPolicy = new(
+                TaskCreationOptions.RunContinuationsAsynchronously
+            );
+
+            public Task<JobClaimPolicy> FirstPolicy => _firstPolicy.Task;
+
+            public Task<JobScheduleMaterializeResult> MaterializeNextDue(
+                string owner,
+                int leaseSeconds,
+                string newJobId,
+                JobClaimPolicy policy,
+                CancellationToken cancellationToken
+            )
+            {
+                _firstPolicy.TrySetResult(policy);
+                return Task.FromResult<JobScheduleMaterializeResult>(
+                    new JobScheduleMaterializeResult.NoneDue()
+                );
+            }
+
+            public Task<JobScheduleUpsertResult> Upsert(
+                JobScheduleUpsertCommand command,
+                CancellationToken cancellationToken
+            ) => throw new NotSupportedException();
+
+            public Task<JobScheduleDisableResult> Disable(
+                string scheduleType,
+                CancellationToken cancellationToken
+            ) => throw new NotSupportedException();
+
+            public Task<JobScheduleDisableResult> DisableById(long id, CancellationToken cancellationToken) =>
+                throw new NotSupportedException();
+
+            public Task<JobScheduleListResult> ListByType(
+                string scheduleType,
+                CancellationToken cancellationToken
+            ) => throw new NotSupportedException();
+        }
     }
 }

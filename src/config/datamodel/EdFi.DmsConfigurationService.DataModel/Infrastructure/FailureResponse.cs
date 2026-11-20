@@ -13,6 +13,15 @@ namespace EdFi.DmsConfigurationService.DataModel.Infrastructure;
 
 public static class FailureResponse
 {
+    public static JsonNode ForServiceUnavailable(string detail, string correlationId) =>
+        CreateBaseJsonObject(
+            detail,
+            "urn:ed-fi:management-api:service-unavailable",
+            "Service Unavailable",
+            503,
+            correlationId
+        );
+
     private static readonly JsonSerializerOptions _serializerOptions = new()
     {
         Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping,

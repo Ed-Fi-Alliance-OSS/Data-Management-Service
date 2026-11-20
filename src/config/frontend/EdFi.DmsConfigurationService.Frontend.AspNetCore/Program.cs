@@ -120,6 +120,9 @@ var app = builder.Build();
 // registration problem stops startup before any schema deployment and before a request can be served.
 await AuditPluginRegistrations(app);
 
+// Fail static management configuration before deployment or any hosted worker can start.
+ManagedDataStoreStartup.Validate(app.Services);
+
 // Before the DatabaseOptions gate, the token-revocation check and ReportInvalidConfiguration,
 // so a host that goes on to run in configuration-report mode still logs it. Reads the flag
 // from configuration without binding and resolves nothing from the container.
@@ -230,6 +233,10 @@ app.UseCors("AllowSwaggerUI");
 app.UseMiddleware<ConnectSourceRateLimitMiddleware>();
 app.UseAuthentication();
 app.UseAuthorization();
+
+// After authorization, so 401/403 keep precedence, and before charset validation, so a disabled managed
+// route returns its disabled-feature 400 whatever the request's encoding or body.
+app.UseMiddleware<ManagedDataStoreFeatureGateMiddleware>();
 
 // Reject JSON requests declaring an unsupported charset with the Ed-Fi 415 contract before body
 // binding reads them. Placed after authorization so authentication and authorization failures keep

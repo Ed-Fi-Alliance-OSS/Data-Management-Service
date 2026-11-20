@@ -3,7 +3,9 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Services;
 using FluentAssertions;
 using Microsoft.Extensions.Logging;
@@ -861,6 +863,59 @@ public class JobExecutorTests
     }
 
     /// <summary>
+    /// A successor reclaims the final attempt of a job whose operation already committed, and the tenant
+    /// lookup fails before the handler runs. The terminal write finds that committed success and completes
+    /// the job instead, and the execution reports the completion the database holds.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_final_attempt_tenant_lookup_failure_after_the_operation_committed
+    {
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness(multiTenancy: true);
+            _harness.Tenants.Fails = true;
+            _harness.Leases.OutcomeResult = _ =>
+                Task.FromResult<JobWriteResult>(
+                    new JobWriteResult.Success(null, DateTime.UtcNow, SettledAsCompleted: true)
+                );
+            _result = await _harness.Executor.ExecuteAsync(
+                ExecutorHarness.Job(attemptCount: ExecutorHarness.MaxAttempts, tenantId: 7, reclaimed: true),
+                CancellationToken.None
+            );
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_requests_the_terminal_write_without_running_the_handler()
+        {
+            _harness.Script.Resolutions.Should().Be(0);
+            _harness
+                .Leases.OutcomeWrites.Should()
+                .Equal(
+                    $"FailTerminal:{JobErrorCode.AttemptsExhausted.Code}:{JobErrorCode.AttemptsExhausted.Message}"
+                );
+        }
+
+        [Test]
+        public void It_reports_and_logs_a_completion()
+        {
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.Completed));
+            LogEntry outcome = _harness.Logger.Entries.Last();
+            outcome.EventId.Name.Should().Be("JobCompleted");
+            outcome.Level.Should().Be(LogLevel.Information);
+            outcome.Field("Outcome").Should().Be(JobExecutionOutcome.Completed);
+            outcome.Field("JobErrorCode").Should().BeNull();
+            _harness.Logger.Entries.Should().NotContain(entry => entry.EventId.Name == "JobFailed");
+        }
+    }
+
+    /// <summary>
     /// Settings that pass startup validation with no slack (12 + 12 + 1 + 5 + 6 + 10 = 46 s), and a lease the scripted
     /// repository models by time: a renewal succeeds only before the current expiry and then extends it.
     /// </summary>
@@ -1337,6 +1392,94 @@ public class JobExecutorTests
                 .Logger.Entries.Select(entry => (string?)entry.Field("JobId"))
                 .Should()
                 .OnlyContain(jobId => jobId == "job-11FORGED log line");
+    }
+
+    [TestFixture(true)]
+    [TestFixture(false)]
+    public class Given_a_managed_provisioning_failure_with_a_safe_diagnostic(bool retryable)
+    {
+        private const string SecretMessage = "Server=db;Password=hunter2";
+        private ExecutorHarness _harness = null!;
+        private JobExecutionResult _result = null!;
+        private DmsProvisioningFailure _failure = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new ExecutorHarness();
+            _failure = retryable
+                ? DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.SecretResolutionFailed,
+                    DmsProvisioningDiagnostic.From(
+                        new InvalidOperationException(SecretMessage, new FormatException(SecretMessage)),
+                        ManagedDataStoreRuntimeConnectionBuilder.ResolveStep
+                    )
+                )
+                : DmsProvisioningFailure.Create(
+                    DmsProvisioningFailureCode.RestoreFailed,
+                    DmsProvisioningFailureCategory.Permanent,
+                    DmsProvisioningDiagnostic.From(
+                        new InvalidOperationException(SecretMessage),
+                        "RestoreTemplate",
+                        "3013"
+                    )
+                );
+            _harness.Script.Run = (_, _, _) => throw new ManagedDataStoreProvisioningException(_failure);
+            _result = await _harness.Executor.ExecuteAsync(ExecutorHarness.Job(), CancellationToken.None);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_keeps_the_retry_or_terminal_disposition()
+        {
+            _result
+                .Should()
+                .Be(
+                    retryable
+                        ? new JobExecutionResult(JobExecutionOutcome.RetryScheduled)
+                        : new JobExecutionResult(
+                            JobExecutionOutcome.Failed,
+                            ErrorCode: JobErrorCode.HandlerFailed.Code
+                        )
+                );
+            _harness.Leases.OutcomeWrites.Should().Equal("FailManaged");
+            _harness.Leases.LastManagedFailure.Should().Be(ManagedDataStoreFailure.FromProvisioner(_failure));
+            (_harness.Leases.ManagedBackoff is not null).Should().Be(retryable);
+        }
+
+        [Test]
+        public void It_logs_the_settlement_with_the_provisioning_diagnostic()
+        {
+            LogEntry settled = _harness.Logger.Entries.Single(entry =>
+                entry.EventId.Name == (retryable ? "JobRetryScheduled" : "JobFailed")
+            );
+            ((string?)settled.Field("ExceptionTypeChain"))
+                .Should()
+                .Be(
+                    retryable
+                        ? "System.InvalidOperationException/System.FormatException"
+                        : "System.InvalidOperationException"
+                );
+            ((string?)settled.Field("ProviderErrorCode")).Should().Be(retryable ? null : "3013");
+            ((string?)settled.Field("Operation"))
+                .Should()
+                .Be(retryable ? ManagedDataStoreRuntimeConnectionBuilder.ResolveStep : "RestoreTemplate");
+        }
+
+        [Test]
+        public void It_logs_no_source_exception_text()
+        {
+            foreach (LogEntry entry in _harness.Logger.Entries)
+            {
+                entry.Message.Should().NotContain("hunter2");
+                entry
+                    .Fields.Select(field => field.Value?.ToString() ?? "")
+                    .Should()
+                    .NotContain(value => value.Contains("hunter2"));
+            }
+        }
     }
 
     [TestFixture]

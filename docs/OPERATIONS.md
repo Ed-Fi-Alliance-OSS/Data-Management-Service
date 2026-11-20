@@ -1531,12 +1531,15 @@ client row are unaffected.
 ## Configuration Service: DMS data store provisioning
 
 The Configuration Service can create and delete DMS data store databases from signed template packages
-(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. It is off by default and configured in the
-`DmsDataStoreProvisioning` section; see [DmsDataStoreProvisioning](./CONFIGURATION.md#dmsdatastoreprovisioning)
-for every setting. This release adds the provisioner as a service for the Configuration Service's own
-background jobs (see
+(`Minimal` and `Sample`) on a PostgreSQL or SQL Server server. The standalone provisioner is off by
+default and configured in the `DmsDataStoreProvisioning` section; see
+[DmsDataStoreProvisioning](./CONFIGURATION.md#dmsdatastoreprovisioning)
+for every setting. It is a service for the Configuration Service's own background jobs (see
 [Configuration Service Background Jobs](./CONFIGURATION-SERVICE-BACKGROUND-JOBS.md#dms-data-store-provisioning)).
-It adds no endpoint and does not change `/health`.
+The provisioner itself adds no endpoint and does not change `/health`. The
+[managed lifecycle](CMS-MANAGED-DATA-STORES.md) exposes secured `/v3/dataStores/manage` routes and
+uses guarded provisioning jobs. Management defaults to **true** and requires provisioner and runtime
+configuration unless explicitly disabled; read its upgrade and credential prerequisites before deployment.
 
 How a create works, in short: the allowlisted package is copied into a private operation directory, its
 attestation is checked against the trust policy, and its manifest is checked against the `Compatibility`
@@ -1770,7 +1773,8 @@ server message, or `psql` output. The category tells the caller whether to retry
 | `RestoreFailed` | `Permanent`; `Transient` when the restore, or a request it needs before it starts (such as the SQL Server backup header read or the PostgreSQL enqueue-owner role check), is known to have rolled back or been rejected for a reason that can clear on its own: a lost connection, a PostgreSQL serialization failure, deadlock, unavailable lock, or temporary resource shortage, or a SQL Server deadlock victim (error 1205) or temporary memory shortage (error 701) |
 | `ExclusiveAccessNotEstablished`, `LockLost`, `DropFailed` | `Transient` before anything on the target changed, or when the operation proved afterwards that its uncertain rename or fence left nothing in place (the rename did not happen and nothing holds the target name; the target is ours and accepts connections); `OperatorInspectionRequired` otherwise |
 | `TrustPolicyUnavailable` | `OperatorInspectionRequired`; `Transient` while another process holds the trust policy file open exclusively. Only an operation reports it; at startup a policy that cannot be used is `StartupValidationFailed`. See [Template package trust](#template-package-trust) |
-| `ArtifactMissing`, `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
+| `ArtifactMissing` | `OperatorInspectionRequired`; `Transient` when an accepted managed create meets it, so a temporarily missing package or attestation retries within the job's attempts. Each retry repeats the trust, hash, manifest and pin checks; a file that stays missing exhausts the job. See [Managed data stores](./CMS-MANAGED-DATA-STORES.md) |
+| `ArtifactUntrusted`, `ArtifactTampered`, `ManifestInvalid`, `ManifestMismatch`, `BackupInvalid`, `PackageIdentityInvalid`, `ArtifactChangedSinceCreate` | `OperatorInspectionRequired` |
 | `ContentProfileViolation`, `TargetIncompatible`, `SecurityStateViolation`, `StagingIntegrityViolation`, `IdentityAssignmentFailed`, `TargetUnowned`, `TargetUnverifiable`, `TargetFenced`, `InstanceChanged`, `OutcomeUnknown`, `CompensationFailed` | `OperatorInspectionRequired` |
 
 #### A refused administrative login, and rotating its password

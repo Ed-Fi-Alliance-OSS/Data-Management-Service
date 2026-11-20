@@ -6,6 +6,7 @@
 using System.Net.Security;
 using System.Security.Cryptography;
 using System.Security.Cryptography.X509Certificates;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.DataStoreProvisioning;
@@ -220,6 +221,42 @@ public sealed class PostgresqlAdminConnection
         catch
         {
             await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    /// <summary>Captures the descriptor from the exact private maintenance connection construction, before provider open can redact its settings.</summary>
+    internal (NpgsqlConnection Connection, ManagedDataStoreEndpoint? Endpoint) CaptureHolderConnection(
+        string applicationName
+    )
+    {
+        NpgsqlConnectionStringBuilder template = Template;
+        NpgsqlConnection connection = new(
+            DriverConnectionString(template, MaintenanceDatabaseName, applicationName)
+        )
+        {
+            UserCertificateValidationCallback = ServerCertificateValidation(template),
+        };
+        PostgresqlManagedEndpoint.TryParse(connection.ConnectionString, out var endpoint);
+        return (connection, endpoint);
+    }
+
+    internal async Task<NpgsqlConnection> OpenHolderAsync(
+        string applicationName,
+        Action<ManagedDataStoreEndpoint?> captureEndpoint,
+        CancellationToken cancellationToken
+    )
+    {
+        var captured = CaptureHolderConnection(applicationName);
+        captureEndpoint(captured.Endpoint);
+        try
+        {
+            await captured.Connection.OpenAsync(cancellationToken);
+            return captured.Connection;
+        }
+        catch
+        {
+            await captured.Connection.DisposeAsync();
             throw;
         }
     }

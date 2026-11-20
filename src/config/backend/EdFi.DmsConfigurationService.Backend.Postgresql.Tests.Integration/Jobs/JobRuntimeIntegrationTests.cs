@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Data.Common;
 using System.Diagnostics;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Jobs;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
@@ -64,9 +65,37 @@ public class JobRuntimeIntegrationTests
     /// <summary>A lease repository that counts the outcome writes passed through to the real one.</summary>
     public sealed class CountingLeaseRepository(IJobLeaseRepository inner) : IJobLeaseRepository
     {
+        public Task<JobWriteResult> FailManaged(
+            long id,
+            string owner,
+            long fencingToken,
+            EdFi.DmsConfigurationService.Backend.ManagedDataStores.ManagedDataStoreFailure failure,
+            int? backoffSeconds,
+            CancellationToken cancellationToken
+        )
+        {
+            Interlocked.Increment(ref _outcomeWrites);
+            return inner.FailManaged(id, owner, fencingToken, failure, backoffSeconds, cancellationToken);
+        }
+
         private int _outcomeWrites;
 
         public int OutcomeWrites => Volatile.Read(ref _outcomeWrites);
+
+        public Task<JobClaimResult> ClaimNext(
+            string owner,
+            int leaseSeconds,
+            int maxAttempts,
+            JobClaimPolicy policy,
+            CancellationToken cancellationToken
+        ) => inner.ClaimNext(owner, leaseSeconds, maxAttempts, policy, cancellationToken);
+
+        public Task<JobExhaustResult> Exhaust(
+            int maxAttempts,
+            JobErrorCode errorCode,
+            JobClaimPolicy policy,
+            CancellationToken cancellationToken
+        ) => inner.Exhaust(maxAttempts, errorCode, policy, cancellationToken);
 
         public Task<JobClaimResult> ClaimNext(
             string owner,
@@ -178,16 +207,27 @@ public class JobRuntimeIntegrationTests
                 Executor,
                 Options.Create(Settings),
                 TimeProvider.System,
-                NullLogger<JobWorkerService>.Instance
+                NullLogger<JobWorkerService>.Instance,
+                JobClaimPolicy.All,
+                ReadyProvisioning()
             );
 
-        public JobScheduleDispatcherService Dispatcher() =>
+        /// <summary>A recorded Ready verdict, so the generic runtime's eligibility is the feature policy alone.</summary>
+        private static DmsDataStoreProvisionerReadiness ReadyProvisioning()
+        {
+            var readiness = new DmsDataStoreProvisionerReadiness();
+            readiness.Record(new DmsProvisionerReadiness.Ready("postgresql", DateTimeOffset.UtcNow));
+            return readiness;
+        }
+
+        public JobScheduleDispatcherService Dispatcher(JobClaimPolicy? featurePolicy = null) =>
             new(
                 _provider.GetRequiredService<IServiceScopeFactory>(),
                 Metrics,
                 Options.Create(Settings),
                 TimeProvider.System,
-                NullLogger<JobScheduleDispatcherService>.Instance
+                NullLogger<JobScheduleDispatcherService>.Instance,
+                featurePolicy ?? JobClaimPolicy.All
             );
 
         public Task<JobExecutionResult> ExecuteAsync(ClaimedJob job) =>

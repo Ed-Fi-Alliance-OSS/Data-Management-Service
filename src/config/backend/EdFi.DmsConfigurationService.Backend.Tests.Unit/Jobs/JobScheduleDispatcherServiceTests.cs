@@ -20,13 +20,17 @@ public sealed class ScriptedScheduleRepository : IJobScheduleRepository
 
     public ConcurrentQueue<(string Owner, int LeaseSeconds, string JobId)> Calls { get; } = new();
 
+    public ConcurrentQueue<JobClaimPolicy> Policies { get; } = new();
+
     public Task<JobScheduleMaterializeResult> MaterializeNextDue(
         string owner,
         int leaseSeconds,
         string newJobId,
+        JobClaimPolicy policy,
         CancellationToken cancellationToken
     )
     {
+        Policies.Enqueue(policy);
         Calls.Enqueue((owner, leaseSeconds, newJobId));
         return Script.TryDequeue(out Func<Task<JobScheduleMaterializeResult>>? next)
             ? next()
@@ -61,7 +65,7 @@ public sealed class DispatcherHarness : IDisposable
 {
     private readonly ServiceProvider _provider;
 
-    public DispatcherHarness()
+    public DispatcherHarness(JobClaimPolicy? featurePolicy = null)
     {
         ServiceCollection services = new();
         services.AddSingleton<IJobScheduleRepository>(Repository);
@@ -71,7 +75,8 @@ public sealed class DispatcherHarness : IDisposable
             Metrics,
             Options.Create(Settings),
             Time,
-            Logger
+            Logger,
+            featurePolicy ?? JobClaimPolicy.All
         );
     }
 
@@ -399,5 +404,34 @@ public class JobScheduleDispatcherServiceTests
         [Test]
         public void It_stops_with_the_host() =>
             _harness.Dispatcher.ExecuteTask!.IsCompletedSuccessfully.Should().BeTrue();
+    }
+
+    [TestFixture]
+    public class Given_the_feature_policy_excludes_managed_data_stores
+    {
+        private DispatcherHarness _harness = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new DispatcherHarness(JobClaimPolicy.ExcludeManagedDataStores);
+            _harness.Repository.Returns(DispatcherHarness.Materialized(1, "Nightly.Refresh"));
+            await _harness.Dispatcher.StartAsync(CancellationToken.None);
+            await HostedServiceProbe.Until(
+                () => _harness.CallCount == 2,
+                "the poll materialized one schedule and found nothing more due"
+            );
+            await HostedServiceProbe.StopAsync(_harness.Dispatcher);
+        }
+
+        [TearDown]
+        public void TearDown() => _harness.Dispose();
+
+        [Test]
+        public void It_materializes_every_schedule_under_that_policy() =>
+            _harness
+                .Repository.Policies.Should()
+                .HaveCount(2)
+                .And.OnlyContain(policy => ReferenceEquals(policy, JobClaimPolicy.ExcludeManagedDataStores));
     }
 }

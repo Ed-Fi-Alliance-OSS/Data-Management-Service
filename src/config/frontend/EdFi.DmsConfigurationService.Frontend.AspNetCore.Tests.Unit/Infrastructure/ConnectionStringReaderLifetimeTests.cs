@@ -36,6 +36,7 @@ public class Given_the_host_booted_in_the_development_environment(string datasto
     private static readonly Dictionary<string, string> _settings = new()
     {
         ["AppSettings:DeployDatabaseOnStartup"] = "false",
+        ["AppSettings:EnableDataStoreManagement"] = "false",
         ["DatabaseSettings:EncryptionKey"] = "TestEncryptionKey32CharactersLong1",
         ["IdentitySettings:AllowRegistration"] = "true",
         ["IdentitySettings:TokenCleanup:Enabled"] = "false",

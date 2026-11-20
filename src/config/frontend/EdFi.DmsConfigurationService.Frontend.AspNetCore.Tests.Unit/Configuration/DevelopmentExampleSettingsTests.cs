@@ -42,6 +42,18 @@ public class Given_the_shipped_development_example
             .BeFalse();
     }
 
+    [Test]
+    public void It_disables_data_store_management()
+    {
+        // The example configures no DmsDataStoreProvisioning, which managed data stores require at
+        // startup. The fallback is the shipped default, so an example without the key fails here.
+        _configuration
+            .GetValue("AppSettings:EnableDataStoreManagement", defaultValue: true)
+            .Should()
+            .BeFalse();
+        _configuration.GetSection("DmsDataStoreProvisioning").Exists().Should().BeFalse();
+    }
+
     private static string FindExampleFile()
     {
         string directory = AppContext.BaseDirectory;

@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 
 namespace EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 
@@ -20,6 +21,9 @@ public interface IDmsTargetEngine
 {
     /// <summary><c>postgresql</c> or <c>mssql</c> (D-17).</summary>
     string Provider { get; }
+
+    /// <summary>Parses only this already-resolved snapshot, without connecting or reading configuration. Null means the destination cannot be verified for managed use.</summary>
+    ManagedDataStoreEndpoint? ParseManagedEndpoint(DmsAdminConnectionString connection) => null;
 
     /// <summary>The engine's share of the readiness probes; no lock is held.</summary>
     Task<DmsEngineEnvironment> ValidateEnvironmentAsync(CancellationToken cancellationToken);

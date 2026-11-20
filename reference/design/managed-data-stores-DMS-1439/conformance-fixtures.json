@@ -1,0 +1,173 @@
+{
+  "fixtureVersion": 1,
+  "specRevision": 9,
+  "specSha256": "0deda56ca66aecffb4e184cb7acc1c4d770ee7dfc3248e07ab47bfb2792098ac",
+  "upstreamCommit": "ed115fd8c0cb3e17dcfefc86966582c74e39f277",
+  "scope": "Expected data only; no runtime conformance is established by fixture integrity tests.",
+  "requests": [
+    { "name": " school 1 ", "databaseTemplate": "Minimal" },
+    { "name": "__school__", "databaseTemplate": "Sample" }
+  ],
+  "invalidRequests": [
+    { "case": "missing name", "body": { "databaseTemplate": "Minimal" }, "status": 400 },
+    { "case": "null name", "body": { "name": null, "databaseTemplate": "Minimal" }, "status": 400 },
+    { "case": "empty name", "body": { "name": "", "databaseTemplate": "Minimal" }, "status": 400 },
+    { "case": "whitespace name", "body": { "name": " \t\r\n", "databaseTemplate": "Minimal" }, "status": 400 },
+    { "case": "missing template", "body": { "name": "school" }, "status": 400 },
+    { "case": "null template", "body": { "name": "school", "databaseTemplate": null }, "status": 400 },
+    { "case": "template casing", "body": { "name": "school", "databaseTemplate": "minimal" }, "status": 400 },
+    { "case": "sample casing", "body": { "name": "school", "databaseTemplate": "sample" }, "status": 400 },
+    { "case": "internal template token", "body": { "name": "school", "databaseTemplate": "Populated" }, "status": 400 },
+    { "case": "unknown property", "body": { "name": "school", "databaseTemplate": "Minimal", "jobId": "not-public-input" }, "status": 400 }
+  ],
+  "naming": [
+    { "name": " school 1 ", "template": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal" },
+    { "name": "__school__", "template": "Sample", "databaseName": "EdFi_Ods_school_Sample" },
+    { "name": "EDFI__ODS_edfi_ods_School", "template": "Minimal", "databaseName": "EdFi_Ods_School_Minimal" },
+    { "name": "EdFi_Ods", "template": "Minimal", "databaseName": "EdFi_Ods_Minimal" },
+    { "name": "_", "template": "Minimal", "databaseName": "EdFi_Ods_Minimal" },
+    { "name": "edfi_odsX", "template": "Minimal", "databaseName": "EdFi_Ods_edfi_odsX_Minimal" },
+    { "name": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "template": "Minimal", "databaseName": "EdFi_Ods_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa_Minimal" },
+    { "name": "\u3000School\u00a0", "template": "Sample", "databaseName": "EdFi_Ods_School_Sample" }
+  ],
+  "invalidNames": [
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "school\t1", "school\n1", "café", "school'1", "school;1", "school/1"
+  ],
+  "physicalNameCollision": { "names": ["EdFi_Ods", "_"], "template": "Minimal", "databaseName": "EdFi_Ods_Minimal", "status": 400, "physicalCalls": 0 },
+  "models": [
+    { "id": 7, "name": "school 1", "dataStoreId": null, "dataStoreName": null, "status": "PendingCreate", "databaseTemplate": "Minimal", "databaseName": null, "lastRefreshed": "2026-11-12T10:00:00Z", "lastModifiedDate": "2026-11-12T10:00:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": null, "dataStoreName": null, "status": "CreateInProgress", "databaseTemplate": "Minimal", "databaseName": null, "lastRefreshed": "2026-11-12T10:01:00Z", "lastModifiedDate": "2026-11-12T10:01:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": null, "dataStoreName": null, "status": "CreateFailed", "databaseTemplate": "Minimal", "databaseName": null, "lastRefreshed": "2026-11-12T10:02:00Z", "lastModifiedDate": "2026-11-12T10:02:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": null, "dataStoreName": null, "status": "CreateError", "databaseTemplate": "Minimal", "databaseName": null, "lastRefreshed": "2026-11-12T10:03:00Z", "lastModifiedDate": "2026-11-12T10:03:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": 101, "dataStoreName": "school 1", "status": "Created", "databaseTemplate": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal", "lastRefreshed": "2026-11-12T10:04:00Z", "lastModifiedDate": "2026-11-12T10:04:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": 101, "dataStoreName": "school 1", "status": "PendingDelete", "databaseTemplate": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal", "lastRefreshed": "2026-11-12T10:04:00Z", "lastModifiedDate": "2026-11-12T10:05:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": 101, "dataStoreName": "school 1", "status": "DeleteInProgress", "databaseTemplate": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal", "lastRefreshed": "2026-11-12T10:06:00Z", "lastModifiedDate": "2026-11-12T10:06:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": 101, "dataStoreName": "school 1", "status": "DeleteFailed", "databaseTemplate": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal", "lastRefreshed": "2026-11-12T10:07:00Z", "lastModifiedDate": "2026-11-12T10:07:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": 101, "dataStoreName": "school 1", "status": "DeleteError", "databaseTemplate": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal", "lastRefreshed": "2026-11-12T10:08:00Z", "lastModifiedDate": "2026-11-12T10:08:00Z" },
+    { "id": 7, "name": "school 1", "dataStoreId": 101, "dataStoreName": "school 1", "status": "Deleted", "databaseTemplate": "Minimal", "databaseName": "EdFi_Ods_school_1_Minimal", "lastRefreshed": "2026-11-12T10:09:00Z", "lastModifiedDate": "2026-11-12T10:09:00Z" }
+  ],
+  "timestampEvents": [
+    { "event": "createAcceptance", "lastRefreshed": "eventUtc", "lastModifiedDate": "eventUtc" },
+    { "event": "deleteAcceptance", "lastRefreshed": "unchanged", "lastModifiedDate": "eventUtc" },
+    { "event": "inProgress", "lastRefreshed": "eventUtc", "lastModifiedDate": "eventUtc" },
+    { "event": "success", "lastRefreshed": "eventUtc", "lastModifiedDate": "eventUtc" },
+    { "event": "failure", "lastRefreshed": "eventUtc", "lastModifiedDate": "eventUtc" },
+    { "event": "terminalExhaustion", "lastRefreshed": "eventUtc", "lastModifiedDate": "eventUtc" }
+  ],
+  "http": {
+    "postAccepted": { "status": 202, "body": "", "headers": { "Location": "https://cms.example.test:8443/cms/v3/dataStores/manage/7" } },
+    "deleteAccepted": { "status": 204, "body": "", "headers": {} },
+    "emptyCollection": { "status": 200, "body": [] },
+    "closedReadiness": {
+      "status": 503,
+      "contentType": "application/problem+json",
+      "headers": {},
+      "body": {
+        "detail": "Managed data store provisioning is unavailable.",
+        "type": "urn:ed-fi:management-api:service-unavailable",
+        "title": "Service Unavailable",
+        "status": 503,
+        "correlationId": "fixture-correlation-id",
+        "validationErrors": {},
+        "errors": []
+      },
+      "aggregateWrites": 0, "reservationWrites": 0, "jobWrites": 0,
+      "lifecycleWrites": 0, "timestampWrites": 0, "linkWrites": 0, "physicalCalls": 0,
+      "earlyPostSecretResolutions": 0
+    }
+  },
+  "locations": [
+    { "scheme": "http", "host": "cms.example.test", "pathBase": "", "id": 7, "manageLocation": "http://cms.example.test/v3/dataStores/manage/7" },
+    { "scheme": "https", "host": "cms.example.test:8443", "pathBase": "/cms", "id": 7, "manageLocation": "https://cms.example.test:8443/cms/v3/dataStores/manage/7" },
+    { "scheme": "https", "host": "cms.example.test:8443", "pathBase": "/cms/", "id": 7, "manageLocation": "https://cms.example.test:8443/cms/v3/dataStores/manage/7" }
+  ],
+  "deleteStates": [
+    { "state": "PendingCreate", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "CreateInProgress", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "CreateFailed", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "CreateError", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "Created", "readyStatus": 204, "closedStatus": 503 },
+    { "state": "PendingDelete", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "DeleteInProgress", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "DeleteFailed", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "DeleteError", "readyStatus": 400, "closedStatus": 400 },
+    { "state": "Deleted", "readyStatus": 404, "closedStatus": 404 },
+    { "state": "absent", "readyStatus": 404, "closedStatus": 404 }
+  ],
+  "managedQuery": {
+    "defaults": { "offset": 0, "limit": 25, "orderBy": "id", "direction": "Descending" },
+    "orderBy": ["id", "name", "dataStoreId", "dataStoreName", "status", "databaseTemplate", "databaseName", "lastRefreshed", "lastModifiedDate"],
+    "nullPlacement": "last in both directions", "tieBreaker": "id in requested direction",
+    "cases": [
+      { "query": "", "status": 200 },
+      { "query": "orderBy=", "status": 200 },
+      { "query": "limit=2147483647&offset=2147483647", "status": 200 },
+      { "query": "id=0", "status": 200, "expectedIds": [] },
+      { "query": "id=-2147483648", "status": 200, "expectedIds": [] },
+      { "query": "name=", "status": 200, "expectedIds": [] },
+      { "query": "name=%20%20", "status": 200, "expectedIds": [] },
+      { "query": "offset=-1", "status": 400 },
+      { "query": "offset=", "status": 400 },
+      { "query": "limit=0", "status": 400 },
+      { "query": "limit=2147483648", "status": 400 },
+      { "query": "id=abc", "status": 400 },
+      { "query": "orderBy=%20", "status": 400 },
+      { "query": "orderBy=Name", "status": 400 },
+      { "query": "orderBy=id%3BDROP", "status": 400 },
+      { "query": "direction=", "status": 400 },
+      { "query": "direction=ASC", "status": 400 },
+      { "query": "direction=descending", "status": 400 },
+      { "query": "direction=Ascending", "status": 200 }
+    ]
+  },
+  "canonicalNames": {
+    "trimCodePoints": [9, 10, 11, 12, 13, 32, 133, 160, 5760, 8192, 8193, 8194, 8195, 8196, 8197, 8198, 8199, 8200, 8201, 8202, 8232, 8233, 8239, 8287, 12288],
+    "vectors": [
+      { "input": " Store ", "canonical": "store" },
+      { "input": "\u3000STORE\u00a0", "canonical": "store" },
+      { "input": "café", "canonical": "café" },
+      { "input": "cafe\u0301", "canonical": "cafe\u0301" },
+      { "input": "CAFÉ", "canonical": "cafÉ" },
+      { "input": "A B", "canonical": "a b" },
+      { "input": "A\tB", "canonical": "a\tb" },
+      { "input": "\u200bStore\u200b", "canonical": "\u200bstore\u200b" },
+      { "input": "\ufeffStore\ufeff", "canonical": "\ufeffstore\ufeff" },
+      { "input": "\ud83d\ude00A", "canonical": "\ud83d\ude00a" }
+    ],
+    "pairs": [
+      { "left": "Store", "right": "store", "equal": true, "managedPostWithExistingOrdinaryStatus": 400 },
+      { "left": "café", "right": "cafe", "equal": false, "managedPostWithExistingOrdinaryStatus": 202 },
+      { "left": "café", "right": "cafe\u0301", "equal": false },
+      { "left": "É", "right": "é", "equal": false }
+    ]
+  },
+  "ordinaryQuery": {
+    "rows": [
+      { "id": 1, "name": "z", "dataStoreType": "SQL" },
+      { "id": 2, "name": "aa", "dataStoreType": "SQL" },
+      { "id": 3, "name": "café", "dataStoreType": "sql" },
+      { "id": 4, "name": "cafe", "dataStoreType": "SQL " },
+      { "id": 5, "name": "\ue000", "dataStoreType": "SQL" },
+      { "id": 6, "name": "\ud800\udc00", "dataStoreType": "SQL" },
+      { "id": 7, "name": "cafe\u0301", "dataStoreType": "SQL" }
+    ],
+    "cases": [
+      { "query": "", "expectedIds": [1, 2, 3, 4, 5, 6, 7] },
+      { "query": "direction=descending", "expectedIds": [1, 2, 3, 4, 5, 6, 7] },
+      { "query": "offset=5", "expectedIds": [6, 7] },
+      { "query": "name=cafe", "expectedIds": [4] },
+      { "query": "name=caf%C3%A9", "expectedIds": [3] },
+      { "query": "name=%20CAFE%20", "expectedIds": [4] },
+      { "query": "name=", "expectedIds": [] },
+      { "query": "id=3&name=cafe", "expectedIds": [] },
+      { "query": "dataStoreType=sql", "expectedIds": [3] },
+      { "query": "dataStoreType=SQL%20", "expectedIds": [4] },
+      { "query": "name=cafe&dataStoreType=SQL", "expectedIds": [] },
+      { "query": "orderBy=name", "expectedIds": [2, 4, 7, 3, 1, 5, 6] },
+      { "query": "orderBy=NAME&direction=desc", "expectedIds": [6, 5, 1, 3, 7, 4, 2] },
+      { "query": "orderBy=name&offset=2&limit=2", "expectedIds": [7, 3] },
+      { "query": "orderBy=dataStoreType&direction=asc", "expectedIds": [1, 2, 5, 6, 7, 4, 3] },
+      { "query": "orderBy=dataStoreType&direction=descending", "expectedIds": [3, 4, 7, 6, 5, 2, 1] }
+    ]
+  }
+}

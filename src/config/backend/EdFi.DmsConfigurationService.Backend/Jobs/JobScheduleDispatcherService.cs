@@ -17,12 +17,17 @@ namespace EdFi.DmsConfigurationService.Backend.Jobs;
 /// transaction left it and is picked up again by a later poll. Failures are logged by their safe diagnostic fields and
 /// never fault the host.
 /// </summary>
+/// <remarks>
+/// Materialization applies the feature policy, so while data-store management is disabled a schedule of a managed job
+/// type is neither materialized nor advanced. Provisioning readiness does not apply here: it governs the worker only.
+/// </remarks>
 public sealed class JobScheduleDispatcherService(
     IServiceScopeFactory scopeFactory,
     JobMetrics metrics,
     IOptions<JobOptions> options,
     TimeProvider timeProvider,
-    ILogger<JobScheduleDispatcherService> logger
+    ILogger<JobScheduleDispatcherService> logger,
+    JobClaimPolicy featurePolicy
 ) : BackgroundService
 {
     internal static readonly EventId ScheduleOccurrenceEnqueued = new(
@@ -102,6 +107,7 @@ public sealed class JobScheduleDispatcherService(
                 Owner,
                 LeaseSeconds,
                 Guid.NewGuid().ToString("N"),
+                featurePolicy,
                 stoppingToken
             );
 

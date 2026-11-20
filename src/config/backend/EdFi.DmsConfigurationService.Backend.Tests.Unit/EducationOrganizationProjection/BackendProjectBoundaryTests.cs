@@ -392,7 +392,26 @@ public partial class BackendProjectBoundaryTests
                 .Should()
                 .BeEmpty();
 
-        [GeneratedRegex(@"EffectiveSchema|\bdms\.(?:""|\[|[A-Z])|""dms""\.|\[dms\]\.")]
+        [Test]
+        public void It_flags_the_effective_schema_table_but_not_a_pinned_artifact_hash()
+        {
+            DmsSchemaObject()
+                .IsMatch("""SELECT "EffectiveSchemaHash" FROM dms."EffectiveSchema";""")
+                .Should()
+                .BeTrue();
+            DmsSchemaObject().IsMatch("SELECT 1 FROM EffectiveSchema").Should().BeTrue();
+            DmsSchemaObject().IsMatch("SELECT 1 FROM [dms].[Document]").Should().BeTrue();
+            // A managed data store pins the trusted template package's recorded hash; that is artifact metadata,
+            // not the DMS EffectiveSchema table.
+            DmsSchemaObject().IsMatch("pin.EffectiveSchemaHash,").Should().BeFalse();
+            DmsSchemaObject()
+                .IsMatch("""  "PinnedEffectiveSchemaHash" VARCHAR(64) NULL,""")
+                .Should()
+                .BeFalse();
+        }
+
+        // The whole word: the EffectiveSchema table, never a longer identifier such as a pinned artifact hash.
+        [GeneratedRegex(@"\bEffectiveSchema\b|\bdms\.(?:""|\[|[A-Z])|""dms""\.|\[dms\]\.")]
         private static partial Regex DmsSchemaObject();
     }
 }

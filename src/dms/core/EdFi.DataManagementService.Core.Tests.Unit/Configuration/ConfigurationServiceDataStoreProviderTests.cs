@@ -45,6 +45,93 @@ public class ConfigurationServiceDataStoreProviderTests
     }
 
     [TestFixture]
+    public class Given_canonically_distinct_DataStore_names
+    {
+        [TestCase(null)]
+        [TestCase("TenantA")]
+        public async Task It_keeps_both_IDs_connections_and_contexts_when_loading_and_refreshing(
+            string? tenant
+        )
+        {
+            var handler = new TestHttpMessageHandler(HttpStatusCode.OK);
+            using var httpClient = new HttpClient(handler)
+            {
+                BaseAddress = new Uri("https://api.example.com/"),
+            };
+            var clock = new FakeTimeProvider();
+            var provider = new ConfigurationServiceDataStoreProvider(
+                new ConfigurationServiceApiClient(httpClient),
+                new StaticTokenHandler(),
+                new ConfigurationServiceContext("clientId", "secret", "scope"),
+                NullLogger<ConfigurationServiceDataStoreProvider>.Instance,
+                new ConnectionStringDecryptionService(TestEncryptionKey),
+                new CacheSettings
+                {
+                    DataStoreCacheRefreshEnabled = true,
+                    DataStoreCacheExpirationSeconds = 1,
+                },
+                clock
+            );
+            for (int revision = 0; revision < 2; revision++)
+            {
+                string[] names = revision == 0 ? ["café", "cafe"] : [" CAFé ", "CAFE"];
+                handler.SetResponse(
+                    "v3/dataStores/",
+                    names
+                        .Select(
+                            (name, index) =>
+                                new
+                                {
+                                    Id = 21L + index,
+                                    Name = name,
+                                    DataStoreType = "Production",
+                                    Provider = "postgresql",
+                                    ConnectionString = EncryptToBase64(
+                                        $"host=host{index};database=db{revision};",
+                                        TestEncryptionKey
+                                    ),
+                                    DataStoreContexts = new[]
+                                    {
+                                        new
+                                        {
+                                            Id = 31L + index,
+                                            DataStoreId = 21L + index,
+                                            ContextKey = "district",
+                                            ContextValue = $"district{index}",
+                                        },
+                                    },
+                                }
+                        )
+                        .ToArray()
+                );
+                if (revision == 0)
+                {
+                    (await provider.LoadDataStores(tenant)).Select(row => row.Id).Should().Equal(21L, 22L);
+                }
+                else
+                {
+                    clock.Advance(TimeSpan.FromSeconds(2));
+                    await provider.RefreshInstancesIfExpiredAsync(tenant);
+                }
+                provider.GetAll(tenant).Select(row => row.Id).Should().Equal(21L, 22L);
+                for (int index = 0; index < names.Length; index++)
+                {
+                    var store = provider.GetById(21L + index, tenant);
+                    store.Should().NotBeNull();
+                    store!.Name.Should().Be(names[index]);
+                    store.ConnectionString.Should().Be($"host=host{index};database=db{revision};");
+                    store
+                        .RouteContext[new RouteQualifierName("district")]
+                        .Should()
+                        .Be(new RouteQualifierValue($"district{index}"));
+                }
+            }
+            handler.LastTenantHeader.Should().Be(tenant);
+            handler.GetRequestCount("v3/dataStores/").Should().Be(2);
+        }
+    }
+
+    [TestFixture]
     public class Given_Valid_DataStores_From_ConfigService
     {
         private ConfigurationServiceDataStoreProvider? _provider;

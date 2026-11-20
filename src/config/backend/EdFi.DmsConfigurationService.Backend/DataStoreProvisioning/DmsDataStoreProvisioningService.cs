@@ -7,6 +7,7 @@ using System.Runtime.ExceptionServices;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -100,9 +101,28 @@ public sealed partial class DmsDataStoreProvisioningService(
         return await catalog.ResolveAsync(template, cancellationToken);
     }
 
-    public async Task<DmsDataStoreCreateResult> CreateAsync(
+    public Task<DmsDataStoreCreateResult> CreateAsync(
         DmsDataStoreCreateRequest request,
         CancellationToken cancellationToken
+    ) => CreateCoreAsync(request, null, cancellationToken, null);
+
+    public Task<DmsDataStoreCreateResult> CreateAsync(
+        DmsDataStoreCreateRequest request,
+        ManagedDataStoreEndpoint expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task> authorize,
+        CancellationToken cancellationToken
+    )
+    {
+        ArgumentNullException.ThrowIfNull(expectedEndpoint);
+        ArgumentNullException.ThrowIfNull(authorize);
+        return CreateCoreAsync(request, expectedEndpoint, cancellationToken, authorize);
+    }
+
+    private async Task<DmsDataStoreCreateResult> CreateCoreAsync(
+        DmsDataStoreCreateRequest request,
+        ManagedDataStoreEndpoint? expectedEndpoint,
+        CancellationToken cancellationToken,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -125,16 +145,24 @@ public sealed partial class DmsDataStoreProvisioningService(
         if (resolution is DmsAdminConnectionResolution.Failed unresolved)
         {
             return new DmsDataStoreCreateResult.Failure(
-                SecretResolutionFailure(unresolved),
+                SecretResolutionFailure(unresolved, expectedEndpoint),
                 DmsCleanupReport.Clean
             );
         }
 
+        DmsAdminConnectionString snapshot = ((DmsAdminConnectionResolution.Resolved)resolution).Connection;
+        if (
+            expectedEndpoint is not null
+            && ValidateEndpoint(expectedEndpoint, engine.ParseManagedEndpoint(snapshot))
+                is { } endpointFailure
+        )
+        {
+            return new DmsDataStoreCreateResult.Failure(endpointFailure, DmsCleanupReport.Clean);
+        }
+
         // Bound here, in the operation's own frame, so every engine call of this create, its cleanup and
         // recovery included, connects with this resolution and no other.
-        using IDisposable adminBinding = adminConnection.Bind(
-            ((DmsAdminConnectionResolution.Resolved)resolution).Connection
-        );
+        using IDisposable adminBinding = adminConnection.Bind(snapshot);
 
         // Runs before the lock so no lock is held during file work. The operation id names
         // the private directory, the staging database, and the holder session alike.
@@ -156,42 +184,54 @@ public sealed partial class DmsDataStoreProvisioningService(
             operation.StagingDatabaseName,
             request.ExpectedSourceIdentity
         );
-        DmsDataStoreCreateResult? result;
+        DmsDataStoreCreateResult? result = null;
         OperationCanceledException? cancellation = null;
         try
         {
-            if (artifact.Pin != request.PinnedArtifact)
+            StagedArtifact? stagedArtifact = null;
+            try
             {
-                throw new DmsProvisioningFailedException(
-                    DmsProvisioningFailure.Create(
-                        DmsProvisioningFailureCode.ArtifactChangedSinceCreate,
-                        DmsProvisioningDiagnostic.ForOperation(ResolveArtifactStep)
-                    )
+                if (artifact.Pin != request.PinnedArtifact)
+                {
+                    throw new DmsProvisioningFailedException(
+                        DmsProvisioningFailure.Create(
+                            DmsProvisioningFailureCode.ArtifactChangedSinceCreate,
+                            DmsProvisioningDiagnostic.ForOperation(ResolveArtifactStep)
+                        )
+                    );
+                }
+
+                // The artifact is extracted while hashing; a mismatch is ArtifactTampered.
+                stagedArtifact = await artifact.ExtractArtifactAsync(cancellationToken);
+            }
+            catch (DmsProvisioningFailedException stepFailure)
+            {
+                // A refusal before the lock: nothing was created on the server.
+                result = Fail(
+                    static (failure, cleanup) => new DmsDataStoreCreateResult.Failure(failure, cleanup),
+                    operation,
+                    CreateOperationName,
+                    stepFailure.Failure,
+                    DmsCleanupReport.Clean
                 );
             }
 
-            // The artifact is extracted while hashing; a mismatch is ArtifactTampered.
-            StagedArtifact stagedArtifact = await artifact.ExtractArtifactAsync(cancellationToken);
-            (result, cancellation) = await CreateUnderLockAsync(
-                request,
-                operation,
-                artifact,
-                stagedArtifact,
-                cleanup,
-                publication,
-                cancellationToken
-            );
-        }
-        catch (DmsProvisioningFailedException stepFailure)
-        {
-            // A refusal before the lock: nothing was created on the server.
-            result = Fail(
-                static (failure, cleanup) => new DmsDataStoreCreateResult.Failure(failure, cleanup),
-                operation,
-                CreateOperationName,
-                stepFailure.Failure,
-                DmsCleanupReport.Clean
-            );
+            // Caller admission is outside the artifact-failure boundary: every exception it supplies
+            // retains its type and identity. Physical step failures are handled under the target lock.
+            if (stagedArtifact is not null)
+            {
+                (result, cancellation) = await CreateUnderLockAsync(
+                    request,
+                    operation,
+                    artifact,
+                    stagedArtifact,
+                    cleanup,
+                    publication,
+                    expectedEndpoint,
+                    cancellationToken,
+                    authorize
+                );
+            }
         }
         finally
         {
@@ -942,7 +982,9 @@ public sealed partial class DmsDataStoreProvisioningService(
         DmsCleanupReport priorCleanup,
         Func<LockScope, Task<TResult>> body,
         Func<DmsProvisioningFailure, DmsCleanupReport, TResult> failure,
-        CancellationToken cancellationToken
+        CancellationToken cancellationToken,
+        ManagedDataStoreEndpoint? expectedEndpoint,
+        Func<ManagedDataStoreEndpoint, CancellationToken, Task>? authorize
     )
     {
         DmsDataStoreProvisioningOptions settings = options.Value;
@@ -950,6 +992,10 @@ public sealed partial class DmsDataStoreProvisioningService(
             Fail(failure, operation, operationName, detail, priorCleanup);
 
         // Cancellation during acquisition propagates: nothing was acquired and nothing was created.
+        if (authorize is not null)
+        {
+            await TestHooks.AtAsync(DmsProvisioningHookPoint.BeforeTargetLock, operation, cancellationToken);
+        }
         DmsTargetLockResult lockResult = await engine.AcquireTargetLockAsync(
             target,
             operation,
@@ -991,8 +1037,44 @@ public sealed partial class DmsDataStoreProvisioningService(
         LockScope scope = new(holder, operation, settings.CommandTimeout, timeProvider, cancellationToken);
         await using (holder)
         {
+            ManagedDataStoreEndpoint? actualEndpoint = ((DmsTargetLockResult.Acquired)lockResult).Endpoint;
+            if (
+                expectedEndpoint is not null
+                && ValidateEndpoint(expectedEndpoint, actualEndpoint) is { } endpointFailure
+            )
+            {
+                return Failed(endpointFailure);
+            }
+
+            if (authorize is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (holder.LostToken.IsCancellationRequested)
+                {
+                    return Failed(scope.LockLostFailure());
+                }
+                using CancellationTokenSource admissionCancellation =
+                    CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, holder.LostToken);
+                // Admission belongs to the caller's job fence, not the physical provider's exception
+                // classification. Preserve its exceptions (including lease loss and cancellation) unchanged.
+                await authorize(actualEndpoint!, admissionCancellation.Token);
+                cancellationToken.ThrowIfCancellationRequested();
+                if (holder.LostToken.IsCancellationRequested)
+                {
+                    return Failed(scope.LockLostFailure());
+                }
+            }
+
             try
             {
+                if (authorize is not null)
+                {
+                    await TestHooks.AtAsync(
+                        DmsProvisioningHookPoint.AfterAdmission,
+                        operation,
+                        cancellationToken
+                    );
+                }
                 return await body(scope);
             }
             catch (DmsProvisioningFailedException stepFailure)
@@ -1048,6 +1130,43 @@ public sealed partial class DmsDataStoreProvisioningService(
     private static DmsProvisioningFailure SecretResolutionFailure(
         DmsAdminConnectionResolution.Failed failed
     ) => DmsProvisioningFailure.Create(DmsProvisioningFailureCode.SecretResolutionFailed, failed.Diagnostic);
+
+    private static DmsProvisioningFailure SecretResolutionFailure(
+        DmsAdminConnectionResolution.Failed failed,
+        ManagedDataStoreEndpoint? expectedEndpoint
+    ) =>
+        expectedEndpoint is not null
+        && failed.Diagnostic.Operation == DmsAdminConnectionSource.UnusableValueStep
+            ? DmsProvisioningFailure.Create(
+                DmsProvisioningFailureCode.TargetEndpointUnverifiable,
+                failed.Diagnostic
+            )
+            : SecretResolutionFailure(failed);
+
+    private static DmsProvisioningFailure? ValidateEndpoint(
+        ManagedDataStoreEndpoint expected,
+        ManagedDataStoreEndpoint? actual
+    )
+    {
+        DmsProvisioningFailureCode code;
+        if (!expected.IsCanonical() || actual is null || !actual.IsCanonical())
+        {
+            code = DmsProvisioningFailureCode.TargetEndpointUnverifiable;
+        }
+        else if (expected != actual)
+        {
+            code = DmsProvisioningFailureCode.TargetEndpointChanged;
+        }
+        else
+        {
+            return null;
+        }
+
+        return DmsProvisioningFailure.Create(
+            code,
+            DmsProvisioningDiagnostic.ForOperation("ValidateTargetEndpoint")
+        );
+    }
 
     private DmsProvisioningFailure? Refusal() =>
         readiness.Current is DmsProvisionerReadiness.Ready

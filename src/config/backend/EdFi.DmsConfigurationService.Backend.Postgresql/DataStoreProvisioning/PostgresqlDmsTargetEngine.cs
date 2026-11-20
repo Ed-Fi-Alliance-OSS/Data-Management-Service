@@ -5,6 +5,7 @@
 
 using System.Diagnostics.CodeAnalysis;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using Microsoft.Extensions.Logging;
 using Npgsql;
 
@@ -174,6 +175,9 @@ public sealed partial class PostgresqlDmsTargetEngine : IDmsTargetEngine
         int serverVersionNum = reader.GetInt32(0);
         return new DmsServerFacts(serverVersionNum / 10000, null, null);
     }
+
+    public ManagedDataStoreEndpoint? ParseManagedEndpoint(DmsAdminConnectionString connection) =>
+        PostgresqlManagedEndpoint.TryParse(connection.Value, out var endpoint) ? endpoint : null;
 
     public Task<DmsTargetLockResult> AcquireTargetLockAsync(
         DmsTargetDatabaseName name,

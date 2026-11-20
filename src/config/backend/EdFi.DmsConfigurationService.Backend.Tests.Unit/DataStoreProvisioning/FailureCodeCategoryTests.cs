@@ -13,7 +13,7 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning;
 
 public class FailureCodeCategoryTests
 {
-    /// <summary>Spec section 8, pinned independently of the implementation table.</summary>
+    /// <summary>DMS-1438 spec section 8 plus the DMS-1439 section 5.7 endpoint failures, pinned independently of the implementation table.</summary>
     private static readonly IReadOnlyDictionary<
         DmsProvisioningFailureCode,
         DmsProvisioningFailureCategory[]
@@ -41,7 +41,8 @@ public class FailureCodeCategoryTests
         [Unknown] = [Transient],
         [ExclusiveAccessNotEstablished] = [Transient, OperatorInspectionRequired],
         [LockLost] = [Transient, OperatorInspectionRequired],
-        [ArtifactMissing] = [OperatorInspectionRequired],
+        // An accepted managed create retries a temporary artifact outage.
+        [ArtifactMissing] = [OperatorInspectionRequired, Transient],
         [ArtifactUntrusted] = [OperatorInspectionRequired],
         [ArtifactTampered] = [OperatorInspectionRequired],
         [ManifestInvalid] = [OperatorInspectionRequired],
@@ -55,6 +56,9 @@ public class FailureCodeCategoryTests
         [SecurityStateViolation] = [OperatorInspectionRequired],
         [StagingIntegrityViolation] = [OperatorInspectionRequired],
         [IdentityAssignmentFailed] = [OperatorInspectionRequired],
+        // DMS-1439 section 5.7: a destination change or unverifiable endpoint requires inspection.
+        [TargetEndpointChanged] = [OperatorInspectionRequired],
+        [TargetEndpointUnverifiable] = [OperatorInspectionRequired],
         [TargetUnowned] = [OperatorInspectionRequired],
         [TargetUnverifiable] = [OperatorInspectionRequired],
         [TargetFenced] = [OperatorInspectionRequired],
@@ -128,7 +132,7 @@ public class FailureCodeCategoryTests
         }
 
         [Test]
-        public void It_gives_exactly_seven_codes_a_context_dependent_category() =>
+        public void It_gives_exactly_eight_codes_a_context_dependent_category() =>
             _codes
                 .Where(code => DmsProvisioningFailure.CategoriesOf(code).Count > 1)
                 .Should()
@@ -137,6 +141,7 @@ public class FailureCodeCategoryTests
                     StagingFailed,
                     ExclusiveAccessNotEstablished,
                     LockLost,
+                    ArtifactMissing,
                     RestoreFailed,
                     DropFailed,
                     TrustPolicyUnavailable,

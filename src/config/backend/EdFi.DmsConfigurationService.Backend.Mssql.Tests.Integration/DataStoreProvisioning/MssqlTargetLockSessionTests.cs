@@ -32,6 +32,39 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Tests.Integration.DataStore
 [Category(Category)]
 public class MssqlTargetLockSessionTests
 {
+    [TestFixture]
+    public class Given_endpoint_capture_on_the_live_holder
+    {
+        [Test]
+        public async Task It_returns_only_the_descriptor_of_the_connection_it_opened()
+        {
+            RequireConfiguredOrSkip();
+            string original = AdminConnectionString!;
+            int reads = 0;
+            MssqlAdminConnection admin = new(
+                () => ++reads == 1 ? original : "invalid rotated connection",
+                TimeSpan.FromSeconds(30)
+            );
+            MssqlManagedEndpoint.TryParse(original, out var expected);
+            DmsTargetLockResult result = await MssqlTargetLockSession.AcquireAsync(
+                admin,
+                TargetName("endpoint"),
+                DmsOperationId.New(),
+                TimeSpan.FromSeconds(5),
+                TimeSpan.FromSeconds(5),
+                TimeProvider.System,
+                NullLogger.Instance,
+                CancellationToken.None
+            );
+            var acquired = result.Should().BeOfType<DmsTargetLockResult.Acquired>().Subject;
+            await using var holder = acquired.Holder;
+            reads.Should().Be(1);
+            // Unsupported standalone topologies (including LocalDB named pipes) deliberately carry null.
+            acquired.Endpoint.Should().Be(expected);
+            (await SelectOneAsync((MssqlTargetLockSession)holder)).Should().Be(1);
+        }
+    }
+
     private const string ExclusiveLockWait = "LCK_M_X";
 
     private static readonly TimeSpan _bound = TimeSpan.FromSeconds(20);

@@ -9,6 +9,7 @@ using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Catalog;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Manifest;
 using EdFi.DmsConfigurationService.Backend.DataStoreProvisioning.Packaging;
+using EdFi.DmsConfigurationService.Backend.ManagedDataStores;
 using EdFi.DmsConfigurationService.Backend.Mssql.DataStoreProvisioning;
 using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Backend.Tests.Unit.DataStoreProvisioning.Packaging;
@@ -136,6 +137,9 @@ internal sealed class RecordingEngine(MssqlDmsTargetEngine inner) : IDmsTargetEn
     public Func<DmsSession, DmsCommandOutcome>? InsteadOfMarker { get; set; }
 
     public string Provider => inner.Provider;
+
+    public ManagedDataStoreEndpoint? ParseManagedEndpoint(DmsAdminConnectionString connection) =>
+        inner.ParseManagedEndpoint(connection);
 
     public int CountOf(string member) => Calls.Count(call => call.Member == member);
 
