@@ -67,7 +67,8 @@
 param(
     # The released image to inspect. It is pulled, resolved to one immutable digest, and every
     # subsequent inspection uses that digest, so a tag republished mid-run cannot make one manifest
-    # describe two images.
+    # describe two images. For a multi-platform image the pull fetches only the runner's platform,
+    # and the manifest names that platform.
     [Parameter(Mandatory, ParameterSetName = "FromImage")]
     [string]
     $Image,
@@ -502,6 +503,7 @@ $stageIsOurs = $false
 $containerId = $null
 $inspectedReference = $null
 $inspectedDigest = $null
+$inspectedPlatform = $null
 $environmentEntries = @($ImageEnvironment)
 
 try {
@@ -529,13 +531,24 @@ try {
             $environmentDocument.Dispose()
         }
 
+        # The digest above can name a multi-platform image index, and the pull fetched only the
+        # runner's platform. The manifest records which platform the extracted files came from.
+        $platformResult = Invoke-Docker -Arguments @("image", "inspect", $inspectedReference, "--format", "{{.Os}}/{{.Architecture}}{{with .Variant}}/{{.}}{{end}}")
+        $inspectedPlatform = $platformResult.Output
+
+        if ($inspectedPlatform -notmatch '^[a-z0-9]+/[a-z0-9_]+(/[a-z0-9]+)?$') {
+            throw "Could not read the platform of $inspectedReference; docker reported '$inspectedPlatform'."
+        }
+
         $stageRoot = Join-Path ([System.IO.Path]::GetTempPath()) "host-assembly-manifest-$([guid]::NewGuid().ToString('N'))"
         New-Item -ItemType Directory -Path $stageRoot -Force | Out-Null
         $stageIsOurs = $true
 
         # create, never run. The entrypoint is not executed: this reads files, and starting a
         # database-backed API to list its own assemblies would be both slower and wrong.
-        $containerId = (Invoke-Docker -Arguments @("create", $inspectedReference)).Output
+        # The platform is named so the files come from the image whose platform was just read:
+        # docker create honors DOCKER_DEFAULT_PLATFORM, and docker image inspect does not.
+        $containerId = (Invoke-Docker -Arguments @("create", "--platform", $inspectedPlatform, $inspectedReference)).Output
 
         if ([string]::IsNullOrWhiteSpace($containerId)) {
             throw "docker create returned no container id for $inspectedReference."
@@ -721,9 +734,14 @@ try {
         "",
         "| Fact | Value |",
         "| --- | --- |",
-        "| Inspected image | $inspectedReference |",
-        "| Runtime base pinned by ``$dockerfileRelative`` in this checkout | $basePin |"
+        "| Inspected image | $inspectedReference |"
     )
+
+    if (-not [string]::IsNullOrWhiteSpace($inspectedPlatform)) {
+        $lines += "| Inspected platform | $inspectedPlatform |"
+    }
+
+    $lines += "| Runtime base pinned by ``$dockerfileRelative`` in this checkout | $basePin |"
 
     foreach ($name in @("DOTNET_VERSION", "ASPNET_VERSION")) {
         if ($declaredVersions.ContainsKey($name)) {
@@ -741,7 +759,18 @@ try {
         "The runtime base row is a fact about the checkout this manifest was generated from, not",
         "provenance for the image. It is cross-checked against the versions the image declares and",
         "carries, and a disagreement fails generation rather than being reported.",
-        "",
+        ""
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($inspectedPlatform)) {
+        $lines += @(
+            "The inspected image reference can name a multi-platform image index. Only the",
+            "$inspectedPlatform image was extracted and inspected, and every table below describes it.",
+            ""
+        )
+    }
+
+    $lines += @(
         "### Contract assemblies",
         ""
     )
@@ -795,7 +824,8 @@ try {
     [System.IO.File]::WriteAllText([System.IO.Path]::GetFullPath($OutputPath), $manifest)
 
     $frameworkSummary = ($frameworkSections | ForEach-Object { "$($_.Name) $($_.Version): $($_.Rows.Count)" }) -join "; "
-    Write-Output "Wrote $OutputPath from ${inspectedReference}: $($applicationRows.Count) application assemblies; $frameworkSummary."
+    $platformSummary = if ([string]::IsNullOrWhiteSpace($inspectedPlatform)) { "" } else { " ($inspectedPlatform)" }
+    Write-Output "Wrote $OutputPath from ${inspectedReference}${platformSummary}: $($applicationRows.Count) application assemblies; $frameworkSummary."
 }
 finally {
     if ($null -ne $containerId) {

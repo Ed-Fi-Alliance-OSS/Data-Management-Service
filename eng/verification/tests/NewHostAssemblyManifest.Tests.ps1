@@ -856,6 +856,66 @@ Describe "New-HostAssemblyManifest header cross-checks" {
 
         $manifest | Should -BeLike "*in this checkout*"
         $manifest | Should -BeLike "*not*provenance for the image*"
+        $manifest | Should -Not -BeLike "*Inspected platform*"
+        $manifest | Should -Not -BeLike "*image was extracted and inspected*"
+    }
+}
+
+Describe "New-HostAssemblyManifest inspected platform" {
+
+    It "reads the platform of a pulled image from the image itself" {
+        if (-not (Test-FixturesAvailable)) {
+            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
+        }
+
+        $fixture = New-ManifestFixture -Name "platform-image"
+        $fixtureRoot = $fixture.Root
+        $indexDigest = "example/ed-fi-api@sha256:$('a' * 64)"
+
+        # Stands in for docker, which the generator reaches by name, so the image parameter set runs
+        # against the fixture directory. arm64 rather than the runner's own platform, so the row can
+        # only come from what this shim reports. DOCKER_DEFAULT_PLATFORM names another platform,
+        # which real docker create would pick when no --platform is given, so only a create that
+        # names the inspected platform is accepted.
+        function docker {
+            $global:LASTEXITCODE = 0
+            $line = $args -join " "
+
+            if ($line -like "pull *" -or $line -like "rm *") { return }
+            if ($line -like "image inspect * {{index .RepoDigests 0}}") { return $indexDigest }
+            if ($line -like "image inspect * {{json .Config.Env}}") { return '["PATH=/usr/bin"]' }
+            if ($line -like "image inspect * {{.Os}}/{{.Architecture}}*") { return "linux/arm64" }
+            if ($line -ceq "create --platform linux/arm64 $indexDigest") { return "fixture-container" }
+            if ($line -like "cp fixture-container:/app *") {
+                Copy-Item -LiteralPath (Join-Path $fixtureRoot "app") -Destination $args[2] -Recurse
+                return
+            }
+            if ($line -like "cp fixture-container:/usr/share/dotnet/shared *") {
+                Copy-Item -LiteralPath (Join-Path $fixtureRoot "shared") -Destination $args[2] -Recurse
+                return
+            }
+
+            $global:LASTEXITCODE = 1
+            return "unexpected docker call: $line"
+        }
+
+        $savedDefaultPlatform = $env:DOCKER_DEFAULT_PLATFORM
+        $env:DOCKER_DEFAULT_PLATFORM = "linux/amd64"
+        try {
+            & $script:generator `
+                -Image "example/ed-fi-api:dms-pre-8.2.0" `
+                -EntryAssemblyName $script:entryAssemblyName `
+                -DockerfilePath $fixture.Dockerfile `
+                -OutputPath $fixture.OutputPath | Out-Null
+        }
+        finally {
+            $env:DOCKER_DEFAULT_PLATFORM = $savedDefaultPlatform
+        }
+
+        $manifest = [System.IO.File]::ReadAllText($fixture.OutputPath) -split "`n"
+
+        $manifest | Should -Contain "| Inspected image | $indexDigest |"
+        $manifest | Should -Contain "| Inspected platform | linux/arm64 |"
     }
 }
 

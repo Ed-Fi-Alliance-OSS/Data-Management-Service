@@ -212,3 +212,309 @@ Describe 'DMS prerelease image tag workflow wiring' {
         $script:dmsPublish | Should -Match '(?m)^      - publish-package-dms$'
     }
 }
+
+Describe 'Prerelease images build for every platform' {
+    BeforeAll {
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-prerelease.yml') -Raw
+
+        # The published image must run natively on both amd64 and arm64 hosts, and an arm64 image
+        # cannot be built on the amd64 runner without QEMU emulation registered before Buildx.
+        $script:jobSteps = @{
+            'docker-publish-dms' = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'docker-publish-dms'))
+            'docker-publish-cs'  = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'docker-publish-cs'))
+        }
+
+        function script:Get-BuildStep([string] $JobId, [string] $Name) {
+            return @($script:jobSteps[$JobId] | Where-Object { $_ -match "^      - name: $([regex]::Escape($Name))\r?\n" })
+        }
+    }
+
+    Context 'the <Name> build step' -ForEach @(
+        @{
+            Name     = 'DMS'
+            JobId    = 'docker-publish-dms'
+            StepName = 'Build and push DMS image'
+        }
+        @{
+            Name     = 'Configuration Service'
+            JobId    = 'docker-publish-cs'
+            StepName = 'Build and push Config image'
+        }
+    ) {
+        It 'declares exactly one platforms input, for amd64 and arm64' {
+            $build = @(script:Get-BuildStep $JobId $StepName)
+            $build.Count | Should -Be 1 -Because "the $Name job has one step named '$StepName'"
+
+            $platforms = @($build[0] -split '\r?\n' | Where-Object { $_ -match '^\s+platforms:' })
+            $platforms.Count | Should -Be 1 -Because "the $Name build step must declare platforms: once"
+            $platforms[0].Trim() | Should -BeExactly 'platforms: linux/amd64,linux/arm64'
+        }
+    }
+
+    Context 'the <Name> job QEMU setup' -ForEach @(
+        @{ Name = 'DMS'; JobId = 'docker-publish-dms' }
+        @{ Name = 'Configuration Service'; JobId = 'docker-publish-cs' }
+    ) {
+        It 'registers QEMU, pinned to a full commit SHA, before Buildx is set up' {
+            $steps = $script:jobSteps[$JobId]
+            $qemu = @(0..($steps.Count - 1) | Where-Object { $steps[$_] -match 'uses: docker/setup-qemu-action@[0-9a-f]{40} # v\d+\.\d+\.\d+' })
+            $buildx = @(0..($steps.Count - 1) | Where-Object { $steps[$_] -match 'uses: docker/setup-buildx-action@' })
+
+            $qemu.Count | Should -Be 1 -Because "the $Name job is missing its docker/setup-qemu-action step pinned to a SHA with a version comment"
+            $buildx.Count | Should -Be 1
+            $qemu[0] | Should -BeLessThan $buildx[0] -Because 'QEMU must be registered before Buildx creates its builder'
+        }
+
+        It 'registers only arm64, from a binfmt image pinned to a digest' {
+            $steps = $script:jobSteps[$JobId]
+            $qemu = @($steps | Where-Object { $_ -match 'uses: docker/setup-qemu-action@' })
+            $qemu.Count | Should -Be 1
+
+            # The action defaults to tonistiigi/binfmt:latest and to every platform it knows.
+            $lines = @($qemu[0] -split '\r?\n')
+            $lines | Should -Contain '          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0'
+            $lines | Should -Contain '          platforms: arm64'
+        }
+    }
+}
+
+Describe 'Release image promotion keeps every platform' {
+    BeforeAll {
+        # No -Force, for the reason package-helpers.psm1 gives.
+        Import-Module (Join-Path $PSScriptRoot 'WorkflowText.psm1') -ErrorAction Stop
+        $workflow = Get-Content (Join-Path $PSScriptRoot '../../../.github/workflows/on-release.yml') -Raw
+
+        # docker pull fetches only the runner's own platform, so promoting by pull, tag and push would
+        # republish a multi-platform prerelease image as a single platform. The registry copies the
+        # whole image index when the release tags are created from the prerelease tag directly.
+        $script:jobSteps = @{
+            'tag-dms-image' = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'tag-dms-image'))
+            'tag-cs-image'  = @(Get-WorkflowJobStep (Get-WorkflowJobText -Workflow $workflow -Id 'tag-cs-image'))
+        }
+
+        $script:promoteCommand = './eng/ci/Invoke-ReleaseImagePromotion.ps1 -Source $env:PRE_IMAGE -Tag $env:RELEASE_MAJOR, $env:RELEASE_MINOR'
+
+        function script:Get-PromoteStep([string] $JobId) {
+            return @($script:jobSteps[$JobId] | Where-Object { (Get-WorkflowStepRun $_).Trim() -ceq $script:promoteCommand })
+        }
+
+        function script:Get-PromoteStepIndex([string] $JobId) {
+            $steps = $script:jobSteps[$JobId]
+            return @(0..($steps.Count - 1) | Where-Object { (Get-WorkflowStepRun $steps[$_]).Trim() -ceq $script:promoteCommand })
+        }
+
+        function script:Get-StepIndexByName([string] $JobId, [string] $Name) {
+            $steps = $script:jobSteps[$JobId]
+            return @(0..($steps.Count - 1) | Where-Object { $steps[$_] -cmatch "^      - name: $([regex]::Escape($Name))\r?\n" })
+        }
+
+        # Reads the raw step text rather than Get-WorkflowStepRun, which returns only a block scalar
+        # and so would miss a one-line run: command. Comments are dropped first.
+        function script:Test-StepRunsDockerCopy([string] $Step) {
+            $code = @($Step -split '\r?\n' | ForEach-Object { $_ -replace '(^|\s)#.*$', '' }) -join "`n"
+            return $code -match '\bdocker\s+(tag|push|pull)\b'
+        }
+    }
+
+    Context 'the <Name> job' -ForEach @(
+        @{ Name = 'DMS'; JobId = 'tag-dms-image' }
+        @{ Name = 'Configuration Service'; JobId = 'tag-cs-image' }
+    ) {
+        It 'promotes with exactly one registry-side copy that reads its values from the environment' {
+            $promote = @(script:Get-PromoteStep $JobId)
+            $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
+
+            (Get-WorkflowStepRun $promote[0]) | Should -Not -Match '\$\{\{' -Because 'the promote script must read the tags from its environment, not from expressions expanded into the script'
+            $promote[0] | Should -Match '(?m)^        shell: pwsh\s*$' -Because 'the promote command reads $env: variables, which only PowerShell expands'
+        }
+
+        It 'maps the image names from the prepared tags into the promote step environment' {
+            $promote = @(script:Get-PromoteStep $JobId)
+            $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
+
+            $lines = @($promote[0] -split '\r?\n')
+            foreach ($name in 'PRE_IMAGE', 'RELEASE_MAJOR', 'RELEASE_MINOR') {
+                $lines | Should -Contain ('          {0}: ${{{{ steps.prepare-tags.outputs.{0} }}}}' -f $name) -Because "the promote step must map $name from the prepare-tags step"
+            }
+        }
+
+        It 'does not pull, tag or push the image on the runner' {
+            $steps = $script:jobSteps[$JobId]
+
+            @($steps | Where-Object { $_ -cmatch '(?m)^        uses: \./\.github/actions/pull-ci-images\s*$' }).Count |
+                Should -Be 0 -Because "the $Name job must not pull the prerelease image through the local action"
+            @($steps | Where-Object { script:Test-StepRunsDockerCopy $_ }).Count |
+                Should -Be 0 -Because "the $Name job must not run docker pull, tag or push, which keeps one platform"
+        }
+
+        It 'logs in to Docker Hub before it promotes' {
+            $login = @(script:Get-StepIndexByName $JobId 'Login to Docker hub')
+            $login.Count | Should -Be 1 -Because "the $Name job must have exactly one step named 'Login to Docker hub'"
+
+            $promote = @(script:Get-PromoteStepIndex $JobId)
+            $promote.Count | Should -Be 1 -Because "the $Name job must have exactly one step that runs: $script:promoteCommand"
+            $login[0] | Should -BeLessThan $promote[0] -Because 'the registry rejects the copy unless the job is logged in first'
+        }
+    }
+
+    It 'flags a docker push in a <Form> as a runner command: <Expected>' -ForEach @(
+        @{ Form = 'one-line run: command'; Expected = $true; Step = "      - name: Push`n        run: docker push example/image:1.0`n" }
+        @{ Form = 'block run: command'; Expected = $true; Step = "      - name: Push`n        run: |`n          docker push example/image:1.0`n" }
+        @{ Form = 'comment only'; Expected = $false; Step = "      # docker push is not used here`n      - name: Promote`n        run: ./promote.ps1 # not docker push`n" }
+    ) {
+        script:Test-StepRunsDockerCopy $Step | Should -Be $Expected
+    }
+}
+
+Describe 'Invoke-ReleaseImagePromotion retry behavior' {
+    BeforeAll {
+        $script:promotionScript = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../Invoke-ReleaseImagePromotion.ps1'))
+
+        # The script runs in a child pwsh with docker and Start-Sleep replaced by functions that
+        # record each call, so no registry and no real wait is involved.
+        $script:harnessPath = Join-Path $TestDrive 'invoke-promotion-harness.ps1'
+        Set-Content -LiteralPath $script:harnessPath -Encoding utf8 -Value @'
+$global:inspectCallIndex = 0
+$global:createCallIndex = 0
+
+function docker {
+    Add-Content -LiteralPath $env:PROMOTE_LOG -Value "docker $($args -join ' ')"
+
+    # One reply per resolution; the last one repeats. A later reply stands for the tag having moved
+    # in the registry, and "fail" for a failed inspect.
+    if ($args[1] -eq 'imagetools' -and $args[2] -eq 'inspect') {
+        $global:inspectCallIndex++
+        $replies = @($env:PROMOTE_INSPECT_REPLIES -split ',')
+        $reply = $replies[[Math]::Min($global:inspectCallIndex, $replies.Count) - 1]
+        if ($reply -eq 'fail') {
+            $global:LASTEXITCODE = 1
+            return
+        }
+
+        $global:LASTEXITCODE = 0
+        return $reply
+    }
+
+    # One exit code per call; the last one repeats.
+    $global:createCallIndex++
+    $codes = @($env:PROMOTE_EXIT_CODES -split ',' | ForEach-Object { [int] $_ })
+    $global:LASTEXITCODE = $codes[[Math]::Min($global:createCallIndex, $codes.Count) - 1]
+}
+
+function Start-Sleep {
+    param([int] $Seconds)
+    Add-Content -LiteralPath $env:PROMOTE_LOG -Value "sleep $Seconds"
+}
+
+# The message is written here, unwrapped: pwsh's own error view wraps it at the console width.
+try {
+    & $env:PROMOTE_SCRIPT -Source $env:PROMOTE_SOURCE -Tag 'example/api:8.2.0', 'example/api:8.2'
+}
+catch {
+    Write-Output "PROMOTION ERROR: $($_.Exception.Message)"
+    exit 1
+}
+'@
+
+        $script:source = 'example/api:dms-pre-8.2.0'
+        $script:digest = "sha256:$('a' * 64)"
+        $script:movedDigest = "sha256:$('b' * 64)"
+
+        # By default every resolution after the first returns another digest, so a script that
+        # resolved the tag again for a later attempt would promote different content.
+        function script:Invoke-Promotion(
+            [string] $ExitCodes,
+            [string] $InspectReplies = "$script:digest,$script:movedDigest",
+            [string] $Source = $script:source
+        ) {
+            $log = Join-Path $TestDrive "promotion-$([guid]::NewGuid().ToString('N')).log"
+            $env:PROMOTE_LOG = $log
+            $env:PROMOTE_EXIT_CODES = $ExitCodes
+            $env:PROMOTE_INSPECT_REPLIES = $InspectReplies
+            $env:PROMOTE_SOURCE = $Source
+            $env:PROMOTE_SCRIPT = $script:promotionScript
+            try {
+                $output = & pwsh -NoProfile -NonInteractive -File $script:harnessPath 2>&1
+                $exitCode = $LASTEXITCODE
+            }
+            finally {
+                Remove-Item Env:\PROMOTE_LOG, Env:\PROMOTE_EXIT_CODES, Env:\PROMOTE_INSPECT_REPLIES, Env:\PROMOTE_SOURCE, Env:\PROMOTE_SCRIPT -ErrorAction SilentlyContinue
+            }
+
+            return [pscustomobject]@{
+                ExitCode = $exitCode
+                Output   = ($output | Out-String)
+                Calls    = @(Get-Content -LiteralPath $log -ErrorAction SilentlyContinue)
+            }
+        }
+
+        $script:inspectCall = 'docker buildx imagetools inspect example/api:dms-pre-8.2.0 --format {{.Manifest.Digest}}'
+        $script:pinnedSource = "example/api:dms-pre-8.2.0@$script:digest"
+        $script:promoteCall = "docker buildx imagetools create --tag example/api:8.2.0 --tag example/api:8.2 $script:pinnedSource"
+    }
+
+    It 'resolves the source once and promotes that digest to both tags in one registry-side copy' {
+        $result = script:Invoke-Promotion '0'
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:inspectCall, $script:promoteCall)
+    }
+
+    It 'retries a transient failure with a doubling wait, promoting the first resolved digest every time' {
+        $result = script:Invoke-Promotion '1,1,0'
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:inspectCall, $script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall)
+    }
+
+    It 'fails the step after the last attempt fails, naming the pinned source' {
+        $result = script:Invoke-Promotion '1'
+
+        $result.ExitCode | Should -Be 1
+        $result.Calls | Should -Be @($script:inspectCall, $script:promoteCall, 'sleep 10', $script:promoteCall, 'sleep 20', $script:promoteCall, 'sleep 40', $script:promoteCall)
+        $result.Output | Should -BeLike "*PROMOTION ERROR: Failed to promote $script:pinnedSource to example/api:8.2.0, example/api:8.2 after 4 attempt(s)*"
+        $result.Output | Should -BeLike "*check which digest example/api:dms-pre-8.2.0 and each release tag now point at*"
+    }
+
+    It 'retries a failed lookup and then promotes the digest it resolves to both tags' {
+        $result = script:Invoke-Promotion '0' -InspectReplies "fail,$script:digest,$script:movedDigest"
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:inspectCall, 'sleep 10', $script:inspectCall, $script:promoteCall)
+    }
+
+    It 'spends one attempt budget on lookups and copies, and never resolves again once a digest is pinned' {
+        $result = script:Invoke-Promotion '1,0' -InspectReplies "fail,$script:digest,$script:movedDigest"
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @($script:inspectCall, 'sleep 10', $script:inspectCall, $script:promoteCall, 'sleep 20', $script:promoteCall)
+    }
+
+    It 'fails the step without writing when every lookup fails' {
+        $result = script:Invoke-Promotion '0' -InspectReplies 'fail'
+
+        $result.ExitCode | Should -Be 1
+        $result.Calls | Should -Be @($script:inspectCall, 'sleep 10', $script:inspectCall, 'sleep 20', $script:inspectCall, 'sleep 40', $script:inspectCall)
+        $result.Output | Should -BeLike '*PROMOTION ERROR: Could not resolve example/api:dms-pre-8.2.0 to a digest after 4 attempt(s); docker buildx imagetools inspect last exited with code 1. Nothing was promoted.*'
+    }
+
+    It 'fails at once without writing when the lookup prints no digest' {
+        $result = script:Invoke-Promotion '0' -InspectReplies 'not-a-digest'
+
+        $result.ExitCode | Should -Be 1
+        $result.Calls | Should -Be @($script:inspectCall)
+        $result.Output | Should -BeLike "*PROMOTION ERROR: Could not resolve example/api:dms-pre-8.2.0 to a digest; docker buildx imagetools inspect printed 'not-a-digest'. Nothing was promoted.*"
+    }
+
+    It 'replaces a digest already in the source with the resolved one' {
+        $result = script:Invoke-Promotion '0' -Source "example/api:dms-pre-8.2.0@$script:movedDigest" -InspectReplies $script:digest
+
+        $result.ExitCode | Should -Be 0
+        $result.Calls | Should -Be @(
+            "docker buildx imagetools inspect example/api:dms-pre-8.2.0@$script:movedDigest --format {{.Manifest.Digest}}",
+            $script:promoteCall
+        )
+    }
+}

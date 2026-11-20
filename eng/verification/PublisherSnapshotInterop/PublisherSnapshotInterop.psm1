@@ -1302,7 +1302,8 @@ function Test-InteropSqlServerMemoryFailure {
     With -DmsImageTag the stack comes up from published images instead, through
     eng/docker-compose/bootstrap-published-dms.ps1 (the dms-published project): the Ed-Fi API image at that tag and
     the Configuration Service image named by -ConfigurationServiceImage, which the environment file already carries.
-    The images are pulled for linux/amd64 first when they are not present. The schema of every data store is still
+    An image that is not present is pulled first for the host's platform, or for linux/amd64 when the tag carries no
+    image for the host's platform. The schema of every data store is still
     provisioned with the SchemaTools built from this checkout, so the checkout must be at, or have the same
     relational mapping as, the revision the published image was built from; a mismatch shows as an
     EffectiveSchemaHash 503 on the first request.
@@ -1815,11 +1816,14 @@ function Get-InteropContainerImage {
 
 <#
 .SYNOPSIS
-    Makes sure a published image is present locally, pulling it for linux/amd64 when it is not.
+    Makes sure a published image is present locally, pulling it when it is not.
 
 .DESCRIPTION
-    The published images are amd64-only, so on an arm64 host the platform is named explicitly; the stack then
-    runs them under emulation.
+    An image already present locally is used as it is, whatever its platform. Otherwise the image is pulled for the
+    host's platform, which an image published since multi-platform publishing began carries. Ed-Fi API and
+    Configuration Service images published before then, such as the 8.0.0 and 8.1.0 release tags, are amd64-only; when
+    Docker reports that the tag has no manifest for the host's platform, the pull is retried once for linux/amd64 and
+    the stack runs that image under emulation. Any other pull failure, and a failure of that retry, is thrown.
 #>
 function Assert-InteropPublishedImage {
     [CmdletBinding()]
@@ -1834,8 +1838,21 @@ function Assert-InteropPublishedImage {
         return
     }
 
-    Write-InteropStep "Pulling the published image $Image (linux/amd64)."
-    $null = Invoke-InteropDocker -Argument @("pull", "--platform", "linux/amd64", $Image)
+    Write-InteropStep "Pulling the published image $Image."
+    try {
+        $null = Invoke-InteropDocker -Argument @("pull", $Image)
+    }
+    catch {
+        # Docker reports the platform mismatch as "no matching manifest for"; older Docker versions
+        # with the containerd image store report it as "no match for platform in manifest".
+        $message = $_.Exception.Message
+        if ($message -notlike "*no matching manifest for*" -and $message -notlike "*no match for platform in manifest*") {
+            throw
+        }
+
+        Write-InteropStep "$Image has no image for this host's platform; pulling it for linux/amd64."
+        $null = Invoke-InteropDocker -Argument @("pull", "--platform", "linux/amd64", $Image)
+    }
 }
 
 <#

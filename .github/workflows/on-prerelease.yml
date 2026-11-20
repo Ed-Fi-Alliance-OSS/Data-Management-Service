@@ -1884,6 +1884,14 @@ jobs:
         shell: pwsh
         run: ./eng/ci/Get-DmsPrereleaseImageTag.ps1 -ReleaseRef $env:REF -TaggedRelease $env:TAGGED_RELEASE -ImageName $env:IMAGE_NAME
 
+      # The binfmt image is pinned to a digest, and only arm64 is registered: the build needs no
+      # other emulated platform. The action's defaults are tonistiigi/binfmt:latest and all.
+      - name: Set up DMS QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
       - name: Set up DMS Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -1909,6 +1917,7 @@ jobs:
           file: Nuget.Dockerfile
           tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
           push: true
 
   attach-dms-host-assembly-manifest:
@@ -2708,6 +2717,14 @@ jobs:
           echo "DMSTAGS=$DMSTAGS" >> "$GITHUB_OUTPUT"
           echo "VERSION=$SEMVERSION" >> "$GITHUB_OUTPUT"
 
+      # The binfmt image is pinned to a digest, and only arm64 is registered: the build needs no
+      # other emulated platform. The action's defaults are tonistiigi/binfmt:latest and all.
+      - name: Set up Config QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3.7.0
+        with:
+          image: docker.io/tonistiigi/binfmt:qemu-v10.2.3-68@sha256:400a4873b838d1b89194d982c45e5fb3cda4593fbfd7e08a02e76b03b21166f0
+          platforms: arm64
+
       - name: Set up Config Docker Buildx
         uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
 
@@ -2735,6 +2752,7 @@ jobs:
           file: Nuget.Dockerfile
           tags: ${{ steps.prepare-tags.outputs.DMSTAGS }}
           labels: ${{ steps.metadatamanagementservice.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
           push: true
 
   # Security Metadata Tools uses the cs- release source and its own committed patch.
