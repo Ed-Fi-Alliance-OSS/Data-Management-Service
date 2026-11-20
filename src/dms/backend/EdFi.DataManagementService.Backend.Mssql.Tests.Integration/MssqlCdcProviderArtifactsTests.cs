@@ -1060,12 +1060,13 @@ public class Given_MssqlCdcProviderArtifacts
         value == "none" || value.StartsWith("0x", StringComparison.Ordinal);
 
     /// <summary>
-    /// Writes a setup's SQL errors to the live log, so their number, state and statement reach it
-    /// whichever assertion then fails, including during a OneTimeSetUp.
+    /// Writes a setup's exception-derived diagnostics to the live log, so their class, number, state
+    /// and statement reach it whichever assertion then fails, including during a OneTimeSetUp. Keyed
+    /// on the error class, which a non-SQL failure such as InvalidOperationException also sets.
     /// </summary>
     internal static async Task<CdcProviderSetupResult> LogProviderErrorsAsync(CdcProviderSetupResult result)
     {
-        if (result.Diagnostics.Any(diagnostic => diagnostic.ProviderErrorCode is not null))
+        if (result.Diagnostics.Any(diagnostic => diagnostic.ProviderErrorClass is not null))
         {
             await TestContext.Progress.WriteLineAsync(
                 $"{TestContext.CurrentContext.Test.FullName} CDC setup provider errors: "
@@ -1153,7 +1154,16 @@ public class Given_MssqlCdcProviderArtifacts_With_A_Legacy_CreatedAt_Column
 
         // Create every CDC prerequisite against the five-column table, then confirm it validates cleanly,
         // so the legacy column is the only difference in the second validation.
-        await RunSetupAsync(connection, CdcProviderSetupMode.InitialCreateOrExactMatch);
+        CdcProviderSetupResult initialSetup = await RunSetupAsync(
+            connection,
+            CdcProviderSetupMode.InitialCreateOrExactMatch
+        );
+        initialSetup
+            .Outcome.Should()
+            .Be(
+                CdcProviderSetupOutcome.CreatedOrMatched,
+                Given_MssqlCdcProviderArtifacts.DescribeDiagnostics(initialSetup.Diagnostics)
+            );
         _fiveColumnValidation = await RunSetupAsync(connection, CdcProviderSetupMode.ValidateOnly);
 
         await Given_MssqlCdcProviderArtifacts.ExecuteNonQueryAsync(

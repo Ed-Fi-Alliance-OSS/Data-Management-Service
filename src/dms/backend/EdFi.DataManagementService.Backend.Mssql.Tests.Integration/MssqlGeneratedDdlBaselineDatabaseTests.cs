@@ -599,6 +599,8 @@ public class Given_Concurrently_Disposed_Baseline_Slots
             // A first disposal that fails before its fence never signals; stop waiting when it ends.
             if (await Task.WhenAny(_firstAtFence.Task, firstDisposal) == _firstAtFence.Task)
             {
+                // Called directly, not queued: the second disposal's first incomplete await is the
+                // lifecycle gate the first holds, so it is waiting there when this call returns.
                 Task secondDisposal = DisposeSlotAsync(1);
                 disposals.Add(secondDisposal);
                 _secondPendingWhileFirstHeld =
@@ -618,19 +620,20 @@ public class Given_Concurrently_Disposed_Baseline_Slots
         }
     }
 
-    private Task DisposeSlotAsync(int index) =>
-        Task.Run(async () =>
+    private async Task DisposeSlotAsync(int index)
+    {
+        try
         {
-            try
-            {
-                await _leases[index].DisposeAsync();
-                await _managers[index].DisposeAsync();
-            }
-            catch (Exception exception)
-            {
-                _disposalExceptions.Add(exception);
-            }
-        });
+            // The lease return completes synchronously while the manager handle is held, so the
+            // manager disposal reaches the lifecycle gate before this method first yields.
+            await _leases[index].DisposeAsync();
+            await _managers[index].DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            _disposalExceptions.Add(exception);
+        }
+    }
 
     [OneTimeTearDown]
     public async Task OneTimeTearDown()
@@ -677,8 +680,9 @@ public class Given_Concurrently_Disposed_Baseline_Slots
     [Test]
     public void It_starts_the_second_disposal_while_the_first_holds_the_gate()
     {
-        // The arrangement this fixture depends on: the second teardown was in flight while the first
-        // waited inside the lifecycle gate, before its source fence.
+        // The arrangement this fixture depends on: the second teardown was waiting on the lifecycle
+        // gate while the first held it, before its source fence. The gate wait is the second
+        // teardown's first incomplete await, so pending here means blocked there.
         _secondPendingWhileFirstHeld.Should().BeTrue(DescribeObservations());
     }
 
