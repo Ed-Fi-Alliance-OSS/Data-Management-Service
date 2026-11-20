@@ -186,9 +186,9 @@ Its four acceptance criteria and its child tickets stand as follows.
 
 | DMS-62 criterion | State | Relationship to this design |
 | --- | --- | --- |
-| Trace ID in log files can come from an upstream proxy or gateway | Met: [DMS-66](https://edfi.atlassian.net/browse/DMS-66) Done; `AppSettings:CorrelationIdHeader` (`docs/CONFIGURATION.md:199`) | Capture rows carry the same correlation ID, subject to [D4](#d4-credential-exclusion) |
+| Trace ID in log files can come from an upstream proxy or gateway | Met in code: `AppSettings:CorrelationIdHeader` (`docs/CONFIGURATION.md:199`). Its story, [DMS-66](https://edfi.atlassian.net/browse/DMS-66), was closed as a duplicate | Capture rows carry the same correlation ID, subject to [D4](#d4-credential-exclusion) |
 | Enrich saved documents with the trace ID | Met: [DMS-65](https://edfi.atlassian.net/browse/DMS-65) Done | None |
-| Incorporate OpenTelemetry | [DMS-61](https://edfi.atlassian.net/browse/DMS-61) Done; [DMS-63](https://edfi.atlassian.net/browse/DMS-63) auto-instrumentation Open | None. OTLP export is why the logging pipeline is not the sink |
+| Incorporate OpenTelemetry | Partly met: OTLP log export, [DMS-1335](https://edfi.atlassian.net/browse/DMS-1335), is Done. [DMS-61](https://edfi.atlassian.net/browse/DMS-61) was closed as a duplicate and cloned into [DMS-63](https://edfi.atlassian.net/browse/DMS-63), auto-instrumentation, which is Open | None. OTLP export is why the logging pipeline is not the sink |
 | Logs establish non-repudiation per the Ed-Fi API Guidelines | [DMS-64](https://edfi.atlassian.net/browse/DMS-64) Open | Out of scope: DMS-1419 excludes long-term audit and compliance retention |
 
 **Why not merge.**
