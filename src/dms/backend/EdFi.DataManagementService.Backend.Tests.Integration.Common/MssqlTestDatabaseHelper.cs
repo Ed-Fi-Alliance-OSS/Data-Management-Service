@@ -13,6 +13,7 @@ public static class MssqlTestDatabaseHelper
 {
     private const int DefaultCommandTimeoutSeconds = 300;
     private const int DropDatabaseMaxAttempts = 6;
+    private const int CdcJobStepSessionWaitSeconds = 30;
     private const int GeneratedDdlDataFileSizeMb = 256;
     private const int GeneratedDdlDataFileGrowthMb = 256;
     private const int GeneratedDdlLogFileSizeMb = 128;
@@ -182,40 +183,121 @@ public static class MssqlTestDatabaseHelper
 
         await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(async connection =>
         {
-            IReadOnlyList<string> snapshotNames = await ReadOwnedSnapshotNamesAsync(
-                connection,
-                databaseName,
-                commandTimeoutSeconds
-            );
-
-            foreach (var snapshotName in snapshotNames)
+            try
             {
-                await DropSnapshotIfExistsAsync(connection, snapshotName, commandTimeoutSeconds);
-                await VerifyDatabaseDoesNotExistAsync(connection, snapshotName, commandTimeoutSeconds);
+                await DropSnapshotsAndSourceDatabaseAsync(connection, databaseName, commandTimeoutSeconds);
             }
-
-            IReadOnlyList<string> remainingSnapshotNames = await ReadOwnedSnapshotNamesAsync(
-                connection,
-                databaseName,
-                commandTimeoutSeconds
-            );
-            if (remainingSnapshotNames.Count != 0)
+            catch (Exception exception)
             {
-                throw new InvalidOperationException(
-                    $"SQL Server snapshots owned by database '{databaseName}' remain after teardown: {string.Join(", ", remainingSnapshotNames)}."
+                // Rethrown unchanged: the deadlock and transient retries classify this exception.
+                await ReportDatabaseSessionsAsync(
+                    databaseName,
+                    $"teardown failed with {DescribeFailure(exception)}",
+                    commandTimeoutSeconds
+                );
+                throw;
+            }
+        });
+    }
+
+    private static async Task DropSnapshotsAndSourceDatabaseAsync(
+        SqlConnection connection,
+        string databaseName,
+        int commandTimeoutSeconds
+    )
+    {
+        IReadOnlyList<string> snapshotNames = await ReadOwnedSnapshotNamesAsync(
+            connection,
+            databaseName,
+            commandTimeoutSeconds
+        );
+
+        foreach (var snapshotName in snapshotNames)
+        {
+            await DropSnapshotIfExistsAsync(connection, snapshotName, commandTimeoutSeconds);
+            await VerifyDatabaseDoesNotExistAsync(connection, snapshotName, commandTimeoutSeconds);
+        }
+
+        IReadOnlyList<string> remainingSnapshotNames = await ReadOwnedSnapshotNamesAsync(
+            connection,
+            databaseName,
+            commandTimeoutSeconds
+        );
+        if (remainingSnapshotNames.Count != 0)
+        {
+            throw new InvalidOperationException(
+                $"SQL Server snapshots owned by database '{databaseName}' remain after teardown: {string.Join(", ", remainingSnapshotNames)}."
+            );
+        }
+
+        await DropCdcAgentJobsAsync(connection, databaseName, commandTimeoutSeconds);
+
+        if (BeforeSourceFenceObservationHook is { } observationHook)
+        {
+            await observationHook(connection, databaseName);
+        }
+
+        await DropSourceDatabaseIfExistsAsync(connection, databaseName, commandTimeoutSeconds);
+        await VerifyDatabaseDoesNotExistAsync(connection, databaseName, commandTimeoutSeconds);
+    }
+
+    private static string DescribeFailure(Exception exception)
+    {
+        return exception is SqlException sqlException
+            ? $"SQL Server error {string.Join(", ", sqlException.Errors.Cast<SqlError>().Select(error => error.Number))}"
+            : exception.GetType().Name;
+    }
+
+    /// <summary>
+    /// Writes one line to the test output that names the database and every session connected to it or to
+    /// one of its snapshots, so a teardown never degrades or fails without saying what still held the
+    /// database. Best effort: the teardown's own outcome never depends on it.
+    /// </summary>
+    private static async Task ReportDatabaseSessionsAsync(
+        string databaseName,
+        string reason,
+        int commandTimeoutSeconds
+    )
+    {
+        const string sql = """
+            SELECT sessions.[session_id], databases.[name], ISNULL(sessions.[program_name], N''), sessions.[status]
+            FROM sys.dm_exec_sessions sessions
+            INNER JOIN sys.databases databases ON databases.[database_id] = sessions.[database_id]
+            WHERE databases.[name] = @databaseName
+               OR databases.[source_database_id] = DB_ID(@databaseName)
+            ORDER BY sessions.[session_id];
+            """;
+
+        string sessions;
+        try
+        {
+            // A connection of its own, because the lifecycle connection may be what just failed.
+            await using SqlConnection connection = CreateMasterConnection();
+            await connection.OpenAsync();
+            await using SqlCommand command = connection.CreateCommand();
+            command.CommandText = sql;
+            command.CommandTimeout = commandTimeoutSeconds;
+            command.Parameters.Add(new SqlParameter("@databaseName", databaseName));
+
+            List<string> rows = [];
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                rows.Add(
+                    $"{reader.GetInt16(0)} '{reader.GetString(2)}' ({reader.GetString(3)}) in '{reader.GetString(1)}'"
                 );
             }
 
-            await DropCdcAgentJobsAsync(connection, databaseName, commandTimeoutSeconds);
+            sessions = rows.Count == 0 ? "none" : string.Join("; ", rows);
+        }
+        catch (Exception exception)
+        {
+            sessions = $"unknown, because the session query failed with {exception.GetType().Name}";
+        }
 
-            if (BeforeSourceFenceObservationHook is { } observationHook)
-            {
-                await observationHook(connection, databaseName);
-            }
-
-            await DropSourceDatabaseIfExistsAsync(connection, databaseName, commandTimeoutSeconds);
-            await VerifyDatabaseDoesNotExistAsync(connection, databaseName, commandTimeoutSeconds);
-        });
+        await Console.Error.WriteLineAsync(
+            $"SQL Server test database '{databaseName}' teardown: {reason}. Sessions connected to it: {sessions}."
+        );
     }
 
     public static async Task<IReadOnlyList<MssqlRunOwnedDatabase>> ReadRunOwnedDatabasesAsync(
@@ -622,9 +704,10 @@ public static class MssqlTestDatabaseHelper
         }
 
         // sp_cdc_drop_job stops the job asynchronously: its session leaves the database about 10 ms later.
-        // Wait for that signal (bounded); past the limit the fence ends the session as before.
+        // Wait for that signal, bounded. A session still connected at the limit is reported, and then the
+        // fence ends it.
         const string waitForJobStepSessionsSql = """
-            DECLARE @deadline datetime2 = DATEADD(second, 30, SYSUTCDATETIME());
+            DECLARE @deadline datetime2 = DATEADD(second, @waitSeconds, SYSUTCDATETIME());
             WHILE EXISTS (
                     SELECT 1
                     FROM sys.dm_exec_sessions
@@ -633,13 +716,28 @@ public static class MssqlTestDatabaseHelper
                 )
                 AND SYSUTCDATETIME() < @deadline
                 WAITFOR DELAY '00:00:00.010';
+
+            SELECT COUNT(*)
+            FROM sys.dm_exec_sessions
+            WHERE [database_id] = DB_ID(@databaseName)
+              AND [program_name] LIKE N'SQLAgent - TSQL JobStep%';
             """;
 
         await using SqlCommand waitCommand = connection.CreateCommand();
         waitCommand.CommandText = waitForJobStepSessionsSql;
         waitCommand.CommandTimeout = commandTimeoutSeconds;
         waitCommand.Parameters.Add(new SqlParameter("@databaseName", databaseName));
-        await waitCommand.ExecuteNonQueryAsync();
+        waitCommand.Parameters.Add(new SqlParameter("@waitSeconds", CdcJobStepSessionWaitSeconds));
+        var remainingSessionCount = Convert.ToInt32(await waitCommand.ExecuteScalarAsync());
+
+        if (remainingSessionCount != 0)
+        {
+            await ReportDatabaseSessionsAsync(
+                databaseName,
+                $"{remainingSessionCount} SQL Agent job-step session(s) still connected {CdcJobStepSessionWaitSeconds} s after its CDC jobs were dropped; the fence ends them next",
+                commandTimeoutSeconds
+            );
+        }
     }
 
     private static async Task DropSourceDatabaseIfExistsAsync(

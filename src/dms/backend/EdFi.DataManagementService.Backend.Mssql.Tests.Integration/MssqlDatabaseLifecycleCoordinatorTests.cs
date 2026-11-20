@@ -14,6 +14,7 @@ using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 using NUnit.Framework;
+using static EdFi.DataManagementService.Backend.Mssql.Tests.Integration.MssqlTeardownTestSupport;
 
 namespace EdFi.DataManagementService.Backend.Mssql.Tests.Integration;
 
@@ -252,6 +253,7 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
     private readonly List<FenceObservation> _observations = [];
     private string _databaseName = null!;
     private Exception? _dropException;
+    private string _teardownReport = "";
     private bool _databaseExistsAfterDrop;
     private bool _sqlAgentRunning;
 
@@ -264,7 +266,7 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
 
         _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
         await MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(_databaseName);
-        await EnableCdcAsync();
+        await EnableCdcAsync(_databaseName, withCaptureInstance);
 
         _sqlAgentRunning = await IsSqlAgentRunningAsync();
         if (withCaptureInstance && _sqlAgentRunning)
@@ -275,11 +277,9 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = ObserveFenceAsync;
         try
         {
-            await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName);
-        }
-        catch (Exception exception)
-        {
-            _dropException = exception;
+            (_teardownReport, _dropException) = await CaptureConsoleErrorAsync(() =>
+                MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName)
+            );
         }
         finally
         {
@@ -341,6 +341,12 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         _databaseExistsAfterDrop.Should().BeFalse(DescribeObservations());
     }
 
+    [Test]
+    public void It_reports_nothing_when_the_teardown_is_not_degraded()
+    {
+        _teardownReport.Should().BeEmpty(DescribeObservations());
+    }
+
     private async Task ObserveFenceAsync(SqlConnection connection, string databaseName)
     {
         if (!string.Equals(databaseName, _databaseName, StringComparison.Ordinal))
@@ -387,38 +393,6 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         List<string> sessions = await ReadStringsAsync(reader);
 
         _observations.Add(new(databaseExists, jobTypes, sessions));
-    }
-
-    private async Task EnableCdcAsync()
-    {
-        await using SqlConnection connection = await OpenConnectionAsync(_databaseName);
-        await ExecuteNonQueryAsync(
-            connection,
-            """
-            CREATE TABLE [dbo].[CdcTeardownProbe]
-            (
-                [ProbeId] int NOT NULL CONSTRAINT [PK_CdcTeardownProbe] PRIMARY KEY CLUSTERED,
-                [ProbeValue] int NOT NULL
-            );
-
-            EXEC sys.sp_cdc_enable_db;
-            """
-        );
-
-        if (withCaptureInstance)
-        {
-            // The first capture instance creates and starts the database's capture and cleanup jobs.
-            await ExecuteNonQueryAsync(
-                connection,
-                """
-                EXEC sys.sp_cdc_enable_table
-                    @source_schema = N'dbo',
-                    @source_name = N'CdcTeardownProbe',
-                    @role_name = NULL,
-                    @supports_net_changes = 0;
-                """
-            );
-        }
     }
 
     private static async Task<bool> IsSqlAgentRunningAsync()
@@ -581,7 +555,235 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         return values;
     }
 
-    private static async Task<bool> DatabaseExistsAsync(SqlConnection connection, string databaseName)
+    private sealed record FenceObservation(
+        bool DatabaseExists,
+        IReadOnlyList<string> CdcJobTypes,
+        IReadOnlyList<string> JobStepSessions
+    );
+}
+
+/// <summary>
+/// The teardown waits a bounded time for SQL Agent to end a dropped CDC job's session. A job-step session
+/// still connected at the limit is reported (database, session and program) before the fence ends it, and
+/// the drop still completes. The stand-in session carries the program-name prefix the helper uses to
+/// recognize SQL Agent job steps; it works with SQL Agent on or off, because enabling a capture instance
+/// writes the database's <c>msdb.dbo.cdc_jobs</c> rows either way.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_A_Cdc_Job_Step_Session_That_Outlasts_The_Teardown_Wait
+{
+    private const string StandInProgramName = "SQLAgent - TSQL JobStep (DMS teardown stand-in)";
+
+    private string _databaseName = null!;
+    private short _standInSessionId;
+    private string _teardownReport = "";
+    private Exception? _dropException;
+    private bool _databaseExistsAfterDrop;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server CDC teardown integration tests require a MssqlAdmin connection string."
+        );
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        await MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(_databaseName);
+        await EnableCdcAsync(_databaseName, withCaptureInstance: true);
+
+        // The fence ends this session; disposing the broken, unpooled connection afterwards is harmless.
+        await using SqlConnection standIn = await OpenConnectionAsync(_databaseName, StandInProgramName);
+        _standInSessionId = await ReadSessionIdAsync(standIn);
+
+        (_teardownReport, _dropException) = await CaptureConsoleErrorAsync(() =>
+            MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName)
+        );
+
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        _databaseExistsAfterDrop = await DatabaseExistsAsync(connection, _databaseName);
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_databaseName is null)
+        {
+            return;
+        }
+
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        if (await DatabaseExistsAsync(connection, _databaseName))
+        {
+            await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_reports_the_job_step_session_left_after_the_wait()
+    {
+        _teardownReport
+            .Should()
+            .Contain($"'{_databaseName}'")
+            .And.Contain("after its CDC jobs were dropped")
+            .And.Contain($"{_standInSessionId} '{StandInProgramName}'");
+    }
+
+    [Test]
+    public void It_still_drops_the_database()
+    {
+        _dropException.Should().BeNull(_teardownReport);
+        _databaseExistsAfterDrop.Should().BeFalse(_teardownReport);
+    }
+}
+
+/// <summary>
+/// Models the tail of the CI failure: a database left in single-user mode with a session still in it makes
+/// the fence fail with 5064. The failure must name the session that holds the database, and reach the
+/// caller unchanged so that the deadlock and transient retries still classify it.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_A_Database_Held_In_Single_User_Mode_At_The_Teardown_Fence
+{
+    private const string HolderProgramName = "DMS teardown single-user holder";
+
+    private string _databaseName = null!;
+    private SqlConnection? _holder;
+    private short _holderSessionId;
+    private string _teardownReport = "";
+    private Exception? _dropException;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        MssqlConnectionStringGuard.RequireConfiguredForCiOrSkipLocally(
+            "SQL Server teardown integration tests require a MssqlAdmin connection string."
+        );
+
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        await MssqlTestDatabaseHelper.CreateDatabaseUnderLifecycleGateAsync(_databaseName);
+
+        _holder = await OpenConnectionAsync(_databaseName, HolderProgramName);
+        _holderSessionId = await ReadSessionIdAsync(_holder);
+        await ExecuteNonQueryAsync(_holder, "ALTER DATABASE CURRENT SET SINGLE_USER;");
+
+        (_teardownReport, _dropException) = await CaptureConsoleErrorAsync(() =>
+            MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName)
+        );
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        if (_holder is not null)
+        {
+            await _holder.DisposeAsync();
+        }
+
+        if (_databaseName is null)
+        {
+            return;
+        }
+
+        await using SqlConnection connection = await OpenConnectionAsync("master");
+        if (await DatabaseExistsAsync(connection, _databaseName))
+        {
+            await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(_databaseName);
+        }
+    }
+
+    [Test]
+    public void It_fails_the_drop_with_the_unchanged_sql_server_error()
+    {
+        _dropException
+            .Should()
+            .BeOfType<SqlException>(_teardownReport)
+            .Which.Errors.Cast<SqlError>()
+            .Select(error => error.Number)
+            .Should()
+            .Contain(5064, _teardownReport);
+    }
+
+    [Test]
+    public void It_reports_the_session_that_holds_the_database()
+    {
+        _teardownReport
+            .Should()
+            .Contain($"'{_databaseName}' teardown: teardown failed with SQL Server error 5064")
+            .And.Contain($"{_holderSessionId} '{HolderProgramName}'");
+    }
+}
+
+internal static class MssqlTeardownTestSupport
+{
+    /// <summary>
+    /// Runs the action with <see cref="Console.Error"/>, where the teardown helper writes its reports,
+    /// captured. Only <c>[NonParallelizable]</c> fixtures may call it, because the writer is process-wide.
+    /// </summary>
+    public static async Task<(string Output, Exception? Exception)> CaptureConsoleErrorAsync(
+        Func<Task> action
+    )
+    {
+        TextWriter original = Console.Error;
+        StringWriter captured = new(CultureInfo.InvariantCulture);
+        Console.SetError(captured);
+        try
+        {
+            await action();
+            return (captured.ToString(), null);
+        }
+        catch (Exception exception)
+        {
+            return (captured.ToString(), exception);
+        }
+        finally
+        {
+            Console.SetError(original);
+            // Still reaches the test output.
+            await original.WriteAsync(captured.ToString());
+        }
+    }
+
+    public static async Task EnableCdcAsync(string databaseName, bool withCaptureInstance)
+    {
+        await using SqlConnection connection = await OpenConnectionAsync(databaseName);
+        await ExecuteNonQueryAsync(
+            connection,
+            """
+            CREATE TABLE [dbo].[CdcTeardownProbe]
+            (
+                [ProbeId] int NOT NULL CONSTRAINT [PK_CdcTeardownProbe] PRIMARY KEY CLUSTERED,
+                [ProbeValue] int NOT NULL
+            );
+
+            EXEC sys.sp_cdc_enable_db;
+            """
+        );
+
+        if (withCaptureInstance)
+        {
+            // The first capture instance creates and starts the database's capture and cleanup jobs.
+            await ExecuteNonQueryAsync(
+                connection,
+                """
+                EXEC sys.sp_cdc_enable_table
+                    @source_schema = N'dbo',
+                    @source_name = N'CdcTeardownProbe',
+                    @role_name = NULL,
+                    @supports_net_changes = 0;
+                """
+            );
+        }
+    }
+
+    public static async Task<bool> DatabaseExistsAsync(SqlConnection connection, string databaseName)
     {
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = "SELECT CASE WHEN DB_ID(@databaseName) IS NULL THEN 0 ELSE 1 END;";
@@ -592,30 +794,39 @@ public class Given_A_Cdc_Enabled_Database_Dropped_Under_The_Lifecycle_Gate(bool 
         return Convert.ToInt32(await command.ExecuteScalarAsync()) == 1;
     }
 
-    private static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
+    public static async Task ExecuteNonQueryAsync(SqlConnection connection, string sql)
     {
         await using SqlCommand command = connection.CreateCommand();
         command.CommandText = sql;
         await command.ExecuteNonQueryAsync();
     }
 
+    public static async Task<short> ReadSessionIdAsync(SqlConnection connection)
+    {
+        await using SqlCommand command = connection.CreateCommand();
+        command.CommandText = "SELECT CAST(@@SPID AS smallint);";
+        return (short)(await command.ExecuteScalarAsync())!;
+    }
+
     /// <summary>
-    /// Unpooled, so that no idle connection from this fixture stays in the database for the fence to end.
+    /// Unpooled, so that no idle connection from a fixture stays in the database for the fence to end.
     /// </summary>
-    private static async Task<SqlConnection> OpenConnectionAsync(string databaseName)
+    public static async Task<SqlConnection> OpenConnectionAsync(
+        string databaseName,
+        string? applicationName = null
+    )
     {
         SqlConnectionStringBuilder builder = new(MssqlTestDatabaseHelper.BuildConnectionString(databaseName))
         {
             Pooling = false,
         };
+        if (applicationName is not null)
+        {
+            builder.ApplicationName = applicationName;
+        }
+
         SqlConnection connection = new(builder.ConnectionString);
         await connection.OpenAsync();
         return connection;
     }
-
-    private sealed record FenceObservation(
-        bool DatabaseExists,
-        IReadOnlyList<string> CdcJobTypes,
-        IReadOnlyList<string> JobStepSessions
-    );
 }
