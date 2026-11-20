@@ -45,6 +45,7 @@ Unprefixed paths are relative to the repository root.
 - For a selected request, under `Failures` it captures a status of 400 or above, or an exception; under `All`, every request.
 - It builds the row, passes it through the credential-exclusion component, and queues it to the writer.
 - It serializes the response body only for a request it captures.
+- When `RequestInfo.CaughtException` is set, the row records its type and the description the credential-exclusion component maps it to (`Core/Middleware/CoreExceptionLoggingMiddleware.cs`).
 - An exception that escapes `CoreExceptionLogging` is captured as a 500 with its type and no response body, then rethrown unchanged.
 - A client cancellation, and a request that fails authentication, are not captured.
 - The step never throws into the request: a failure inside it logs a warning with metadata only.
@@ -72,16 +73,17 @@ Unprefixed paths are relative to the repository root.
     - every in-scope route creates a context; a missing one is not captured and warns
     - status boundaries 399, 400, 499, and 500, and the exception path, under both modes
     - the rethrow case and the cancellation case
+    - an unhandled exception translated to 500 records its type, and the circuit-open 503 records none
     - the empty connection string registers nothing
 - Fidelity: malformed, duplicate-property, and coerced bodies are stored as sent.
-- Translated exceptions: captured 403, 500, and 503 responses equal the HTTP response.
+- Translated exceptions: captured 403, Snapshot Not Found 404, 500, and 503 responses equal the HTTP response.
 - API integration on both engines: a failed POST and a GET-many under `All` each produce exactly one row, and `/oauth/token` produces none. Rows are located by a per-test grant id, and the row count is asserted before content.
-- One end-to-end scenario, tagged `@DMS-<key>`, enables a grant through CMS, sends a failing request, and finds its row.
+- One end-to-end scenario, tagged `@DMS-<key>`, enables a grant through CMS, sends a failing request, and finds its row. It and the latency benchmark run on the Docker environment's capture opt-in from the capture-store story.
 
 ## Dependencies
 
 - Credential exclusion (02): every row passes through it.
-- Capture store and retention (03): the writer.
+- Capture store and retention (03): the writer, and the Docker capture opt-in.
 - Grant polling and freshness (04): the snapshot.
 
 ## Estimate

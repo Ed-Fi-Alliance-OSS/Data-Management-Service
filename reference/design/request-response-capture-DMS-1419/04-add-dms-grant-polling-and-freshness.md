@@ -35,27 +35,29 @@ Unprefixed paths are relative to the repository root.
 
 **The snapshot**
 
-- Each successful poll replaces an immutable snapshot keyed by tenant and client key.
+- Each successful poll of a tenant replaces that tenant's entry in an immutable snapshot keyed by tenant and client key.
 - A lookup by tenant, client key, and time returns the active grant or none, with no I/O and no allocation.
 - A tenant that has not been polled yet has no grants.
 
 **Freshness**
 
-- A snapshot's age is counted from the start of the poll that produced it, on the monotonic clock.
-- A response from an older poll that completes after a newer one is discarded.
-- A snapshot older than `A`, which is `2I + T`, returns no grant for any lookup.
+- Freshness is per tenant: one tenant's failed or late polls never change another tenant's lookups.
+- A tenant entry's age is counted from the start of the poll that produced it, on the monotonic clock.
+- A response from an older poll of a tenant that completes after a newer poll of the same tenant is discarded.
+- A tenant whose entry is older than `A`, which is `2I + T`, returns no grant.
 - A grant past its `ExpiresAt` is not returned, even before the next poll.
 
 **Tests**
 
 - Units use FakeItEasy, fake time, and explicit signals, never delays, and cover:
-    - a stale snapshot returns no grant
+    - a stale tenant entry returns no grant
     - age is counted from poll start, so a slow response does not refresh it
     - an out-of-order response is discarded
     - local expiry between polls
     - a tenant loaded after the last poll has no grants until the next one
     - one timed-out poll followed by a successful one never makes the snapshot stale
     - several tenants, each answering in just under `T`, all stay within `A`
+    - tenant X's polls fail while tenant Y's succeed: X returns no grant once its entry is older than `A`, and Y keeps returning its grant
     - a single-tenant deployment polls without a `Tenant` header and returns the granted client's grant
 - Two-replica tests run two pollers against one fake CMS and cover:
     - healthy: enable and disable reach both within `A`

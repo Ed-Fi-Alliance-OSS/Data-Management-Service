@@ -13,7 +13,7 @@ Adds the separate database where captured API traffic is kept, the background wr
 ## Description
 
 Captured rows go to a dedicated capture database, never to the logs.
-This story builds that store: the command that creates its table, the DMS settings that point at it, the background writer, and the purge.
+This story builds that store: the command that creates its table, the DMS settings that point at it, the background writer, the purge, and the Docker opt-in the capture-pipeline story's tests run on.
 The row itself is defined by the credential-exclusion story, and nothing queues a row until the capture-pipeline story lands.
 
 Per `reference/design/request-response-capture-DMS-1419/design.md` ("## D6: Capture Store and Retention": "### Configuration Surface", "### Provisioning", "### Semantics", "### Retention").
@@ -30,6 +30,7 @@ Unprefixed paths are relative to the repository root.
 - The indexes cover the receive time, the client key with the receive time, and the grant id.
 - The command is idempotent: run twice, it changes nothing the second time. It never drops or alters an existing table.
 - The SchemaTools README documents the command.
+- The Docker environment (`eng/docker-compose/`) can opt in to capture: it provisions a capture database with `capture provision` and passes `RequestResponseCapture__ConnectionString` to DMS, for PostgreSQL and SQL Server. The E2E environment opts in.
 
 **Settings**
 
@@ -41,7 +42,7 @@ Unprefixed paths are relative to the repository root.
 **The writer**
 
 - Rows are queued to a bounded in-memory queue, holding at most `WriterQueueCapacity` rows and `WriterQueueMaxBytes` of body bytes, and inserted in batches by a background service.
-- Queuing never blocks and never throws. When either bound would be exceeded, the row is dropped and a warning carries only the grant id and the status.
+- Queuing never blocks and never throws. When either bound would be exceeded, the row is dropped. The drop warning is rate-limited per grant and carries only the grant id and the number of rows dropped since the last warning.
 - When the store fails, the batch is dropped and a warning carries only metadata. The writer keeps running.
 - On shutdown, the writer drains what it can within the host's shutdown timeout.
 
@@ -57,7 +58,7 @@ Unprefixed paths are relative to the repository root.
     - every column round-trips
     - the purge deletes only rows past retention
     - two purgers serialize
-- Units cover a full queue dropping instead of blocking, rows with large bodies dropped at the byte bound before the row bound is reached, a store failure warning with metadata only, and an empty connection string registering nothing.
+- Units cover a full queue dropping instead of blocking with one warning per interval, rows with large bodies dropped at the byte bound before the row bound is reached, a store failure warning with metadata only, and an empty connection string registering nothing.
 - Rows are located by a per-test grant id, never by insertion order.
 
 ## Dependencies

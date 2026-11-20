@@ -72,7 +72,7 @@ Anything sent through `ILogger` is therefore routable, so R10 rules out the logg
 **The pipeline.**
 `ApiService.GetCommonInitialSteps` (`ApiService.cs:234-246`) runs `RequestResponseLogging`, `CoreExceptionLogging`, `TenantValidation`, `JwtAuthentication`, then `ResolveDataStore`.
 `JwtAuthentication` sets the validated `ClientId`, which is the CMS `ApiClient.ClientId`.
-`CoreExceptionLogging` builds the 403, 500 and 503 responses after the inner steps unwind, so the final response is visible only outside it (`Middleware/CoreExceptionLoggingMiddleware.cs:107-150`).
+`CoreExceptionLogging` builds the 403, 404 (Snapshot Not Found), 500 and 503 responses after the inner steps unwind, so the final response is visible only outside it (`Middleware/CoreExceptionLoggingMiddleware.cs:49-152`).
 Every core response is a `JsonNode`, serialized once in `AspNetCoreFrontend.ToResult`.
 
 **Request bodies are gone by the time core runs.**
@@ -154,7 +154,7 @@ This rests on GitHub code search for `RequestResponseContentLog`, which indexes 
 | Capture window | Starts when the singleton is constructed, at the first `/data` or `/composites` request after startup (`mw.cs:43`; `ODS docs:303-312`). Each instance runs its own timer | Each grant has explicit StartsAt and ExpiresAt under an enforced maximum duration ([D2](#d2-control-surface)) | R3; the window is the operator's choice, not a side effect of traffic |
 | What is captured | A log4net level. A 500 with a recorded exception logs at Error, any other status of 400 or above except 500 at Info, and everything else at Debug (`mw.cs:70-82`). The documented default threshold, ERROR, captures only exception 500s (`ODS docs:75-78`, `:88`, `:93`) | A per-grant mode: `Failures`, the default, or `All`. Failures means status 400 or above, or an exception ([D2](#d2-control-surface), [D6](#d6-capture-store-and-retention)) | R9, as a mode rather than a log level |
 | The docs on levels | "Change ERROR to INFO to log all calls" (`ODS docs:75-78`). Stale since v7.2: v7.0 and v7.1 logged every non-500 at Info, and v7.2 moved responses below 400 to Debug. INFO now captures failures only, and all calls need DEBUG | Not applicable | Recorded so the parity claim is against behavior, not the docs |
-| Routes | `/data` and `/composites` only. The token endpoint is never captured | The core data-plane pipelines only: resources, descriptors, change queries and partitions. Never token, identity, management, or CMS routes ([D4](#d4-credential-exclusion)) | R4, and DMS-1419's scope |
+| Routes | `/data` and `/composites` only. The token endpoint is never captured | The core data-plane pipelines only, as listed in [D4](#capture-scope) | R4, and DMS-1419's scope |
 | Fields | Date (log4net `RawTimeStampLayout`, local time, no zone), thread, correlation ID (a client header, else a `correlationId` query parameter, else generated, `Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestCorrelationMiddleware.cs:25-39`), the numeric API client id (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/EdFiApiAuthenticationMiddleware.cs:123`; `Ed-Fi-ODS:Application/EdFi.Common/Security/ApiClientDetails.cs:79`), level, URL with the raw query string (`mw.cs:224`, 255 characters), method (10 characters), the raw profile content-type header (`Ed-Fi-ODS:Application/EdFi.Ods.Features/Profiles/ProfileContentTypeContextMiddleware.cs:84`, `:106`), full uncapped bodies, the status name or problem details as the message (`mw.cs:138-172`), and the exception (2000 characters) (`ODS docs:26-40`, `:95-187`) | Every column is classed server-generated or client-derived ([D4](#d4-credential-exclusion)). Adds the status code, duration, tenant, data store and grant. Stores the validated client key, the profile name DMS resolved, and the method as a server value. Stored bodies are capped and flagged ([D6](#d6-capture-store-and-retention)) | R6 and R12: BI tooling needs the status code and the tenant, and a capped body bounds one row |
 | Not captured | Headers other than the profile header, the status code, the tenant, the duration | See the row above | |
 | Correlation ID | Always stored (`NOT NULL` in the DDL) | Always stored. A client-supplied ID is withheld with the other client-derived fields when the D4 rule fires; an ID DMS generated is kept ([D4](#d4-credential-exclusion)) | R4: a client-supplied ID is client text. A departure from R12 for that case, recorded for the gate |
@@ -258,7 +258,7 @@ If [D5](#d5-payload-policy) chooses a masking mode per grant, the grant gains th
 
 Each DMS replica runs a background poller, on the precedent of the backend's hosted services (`DocumentCacheProjectionSupervisor`).
 It calls the active-grants read for each tenant the replica has loaded (`ConfigurationServiceDataStoreProvider.GetLoadedTenantKeys`, `:350`), through the existing CMS client and token handler.
-The result replaces an immutable snapshot keyed by tenant and client key.
+Each result replaces that tenant's entry in an immutable snapshot keyed by tenant and client key.
 A request's capture decision is a lookup in that snapshot, so the per-request cost is a dictionary read and no CMS call.
 
 ### Freshness
@@ -274,9 +274,12 @@ The `DocumentCacheProjectionSupervisor` loop is a hosting precedent only, becaus
 On that schedule one timed-out poll could push a snapshot past `A`, and polling tenants in sequence against a slow CMS could too.
 
 **The rules.**
-- A snapshot's age is counted from the start of the poll that produced it, on the monotonic clock, so a slow response cannot make old data look new.
-- A response from an older poll that arrives after a newer one is discarded.
-- A snapshot older than `A` is stale, and a stale snapshot captures nothing: the control fails closed.
+Every rule is per tenant: each tenant's grants form one entry of the snapshot, and one tenant's failed or late polls never change another tenant's lookups.
+A tenant whose polls keep failing therefore stops capturing within `A` while the others carry on. One such tenant is a tenant deleted in CMS: DMS never drops a loaded tenant (`ConfigurationServiceDataStoreProvider.cs:240`), and CMS answers 400 for a tenant it no longer has.
+
+- An entry's age is counted from the start of the poll that produced it, on the monotonic clock, so a slow response cannot make old data look new.
+- A response from an older poll of a tenant that arrives after a newer poll of the same tenant is discarded.
+- An entry older than `A` is stale, and a stale entry captures nothing: the control fails closed for that tenant.
 - `ExpiresAt` is also enforced locally between polls. It assumes DMS and CMS clocks are synchronized, as JWT validation already does.
 
 **What an operator can rely on, which the documentation states:**
@@ -406,7 +409,7 @@ In normalized form:
 
 These cover the OAuth client-credentials and token fields DMS and CMS use, and the common names for keys, passwords, and connection strings.
 The list is checked against every property name and query field name in the seven ApiSchema packages this repository references, all at `1.0.335`: DS 5.2 and DS 6.1, each with its Homograph and Sample variants, and DS 5.2 TPDM.
-None of the 3,370 distinct names matches a listed entry.
+None of the 1,446 distinct names, every `properties` key at any depth and every `queryFieldMapping` key, matches a listed entry.
 Two candidates were dropped because they collide: `credential` and `credentials` are Ed-Fi resource and property names.
 `key` is not listed: it is generic, and in ODS client credentials the key is the public identifier, not the secret.
 The credential-exclusion story repeats the collision check as a test, so a new Data Standard cannot add a colliding name unnoticed.
@@ -531,7 +534,7 @@ It is added only to the in-scope pipelines of [D4](#capture-scope).
 An in-scope request with no capture context is not captured, and a warning is logged, so a route added later without one fails safe.
 
 **3. Finalization, outside `CoreExceptionLogging`.**
-A new step sits between `RequestResponseLogging` and `CoreExceptionLogging`, so it sees the response after `CoreExceptionLogging` has translated an exception into 403, 500 or 503 (`ApiService.cs:234-246`).
+A new step sits between `RequestResponseLogging` and `CoreExceptionLogging`, so it sees the response after `CoreExceptionLogging` has translated an exception into 403, 404 (Snapshot Not Found), 500 or 503 (`ApiService.cs:234-246`).
 For a selected request whose status the grant's mode accepts, it builds the row, applies the D4 rule, and queues the row.
 It serializes the response body only for such a request, so no other request pays for it.
 It never throws into the request: a failure inside it is logged with metadata only.
@@ -541,6 +544,10 @@ It never throws into the request: a failure inside it is logged with metadata on
 **What counts as a failure.**
 Under the `Failures` mode, a request is captured when its status is 400 or above, or when an exception escaped `CoreExceptionLogging`.
 Under `All`, every selected request is captured.
+
+**Exception detail.**
+When `CoreExceptionLogging` records the exception on `RequestInfo.CaughtException`, as its generic and custom-view arms do (`CoreExceptionLoggingMiddleware.cs:61-64`, `:146-152`), the row records that exception's type and the mapped description.
+Its other arms record no exception, so neither does the row.
 
 **What is never captured.**
 - A request that fails authentication: there is no validated client to match a grant.
@@ -559,7 +566,8 @@ The D4 rule is applied to the full body first, so a body that triggers it is wit
 
 **The writer.**
 Rows go to a bounded in-memory queue, and a background writer inserts them in batches.
-When the queue is full, by rows or by body bytes, the row is dropped and a warning is logged with the grant id and status only.
+When the queue is full, by rows or by body bytes, the row is dropped.
+The drop warning is rate-limited per grant and carries only the grant id and the number of rows dropped since the last warning, so a full queue under `All` cannot flood the logs.
 When the store fails, the rows are dropped and a warning is logged with metadata only.
 The request is never delayed or failed by capture: the writer fails open.
 On shutdown, the writer drains what it can within the host's shutdown timeout.
