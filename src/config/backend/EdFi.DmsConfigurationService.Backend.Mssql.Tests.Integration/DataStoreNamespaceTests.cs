@@ -56,7 +56,7 @@ public partial class Given_data_store_namespace_reservations
             ALTER TABLE dmscs.DataStore ADD CONSTRAINT UX_DataStore_TenantId_Name UNIQUE (TenantId, Name);
             """
         );
-        _database.DeployThrough(41);
+        _database.DeployThrough(42);
         (
             await connection.QuerySingleAsync<string>(
                 "SELECT collation_name FROM sys.columns WHERE object_id = OBJECT_ID('dmscs.DataStore') AND name = 'Name';"

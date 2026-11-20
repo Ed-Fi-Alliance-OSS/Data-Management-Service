@@ -20,6 +20,8 @@ public class DeployTests : DatabaseTestBase
     /// TenantId foreign keys that reference Tenant.Id. Job.Id, Job.FencingToken, JobSchedule.Id, and
     /// JobSchedule.FencingToken (DMS-1437) are internal job-infrastructure identifiers with no Admin API
     /// counterpart, and Job.SourceScheduleId references JobSchedule.Id.
+    /// EducationOrganizationSnapshot holds Ed-Fi education organization and parent ids, which are int64,
+    /// and both snapshot tables hold internal generation counters with no Admin API counterpart.
     /// </summary>
     private static readonly (string TableName, string ColumnName)[] ExpectedBigintColumns =
     [
@@ -30,6 +32,14 @@ public class DeployTests : DatabaseTestBase
         ("ClaimsHierarchy", "Id"),
         ("DataStore", "TenantId"),
         ("DataStoreManage", "TenantId"),
+        ("EducationOrganizationSnapshot", "EducationOrganizationId"),
+        ("EducationOrganizationSnapshot", "Generation"),
+        ("EducationOrganizationSnapshot", "ParentId"),
+        ("EducationOrganizationSnapshot", "TenantId"),
+        ("EducationOrganizationSnapshotTarget", "ActiveGeneration"),
+        ("EducationOrganizationSnapshotTarget", "LastGeneration"),
+        ("EducationOrganizationSnapshotTarget", "LeaseGeneration"),
+        ("EducationOrganizationSnapshotTarget", "TenantId"),
         ("Job", "FencingToken"),
         ("Job", "Id"),
         ("Job", "SourceScheduleId"),
@@ -115,6 +125,8 @@ public class DeployTests : DatabaseTestBase
                 "apiclienteducationorganization",
                 "datastorecontext",
                 "datastorederivative",
+                "educationorganizationsnapshot",
+                "educationorganizationsnapshottarget",
                 "job",
                 "jobschedule",
                 "tenant",

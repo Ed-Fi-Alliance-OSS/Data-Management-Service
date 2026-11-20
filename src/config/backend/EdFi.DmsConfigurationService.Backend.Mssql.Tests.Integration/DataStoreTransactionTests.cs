@@ -377,6 +377,9 @@ public class DataStoreTransactionTests
                 """
                 INSERT INTO dmscs.[DataStoreContext] ([DataStoreId], [ContextKey], [ContextValue]) VALUES (@Id, 'year', '2026');
                 INSERT INTO dmscs.[DataStoreDerivative] ([DataStoreId], [DerivativeType]) VALUES (@Id, 'ReadReplica');
+                INSERT INTO dmscs.[EducationOrganizationSnapshotTarget] ([DataStoreId], [LastGeneration], [ActiveGeneration]) VALUES (@Id, 1, 1);
+                INSERT INTO dmscs.[EducationOrganizationSnapshot] ([DataStoreId], [Generation], [EducationOrganizationId], [NameOfInstitution], [Discriminator], [RefreshedAt], [SourceContractVersion])
+                VALUES (@Id, 1, 255901001, N'Snapshot School', N'edfi.School', SYSUTCDATETIME(), N'educationOrganizationProjection.v1');
                 """,
                 new { Id = id }
             );
@@ -385,6 +388,8 @@ public class DataStoreTransactionTests
             (await Count("[DataStore]", transaction)).Should().Be(0);
             (await Count("[DataStoreContext]", transaction)).Should().Be(0);
             (await Count("[DataStoreDerivative]", transaction)).Should().Be(0);
+            (await Count("[EducationOrganizationSnapshotTarget]", transaction)).Should().Be(0);
+            (await Count("[EducationOrganizationSnapshot]", transaction)).Should().Be(0);
             if (commit)
             {
                 await transaction.CommitAsync();
@@ -396,6 +401,8 @@ public class DataStoreTransactionTests
             (await Count("[DataStore]")).Should().Be(commit ? 0 : 1);
             (await Count("[DataStoreContext]")).Should().Be(commit ? 0 : 1);
             (await Count("[DataStoreDerivative]")).Should().Be(commit ? 0 : 1);
+            (await Count("[EducationOrganizationSnapshotTarget]")).Should().Be(commit ? 0 : 1);
+            (await Count("[EducationOrganizationSnapshot]")).Should().Be(commit ? 0 : 1);
         }
 
         [Test]

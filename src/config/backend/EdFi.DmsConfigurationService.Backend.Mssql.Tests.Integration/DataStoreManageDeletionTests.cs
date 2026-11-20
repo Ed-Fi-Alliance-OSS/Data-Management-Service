@@ -112,6 +112,25 @@ public partial class Given_data_store_namespace_reservations
         );
     }
 
+    /// <summary>
+    /// The tables a test can seed through <see cref="InsertDeletionDependent"/>. The snapshot target
+    /// dependent also writes one organization row, so <see cref="DeletionDependentCountTables"/> adds
+    /// the organization table to the tables each assertion counts.
+    /// </summary>
+    private static readonly string[] DeletionDependentTables =
+    [
+        "ApiClientDataStore",
+        "DataStoreContext",
+        "DataStoreDerivative",
+        "EducationOrganizationSnapshotTarget",
+    ];
+
+    private static readonly string[] DeletionDependentCountTables =
+    [
+        .. DeletionDependentTables,
+        "EducationOrganizationSnapshot",
+    ];
+
     private static Task InsertDeletionDependent(
         DbConnection connection,
         DbTransaction? transaction,
@@ -128,6 +147,12 @@ public partial class Given_data_store_namespace_reservations
                     """INSERT INTO dmscs."DataStoreContext" ("DataStoreId", "ContextKey", "ContextValue") VALUES (@DataStoreId, 'schoolYear', '2026');""",
                 "DataStoreDerivative" =>
                     """INSERT INTO dmscs."DataStoreDerivative" ("DataStoreId", "DerivativeType") VALUES (@DataStoreId, 'ReadReplica');""",
+                "EducationOrganizationSnapshotTarget" => """
+                INSERT INTO dmscs."EducationOrganizationSnapshotTarget" ("DataStoreId", "LastGeneration", "ActiveGeneration")
+                VALUES (@DataStoreId, 1, 1);
+                INSERT INTO dmscs."EducationOrganizationSnapshot" ("DataStoreId", "Generation", "EducationOrganizationId", "NameOfInstitution", "Discriminator", "RefreshedAt", "SourceContractVersion")
+                VALUES (@DataStoreId, 1, 255901001, N'Snapshot School', N'edfi.School', SYSUTCDATETIME(), N'educationOrganizationProjection.v1');
+                """,
                 _ => throw new ArgumentException("Unknown test dependent.", nameof(table)),
             },
             new { DataStoreId = dataStoreId, ClientId = clientId },
@@ -141,7 +166,7 @@ public partial class Given_data_store_namespace_reservations
         DbTransaction? transaction = null
     )
     {
-        foreach (string table in new[] { "ApiClientDataStore", "DataStoreContext", "DataStoreDerivative" })
+        foreach (string table in DeletionDependentCountTables)
         {
             (
                 await connection.ExecuteScalarAsync<int>(
@@ -175,6 +200,7 @@ public partial class Given_data_store_namespace_reservations
                     ("DataStoreContext", "DataStoreId", "CASCADE"),
                     ("DataStoreDerivative", "DataStoreId", "CASCADE"),
                     ("DataStoreManage", "DataStoreId", "NO ACTION"),
+                    ("EducationOrganizationSnapshotTarget", "DataStoreId", "CASCADE"),
                 }
             );
     }
@@ -194,7 +220,7 @@ public partial class Given_data_store_namespace_reservations
             .Subject.Id;
         await using var connection = await Open();
         int client = await SeedDeletionClient(connection);
-        foreach (string table in new[] { "ApiClientDataStore", "DataStoreContext", "DataStoreDerivative" })
+        foreach (string table in DeletionDependentTables)
         {
             await InsertDeletionDependent(
                 connection,
@@ -513,7 +539,7 @@ public partial class Given_data_store_namespace_reservations
         var seed = await SeedDeletion();
         await using var connection = await Open();
         int client = await SeedDeletionClient(connection);
-        foreach (string table in new[] { "ApiClientDataStore", "DataStoreContext", "DataStoreDerivative" })
+        foreach (string table in DeletionDependentTables)
         {
             await InsertDeletionDependent(
                 connection,
@@ -625,7 +651,7 @@ public partial class Given_data_store_namespace_reservations
         var seed = await SeedDeletion();
         await using var connection = await Open();
         int client = await SeedDeletionClient(connection);
-        foreach (string table in new[] { "ApiClientDataStore", "DataStoreContext", "DataStoreDerivative" })
+        foreach (string table in DeletionDependentTables)
         {
             await InsertDeletionDependent(
                 connection,
@@ -721,7 +747,13 @@ public partial class Given_data_store_namespace_reservations
 
     [Test, Category("DataStoreManageDeletion")]
     public async Task It_serializes_each_dependent_insert_with_deletion_in_both_orders(
-        [Values("ApiClientDataStore", "DataStoreContext", "DataStoreDerivative")] string table,
+        [Values(
+            "ApiClientDataStore",
+            "DataStoreContext",
+            "DataStoreDerivative",
+            "EducationOrganizationSnapshotTarget"
+        )]
+            string table,
         [Values(false, true)] bool insertFirst,
         [Values(false, true)] bool rollbackFirst
     )
