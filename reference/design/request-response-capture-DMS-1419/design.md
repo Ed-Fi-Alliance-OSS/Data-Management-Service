@@ -567,7 +567,27 @@ The table is indexed on the receive time, for the purge and for time-range queri
 
 ## Stories
 
-Pending. The estimated story set (AC4), with dependencies.
+Six stories, each 2 SP or less, cover the scope; a seventh exists only if the payload policy requires redaction.
+The drafts are in this folder, and [README.md](./README.md) holds their dependency and blocker tables.
+
+| # | Story | Covers | SP | Depends on |
+| --- | --- | --- | --- | --- |
+| 01 | [CMS request-capture grants](./01-add-cms-request-capture-grants.md) | Configuration: [D2](#the-grant) | 2 | None |
+| 02 | [Credential exclusion](./02-add-dms-credential-exclusion.md) | Redaction of credentials: [D4](#d4-credential-exclusion), and the stored-body cap | 2 | None |
+| 03 | [Capture store and retention](./03-add-dms-capture-store-and-retention.md) | Capture storage: [D6](#d6-capture-store-and-retention) | 2 | 02 |
+| 04 | [Grant polling and freshness](./04-add-dms-grant-polling-and-freshness.md) | Configuration reaching every replica: [D2](#freshness) | 2 | 01 |
+| 05 | [Capture pipeline](./05-add-dms-capture-pipeline.md) | Capture in the request path, and the [D3](#d3-readiness) idle gate | 2 | 02, 03, 04 |
+| 06 | Payload redaction | Only if [D5](#d5-payload-policy) requires redaction; estimated then | - | - |
+| 07 | [Documentation](./07-document-request-response-capture.md) | Documentation (R7) | 1 | 01 to 05 |
+
+**Total.**
+11 SP for the six stories, plus story 06's estimate if it is filed.
+The epic's Confluence estimate is 10 SP; the difference is grant polling, split out of the capture pipeline so that no story exceeds 2 SP.
+
+**Boundaries.**
+- Credential exclusion owns the capture-row contract, so the store builds its table from it and depends on it.
+- The stored-body cap lives in credential exclusion rather than in the store. "Withhold before truncate" is then a property of one pure component, proven by its generative test, instead of an ordering rule between two stories.
+- No story depends on the payload policy. If D5 requires redaction, story 06 is filed and blocks 05 and 07, so capture cannot be activated without it.
 
 ## Disposition
 
