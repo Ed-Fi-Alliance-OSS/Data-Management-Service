@@ -269,6 +269,10 @@ Three values bound how current the snapshot is:
 - `T`, the poll timeout
 - `A`, the maximum snapshot age, about `2I + T`, which tolerates one failed poll
 
+The bound assumes a fixed-rate schedule: each tenant's polls start every `I`, however long the previous poll took, and tenants are polled concurrently, each bounded by `T`.
+The `DocumentCacheProjectionSupervisor` loop is a hosting precedent only, because it starts the next poll `I` after the last one ends (`DocumentCacheProjectionSupervisor.cs:1302-1308`).
+On that schedule one timed-out poll could push a snapshot past `A`, and polling tenants in sequence against a slow CMS could too.
+
 **The rules.**
 - A snapshot's age is counted from the start of the poll that produced it, on the monotonic clock, so a slow response cannot make old data look new.
 - A response from an older poll that arrives after a newer one is discarded.
@@ -310,7 +314,7 @@ So an operator enables capture for a client without a restart (R2), and a deploy
 **The idle benchmark is an implementation gate.**
 R5 asks for no measurable overhead when capture is off.
 The capture-pipeline story must show that a deployment with a store configured and no grants adds no measurable latency over one with no store, and the story is not done until it does.
-Its added allocations are held to a fixed budget: the per-request cost of the two capture steps, and nothing that grows with the request, such as a body copy or a token decode.
+Its added allocations are held to a fixed budget: the per-request cost of the two capture steps and of the capture context the frontend attaches ([D6](#placement-in-the-request-path)), and nothing that grows with the request, such as a body copy or a token decode.
 Zero added allocation is not the bar, because every registered step costs a closure, a delegate, and an async state machine per request whether or not it acts (`Pipeline/PipelineProvider.cs:23-28`).
 
 **The fallback, if the benchmark fails.**
@@ -331,6 +335,11 @@ This is mandatory, and independent of the payload policy in [D5](#d5-payload-pol
 
 Capture covers only the core data-plane pipelines: resources, descriptors, change queries, partitions, and the 405 answer on a data route.
 It never covers the token, token-info, identity, discovery, metadata, health, or management routes, and never CMS.
+
+**The Management API is out of scope.**
+ODS captures only `/data` and `/composites` ([ODS Precedent](#ods-precedent)), and the ticket targets an API client's data traffic (R1).
+CMS traffic carries client secrets and security configuration, and the DMS-1418 discussion notes that CMS logs no request content today, so capturing it would be a separate decision.
+The exclusion goes to the gate.
 
 Every in-scope request body is JSON.
 The only route that reads a form body is token-info (`AspNetCoreFrontend.cs:974-987`), which is out of scope.
@@ -465,6 +474,7 @@ The store, and the D2 polling values, are DMS settings in a new `RequestResponse
 | `RetentionDays` | 7 | Rows older than this are purged |
 | `MaxStoredBodyBytes` | 1,048,576 | The cap on each stored body; a longer body is truncated and flagged |
 | `WriterQueueCapacity` | 1,000 | Rows waiting to be written; beyond it, rows are dropped |
+| `WriterQueueMaxBytes` | 67,108,864 | Body bytes waiting to be written; beyond it, rows are dropped. Without it, a full queue of capped bodies holds about 2 GiB |
 | `PollIntervalSeconds` | 30 | `I` in [D2](#freshness) |
 | `PollTimeoutSeconds` | 10 | `T` in [D2](#freshness); the maximum snapshot age `A` follows as `2I + T` |
 
@@ -492,7 +502,10 @@ Capture touches the request at three points.
 
 **1. Extraction, in the frontend.**
 `FromRequest` attaches an immutable **capture context** to every in-scope request.
-It holds the receive time, the raw query string with every repeated value, and the request body's state:
+It holds the receive time, the raw query string with every repeated value, whether the client supplied the correlation ID, and the request body's state.
+The correlation ID's source is known only in the frontend (`AspNetCoreFrontend.cs:473-480`), and core receives only the normalized ID, so the context carries it to the [D4](#column-classes) trace ID and correlation ID columns.
+
+The body state is one of:
 
 | Body state | Meaning |
 | --- | --- |
@@ -546,7 +559,7 @@ The D4 rule is applied to the full body first, so a body that triggers it is wit
 
 **The writer.**
 Rows go to a bounded in-memory queue, and a background writer inserts them in batches.
-When the queue is full, the row is dropped and a warning is logged with the grant id and status only.
+When the queue is full, by rows or by body bytes, the row is dropped and a warning is logged with the grant id and status only.
 When the store fails, the rows are dropped and a warning is logged with metadata only.
 The request is never delayed or failed by capture: the writer fails open.
 On shutdown, the writer drains what it can within the host's shutdown timeout.

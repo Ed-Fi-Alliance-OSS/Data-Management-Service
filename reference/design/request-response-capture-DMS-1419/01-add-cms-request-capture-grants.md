@@ -28,7 +28,7 @@ Unprefixed paths are relative to the repository root.
 
 **Schema**
 
-- DbUp scripts `0039` in `Backend.Postgresql/Deploy/Scripts/` and `Backend.Mssql/Deploy/Scripts/` create `dmscs.RequestCaptureGrant` with:
+- DbUp scripts, numbered with the next free script number, in `Backend.Postgresql/Deploy/Scripts/` and `Backend.Mssql/Deploy/Scripts/` create `dmscs.RequestCaptureGrant` with:
     - `Id`, the grant id
     - `ApiClientId`, a foreign key to the API client that cascades on its deletion
     - `Mode`, `Failures` or `All`

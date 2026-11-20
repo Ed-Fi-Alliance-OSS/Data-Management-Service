@@ -33,6 +33,7 @@ Unprefixed paths are relative to the repository root.
 - A test fails when a column has no class.
 - The method is the `RequestMethod` value, and `UNSUPPORTED` for any other verb. The raw verb text is never a field of the row.
 - The tenant is the validated tenant, and the profile is the resolved profile name.
+- The trace ID holds the correlation ID only when DMS generated it. A client-supplied correlation ID goes only to the client-derived correlation ID column. The component takes the source as an input; the capture-pipeline story supplies it.
 
 **The withholding rule**
 
@@ -77,6 +78,7 @@ Each is an example test:
 - a look-alike name, such as `customizationKey`, that is stored
 - an over-cap triggered body that is withheld, not truncated
 - a bearer token sent as the HTTP method of a data route: the method is `UNSUPPORTED`, and the token appears in no field
+- a bearer token no longer than `CorrelationIdMaxLength`, sent as a client-supplied correlation ID: the trace ID is empty, and the correlation ID is withheld with the other client-derived fields
 
 ## Dependencies
 

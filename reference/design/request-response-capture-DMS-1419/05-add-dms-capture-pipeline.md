@@ -28,7 +28,8 @@ Unprefixed paths are relative to the repository root.
 
 **Extraction, in the frontend**
 
-- `FromRequest` (`Frontend/AspNetCoreFrontend.cs`) attaches an immutable capture context to every request of an in-scope route, holding the receive time, the raw query string, and the body state: `NoBody`, `Unread`, `Retained`, or `NotRetained`.
+- `FromRequest` (`Frontend/AspNetCoreFrontend.cs`) attaches an immutable capture context to every request of an in-scope route, holding the receive time, the raw query string, whether the client supplied the correlation ID, and the body state: `NoBody`, `Unread`, `Retained`, or `NotRetained`.
+- The correlation ID counts as client-supplied when the frontend's correlation-ID ingestion reports a client value that did not fall back to the server identifier (`ClientSuppliedAValue` and not `FellBackToServerIdentifier`, `Frontend/AspNetCoreFrontend.cs`). Core receives only the normalized ID, so the row's trace ID and correlation ID columns are filled from this flag.
 - A raw copy of the body bytes is taken before the buffer is cleared, only when the client named by the bearer token's `client_id` claim, read without validation, has an active grant for the tenant. The read takes the first `client_id` claim, as `JwtValidationService` does (`Core/Security/JwtValidationService.cs`).
 - The claim is read only when the tenant has an active grant. A token that cannot be decoded yields no copy and never fails the request.
 
@@ -56,7 +57,7 @@ Unprefixed paths are relative to the repository root.
 
 - An idle benchmark compares a store configured with no grants against no store. The story is not done until it shows:
     - no measurable difference in p50 and p95 latency, measured on a host with pooled connections, such as the Docker stack. The in-process API host is not used for latency, because it opens a new PostgreSQL backend for every request.
-    - added allocations per request within the fixed cost of the two capture steps (`Core/Pipeline/PipelineProvider.cs`), and none that grows with the request. They are counted in-process, over the in-scope pipelines with a fake backend.
+    - added allocations per request within the fixed cost of the two capture steps (`Core/Pipeline/PipelineProvider.cs`) and of the capture context, and none that grows with the request. They are counted in-process, over the in-scope pipelines with a fake backend.
 - With an active grant, the same measurements, plus peak memory, are documented in the pull request.
 - If the idle gate fails, the restart-dependent flag fallback of design.md ("## D3: Readiness") is not adopted without the DMS-1419 owner's renewed approval.
 
@@ -67,6 +68,7 @@ Unprefixed paths are relative to the repository root.
     - a grant changed between extraction and selection is honored at selection
     - a disable after selection still captures that request, and queued rows are written
     - a bodyless route is captured with `NoBody`
+    - a client-supplied correlation ID fills only the correlation ID column, and a generated one only the trace ID column
     - every in-scope route creates a context; a missing one is not captured and warns
     - status boundaries 399, 400, 499, and 500, and the exception path, under both modes
     - the rethrow case and the cancellation case

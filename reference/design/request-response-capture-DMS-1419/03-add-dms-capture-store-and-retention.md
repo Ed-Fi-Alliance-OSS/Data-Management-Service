@@ -33,15 +33,15 @@ Unprefixed paths are relative to the repository root.
 
 **Settings**
 
-- DMS binds `RequestResponseCapture:ConnectionString`, `RetentionDays` (default 7), `MaxStoredBodyBytes` (default 1,048,576), and `WriterQueueCapacity` (default 1,000).
+- DMS binds `RequestResponseCapture:ConnectionString`, `RetentionDays` (default 7), `MaxStoredBodyBytes` (default 1,048,576), `WriterQueueCapacity` (default 1,000), and `WriterQueueMaxBytes` (default 67,108,864).
 - An empty connection string registers nothing from this story.
 - A non-positive number fails startup.
 - The store uses the dialect of `AppSettings:Datastore`.
 
 **The writer**
 
-- Rows are queued to a bounded in-memory queue of `WriterQueueCapacity` and inserted in batches by a background service.
-- Queuing never blocks and never throws. When the queue is full, the row is dropped and a warning carries only the grant id and the status.
+- Rows are queued to a bounded in-memory queue, holding at most `WriterQueueCapacity` rows and `WriterQueueMaxBytes` of body bytes, and inserted in batches by a background service.
+- Queuing never blocks and never throws. When either bound would be exceeded, the row is dropped and a warning carries only the grant id and the status.
 - When the store fails, the batch is dropped and a warning carries only metadata. The writer keeps running.
 - On shutdown, the writer drains what it can within the host's shutdown timeout.
 
@@ -57,7 +57,7 @@ Unprefixed paths are relative to the repository root.
     - every column round-trips
     - the purge deletes only rows past retention
     - two purgers serialize
-- Units cover a full queue dropping instead of blocking, a store failure warning with metadata only, and an empty connection string registering nothing.
+- Units cover a full queue dropping instead of blocking, rows with large bodies dropped at the byte bound before the row bound is reached, a store failure warning with metadata only, and an empty connection string registering nothing.
 - Rows are located by a per-test grant id, never by insertion order.
 
 ## Dependencies

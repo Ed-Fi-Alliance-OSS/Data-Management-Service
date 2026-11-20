@@ -27,6 +27,8 @@ Unprefixed paths are relative to the repository root.
 **The poller**
 
 - A background service polls `GET /v3/requestCaptureGrants/active` for each tenant the replica has loaded (`Core/Configuration/ConfigurationServiceDataStoreProvider.cs`, `GetLoadedTenantKeys`), through the existing CMS client and token handler.
+- Each tenant is polled on a fixed-rate schedule: its polls start every `I`, however long the previous poll took. Tenants are polled concurrently, each poll bounded by `T`. The `DocumentCacheProjectionSupervisor` loop, which starts the next poll `I` after the last one ends, is a hosting precedent only.
+- In a single-tenant deployment the loaded tenant key is empty. The poller then sends no `Tenant` header, and the snapshot keys its grants by that empty key, which selection uses.
 - It is registered only when `RequestResponseCapture:ConnectionString` is set.
 - DMS binds `RequestResponseCapture:ConnectionString`, `PollIntervalSeconds` (`I`, default 30), and `PollTimeoutSeconds` (`T`, default 10). The `RequestResponseCapture` options type is shared with the capture-store story, so whichever of the two lands first creates it. A non-positive value, or a timeout not shorter than the interval, fails startup.
 - A failed poll logs a rate-limited warning with the tenant and the failure, and nothing from a grant beyond its id.
@@ -52,6 +54,9 @@ Unprefixed paths are relative to the repository root.
     - an out-of-order response is discarded
     - local expiry between polls
     - a tenant loaded after the last poll has no grants until the next one
+    - one timed-out poll followed by a successful one never makes the snapshot stale
+    - several tenants, each answering in just under `T`, all stay within `A`
+    - a single-tenant deployment polls without a `Tenant` header and returns the granted client's grant
 - Two-replica tests run two pollers against one fake CMS and cover:
     - healthy: enable and disable reach both within `A`
     - CMS unreachable during a disable: both stop capturing within `A`
