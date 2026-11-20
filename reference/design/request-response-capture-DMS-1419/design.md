@@ -286,7 +286,7 @@ Three values bound how current the snapshot is:
 
 A request's capture decision is made once, at **authenticated selection**.
 
-- When the frontend reads a request, it checks only whether some grant for the tenant could apply, to decide whether to keep a raw copy of the body. That check is provisional: the client is not authenticated yet.
+- When the frontend reads a request, it checks whether the client named in the not-yet-validated token has a grant, only to decide whether to keep a raw copy of the body ([D6](#placement-in-the-request-path)). That check is provisional: the client is not authenticated yet.
 - The selection step runs after `JwtAuthentication`. It looks up the validated client key in the current snapshot and freezes the decision for that request.
 - A disable that lands before selection prevents capture.
 - A disable that lands after selection does not cancel the request: it is captured, and rows already queued for writing are written.
@@ -359,7 +359,7 @@ The outline below is that contract's starting point; the story fixes the names a
 | Client key | Server-generated | The `ClientId` that `JwtAuthentication` validated |
 | Tenant, data store | Server-generated | The validated tenant, and the data store DMS resolved |
 | Profile | Server-generated | The resolved profile name, or empty |
-| Body state, truncation flags | Server-generated | Whether a body was absent, retained, or not retained, and whether stored output was capped |
+| Body state, truncation flags | Server-generated | `NoBody`, `Unread`, `Retained` or `NotRetained` ([D6](#placement-in-the-request-path)), and whether stored output was capped |
 | Withheld, withholding reason | Server-generated | Whether the rule fired, and which trigger, from a fixed set |
 | Exception type, exception description | Server-generated | The exception's type, and a description DMS chooses from a fixed set by type, never the message chain |
 | Path, query | Client-derived | The request path, and the raw query string with every repeated value |
@@ -439,7 +439,131 @@ Pending. Records the accountable policy owner's decision on payload redaction (A
 
 ## D6: Capture Store and Retention
 
-Pending. Decides the sink (AC3; R6, R10, R11): the dedicated capture database, how it is supplied and provisioned, where capture sits in the pipeline, failure and capping semantics, and the purge.
+**Decision: a dedicated relational capture database.**
+DMS writes captured rows to one table in a database used for nothing else, in the same dialect as its data stores (`AppSettings:Datastore`).
+BI and workflow tooling read it with SQL (R6).
+Nothing captured passes through `ILogger`, so no log sink, OTLP exporter, or plugin `ILoggerProvider` can receive it (R10).
+
+### Independence from the Payload Policy
+
+This decision holds under every answer [D5](#d5-payload-policy) can give.
+Payload redaction, if the policy requires any, is a transform applied to a row's bodies before the row reaches the writer, at the same point as the [D4](#d4-credential-exclusion) withholding rule.
+The table's shape, the writer, the caps, and the purge do not change.
+If the policy is a masking mode per grant, the row's grant id already identifies the grant and its mode, so the table gains no column.
+
+### Configuration Surface
+
+The store, and the D2 polling values, are DMS settings in a new `RequestResponseCapture` section.
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `ConnectionString` | Empty | The capture database. Empty means the feature is absent: nothing is registered ([D3](#d3-readiness)) |
+| `RetentionDays` | 7 | Rows older than this are purged |
+| `MaxStoredBodyBytes` | 1,048,576 | The cap on each stored body; a longer body is truncated and flagged |
+| `WriterQueueCapacity` | 1,000 | Rows waiting to be written; beyond it, rows are dropped |
+| `PollIntervalSeconds` | 30 | `I` in [D2](#freshness) |
+| `PollTimeoutSeconds` | 10 | `T` in [D2](#freshness); the maximum snapshot age `A` follows as `2I + T` |
+
+The defaults are proposals for the story to confirm.
+The connection string is secret-bearing.
+It is supplied by environment injection, or by a Phase A configuration plugin ([DMS-1551](https://edfi.atlassian.net/browse/DMS-1551)), never by CMS: the secret references of [DMS-1554](https://edfi.atlassian.net/browse/DMS-1554) resolve only CMS-stored strings.
+The maximum grant duration is a CMS setting ([D2](#the-grant)).
+
+### Provisioning
+
+**Decision: a SchemaTools subcommand creates the table; DMS runs no DDL.**
+The command provisions the capture table and its indexes in a named database, for either dialect, on the pattern of `ddl provision` (`src/dms/clis/EdFi.DataManagementService.SchemaTools/README.md`).
+DMS's runtime credential then needs only to insert, read, and delete rows in that table, never to change a schema.
+DMS has no deploy-on-startup setting, unlike CMS, and provisioning stays an explicit operator step, as it already is for data stores.
+
+The command is idempotent: it creates what is missing and leaves an existing table alone.
+Captured rows are disposable troubleshooting data with a short retention, so a later release that changes the table can recreate it rather than migrate it.
+
+**Rejected:** DDL at DMS startup.
+It removes one operator step, but it gives the DMS runtime schema-changing rights, and it is the only place DMS would run DDL.
+
+### Placement in the Request Path
+
+Capture touches the request at three points.
+
+**1. Extraction, in the frontend.**
+`FromRequest` attaches an immutable **capture context** to every in-scope request.
+It holds the receive time, the raw query string with every repeated value, and the request body's state:
+
+| Body state | Meaning |
+| --- | --- |
+| `NoBody` | The route reads no body, and none was sent; or an empty body was sent |
+| `Unread` | A body was sent to a route that does not read one. [D4](#the-withholding-rule) trigger 3 withholds the row |
+| `Retained` | The body was read, and a raw copy of its bytes was kept |
+| `NotRetained` | The body was read, but no copy was kept, because no grant could apply when it was read |
+
+The raw copy is taken before the frontend clears its buffer, and only when a grant could apply.
+It is the bytes as sent, so a malformed body, a duplicate property, or a value that coercion later changes is stored as the client sent it.
+The raw query string is kept because `FromRequest` keeps only the last value of a repeated parameter (`AspNetCoreFrontend.cs:704`).
+
+**Narrowing the raw copy: decided yes.**
+The frontend reads the `client_id` claim from the bearer token without validating it, and keeps a raw copy only when that client has an active grant for the tenant.
+This is safe in both directions.
+For a valid token, the unvalidated claim equals the validated one (`ApiClientDetailsProvider.cs:30`), so no request that selection would capture loses its body.
+For an invalid token, authentication fails and the request is never captured, so the claim's value cannot add a capture.
+The decode runs only when the tenant has an active grant, and without it every request of a granted tenant would pay for a copy.
+
+**2. Selection, after `JwtAuthentication`.**
+A new step looks up the validated client key in the current snapshot ([D2](#the-in-flight-boundary)) and freezes the decision on the request.
+It is added only to the in-scope pipelines of [D4](#capture-scope).
+An in-scope request with no capture context is not captured, and a warning is logged, so a route added later without one fails safe.
+
+**3. Finalization, outside `CoreExceptionLogging`.**
+A new step sits between `RequestResponseLogging` and `CoreExceptionLogging`, so it sees the response after `CoreExceptionLogging` has translated an exception into 403, 500 or 503 (`ApiService.cs:234-246`).
+For a selected request whose status the grant's mode accepts, it builds the row, applies the D4 rule, and queues the row.
+It serializes the response body only for such a request, so no other request pays for it.
+It never throws into the request: a failure inside it is logged with metadata only.
+
+### Semantics
+
+**What counts as a failure.**
+Under the `Failures` mode, a request is captured when its status is 400 or above, or when an exception escaped `CoreExceptionLogging`.
+Under `All`, every selected request is captured.
+
+**What is never captured.**
+- A request that fails authentication: there is no validated client to match a grant.
+- A response produced entirely by the frontend or the host, such as a request rejected before core runs: core never sees it.
+- A request the client cancelled: no response was sent.
+
+**The rethrow case.**
+`RequestResponseLogging` rethrows a client cancellation as it is, and wraps any other exception that escaped `CoreExceptionLogging` (`RequestResponseLoggingMiddleware.cs:115-138`).
+Since `CoreExceptionLogging` catches everything else, the second case is reached only by a defect in that step.
+**Decided:** finalization records such a request as a failure, with status 500, the exception type and a server-chosen description, and no response body, and then rethrows the exception unchanged.
+A cancellation is not captured.
+
+**Caps.**
+Each stored body is capped at `MaxStoredBodyBytes`; a longer body is truncated and its flag set.
+The D4 rule is applied to the full body first, so a body that triggers it is withheld, not truncated.
+
+**The writer.**
+Rows go to a bounded in-memory queue, and a background writer inserts them in batches.
+When the queue is full, the row is dropped and a warning is logged with the grant id and status only.
+When the store fails, the rows are dropped and a warning is logged with metadata only.
+The request is never delayed or failed by capture: the writer fails open.
+On shutdown, the writer drains what it can within the host's shutdown timeout.
+
+### Retention
+
+A hosted purge in DMS deletes rows older than `RetentionDays`, in batches, on a fixed schedule (R11).
+It runs under a database mutex so that one replica purges at a time, on the precedent of the DocumentCache administrative mutex: `pg_advisory_lock` on PostgreSQL and `sp_getapplock` on SQL Server (`Backend.Postgresql/PostgresqlDocumentCacheAdministrativeMutex.cs`, `Backend.Mssql/MssqlDocumentCacheAdministrativeMutex.cs`).
+The table is indexed on the receive time, for the purge and for time-range queries, and on the client key with the receive time, and on the grant id, for the queries a troubleshooter runs.
+
+### Recorded Consequences
+
+- **The departure from ODS confinement.** ODS confines content to the database that handled the call ([ODS Precedent](#ods-precedent)). One capture database holds rows from every data store and tenant. It goes to the gate.
+- **Rows carry the tenant.** Tenancy in DMS is routing, not a security boundary ([DMS-1477](https://edfi.atlassian.net/browse/DMS-1477)), so the tenant column is for filtering, and access to the database is the operator's control. The documentation story states that the capture database holds student data and must be secured like a data store.
+
+### Rejected Alternatives
+
+- **A `dms` table in each data store, which is ODS parity.** Data-store provisioning is create-only, so existing stores would need reprovisioning. Rows would split across stores, and GETs routed to read replicas could not write there.
+- **The logging pipeline.** Every Serilog event can reach OTLP and plugin providers, which breaks R10.
+- **Files.** Not consumable by workflow or BI tooling without another loader (R6), and they multiply per replica.
+- **The CMS database.** It holds credentials and security configuration. Adding student payloads to it widens what its compromise exposes, and DMS would need write access to it.
 
 ## Stories
 
