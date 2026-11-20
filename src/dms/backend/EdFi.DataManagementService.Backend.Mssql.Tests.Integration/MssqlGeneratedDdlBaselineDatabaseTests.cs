@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Collections.Concurrent;
 using EdFi.DataManagementService.Backend.Tests.Integration.Common;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
@@ -461,7 +462,7 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         return $"{FixtureRelativePath}#{scenario}";
     }
 
-    private static async Task CreateAdditionalSnapshotAsync(string databaseName, string snapshotName)
+    internal static async Task CreateAdditionalSnapshotAsync(string databaseName, string snapshotName)
     {
         IReadOnlyList<MssqlDatabaseFileMetadata> databaseFiles =
             await MssqlGeneratedDdlBackupBaselineDatabase.ReadDatabaseFilesAsync(databaseName);
@@ -494,7 +495,7 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
         });
     }
 
-    private static async Task<bool> DatabaseExistsAsync(string databaseName)
+    internal static async Task<bool> DatabaseExistsAsync(string databaseName)
     {
         await using SqlConnection connection = new(Configuration.MssqlAdminConnectionString!);
         await connection.OpenAsync();
@@ -514,4 +515,277 @@ public class Given_MssqlGeneratedDdlBaselineDatabase
 
         return (bool)(await command.ExecuteScalarAsync() ?? false);
     }
+}
+
+/// <summary>
+/// Two baseline slots, each with two snapshots of its source. The first slot's teardown is paused inside
+/// the lifecycle gate, after its snapshot cleanup and before its source fence, and the second slot's
+/// teardown starts while it waits. Every source fence must find its source without any snapshot that
+/// refers to it.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+[Category(MssqlCiShards.Shard4)]
+public class Given_Concurrently_Disposed_Baseline_Slots
+{
+    private const string FixtureRelativePath =
+        "src/dms/backend/EdFi.DataManagementService.Backend.Ddl.Tests.Unit/Fixtures/focused/stable-key-extension-child-collections";
+    private const int SlotCount = 2;
+
+    private readonly List<MssqlGeneratedDdlBaselineDatabase> _managers = [];
+    private readonly List<MssqlGeneratedDdlBaselineLease> _leases = [];
+    private readonly List<string> _sourceNames = [];
+    private readonly List<string> _snapshotNames = [];
+    private readonly ConcurrentQueue<SourceFenceObservation> _observations = new();
+    private readonly ConcurrentBag<Exception> _disposalExceptions = [];
+    private readonly TaskCompletionSource _firstAtFence = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private readonly TaskCompletionSource _releaseFirst = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
+    private bool _secondPendingWhileFirstHeld;
+
+    [OneTimeSetUp]
+    public async Task OneTimeSetUp()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore(
+                "SQL Server integration tests require a MssqlAdmin connection string in appsettings.Test.json"
+            );
+        }
+
+        MssqlGeneratedDdlFixture fixture = MssqlGeneratedDdlFixtureLoader.LoadFromRepositoryRelativePath(
+            FixtureRelativePath
+        );
+
+        for (var index = 0; index < SlotCount; index++)
+        {
+            MssqlGeneratedDdlBaselineDatabase manager = await MssqlGeneratedDdlBaselineDatabase.CreateAsync(
+                $"{FixtureRelativePath}#concurrent-slot-teardown-{index}-{Guid.NewGuid():N}",
+                fixture.GeneratedDdl
+            );
+            _managers.Add(manager);
+
+            MssqlGeneratedDdlBaselineLease lease = await manager.AcquireRestoredDatabaseAsync();
+            _leases.Add(lease);
+
+            var sourceName = lease.Database.DatabaseName;
+            var additionalSnapshotName = $"{sourceName}_additional";
+            _sourceNames.Add(sourceName);
+            _snapshotNames.Add(lease.SnapshotName);
+            await Given_MssqlGeneratedDdlBaselineDatabase.CreateAdditionalSnapshotAsync(
+                sourceName,
+                additionalSnapshotName
+            );
+            _snapshotNames.Add(additionalSnapshotName);
+        }
+
+        await TestContext.Progress.WriteLineAsync(
+            $"{nameof(Given_Concurrently_Disposed_Baseline_Slots)} databases: sources "
+                + $"{string.Join(", ", _sourceNames)}; snapshots {string.Join(", ", _snapshotNames)}"
+        );
+
+        MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = ObserveSourceFenceAsync;
+        List<Task> disposals = [];
+        try
+        {
+            Task firstDisposal = DisposeSlotAsync(0);
+            disposals.Add(firstDisposal);
+
+            // A first disposal that fails before its fence never signals; stop waiting when it ends.
+            if (await Task.WhenAny(_firstAtFence.Task, firstDisposal) == _firstAtFence.Task)
+            {
+                // Called directly, not queued: the second disposal's first incomplete await is the
+                // lifecycle gate the first holds, so it is waiting there when this call returns.
+                Task secondDisposal = DisposeSlotAsync(1);
+                disposals.Add(secondDisposal);
+                _secondPendingWhileFirstHeld =
+                    !secondDisposal.IsCompleted
+                    && !_observations.Any(observation => observation.SourceName == _sourceNames[1]);
+            }
+        }
+        finally
+        {
+            // A first disposal left paused would hold the lifecycle gate for every later fixture.
+            _releaseFirst.TrySetResult();
+
+            // Drain with no timeout: an abandoned disposal would keep running into later fixtures
+            // while holding the lifecycle gate. The test process hang limit bounds a hang.
+            await Task.WhenAll(disposals);
+            MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = null;
+        }
+    }
+
+    private async Task DisposeSlotAsync(int index)
+    {
+        try
+        {
+            // The lease return completes synchronously while the manager handle is held, so the
+            // manager disposal reaches the lifecycle gate before this method first yields.
+            await _leases[index].DisposeAsync();
+            await _managers[index].DisposeAsync();
+        }
+        catch (Exception exception)
+        {
+            _disposalExceptions.Add(exception);
+        }
+    }
+
+    [OneTimeTearDown]
+    public async Task OneTimeTearDown()
+    {
+        MssqlTestDatabaseHelper.BeforeSourceFenceObservationHook = null;
+
+        List<Exception> cleanupExceptions = [];
+        foreach (IAsyncDisposable disposable in _leases.Cast<IAsyncDisposable>().Concat(_managers))
+        {
+            try
+            {
+                await disposable.DisposeAsync();
+            }
+            catch (Exception exception)
+            {
+                cleanupExceptions.Add(exception);
+            }
+        }
+
+        foreach (var snapshotName in _snapshotNames)
+        {
+            await MssqlDatabaseLifecycleCoordinator.ExecuteAsync(connection =>
+                MssqlTestDatabaseHelper.DropSnapshotIfExistsAsync(connection, snapshotName, 300)
+            );
+        }
+
+        foreach (var sourceName in _sourceNames)
+        {
+            if (await Given_MssqlGeneratedDdlBaselineDatabase.DatabaseExistsAsync(sourceName))
+            {
+                await MssqlTestDatabaseHelper.DropDatabaseUnderLifecycleGateAsync(sourceName);
+            }
+        }
+
+        if (cleanupExceptions.Count != 0)
+        {
+            await TestContext.Progress.WriteLineAsync(
+                $"{nameof(Given_Concurrently_Disposed_Baseline_Slots)} cleanup disposal failures: "
+                    + string.Join(Environment.NewLine, cleanupExceptions)
+            );
+        }
+    }
+
+    [Test]
+    public void It_starts_the_second_disposal_while_the_first_holds_the_gate()
+    {
+        // The arrangement this fixture depends on: the second teardown was waiting on the lifecycle
+        // gate while the first held it, before its source fence. The gate wait is the second
+        // teardown's first incomplete await, so pending here means blocked there.
+        _secondPendingWhileFirstHeld.Should().BeTrue(DescribeObservations());
+    }
+
+    [Test]
+    public void It_observes_every_source_fence_while_the_source_exists()
+    {
+        _sourceNames
+            .Should()
+            .OnlyContain(
+                sourceName =>
+                    _observations.Any(observation =>
+                        observation.SourceName == sourceName && observation.SourceExists
+                    ),
+                DescribeObservations()
+            );
+    }
+
+    [Test]
+    public void It_drops_every_owned_snapshot_before_its_source_fence()
+    {
+        _observations
+            .Should()
+            .OnlyContain(observation => observation.OwnedSnapshotNames.Count == 0, DescribeObservations());
+    }
+
+    [Test]
+    public async Task It_leaves_no_snapshot_or_source_behind()
+    {
+        List<string> remainingDatabases = [];
+        foreach (var databaseName in _snapshotNames.Concat(_sourceNames))
+        {
+            if (await Given_MssqlGeneratedDdlBaselineDatabase.DatabaseExistsAsync(databaseName))
+            {
+                remainingDatabases.Add(databaseName);
+            }
+        }
+
+        remainingDatabases.Should().BeEmpty(DescribeObservations());
+        _disposalExceptions.Should().BeEmpty(DescribeObservations());
+    }
+
+    private async Task ObserveSourceFenceAsync(SqlConnection connection, string databaseName)
+    {
+        if (!_sourceNames.Contains(databaseName, StringComparer.Ordinal))
+        {
+            return;
+        }
+
+        const string sql = """
+            SELECT CASE WHEN DB_ID(@databaseName) IS NULL THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END;
+
+            SELECT [name]
+            FROM sys.databases
+            WHERE [source_database_id] = DB_ID(@databaseName)
+            ORDER BY [name];
+            """;
+
+        bool sourceExists;
+        List<string> ownedSnapshotNames = [];
+        await using (SqlCommand command = connection.CreateCommand())
+        {
+            command.CommandText = sql;
+            command.Parameters.Add(new SqlParameter("@databaseName", databaseName));
+
+            await using SqlDataReader reader = await command.ExecuteReaderAsync();
+            await reader.ReadAsync();
+            sourceExists = reader.GetBoolean(0);
+            await reader.NextResultAsync();
+            while (await reader.ReadAsync())
+            {
+                ownedSnapshotNames.Add(reader.GetString(0));
+            }
+        }
+
+        _observations.Enqueue(new(databaseName, sourceExists, ownedSnapshotNames));
+
+        if (string.Equals(databaseName, _sourceNames[0], StringComparison.Ordinal))
+        {
+            // Hold the first teardown inside the lifecycle gate until the second has started. A retry
+            // that re-enters the hook does not pause again, because the release is already complete.
+            _firstAtFence.TrySetResult();
+            await _releaseFirst.Task;
+        }
+    }
+
+    private string DescribeObservations()
+    {
+        return "source fence observations:"
+            + Environment.NewLine
+            + string.Join(
+                Environment.NewLine,
+                _observations.Select(observation =>
+                    $"  {observation.SourceName}: exists={observation.SourceExists}, "
+                    + $"owned snapshots=[{string.Join(", ", observation.OwnedSnapshotNames)}]"
+                )
+            )
+            + Environment.NewLine
+            + $"disposal exceptions: {(_disposalExceptions.IsEmpty ? "none" : string.Join(Environment.NewLine, _disposalExceptions))}";
+    }
+
+    private sealed record SourceFenceObservation(
+        string SourceName,
+        bool SourceExists,
+        IReadOnlyList<string> OwnedSnapshotNames
+    );
 }

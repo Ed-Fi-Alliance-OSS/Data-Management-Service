@@ -683,6 +683,12 @@ public sealed record CdcProviderDiagnostic(
     public string? ProviderErrorCode { get; init; }
 
     public string? ProviderErrorState { get; init; }
+
+    /// <summary>
+    /// The tag of the provider statement that failed, for steps that run more than one. It comes
+    /// from code, never from the provider error or the request.
+    /// </summary>
+    public string? ProviderStatement { get; init; }
 }
 
 public sealed record CdcProviderErrorIdentity(string? ProviderErrorCode, string? ProviderErrorState);

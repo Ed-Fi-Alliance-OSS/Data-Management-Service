@@ -80,6 +80,7 @@ public class Given_CdcProviderManifest_Emitter
         {
             ProviderErrorCode = "51000",
             ProviderErrorState = "7",
+            ProviderStatement = "cdc:sqlserver:grant-connector-access",
         };
         var payloadWithIdentity = CdcProviderManifestEmitter.CreatePayload(
             BuildManifestResult() with
@@ -90,12 +91,18 @@ public class Given_CdcProviderManifest_Emitter
 
         payloadWithoutIdentity.Json.Should().NotContain("provider_error_code");
         payloadWithoutIdentity.Json.Should().NotContain("provider_error_state");
+        payloadWithoutIdentity.Json.Should().NotContain("provider_statement");
 
         using var document = JsonDocument.Parse(payloadWithIdentity.Json);
         var diagnostic = document.RootElement.GetProperty("validation_diagnostics").EnumerateArray().Single();
 
         diagnostic.GetProperty("provider_error_code").GetString().Should().Be("51000");
         diagnostic.GetProperty("provider_error_state").GetString().Should().Be("7");
+        diagnostic
+            .GetProperty("provider_statement")
+            .GetString()
+            .Should()
+            .Be("cdc:sqlserver:grant-connector-access");
     }
 
     [Test]

@@ -710,7 +710,7 @@ public class Given_MssqlCdcSourcePositionAdapterTests
             providerErrorIdentityMapper: MssqlCdcProviderErrorIdentityMapper.MapProviderErrorIdentity
         );
 
-        return await service.SetupAsync(
+        var result = await service.SetupAsync(
             new CdcProviderSetupRequest(
                 provider: DdlCdcProvider.SqlServer,
                 mode: mode,
@@ -739,6 +739,8 @@ public class Given_MssqlCdcSourcePositionAdapterTests
                 databaseExecutor: executor
             )
         );
+
+        return await Given_MssqlCdcProviderArtifacts.LogProviderErrorsAsync(result);
     }
 
     private async Task<CdcProviderSetupObservationMapping> ObserveProviderSetupAsync(
@@ -1269,7 +1271,7 @@ public class Given_MssqlCdcSourcePositionAdapterTests
         string.Join(
             "; ",
             diagnostics.Select(diagnostic =>
-                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:error_class={diagnostic.ProviderErrorClass ?? "none"}:error_code={diagnostic.ProviderErrorCode ?? "none"}:error_state={diagnostic.ProviderErrorState ?? "none"}"
+                $"{diagnostic.Code}:{diagnostic.ArtifactKind}:{diagnostic.SafeName.Value}:{diagnostic.ExpectedValue}->{diagnostic.ObservedValue}:error_class={diagnostic.ProviderErrorClass ?? "none"}:error_code={diagnostic.ProviderErrorCode ?? "none"}:error_state={diagnostic.ProviderErrorState ?? "none"}:statement={diagnostic.ProviderStatement ?? "none"}"
             )
         );
 
