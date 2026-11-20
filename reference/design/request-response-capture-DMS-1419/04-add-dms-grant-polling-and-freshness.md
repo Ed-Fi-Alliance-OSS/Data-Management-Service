@@ -28,7 +28,7 @@ Unprefixed paths are relative to the repository root.
 
 - A background service polls `GET /v3/requestCaptureGrants/active` for each tenant the replica has loaded (`Core/Configuration/ConfigurationServiceDataStoreProvider.cs`, `GetLoadedTenantKeys`), through the existing CMS client and token handler.
 - It is registered only when `RequestResponseCapture:ConnectionString` is set.
-- DMS binds `RequestResponseCapture:PollIntervalSeconds` (`I`, default 30) and `PollTimeoutSeconds` (`T`, default 10). A non-positive value, or a timeout not shorter than the interval, fails startup.
+- DMS binds `RequestResponseCapture:ConnectionString`, `PollIntervalSeconds` (`I`, default 30), and `PollTimeoutSeconds` (`T`, default 10). The `RequestResponseCapture` options type is shared with the capture-store story, so whichever of the two lands first creates it. A non-positive value, or a timeout not shorter than the interval, fails startup.
 - A failed poll logs a rate-limited warning with the tenant and the failure, and nothing from a grant beyond its id.
 
 **The snapshot**

@@ -135,15 +135,15 @@ A DMS setting is secret-sourced by environment injection or by a Phase A plugin 
 ## ODS Precedent
 
 **The mechanism.**
-`RequestResponseDetailsLoggerMiddleware` (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestResponseDetailsLoggerMiddleware.cs`, cited below as `mw.cs`) writes through a log4net `AdoNetAppender` to a `RequestResponseContentLog` table.
+`RequestResponseDetailsLoggerMiddleware` (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestResponseDetailsLoggerMiddleware.cs`, cited below as `mw.cs`) writes through the single `AdoNetAppender` of its `RequestResponseContentLogger` logger (`mw.cs:240`). The code names no table: the appender's `commandText`, which the operator supplies, does, and the docs set it to `RequestResponseContentLog` (`ODS docs:96`, `:205`).
 It is registered as a singleton (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Container/Modules/ApplicationModule.cs:505-516`).
 It runs only for paths that start with `/data` or `/composites` (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Startup/OdsStartupBase.cs:451-454`), after correlation, tenant identification, authentication, and ODS instance identification (`OdsStartupBase.cs:400-440`).
 
 **Nothing ships it.**
-None of the nine log4net configurations in `Impl:` at `v7.3.2` defines the `RequestResponseContentLogger` logger or an `AdoNetAppender`.
+None of the ten log4net configurations in `Impl:` at `v7.3.2` defines the `RequestResponseContentLogger` logger or an `AdoNetAppender`.
 The web API's own `Impl:Application/EdFi.Ods.WebApi/log4net.config` defines only `NHibernate` and the separate file-based `RequestResponseDetailsLogger`.
 Neither repository creates the table: operators run the DDL from the docs by hand (`ODS docs:14-62`).
-This rests on GitHub code search for `RequestResponseContentLog`, which indexes only each repository's default branch and finds the name only in `mw.cs`, plus no file in either `v7.3.2` tree named for it.
+This rests on GitHub code search for `RequestResponseContentLog`, which indexes only each repository's default branch and finds it only in `mw.cs`, as part of the logger name, and in the docs, plus no file in either `v7.3.2` tree named for it.
 
 | Aspect | ODS behavior | DMS decision | Reason |
 | --- | --- | --- | --- |
@@ -155,9 +155,9 @@ This rests on GitHub code search for `RequestResponseContentLog`, which indexes 
 | What is captured | A log4net level. A 500 with a recorded exception logs at Error, any other status of 400 or above except 500 at Info, and everything else at Debug (`mw.cs:70-82`). The documented default threshold, ERROR, captures only exception 500s (`ODS docs:75-78`, `:88`, `:93`) | A per-grant mode: `Failures`, the default, or `All`. Failures means status 400 or above, or an exception ([D2](#d2-control-surface), [D6](#d6-capture-store-and-retention)) | R9, as a mode rather than a log level |
 | The docs on levels | "Change ERROR to INFO to log all calls" (`ODS docs:75-78`). Stale since v7.2: v7.0 and v7.1 logged every non-500 at Info, and v7.2 moved responses below 400 to Debug. INFO now captures failures only, and all calls need DEBUG | Not applicable | Recorded so the parity claim is against behavior, not the docs |
 | Routes | `/data` and `/composites` only. The token endpoint is never captured | The core data-plane pipelines only: resources, descriptors, change queries and partitions. Never token, identity, management, or CMS routes ([D4](#d4-credential-exclusion)) | R4, and DMS-1419's scope |
-| Fields | Date (log4net `RawTimeStampLayout`, local time, no zone), thread, correlation ID (client header or generated, `Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestCorrelationMiddleware.cs:25`), the numeric API client id (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/EdFiApiAuthenticationMiddleware.cs:123`; `Ed-Fi-ODS:Application/EdFi.Common/Security/ApiClientDetails.cs:79`), level, URL with the raw query string (`mw.cs:224`, 255 characters), method (10 characters), the raw profile content-type header (`Ed-Fi-ODS:Application/EdFi.Ods.Features/Profiles/ProfileContentTypeContextMiddleware.cs:84`, `:106`), full uncapped bodies, the status name or problem details as the message (`mw.cs:138-172`), and the exception (2000 characters) (`ODS docs:26-40`, `:95-187`) | Every column is classed server-generated or client-derived ([D4](#d4-credential-exclusion)). Adds the status code, duration, tenant, data store and grant. Stores the validated client key, the profile name DMS resolved, and the method as a server value. Stored bodies are capped and flagged ([D6](#d6-capture-store-and-retention)) | R6 and R12: BI tooling needs the status code and the tenant, and a capped body bounds one row |
+| Fields | Date (log4net `RawTimeStampLayout`, local time, no zone), thread, correlation ID (a client header, else a `correlationId` query parameter, else generated, `Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/RequestCorrelationMiddleware.cs:25-39`), the numeric API client id (`Ed-Fi-ODS:Application/EdFi.Ods.Api/Middleware/EdFiApiAuthenticationMiddleware.cs:123`; `Ed-Fi-ODS:Application/EdFi.Common/Security/ApiClientDetails.cs:79`), level, URL with the raw query string (`mw.cs:224`, 255 characters), method (10 characters), the raw profile content-type header (`Ed-Fi-ODS:Application/EdFi.Ods.Features/Profiles/ProfileContentTypeContextMiddleware.cs:84`, `:106`), full uncapped bodies, the status name or problem details as the message (`mw.cs:138-172`), and the exception (2000 characters) (`ODS docs:26-40`, `:95-187`) | Every column is classed server-generated or client-derived ([D4](#d4-credential-exclusion)). Adds the status code, duration, tenant, data store and grant. Stores the validated client key, the profile name DMS resolved, and the method as a server value. Stored bodies are capped and flagged ([D6](#d6-capture-store-and-retention)) | R6 and R12: BI tooling needs the status code and the tenant, and a capped body bounds one row |
 | Not captured | Headers other than the profile header, the status code, the tenant, the duration | See the row above | |
-| Correlation ID | Always stored (`NOT NULL` in the DDL) | Stored, but withheld with the other client-derived fields when the D4 rule fires ([D4](#d4-credential-exclusion)) | R4: it can come from a client header. A departure from R12, recorded for the gate |
+| Correlation ID | Always stored (`NOT NULL` in the DDL) | Always stored. A client-supplied ID is withheld with the other client-derived fields when the D4 rule fires; an ID DMS generated is kept ([D4](#d4-credential-exclusion)) | R4: a client-supplied ID is client text. A departure from R12 for that case, recorded for the gate |
 | Exception detail | log4net `ExceptionLayout`: the exception text, truncated to 2000 characters | The exception type plus a server-chosen description, never the message chain ([D4](#d4-credential-exclusion)) | R4: DMS exception chains can quote a connection string. A departure from R12's exception detail, recorded for the gate |
 | Redaction | None. Bodies and the query string are stored as sent | Credential withholding ([D4](#d4-credential-exclusion)) and the payload policy ([D5](#d5-payload-policy)) | R4, and the ticket's redaction question |
 | Retention | None. The table grows until an operator deletes rows | A hosted purge after `RetentionDays` ([D6](#d6-capture-store-and-retention)) | R11 |
@@ -309,7 +309,9 @@ So an operator enables capture for a client without a restart (R2), and a deploy
 
 **The idle benchmark is an implementation gate.**
 R5 asks for no measurable overhead when capture is off.
-The capture-pipeline story must show that a deployment with a store configured and no grants is indistinguishable from one with no store, and the story is not done until it does.
+The capture-pipeline story must show that a deployment with a store configured and no grants adds no measurable latency over one with no store, and the story is not done until it does.
+Its added allocations are held to a fixed budget: the per-request cost of the two capture steps, and nothing that grows with the request, such as a body copy or a token decode.
+Zero added allocation is not the bar, because every registered step costs a closure, a delegate, and an async state machine per request whether or not it acts (`Pipeline/PipelineProvider.cs:23-28`).
 
 **The fallback, if the benchmark fails.**
 A `RequestResponseCapture:Enabled` flag would register the control path only when set, so its first enablement needs a one-time restart.
@@ -363,7 +365,8 @@ The outline below is that contract's starting point; the story fixes the names a
 | Withheld, withholding reason | Server-generated | Whether the rule fired, and which trigger, from a fixed set |
 | Exception type, exception description | Server-generated | The exception's type, and a description DMS chooses from a fixed set by type, never the message chain |
 | Path, query | Client-derived | The request path, and the raw query string with every repeated value |
-| Correlation ID | Client-derived | The normalized correlation ID, which comes from a client header when `CorrelationIdHeader` is set |
+| Trace ID | Server-generated | The correlation ID when DMS generated it: `CorrelationIdHeader` is not set, or the client sent no usable value. Empty otherwise |
+| Correlation ID | Client-derived | The normalized correlation ID when the client supplied it through `CorrelationIdHeader`. Empty otherwise |
 | Request body, response body | Client-derived | The JSON as sent and as answered; a response can echo request content |
 
 ### The Withholding Rule
@@ -378,6 +381,7 @@ If any trigger below holds, every client-derived column is stored empty, `Withhe
    The decoders are lenient and never fail: an invalid escape or percent sequence is left as it is.
 3. **Incomplete discovery.**
    - A request body fails to parse as JSON, and its text contains a listed name in any spelling the comparison below accepts.
+   - A request body fails to parse as JSON, and it contains a NUL byte. UTF-16 or UTF-32 text, and compressed content such as a gzip body, which DMS does not decompress, hide listed names from the text comparison. JSON text never carries a raw NUL byte, so one marks a body the rule cannot read. This also keeps U+0000 out of PostgreSQL `text` columns, which reject it.
    - A body was sent to a route that does not read one (GET, DELETE, the change-query routes, and the 405 answer). DMS never reads that body, so the rule cannot examine it, and unexamined input fails closed. Such bodies are rare, and DMS ignores them.
    - The examination stopped before finishing, for example at a depth or size bound.
 
@@ -414,7 +418,7 @@ Such requests are rare in Ed-Fi traffic: no Data Standard property bears a liste
 The server-generated columns still record that the request happened, its client, its status, and why its content was withheld.
 
 **Departures from R12, for gate approval.**
-- A withheld row loses its correlation ID, which is client-derived, so it can be matched to the logs only by time, client, and status. No third column class is added to avoid this, because a class that is client text but exempt from the rule is the gap the rule exists to close.
+- A withheld row loses a client-supplied correlation ID, so it can be matched to the logs only by time, client, and status. A correlation ID DMS generated is kept, in the server-generated trace ID column, because the frontend already records which source a request's ID came from (`AspNetCoreFrontend.cs:473-480`). With `CorrelationIdHeader` unset, the default, no withheld row loses its join key. No third column class is added for the client-supplied case, because a class that is client text but exempt from the rule is the gap the rule exists to close.
 - Exception detail is the type plus a server-chosen description, not the ODS exception text, because DMS exception chains can quote a connection string.
 
 Both are recorded in the [ODS Precedent](#ods-precedent) table.
@@ -435,7 +439,7 @@ No test can prove the absolute claim that no secret is ever captured.
 
 ## D5: Payload Policy
 
-Pending. Records the accountable policy owner's decision on payload redaction (AC2), including the NFR-OBS-3 interpretation.
+Pending. Records the accountable policy owner's decision on payload redaction (AC2), including the NFR-OBS-3 interpretation or exception.
 
 ## D6: Capture Store and Retention
 
@@ -504,7 +508,7 @@ The raw query string is kept because `FromRequest` keeps only the last value of 
 **Narrowing the raw copy: decided yes.**
 The frontend reads the `client_id` claim from the bearer token without validating it, and keeps a raw copy only when that client has an active grant for the tenant.
 This is safe in both directions.
-For a valid token, the unvalidated claim equals the validated one (`ApiClientDetailsProvider.cs:30`), so no request that selection would capture loses its body.
+For a valid token, the unvalidated claim equals the validated one, provided the frontend takes the first `client_id` claim as `JwtAuthentication` does (`Security/JwtValidationService.cs:303-306`), so no request that selection would capture loses its body.
 For an invalid token, authentication fails and the request is never captured, so the claim's value cannot add a capture.
 The decode runs only when the tenant has an active grant, and without it every request of a granted tenant would pay for a copy.
 

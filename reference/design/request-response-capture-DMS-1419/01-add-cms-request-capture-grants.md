@@ -9,7 +9,7 @@ source_spike: DMS-1419
 ## TL;DR
 
 Administrators can turn on request/response capture for one API client for a limited time, and turn it off early, through the Configuration Service.
-Every grant is kept as a permanent record of who enabled capture, for which client, and when.
+Every grant is kept, never overwritten, as the record of who enabled capture, for which client, and when, for as long as the client exists; CMS also logs each grant and its end.
 
 ## Description
 
@@ -44,7 +44,7 @@ Unprefixed paths are relative to the repository root.
     - it answers 201 with the grant
 - `POST` refuses with 400 a missing, zero, negative, or over-maximum duration, and an unknown mode.
 - `POST` refuses with 404 an API client that does not exist in the caller's tenant.
-- `POST` refuses with 409 a client that already has an active grant.
+- `POST` refuses with 409 a client that already has an active grant. The rule holds under concurrent requests: the insert transaction locks the API client row before it checks for an active grant, since a unique index cannot express "`ExpiresAt` in the future".
 - `DELETE /v3/apiClients/{id}/requestCapture` (`MapSecuredDelete`) ends the client's active grant by setting `EndedAt` and `EndedBy`, and answers 204. With no active grant it answers 404 and changes nothing.
 - `GET /v3/apiClients/{id}/requestCapture` (`MapSecuredGet`) returns the client's grants, active, expired, and ended, newest first.
 - `GET /v3/requestCaptureGrants/active` (`MapLimitedAccess`) returns every grant of the caller's tenant that is not ended and whose `ExpiresAt` is in the future, with exactly these fields:
@@ -73,6 +73,7 @@ Unprefixed paths are relative to the repository root.
     - history returns every grant, newest first
     - the active read omits ended and expired grants, and grants of another tenant
     - deleting the API client deletes its grants
+    - two concurrent `POST`s for one client create one grant, and the other answers 409
 - Authorization tests show the admin scope can create and end a grant, a read-only caller can read history, and any other caller is refused.
 - The CMS end-to-end suite covers the HTTP contract of the four endpoints.
 

@@ -43,7 +43,7 @@ A new `docs/REQUEST-RESPONSE-CAPTURE.md` states:
 - `docs/LOGGING.md` states that captured content never passes through logging, and stays consistent with the outcome of [DMS-1550](https://edfi.atlassian.net/browse/DMS-1550).
 - `docs/PRD-Ed-Fi-API-v8.0.md`:
     - NFR-OBS-2 and its warning reflect that request capture expires on its own
-    - NFR-OBS-3 states how request capture meets it, per the interpretation recorded in design.md, D5
+    - NFR-OBS-3 records the interpretation or exception decided in design.md, D5
 - `docs/changelog/8.2.0.md` adds the feature under Improvements, linking the operator guide.
 
 **Checks**
