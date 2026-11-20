@@ -2001,6 +2001,87 @@ Describe "Start-InteropStack with published images" {
     }
 }
 
+Describe "Assert-InteropPublishedImage" {
+    BeforeAll {
+        $script:pulledImage = "edfialliance/ed-fi-api:pre"
+        $script:dockerCalls = [System.Collections.Generic.List[string]]::new()
+    }
+
+    BeforeEach {
+        $script:dockerCalls.Clear()
+
+        # Each docker command line, joined with spaces, maps to the exit code and output docker gives
+        # for it. A command line not listed fails, so an unexpected call cannot pass silently.
+        $script:dockerReplies = @{
+            "image inspect $script:pulledImage" = @{ ExitCode = 1; Output = "Error response from daemon: No such image: $script:pulledImage" }
+        }
+
+        Mock -ModuleName PublisherSnapshotInterop Write-InteropStep {}
+        Mock -ModuleName PublisherSnapshotInterop docker {
+            $line = $args -join " "
+            $script:dockerCalls.Add($line)
+            $reply = $script:dockerReplies[$line]
+            if ($null -eq $reply) {
+                $global:LASTEXITCODE = 1
+                return "unexpected docker call: $line"
+            }
+
+            $global:LASTEXITCODE = $reply.ExitCode
+            return $reply.Output
+        }
+    }
+
+    It "uses an image already present without pulling it" {
+        $script:dockerReplies["image inspect $script:pulledImage"] = @{ ExitCode = 0; Output = "[]" }
+
+        Assert-InteropPublishedImage -Image $script:pulledImage
+
+        @($script:dockerCalls) | Should -Be @("image inspect $script:pulledImage")
+    }
+
+    It "pulls an absent image for the host's platform and does not fall back when that pull succeeds" {
+        $script:dockerReplies["pull $script:pulledImage"] = @{ ExitCode = 0; Output = "Status: Downloaded newer image" }
+
+        Assert-InteropPublishedImage -Image $script:pulledImage
+
+        @($script:dockerCalls) | Should -Be @("image inspect $script:pulledImage", "pull $script:pulledImage")
+    }
+
+    It "retries once for linux/amd64 when the tag has no manifest for the host's platform" {
+        $script:dockerReplies["pull $script:pulledImage"] = @{ ExitCode = 1; Output = "no matching manifest for linux/arm64/v8 in the manifest list entries" }
+        $script:dockerReplies["pull --platform linux/amd64 $script:pulledImage"] = @{ ExitCode = 0; Output = "Status: Downloaded newer image" }
+
+        Assert-InteropPublishedImage -Image $script:pulledImage
+
+        @($script:dockerCalls) | Should -Be @(
+            "image inspect $script:pulledImage",
+            "pull $script:pulledImage",
+            "pull --platform linux/amd64 $script:pulledImage"
+        )
+    }
+
+    It "throws any other pull failure without falling back to linux/amd64" {
+        $script:dockerReplies["pull $script:pulledImage"] = @{ ExitCode = 1; Output = "pull access denied for edfialliance/ed-fi-api, repository does not exist or may require 'docker login'" }
+
+        { Assert-InteropPublishedImage -Image $script:pulledImage } | Should -Throw "*pull access denied*"
+
+        @($script:dockerCalls) | Should -Be @("image inspect $script:pulledImage", "pull $script:pulledImage")
+    }
+
+    It "throws the failure of the linux/amd64 retry" {
+        $script:dockerReplies["pull $script:pulledImage"] = @{ ExitCode = 1; Output = "no matching manifest for linux/arm64/v8 in the manifest list entries" }
+        $script:dockerReplies["pull --platform linux/amd64 $script:pulledImage"] = @{ ExitCode = 1; Output = "toomanyrequests: You have reached your pull rate limit" }
+
+        { Assert-InteropPublishedImage -Image $script:pulledImage } | Should -Throw "*toomanyrequests*"
+
+        @($script:dockerCalls) | Should -Be @(
+            "image inspect $script:pulledImage",
+            "pull $script:pulledImage",
+            "pull --platform linux/amd64 $script:pulledImage"
+        )
+    }
+}
+
 Describe "Set-InteropSourceArrangement baseline publishes" {
     BeforeAll {
         $script:arrangementCalls = [System.Collections.Generic.List[object]]::new()

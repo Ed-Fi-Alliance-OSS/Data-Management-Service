@@ -88,13 +88,6 @@ param(
     [string[]]
     $ImageEnvironment = @(),
 
-    # The platform the staged image was built for, in os/architecture[/variant] form. Supplied by
-    # the caller only in the directory parameter set; the image parameter set reads it from the
-    # image itself.
-    [Parameter(ParameterSetName = "FromDirectory")]
-    [string]
-    $ImagePlatform,
-
     # The application whose runtimeconfig.json names the shared frameworks.
     [string]
     $EntryAssemblyName = "EdFi.DataManagementService.Frontend.AspNetCore",
@@ -585,7 +578,6 @@ try {
     else {
         $stageRoot = [System.IO.Path]::GetFullPath($ExtractedRoot)
         $inspectedReference = $ExtractedRoot
-        $inspectedPlatform = $ImagePlatform
     }
 
     foreach ($name in $rollForwardEnvironmentNames) {

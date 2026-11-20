@@ -850,30 +850,12 @@ Describe "New-HostAssemblyManifest header cross-checks" {
 
         $manifest | Should -BeLike "*in this checkout*"
         $manifest | Should -BeLike "*not*provenance for the image*"
+        $manifest | Should -Not -BeLike "*Inspected platform*"
+        $manifest | Should -Not -BeLike "*image was extracted and inspected*"
     }
 }
 
 Describe "New-HostAssemblyManifest inspected platform" {
-
-    It "records the platform the caller states for a staged directory" {
-        if (-not (Test-FixturesAvailable)) {
-            Set-ItResult -Inconclusive -Because "the fixture needs an installed .NET shared framework"
-        }
-
-        $fixture = New-ManifestFixture -Name "platform-directory"
-
-        & $script:generator `
-            -ExtractedRoot $fixture.Root `
-            -ImagePlatform "linux/arm64" `
-            -EntryAssemblyName $script:entryAssemblyName `
-            -DockerfilePath $fixture.Dockerfile `
-            -OutputPath $fixture.OutputPath | Out-Null
-
-        $manifest = [System.IO.File]::ReadAllText($fixture.OutputPath) -split "`n"
-
-        $manifest | Should -Contain "| Inspected platform | linux/arm64 |"
-        $manifest | Should -Contain "linux/arm64 image was extracted and inspected, and every table below describes it."
-    }
 
     It "reads the platform of a pulled image from the image itself" {
         if (-not (Test-FixturesAvailable)) {
