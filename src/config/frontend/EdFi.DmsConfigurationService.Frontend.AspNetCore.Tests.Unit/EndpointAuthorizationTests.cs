@@ -517,6 +517,37 @@ public class EndpointAuthorizationTests
             body["detail"]!.GetValue<string>().Should().Be("Current claims endpoint is not available.");
         }
 
+        [TestCase("/v3/dataStores/edOrgs/refresh")]
+        [TestCase("/v3/dataStores/7/edOrgs/refresh")]
+        public async Task It_requires_the_admin_scope_to_queue_an_education_organization_refresh(string path)
+        {
+            var state = new ProbeState();
+            await using var factory = CreateBehaviorFactory(identityProvider, multiTenancy, state);
+            using var client = factory.CreateClient();
+            using var readOnly = CreateRequest(
+                HttpMethod.Post,
+                path,
+                "role-readonly",
+                multiTenancy ? "Tenant_A" : null
+            );
+            using var forbidden = await client.SendAsync(readOnly);
+            await AssertFailure(
+                forbidden,
+                state,
+                HttpStatusCode.Forbidden,
+                "urn:ed-fi:management-api:security:authorization",
+                "Authorization Failed",
+                "The authenticated client is not authorized to access this resource."
+            );
+            using var anonymous = CreateRequest(
+                HttpMethod.Post,
+                path,
+                tenant: multiTenancy ? "Tenant_A" : null
+            );
+            using var challenged = await client.SendAsync(anonymous);
+            await AssertChallenge(challenged, state);
+        }
+
         [Test]
         public async Task It_challenges_an_anonymous_wrong_method()
         {

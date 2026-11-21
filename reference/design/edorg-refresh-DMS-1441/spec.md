@@ -383,7 +383,7 @@ Status: **P** = provided by a dependency (verified and re-tested), **Part** = pa
 | `POST /v3/dataStores/edOrgs/refresh` | `MapSecuredPost` | Enqueue `{All,0}` with a null transaction (autocommit). Respond `202` with `Location: {PathBase}/v3/jobs/{jobId}` and body `{ jobId, message: "Education organizations refresh has been queued for all instances" }`. |
 | `POST /v3/dataStores/{dataStoreId}/edOrgs/refresh` | `MapSecuredPost` | `int` route binding; a non-integer gets the existing 400. A tenant-scoped existence check, which reads no connection string; absent → `404 "Data store not found."` with no job. Otherwise enqueue `{One,id}` → `202` with message `"…for the specified instance"`. |
 
-In multi-tenant mode the existing tenant middleware applies. An enqueue failure returns 500 with no `Location`. OpenAPI declares 202 + Location, 400, 401, 403, 404 and 500.
+In multi-tenant mode the existing tenant middleware applies; in single-tenant mode a `Tenant` header is ignored. A failed existence check or a failed enqueue returns 500 with no `Location` and logs `RefreshRequestFailed` (§6.11). `Location` is relative, `{PathBase}/v3/jobs/{jobId}`, as in the pinned contract. Both routes carry the pinned `DataStores` tag. OpenAPI declares 202 + Location, 400, 401, 403, 404 (per-store route only) and 500, with `dataStoreId` as an `int32` path parameter.
 
 ### 6.5 Handler (`EducationOrganizationRefreshJobHandler`)
 
@@ -545,6 +545,7 @@ Every event uses its event name as the `EventId` name. Values are sanitized. URL
 | `…ScheduleReconciliationFailed` | Warning | — |
 | `JobCompositeErrorRejected` | Warning | — |
 | `JobWorkersDisabled` | Warning | at startup |
+| `RefreshRequestFailed` | Error | a refresh route's failed existence check or enqueue: request, exception type chain, provider code, operation, trace ID |
 
 ### 6.12 Locking, ordering and bounded failure (both providers)
 
@@ -850,7 +851,7 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 
 **3.1 Refresh routes**
 - Objective: AC3–5.
-- Files: `FE/Modules/EducationOrganizationModule.cs`, `OpenApiModuleTags`, FE tests.
+- Files: `FE/Modules/EducationOrganizationModule.cs`, `OpenApiModuleTags`, FE tests (`EducationOrganizationModuleTests.cs`, `EndpointAuthorizationTests.cs`), `ManagedDataStoreApiTestHost` (a request path under the simulated path base is routed without it, so a returned Location can be requested again), and the refresh half of PG/MS `EducationOrganizationHttpTests.cs`.
 - Depends on: 2.1, 1.4.
 - Validation: 202, body and exact Location (with and without PathBase); distinct messages; 404 creates no job; non-integer → 400; enqueue failure → 500 with no Location; EAT admin metadata; OpenAPI.
 - Done when: FE green.
