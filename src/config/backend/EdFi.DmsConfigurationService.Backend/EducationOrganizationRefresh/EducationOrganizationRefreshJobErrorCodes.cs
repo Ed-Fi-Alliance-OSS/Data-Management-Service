@@ -3,6 +3,8 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
+
 namespace EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 
 /// <summary>
@@ -22,7 +24,7 @@ public static class EducationOrganizationRefreshJobErrorCodes
 
     /// <summary>
     /// The composite code of a refresh of every data store that did not refresh them all. It is registered as a
-    /// composite, with its allowed categories, by the composite error extension, not with <see cref="All"/>.
+    /// composite with <see cref="IncompleteCategories"/>, not with <see cref="All"/>.
     /// </summary>
     public const string Incomplete = "EdOrgRefreshIncomplete";
 
@@ -42,5 +44,16 @@ public static class EducationOrganizationRefreshJobErrorCodes
             "DMS, the data store, or the Configuration Service database was temporarily unavailable."
         ),
         new(TargetBusy, "The data store was being refreshed by another job."),
+    ];
+
+    /// <summary>
+    /// The categories an <see cref="Incomplete"/> failure may list: every permanent projection code, then the
+    /// refresh's two transient codes.
+    /// </summary>
+    public static IReadOnlyList<string> IncompleteCategories { get; } =
+    [
+        .. EducationOrganizationProjectionJobErrorCodes.All.Select(pair => pair.Key),
+        TemporarilyUnavailable,
+        TargetBusy,
     ];
 }

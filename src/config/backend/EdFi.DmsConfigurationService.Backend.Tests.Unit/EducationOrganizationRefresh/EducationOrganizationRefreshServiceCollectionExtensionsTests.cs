@@ -70,6 +70,45 @@ public class EducationOrganizationRefreshServiceCollectionExtensionsTests
                 errorCode.Should().Be(new JobErrorCode(code, message));
             }
         }
+
+        [Test]
+        public void It_registers_the_incomplete_code_as_a_composite_of_the_allowed_categories()
+        {
+            IJobErrorCodeRegistry registry = _provider.GetRequiredService<IJobErrorCodeRegistry>();
+            registry.TryGet(EducationOrganizationRefreshJobErrorCodes.Incomplete, out _).Should().BeFalse();
+            registry
+                .TryCompose(
+                    EducationOrganizationRefreshJobErrorCodes.Incomplete,
+                    EducationOrganizationRefreshJobErrorCodes.IncompleteCategories,
+                    out _
+                )
+                .Should()
+                .BeTrue();
+            registry
+                .TryCompose(
+                    EducationOrganizationRefreshJobErrorCodes.Incomplete,
+                    [EducationOrganizationRefreshJobErrorCodes.DataStoreNotFound],
+                    out _
+                )
+                .Should()
+                .BeFalse();
+        }
+
+        [Test]
+        public void It_registers_the_refresh_job_handler()
+        {
+            _provider
+                .GetRequiredService<IJobHandlerRegistry>()
+                .TryGet(
+                    EducationOrganizationRefreshJobTypes.Refresh,
+                    out JobHandlerRegistration? registration
+                )
+                .Should()
+                .BeTrue();
+            registration!.HandlerType.Should().Be<EducationOrganizationRefreshJobHandler>();
+            registration.PayloadType.Should().Be<EducationOrganizationRefreshPayload>();
+            registration.PayloadVersions.Should().Equal(EducationOrganizationRefreshJobTypes.PayloadVersion);
+        }
     }
 
     [TestFixture]
@@ -160,6 +199,7 @@ public class EducationOrganizationRefreshServiceCollectionExtensionsTests
             {
                 using ServiceProvider provider = Provider([], registrations: 2);
                 provider.GetRequiredService<IJobErrorCodeRegistry>();
+                provider.GetRequiredService<IJobHandlerRegistry>();
                 _validators = provider
                     .GetServices<IValidateOptions<EducationOrganizationRefreshOptions>>()
                     .Count();

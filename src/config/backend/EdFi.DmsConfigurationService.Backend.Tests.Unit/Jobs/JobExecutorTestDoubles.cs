@@ -436,7 +436,12 @@ public sealed class ExecutorHarness : IDisposable
 
     private readonly ServiceProvider _provider;
 
-    public ExecutorHarness(bool multiTenancy = false, IJobLeaseRepository? leaseRepository = null)
+    /// <param name="configure">Adds a test's own registrations, such as a real job handler and its fakes.</param>
+    public ExecutorHarness(
+        bool multiTenancy = false,
+        IJobLeaseRepository? leaseRepository = null,
+        Action<IServiceCollection>? configure = null
+    )
     {
         ServiceCollection services = new();
         services.AddSingleton(Script);
@@ -454,6 +459,7 @@ public sealed class ExecutorHarness : IDisposable
             "The consumer could not finish every part of the job.",
             ["ConsumerRejected", "ConsumerBusy"]
         );
+        configure?.Invoke(services);
         _provider = services.BuildServiceProvider();
         Scopes = new TrackingScopeFactory(_provider.GetRequiredService<IServiceScopeFactory>());
         Executor = new JobExecutor(
@@ -471,6 +477,7 @@ public sealed class ExecutorHarness : IDisposable
     }
 
     public HandlerScript Script { get; } = new();
+    public IServiceProvider Services => _provider;
     public ScriptedLeaseRepository Leases { get; } = new();
     public RecordingFenceFactory Fences { get; } = new();
     public ScriptedTenantRepository Tenants { get; } = new();
