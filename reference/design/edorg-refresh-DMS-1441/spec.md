@@ -620,7 +620,7 @@ Updates: `CONFIGURATION.md`, `CONFIGURATION-SERVICE-BACKGROUND-JOBS.md` (job typ
 
 A rejected step gets a focused follow-up commit.
 
-**Environment:** SQL Server runs on `dms1439-sql2025-test` first, with LocalDB as the fallback. PG and MS test processes never run at the same time.
+**Environment:** SQL Server lanes run on LocalDB first, long runs and full suites included. The `dms1439-sql2025-test` container is used when a lane needs real SQL Server or container behavior that LocalDB cannot provide, such as a result that differs only on LocalDB or engine-specific behavior. PG and MS test processes never run at the same time.
 
 ### 7.0.1 Review checkpoints (reduced plan)
 

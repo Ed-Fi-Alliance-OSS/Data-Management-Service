@@ -75,6 +75,14 @@ public class EducationOrganizationRefreshJobTests
         public Task<EducationOrganizationSnapshotLease> Reached => _reached.Task.WaitAsync(_wait);
 
         public void Release() => _release.TrySetResult();
+
+        /// <summary>A pause that is already released: it only records the lease of the first caller.</summary>
+        public static Pause Observing()
+        {
+            Pause pause = new();
+            pause.Release();
+            return pause;
+        }
     }
 
     /// <summary>
@@ -286,8 +294,9 @@ public class EducationOrganizationRefreshJobTests
         public Pause? AfterReclaim { get; set; }
         public Pause? AfterAdmission { get; set; }
 
-        public Task<JobExecutionResult> RunAsync(ClaimedJob job) =>
-            Executor.ExecuteAsync(job, CancellationToken.None).WaitAsync(_wait);
+        /// <summary>Runs one claimed job; <paramref name="stoppingToken"/> is the host's stop signal.</summary>
+        public Task<JobExecutionResult> RunAsync(ClaimedJob job, CancellationToken stoppingToken = default) =>
+            Executor.ExecuteAsync(job, stoppingToken).WaitAsync(_wait);
 
         /// <summary>Fires the refresher's next renewal tick.</summary>
         public void Tick() => Time.Advance(Settings.RenewalInterval);
@@ -317,6 +326,8 @@ public class EducationOrganizationRefreshJobTests
     public sealed record RefreshJob(long Id, string JobId);
 
     public sealed record TargetState(long LastGeneration, long? ActiveGeneration, string? LeaseOwner);
+
+    public sealed record LeaseState(string? LeaseOwner, long? LeaseGeneration, DateTime? LeaseExpiresAt);
 
     public abstract class RefreshJobTestBase : JobRuntimeIntegrationTests.RuntimeTestBase
     {
@@ -406,6 +417,16 @@ public class EducationOrganizationRefreshJobTests
             Connection!.QuerySingleAsync<TargetState>(
                 """
                 SELECT "LastGeneration", "ActiveGeneration", "LeaseOwner"
+                FROM dmscs."EducationOrganizationSnapshotTarget" WHERE "DataStoreId" = @Id;
+                """,
+                new { Id = dataStoreId }
+            );
+
+        /// <summary>The target lease exactly as stored.</summary>
+        protected Task<LeaseState> LeaseAsync(int dataStoreId) =>
+            Connection!.QuerySingleAsync<LeaseState>(
+                """
+                SELECT "LeaseOwner", "LeaseGeneration", "LeaseExpiresAt"
                 FROM dmscs."EducationOrganizationSnapshotTarget" WHERE "DataStoreId" = @Id;
                 """,
                 new { Id = dataStoreId }
@@ -721,6 +742,198 @@ public class EducationOrganizationRefreshJobTests
             _resultB.Outcome.Should().Be(JobExecutionOutcome.Completed);
             _target.ActiveGeneration.Should().Be(_leaseA.Generation + 1);
             _generations.Should().Equal(_leaseA.Generation + 1);
+        }
+    }
+
+    /// <summary>
+    /// Caller cancellation during a read (§6.5, AC10): a refresh of a data store with a published snapshot is
+    /// reading when the host stops. The read is cancelled, the job is released to <c>Pending</c> with its attempt
+    /// kept, the target lease is released, and the published snapshot is unchanged.
+    /// </summary>
+    [TestFixture]
+    public class Given_the_host_stops_while_a_refresh_reads : RefreshJobTestBase
+    {
+        private RefreshHarness _planting = null!;
+        private RefreshHarness _harness = null!;
+        private ClaimedJob _claimed = null!;
+        private bool _readCanceled;
+        private JobExecutionResult _result = null!;
+        private JobLeaseRepositoryTests.LeaseRow _row = null!;
+        private TargetState _target = null!;
+        private List<long> _ids = [];
+        private List<long> _generations = [];
+        private int _store;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _store = await InsertDataStoreAsync("stopping");
+            _planting = Harness();
+            _harness = Harness();
+            _harness.Reader.Blocks = true;
+
+            await EnqueueAsync(RefreshOne(_store));
+            await _planting.RunAsync(await ClaimRefreshAsync(_planting, OwnerA));
+
+            RefreshJob job = await EnqueueAsync(RefreshOne(_store));
+            _claimed = await ClaimRefreshAsync(_harness, OwnerB);
+            using CancellationTokenSource stopping = new();
+            Task<JobExecutionResult> running = _harness.RunAsync(_claimed, stopping.Token);
+            await _harness.Reader.Entered;
+
+            await stopping.CancelAsync();
+            await _harness.Reader.Canceled;
+            _readCanceled = true;
+            _result = await running;
+
+            _row = await RowAsync(job.Id);
+            _target = await TargetAsync(_store);
+            _ids = await ActiveIdsAsync(_store);
+            _generations = await GenerationsAsync(_store);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _planting.Dispose();
+            _harness.Dispose();
+        }
+
+        [Test]
+        public void It_cancels_the_read() => _readCanceled.Should().BeTrue();
+
+        [Test]
+        public void It_releases_the_job_to_pending_with_its_attempt_kept()
+        {
+            _result.Should().Be(new JobExecutionResult(JobExecutionOutcome.ReleasedOnShutdown));
+            _row.Status.Should().Be(JobStatuses.Pending);
+            _row.AttemptCount.Should().Be(_claimed.AttemptCount);
+            _row.LeaseOwner.Should().BeNull();
+            _row.FinishedAt.Should().BeNull();
+        }
+
+        [Test]
+        public void It_releases_the_target_lease() => _target.Should().Be(new TargetState(2, 1, null));
+
+        [Test]
+        public void It_keeps_the_published_snapshot()
+        {
+            _ids.Should().Equal(_store * 100 + 1);
+            _generations.Should().Equal(1);
+        }
+    }
+
+    /// <summary>
+    /// Recovery of the same job against the old execution's live target lease (§6.2, AC12): A is reading under its
+    /// target lease when only its job lease expires and B reclaims the job. B finds the target busy and retries
+    /// without reading or touching the lease. A's read then completes, but its stale job fence refuses the
+    /// activation and A releases the target. The next attempt publishes under a new execution token.
+    /// </summary>
+    [TestFixture]
+    public class Given_a_reclaimed_job_whose_old_execution_still_holds_the_target : RefreshJobTestBase
+    {
+        private RefreshHarness _planting = null!;
+        private RefreshHarness _a = null!;
+        private RefreshHarness _b = null!;
+        private EducationOrganizationSnapshotLease _leaseA = null!;
+        private EducationOrganizationSnapshotLease _leaseB = null!;
+        private LeaseState _leaseBeforeReclaim = null!;
+        private LeaseState _leaseAfterBusy = null!;
+        private ClaimedJob _busyClaim = null!;
+        private JobExecutionResult _busy = null!;
+        private int _readsByBWhileBusy;
+        private JobExecutionResult _resultA = null!;
+        private TargetState _afterRefusal = null!;
+        private List<long> _idsAfterRefusal = [];
+        private ClaimedJob _recoveryClaim = null!;
+        private JobExecutionResult _recovery = null!;
+        private TargetState _target = null!;
+        private List<long> _ids = [];
+        private JobStatusResponse _status = null!;
+        private int _store;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _store = await InsertDataStoreAsync("recovery");
+            _planting = Harness();
+            _a = Harness();
+            _b = Harness();
+            _a.Reader.Blocks = true;
+            Pause acquiredByA = Pause.Observing();
+            Pause acquiredByB = Pause.Observing();
+            _a.AfterAcquire = acquiredByA;
+            _b.AfterAcquire = acquiredByB;
+            _b.Reader.Answer = (dataStoreId, call) =>
+                SignalledReader.Organizations(dataStoreId * 100 + 50 + call);
+
+            await EnqueueAsync(RefreshOne(_store));
+            await _planting.RunAsync(await ClaimRefreshAsync(_planting, OwnerA));
+
+            RefreshJob job = await EnqueueAsync(RefreshOne(_store));
+            Task<JobExecutionResult> runningA = _a.RunAsync(await ClaimRefreshAsync(_a, OwnerA));
+            await _a.Reader.Entered;
+            _leaseA = await acquiredByA.Reached;
+            _leaseBeforeReclaim = await LeaseAsync(_store);
+
+            // Only the job lease expires; A still holds a live target lease and is still reading.
+            await ExpireLeaseAsync(job.Id);
+            _busyClaim = await ClaimRefreshAsync(_b, OwnerB);
+            _busy = await _b.RunAsync(_busyClaim);
+            _readsByBWhileBusy = _b.Reader.Calls.Count;
+            _leaseAfterBusy = await LeaseAsync(_store);
+
+            _a.Reader.Release();
+            _resultA = await runningA;
+            _afterRefusal = await TargetAsync(_store);
+            _idsAfterRefusal = await ActiveIdsAsync(_store);
+
+            await MakeDueAsync(job.Id);
+            _recoveryClaim = await ClaimRefreshAsync(_b, OwnerB);
+            _recovery = await _b.RunAsync(_recoveryClaim);
+            _leaseB = await acquiredByB.Reached;
+            _target = await TargetAsync(_store);
+            _ids = await ActiveIdsAsync(_store);
+            _status = await StatusAsync(job);
+        }
+
+        [TearDown]
+        public void TearDown()
+        {
+            _planting.Dispose();
+            _a.Dispose();
+            _b.Dispose();
+        }
+
+        [Test]
+        public void It_retries_the_reclaim_as_busy_without_reading_or_changing_the_lease()
+        {
+            _busyClaim.Reclaimed.Should().BeTrue();
+            _busy.Outcome.Should().Be(JobExecutionOutcome.RetryScheduled);
+            _b.Logs.Named(EducationOrganizationTargetRefresher.TargetBusy.Name!).Should().ContainSingle();
+            _readsByBWhileBusy.Should().Be(0);
+            _leaseBeforeReclaim.LeaseOwner.Should().Be(_leaseA.Owner);
+            _leaseAfterBusy.Should().Be(_leaseBeforeReclaim);
+        }
+
+        [Test]
+        public void It_refuses_the_old_execution_at_its_stale_job_fence()
+        {
+            _resultA.Outcome.Should().Be(JobExecutionOutcome.OwnershipUncertain);
+            _afterRefusal.Should().Be(new TargetState(_leaseA.Generation, 1, null));
+            _idsAfterRefusal.Should().Equal(_store * 100 + 1);
+        }
+
+        [Test]
+        public void It_publishes_the_recovery_under_a_new_execution_token()
+        {
+            _recoveryClaim.AttemptCount.Should().Be(3);
+            _leaseB.Owner.Should().NotBe(_leaseA.Owner);
+            _leaseB.Generation.Should().Be(_leaseA.Generation + 1);
+            _recovery.Outcome.Should().Be(JobExecutionOutcome.Completed);
+            _target.Should().Be(new TargetState(_leaseB.Generation, _leaseB.Generation, null));
+            _ids.Should().Equal(_store * 100 + 51);
+            _status.Status.Should().Be(JobStatuses.Completed);
         }
     }
 
@@ -1078,13 +1291,15 @@ public class EducationOrganizationRefreshJobTests
     public class Given_mixed_failures_through_the_final_attempt : RefreshJobTestBase
     {
         private RefreshHarness _harness = null!;
-        private JobExecutionResult _planting = null!;
+        private JobExecutionResult[] _plantings = [];
         private JobExecutionResult _firstAttempt = null!;
         private JobExecutionResult _finalAttempt = null!;
         private JobStatusResponse _status = null!;
         private List<long> _refreshedIds = [];
+        private List<long> _permanentIds = [];
         private List<long> _transientIds = [];
         private TargetState _permanent = null!;
+        private TargetState _transientTarget = null!;
         private int _refreshed;
         private int _permanentStore;
         private int _transient;
@@ -1098,9 +1313,16 @@ public class EducationOrganizationRefreshJobTests
             _harness = Harness(maxAttempts: 2);
             _harness.Reader.Answer = Answer;
 
-            // The transient data store's earlier snapshot, which the failed refresh must keep.
+            // Earlier snapshots of both failing data stores, which the failed refresh must keep.
+            await EnqueueAsync(RefreshOne(_permanentStore));
+            JobExecutionResult permanentPlanting = await _harness.RunAsync(
+                await ClaimRefreshAsync(_harness, OwnerA)
+            );
             await EnqueueAsync(RefreshOne(_transient));
-            _planting = await _harness.RunAsync(await ClaimRefreshAsync(_harness, OwnerA));
+            JobExecutionResult transientPlanting = await _harness.RunAsync(
+                await ClaimRefreshAsync(_harness, OwnerA)
+            );
+            _plantings = [permanentPlanting, transientPlanting];
 
             RefreshJob job = await EnqueueAsync(RefreshAll);
             _firstAttempt = await _harness.RunAsync(await ClaimRefreshAsync(_harness, OwnerA));
@@ -1109,30 +1331,32 @@ public class EducationOrganizationRefreshJobTests
 
             _status = await StatusAsync(job);
             _refreshedIds = await ActiveIdsAsync(_refreshed);
+            _permanentIds = await ActiveIdsAsync(_permanentStore);
             _transientIds = await ActiveIdsAsync(_transient);
             _permanent = await TargetAsync(_permanentStore);
+            _transientTarget = await TargetAsync(_transient);
         }
 
         [TearDown]
         public void TearDown() => _harness.Dispose();
 
-        /// <summary>The permanent data store always fails; the transient one fails after its first read.</summary>
+        /// <summary>Both failing data stores refresh on their first read, which plants their snapshots, then fail.</summary>
         private ReadResult Answer(int dataStoreId, int call)
         {
-            if (dataStoreId == _permanentStore)
+            if (call == 1 || dataStoreId == _refreshed)
             {
-                return SignalledReader.Fails(FailureCode.TargetSchemaIncompatible);
+                return SignalledReader.Organizations(dataStoreId * 100 + call);
             }
 
-            return dataStoreId == _transient && call > 1
-                ? SignalledReader.Fails(FailureCode.Timeout)
-                : SignalledReader.Organizations(dataStoreId * 100 + call);
+            return dataStoreId == _permanentStore
+                ? SignalledReader.Fails(FailureCode.TargetSchemaIncompatible)
+                : SignalledReader.Fails(FailureCode.Timeout);
         }
 
         [Test]
         public void It_retries_then_fails_with_the_composite()
         {
-            _planting.Outcome.Should().Be(JobExecutionOutcome.Completed);
+            _plantings.Should().OnlyContain(result => result.Outcome == JobExecutionOutcome.Completed);
             _firstAttempt.Outcome.Should().Be(JobExecutionOutcome.RetryScheduled);
             _finalAttempt
                 .Should()
@@ -1144,6 +1368,7 @@ public class EducationOrganizationRefreshJobTests
             _harness
                 .Reader.Calls.Should()
                 .Equal(
+                    _permanentStore,
                     _transient,
                     _refreshed,
                     _permanentStore,
@@ -1170,8 +1395,10 @@ public class EducationOrganizationRefreshJobTests
         public void It_publishes_the_refreshed_data_store_and_keeps_the_others()
         {
             _refreshedIds.Should().Equal(_refreshed * 100 + 2);
+            _permanent.ActiveGeneration.Should().Be(1);
+            _permanentIds.Should().Equal(_permanentStore * 100 + 1);
+            _transientTarget.ActiveGeneration.Should().Be(1);
             _transientIds.Should().Equal(_transient * 100 + 1);
-            _permanent.ActiveGeneration.Should().BeNull();
         }
     }
 
