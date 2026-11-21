@@ -6,6 +6,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
+using EdFi.DataManagementService.Backend.External;
 using CoreCdc = EdFi.DataManagementService.Core.DocumentCache.Cdc;
 
 namespace EdFi.DataManagementService.Backend.Cdc;
@@ -26,6 +27,8 @@ internal sealed class CdcConnectorTemplateRenderer(
     TimeProvider timeProvider
 ) : ICdcConnectorTemplateRenderer
 {
+    internal const string CacheJsonConverterTableProperty = "edfiCacheJson.table";
+
     private const int ManifestFileNameMaxLength = 255;
     private const int ManifestFileNameConnectorHashLength = 32;
     private const string ManifestFileNameConnectorHashPrefix = ".sha256-";
@@ -222,6 +225,25 @@ internal sealed class CdcConnectorTemplateRenderer(
         SortedDictionary<string, string> config
     )
     {
+        CdcSourceTableInventory cacheTable = CdcConnectorTemplateSharedRules.SourceTable(
+            request,
+            CdcSourceTableKind.DocumentCache
+        );
+        if (
+            cacheTable.TableName == DocumentCacheInventoryDefinition.DocumentCache
+            && cacheTable.Columns.Any(column =>
+                column.ColumnName == DocumentCacheInventoryDefinition.DocumentCacheColumns.DocumentJson
+                && string.Equals(column.ProviderDataType, "json", StringComparison.OrdinalIgnoreCase)
+            )
+        )
+        {
+            config["converters"] = "edfiCacheJson";
+            config["edfiCacheJson.type"] =
+                "org.edfi.kafka.connect.converters.SqlServerDocumentCacheJsonConverter";
+            config[CacheJsonConverterTableProperty] =
+                $"{config["database.names"]}.{cacheTable.TableName.Schema.Value}.{cacheTable.TableName.Name}";
+        }
+
         config["data.query.mode"] = "function";
         config["time.precision.mode"] = "isostring";
         config["unavailable.value.placeholder"] = "__debezium_unavailable_value";
@@ -446,6 +468,7 @@ internal sealed class CdcConnectorTemplateRenderer(
     private static bool IsArtifactRedactedProperty(string propertyName) =>
         propertyName.StartsWith("database.", StringComparison.Ordinal)
         || propertyName.StartsWith("driver.", StringComparison.Ordinal)
+        || propertyName == CacheJsonConverterTableProperty
         || propertyName == "heartbeat.action.query"
         || propertyName == "schema.history.internal.kafka.bootstrap.servers"
         || CdcConnectorTemplateInputValidator.IsSecretBearingRenderedProperty(propertyName)

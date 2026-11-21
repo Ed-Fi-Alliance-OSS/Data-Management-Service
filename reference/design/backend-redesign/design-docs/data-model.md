@@ -639,6 +639,11 @@ CREATE TABLE dms.DocumentCache (
 
 **SQL Server**
 
+The SQL Server `v2` physical baseline uses native `json` for this column. The named
+check restricts the root to a JSON object. SQL Server provisioning verifies the
+[physical baseline marker](#6a-dmsmssqlphysicalschema-sql-server-physical-baseline)
+and the actual column type together.
+
 ```sql
 CREATE TABLE dms.DocumentCache (
     DocumentId bigint NOT NULL,
@@ -650,12 +655,12 @@ CREATE TABLE dms.DocumentCache (
     StreamEtag varchar(64) NOT NULL,
     LastModifiedAt datetime2(7) NOT NULL,
     ContentCreatedAt datetime2(7) NOT NULL,
-    DocumentJson nvarchar(max) NOT NULL,
+    DocumentJson json NOT NULL,
     ComputedAt datetime2(7) NOT NULL CONSTRAINT DF_DocumentCache_ComputedAt DEFAULT (sysutcdatetime()),
     CONSTRAINT PK_DocumentCache PRIMARY KEY CLUSTERED (DocumentId),
     CONSTRAINT FK_DocumentCache_Document FOREIGN KEY (DocumentId)
         REFERENCES dms.Document (DocumentId) ON DELETE CASCADE,
-    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson) = 1 AND LEFT(LTRIM(DocumentJson), 1) = '{')
+    CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1)
 );
 ```
 
@@ -840,6 +845,27 @@ enforce and test the supported transition edges. The
 [projector/source ADR](cdc/0001-relational-cdc-projector-and-sources.md#durable-work-and-lifecycle)
 owns the supported transitions, shared/exclusive state-row locking, administrative mutex,
 and recovery behavior.
+
+##### 6a) `dms.MssqlPhysicalSchema` (SQL Server physical baseline)
+
+This SQL Server-only core table records the physical baseline of `DocumentCache.DocumentJson`.
+
+```sql
+CREATE TABLE dms.MssqlPhysicalSchema (
+    SingletonId smallint NOT NULL,
+    MssqlPhysicalSchemaVersion varchar(2) NOT NULL,
+    CONSTRAINT PK_MssqlPhysicalSchema PRIMARY KEY CLUSTERED (SingletonId),
+    CONSTRAINT CK_MssqlPhysicalSchema_Singleton CHECK (SingletonId = 1)
+);
+```
+
+Fresh provisioning inserts `(1, 'v2')` in the marker's table-creation branch. A compatible
+rerun preserves the row after verifying its exact value and the built-in `json` column.
+A database with no marker and the built-in `nvarchar(max)` cache column is legacy `v1`.
+The [provisioning preflight](ddl-generation.md#sql-server-physical-baseline-preflight)
+rejects legacy or incomplete baselines without repairing them. The marker belongs to
+the DMS physical inventory. The CDC source inventory continues to cover the cache and
+heartbeat tables.
 
 ##### 7) `dms.CdcHeartbeat` (opt-in CDC integration object)
 

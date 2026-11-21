@@ -65,12 +65,10 @@ After the pin flip, the template lanes provide ongoing build/restore coverage on
 
 ## Phase 2: Native `json` Storage
 
-The native `json` type is a physical storage decision behind `ISqlDialect.JsonColumnType`. Shared document
-semantics and PostgreSQL `jsonb` behavior do not change. Today that dialect property is used only by the
-always-provisioned `dms.DocumentCache.DocumentJson` DDL; DMS has no production cache projector or cache-backed read path.
-Ordinary resource CRUD, query, batching, and reconstitution therefore cannot prove native-JSON parameter or
-result behavior, and this story must not claim that coverage unless it also receives explicit ownership of a
-production `DocumentCache` path.
+This story evaluated native `json` as a physical storage decision for the always-provisioned
+`dms.DocumentCache.DocumentJson` column. At the time of the evaluation DMS lacked a production cache projector
+and cache-backed read path. Ordinary resource CRUD, query, batching, and reconstitution did not exercise
+native-JSON parameter or result behavior. The later DMS-1328 decision below accounts for the shipped cache.
 
 ### Decision Record (2026-07-22): Defer
 
@@ -86,6 +84,20 @@ The release-status gate below was executed on 2026-07-22 and the decision is def
 - The `DMS-1328` provider baseline is explicit: PostgreSQL `DocumentJson` uses `jsonb`, MSSQL
   `DocumentJson` uses `nvarchar(max)`, and only MSSQL adoption of native `json` is in scope.
 
+### DMS-1328 adoption scope
+
+[`DMS-1328`](https://edfi.atlassian.net/browse/DMS-1328) adopts native `json` for SQL Server
+`dms.DocumentCache.DocumentJson` in the `v2` physical baseline. The provider's generic
+`JsonColumnType` stays `nvarchar(max)` on SQL Server, including for
+`RepresentationRestampOperation.ScopeJson`. PostgreSQL keeps `jsonb` for `DocumentJson`.
+DMS now ships a cache projector and cache-backed reads. Their native-v2 admission and
+binding, and standalone CDC admission, require separate verification before rollout.
+
+The shipped CDC worker loses native `DocumentJson` during JDBC column discovery. The
+locally qualified JDBC 13.4.0 worker and column-specific converter preserve the existing
+Connect `STRING` contract. The shipped worker pin and package publication follow the
+separate release process. See the [relational backend rollout guide](../../../../../docs/RELATIONAL-BACKEND.md#sql-server-native-documentcache-rollout).
+
 ### Evaluation Spike (In Scope Under Defer)
 
 The defer decision still ships evaluation tests so their findings detail `DMS-1328`.
@@ -97,9 +109,8 @@ The defer decision still ships evaluation tests so their findings detail `DMS-13
 
 Before enabling native storage:
 
-1. Verify the native `json` type's current SQL Server 2025 release status. Microsoft currently documents it as
-   preview for boxed SQL Server 2025. Adopt it only after it is generally available or the project explicitly
-   accepts a preview database format for the supported MSSQL tier.
+1. Verify the native `json` type's current SQL Server 2025 release status. Adopt it only after it is
+   generally available or the project explicitly accepts a preview database format for the supported MSSQL tier.
 2. Validate the pinned `Microsoft.Data.SqlClient` version and the .NET 10 parameter-binding path. Prefer
    `SqlDbType.Json`/the provider's supported JSON surface when explicit typing is required; retain CLR `string`
    only where provider inference is intentional and covered by integration tests.
@@ -107,11 +118,10 @@ Before enabling native storage:
    - without a production `DocumentCache` path, validate generated DDL and direct `DocumentCache` provider
      round trips; or
    - explicitly add the cache projector/read path to an owning ticket before requiring DMS CRUD/query coverage.
-4. Establish and bump the MSSQL physical-schema identity described below, change
-   `MssqlDialect.JsonColumnType`, regenerate provisioned-schema goldens and relational-model manifests, and
-   update the authoritative data-model DDL. Replace the current string-based
-   `LEFT(LTRIM(DocumentJson), 1)` object check, because native `json` does not allow implicit string conversion;
-   use a native-compatible root-object constraint such as `ISJSON(DocumentJson, OBJECT) = 1` and cover it.
+4. Establish and bump the MSSQL physical-schema identity described below, change the SQL Server
+   `DocumentCache.DocumentJson` DDL, regenerate affected goldens and manifests, and update the
+   authoritative data-model DDL. Replace the legacy string-based
+   `LEFT(LTRIM(DocumentJson), 1)` object check with `ISJSON(DocumentJson, OBJECT) = 1` and cover it.
 5. In direct real-SQL-Server integration tests, verify table creation, object-only validation, explicit and
    inferred provider parameter binding, insert/select round trips, `OPENJSON`, `JSON_VALUE`, supported bulk
    operations, schema inspection, and result materialization against the native column.
@@ -133,12 +143,11 @@ Instead, generated MSSQL artifacts have a DMS-owned `MssqlPhysicalSchemaVersion`
 - MSSQL DDL artifact identity and determinism use `(ApiSchema set, mssql, RelationalMappingVersion,
   MssqlPhysicalSchemaVersion)`. Update the authoritative DDL-generation contract and diagnostic manifests to
   include that final component. PostgreSQL keeps its existing identity tuple and byte-for-byte DDL.
-- The database-template restore manifest from `DMS-1271` records `MssqlPhysicalSchemaVersion` beside the
-  physical `DocumentJson` type. Package production, scratch restore, SchemaTools verification, and any future
-  cache startup path require the version marker and live catalog type to agree.
-- This physical version does not key ordinary mapping packs while `DocumentCache` has no production read/write
-  path. If such a path is introduced, its owning design must either add the version to the relevant compiled
-  artifact key or prove that the existing physical-type startup gate is the only required discriminator.
+- The native-template rollout will add the physical version beside the `DocumentJson` type in the SQL Server
+  restore manifest. The rollout requires agreement between the package and the live marker and catalog type.
+- Resource derivation and ordinary mapping-pack keys keep their logical identity. SQL Server provisioning
+  checks the physical marker and catalog type separately. The cache and CDC consumer tasks must use that
+  physical boundary before enabling native operation.
 
 ### Existing Database Transition
 
@@ -152,9 +161,9 @@ uses mandatory reprovisioning rather than an in-place migration:
 - Schema/template verification must inspect the actual SQL Server column type and reject an `nvarchar(max)`
   `DocumentJson` when native JSON is expected. It must also reject a missing or mismatched
   `MssqlPhysicalSchemaVersion`, with drop/reprovision guidance.
-- Do not enable a future cache writer, reader, or `SqlDbType.Json` binding path without a startup compatibility
-  gate that verifies the physical type. `EffectiveSchemaHash` alone is insufficient for this provider-specific
-  storage decision.
+- Require a physical compatibility check before the shipped cache writer or reader can use the native
+  baseline, including before `SqlDbType.Json` binding. `EffectiveSchemaHash` continues to identify the
+  logical schema.
 - Document that there is no in-place data-preserving conversion in this story. A future production migration
   requires its own design and tests.
 

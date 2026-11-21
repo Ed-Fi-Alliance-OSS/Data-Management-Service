@@ -1115,7 +1115,7 @@ internal sealed class MssqlDocumentCacheWriter(
             }
         );
         command.Parameters.Add(
-            new SqlParameter("@documentJson", SqlDbType.NVarChar, -1)
+            new SqlParameter("@documentJson", SqlDbType.Json)
             {
                 Value = candidate.DocumentJson.ToJsonString(JsonSerializerOptions.Default),
             }

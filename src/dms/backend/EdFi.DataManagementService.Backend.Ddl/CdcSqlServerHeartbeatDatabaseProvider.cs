@@ -14,6 +14,7 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 {
     private static readonly ISqlDialect _dialect = SqlDialectFactory.Create(SqlDialect.Mssql);
     private static readonly CdcSafeName _databaseCdcSafeName = new("sqlserver_database_cdc");
+    private static readonly CdcSafeName _cacheJsonSafeName = new("dms.DocumentCache.DocumentJson");
     private static readonly CdcSafeName _snapshotIsolationSafeName = new("sqlserver_snapshot_isolation");
     private static readonly CdcSafeName _captureInstancesSafeName = new("sqlserver_cdc_capture_instances");
     private static readonly IReadOnlySet<string> _requiredCdcMetadataSelectPermissionTokens =
@@ -39,6 +40,12 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
 
         return
         [
+            new CdcProviderSetupStep(
+                CdcProviderArtifactKind.SourceColumn,
+                _cacheJsonSafeName,
+                canCreateInInitialSetup: false,
+                ExecuteDocumentCachePhysicalSchemaAsync
+            ),
             new CdcProviderSetupStep(
                 CdcProviderArtifactKind.SourceFingerprint,
                 CdcSourceFingerprintMetadata.SafeArtifactName,
@@ -88,6 +95,63 @@ internal sealed class CdcSqlServerHeartbeatDatabaseProvider : ICdcProviderSetupP
                 ExecuteProviderMetadataRefreshAsync
             ),
         ];
+    }
+
+    private static async Task<CdcProviderSetupStepResult> ExecuteDocumentCachePhysicalSchemaAsync(
+        CdcProviderSetupStepContext context,
+        CancellationToken cancellationToken
+    )
+    {
+        if (!TryGetExecutor(context, CdcProviderArtifactKind.SourceColumn, out var executor, out var failure))
+        {
+            return failure;
+        }
+
+        try
+        {
+            var rows = await executor
+                .QueryAsync(
+                    "/* cdc:sqlserver:document-cache-physical-schema */\n"
+                        + MssqlDocumentCachePhysicalSchema.ObservedVersionSql,
+                    cancellationToken
+                )
+                .ConfigureAwait(false);
+            if (
+                rows.Count == 1
+                && ReadOptional(rows[0], "physical_schema_version")
+                    == MssqlDocumentCachePhysicalSchema.Version
+            )
+            {
+                return new CdcProviderSetupStepResult();
+            }
+
+            return new CdcProviderSetupStepResult(
+                diagnostics:
+                [
+                    new CdcProviderDiagnostic(
+                        Code: "CDC_SQLSERVER_DOCUMENTCACHE_PHYSICAL_SCHEMA_MISMATCH",
+                        Category: CdcProviderDiagnosticCategory.ValidationMismatch,
+                        Severity: CdcProviderDiagnosticSeverity.Error,
+                        PrincipalKind: CdcPrincipalKind.SetupPrincipal,
+                        ArtifactKind: CdcProviderArtifactKind.SourceColumn,
+                        SafeName: _cacheJsonSafeName,
+                        ExpectedValue: "native json and readable v2 marker (reprovision incompatible databases)",
+                        ObservedValue: "physical baseline unverified",
+                        ProviderErrorClass: null,
+                        Classification: CdcProviderRetryContinuityClassification.FailClosed
+                    ),
+                ]
+            );
+        }
+        catch (Exception exception) when (exception is DbException or InvalidOperationException)
+        {
+            return SetupPrincipalFailure(
+                executor,
+                CdcProviderArtifactKind.SourceColumn,
+                _cacheJsonSafeName,
+                exception
+            );
+        }
     }
 
     private static async Task<CdcProviderSetupStepResult> ExecuteSourceFingerprintAsync(

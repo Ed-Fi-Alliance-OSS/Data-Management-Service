@@ -10,7 +10,9 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Nodes;
+using EdFi.DataManagementService.Backend;
 using EdFi.DataManagementService.Backend.Etag;
+using EdFi.DataManagementService.Core.DocumentCache;
 using EdFi.DataManagementService.Core.External.Model;
 using EdFi.DataManagementService.Core.External.Security;
 using EdFi.DataManagementService.Core.Paging;
@@ -19,6 +21,7 @@ using EdFi.DataManagementService.Core.Security.Model;
 using EdFi.DataManagementService.Tests.Integration.Doubles;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EdFi.DataManagementService.Tests.Integration.Scenarios;
 
@@ -125,6 +128,43 @@ internal static class DocumentCacheReadAccelerationScenario
                 secondQueryMetadata.DocumentId + 1,
                 "the continuation resumes after the highest key this page selected"
             );
+    }
+
+    public static async Task It_serves_relationally_when_physical_admission_fails(
+        ApiIntegrationHarness harness
+    )
+    {
+        var registry = harness.Services.GetRequiredService<IDocumentCacheTargetRegistry>();
+        var target = registry.CurrentSnapshot.Targets.Should().ContainSingle().Which;
+        target.Inventory!.Status.Should().Be(DocumentCacheInventoryStatus.Invalid);
+        target.Inventory.Message.Should().Contain("v2 marker");
+        registry.CurrentRuntimeSnapshot.ExecutionContexts.Should().BeEmpty();
+        harness
+            .Services.GetRequiredService<IDocumentCacheProjectionSupervisor>()
+            .CurrentTargetContexts.Should()
+            .BeEmpty();
+
+        string location = await PostStudentAsync(harness, "cache-physical-001", "Relational Student");
+        var metadata = await ReadDocumentMetadataAsync(harness, Guid.Parse(location.Split('/')[^1]));
+        (await CountProjectionWorkRowsAsync(harness, metadata.DocumentId)).Should().Be(1);
+        var document = await GetJsonObjectAsync(harness, location);
+
+        document["firstName"]!.GetValue<string>().Should().Be("Relational Student");
+        (await CountCacheRowsAsync(harness, metadata.DocumentId)).Should().Be(0);
+        (await CountProjectionWorkRowsAsync(harness, metadata.DocumentId)).Should().Be(1);
+        var recorder = harness.DocumentCacheReadTelemetryRecorder!;
+        recorder.CountTelemetryRecords("RecordDirectFill", "Attempted").Should().Be(0);
+        recorder
+            .CountTelemetryRecords("RecordDirectFill", "SkippedUnresolvedTarget")
+            .Should()
+            .BeGreaterThan(0);
+
+        var cacheDocument = CacheDocumentFrom(document, metadata);
+        cacheDocument["firstName"] = "Cached Student";
+        await UpsertCacheRowAsync(harness, metadata, cacheDocument);
+        var fresh = await GetJsonObjectAsync(harness, location);
+        fresh["firstName"]!.GetValue<string>().Should().Be("Relational Student");
+        fresh["_etag"]!.GetValue<string>().Should().Be(document["_etag"]!.GetValue<string>());
     }
 
     public static async Task It_falls_back_relationally_when_cache_row_is_missing_or_stale(

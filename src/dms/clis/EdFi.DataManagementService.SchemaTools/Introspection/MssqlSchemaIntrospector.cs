@@ -4,6 +4,7 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data.Common;
+using EdFi.DataManagementService.Backend.External;
 using Microsoft.Data.SqlClient;
 
 namespace EdFi.DataManagementService.SchemaTools.Introspection;
@@ -334,6 +335,21 @@ public class MssqlSchemaIntrospector : SchemaIntrospectorBase
 
     protected override DbConnection CreateConnection(string connectionString) =>
         new SqlConnection(connectionString);
+
+    protected override string? ReadMssqlPhysicalSchemaVersion(
+        DbConnection connection,
+        IReadOnlyList<SchemaEntry> schemas
+    )
+    {
+        if (!schemas.Any(schema => schema.SchemaName == MssqlDocumentCachePhysicalSchema.SchemaName))
+        {
+            return null;
+        }
+
+        using var command = connection.CreateCommand();
+        command.CommandText = MssqlDocumentCachePhysicalSchema.ObservedVersionSql;
+        return command.ExecuteScalar() as string;
+    }
 
     protected override (string SqlFragment, Action<DbCommand> AddParameters) BuildSchemaFilter(
         IReadOnlyList<string> allowlist

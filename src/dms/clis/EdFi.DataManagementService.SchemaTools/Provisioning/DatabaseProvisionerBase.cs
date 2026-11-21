@@ -121,16 +121,16 @@ public abstract class DatabaseProvisionerBase(ILogger logger) : IDatabaseProvisi
 
     public virtual void CheckPlatformPreconditions(string connectionString)
     {
-        // SQL Server has no platform floor checked before CREATE.
+        // Providers can check the maintenance connection before CREATE.
     }
 
     /// <summary>
-    /// Checks the open target connection's platform compatibility before any other preflight query.
+    /// Checks the open target connection's platform and physical compatibility before any other preflight query.
     /// This also covers targets created concurrently after <see cref="CheckPlatformPreconditions"/>.
     /// </summary>
     protected virtual void ValidatePlatformCompatibility(DbConnection connection)
     {
-        // SQL Server has no target platform floor.
+        // Providers can validate their target-specific prerequisites.
     }
 
     public void PreflightSeedValidation(string connectionString, EffectiveSchemaInfo expectedSchema)

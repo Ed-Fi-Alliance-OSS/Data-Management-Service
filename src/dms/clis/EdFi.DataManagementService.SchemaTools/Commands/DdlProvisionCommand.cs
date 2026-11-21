@@ -312,9 +312,13 @@ public static class DdlProvisionCommand
                         Console.Error.WriteLine(exception.Message);
                         return 1;
                     }
-                    catch (PostgresqlPlatformCompatibilityException exception)
+                    catch (InvalidOperationException exception)
+                        when (exception
+                                is PostgresqlPlatformCompatibilityException
+                                    or MssqlPhysicalSchemaCompatibilityException
+                        )
                     {
-                        // Fixed requirement text plus a server-reported value; never a physical name.
+                        // These compatibility diagnostics do not include a target name or credentials.
                         Console.Error.WriteLine(exception.Message);
                         return 1;
                     }

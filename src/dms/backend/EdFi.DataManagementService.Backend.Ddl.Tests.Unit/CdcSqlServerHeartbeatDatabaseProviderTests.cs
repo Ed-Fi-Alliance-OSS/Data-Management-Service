@@ -543,6 +543,26 @@ public class Given_MssqlCdcHeartbeatDatabase_Initial_Setup
 [TestFixture]
 public class Given_MssqlCdcHeartbeatDatabase_ValidateOnly
 {
+    [TestCase(CdcProviderSetupMode.InitialCreateOrExactMatch)]
+    [TestCase(CdcProviderSetupMode.ValidateOnly)]
+    public async Task It_rejects_an_unverified_physical_baseline_before_any_setup_mutation(
+        CdcProviderSetupMode mode
+    )
+    {
+        var executor = new RecordingSqlServerCdcExecutor { PhysicalSchemaVersion = null };
+        var service = new CdcProviderSetupService([new CdcSqlServerHeartbeatDatabaseProvider()]);
+
+        var result = await service.SetupAsync(
+            CdcProviderSetupContractTestData.BuildSqlServerRequest(mode: mode, databaseExecutor: executor)
+        );
+
+        result
+            .Diagnostics.Should()
+            .Contain(diagnostic => diagnostic.Code == "CDC_SQLSERVER_DOCUMENTCACHE_PHYSICAL_SCHEMA_MISMATCH");
+        executor.ExecutedSql.Should().BeEmpty();
+        executor.QueriedSql.Should().ContainSingle();
+    }
+
     [Test]
     public async Task It_should_fail_closed_when_snapshot_isolation_is_off_without_mutation()
     {
@@ -3031,6 +3051,8 @@ internal sealed class RecordingSqlServerCdcExecutor
     private readonly CdcProviderErrorIdentity? _executeFailureIdentity;
     private int _databaseCdcStateQueryCount;
 
+    public string? PhysicalSchemaVersion { get; init; } = "v2";
+
     public RecordingSqlServerCdcExecutor(
         bool databaseCdcEnabled = false,
         bool heartbeatTableExists = false,
@@ -3253,6 +3275,10 @@ internal sealed class RecordingSqlServerCdcExecutor
 
         IReadOnlyList<IReadOnlyDictionary<string, string?>> rows = sql switch
         {
+            var text when text.Contains("cdc:sqlserver:document-cache-physical-schema") =>
+            [
+                Row(("physical_schema_version", PhysicalSchemaVersion)),
+            ],
             var text when text.Contains("cdc:sqlserver:source-fingerprint") =>
             [
                 Row(("source_identity", _sourceIdentity)),

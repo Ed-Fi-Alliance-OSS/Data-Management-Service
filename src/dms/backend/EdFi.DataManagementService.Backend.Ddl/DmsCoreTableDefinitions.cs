@@ -63,7 +63,13 @@ internal static class DmsCoreTableDefinitions
                 new(Col("LastModifiedAt"), DateTimeType(dialect), IsNullable: false),
                 // Copied from the resource owner by the cache materializer; never defaulted from a clock.
                 new(Col("ContentCreatedAt"), DateTimeType(dialect), IsNullable: false),
-                new(Col("DocumentJson"), dialect.JsonColumnType, IsNullable: false),
+                new(
+                    Col("DocumentJson"),
+                    dialect.Rules.Dialect == SqlDialect.Mssql
+                        ? MssqlDocumentCachePhysicalSchema.NativeJsonType
+                        : dialect.JsonColumnType,
+                    IsNullable: false
+                ),
                 new(
                     Col("ComputedAt"),
                     DateTimeType(dialect),

@@ -36,8 +36,13 @@ public static class FullDdlEmitter
     public static FullDdlEmission EmitWithMetadata(ISqlDialect dialect, DerivedRelationalModelSet modelSet)
     {
         var seedEmitter = new SeedDmlEmitter(dialect);
+        // The engine check must finish before SQL Server compiles any native JSON DDL.
+        var physicalGuard =
+            dialect.Rules.Dialect == SqlDialect.Mssql
+                ? MssqlDocumentCachePhysicalSchema.ProvisioningGuardSql + "\nGO\n\n"
+                : "";
         string preflightDdl = WrapPhase0(
-            seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
+            physicalGuard + seedEmitter.EmitPreflightOnly(modelSet.EffectiveSchema.EffectiveSchemaHash)
         );
         var sharedDescriptorTrackedChangeTable = modelSet.TrackedChangeTablesInNameOrder.SingleOrDefault(t =>
             t.Kind == TrackedChangeTableKind.SharedDescriptor

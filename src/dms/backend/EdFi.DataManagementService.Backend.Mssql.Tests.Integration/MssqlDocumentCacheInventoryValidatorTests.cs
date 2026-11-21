@@ -57,9 +57,103 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
             database.ConnectionString
         );
 
-        result.IsSatisfied.Should().BeTrue();
+        result.IsSatisfied.Should().BeTrue(result.Inventory.Message);
         result.Inventory.Status.Should().Be(DocumentCacheInventoryStatus.Satisfied);
         result.EnqueueTrigger.Status.Should().Be(DocumentCacheEnqueueTriggerStatus.Satisfied);
+    }
+
+    [TestCase("DELETE FROM dms.MssqlPhysicalSchema")]
+    [TestCase("UPDATE dms.MssqlPhysicalSchema SET MssqlPhysicalSchemaVersion = 'V2'")]
+    [TestCase("DROP TABLE dms.MssqlPhysicalSchema")]
+    [TestCase(
+        """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache DROP COLUMN DocumentJson;
+            ALTER TABLE dms.DocumentCache ADD DocumentJson nvarchar(max) NOT NULL;
+            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject CHECK (ISJSON(DocumentJson, OBJECT) = 1);
+            """
+    )]
+    public async Task It_rejects_invalid_physical_schema_before_cache_admission(string mutation)
+    {
+        await using var database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(database, mutation);
+
+        var result = await _validator.ValidateInventoryAsync(database.ConnectionString);
+
+        result.IsSatisfied.Should().BeFalse();
+        result.Inventory.Message.Should().Contain("reprovision");
+    }
+
+    [Test]
+    public async Task It_requires_only_read_access_to_the_physical_marker_on_the_cache_connection()
+    {
+        await using var database = await CreateDatabaseAsync();
+        var login = $"cache_reader_{Guid.NewGuid():N}";
+        var password = $"Test_{Guid.NewGuid():N}!";
+        var connectionString = new SqlConnectionStringBuilder(database.ConnectionString)
+        {
+            IntegratedSecurity = false,
+            UserID = login,
+            Password = password,
+            Pooling = false,
+        }.ConnectionString;
+        await ExecuteNonQueryAsync(database, $"CREATE LOGIN [{login}] WITH PASSWORD = '{password}'");
+        try
+        {
+            await ExecuteNonQueryAsync(
+                database,
+                $"""
+                CREATE USER [{login}] FOR LOGIN [{login}];
+                CREATE ROLE [cache_runtime];
+                ALTER ROLE [cache_runtime] ADD MEMBER [{login}];
+                GRANT SELECT, VIEW DEFINITION ON SCHEMA::dms TO [cache_runtime];
+                GRANT INSERT, UPDATE, DELETE ON OBJECT::dms.DocumentCache TO [cache_runtime];
+                GRANT INSERT, UPDATE, DELETE ON OBJECT::dms.DocumentProjectionWork TO [cache_runtime];
+                """
+            );
+            var admitted = await _validator.ValidateInventoryAsync(connectionString);
+            admitted.IsSatisfied.Should().BeTrue(admitted.Inventory.Message);
+
+            await using var connection = new SqlConnection(connectionString);
+            await connection.OpenAsync();
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT HAS_PERMS_BY_NAME('dms.MssqlPhysicalSchema','OBJECT','INSERT')
+                     + HAS_PERMS_BY_NAME('dms.MssqlPhysicalSchema','OBJECT','UPDATE')
+                     + HAS_PERMS_BY_NAME('dms.MssqlPhysicalSchema','OBJECT','DELETE');
+                """;
+            (await command.ExecuteScalarAsync()).Should().Be(0);
+
+            await ExecuteNonQueryAsync(
+                database,
+                $"DENY SELECT ON OBJECT::dms.MssqlPhysicalSchema TO [{login}]"
+            );
+            var denied = await _validator.ValidateInventoryAsync(connectionString);
+            denied.IsSatisfied.Should().BeFalse();
+            denied.Inventory.Message.Should().Contain("reprovision");
+        }
+        finally
+        {
+            await ExecuteNonQueryAsync(database, $"DROP LOGIN [{login}]");
+        }
+    }
+
+    [TestCase("NOCHECK CONSTRAINT")]
+    [TestCase(
+        "NOCHECK CONSTRAINT [CK_DocumentCache_IsJsonObject]; ALTER TABLE dms.DocumentCache WITH NOCHECK CHECK CONSTRAINT"
+    )]
+    public async Task It_requires_an_enabled_trusted_json_object_check(string mutation)
+    {
+        await using var database = await CreateDatabaseAsync();
+        await ExecuteNonQueryAsync(
+            database,
+            $"ALTER TABLE dms.DocumentCache {mutation} [CK_DocumentCache_IsJsonObject]"
+        );
+
+        var result = await _validator.ValidateInventoryAsync(database.ConnectionString);
+
+        result.IsSatisfied.Should().BeFalse();
+        result.Inventory.Message.Should().Contain("CK_DocumentCache_IsJsonObject");
     }
 
     [Test]
@@ -784,9 +878,17 @@ public class Given_A_Mssql_DocumentCacheInventory_Validator
 
             ALTER TABLE [dms].[DocumentCache]
             ADD CONSTRAINT [CK_DocumentCache_IsJsonObject]
-            CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) IN ('{', '['));
+            CHECK (ISJSON([DocumentJson]) = 1);
             """
         ).SetName("It_rejects_sqlserver_documentcache_json_object_check_that_allows_arrays");
+
+        yield return new TestCaseData(
+            """
+            ALTER TABLE dms.DocumentCache DROP CONSTRAINT CK_DocumentCache_IsJsonObject;
+            ALTER TABLE dms.DocumentCache ADD CONSTRAINT CK_DocumentCache_IsJsonObject
+                CHECK (ISJSON(DocumentJson, OBJECT) = -1);
+            """
+        ).SetName("It_rejects_sqlserver_documentcache_json_check_with_wrong_comparison_value");
 
         yield return new TestCaseData(
             """

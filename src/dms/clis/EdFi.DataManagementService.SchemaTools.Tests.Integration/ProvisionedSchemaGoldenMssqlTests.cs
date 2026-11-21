@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Tests.Common;
 using EdFi.DataManagementService.SchemaTools.Introspection;
 using FluentAssertions;
@@ -129,6 +130,37 @@ public class Given_Provisioned_Mssql_Database_When_Introspecting_Schema
 
         var diff = GoldenFixtureTestHelpers.RunGitDiff(_expectedManifestPath, _actualManifestPath);
         diff.Should().BeEmpty("the provisioned schema manifest should match the golden file.\n" + diff);
+    }
+
+    [Test]
+    public void It_reports_the_observed_native_document_cache_baseline()
+    {
+        if (!_isConfigured)
+        {
+            Assert.Ignore("MSSQL admin connection is required.");
+        }
+
+        using var json = JsonDocument.Parse(ProvisionedSchemaManifestEmitter.Emit(_manifest!));
+        json.RootElement.TryGetProperty("mssql_physical_schema_version", out var version).Should().BeTrue();
+        version.GetString().Should().Be("v2");
+        _manifest!.Tables.Should().ContainEquivalentOf(new TableEntry("dms", "MssqlPhysicalSchema"));
+        _manifest
+            .Columns.Should()
+            .Contain(column =>
+                column.SchemaName == "dms"
+                && column.TableName == "DocumentCache"
+                && column.ColumnName == "DocumentJson"
+                && column.DataType == "json"
+                && !column.IsNullable
+            );
+        _manifest
+            .Constraints.Should()
+            .Contain(constraint =>
+                constraint.SchemaName == "dms"
+                && constraint.TableName == "DocumentCache"
+                && constraint.ConstraintName == "CK_DocumentCache_IsJsonObject"
+                && constraint.ConstraintType == "CHECK"
+            );
     }
 
     [Test]

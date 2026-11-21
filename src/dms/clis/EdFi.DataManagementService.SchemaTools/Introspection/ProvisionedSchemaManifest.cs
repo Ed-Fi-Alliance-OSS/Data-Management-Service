@@ -22,7 +22,8 @@ public sealed record ProvisionedSchemaManifest(
     IReadOnlyList<SequenceEntry> Sequences,
     IReadOnlyList<TableTypeEntry> TableTypes,
     IReadOnlyList<FunctionEntry> Functions,
-    SeedData SeedData
+    SeedData SeedData,
+    string? MssqlPhysicalSchemaVersion = null
 );
 
 public sealed record SchemaEntry(string SchemaName);

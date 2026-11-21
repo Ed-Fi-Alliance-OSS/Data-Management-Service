@@ -39,6 +39,8 @@ The DDL generation utility is responsible for database objects derived from the 
   - always-provisioned `dms.DataStoreIdentity`, `dms.DocumentCache`,
     `dms.DocumentProjectionWork`, and singleton `dms.DocumentCacheState`; projection
     starts in durable lifecycle state `Disabled`
+  - SQL Server-only singleton `dms.MssqlPhysicalSchema` for the cache column's
+    physical baseline
   - provider-equivalent `dms.Document` transactional enqueue triggers/functions,
     lifecycle constraints, work paging/oldest-work indexes, and trigger-execution
     ownership/grants defined by the
@@ -86,6 +88,8 @@ Explicitly out of scope for this redesign phase:
   - Insert-if-absent initialization for singleton `dms.DocumentCacheState` with lifecycle
     `Disabled` and its cache-ahead recovery latch clear; ordinary reruns never reset an
     existing lifecycle, latch, cache, or pending-work row
+  - SQL Server-only initialization of `dms.MssqlPhysicalSchema` with `(1, 'v2')` in
+    the table-creation branch. A rerun validates and preserves the existing marker.
   - Deterministic seed inserts for `dms.ResourceKey` (`ResourceKeyId ↔ (ProjectName, ResourceName, ResourceVersion)`)
   - Deterministic `ResourceKeySeedHash`/smallint-bounded `ResourceKeyCount` recorded alongside `EffectiveSchemaHash` in `dms.EffectiveSchema` (fast runtime validation; `ResourceKeySeedHash` stored as raw SHA-256 bytes, 32 bytes)
   - Insert-if-missing statements for the singleton `dms.EffectiveSchema` row and the corresponding `dms.SchemaComponent` rows (keyed by `EffectiveSchemaHash`). These make the emitted SQL script idempotent for standalone execution (`psql -f` / `sqlcmd -i`). Note: when provisioning via `ddl provision`, a preflight check runs first — if the `dms.EffectiveSchema` table exists but the singleton row is missing, this is treated as a partial/corrupt state and provisioning fails fast with a diagnostic directing the operator to drop and recreate the database.
@@ -119,14 +123,23 @@ Implementation guidance:
   - compiled plan generation (`flattening-reconstitution.md`),
   so canonicalization rules cannot drift across layers.
 
-Acceptance: for a fixed `(ApiSchema.json set, dialect, relational mapping version)`, emitted SQL text artifacts are byte-for-byte stable.
+Acceptance: emitted SQL text artifacts are byte-for-byte stable for a fixed artifact
+identity as defined below.
 
 ## Determinism Scope (Artifacts)
 
 Determinism requirements differ by artifact:
 
 - **`EffectiveSchemaHash`**: byte-for-byte stable lowercase hex output for a fixed effective schema set and relational mapping version (see [data-model.md](data-model.md)).
-- **DDL scripts**: byte-for-byte stable SQL text output for a fixed `(ApiSchema.json set, dialect, relational mapping version)` (see “SQL Text Canonicalization” above).
+- **DDL scripts**: byte-for-byte stable SQL text output for a fixed `(ApiSchema.json set,
+  dialect, relational mapping version)` on PostgreSQL. SQL Server also includes its
+  physical schema version in that identity. The same logical schema is compatible with
+  distinct SQL Server DDL artifacts for legacy `v1` and native `v2`.
+- **SQL Server diagnostics** use `mssql_physical_schema_version` to record `v2` on the SQL
+  Server entry in `ddl.manifest.json` and at the root of
+  `relational-model.mssql.manifest.json`. Live provisioned-schema output reports the
+  observed version alongside catalog types, tables and constraints. The field is
+  limited to SQL Server diagnostics.
 - **AOT mapping packs (`.mpack`)**: semantic equivalence is required (not byte-for-byte file identity).
   - Definition: two packs are equivalent if their keying fields match (effective schema hash, dialect, relational mapping version, pack format version) and their decoded payloads (models/plans/resource keys) are semantically identical after decompression and protobuf parse.
   - Rationale: pack envelopes may include producer metadata and compression may not be byte-for-byte stable even when payload semantics are unchanged.
@@ -172,6 +185,7 @@ This inventory is the explicit “what exists in the database” contract that t
 - `dms.DocumentCache` (always present; optionally populated/read)
 - `dms.DocumentProjectionWork` (always-present coalesced durable projection work)
 - `dms.DocumentCacheState` (singleton constrained lifecycle plus durable cache-ahead latch)
+- `dms.MssqlPhysicalSchema` (SQL Server-only singleton physical baseline marker)
 - `dms.EffectiveSchema` (singleton current state)
 - `dms.SchemaComponent` (keyed by `EffectiveSchemaHash`)
 - Update tracking / Change Queries:
@@ -502,6 +516,32 @@ Before provisioning any schema-dependent objects, the utility must perform a lig
   - if `EffectiveSchemaHash` matches the computed hash: proceed (but still validate seed fingerprints),
   - if `EffectiveSchemaHash` differs: fail fast with a clear error (“database is provisioned for hash X; generator expected hash Y”).
 
+### SQL Server physical baseline preflight
+
+Native cache provisioning requires SQL Server 2025 (engine major version 17) or later.
+SchemaTools checks the engine before optional database creation and preflights the
+target before applying DDL. The emitted SQL checks the same boundary in phase zero.
+When applying `mssql.sql` manually, use an abort-on-error client such as
+`sqlcmd -b -i mssql.sql` so an error stops later batches.
+
+| Observed target | Provisioning action |
+|---|---|
+| No completed logical metadata and no object at the cache, marker, state, or work inventory names | Allow fresh apply or an early retry that passes the other guards, such as a schema-plus-sequence retry. |
+| No marker object and `DocumentCache.DocumentJson` is built-in `nvarchar(max)` | Reject legacy `v1` with fresh reprovisioning guidance, including when the effective schema hash matches. |
+| `DocumentCache.DocumentJson` is built-in `json` and the marker contains exactly `(1, 'v2')` | Continue with the existing logical, inventory and lifecycle checks. |
+| Any other physical shape or evidence that cannot be verified | Reject before DDL. A partial physical boundary requires deliberate reprovisioning. |
+
+A fresh apply or early retry requires an effective `dbo` context to prove absence.
+Object-level denials can hide a boundary object from catalog queries even when the
+principal has database-level `VIEW DEFINITION`. The preflight also requires an
+effective `dbo` context to identify legacy `v1` by the absence of the marker. For an
+existing `v2` target, a principal with sufficient catalog and marker read permissions
+can verify the baseline through positive evidence.
+
+A marker uses an exact version token and only qualifies in combination with the actual
+catalog type. The check is also part of managed inspection-only reuse. The CLI's
+transactional apply runs the phase-zero checks before changing database objects.
+
 ### Existence-check patterns everywhere
 
 Even though the tool is create-only, the generated SQL uses existence-check patterns for *all* database objects to make provisioning robust against partial/failed runs:
@@ -519,9 +559,10 @@ Even though the tool is create-only, the generated SQL uses existence-check patt
 This is not a migration story; it is a guardrail to avoid brittle provisioning scripts.
 Existence checks do not imply an exhaustive catalog preflight or a supported schema-drift
 reconciler. Feature-specific phase-zero checks remain bounded to safety-critical
-fingerprints, singleton preservation, known incompatible legacy artifacts, and required
-provisioning security prerequisites. Other incompatible existing objects may fail through
-ordinary provider DDL execution inside the provisioning transaction.
+fingerprints, singleton preservation, known incompatible legacy artifacts, required
+provisioning security prerequisites, and the SQL Server physical baseline. Other
+incompatible existing objects may fail through ordinary provider DDL execution inside
+the provisioning transaction.
 
 An operator may use the separate `api-schema-tools ddl re-stamp` command after an
 independently designed and validated physical migration to update a compatible fingerprint
@@ -554,6 +595,7 @@ normal path; this is not a named-release upgrade recipe or automatic rollback gu
 - Provisioning runs in a **single transaction**:
   - all schemas/tables/views/sequences/triggers,
   - insert-if-absent `dms.DataStoreIdentity` and `dms.DocumentCacheState` initialization,
+  - fresh-apply initialization of the SQL Server physical baseline marker,
   - all deterministic seeds (`dms.ResourceKey`, schema fingerprint rows),
   - all required supporting indexes.
 - Deterministic object dependencies create `dms.Document` and

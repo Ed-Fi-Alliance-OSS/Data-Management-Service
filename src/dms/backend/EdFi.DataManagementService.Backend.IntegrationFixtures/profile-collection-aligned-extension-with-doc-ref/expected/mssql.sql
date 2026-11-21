@@ -10,6 +10,79 @@ GO
 -- Phase 0: Bounded Provisioning Guards
 -- ==========================================================
 
+-- Preflight: verify the SQL Server engine and DocumentCache physical baseline
+IF ISNULL(TRY_CONVERT(int, SERVERPROPERTY(N'ProductMajorVersion')), 0) < 17
+    THROW 51128, 'Native dms.DocumentCache.DocumentJson requires SQL Server 2025 (major version 17) or later. Upgrade the SQL Server engine before provisioning.', 1;
+
+DECLARE @document_cache_object_id int, @physical_marker_object_id int, @boundary_objects bigint;
+SELECT
+    @document_cache_object_id = MAX(CASE WHEN o.[name] = N'DocumentCache' THEN o.[object_id] END),
+    @physical_marker_object_id = MAX(CASE WHEN o.[name] = N'MssqlPhysicalSchema' THEN o.[object_id] END),
+    @boundary_objects = COUNT_BIG(*)
+FROM sys.schemas s
+INNER JOIN sys.objects o ON o.[schema_id] = s.[schema_id]
+WHERE s.[name] = N'dms'
+    AND o.[name] IN (N'DocumentCache', N'MssqlPhysicalSchema', N'EffectiveSchema', N'DocumentCacheState', N'DocumentProjectionWork');
+
+DECLARE @document_json_type sysname, @document_json_max_length smallint;
+SELECT @document_json_type = ty.[name], @document_json_max_length = c.[max_length]
+FROM sys.tables t
+INNER JOIN sys.schemas s ON s.[schema_id] = t.[schema_id]
+INNER JOIN sys.columns c ON c.[object_id] = t.[object_id]
+INNER JOIN sys.types ty ON ty.[user_type_id] = c.[user_type_id]
+WHERE t.[object_id] = @document_cache_object_id
+    AND s.[name] COLLATE Latin1_General_100_BIN2 = N'dms'
+    AND t.[name] COLLATE Latin1_General_100_BIN2 = N'DocumentCache'
+    AND c.[name] COLLATE Latin1_General_100_BIN2 = N'DocumentJson'
+    AND c.[user_type_id] = c.[system_type_id] AND ty.[is_user_defined] = 0;
+
+DECLARE @physical_marker_valid bit = 0;
+IF @document_json_type = N'json' AND EXISTS (
+    SELECT 1
+    FROM sys.tables t
+    INNER JOIN sys.schemas s ON s.[schema_id] = t.[schema_id]
+    INNER JOIN sys.columns c ON c.[object_id] = t.[object_id]
+    INNER JOIN sys.types ty ON ty.[user_type_id] = c.[user_type_id]
+    WHERE t.[object_id] = @physical_marker_object_id
+        AND s.[name] COLLATE Latin1_General_100_BIN2 = N'dms'
+        AND t.[name] COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchema'
+        AND c.[user_type_id] = c.[system_type_id] AND ty.[is_user_defined] = 0
+        AND c.[is_nullable] = 0
+        AND ((c.[name] COLLATE Latin1_General_100_BIN2 = N'SingletonId' AND ty.[name] = N'smallint')
+            OR (c.[name] COLLATE Latin1_General_100_BIN2 = N'MssqlPhysicalSchemaVersion' AND ty.[name] = N'varchar' AND c.[max_length] = 2))
+    GROUP BY t.[object_id]
+    HAVING COUNT(*) = 2
+)
+BEGIN
+    BEGIN TRY
+        EXEC sys.sp_executesql N'
+            SELECT @valid = CASE WHEN COUNT_BIG(*) = 1 AND MAX(CASE WHEN [SingletonId] = 1
+                AND CONVERT(varbinary(2), [MssqlPhysicalSchemaVersion]) = CONVERT(varbinary(2), ''v2'')
+                THEN 1 ELSE 0 END) = 1 THEN 1 ELSE 0 END
+            FROM [dms].[MssqlPhysicalSchema] WITH (HOLDLOCK);',
+            N'@valid bit OUTPUT', @valid = @physical_marker_valid OUTPUT;
+    END TRY
+    BEGIN CATCH
+        SET @physical_marker_valid = 0;
+    END CATCH;
+END;
+
+-- Object-level DENY can hide a boundary object even with broader VIEW DEFINITION.
+-- Only the database owner can establish absence from the catalog for this guard.
+DECLARE @can_prove_boundary_absence bit =
+    CASE WHEN USER_ID() = DATABASE_PRINCIPAL_ID(N'dbo') THEN 1 ELSE 0 END;
+DECLARE @document_cache_physical_version varchar(2) = CASE
+    WHEN @physical_marker_valid = 1 THEN 'v2'
+    WHEN @can_prove_boundary_absence = 1 AND @physical_marker_object_id IS NULL
+        AND @document_json_type = N'nvarchar' AND @document_json_max_length = -1 THEN 'v1'
+    ELSE NULL END;
+
+IF @document_cache_physical_version = 'v1'
+    THROW 51129, 'The dms.DocumentCache.DocumentJson column uses the legacy v1 physical schema. Drop and recreate the database before provisioning the v2 DocumentCache schema.', 1;
+IF @document_cache_physical_version IS NULL AND (@boundary_objects <> 0 OR @can_prove_boundary_absence = 0)
+    THROW 51130, 'The SQL Server DocumentCache physical schema is incompatible or could not be verified. Use the database owner to verify an absent boundary and ensure the marker can be read. Drop and recreate an incompatible database before provisioning the v2 DocumentCache schema.', 1;
+GO
+
 -- Preflight: validate EffectiveSchema hash compatibility
 DECLARE @preflight_stored_hash nvarchar(200);
 
@@ -249,7 +322,7 @@ CREATE TABLE [dms].[DocumentCache]
     [StreamEtag] varchar(64) NOT NULL,
     [LastModifiedAt] datetime2(7) NOT NULL,
     [ContentCreatedAt] datetime2(7) NOT NULL,
-    [DocumentJson] nvarchar(max) NOT NULL,
+    [DocumentJson] json NOT NULL,
     [ComputedAt] datetime2(7) NOT NULL CONSTRAINT [DF_DocumentCache_ComputedAt] DEFAULT (sysutcdatetime()),
     CONSTRAINT [PK_DocumentCache] PRIMARY KEY CLUSTERED ([DocumentId])
 );
@@ -259,7 +332,7 @@ IF NOT EXISTS (
     WHERE name = N'CK_DocumentCache_IsJsonObject' AND parent_object_id = OBJECT_ID(N'dms.DocumentCache')
 )
 ALTER TABLE [dms].[DocumentCache]
-ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson]) = 1 AND LEFT(LTRIM([DocumentJson]), 1) = '{');
+ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson], OBJECT) = 1);
 
 IF OBJECT_ID(N'dms.DocumentCacheState', N'U') IS NULL
 CREATE TABLE [dms].[DocumentCacheState]
@@ -326,6 +399,20 @@ IF NOT EXISTS (
 )
 ALTER TABLE [dms].[EffectiveSchema]
 ADD CONSTRAINT [UX_EffectiveSchema_EffectiveSchemaHash] UNIQUE ([EffectiveSchemaHash]);
+
+IF OBJECT_ID(N'[dms].[MssqlPhysicalSchema]', N'U') IS NULL
+BEGIN
+    CREATE TABLE [dms].[MssqlPhysicalSchema]
+    (
+        [SingletonId] smallint NOT NULL,
+        [MssqlPhysicalSchemaVersion] varchar(2) NOT NULL,
+        CONSTRAINT [PK_MssqlPhysicalSchema] PRIMARY KEY CLUSTERED ([SingletonId]),
+        CONSTRAINT [CK_MssqlPhysicalSchema_Singleton] CHECK ([SingletonId] = 1)
+    );
+
+    INSERT INTO [dms].[MssqlPhysicalSchema] ([SingletonId], [MssqlPhysicalSchemaVersion])
+    VALUES (1, N'v2');
+END;
 
 IF OBJECT_ID(N'dms.RepresentationRestampOperation', N'U') IS NULL
 CREATE TABLE [dms].[RepresentationRestampOperation]

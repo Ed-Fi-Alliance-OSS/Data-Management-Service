@@ -1,6 +1,7 @@
 {
   "manifest_version": "1",
   "dialect": "mssql",
+  "mssql_physical_schema_version": "v2",
   "schemas": [
     {
       "schema_name": "auth"
@@ -56,6 +57,10 @@
     {
       "schema_name": "dms",
       "table_name": "EffectiveSchema"
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "MssqlPhysicalSchema"
     },
     {
       "schema_name": "dms",
@@ -3014,7 +3019,7 @@
       "table_name": "DocumentCache",
       "column_name": "DocumentJson",
       "ordinal_position": 10,
-      "data_type": "nvarchar(max)",
+      "data_type": "json",
       "is_nullable": false,
       "default_expression": null,
       "is_computed": false
@@ -3205,6 +3210,26 @@
       "column_name": "ResourceKeySeedHash",
       "ordinal_position": 5,
       "data_type": "binary(32)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "MssqlPhysicalSchema",
+      "column_name": "MssqlPhysicalSchemaVersion",
+      "ordinal_position": 2,
+      "data_type": "varchar(2)",
+      "is_nullable": false,
+      "default_expression": null,
+      "is_computed": false
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "MssqlPhysicalSchema",
+      "column_name": "SingletonId",
+      "ordinal_position": 1,
+      "data_type": "smallint",
       "is_nullable": false,
       "default_expression": null,
       "is_computed": false
@@ -69122,6 +69147,30 @@
       "constraint_type": "UNIQUE",
       "columns": [
         "EffectiveSchemaHash"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "MssqlPhysicalSchema",
+      "constraint_name": "CK_MssqlPhysicalSchema_Singleton",
+      "constraint_type": "CHECK",
+      "columns": [
+        "SingletonId"
+      ],
+      "referenced_schema": null,
+      "referenced_table": null,
+      "referenced_columns": null
+    },
+    {
+      "schema_name": "dms",
+      "table_name": "MssqlPhysicalSchema",
+      "constraint_name": "PK_MssqlPhysicalSchema",
+      "constraint_type": "PRIMARY KEY",
+      "columns": [
+        "SingletonId"
       ],
       "referenced_schema": null,
       "referenced_table": null,

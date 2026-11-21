@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using System.Text.Json;
 using EdFi.DataManagementService.Backend.Ddl;
 using EdFi.DataManagementService.Backend.External;
 using FluentAssertions;
@@ -18,6 +19,92 @@ namespace EdFi.DataManagementService.Backend.Cdc.Tests.Unit;
 [Category("CdcConnectorTemplateRenderingSqlServer")]
 public class Given_CdcConnectorTemplateSqlServerRendering
 {
+    [TestCase("json", true)]
+    [TestCase("nvarchar(max)", false)]
+    public void It_only_configures_the_cache_converter_for_native_document_json(
+        string providerDataType,
+        bool expected
+    )
+    {
+        CdcConnectorTemplateRequest request = BuildRequest(
+            CdcProvider.SqlServer,
+            artifactOutput: new CdcConnectorTemplateArtifactOutputRequest(
+                includeRedactedArtifactPayload: true
+            ),
+            sourceTableInventory:
+            [
+                BuildSourceTable(
+                    CdcProvider.SqlServer,
+                    CdcSourceTableKind.DocumentCache,
+                    "DocumentCache",
+                    [
+                        BuildColumn(CdcProvider.SqlServer, "DocumentUuid"),
+                        BuildColumn(CdcProvider.SqlServer, "DocumentJson", 2, providerDataType),
+                    ]
+                ),
+                BuildSourceTable(
+                    CdcProvider.SqlServer,
+                    CdcSourceTableKind.Document,
+                    "Document",
+                    [BuildColumn(CdcProvider.SqlServer, "DocumentUuid")]
+                ),
+                BuildSourceTable(
+                    CdcProvider.SqlServer,
+                    CdcSourceTableKind.CdcHeartbeat,
+                    "CdcHeartbeat",
+                    [
+                        BuildColumn(CdcProvider.SqlServer, "HeartbeatId"),
+                        BuildColumn(CdcProvider.SqlServer, "HeartbeatSequence", 2),
+                        BuildColumn(CdcProvider.SqlServer, "HeartbeatAt", 3),
+                    ]
+                ),
+            ]
+        );
+        using ServiceProvider provider = new ServiceCollection()
+            .AddCdcConnectorTemplates()
+            .BuildServiceProvider();
+        var service = provider.GetRequiredService<ICdcConnectorTemplateService>();
+        CdcConnectorTemplateResult result = service.Render(request);
+
+        result.Outcome.Should().Be(CdcConnectorTemplateOutcome.Rendered);
+        if (expected)
+        {
+            result.Config.Should().Contain("converters", "edfiCacheJson");
+            result
+                .Config.Should()
+                .Contain(
+                    "edfiCacheJson.type",
+                    "org.edfi.kafka.connect.converters.SqlServerDocumentCacheJsonConverter"
+                );
+            result.Config.Should().Contain("edfiCacheJson.table", "edfi_datastore.dms.DocumentCache");
+            using JsonDocument manifest = JsonDocument.Parse(result.RedactedArtifactPayload!.Json);
+            manifest
+                .RootElement.GetProperty("redactedConfig")
+                .GetProperty("edfiCacheJson.table")
+                .GetString()
+                .Should()
+                .NotContain("edfi_datastore");
+
+            var mismatched = new Dictionary<string, string>(result.Config);
+            mismatched["edfiCacheJson.table"] = "other_datastore.dms.DocumentCache";
+            service
+                .ValidateRegistrationPreflight(new(request, mismatched, request.ProviderSetupEvidence))
+                .Diagnostics.Should()
+                .Contain(diagnostic =>
+                    diagnostic.Code == CdcConnectorTemplateDiagnosticCodes.LiveReadBackPropertyMismatch
+                    && diagnostic.PropertyName == "edfiCacheJson.table"
+                    && diagnostic.RedactionClassification
+                        == CdcConnectorTemplateRedactionClassification.PhysicalIdentifier
+                );
+        }
+        else
+        {
+            result.Config.Should().NotContainKey("converters");
+            result.Config.Should().NotContainKey("edfiCacheJson.type");
+            result.Config.Should().NotContainKey("edfiCacheJson.table");
+        }
+    }
+
     [Test]
     public void It_renders_the_sqlserver_connector_contract_from_provider_setup_metadata()
     {

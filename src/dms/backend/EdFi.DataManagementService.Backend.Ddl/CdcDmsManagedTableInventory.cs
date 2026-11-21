@@ -46,6 +46,11 @@ internal static class CdcDmsManagedTableInventoryBuilder
                 new CdcDmsManagedTableInventory(CdcDmsManagedTableKind.Core, table, emittedQuotedTableName)
             );
         }
+
+        if (dialect.Rules.Dialect == SqlDialect.Mssql)
+        {
+            AddTables(tables, CdcDmsManagedTableKind.Core, dialect, [MssqlDocumentCachePhysicalSchema.Table]);
+        }
     }
 
     private static void AddAuthorizationTables(

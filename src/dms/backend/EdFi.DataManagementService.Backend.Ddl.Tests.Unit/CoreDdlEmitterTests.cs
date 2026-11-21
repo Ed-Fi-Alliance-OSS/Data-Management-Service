@@ -125,12 +125,31 @@ public class Given_CoreDdlEmitter_Ordinary_Tables_And_Cdc_Managed_Core_Table_Inv
         _cdcSourceTables.Should().NotContain(DmsTableNames.RepresentationRestampOperation);
     }
 
+    [Test]
+    public void It_should_include_the_physical_marker_only_in_mssql_owned_inventory()
+    {
+        DbTableName physicalMarker = new(DmsTableNames.DmsSchema, "MssqlPhysicalSchema");
+
+        if (dialect == SqlDialect.Mssql)
+        {
+            _ordinaryCoreTables.Should().Contain(physicalMarker);
+            _cdcManagedCoreTables.Should().Contain(physicalMarker);
+        }
+        else
+        {
+            _ordinaryCoreTables.Should().NotContain(physicalMarker);
+            _cdcManagedCoreTables.Should().NotContain(physicalMarker);
+        }
+
+        _cdcSourceTables.Should().NotContain(physicalMarker);
+    }
+
     private static IReadOnlyList<DbTableName> ExtractOrdinaryCoreTables(string ddl, SqlDialect dialect)
     {
         var tablePattern = dialect switch
         {
             SqlDialect.Pgsql => @"^CREATE TABLE IF NOT EXISTS ""dms""\.""(?<table>[^""]+)""\r?$",
-            SqlDialect.Mssql => @"^CREATE TABLE \[dms\]\.\[(?<table>[^\]]+)\]\r?$",
+            SqlDialect.Mssql => @"^[ ]*CREATE TABLE \[dms\]\.\[(?<table>[^\]]+)\]\r?$",
             _ => throw new ArgumentOutOfRangeException(nameof(dialect), dialect, "Unsupported dialect"),
         };
 
@@ -1679,9 +1698,33 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     }
 
     [Test]
-    public void It_should_use_nvarchar_max_for_document_json()
+    public void It_should_use_native_json_for_document_json()
     {
-        _ddl.Should().Contain("[DocumentJson] nvarchar(max) NOT NULL");
+        _ddl.Should().Contain("[DocumentJson] json NOT NULL");
+    }
+
+    [Test]
+    public void It_should_create_and_initialize_the_physical_schema_marker_in_the_same_branch()
+    {
+        _ddl.Should()
+            .Contain(
+                """
+                IF OBJECT_ID(N'[dms].[MssqlPhysicalSchema]', N'U') IS NULL
+                BEGIN
+                    CREATE TABLE [dms].[MssqlPhysicalSchema]
+                    (
+                        [SingletonId] smallint NOT NULL,
+                        [MssqlPhysicalSchemaVersion] varchar(2) NOT NULL,
+                        CONSTRAINT [PK_MssqlPhysicalSchema] PRIMARY KEY CLUSTERED ([SingletonId]),
+                        CONSTRAINT [CK_MssqlPhysicalSchema_Singleton] CHECK ([SingletonId] = 1)
+                    );
+
+                    INSERT INTO [dms].[MssqlPhysicalSchema] ([SingletonId], [MssqlPhysicalSchemaVersion])
+                    VALUES (1, N'v2');
+                END;
+                """
+            );
+        _ddl.Should().NotContain("UPDATE [dms].[MssqlPhysicalSchema]");
     }
 
     [Test]
@@ -1971,7 +2014,7 @@ public class Given_CoreDdlEmitter_With_MssqlDialect
     public void It_should_have_mssql_json_check_on_document_cache()
     {
         _ddl.Should().Contain("[CK_DocumentCache_IsJsonObject]");
-        _ddl.Should().Contain("ISJSON([DocumentJson]) = 1");
+        _ddl.Should().Contain("ISJSON([DocumentJson], OBJECT) = 1");
     }
 
     [Test]

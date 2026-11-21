@@ -619,6 +619,17 @@ public class Given_SeedDmlEmitter_With_MssqlDialect_And_SeedData
     }
 
     [Test]
+    public void It_should_leave_the_physical_marker_out_of_seed_output()
+    {
+        var fullDdlSeed = new SeedDmlEmitter(SqlDialectFactory.Create(SqlDialect.Mssql)).EmitForFullDdl(
+            SeedTestData.BuildEffectiveSchema()
+        );
+
+        fullDdlSeed.Should().NotContain("[dms].[MssqlPhysicalSchema]");
+        _ddl.Should().NotContain("[dms].[MssqlPhysicalSchema]");
+    }
+
+    [Test]
     public void It_should_emit_singleton_initialization_before_schema_fingerprint_rows()
     {
         var dataStoreIdentity = _ddl.IndexOf(

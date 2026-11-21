@@ -74,6 +74,10 @@
             Link="Shared/MssqlDatabaseProvisioner.cs"
         />
         <Compile
+            Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/MssqlPhysicalSchemaCompatibilityException.cs"
+            Link="Shared/MssqlPhysicalSchemaCompatibilityException.cs"
+        />
+        <Compile
             Include="../../clis/EdFi.DataManagementService.SchemaTools/Provisioning/ManagedDatabaseProvisioner.cs"
             Link="Shared/ManagedDatabaseProvisioner.cs"
         />

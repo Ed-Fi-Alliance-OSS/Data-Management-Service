@@ -4,7 +4,10 @@
 // See the LICENSE and NOTICES files in the project root for more information.
 
 using System.Data;
+using System.Text.Json;
+using EdFi.DataManagementService.Backend.External;
 using EdFi.DataManagementService.SchemaTools.Introspection;
+using EdFi.DataManagementService.SchemaTools.Provisioning;
 using FluentAssertions;
 using Microsoft.Data.SqlClient;
 
@@ -104,6 +107,24 @@ public class Given_A_Fresh_Mssql_Database_Provisioned_With_Create_Database_Flag
                 ["dms", "testproject"]
             )
         );
+    }
+
+    [Test]
+    public void It_creates_native_document_json_and_the_physical_schema_singleton()
+    {
+        _exitCode.Should().Be(0, $"stdout: {_output}\nstderr: {_error}");
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        using var command = new SqlCommand(
+            """
+            SELECT t.name
+            FROM sys.columns c JOIN sys.types t ON t.user_type_id = c.user_type_id
+            WHERE c.object_id = OBJECT_ID(N'dms.DocumentCache', N'U') AND c.name = N'DocumentJson'
+                AND c.is_nullable = 0 AND c.user_type_id = c.system_type_id;
+            """,
+            connection
+        );
+        command.ExecuteScalar().Should().Be("json");
+        MssqlPhysicalProvisioningTestSupport.AssertMarker(connection);
     }
 
     [Test]
@@ -622,6 +643,590 @@ public class Given_Mssql_Bounded_E18_Preflight_Guards
 [TestFixture]
 [Category("DatabaseIntegration")]
 [Category("MssqlIntegration")]
+public class Given_Mssql_DocumentCache_Physical_Preflight
+{
+    private string _databaseName = null!;
+    private string _connectionString = null!;
+    private string _ddlFile = null!;
+
+    [OneTimeSetUp]
+    public void EmitDdl()
+    {
+        if (!MssqlTestDatabaseHelper.IsConfigured())
+        {
+            Assert.Ignore("MssqlAdmin connection string is not configured.");
+        }
+
+        _ddlFile = MssqlPhysicalProvisioningTestSupport.WriteMinimalDdlFile();
+    }
+
+    [OneTimeTearDown]
+    public void DeleteDdl()
+    {
+        if (_ddlFile is not null)
+        {
+            File.Delete(_ddlFile);
+        }
+    }
+
+    [SetUp]
+    public void SetUp()
+    {
+        _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+        _connectionString = MssqlTestDatabaseHelper.BuildConnectionString(_databaseName);
+    }
+
+    [TearDown]
+    public void TearDown() => MssqlTestDatabaseHelper.DropDatabaseIfExists(_databaseName);
+
+    [TestCase("legacy")]
+    [TestCase("missing marker")]
+    [TestCase("empty marker")]
+    [TestCase("wrong version")]
+    [TestCase("wrong singleton")]
+    [TestCase("multiple marker rows")]
+    [TestCase("column type alias")]
+    [TestCase("marker view")]
+    [TestCase("missing column")]
+    [TestCase("missing cache table")]
+    public void It_rejects_invalid_completed_targets_before_cli_or_raw_ddl_mutates_them(string shape)
+    {
+        var created = ProvisionTestHelper.RunProvision("mssql", _connectionString, createDatabase: true);
+        created.ExitCode.Should().Be(0, $"stdout: {created.Output}\nstderr: {created.Error}");
+
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        ConfigurePhysicalShape(connection, shape);
+        MssqlDocumentProjectionTestSupport.InsertWidget(connection, 1, "Preserved document");
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            "DROP TRIGGER IF EXISTS [dms].[TR_DocumentCache_ValidateDocumentUuid];"
+        );
+        var before = ReadCompletedTarget(connection);
+
+        var cli = ProvisionTestHelper.RunProvision("mssql", _connectionString);
+        var afterCli = ReadCompletedTarget(connection);
+        var raw = ProvisionTestHelper.RunSqlcmd(_connectionString, _ddlFile);
+
+        var reason = shape == "legacy" ? "legacy v1" : "incompatible or could not be verified";
+        Assert.Multiple(() =>
+        {
+            Assert.That(cli.ExitCode, Is.Not.EqualTo(0), cli.Output + cli.Error);
+            Assert.That(cli.Error, Does.Contain(reason).And.Contain("Drop and recreate"));
+            Assert.That(raw.ExitCode, Is.Not.EqualTo(0), raw.Output + raw.Error);
+            Assert.That(raw.Output + raw.Error, Does.Contain(reason).And.Contain("Drop and recreate"));
+            Assert.That(afterCli, Is.EqualTo(before), "CLI preflight must leave the target unchanged");
+            Assert.That(
+                ReadCompletedTarget(connection),
+                Is.EqualTo(before),
+                "raw preflight must leave the target unchanged"
+            );
+            if (shape is "legacy" or "wrong version")
+            {
+                var manifest = new MssqlSchemaIntrospector().Introspect(
+                    _connectionString,
+                    ["dms", "testproject"]
+                );
+                using var json = JsonDocument.Parse(ProvisionedSchemaManifestEmitter.Emit(manifest));
+                var hasPhysicalVersion = json.RootElement.TryGetProperty(
+                    "mssql_physical_schema_version",
+                    out var physicalVersion
+                );
+                if (shape == "legacy")
+                {
+                    Assert.That(hasPhysicalVersion ? physicalVersion.GetString() : null, Is.EqualTo("v1"));
+                }
+                else
+                {
+                    Assert.That(
+                        hasPhysicalVersion,
+                        Is.False,
+                        "a tampered marker must not attest physical v2"
+                    );
+                }
+            }
+        });
+    }
+
+    [TestCase("CREATE TABLE [dms].[DocumentCacheState] ([Id] int NOT NULL)")]
+    [TestCase("CREATE TABLE [dms].[DocumentProjectionWork] ([Id] int NOT NULL)")]
+    [TestCase("CREATE VIEW [dms].[DocumentCache] AS SELECT 1 AS [Id]")]
+    public void It_rejects_interrupted_physical_inventory_before_any_core_ddl(string createBoundaryObject)
+    {
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(connection, "CREATE SCHEMA [dms];");
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(connection, createBoundaryObject);
+        const string countObjects = """
+            SELECT COUNT(*) FROM sys.objects WHERE schema_id = SCHEMA_ID(N'dms');
+            """;
+        using var command = new SqlCommand(countObjects, connection);
+        var objectCount = command.ExecuteScalar();
+
+        var cli = ProvisionTestHelper.RunProvision("mssql", _connectionString);
+        var raw = ProvisionTestHelper.RunSqlcmd(_connectionString, _ddlFile);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(cli.ExitCode, Is.Not.EqualTo(0), cli.Output + cli.Error);
+            Assert.That(cli.Error, Does.Contain("incompatible or could not be verified"));
+            Assert.That(raw.ExitCode, Is.Not.EqualTo(0), raw.Output + raw.Error);
+            Assert.That(raw.Output + raw.Error, Does.Contain("incompatible or could not be verified"));
+            Assert.That(
+                command.ExecuteScalar(),
+                Is.EqualTo(objectCount),
+                "phase zero must run before core DDL"
+            );
+        });
+    }
+
+    [Test]
+    public void It_rejects_a_target_with_its_only_boundary_object_hidden_by_an_object_deny()
+    {
+        MssqlTestDatabaseHelper.CreateDatabase(_databaseName);
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(connection, "CREATE SCHEMA [dms];");
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            """
+            CREATE TABLE [dms].[DocumentCacheState] ([Id] int NOT NULL);
+            INSERT INTO [dms].[DocumentCacheState] ([Id]) VALUES (7);
+            CREATE USER [physical_provisioner] WITHOUT LOGIN;
+            GRANT VIEW DEFINITION TO [physical_provisioner];
+            DENY VIEW DEFINITION ON OBJECT::[dms].[DocumentCacheState] TO [physical_provisioner];
+            """
+        );
+
+        AssertRestrictedPhaseZeroRejection(
+            connection,
+            """
+            SELECT CASE WHEN HAS_PERMS_BY_NAME(DB_NAME(), N'DATABASE', N'VIEW DEFINITION') = 1
+                AND OBJECT_ID(N'dms.DocumentCacheState') IS NULL THEN 1 ELSE 0 END;
+            """
+        );
+
+        using var command = new SqlCommand("SELECT [Id] FROM [dms].[DocumentCacheState];", connection);
+        command.ExecuteScalar().Should().Be(7);
+        command.CommandText = "SELECT COUNT(*) FROM sys.objects WHERE schema_id = SCHEMA_ID(N'dms');";
+        command.ExecuteScalar().Should().Be(1);
+    }
+
+    [Test]
+    public void It_rejects_a_visible_native_marker_with_select_denied()
+    {
+        var created = ProvisionTestHelper.RunProvision("mssql", _connectionString, createDatabase: true);
+        created.ExitCode.Should().Be(0, created.Output + created.Error);
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        MssqlPhysicalProvisioningTestSupport.AssertMarker(connection);
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            """
+            CREATE USER [physical_provisioner] WITHOUT LOGIN;
+            GRANT VIEW DEFINITION TO [physical_provisioner];
+            DENY SELECT ON OBJECT::[dms].[MssqlPhysicalSchema] TO [physical_provisioner];
+            """
+        );
+        var before = ReadCompletedTarget(connection);
+
+        AssertRestrictedPhaseZeroRejection(
+            connection,
+            """
+            SELECT CASE WHEN OBJECT_ID(N'dms.DocumentCache', N'U') IS NOT NULL
+                AND OBJECT_ID(N'dms.MssqlPhysicalSchema', N'U') IS NOT NULL
+                AND HAS_PERMS_BY_NAME(N'dms.MssqlPhysicalSchema', N'OBJECT', N'SELECT') = 0
+                THEN 1 ELSE 0 END;
+            """
+        );
+
+        ReadCompletedTarget(connection).Should().Be(before);
+    }
+
+    private void AssertRestrictedPhaseZeroRejection(SqlConnection connection, string permissionEvidenceSql)
+    {
+        var phaseZero = MssqlDatabaseProvisioner
+            .SplitOnGoBatchSeparator(File.ReadAllText(_ddlFile))
+            .First(batch =>
+                batch.Contains("-- Phase 0: Bounded Provisioning Guards", StringComparison.Ordinal)
+            );
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            "EXECUTE AS USER = N'physical_provisioner';"
+        );
+        try
+        {
+            using var command = new SqlCommand(permissionEvidenceSql, connection);
+            command
+                .ExecuteScalar()
+                .Should()
+                .Be(1, "the impersonated session must see the intended permission boundary");
+            command.CommandText = phaseZero;
+            var exception = Assert.Throws<SqlException>(() => command.ExecuteNonQuery());
+            exception!
+                .Number.Should()
+                .Be(51130, "phase zero must classify incomplete evidence before any core DDL");
+        }
+        finally
+        {
+            MssqlDocumentProjectionTestSupport.ExecuteNonQuery(connection, "REVERT;");
+        }
+    }
+
+    [Test]
+    public void It_keeps_the_existing_marker_without_writing_it_on_a_healthy_rerun()
+    {
+        var created = ProvisionTestHelper.RunProvision("mssql", _connectionString, createDatabase: true);
+        created.ExitCode.Should().Be(0, created.Output + created.Error);
+
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        MssqlPhysicalProvisioningTestSupport.AssertMarker(connection);
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            """
+            CREATE TRIGGER [dms].[BlockUnexpectedMarkerWrite] ON [dms].[MssqlPhysicalSchema]
+            AFTER INSERT, UPDATE, DELETE
+            AS
+            THROW 50000, 'A healthy provisioning rerun must not write the marker.', 1;
+            """
+        );
+
+        var cli = ProvisionTestHelper.RunProvision("mssql", _connectionString);
+        var raw = ProvisionTestHelper.RunSqlcmd(_connectionString, _ddlFile);
+
+        cli.ExitCode.Should().Be(0, cli.Output + cli.Error);
+        raw.ExitCode.Should().Be(0, raw.Output + raw.Error);
+        MssqlPhysicalProvisioningTestSupport.AssertMarker(connection);
+    }
+
+    [Test]
+    [Platform(Exclude = "Win", Reason = "Local CDC ownership state requires Unix permissions.")]
+    public void It_rejects_physical_drift_on_managed_inspection_without_changing_the_target_or_receipt()
+    {
+        var statePath = Path.Combine(Path.GetTempPath(), $"dms-managed-physical-{Guid.NewGuid():N}");
+        try
+        {
+            (int ExitCode, string Output, string Error) RunManaged() =>
+                CliTestHelper.RunCli(
+                    "ddl",
+                    "provision",
+                    "--schema",
+                    CliTestHelper.GetMinimalSchemaPath(),
+                    "--connection-string",
+                    _connectionString,
+                    "--dialect",
+                    "mssql",
+                    "--create-database",
+                    "--managed-state-path",
+                    statePath,
+                    "--data-store-id",
+                    "42",
+                    "--instance-key",
+                    "datastore-42"
+                );
+
+            var created = RunManaged();
+            created.ExitCode.Should().Be(0, $"stdout: {created.Output}\nstderr: {created.Error}");
+            using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+            ConfigurePhysicalShape(connection, "wrong version");
+            var before = ReadCompletedTarget(connection);
+            var receipts = Directory
+                .EnumerateFiles(statePath, "*.json", SearchOption.AllDirectories)
+                .ToDictionary(path => path, File.ReadAllText);
+            receipts.Should().NotBeEmpty();
+
+            var retry = RunManaged();
+
+            retry.ExitCode.Should().Be(1, retry.Output + retry.Error);
+            retry.Error.Should().Contain("incompatible or could not be verified");
+            retry.Output.Should().BeEmpty("rejected inspection does not report a new or reusable receipt");
+            ReadCompletedTarget(connection).Should().Be(before);
+            Directory
+                .EnumerateFiles(statePath, "*.json", SearchOption.AllDirectories)
+                .ToDictionary(path => path, File.ReadAllText)
+                .Should()
+                .BeEquivalentTo(receipts);
+        }
+        finally
+        {
+            if (Directory.Exists(statePath))
+            {
+                Directory.Delete(statePath, recursive: true);
+            }
+        }
+    }
+
+    private static void ConfigurePhysicalShape(SqlConnection connection, string shape)
+    {
+        using var command = connection.CreateCommand();
+        void Execute(string sql)
+        {
+            command.CommandText = sql;
+            command.ExecuteNonQuery();
+        }
+
+        // Prepare the chosen shape explicitly so this fixture also runs against the legacy emitter.
+        Execute("DROP TABLE IF EXISTS [dms].[MssqlPhysicalSchema];");
+        if (shape == "missing cache table")
+        {
+            Execute("DROP TABLE [dms].[DocumentCache];");
+        }
+        else
+        {
+            Execute("ALTER TABLE [dms].[DocumentCache] DROP CONSTRAINT [CK_DocumentCache_IsJsonObject];");
+            Execute("ALTER TABLE [dms].[DocumentCache] DROP COLUMN [DocumentJson];");
+            if (shape == "column type alias")
+            {
+                Execute("CREATE TYPE [dms].[TextJsonAlias] FROM nvarchar(64) NOT NULL;");
+            }
+
+            var columnType = shape switch
+            {
+                "legacy" => "nvarchar(max)",
+                "column type alias" => "[dms].[TextJsonAlias]",
+                _ => "json",
+            };
+            if (shape != "missing column")
+            {
+                Execute($"ALTER TABLE [dms].[DocumentCache] ADD [DocumentJson] {columnType} NOT NULL;");
+                Execute(
+                    """
+                    ALTER TABLE [dms].[DocumentCache] WITH CHECK
+                    ADD CONSTRAINT [CK_DocumentCache_IsJsonObject] CHECK (ISJSON([DocumentJson], OBJECT) = 1);
+                    """
+                );
+            }
+        }
+
+        if (shape is "legacy" or "missing marker")
+        {
+            return;
+        }
+        if (shape == "marker view")
+        {
+            Execute(
+                """
+                CREATE VIEW [dms].[MssqlPhysicalSchema] AS
+                SELECT CONVERT(smallint, 1) AS [SingletonId], CONVERT(varchar(2), 'v2') AS [MssqlPhysicalSchemaVersion];
+                """
+            );
+            return;
+        }
+
+        var seed = shape switch
+        {
+            "empty marker" => "",
+            "wrong singleton" => "(2, 'v2')",
+            "multiple marker rows" => "(1, 'v2'), (2, 'v2')",
+            "wrong version" => "(1, 'V2')",
+            _ => "(1, 'v2')",
+        };
+        MssqlPhysicalProvisioningTestSupport.CreateMarker(
+            connection,
+            seed,
+            enforceSingleton: shape is not ("wrong singleton" or "multiple marker rows")
+        );
+    }
+
+    private static string ReadCompletedTarget(SqlConnection connection)
+    {
+        using var command = new SqlCommand(
+            """
+            SELECT OBJECT_ID(N'dms.DocumentCache') AS [CacheObject],
+                COL_LENGTH(N'dms.DocumentCache', N'DocumentJson') AS [CacheColumnLength],
+                OBJECT_ID(N'dms.MssqlPhysicalSchema') AS [MarkerObject],
+                OBJECT_ID(N'dms.TR_DocumentCache_ValidateDocumentUuid', N'TR') AS [CacheTrigger],
+                (SELECT COUNT(*) FROM [dms].[Document]) AS [DocumentCount],
+                (SELECT [WidgetName] FROM [testproject].[Widget] WHERE [WidgetId] = 1) AS [PreservedWidget],
+                (SELECT [EffectiveSchemaHash] FROM [dms].[EffectiveSchema]) AS [EffectiveSchemaHash]
+            FOR JSON PATH, WITHOUT_ARRAY_WRAPPER, INCLUDE_NULL_VALUES;
+            """,
+            connection
+        );
+        return (string)command.ExecuteScalar()! + MssqlPhysicalProvisioningTestSupport.ReadMarker(connection);
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
+public class Given_Mssql_Provisioning_On_Sql_Server_2022
+{
+    private string _masterConnectionString = null!;
+    private string _databaseName = null!;
+    private string _ddlFile = null!;
+
+    [OneTimeSetUp]
+    public void RequireSqlServer2022()
+    {
+        // Point ConnectionStrings__Mssql2022Admin at a separate SQL Server 2022 instance with CREATE DATABASE rights.
+        if (DatabaseConfiguration.Mssql2022AdminConnectionString is not { } connectionString)
+        {
+            Assert.Ignore("Mssql2022Admin connection string is not configured.");
+            return;
+        }
+
+        _masterConnectionString = new SqlConnectionStringBuilder(connectionString)
+        {
+            InitialCatalog = "master",
+        }.ConnectionString;
+        using var connection = new SqlConnection(_masterConnectionString);
+        connection.Open();
+        using var command = new SqlCommand(
+            "SELECT CONVERT(int, SERVERPROPERTY('ProductMajorVersion'));",
+            connection
+        );
+        command.ExecuteScalar().Should().Be(16, "this fixture requires SQL Server 2022");
+        _ddlFile = MssqlPhysicalProvisioningTestSupport.WriteMinimalDdlFile();
+    }
+
+    [OneTimeTearDown]
+    public void DeleteDdl()
+    {
+        if (_ddlFile is not null)
+        {
+            File.Delete(_ddlFile);
+        }
+    }
+
+    [SetUp]
+    public void SetUp() => _databaseName = MssqlTestDatabaseHelper.GenerateUniqueDatabaseName();
+
+    [TearDown]
+    public void TearDown()
+    {
+        SqlConnection.ClearAllPools();
+        using var connection = new SqlConnection(_masterConnectionString);
+        connection.Open();
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            $"DROP DATABASE IF EXISTS [{_databaseName}];"
+        );
+    }
+
+    [TestCase("cli-create")]
+    [TestCase("cli-existing")]
+    [TestCase("sqlcmd")]
+    public void It_reports_the_engine_floor_before_creating_a_database_or_applying_ddl(string entryPoint)
+    {
+        using var master = new SqlConnection(_masterConnectionString);
+        master.Open();
+        var targetConnection = new SqlConnectionStringBuilder(_masterConnectionString)
+        {
+            InitialCatalog = _databaseName,
+        }.ConnectionString;
+        bool createDatabase = entryPoint == "cli-create";
+        if (!createDatabase)
+        {
+            MssqlDocumentProjectionTestSupport.ExecuteNonQuery(master, $"CREATE DATABASE [{_databaseName}];");
+        }
+
+        var result =
+            entryPoint == "sqlcmd"
+                ? ProvisionTestHelper.RunSqlcmd(targetConnection, _ddlFile)
+                : ProvisionTestHelper.RunProvision("mssql", targetConnection, createDatabase: createDatabase);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(result.ExitCode, Is.Not.EqualTo(0), result.Output + result.Error);
+            Assert.That(
+                result.Output + result.Error,
+                Does.Contain("requires SQL Server 2025 (major version 17) or later")
+            );
+            Assert.That(result.Output + result.Error, Does.Not.Contain("Drop and recreate"));
+            if (createDatabase)
+            {
+                using var command = new SqlCommand("SELECT DB_ID(@database);", master);
+                command.Parameters.AddWithValue("@database", _databaseName);
+                Assert.That(
+                    command.ExecuteScalar(),
+                    Is.EqualTo(DBNull.Value),
+                    "the incompatible server must be rejected before CREATE DATABASE"
+                );
+            }
+            else
+            {
+                using var target = new SqlConnection(targetConnection);
+                target.Open();
+                using var command = new SqlCommand("SELECT SCHEMA_ID(N'dms');", target);
+                Assert.That(
+                    command.ExecuteScalar(),
+                    Is.EqualTo(DBNull.Value),
+                    "an unsupported engine must not receive core DDL"
+                );
+            }
+        });
+    }
+}
+
+internal static class MssqlPhysicalProvisioningTestSupport
+{
+    internal static string WriteMinimalDdlFile()
+    {
+        var file = Path.Combine(Path.GetTempPath(), $"dms-mssql-{Guid.NewGuid():N}.sql");
+        File.WriteAllText(
+            file,
+            CdcSchemaToolsTestMetadata.BuildMinimalDdlEmission(SqlDialect.Mssql).CombinedSql
+        );
+        return file;
+    }
+
+    internal static void AssertMarker(SqlConnection connection) =>
+        ReadMarker(connection).Should().Be("1:v2", "the generated marker is an exact singleton");
+
+    internal static string ReadMarker(SqlConnection connection)
+    {
+        using var command = new SqlCommand("SELECT OBJECT_ID(N'dms.MssqlPhysicalSchema', N'U');", connection);
+        if (command.ExecuteScalar() is DBNull)
+        {
+            return "absent";
+        }
+
+        command.CommandText = """
+            SELECT CONCAT([SingletonId], ':', [MssqlPhysicalSchemaVersion])
+            FROM [dms].[MssqlPhysicalSchema]
+            ORDER BY [SingletonId];
+            """;
+        using var reader = command.ExecuteReader();
+        var rows = new List<string>();
+        while (reader.Read())
+        {
+            rows.Add(reader.GetString(0));
+        }
+        return string.Join(",", rows);
+    }
+
+    internal static void CreateMarker(SqlConnection connection, string rows, bool enforceSingleton = true)
+    {
+        MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+            connection,
+            """
+            CREATE TABLE [dms].[MssqlPhysicalSchema] (
+                [SingletonId] smallint NOT NULL PRIMARY KEY,
+                [MssqlPhysicalSchemaVersion] varchar(2) NOT NULL,
+                CONSTRAINT [CK_MssqlPhysicalSchema_Singleton] CHECK ([SingletonId] = 1)
+            );
+            """
+        );
+        if (!enforceSingleton)
+        {
+            MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+                connection,
+                "ALTER TABLE [dms].[MssqlPhysicalSchema] NOCHECK CONSTRAINT [CK_MssqlPhysicalSchema_Singleton];"
+            );
+        }
+        if (rows.Length > 0)
+        {
+            MssqlDocumentProjectionTestSupport.ExecuteNonQuery(
+                connection,
+                $"""
+                INSERT INTO [dms].[MssqlPhysicalSchema] ([SingletonId], [MssqlPhysicalSchemaVersion]) VALUES {rows};
+                """
+            );
+        }
+    }
+}
+
+[TestFixture]
+[Category("DatabaseIntegration")]
+[Category("MssqlIntegration")]
 public class Given_Mssql_Compatible_Interrupted_Initial_Apply
 {
     private string _databaseName = null!;
@@ -683,6 +1288,13 @@ public class Given_Mssql_Compatible_Interrupted_Initial_Apply
 
         ProvisionTestHelper.AssertCoreTablesExist(connection);
         ProvisionTestHelper.AssertDocumentCacheStateSeeded(connection, "mssql");
+    }
+
+    [Test]
+    public void It_seeds_the_physical_schema_marker_after_the_early_retry()
+    {
+        using var connection = MssqlDocumentProjectionTestSupport.OpenConnection(_databaseName);
+        MssqlPhysicalProvisioningTestSupport.AssertMarker(connection);
     }
 }
 

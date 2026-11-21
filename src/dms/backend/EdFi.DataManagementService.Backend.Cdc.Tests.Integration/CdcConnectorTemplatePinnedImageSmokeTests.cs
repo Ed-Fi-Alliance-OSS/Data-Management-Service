@@ -78,6 +78,23 @@ public sealed class Given_OfflinePinnedImageConnectorTemplateFixture(CdcProvider
     private CdcProvider Provider { get; } = provider;
 
     [Test]
+    public void It_uses_the_generated_cache_column_type_and_keeps_the_physical_marker_outside_capture()
+    {
+        var sources = CdcConnectorTemplatePinnedImageFixture.BuildRequiredSourceTableInventory(Provider);
+        var cache = sources.Single(table => table.TableKind == CdcSourceTableKind.DocumentCache);
+        cache
+            .Columns.Single(column => column.ColumnName.Value == "DocumentJson")
+            .ProviderDataType.Should()
+            .Be(Provider == CdcProvider.SqlServer ? "json" : "jsonb");
+        sources.Should().NotContain(table => table.TableName.Name == "MssqlPhysicalSchema");
+        var managed = CdcConnectorTemplatePinnedImageFixture.BuildDmsManagedTableInventory(Provider);
+        managed
+            .Count(table => table.TableName.Name == "MssqlPhysicalSchema")
+            .Should()
+            .Be(Provider == CdcProvider.SqlServer ? 1 : 0);
+    }
+
+    [Test]
     public async Task It_configures_kafka_connect_env_config_provider_for_externalized_database_passwords()
     {
         await using CdcConnectorTemplatePinnedImageFixture fixture =
