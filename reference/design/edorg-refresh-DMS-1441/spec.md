@@ -498,12 +498,13 @@ In multi-tenant mode the existing tenant middleware applies; in single-tenant mo
 
 ### 6.9 Scheduling (`EducationOrganizationRefreshScheduleReconciler : BackgroundService`)
 
-Registered when `JobSettings:SchedulerEnabled=true`; independent of `EnableDataStoreManagement`. It runs at startup, then every 5 minutes.
+Added as a hosted service by `AddEducationOrganizationRefresh` when `JobSettings:SchedulerEnabled=true`; independent of `EnableDataStoreManagement`. It runs at startup, then 5 minutes after each run ends (`TimeProvider`). It needs `JobRuntimeEnvironment` for the tenancy mode.
 
 **Upsert:**
-- **Multi-tenant:** page through all tenants. For each tenant, create a scope with `Multitenant(id, name)` and call `UpsertAsync(ScheduledRefresh, Refresh, 1, {All,0}, interval, RunFirstOccurrenceImmediately: true)`.
+- **Multi-tenant:** page through all tenants, 100 at a time in identifier order. For each tenant, create a scope with `Multitenant(id, name)` installed before the schedule service is resolved, and call `UpsertAsync(ScheduledRefresh, Refresh, 1, {All,0}, interval, RunFirstOccurrenceImmediately: true)`.
 - **Single-tenant:** one upsert with `NotMultitenant`.
-- If enumeration fails, what was already upserted stands, and **nothing is disabled**.
+- If enumeration fails (a failed result or an exception), what was already upserted stands, and **nothing is disabled**. A failed upsert for one tenant is logged and the others continue; it does not stop the disable phase, because no disable decision depends on the enumeration.
+- If the schedules cannot be listed, nothing is disabled.
 
 **Disable** — each enabled schedule of the type is decided on its own:
 
@@ -515,7 +516,7 @@ Registered when `JobSettings:SchedulerEnabled=true`; independent of `EnableDataS
 
 Every disable keeps history.
 
-**Failures:** logged as `EducationOrganizationScheduleReconciliationFailed` and retried at the next run. They never stop the host or affect dispatch of existing schedules.
+**Failures:** logged as `EducationOrganizationScheduleReconciliationFailed` (Warning: operation, tenant ID, exception type chain, provider code; never a message) and retried at the next run. They never stop the host or affect dispatch of existing schedules. Each run ends with `EducationOrganizationScheduleReconciled` (Info: counts and whether the disable phase was skipped).
 
 **Documented:**
 - New tenants are scheduled within 5 minutes.
@@ -900,7 +901,7 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 
 **4.1 Schedule reconciler**
 - Objective: AC13 (reconciliation).
-- Files: `BE/EducationOrganizationRefresh/EducationOrganizationRefreshScheduleReconciler.cs`; registration gated on `SchedulerEnabled`; unit tests (fakes plus `FakeTimeProvider`).
+- Files: `BE/EducationOrganizationRefresh/EducationOrganizationRefreshScheduleReconciler.cs`; registration gated on `SchedulerEnabled` in `AddEducationOrganizationRefresh`; unit tests (fakes plus `FakeTimeProvider`); an FE startup test that the host resolves and runs the reconciler only when the scheduler is on.
 - Depends on: 2.4.
 - Validation: per-tenant upsert under the right context; the §6.9 disable table; partial enumeration → no disables; Unknown → keep; mode switches; periodic runs; not registered when the scheduler is off; independent of management.
 - Done when: unit green.

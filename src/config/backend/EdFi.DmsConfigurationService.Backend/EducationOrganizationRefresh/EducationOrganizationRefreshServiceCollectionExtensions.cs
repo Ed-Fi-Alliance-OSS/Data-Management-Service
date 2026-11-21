@@ -20,7 +20,9 @@ public static class EducationOrganizationRefreshServiceCollectionExtensions
     /// startup, registers the refresh's single job error codes and its composite code, and registers the refresh job
     /// handler with its target refresher. The projection reader, whose error codes the composite lists, is registered
     /// first. The handler needs the snapshot repository, which the datastore registration provides, and the job
-    /// options. Calling it more than once is harmless.
+    /// options. When <c>JobSettings:SchedulerEnabled</c> is on, whatever the data store management setting is, the
+    /// schedule reconciler is added as a hosted service; it needs <see cref="JobRuntimeEnvironment"/>, which the host
+    /// registers. Calling it more than once is harmless.
     /// </summary>
     public static IServiceCollection AddEducationOrganizationRefresh(
         this IServiceCollection services,
@@ -62,6 +64,12 @@ public static class EducationOrganizationRefreshServiceCollectionExtensions
             EducationOrganizationRefreshPayload,
             EducationOrganizationRefreshPayloadValidator
         >(EducationOrganizationRefreshJobTypes.Refresh, EducationOrganizationRefreshJobTypes.PayloadVersion);
+
+        JobOptions jobs = configuration.GetSection(JobOptions.SectionName).Get<JobOptions>() ?? new();
+        if (jobs.SchedulerEnabled)
+        {
+            services.AddHostedService<EducationOrganizationRefreshScheduleReconciler>();
+        }
 
         return services;
     }

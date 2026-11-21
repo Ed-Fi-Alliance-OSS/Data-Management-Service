@@ -215,4 +215,43 @@ public class EducationOrganizationRefreshStartupTests
         public void It_uses_the_interval_from_the_environment() =>
             ConfiguredInterval(_factory).Should().Be(5);
     }
+
+    [TestFixture("true", 1)]
+    [TestFixture("false", 0)]
+    public class Given_the_scheduler_switch_at_startup(string scheduler, int reconcilers)
+    {
+        private WebApplicationFactory<Program> _factory = null!;
+        private Exception? _exception;
+
+        [SetUp]
+        public void Act()
+        {
+            // The switch is read while the services are registered, so it goes through UseSetting. With the scheduler
+            // on, the reconciler starts with the host, against a database it can never reach.
+            _factory = new WebApplicationFactory<Program>().WithWebHostBuilder(builder =>
+            {
+                builder.UseEnvironment("Test");
+                builder.UseSetting("JobSettings:SchedulerEnabled", scheduler);
+                builder.UseSetting(
+                    "DatabaseSettings:DatabaseConnection",
+                    "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1"
+                );
+            });
+            _exception = StartupExceptionFor(_factory);
+        }
+
+        [TearDown]
+        public void TearDown() => _factory.Dispose();
+
+        [Test]
+        public void It_starts() => _exception.Should().BeNull();
+
+        [Test]
+        public void It_runs_the_schedule_reconciler_only_when_the_scheduler_is_on() =>
+            _factory
+                .Services.GetServices<Microsoft.Extensions.Hosting.IHostedService>()
+                .OfType<EducationOrganizationRefreshScheduleReconciler>()
+                .Should()
+                .HaveCount(reconcilers);
+    }
 }
