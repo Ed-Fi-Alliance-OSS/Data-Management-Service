@@ -171,6 +171,7 @@ public class EndpointAuthorizationTests
                 .Where(endpoint =>
                     NormalizePattern(endpoint.RoutePattern.RawText!) is var path
                     && (path == "/v3/tenants" || path.StartsWith("/v3/tenants/", StringComparison.Ordinal))
+                    && path != TenantAggregatePattern
                 )
                 .ToArray();
             tenants.Any().Should().Be(multiTenancy);
@@ -180,7 +181,24 @@ public class EndpointAuthorizationTests
                 endpoint.Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
             }
         }
+
+        [Test]
+        public void It_maps_the_protected_tenant_aggregate_in_every_tenancy_mode()
+        {
+            var aggregate = _endpoints
+                .Where(endpoint => NormalizePattern(endpoint.RoutePattern.RawText!) == TenantAggregatePattern)
+                .ToArray();
+            aggregate.Should().ContainSingle();
+            aggregate[0]
+                .Metadata.GetRequiredMetadata<IHttpMethodMetadata>()
+                .HttpMethods.Should()
+                .Equal("GET");
+            aggregate[0].Metadata.GetOrderedMetadata<IAuthorizeData>().Should().NotBeEmpty();
+            aggregate[0].Metadata.GetMetadata<IAllowAnonymous>().Should().BeNull();
+        }
     }
+
+    private const string TenantAggregatePattern = "/v3/tenants/{tenantName}/dataStores/edOrgs";
 
     private const string ProbePath = "/__dms1582/no-metadata";
 
@@ -546,6 +564,42 @@ public class EndpointAuthorizationTests
             );
             using var challenged = await client.SendAsync(anonymous);
             await AssertChallenge(challenged, state);
+        }
+
+        [TestCase("/v3/tenants/Tenant_A/dataStores/edOrgs")]
+        [TestCase("/v3/tenants/default/dataStores/edOrgs")]
+        [TestCase("/v3/dataStores/edOrgs")]
+        public async Task It_challenges_an_anonymous_education_organization_read(string path)
+        {
+            var state = new ProbeState();
+            await using var factory = CreateBehaviorFactory(identityProvider, multiTenancy, state);
+            using var client = factory.CreateClient();
+            using var request = CreateRequest(HttpMethod.Get, path, tenant: multiTenancy ? "Tenant_A" : null);
+            using var response = await client.SendAsync(request);
+            await AssertChallenge(response, state);
+        }
+
+        [Test]
+        public async Task It_keeps_the_excluded_education_organization_GET_not_found()
+        {
+            var state = new ProbeState();
+            await using var factory = CreateBehaviorFactory(identityProvider, multiTenancy, state);
+            using var client = factory.CreateClient();
+            using var request = CreateRequest(
+                HttpMethod.Get,
+                "/v3/dataStores/edOrgs",
+                "role-and-scope",
+                multiTenancy ? "Tenant_A" : null
+            );
+            using var response = await client.SendAsync(request);
+            await AssertFailure(
+                response,
+                state,
+                HttpStatusCode.NotFound,
+                "urn:ed-fi:management-api:not-found",
+                "Not Found",
+                "The requested resource could not be found."
+            );
         }
 
         [Test]

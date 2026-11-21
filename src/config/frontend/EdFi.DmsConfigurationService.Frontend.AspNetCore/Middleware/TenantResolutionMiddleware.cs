@@ -17,6 +17,10 @@ public class TenantResolutionMiddleware(RequestDelegate next)
     private readonly RequestDelegate _next = next ?? throw new ArgumentNullException(nameof(next));
     private const string TenantHeaderName = "Tenant";
 
+    /// <summary>The detail of the 400 returned when multi-tenancy requires a Tenant header and none is given.</summary>
+    internal const string MissingTenantHeaderMessage =
+        $"The '{TenantHeaderName}' header is required when multi-tenancy is enabled";
+
     public async Task Invoke(
         HttpContext context,
         IOptions<AppSettings> appSettings,
@@ -59,10 +63,7 @@ public class TenantResolutionMiddleware(RequestDelegate next)
             logger.LogWarning("Tenant header is missing or empty");
             await FailureResponseWriter.WriteAsync(
                 context,
-                FailureResponse.ForBadRequest(
-                    $"The '{TenantHeaderName}' header is required when multi-tenancy is enabled",
-                    context.TraceIdentifier
-                ),
+                FailureResponse.ForBadRequest(MissingTenantHeaderMessage, context.TraceIdentifier),
                 context.RequestAborted
             );
             return;

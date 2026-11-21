@@ -195,7 +195,7 @@ public class Given_education_organization_refresh_requests
         using var response = await client.PostAsync(OneRoute(value), null);
         var problem = await AssertProblem(response, HttpStatusCode.BadRequest);
         // The body of every other int32 route parameter that cannot bind.
-        using var existing = await client.GetAsync($"/v3/dataStores/{value}");
+        using var existing = await client.GetAsync($"/v3/dataStores/{value}/applications/");
         var expected = await AssertProblem(existing, HttpStatusCode.BadRequest);
         problem.Remove("correlationId");
         expected.Remove("correlationId");

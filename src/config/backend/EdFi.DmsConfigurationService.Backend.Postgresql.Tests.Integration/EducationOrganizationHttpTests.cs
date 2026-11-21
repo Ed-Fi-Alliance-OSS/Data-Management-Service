@@ -6,10 +6,16 @@
 using System.Net;
 using System.Text.Json.Nodes;
 using Dapper;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
+using EdFi.DmsConfigurationService.Backend.Jobs;
+using EdFi.DmsConfigurationService.Backend.Postgresql.Repositories;
 using EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration.Jobs;
+using EdFi.DmsConfigurationService.Backend.Services;
 using EdFi.DmsConfigurationService.Frontend.AspNetCore.Tests.Unit.Infrastructure;
 using FluentAssertions;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
 using Npgsql;
 
 namespace EdFi.DmsConfigurationService.Backend.Postgresql.Tests.Integration;
@@ -395,5 +401,394 @@ public class Given_education_organization_refresh_over_HTTP(bool multitenant)
             await AssertProblemAsync(response, status);
         }
         await AssertNothingQueuedAsync();
+    }
+}
+
+/// <summary>
+/// <c>GET /v3/tenants/{tenantName}/dataStores/edOrgs</c> through the production HTTP pipeline, against the shared test
+/// database, with snapshots published through the target protocol. The selected partition is a fresh tenant in
+/// multi-tenant mode and the data stores without a tenant in single-tenant mode; another tenant's data stores, and
+/// the data stores of the other partition, are present in every test and never appear.
+/// </summary>
+[TestFixture(false)]
+[TestFixture(true)]
+[NonParallelizable]
+[Category("EducationOrganizationHttp")]
+public class Given_tenant_aggregates_over_HTTP(bool multitenant) : EducationOrganizationSnapshotReadTestBase
+{
+    // Numeric order differs from both text order and insertion order.
+    private const int Ten = 910000010;
+    private const int Two = 91000002;
+    private const int Nine = 910000009;
+    private const int Foreign = 91000001;
+    private const int Unpartitioned = 91000003;
+    private const string Admin = "edfi_admin_api/full_access";
+    private const string ConnectionSecret = "Password=aggregate-connection-sentinel";
+    private const string ContextSecret = "aggregate-context-sentinel";
+
+    private WebApplicationFactory<Program> _host = null!;
+    private long _tenant;
+    private string _tenantName = null!;
+    private long _otherTenant;
+    private string _otherTenantName = null!;
+
+    [OneTimeSetUp]
+    public void StartHost() => _host = Host();
+
+    [OneTimeTearDown]
+    public async Task StopHost() => await _host.DisposeAsync();
+
+    [SetUp]
+    public async Task InsertTenants()
+    {
+        _tenantName = "Aggregate_" + Guid.NewGuid().ToString("N");
+        _otherTenantName = "Aggregate_" + Guid.NewGuid().ToString("N");
+        _tenant = await InsertNamedTenantAsync(_tenantName);
+        _otherTenant = await InsertNamedTenantAsync(_otherTenantName);
+    }
+
+    /// <summary>The production host, or one whose snapshot repository runs <paramref name="hooks"/>.</summary>
+    private WebApplicationFactory<Program> Host(JobDatabaseSessionHooks? hooks = null) =>
+        ManagedDataStoreApiTestHost.Create(
+            services =>
+            {
+                if (hooks is not null)
+                {
+                    // Resolved in the route's scope, so the repository reads the tenant the route installed.
+                    services.AddTransient<IEducationOrganizationSnapshotRepository>(provider =>
+                        Repository(
+                            tenant: provider.GetRequiredService<ITenantContextProvider>().Context,
+                            hooks: hooks
+                        )
+                    );
+                }
+            },
+            provider: "postgresql",
+            connectionString: Configuration.DatabaseOptions.Value.DatabaseConnection,
+            multitenant: multitenant
+        );
+
+    private async Task<long> InsertNamedTenantAsync(string name) =>
+        await Connection!.ExecuteScalarAsync<long>(
+            """INSERT INTO dmscs."Tenant" ("Name") VALUES (@Name) RETURNING "Id";""",
+            new { Name = name }
+        );
+
+    private long? Partition => multitenant ? _tenant : null;
+
+    private TenantContext PartitionContext =>
+        multitenant
+            ? new TenantContext.Multitenant(_tenant, _tenantName)
+            : new TenantContext.NotMultitenant();
+
+    /// <summary>The tenant name of the response, and the route's name for it in this mode.</summary>
+    private string CanonicalName => multitenant ? _tenantName : "default";
+
+    private HttpClient Client(string? tenant)
+    {
+        var client = _host.CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Scope", Admin);
+        if (tenant is not null)
+        {
+            client.DefaultRequestHeaders.Add("Tenant", tenant);
+        }
+        return client;
+    }
+
+    /// <summary>A client of the selected partition, whose route names it in another case than it is stored.</summary>
+    private HttpClient PartitionClient(WebApplicationFactory<Program>? host = null)
+    {
+        var client = (host ?? _host).CreateClient();
+        client.DefaultRequestHeaders.Add("X-Test-Scope", Admin);
+        if (multitenant)
+        {
+            client.DefaultRequestHeaders.Add("Tenant", _tenantName.ToLowerInvariant());
+        }
+        return client;
+    }
+
+    private string PartitionRoute =>
+        $"/v3/tenants/{(multitenant ? _tenantName.ToUpperInvariant() : "DEFAULT")}/dataStores/edOrgs";
+
+    private static string Text(string? value) => value is null ? "null" : $"\"{value}\"";
+
+    private static string Number(long? value) =>
+        value?.ToString(System.Globalization.CultureInfo.InvariantCulture) ?? "null";
+
+    private static string OrganizationJson(EducationOrganizationProjectionItem item) =>
+        $$"""{"educationOrganizationId":{{Number(item.EducationOrganizationId)}},"nameOfInstitution":{{Text(item.NameOfInstitution)}},"shortNameOfInstitution":{{Text(item.ShortNameOfInstitution)}},"discriminator":{{Text(item.Discriminator)}},"parentId":{{Number(item.ParentId)}}}""";
+
+    private static string StoreJson(TenantAggregateDataStore store) =>
+        $$"""{"id":{{Number(store.Id)}},"dataStoreManageId":{{Number(store.DataStoreManageId)}},"name":{{Text(store.Name)}},"dataStoreType":{{Text(store.DataStoreType)}},"status":{{Text(store.Status)}},"databaseTemplate":{{Text(store.DatabaseTemplate)}},"databaseName":{{Text(store.DatabaseName)}},"educationOrganizations":[{{string.Join(',', store.EducationOrganizations.Select(OrganizationJson))}}]}""";
+
+    /// <summary>The exact response text of the selected tenant with <paramref name="stores"/>.</summary>
+    private string Json(params TenantAggregateDataStore[] stores) =>
+        $$"""{"id":{{Text(CanonicalName)}},"name":{{Text(CanonicalName)}},"dataStores":[{{string.Join(',', stores.Select(StoreJson))}}]}""";
+
+    private static async Task<string> ReadOkAsync(HttpResponseMessage response)
+    {
+        string text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(HttpStatusCode.OK, text);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/json");
+        return text;
+    }
+
+    private static async Task<string> ProblemDetailAsync(HttpResponseMessage response, HttpStatusCode status)
+    {
+        string text = await response.Content.ReadAsStringAsync();
+        response.StatusCode.Should().Be(status, text);
+        response.Content.Headers.ContentType!.MediaType.Should().Be("application/problem+json");
+        return JsonNode.Parse(text)!["detail"]!.GetValue<string>();
+    }
+
+    /// <summary>Data stores outside the selected partition, each with a published snapshot and a management record.</summary>
+    private async Task SeedOtherPartitionsAsync()
+    {
+        await InsertDataStoreAsync(Foreign, "Foreign store", _otherTenant);
+        await PublishAsync(
+            Foreign,
+            [Item(3)],
+            repository: Repository(tenant: new TenantContext.Multitenant(_otherTenant, _otherTenantName))
+        );
+        await InsertManageAsync("Foreign pending", "PendingCreate", null, null, _otherTenant);
+        long? unpartitioned = multitenant ? null : _tenant;
+        await InsertDataStoreAsync(Unpartitioned, "Unpartitioned store", unpartitioned);
+        await PublishAsync(
+            Unpartitioned,
+            [Item(4)],
+            repository: Repository(
+                tenant: unpartitioned is long id
+                    ? new TenantContext.Multitenant(id, _tenantName)
+                    : new TenantContext.NotMultitenant()
+            )
+        );
+        await InsertManageAsync("Unpartitioned pending", "PendingCreate", null, null, unpartitioned);
+    }
+
+    [Test]
+    public async Task It_returns_the_full_aggregate_of_snapshots_published_through_the_protocol()
+    {
+        EducationOrganizationSnapshotRepository repository = Repository(tenant: PartitionContext);
+        await InsertDataStoreAsync(Ten, "Ten store", Partition, "Production");
+        await InsertDataStoreAsync(Two, "Two store", Partition);
+        await InsertDataStoreAsync(Nine, "Nine store", Partition);
+        await InsertContextAsync(Ten, "secret", ContextSecret);
+        await Connection!.ExecuteAsync(
+            """UPDATE dmscs."DataStore" SET "ConnectionString" = convert_to(@Value, 'UTF8') WHERE "Id" = @Id;""",
+            new { Value = ConnectionSecret, Id = Two }
+        );
+        EducationOrganizationProjectionItem[] tenOrganizations =
+        [
+            Organization(2, "Two Elementary", null, "edfi.School", 255901),
+            Organization(9, "Nine Middle", "Nine", "edfi.School", null),
+            Organization(10, "Ten District", null, "edfi.LocalEducationAgency", null),
+            Organization(2147483649, "Wide High", null, "edfi.School", 10),
+            Organization(9007199254740993, "Beyond Academy", null, "edfi.School", null),
+            Organization(long.MaxValue - 1, "Largest Academy", "Largest", "edfi.School", 9007199254740993),
+        ];
+        // Staged in another order than the identifiers: the response orders them.
+        await PublishAsync(Ten, [.. tenOrganizations.Reverse()], repository: repository);
+        ManageRecord linked = await InsertManageAsync("Two store", "Created", Two, Two, Partition);
+        await PublishAsync(Two, [Item(1)], prune: false, repository: repository);
+        await PublishAsync(Two, [Item(5)], repository: repository);
+        ManageRecord pending = await InsertManageAsync(
+            "Pending store",
+            "PendingCreate",
+            null,
+            null,
+            Partition
+        );
+        ManageRecord deleted = await InsertManageAsync("Deleted store", "Deleted", null, 77, Partition);
+        await SeedOtherPartitionsAsync();
+
+        using var client = PartitionClient();
+        using var response = await client.GetAsync(PartitionRoute);
+        string text = await ReadOkAsync(response);
+
+        text.Should()
+            .Be(
+                Json(
+                    new TenantAggregateDataStore(
+                        Two,
+                        linked.Id,
+                        "Two store",
+                        "Shared",
+                        "Created",
+                        "Minimal",
+                        linked.TargetDatabaseName,
+                        [Item(5)]
+                    ),
+                    Unmanaged(Nine, "Nine store"),
+                    new TenantAggregateDataStore(
+                        Ten,
+                        null,
+                        "Ten store",
+                        "Production",
+                        "Created",
+                        null,
+                        null,
+                        tenOrganizations
+                    ),
+                    Unlinked(pending, "Pending store", "PendingCreate", published: false),
+                    Unlinked(deleted, "Deleted store", "Deleted", published: true)
+                )
+            );
+        text.Should()
+            .Contain("\"educationOrganizationId\":9007199254740993,")
+            .And.Contain("\"educationOrganizationId\":9223372036854775806,");
+        foreach (
+            string sentinel in new[]
+            {
+                ConnectionSecret,
+                ContextSecret,
+                ContractVersion,
+                "Foreign",
+                "Unpartitioned",
+                "tenantId",
+                "expectedSourceIdentity",
+                "generation",
+            }
+        )
+        {
+            text.Should().NotContainEquivalentOf(sentinel);
+        }
+    }
+
+    [Test]
+    public async Task It_applies_the_tenant_rules_of_the_route_against_the_database()
+    {
+        await InsertDataStoreAsync(Ten, "Ten store", Partition);
+        await PublishAsync(Ten, [Item(6)], repository: Repository(tenant: PartitionContext));
+        await SeedOtherPartitionsAsync();
+        string own = Json(Unmanaged(Ten, "Ten store", Item(6)));
+        if (multitenant)
+        {
+            string route = $"/v3/tenants/{_tenantName}/dataStores/edOrgs";
+            using (var missing = Client(null))
+            using (var response = await missing.GetAsync(route))
+            {
+                (await ProblemDetailAsync(response, HttpStatusCode.BadRequest))
+                    .Should()
+                    .Be("The 'Tenant' header is required when multi-tenancy is enabled");
+            }
+            using (var mismatched = Client(_otherTenantName))
+            using (var response = await mismatched.GetAsync(route))
+            {
+                (await ProblemDetailAsync(response, HttpStatusCode.BadRequest))
+                    .Should()
+                    .Be("The 'Tenant' header does not match the tenant name in the route.");
+            }
+            string unknownName = "Aggregate_" + Guid.NewGuid().ToString("N");
+            using (var unknown = Client(unknownName))
+            using (var response = await unknown.GetAsync($"/v3/tenants/{unknownName}/dataStores/edOrgs"))
+            {
+                (await ProblemDetailAsync(response, HttpStatusCode.NotFound))
+                    .Should()
+                    .Be("Tenant not found.");
+            }
+            // The other tenant reads only its own data store and management record.
+            using var other = Client(_otherTenantName);
+            using var otherResponse = await other.GetAsync(
+                $"/v3/tenants/{_otherTenantName}/dataStores/edOrgs"
+            );
+            var otherBody = JsonNode.Parse(await ReadOkAsync(otherResponse))!;
+            otherBody["name"]!.GetValue<string>().Should().Be(_otherTenantName);
+            otherBody["dataStores"]!
+                .AsArray()
+                .Select(store => store!["name"]!.GetValue<string>())
+                .Should()
+                .Equal("Foreign store", "Foreign pending");
+        }
+        else
+        {
+            using (var unknown = Client(null))
+            using (var response = await unknown.GetAsync($"/v3/tenants/{_tenantName}/dataStores/edOrgs"))
+            {
+                (await ProblemDetailAsync(response, HttpStatusCode.NotFound))
+                    .Should()
+                    .Be("Tenant not found.");
+            }
+            // A header naming a real tenant is ignored: the response is the partition without a tenant.
+            using var withHeader = Client(_otherTenantName);
+            using var response2 = await withHeader.GetAsync("/v3/tenants/Default/dataStores/edOrgs");
+            (await ReadOkAsync(response2)).Should().Be(own);
+        }
+        using var client = PartitionClient();
+        using var ownResponse = await client.GetAsync(PartitionRoute);
+        (await ReadOkAsync(ownResponse)).Should().Be(own);
+    }
+
+    [Test]
+    public async Task It_leaves_no_snapshot_of_a_data_store_deleted_over_HTTP()
+    {
+        EducationOrganizationSnapshotRepository repository = Repository(tenant: PartitionContext);
+        await InsertDataStoreAsync(Ten, "Ten store", Partition);
+        await InsertDataStoreAsync(Two, "Two store", Partition);
+        await PublishAsync(Ten, [Item(1), Item(2)], prune: false, repository: repository);
+        await PublishAsync(Ten, [Item(3)], prune: false, repository: repository);
+        await PublishAsync(Two, [Item(4)], repository: repository);
+        using var client = PartitionClient();
+        using (var deleted = await client.DeleteAsync($"/v3/dataStores/{Ten}"))
+        {
+            deleted
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+        }
+        (await TargetCountAsync(Ten)).Should().Be(0);
+        (await OrganizationCountAsync(Ten)).Should().Be(0);
+        (await ActiveIdsAsync(Two)).Should().Equal(4);
+        using var response = await client.GetAsync(PartitionRoute);
+        (await ReadOkAsync(response)).Should().Be(Json(Unmanaged(Two, "Two store", Item(4))));
+    }
+
+    [Test]
+    public async Task It_returns_the_state_before_a_delete_that_commits_during_the_read()
+    {
+        EducationOrganizationSnapshotRepository repository = Repository(tenant: PartitionContext);
+        await InsertDataStoreAsync(Ten, "Ten store", Partition);
+        await InsertDataStoreAsync(Two, "Two store", Partition);
+        await PublishAsync(Ten, [Item(1), Item(2)], repository: repository);
+        await PublishAsync(Two, [Item(4)], repository: repository);
+        TaskCompletionSource reached = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        TaskCompletionSource release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        JobDatabaseSessionHooks hooks = new()
+        {
+            BeforeOperation = async (operation, _) =>
+            {
+                if (operation == TenantAggregateReads.BeforeOrganizations)
+                {
+                    reached.TrySetResult();
+                    await release.Task.WaitAsync(TimeSpan.FromSeconds(30), CancellationToken.None);
+                }
+            },
+        };
+        await using var hooked = Host(hooks);
+        using var reader = PartitionClient(hooked);
+        Task<HttpResponseMessage> reading = reader.GetAsync(PartitionRoute);
+        try
+        {
+            await reached.Task.WaitAsync(TimeSpan.FromSeconds(30));
+            using var client = PartitionClient();
+            using var deleted = await client.DeleteAsync($"/v3/dataStores/{Ten}");
+            deleted
+                .StatusCode.Should()
+                .Be(HttpStatusCode.NoContent, await deleted.Content.ReadAsStringAsync());
+        }
+        finally
+        {
+            release.TrySetResult();
+        }
+
+        // Read before the delete committed: the deleted store with its whole snapshot, never part of it.
+        using (var before = await reading)
+        {
+            (await ReadOkAsync(before))
+                .Should()
+                .Be(
+                    Json(Unmanaged(Two, "Two store", Item(4)), Unmanaged(Ten, "Ten store", Item(1), Item(2)))
+                );
+        }
+        using var after = await PartitionClient().GetAsync(PartitionRoute);
+        (await ReadOkAsync(after)).Should().Be(Json(Unmanaged(Two, "Two store", Item(4))));
     }
 }

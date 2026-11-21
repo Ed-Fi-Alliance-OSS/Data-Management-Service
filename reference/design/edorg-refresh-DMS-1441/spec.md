@@ -478,18 +478,21 @@ In multi-tenant mode the existing tenant middleware applies; in single-tenant mo
 `GET /v3/tenants/{tenantName}/dataStores/edOrgs` is mapped with `MapSecuredGet` in both tenancy modes. The EAT tenant-gating test excludes this pattern and asserts that it exists in all four fixtures.
 
 **Multi-tenant mode**, after authorization:
-1. A missing or whitespace `Tenant` header → 400 with the middleware's exact body (a shared constant).
+1. A missing or whitespace `Tenant` header → 400 with the middleware's exact body (a shared constant, `TenantResolutionMiddleware.MissingTenantHeaderMessage`, written by the same `FailureResponseWriter`).
 2. Header ≠ path (OrdinalIgnoreCase) → 400 "The 'Tenant' header does not match the tenant name in the route.", with **no lookup**.
-3. `GetTenantByName` → NotFound: 404 "Tenant not found."; Unknown: 500.
+3. `GetTenantByName` → NotFound: 404 "Tenant not found."; Unknown: 500, logging `TenantAggregateReadFailed` without the failure's message.
 4. Create a nested `AsyncServiceScope` and set its provider to `Multitenant(id, canonicalName)`. Only then resolve the repository from it.
 
 **Single-tenant mode:** `default` (any case) is accepted; any other name → 404. Uses a nested scope with `NotMultitenant`. Any header is ignored.
 
 **Response:**
 - Shape: `{ id, name, dataStores[{ id, dataStoreManageId, name, dataStoreType, status, databaseTemplate, databaseName, educationOrganizations[] }] }`.
+- Organizations: `{ educationOrganizationId, nameOfInstitution, shortNameOfInstitution, discriminator, parentId }`.
 - Unmanaged store: `status: "Created"` and the manage fields null.
 - Nulls are written explicitly.
 - No internal metadata.
+- A failed aggregate read → 500, logging `TenantAggregateReadFailed`.
+- OpenAPI declares 200, 400, 401, 403, 404 and 500. The schemas are `TenantDetailsResponse`, `TenantDataStoreResponse` and `EducationOrganizationResponse`, and the operation carries the module's `DataStores` tag rather than the pinned `Tenants`: both are documented difference (d) in E1. A second tag would break the one-tag-per-operation rule, and `TenantModule`'s tag exists only in multi-tenant mode.
 
 **Excluded-GET guard:** `MapSecuredGet("/v3/dataStores/edOrgs")` → 404 with the unknown-route body, excluded from OpenAPI. `/v3/dataStores/{id}/edOrgs` stays unmapped.
 
@@ -546,6 +549,7 @@ Every event uses its event name as the `EventId` name. Values are sanitized. URL
 | `JobCompositeErrorRejected` | Warning | — |
 | `JobWorkersDisabled` | Warning | at startup |
 | `RefreshRequestFailed` | Error | a refresh route's failed existence check or enqueue: request, exception type chain, provider code, operation, trace ID |
+| `TenantAggregateReadFailed` | Error | the tenant aggregate's failed tenant lookup or read: request, exception type chain, provider code, operation, trace ID |
 
 ### 6.12 Locking, ordering and bounded failure (both providers)
 
@@ -860,7 +864,7 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 
 **3.2 Aggregate GET and the excluded-GET guard**
 - Objective: AC14–19.
-- Files: the module, `TenantResolutionMiddleware.cs` (constant only), `EndpointAuthorizationTests.cs`, FE tests.
+- Files: the module, `DataModel/Model/Tenant/TenantDetailsResponse.cs`, `TenantResolutionMiddleware.cs` (constant only), `EndpointAuthorizationTests.cs`, FE tests (`TenantAggregateHttpTests.cs`).
 - Depends on: 1.4, 3.1.
 - Validation:
   - The 400/400/404 order, with probes.
@@ -876,7 +880,8 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
 
 **3.3 API integration on real databases (both providers)**
 - Objective: API-level evidence for AC3–5 and 15–21, plus blocked HTTP writers.
-- Files: PG/MS `EducationOrganizationHttpTests.cs` (`ManagedDataStoreApiTestHost`, both tenancy modes).
+- Files: PG/MS `EducationOrganizationHttpTests.cs` (`ManagedDataStoreApiTestHost`, both tenancy modes). The refresh fixture uses its own fully migrated database. The aggregate fixture uses the shared test database, so it can seed snapshots through the target protocol, and runs a second host whose repository pauses the read.
+- Deletion consistency: on PostgreSQL, a delete that commits while the read is paused leaves the response showing the whole pre-delete state. On SQL Server, the paused read holds the gate, so the same delete is a blocked writer (below).
 - Depends on: 3.2, 1.5.
 - Validation:
   - POST, then an immediate poll.
