@@ -519,7 +519,7 @@ Every disable keeps history.
 **Failures:** logged as `EducationOrganizationScheduleReconciliationFailed` (Warning: operation, tenant ID, exception type chain, provider code; never a message) and retried at the next run. They never stop the host or affect dispatch of existing schedules. Each run ends with `EducationOrganizationScheduleReconciled` (Info: counts and whether the disable phase was skipped).
 
 **Documented:**
-- New tenants are scheduled within 5 minutes.
+- Reconciliation is periodic: each run starts 5 minutes after the previous run completed, so a new tenant is scheduled by a later run, not within a fixed time. Enumeration and upserts add to that delay, and a failed run defers the tenant to the next one.
 - All replicas must use the same `MultiTenancy` value.
 - A replica with the scheduler on and workers off logs `JobWorkersDisabled` (E2).
 
@@ -958,6 +958,25 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
   - The full FE unit suite.
 - Done when: every shipped stack starts in its declared mode, and the matrix is green.
 - Risks: missed inventory entries. A repo-wide search for `JobSettings__WorkerEnabled` and `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED` is part of the step.
+- As implemented:
+  - **Validation split.** `DmsEducationOrganizationProjectionSettingsValidator` always checks the bounds, the body size, the contract versions, every `TenantCredentials` entry and a half-set shared pair. It still checks the base URL's format, and requires a complete pair, only when `DmsBaseUrl` is set. `RefreshReaderRequiredValidator` is registered by `AddEducationOrganizationRefresh` when `JobSettings:WorkerEnabled` is true, read at registration as the host reads it for the worker. It adds only what the other validator does not check: `DmsBaseUrl` missing, and no complete pair while it is missing. No failure is reported twice.
+  - **`JobWorkersDisabled`** is `BE/Jobs/JobWorkersDisabledNotice`, a hosted service the host registers in place of the worker (EventId `1441_11`).
+  - **Azure VM stack.** It had no `JobSettings__WorkerEnabled` line; its Configuration Services ran workers through the `appsettings.json` default. The shared Configuration Service environment gains `JobSettings__WorkerEnabled: ${CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED:-true}`, which keeps that default. Each stack gets its own reader variables (`CONFIGURATION_SERVICE_ST_DMS_EDORG_*`, `CONFIGURATION_SERVICE_MT_DMS_EDORG_*`), and its `.env.example` sets bootstrap. `provision/UPDATE.md` names the choice an in-place update must make.
+  - **Inventory.** Every tracked full environment file that composes the Configuration Service, and its mode (asserted by `EducationOrganizationRefreshWiring.Tests.ps1`):
+
+    | File | Used by | Mode |
+    | --- | --- | --- |
+    | `.env.example` | fresh local installs; `start-*`/`bootstrap-*` seed `.env` from it | bootstrap |
+    | `.env.multitenancy` | multi-tenancy getting-started example | bootstrap |
+    | `.env.e2e`, `.env.cursorpartitions.e2e` | DMS E2E, CDC, SDK, performance scripts | bootstrap |
+    | `.env.routeContext.e2e` | Instance Management E2E | bootstrap until 5.2 wires it as operational |
+    | `.env.smoke`, `.env.smoke.ds61` | scheduled smoke tests | bootstrap |
+    | `.env.template`, `.env.template.ds61` | database template builds | bootstrap |
+    | `.env.config.e2e`, `.env.config.mssql.e2e`, `.env.config.mssql.multitenant.e2e` | CMS E2E | bootstrap |
+    | `eng/azure-vm/compose/.env.example` | fresh Azure VM installs | bootstrap |
+
+    Overlays (`.env.ds52`, `.env.ds61`, `.env.bootstrap.*`, `.env.mssql`, `.env.document-cache.e2e`, `.env.ide.example`) inherit the mode of their base file.
+  - **Test hosts that run workers** without DMS (the CMS E2E managed-store deployment and the backend process-recovery hosts) set reader settings that name an unused local port.
 
 **5.2 Operational Instance E2E: provisioning → workers on → scheduled execution**
 - Objective: AC13 operational behavior and E2 point 5 (Q8).
@@ -1027,7 +1046,7 @@ There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before ch
   - `@MultitenantOnly` header rules;
   - excluded GETs → 404.
 - Done when: both lanes green.
-- Risks: none beyond 5.1.
+- Risks: the managed-store suppression test (`ManagedDataStoreExternalSuppressionTests`) asserts on every `Error` job, and with the scheduler on the refresh schedule (step 4.1) adds refresh jobs to that host; its assertions must account for them.
 
 **5.6 Pre-push validation** (no commit unless fixes are needed)
 - Runs:

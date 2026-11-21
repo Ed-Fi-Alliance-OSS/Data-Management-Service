@@ -408,6 +408,10 @@ public partial class Given_data_store_namespace_reservations
                     .AdminConnectionString!,
                 ["DataStoreManagement:RuntimeConnectionString"] = settings.RuntimeConnection,
                 ["JobSettings:WorkerEnabled"] = "true",
+                // A worker needs a configured DMS reader to start; the scheduler stays off, so it is never called.
+                ["DmsEducationOrganizationProjectionSettings:DmsBaseUrl"] = "http://127.0.0.1:9/",
+                ["DmsEducationOrganizationProjectionSettings:Credentials:ClientId"] = "unused",
+                ["DmsEducationOrganizationProjectionSettings:Credentials:ClientSecret"] = "unused",
                 ["JobSettings:MaxAttempts"] = settings.MaxAttempts.ToString(CultureInfo.InvariantCulture),
             },
             ready: !settings.ClosedReadiness,

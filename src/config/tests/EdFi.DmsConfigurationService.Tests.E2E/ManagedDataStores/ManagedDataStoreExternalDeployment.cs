@@ -202,6 +202,11 @@ internal sealed class ManagedDataStoreExternalDeployment : IAsyncDisposable
             ["IdentitySettings__CertificatePassword"] = _certificatePassword,
             ["DmsDataStoreProvisioning__Enabled"] = "false",
             ["DataStoreManagement__RuntimeConnectionString"] = "",
+            // Job workers need a configured DMS reader to start. These tests run no DMS, so the reader names an
+            // unused local port and a credential no server accepts.
+            ["DmsEducationOrganizationProjectionSettings__DmsBaseUrl"] = "http://127.0.0.1:9/",
+            ["DmsEducationOrganizationProjectionSettings__Credentials__ClientId"] = "managed-e2e-no-dms",
+            ["DmsEducationOrganizationProjectionSettings__Credentials__ClientSecret"] = "managed-e2e-no-dms",
             ["Serilog__WriteTo__0__Args__path"] = Path.Combine(_directory, "cms.log"),
         };
         foreach (var pair in configuration)

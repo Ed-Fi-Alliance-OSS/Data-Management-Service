@@ -20,9 +20,11 @@ public static class EducationOrganizationRefreshServiceCollectionExtensions
     /// startup, registers the refresh's single job error codes and its composite code, and registers the refresh job
     /// handler with its target refresher. The projection reader, whose error codes the composite lists, is registered
     /// first. The handler needs the snapshot repository, which the datastore registration provides, and the job
-    /// options. When <c>JobSettings:SchedulerEnabled</c> is on, whatever the data store management setting is, the
-    /// schedule reconciler is added as a hosted service; it needs <see cref="JobRuntimeEnvironment"/>, which the host
-    /// registers. Calling it more than once is harmless.
+    /// options. When <c>JobSettings:WorkerEnabled</c> is on, <see cref="RefreshReaderRequiredValidator"/> makes a
+    /// configured reader a startup requirement. When <c>JobSettings:SchedulerEnabled</c> is on, whatever the data store
+    /// management setting is, the schedule reconciler is added as a hosted service; it needs
+    /// <see cref="JobRuntimeEnvironment"/>, which the host registers. Both switches are read while the services are
+    /// registered, as the host reads them for its own job services. Calling it more than once is harmless.
     /// </summary>
     public static IServiceCollection AddEducationOrganizationRefresh(
         this IServiceCollection services,
@@ -66,6 +68,16 @@ public static class EducationOrganizationRefreshServiceCollectionExtensions
         >(EducationOrganizationRefreshJobTypes.Refresh, EducationOrganizationRefreshJobTypes.PayloadVersion);
 
         JobOptions jobs = configuration.GetSection(JobOptions.SectionName).Get<JobOptions>() ?? new();
+        if (jobs.WorkerEnabled)
+        {
+            services.TryAddEnumerable(
+                ServiceDescriptor.Singleton<
+                    IValidateOptions<DmsEducationOrganizationProjectionSettings>,
+                    RefreshReaderRequiredValidator
+                >()
+            );
+        }
+
         if (jobs.SchedulerEnabled)
         {
             services.AddHostedService<EducationOrganizationRefreshScheduleReconciler>();

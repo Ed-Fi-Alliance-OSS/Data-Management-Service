@@ -21,6 +21,7 @@ Use consistent settings on every replica; the management policy and readiness ar
 | Setting or prerequisite | Operator responsibility |
 | --- | --- |
 | `AppSettings:Datastore` | Select the CMS persistence provider independently of the physical target provider. |
+| Job workers and the DMS reader | Managed create and delete jobs run on job workers, and an instance with `JobSettings:WorkerEnabled=true` requires the DMS education organization reader settings at startup. Configure them before enabling management; see [Bootstrap and operational modes](CONFIGURATION.md#bootstrap-and-operational-modes). |
 | `DmsDataStoreProvisioning:Enabled` | Set true when management is enabled. The standalone provisioner defaults to false. |
 | `DmsDataStoreProvisioning:Provider` | Select `postgresql` or `mssql` for the target. SQL ordinary registrations use the DMS routing token `sqlserver`. |
 | Provisioner administrative connection, artifact catalog, trust and compatibility settings | Supply the administrative endpoint/permissions and genuine compatible Minimal/Sample packages. Follow the [provisioner configuration](CONFIGURATION.md#dmsdatastoreprovisioning) and [platform setup](OPERATIONS.md#configuration-service-dms-data-store-provisioning), including PostgreSQL tools or SQL Server shared staging. |

@@ -22,6 +22,10 @@ The design record, with every decision and its evidence, is
 | Retention sweep                | `JobSettings:RetentionEnabled`   | Deletes finished jobs older than `FinishedJobRetention`                                |
 | `GET /v3/jobs/{jobId}`         | Always                           | Returns the status of one job of the caller's tenant                                   |
 
+An instance with the worker on requires the DMS education organization reader settings at startup; an instance
+with it off logs `JobWorkersDisabled` and runs no jobs. See
+[Bootstrap and operational modes](./CONFIGURATION.md#bootstrap-and-operational-modes).
+
 Each switch is independent and is read at startup. Every Configuration Service instance may run all three; the
 database coordinates them, so running several instances is safe and adds capacity.
 

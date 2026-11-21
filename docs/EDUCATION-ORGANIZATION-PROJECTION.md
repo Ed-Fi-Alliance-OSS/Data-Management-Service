@@ -1046,8 +1046,10 @@ hash is unchanged.
 3. **Deploy DMS** with `DataManagement:EducationOrganizationProjection:Enabled`
    `true`, its default.
 4. **Configure the reader** (`DmsBaseUrl` and the credentials) and restart the
-   Configuration Service. Until a background job uses the reader, its section
-   can stay empty.
+   Configuration Service. Every Configuration Service instance whose job
+   workers are on requires them at startup; an instance in bootstrap
+   (`JobSettings:WorkerEnabled=false`) can leave the section empty. See
+   [Bootstrap and operational modes](./CONFIGURATION.md#bootstrap-and-operational-modes).
 
 Turning the toggle off later removes the route and the two Discovery members.
 A read that fetches Discovery then fails as `Unsupported`. A read that still

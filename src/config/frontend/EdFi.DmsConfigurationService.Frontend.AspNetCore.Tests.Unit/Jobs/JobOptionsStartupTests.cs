@@ -194,7 +194,7 @@ public class JobOptionsStartupTests
         private JobRuntimeEnvironment _environment = null!;
         private readonly Dictionary<Type, Type> _registered = [];
         private Type _snapshotRepository = null!;
-        private int _jobServices;
+        private Type[] _jobServices = [];
 
         [SetUp]
         public async Task Act()
@@ -210,9 +210,13 @@ public class JobOptionsStartupTests
             _options = scope.ServiceProvider.GetRequiredService<IOptions<JobOptions>>().Value;
             _timings = scope.ServiceProvider.GetRequiredService<JobLeaseTimings>();
             _environment = scope.ServiceProvider.GetRequiredService<JobRuntimeEnvironment>();
-            _jobServices = _factory
-                .Services.GetServices<IHostedService>()
-                .Count(hosted => hosted.GetType().Namespace == typeof(JobWorkerService).Namespace);
+            _jobServices =
+            [
+                .. _factory
+                    .Services.GetServices<IHostedService>()
+                    .Select(hosted => hosted.GetType())
+                    .Where(type => type.Namespace == typeof(JobWorkerService).Namespace),
+            ];
             foreach (
                 Type service in new[]
                 {
@@ -263,8 +267,8 @@ public class JobOptionsStartupTests
         public void It_publishes_the_tenancy_mode() => _environment.MultiTenancy.Should().BeFalse();
 
         [Test]
-        public void It_registers_no_job_hosted_service_while_the_switches_are_off() =>
-            _jobServices.Should().Be(0);
+        public void It_registers_only_the_workers_disabled_notice_while_the_switches_are_off() =>
+            _jobServices.Should().Equal(typeof(JobWorkersDisabledNotice));
 
         [Test]
         public void It_registers_the_postgresql_job_services() =>
@@ -370,7 +374,8 @@ public class JobOptionsStartupTests
         [SetUp]
         public void Act()
         {
-            // The service starts with the host, so it gets a database it can never reach.
+            // The service starts with the host, so it gets a database it can never reach. A worker needs a configured
+            // DMS reader to start, so the reader settings are set in every case.
             _factory = CreateFactory(
                 [],
                 new Dictionary<string, string>
@@ -378,6 +383,10 @@ public class JobOptionsStartupTests
                     [key] = "true",
                     ["DatabaseSettings:DatabaseConnection"] =
                         "host=127.0.0.1;port=1;database=unreachable;username=none;timeout=1",
+                    ["DmsEducationOrganizationProjectionSettings:DmsBaseUrl"] = "https://dms.example.org/api",
+                    ["DmsEducationOrganizationProjectionSettings:Credentials:ClientId"] = "projection-client",
+                    ["DmsEducationOrganizationProjectionSettings:Credentials:ClientSecret"] =
+                        "projection-secret",
                 }
             );
             _jobServices =
@@ -394,7 +403,14 @@ public class JobOptionsStartupTests
         public void TearDown() => _factory.Dispose();
 
         [Test]
-        public void It_registers_only_that_service() => _jobServices.Should().Equal(service);
+        public void It_registers_only_that_service_besides_the_workers_disabled_notice() =>
+            _jobServices
+                .Should()
+                .Equal(
+                    service == typeof(JobWorkerService)
+                        ? [service]
+                        : [typeof(JobWorkersDisabledNotice), service]
+                );
 
         [Test]
         public void It_registers_the_executor() => _executor.Should().NotBeNull();

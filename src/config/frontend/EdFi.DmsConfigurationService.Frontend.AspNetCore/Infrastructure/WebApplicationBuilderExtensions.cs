@@ -485,6 +485,10 @@ public static class WebApplicationBuilderExtensions
         {
             services.AddHostedService<JobWorkerService>();
         }
+        else
+        {
+            services.AddHostedService<JobWorkersDisabledNotice>();
+        }
 
         if (configured.SchedulerEnabled)
         {

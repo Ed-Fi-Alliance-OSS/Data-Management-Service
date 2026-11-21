@@ -163,6 +163,14 @@ cd ~/dms-src/eng/azure-vm/compose/claims &&
 
 `mv -n` never overwrites: if a file is still listed, a `-claims.json` file with the same stem already exists, so merge or remove one of them by hand.
 
+The Configuration Services now refuse to start with job workers on until their DMS education organization reader is configured, and an existing `.env` keeps workers on.
+Before updating, choose one, as described in [Bootstrap and operational modes](../../../docs/CONFIGURATION.md#bootstrap-and-operational-modes):
+
+- **Operational:** on the running build, create the projection claim set and application for each stack (one per tenant on the multi-tenant stack), then set `CONFIGURATION_SERVICE_ST_DMS_EDORG_BASE_URL`, `_CLIENT_ID` and `_CLIENT_SECRET` and the `CONFIGURATION_SERVICE_MT_DMS_EDORG_*` equivalents in `.env` (for example `http://st-dms:8080/st-dms`); the multi-tenant stack's per-tenant credentials go in a compose override (see the `mt-config` service).
+- **Bootstrap:** add `CONFIGURATION_SERVICE_JOBS_WORKER_ENABLED=false` to `.env`. Both Configuration Services start, log `JobWorkersDisabled`, and run no jobs until the reader is configured and the variable is set back to `true`.
+
+Skipping both makes `st-config` and `mt-config` fail at startup, naming the missing reader settings.
+
 ```bash
 cd ~/dms-src && git restore -- '*packages.lock.json' &&
   git fetch --force --tags origin && git switch --detach origin/main && git log -1 --oneline &&

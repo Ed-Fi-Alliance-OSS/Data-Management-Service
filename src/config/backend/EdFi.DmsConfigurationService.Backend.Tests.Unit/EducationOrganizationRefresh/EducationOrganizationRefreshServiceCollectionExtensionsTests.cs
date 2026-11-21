@@ -3,6 +3,7 @@
 // The Ed-Fi Alliance licenses this file to you under the Apache License, Version 2.0.
 // See the LICENSE and NOTICES files in the project root for more information.
 
+using EdFi.DmsConfigurationService.Backend.EducationOrganizationProjection;
 using EdFi.DmsConfigurationService.Backend.EducationOrganizationRefresh;
 using EdFi.DmsConfigurationService.Backend.Jobs;
 using FluentAssertions;
@@ -14,10 +15,18 @@ namespace EdFi.DmsConfigurationService.Backend.Tests.Unit.EducationOrganizationR
 
 public class EducationOrganizationRefreshServiceCollectionExtensionsTests
 {
+    private const string Reader = DmsEducationOrganizationProjectionSettings.SectionName;
+
+    /// <summary>
+    /// Registers the refresh over <paramref name="values"/>. Job workers default to off here, because with workers on
+    /// a configured reader is a startup requirement; the fixtures about that requirement set the switch themselves.
+    /// </summary>
     private static ServiceProvider Provider(Dictionary<string, string?> values, int registrations = 1)
     {
         ServiceCollection services = new();
-        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(values).Build();
+        Dictionary<string, string?> settings = new(values);
+        settings.TryAdd("JobSettings:WorkerEnabled", "false");
+        IConfiguration configuration = new ConfigurationBuilder().AddInMemoryCollection(settings).Build();
         for (int i = 0; i < registrations; i++)
         {
             services.AddEducationOrganizationRefresh(configuration);
@@ -191,17 +200,25 @@ public class EducationOrganizationRefreshServiceCollectionExtensionsTests
     {
         private Exception? _exception;
         private int _validators;
+        private int _readerRequirements;
 
         [SetUp]
         public void Setup()
         {
             try
             {
-                using ServiceProvider provider = Provider([], registrations: 2);
+                using ServiceProvider provider = Provider(
+                    new() { ["JobSettings:WorkerEnabled"] = "true" },
+                    registrations: 2
+                );
                 provider.GetRequiredService<IJobErrorCodeRegistry>();
                 provider.GetRequiredService<IJobHandlerRegistry>();
                 _validators = provider
                     .GetServices<IValidateOptions<EducationOrganizationRefreshOptions>>()
+                    .Count();
+                _readerRequirements = provider
+                    .GetServices<IValidateOptions<DmsEducationOrganizationProjectionSettings>>()
+                    .OfType<RefreshReaderRequiredValidator>()
                     .Count();
                 _exception = null;
             }
@@ -216,5 +233,148 @@ public class EducationOrganizationRefreshServiceCollectionExtensionsTests
 
         [Test]
         public void It_registers_one_validator() => _validators.Should().Be(1);
+
+        [Test]
+        public void It_registers_one_reader_requirement() => _readerRequirements.Should().Be(1);
+    }
+
+    [TestFixture("true", 1)]
+    [TestFixture("false", 0)]
+    public class Given_the_worker_switch(string worker, int requirements)
+    {
+        [Test]
+        public void It_requires_a_configured_reader_only_when_workers_are_on()
+        {
+            using ServiceProvider provider = Provider(new() { ["JobSettings:WorkerEnabled"] = worker });
+            provider
+                .GetServices<IValidateOptions<DmsEducationOrganizationProjectionSettings>>()
+                .OfType<RefreshReaderRequiredValidator>()
+                .Should()
+                .HaveCount(requirements);
+        }
+    }
+
+    [TestFixture]
+    public class Given_no_worker_setting
+    {
+        [Test]
+        public void It_requires_a_configured_reader_because_workers_default_to_on()
+        {
+            ServiceCollection services = new();
+            services.AddEducationOrganizationRefresh(new ConfigurationBuilder().Build());
+            using ServiceProvider provider = services.BuildServiceProvider();
+            StartupValidationException(provider)
+                .Should()
+                .BeOfType<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Equal(
+                    RefreshReaderRequiredValidator.MissingBaseUrl,
+                    RefreshReaderRequiredValidator.MissingCredential
+                );
+        }
+    }
+
+    [TestFixture]
+    public class Given_workers_on
+    {
+        private static Exception? Start(Dictionary<string, string?> reader)
+        {
+            Dictionary<string, string?> values = new(reader) { ["JobSettings:WorkerEnabled"] = "true" };
+            using ServiceProvider provider = Provider(values);
+            return StartupValidationException(provider);
+        }
+
+        [Test]
+        public void It_starts_with_a_base_url_and_a_shared_credential() =>
+            Start(
+                    new()
+                    {
+                        [$"{Reader}:DmsBaseUrl"] = "https://dms.example.org/api",
+                        [$"{Reader}:Credentials:ClientId"] = "projection-client",
+                        [$"{Reader}:Credentials:ClientSecret"] = "projection-secret",
+                    }
+                )
+                .Should()
+                .BeNull();
+
+        [Test]
+        public void It_starts_with_a_base_url_and_only_a_tenant_credential() =>
+            Start(
+                    new()
+                    {
+                        [$"{Reader}:DmsBaseUrl"] = "https://dms.example.org/api",
+                        [$"{Reader}:TenantCredentials:Tenant1:ClientId"] = "projection-client",
+                        [$"{Reader}:TenantCredentials:Tenant1:ClientSecret"] = "projection-secret",
+                    }
+                )
+                .Should()
+                .BeNull();
+
+        [Test]
+        public void It_refuses_empty_reader_values_naming_both_settings() =>
+            Start(
+                    new()
+                    {
+                        [$"{Reader}:DmsBaseUrl"] = "",
+                        [$"{Reader}:Credentials:ClientId"] = "",
+                        [$"{Reader}:Credentials:ClientSecret"] = "",
+                    }
+                )
+                .Should()
+                .BeOfType<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Equal(
+                    RefreshReaderRequiredValidator.MissingBaseUrl,
+                    RefreshReaderRequiredValidator.MissingCredential
+                );
+
+        [Test]
+        public void It_refuses_a_credential_without_a_base_url_naming_only_the_base_url() =>
+            Start(
+                    new()
+                    {
+                        [$"{Reader}:Credentials:ClientId"] = "projection-client",
+                        [$"{Reader}:Credentials:ClientSecret"] = "projection-secret",
+                    }
+                )
+                .Should()
+                .BeOfType<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Equal(RefreshReaderRequiredValidator.MissingBaseUrl);
+
+        [Test]
+        public void It_refuses_a_base_url_without_a_credential_reporting_it_once() =>
+            Start(new() { [$"{Reader}:DmsBaseUrl"] = "https://dms.example.org/api" })
+                .Should()
+                .BeOfType<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Equal(
+                    $"{Reader}:Credentials or at least one {Reader}:TenantCredentials entry must be set when "
+                        + $"{Reader}:DmsBaseUrl is set."
+                );
+    }
+
+    [TestFixture]
+    public class Given_workers_off
+    {
+        [Test]
+        public void It_starts_without_a_reader()
+        {
+            using ServiceProvider provider = Provider(new() { ["JobSettings:WorkerEnabled"] = "false" });
+            StartupValidationException(provider).Should().BeNull();
+        }
+
+        [Test]
+        public void It_still_validates_the_reader_settings_that_are_given()
+        {
+            using ServiceProvider provider = Provider(
+                new() { ["JobSettings:WorkerEnabled"] = "false", [$"{Reader}:PageSize"] = "0" }
+            );
+            StartupValidationException(provider)
+                .Should()
+                .BeOfType<OptionsValidationException>()
+                .Which.Failures.Should()
+                .Equal($"{Reader}:PageSize must be between 1 and 10000; it is 0.");
+        }
     }
 }
