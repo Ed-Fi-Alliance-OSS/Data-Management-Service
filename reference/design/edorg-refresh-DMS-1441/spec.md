@@ -1,6 +1,6 @@
 # DMS-1441 — CMS education-organization refresh, snapshots, and tenant aggregate
 
-Specification **v4** (approved by the architect on 2026-11-20, with the step 1.2 reclaim and staging checkpoint clarification and the step 1.3 SQL Server staging change in §6.2 step 7).
+Specification **v4** (approved by the architect on 2026-11-20, with the step 1.2 reclaim and staging checkpoint clarification, the step 1.3 SQL Server staging change in §6.2 step 7, the step 2.2 and 2.4 review corrections in §6.5 and §6.6, and the reduced review plan in §7.0).
 
 - Written against `main` at `df7b857fc`. Every code citation (file:line) refers to that commit.
 - Three earlier review rounds (v1 to v3) are summarized in §0. Their full text is not committed.
@@ -390,12 +390,13 @@ In multi-tenant mode the existing tenant middleware applies. An enqueue failure 
 1. **Resolve targets** in the job scope (§6.7): all of the tenant's stores ordered by `Id`, or the single one.
    - `One` and absent → `JobPermanentException(EdOrgRefreshDataStoreNotFound)`.
    - `All` and none → return.
+   - A Configuration Service database failure of the lookup is a **transient** failure, and no target is attempted. It is decided like every other failure in step 3: a retry while attempts remain; on the final attempt `EdOrgRefreshTemporarilyUnavailable` for `One`, and for `All` the composite listing only `EdOrgRefreshTemporarilyUnavailable`. The log entry records that the lookup failed, with its diagnostic.
 2. **Process each target sequentially** (Q4): `ct.ThrowIfCancellationRequested()`, then run §6.2. Outcomes: `Refreshed | Removed | Busy | LeaseLost | Failed(projectionFailure) | DbFailure`.
    - `Removed` (`DataStoreNotFound` at acquisition, or `DataStoreRemoved` later) is not a failure for `All`. For `One` it is `EdOrgRefreshDataStoreNotFound`.
    - A caller-token `OperationCanceledException`, `JobLeaseLostException` or `JobFenceUnavailableException` propagates immediately, after a best-effort release.
 3. **Decide**, after every target has been processed (AC11):
    - **No failures** → return (`Completed`).
-   - **Else, any transient failure** (`Busy`, `LeaseLost`, `DbFailure`, a reader `Transient`) with `Attempt < MaxAttempts` → throw `EducationOrganizationRefreshRetryException` (transient).
+   - **Else, any transient failure** (`Busy`, `LeaseLost`, `DbFailure`, a reader `Transient`, a failed target lookup) with `Attempt < MaxAttempts` → throw `EducationOrganizationRefreshRetryException` (transient).
    - **Else terminal:**
      - `One` → the single code: `failure.ToJobErrorCode()` for a permanent failure; `EdOrgRefreshTemporarilyUnavailable` or `EdOrgRefreshTargetBusy` for a transient one.
      - `All` → `JobPermanentException(EdOrgRefreshIncomplete, categories)` (§6.6).
@@ -411,8 +412,11 @@ In multi-tenant mode the existing tenant middleware applies. An enqueue failure 
 **Registration** — `AddJobCompositeErrorCode(string code, string message, IReadOnlyList<string> categoryCodes)`:
 - The code and message follow the existing rules.
 - Each category code must be registered (consumer or infrastructure), distinct, and not itself composite.
-- At registry construction, startup **fails** unless the worst case fits:
+- Validation is **eager**: `AddJobCompositeErrorCode` validates when it is called, during service registration, so startup fails before the host is built. The `IJobErrorCodeRegistry` singleton is built on first resolution, which not every replica performs, so a check deferred to its construction would not run on every replica.
+- **Registration order:** every category code is registered before the composite that lists it. A category registered later is refused as unknown.
+- The call **fails** unless the worst case fits:
   `message.Length + " Problem categories: ".Length + Σ len(categoryCodes) + 2×(n−1) + ".".Length ≤ 1000`.
+- `AddEducationOrganizationRefresh` follows the order: it first calls the idempotent `AddDmsEducationOrganizationProjectionReader`, which registers the 13 `EdOrgProjection*` codes, then registers the refresh's single codes, and only then the `EdOrgRefreshIncomplete` composite.
 
 **Raising** — `JobPermanentException(JobErrorCode errorCode, IReadOnlyList<JobErrorCode> categories)` (an additive constructor). Only `.Code` values are read; caller `.Message` text is **never** used.
 
@@ -430,11 +434,11 @@ In multi-tenant mode the existing tenant middleware applies. An enqueue failure 
   - Deterministic.
 - **The single-code path is unchanged byte for byte.**
 
-**Refresh capacity** (computed): primary 137 + 21 + 440 (15 category codes) + 28 + 1 = **627** ≤ 1000. The startup check and a test with all 15 categories both enforce it.
+**Refresh capacity** (computed): primary 137 + 21 + 440 (15 category codes) + 28 + 1 = **627** ≤ 1000. The registration check and a test with all 15 categories both enforce it.
 
 **Refresh-all category order:** distinct codes in ascending order of the data store ID that first produced them.
 - Permanent → `ToJobErrorCode()`.
-- Reader-transient, DB failure or lease lost → `EdOrgRefreshTemporarilyUnavailable`.
+- Reader-transient, DB failure, lease lost or a failed target lookup → `EdOrgRefreshTemporarilyUnavailable`. A failed lookup attempts no data store, so it is the only category.
 - Busy → `EdOrgRefreshTargetBusy`.
 
 **Classification:**
@@ -446,6 +450,7 @@ In multi-tenant mode the existing tenant middleware applies. An enqueue failure 
 | Reader `Failure` Permanent | Permanent | Kept | Its code |
 | `Busy` | Transient | Kept | Retry, then `TargetBusy` |
 | `LeaseLost` / CMS DB failure before activation | Transient | Kept | Retry, then `TemporarilyUnavailable` |
+| CMS DB failure of the target lookup | Transient | Kept (no target attempted) | Retry, then `TemporarilyUnavailable` (`One`) or the composite listing it (`All`) |
 | Prune or release failure after activation | none | Published | Ignored (logged) |
 | Fence refusal / job-lease loss / caller cancellation | DMS-1437 | Kept unless already activated | No outcome write, or release |
 | Store removed | — | Cascaded | `All`: ignored; `One`: `DataStoreNotFound` |
@@ -616,6 +621,24 @@ Updates: `CONFIGURATION.md`, `CONFIGURATION-SERVICE-BACKGROUND-JOBS.md` (job typ
 A rejected step gets a focused follow-up commit.
 
 **Environment:** SQL Server runs on `dms1439-sql2025-test` first, with LocalDB as the fallback. PG and MS test processes never run at the same time.
+
+### 7.0.1 Review checkpoints (reduced plan)
+
+Agreed at the step 2.4 review. Every planned step, test and validation is kept; only the review grouping changes. Each checkpoint is one approved local commit, plus any follow-up commit a rejection requires, and the next checkpoint starts only after approval.
+
+| # | Checkpoint | Contents |
+| --- | --- | --- |
+| 1 | 2.5 | Execution integration through the real executor and fence (both providers) |
+| 2 | 3.1 + the refresh part of 3.3 | Refresh routes, with their real-database API integration tests |
+| 3 | 3.2 + the aggregate part of 3.3 | Aggregate GET and the excluded-GET guard, with the remaining API integration tests |
+| 4 | 4.1 + 4.2 | Schedule reconciler, with its reconciliation integration tests (both providers) |
+| 5 | 5.1 | Startup requirement and shipped-configuration repairs, with the 5.3 configuration, bootstrap, upgrade and deployment instructions |
+| 6 | 5.2 | Operational Instance E2E, with the 5.3 operational scheduling instructions finalized and verified against the working E2E |
+| 7 | 5.4 | Live cross-component validation |
+| 8 | 5.5 | CMS E2E |
+| 9 | 5.6 | Pre-push validation, including a drift recheck of all documentation |
+
+There is no standalone 3.3 or 5.3 checkpoint. Checkpoint 2 is approved before checkpoint 3 starts.
 
 ### Phase 0 — Design record
 
@@ -832,6 +855,7 @@ A rejected step gets a focused follow-up commit.
 - Validation: 202, body and exact Location (with and without PathBase); distinct messages; 404 creates no job; non-integer → 400; enqueue failure → 500 with no Location; EAT admin metadata; OpenAPI.
 - Done when: FE green.
 - Risks: precedence against `{id}`.
+- Review: checkpoint 2, together with the refresh tests of 3.3 (POST then an immediate poll, a cross-tenant 404 that creates no job, Location under PathBase, and the header and path cases of the refresh routes).
 
 **3.2 Aggregate GET and the excluded-GET guard**
 - Objective: AC14–19.
@@ -847,6 +871,7 @@ A rejected step gets a focused follow-up commit.
   - Existing `DataStoreModule` tests unchanged.
 - Done when: FE green with all four EAT fixtures.
 - Risks: the EAT edits (intended).
+- Review: checkpoint 3, together with the remaining tests of 3.3 (the full aggregate JSON, exact int64 text, the header and path cases of the aggregate route, no orphans after delete, and the blocked HTTP writers).
 
 **3.3 API integration on real databases (both providers)**
 - Objective: API-level evidence for AC3–5 and 15–21, plus blocked HTTP writers.
@@ -863,6 +888,7 @@ A rejected step gets a focused follow-up commit.
   - **Blocked HTTP writers (SQL Server lane):** while an aggregate read holds the gate past its bound, ordinary DELETE and POST return 500 with the state unchanged; after release they succeed.
 - Done when: both green.
 - Risks: temp-path collisions (lanes never run concurrently).
+- Review: no checkpoint of its own. Its tests are split between checkpoints 2 and 3 as listed under 3.1 and 3.2, and every test listed here is kept.
 
 ### Phase 4 — Scheduling
 
@@ -884,6 +910,7 @@ A rejected step gets a focused follow-up commit.
   - A due occurrence becomes a refresh job, and the skip rule holds while it is active (`MaterializeNextDue` driven directly).
 - Done when: both green.
 - Risks: none beyond 4.1.
+- Review: one checkpoint with 4.1.
 
 ### Phase 5 — Deployment, operations, documentation, live validation
 
@@ -954,6 +981,7 @@ A rejected step gets a focused follow-up commit.
 - Validation: lint; links resolve; every documented setting is read by code.
 - Done when: reviewed.
 - Risks: drift (re-checked in 5.6).
+- Review: no checkpoint of its own. The configuration, bootstrap, upgrade and deployment instructions land in 5.1; the operational scheduling instructions are finalized in 5.2 and verified against the working E2E; 5.6 rechecks all documentation for drift.
 
 **5.4 Live cross-component validation (concrete)**
 - Objective: the Jira live verification; AC8–11 against a real DMS.

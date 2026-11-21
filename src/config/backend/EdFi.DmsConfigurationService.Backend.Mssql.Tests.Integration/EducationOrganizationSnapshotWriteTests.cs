@@ -112,7 +112,7 @@ public abstract class EducationOrganizationSnapshotWriteTestBase : DatabaseTest
             """
             INSERT INTO dmscs.Job (JobId, JobType, PayloadVersion, Payload, Status, NextAttemptAt, AttemptCount,
                 FencingToken)
-            VALUES (@JobId, N'EducationOrganization.Refresh', 1, N'{"scope":"All","dataStoreId":0}', N'Pending',
+            VALUES (@JobId, N'EducationOrganization.Refresh', 1, N'{"scope":1,"dataStoreId":0}', N'Pending',
                 DATEADD(second, -1, SYSUTCDATETIME()), 0, 0);
             """,
             new { JobId = Guid.NewGuid().ToString("N") }

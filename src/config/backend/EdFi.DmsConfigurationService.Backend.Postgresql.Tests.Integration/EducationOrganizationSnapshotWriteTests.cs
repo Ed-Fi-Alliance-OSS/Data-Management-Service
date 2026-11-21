@@ -113,7 +113,7 @@ public abstract class EducationOrganizationSnapshotWriteTestBase : DatabaseTest
             """
             INSERT INTO dmscs."Job" ("JobId", "JobType", "PayloadVersion", "Payload", "Status", "NextAttemptAt",
                 "AttemptCount", "FencingToken")
-            VALUES (@JobId, 'EducationOrganization.Refresh', 1, '{"scope":"All","dataStoreId":0}', 'Pending',
+            VALUES (@JobId, 'EducationOrganization.Refresh', 1, '{"scope":1,"dataStoreId":0}', 'Pending',
                 (clock_timestamp() AT TIME ZONE 'UTC') - interval '1 second', 0, 0);
             """,
             new { JobId = Guid.NewGuid().ToString("N") }
