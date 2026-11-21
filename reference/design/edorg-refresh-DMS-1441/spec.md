@@ -458,8 +458,8 @@ In multi-tenant mode the existing tenant middleware applies. An enqueue failure 
   - **PostgreSQL:** `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`. One snapshot for every statement. It blocks no writer and takes no gate.
   - **SQL Server:** one transaction.
     - (i) `AcquireTenantGateAsync(…, shared: true)` — a new shared mode, `sp_getapplock @LockMode='Shared'`. Writers take the gate exclusively (F12), so ordinary rows and managed links cannot change until commit.
-    - (ii) Read the target rows `WITH (HOLDLOCK, ROWLOCK)`. The shared locks are held to commit. Activation's update lock is compatible with them, but its **exclusive modification** must wait, so `ActiveGeneration` cannot change during the read.
-    - (iii) The statements below, in order.
+    - (ii) Read the target rows `WITH (HOLDLOCK, ROWLOCK)`, inside statement (a), by `FORCESEEK` on the target's primary key for each data store. The shared locks on the clustered rows are held to commit. Activation's update lock is compatible with them, but its **exclusive modification** must wait, so `ActiveGeneration` cannot change during the read.
+    - (iii) The statements below, in order. Statement (b) takes (a)'s active `(DataStoreId, Generation)` pairs as an `OPENJSON` parameter and reaches the rows `WITH (FORCESEEK)`, so it seeks each active generation's key range instead of scanning the table; the 1.5 tests observe that it does not wait for a concurrent large stage, reclaim or prune.
 - **Statements:**
   - (a) Ordinary stores `LEFT JOIN DataStoreManage m ON m.DataStoreId = ds.Id`, plus their targets' `ActiveGeneration`.
   - (b) Rows for the active `(DataStoreId, Generation)` pairs, ordered by `(DataStoreId, EducationOrganizationId)`.
@@ -724,7 +724,8 @@ A rejected step gets a focused follow-up commit.
     - released within 5 s → completes after the read, and the response is pre-state;
     - held past 5 s → the writer fails, rolls back, and the state is unchanged.
   - Activation blocked by the held target share lock → waits, then publishes after the read.
-  - Shared-gate hold time measured and reported.
+  - An aggregate read during a paused 50,000-row stage, reclaim and prune completes without waiting and returns the active generations.
+  - Shared-gate hold time measured and reported (explicit `OperationalProbe` fixture). The gate is held until the client has read every organization, so the hold grows with the result size and the network as well as the server.
 - Done when: MS green.
 - Risks: A5 (every link writer takes the gate) is re-verified by search, and the callers are listed in the report.
 

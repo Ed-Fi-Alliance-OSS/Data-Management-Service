@@ -55,16 +55,30 @@ namespace EdFi.DmsConfigurationService.Backend.Mssql.Repositories;
 /// Organization rows are inserted with ordinary <c>INSERT … WITH (ROWLOCK)</c> statements that read their rows
 /// from a JSON parameter, so the foreign key and check constraints are enforced and stay trusted; reclaim and
 /// prune delete <c>WITH (ROWLOCK)</c> rows whose keys a <c>FORCESEEK</c> subquery chooses within the data store's
-/// key range, reaching them by nested loops on the full primary key. A scan plan, which the optimizer chose for a
-/// plain batched delete, reads past other data stores' rows and waits for any that another transaction holds, and
-/// SQL Server refuses <c>FORCESEEK</c> on a delete's target. The statements that lock or read a target or data
-/// store row seek for the same reason. A bulk copy is not used: without a table lock
+/// key range, joined to the target table on the full primary key under <c>OPTION (LOOP JOIN)</c>. A scan plan,
+/// which the optimizer chose for a plain batched delete, reads past other data stores' rows and waits for any that
+/// another transaction holds, and SQL Server refuses <c>FORCESEEK</c> on a delete's target. The statements that
+/// lock or read a target or data store row seek for the same reason. A bulk copy is not used: without a table lock
 /// it loads by page and holds exclusive page locks, which block other data stores whose rows share those pages.
 /// <c>ROWLOCK</c> sets only the initial lock granularity; SQL Server can still escalate to a table lock, for
 /// example under lock-memory pressure. Inserts and deletes therefore run in statements of at most
 /// <see cref="BatchSize"/> rows, all in the operation's transaction, below the 5,000-lock threshold at which one
 /// statement escalates, which reduces that risk without ruling it out. An operation of another data store that
 /// meets such a lock waits at most its lock wait and fails like any other lock wait.
+/// </para>
+/// <para>
+/// The reads run in ordinary <c>READ COMMITTED</c> transactions under the 5-second lock wait. The tenant aggregate
+/// first takes the tenant's catalog gate in shared mode. Every writer of ordinary data stores and management links
+/// takes that gate exclusively, so none of them can commit until the read ends: a writer that arrives during the
+/// read waits at most 5 seconds for the gate, then fails and rolls back. The data stores statement (a) then reads
+/// each data store's target row under a shared row lock held to commit (<c>HOLDLOCK</c>); an activation's update
+/// lock is compatible with it, but the update itself needs an exclusive lock and waits until the read ends, so
+/// the active generations that (a) found stay active. The organizations statement (b) seeks only the rows of those
+/// generations, which staging, reclaim and prune never change, and the unlinked management records statement (c)
+/// reads under the gate. The whole result is therefore the state at one point: a change either committed before
+/// the gate and target locks were taken, or waits for the read. While it runs, the read also delays any
+/// acquisition, takeover or renewal that must update a target row it locked, and a first acquisition whose new
+/// target row falls in a key range it locked for a missing target, each by at most that operation's lock wait.
 /// </para>
 /// </remarks>
 public sealed class EducationOrganizationSnapshotRepository(
@@ -119,19 +133,134 @@ public sealed class EducationOrganizationSnapshotRepository(
 
     private int LeaseMilliseconds => (int)LeaseDuration.TotalMilliseconds;
 
-    // The SQL Server read models are not implemented yet; nothing calls these reads.
     public Task<SnapshotRefreshTargetsResult> GetRefreshTargetsAsync(
         int? dataStoreId,
         CancellationToken cancellationToken
-    ) => throw new NotSupportedException("SQL Server snapshot reads are not available.");
+    )
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotRefreshTargetsResult>(
+            "GetRefreshTargets",
+            LeaseDuration,
+            _lockWait,
+            async (session, deadline) =>
+            {
+                IEnumerable<TargetContextRow> rows = await QueryAsync<TargetContextRow>(
+                    session,
+                    "ReadTargets",
+                    RefreshTargetsSql(tenant),
+                    new { DataStoreId = dataStoreId, tenant.TenantId },
+                    deadline,
+                    cancellationToken
+                );
+                return Outcome.Commit<SnapshotRefreshTargetsResult>(
+                    new SnapshotRefreshTargetsResult.Success(RefreshTargets(rows))
+                );
+            },
+            diagnostic => new SnapshotRefreshTargetsResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
 
     public Task<SnapshotDataStoreExistsResult> DataStoreExistsAsync(
         int dataStoreId,
         CancellationToken cancellationToken
-    ) => throw new NotSupportedException("SQL Server snapshot reads are not available.");
+    )
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotDataStoreExistsResult>(
+            "DataStoreExists",
+            LeaseDuration,
+            _lockWait,
+            async (session, deadline) =>
+                Outcome.Commit<SnapshotDataStoreExistsResult>(
+                    await ScalarAsync<bool>(
+                        session,
+                        "ReadDataStore",
+                        DataStoreExistsSql(tenant),
+                        new { DataStoreId = dataStoreId, tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                        ? new SnapshotDataStoreExistsResult.Found()
+                        : new SnapshotDataStoreExistsResult.NotFound()
+                ),
+            diagnostic => new SnapshotDataStoreExistsResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
 
-    public Task<SnapshotTenantAggregateResult> GetTenantAggregateAsync(CancellationToken cancellationToken) =>
-        throw new NotSupportedException("SQL Server snapshot reads are not available.");
+    public Task<SnapshotTenantAggregateResult> GetTenantAggregateAsync(CancellationToken cancellationToken)
+    {
+        TenantScope tenant = CurrentTenant();
+        return InTransactionAsync<SnapshotTenantAggregateResult>(
+            "GetTenantAggregate",
+            LeaseDuration,
+            _lockWait,
+            async (session, deadline) =>
+            {
+                await session.RunAsync(
+                    "AcquireTenantGate",
+                    token =>
+                        DataStoreCatalog.AcquireSharedTenantGateAsync(
+                            session.Transaction!,
+                            tenant.TenantId,
+                            token
+                        ),
+                    deadline,
+                    cancellationToken
+                );
+                List<TenantAggregateDataStoreRow> dataStores = (
+                    await QueryAsync<TenantAggregateDataStoreRow>(
+                        session,
+                        "ReadDataStores",
+                        AggregateDataStoresSql(tenant),
+                        new { tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                ).AsList();
+                DynamicParameters organizationParameters = new(new { tenant.TenantId });
+                organizationParameters.Add(
+                    "Active",
+                    JsonSerializer.Serialize(
+                        dataStores
+                            .Where(row => row.ActiveGeneration is not null)
+                            .Select(row => new ActiveGeneration(row.Id, row.ActiveGeneration!.Value))
+                    ),
+                    DbType.String,
+                    size: -1
+                );
+                List<TenantAggregateOrganizationRow> organizations = (
+                    await QueryAsync<TenantAggregateOrganizationRow>(
+                        session,
+                        "ReadOrganizations",
+                        AggregateOrganizationsSql(tenant),
+                        organizationParameters,
+                        deadline,
+                        cancellationToken
+                    )
+                ).AsList();
+                List<TenantAggregateUnlinkedManageRow> unlinked = (
+                    await QueryAsync<TenantAggregateUnlinkedManageRow>(
+                        session,
+                        "ReadUnlinkedManages",
+                        AggregateUnlinkedManagesSql(tenant),
+                        new { tenant.TenantId },
+                        deadline,
+                        cancellationToken
+                    )
+                ).AsList();
+                return Outcome.Commit<SnapshotTenantAggregateResult>(
+                    new SnapshotTenantAggregateResult.Success(
+                        TenantAggregateAssembler.Assemble(dataStores, organizations, unlinked)
+                    )
+                );
+            },
+            diagnostic => new SnapshotTenantAggregateResult.DbFailure(diagnostic),
+            cancellationToken
+        );
+    }
 
     public Task<SnapshotAcquireResult> AcquireAsync(
         int dataStoreId,
@@ -713,6 +842,74 @@ public sealed class EducationOrganizationSnapshotRepository(
         return parameters;
     }
 
+    // Never selects the connection string. Context keys are unique per data store.
+    private static string RefreshTargetsSql(TenantScope tenant) =>
+        $"""
+            SELECT ds.Id AS DataStoreId, c.ContextKey, c.ContextValue
+            FROM dmscs.DataStore AS ds
+            LEFT JOIN dmscs.DataStoreContext AS c ON c.DataStoreId = ds.Id
+            WHERE {tenant.Where("ds")} AND (@DataStoreId IS NULL OR ds.Id = @DataStoreId)
+            ORDER BY ds.Id, c.ContextKey COLLATE Latin1_General_100_BIN2;
+            """;
+
+    private static string DataStoreExistsSql(TenantScope tenant) =>
+        $"""
+            SELECT CAST(CASE WHEN EXISTS (
+                SELECT 1 FROM dmscs.DataStore WHERE Id = @DataStoreId AND {tenant.Where()}
+            ) THEN 1 ELSE 0 END AS bit);
+            """;
+
+    // (a) The target rows are read by primary-key seeks under shared locks held to commit, so an activation cannot
+    // change ActiveGeneration until the read ends. The link is one-to-one and same-tenant; the joined tables are
+    // filtered by tenant all the same.
+    private static string AggregateDataStoresSql(TenantScope tenant) =>
+        $"""
+            SELECT ds.Id, ds.Name, ds.DataStoreType, m.Id AS DataStoreManageId, m.Status, m.Template,
+                m.TargetDatabaseName, m.HistoricalDataStoreId, t.ActiveGeneration
+            FROM dmscs.DataStore AS ds
+            LEFT JOIN dmscs.DataStoreManage AS m ON m.DataStoreId = ds.Id AND {tenant.Where("m")}
+            LEFT JOIN dmscs.EducationOrganizationSnapshotTarget AS t
+                WITH (HOLDLOCK, ROWLOCK, FORCESEEK (PK_EducationOrganizationSnapshotTarget (DataStoreId)))
+                ON t.DataStoreId = ds.Id AND {tenant.Where("t")}
+            WHERE {tenant.Where("ds")}
+            ORDER BY ds.Id;
+            """;
+
+    // (b) Only the generations statement (a) found active, each reached by a seek within its own key range.
+    private static string AggregateOrganizationsSql(TenantScope tenant) =>
+        $"""
+            SELECT s.DataStoreId, s.EducationOrganizationId, s.NameOfInstitution, s.ShortNameOfInstitution,
+                s.Discriminator, s.ParentId
+            FROM OPENJSON(@Active)
+                WITH (DataStoreId INT '$.DataStoreId', Generation BIGINT '$.Generation') AS active
+            INNER JOIN dmscs.EducationOrganizationSnapshot AS s WITH (FORCESEEK)
+                ON s.DataStoreId = active.DataStoreId AND s.Generation = active.Generation
+            WHERE {tenant.Where("s")}
+            ORDER BY s.DataStoreId, s.EducationOrganizationId;
+            """;
+
+    // (c) Every status, Deleted included. A linked record never dangles, so these are all the unlinked ones.
+    private static string AggregateUnlinkedManagesSql(TenantScope tenant) =>
+        $"""
+            SELECT Id, Name, Status, Template, TargetDatabaseName, HistoricalDataStoreId
+            FROM dmscs.DataStoreManage
+            WHERE DataStoreId IS NULL AND {tenant.Where()}
+            ORDER BY Id;
+            """;
+
+    /// <summary>Groups the ordered rows by data store, keeping the order.</summary>
+    private static List<EducationOrganizationRefreshTarget> RefreshTargets(
+        IEnumerable<TargetContextRow> rows
+    ) =>
+        rows.GroupBy(row => row.DataStoreId)
+            .Select(group => new EducationOrganizationRefreshTarget(
+                group.Key,
+                group
+                    .Where(row => row.ContextKey is not null)
+                    .ToDictionary(row => row.ContextKey!, row => row.ContextValue!, StringComparer.Ordinal)
+            ))
+            .ToList();
+
     private static string LockDataStoreSql(TenantScope tenant) =>
         $"""
             SELECT 1 FROM dmscs.DataStore WITH (HOLDLOCK, ROWLOCK, FORCESEEK)
@@ -812,8 +1009,11 @@ public sealed class EducationOrganizationSnapshotRepository(
     /// <summary>
     /// One batched delete of the rows whose keys <paramref name="batchSelect"/> returns. SQL Server refuses
     /// <c>FORCESEEK</c> on a <c>DELETE</c>'s target, so the keys are chosen by a separate reference that seeks
-    /// within the data store's key range, and the target is reached through nested loops on its full primary key,
-    /// so no plan scans past other data stores' rows.
+    /// within the data store's key range, and the target is joined to them on its full primary key under
+    /// <c>OPTION (LOOP JOIN)</c>. The intent is that the target is reached by one seek per chosen key and never
+    /// scanned past other data stores' rows. The hint fixes only the join algorithm, not the access path or order
+    /// the optimizer picks for the target, so this is the plan the large reclaim and prune tests observe, not one
+    /// SQL Server guarantees.
     /// </summary>
     private static string DeleteBatchSql(string batchSelect) =>
         $"""
@@ -893,6 +1093,24 @@ public sealed class EducationOrganizationSnapshotRepository(
             cancellationToken
         );
 
+    private static Task<IEnumerable<T>> QueryAsync<T>(
+        JobDatabaseSession session,
+        string name,
+        string sql,
+        object parameters,
+        JobDeadline deadline,
+        CancellationToken cancellationToken
+    ) =>
+        session.RunAsync(
+            name,
+            token =>
+                session.Connection.QueryAsync<T>(
+                    MssqlJobSession.Command(session, sql, parameters, deadline, token)
+                ),
+            deadline,
+            cancellationToken
+        );
+
     private static Task<int> ExecuteAsync(
         JobDatabaseSession session,
         string name,
@@ -936,6 +1154,12 @@ public sealed class EducationOrganizationSnapshotRepository(
     {
         public string Where(string? tableAlias = null) => Context.TenantWhereClause(tableAlias);
     }
+
+    /// <summary>A data store and one of its contexts, or null context columns when it has none.</summary>
+    private sealed record TargetContextRow(int DataStoreId, string? ContextKey, string? ContextValue);
+
+    /// <summary>An active generation as serialized into the organizations statement's JSON parameter.</summary>
+    private sealed record ActiveGeneration(int DataStoreId, long Generation);
 
     /// <summary>A transaction body's result and whether the transaction commits.</summary>
     private readonly record struct Outcome<T>(T Result, bool Commit);

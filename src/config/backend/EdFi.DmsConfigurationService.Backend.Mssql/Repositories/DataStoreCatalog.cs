@@ -31,6 +31,17 @@ internal static class DataStoreCatalog
         CancellationToken cancellationToken
     ) => AcquireAsync(transaction, TenantGateResource(tenantId), cancellationToken);
 
+    /// <summary>
+    /// The tenant gate in shared mode, held to the end of the transaction under the same 5-second bound. Shared
+    /// holders are compatible with one another and exclude every catalog writer, which takes the gate exclusively,
+    /// so no ordinary data store or management link of the tenant can change until the holder's transaction ends.
+    /// </summary>
+    internal static Task AcquireSharedTenantGateAsync(
+        DbTransaction transaction,
+        long? tenantId,
+        CancellationToken cancellationToken
+    ) => AcquireResourcesAsync(transaction, [TenantGateResource(tenantId)], true, cancellationToken);
+
     internal static Task AcquireTenantGatesAsync(
         DbTransaction transaction,
         IEnumerable<long?> tenantIds,
@@ -39,6 +50,7 @@ internal static class DataStoreCatalog
         AcquireResourcesAsync(
             transaction,
             tenantIds.Distinct().Order().Select(TenantGateResource).ToArray(),
+            false,
             cancellationToken
         );
 
@@ -171,11 +183,12 @@ internal static class DataStoreCatalog
         DbTransaction transaction,
         string resource,
         CancellationToken cancellationToken
-    ) => AcquireResourcesAsync(transaction, [resource], cancellationToken);
+    ) => AcquireResourcesAsync(transaction, [resource], false, cancellationToken);
 
     private static async Task AcquireResourcesAsync(
         DbTransaction transaction,
         string[] resources,
+        bool shared,
         CancellationToken cancellationToken
     )
     {
@@ -201,6 +214,7 @@ internal static class DataStoreCatalog
         // VALUES works below compatibility level 130 too. Exhaustion supplies at most 1000 gates,
         // so the ordered set needs one round trip and remains below SQL Server's parameter limit.
         DynamicParameters parameters = new();
+        parameters.Add("LockMode", shared ? "Shared" : "Exclusive", DbType.String, size: 32);
         string rows = string.Join(
             ",",
             resources.Select(
@@ -228,7 +242,7 @@ internal static class DataStoreCatalog
                     FETCH NEXT FROM gates INTO @Resource;
                     WHILE @@FETCH_STATUS = 0
                     BEGIN
-                        EXEC @Result = sys.sp_getapplock @Resource = @Resource, @LockMode = 'Exclusive',
+                        EXEC @Result = sys.sp_getapplock @Resource = @Resource, @LockMode = @LockMode,
                             @LockOwner = 'Transaction', @LockTimeout = @Wait;
                         IF @Result < 0 BREAK;
                         FETCH NEXT FROM gates INTO @Resource;
