@@ -125,6 +125,7 @@ public static class WebApplicationBuilderExtensions
         webApplicationBuilder.Services.AddDmsEducationOrganizationProjectionReader(
             webApplicationBuilder.Configuration
         );
+        webApplicationBuilder.Services.AddEducationOrganizationRefresh(webApplicationBuilder.Configuration);
         ConfigureDatastore(webApplicationBuilder, logger);
         ConfigureDmsDataStoreProvisioning(webApplicationBuilder, logger);
         ConfigureManagedDataStores(webApplicationBuilder.Services, webApplicationBuilder.Configuration);
