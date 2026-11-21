@@ -625,6 +625,95 @@ public class EducationOrganizationTargetRefresherTests
         }
     }
 
+    public enum ReadEnd
+    {
+        Failure,
+        Success,
+    }
+
+    [TestFixture(ReadEnd.Failure, false)]
+    [TestFixture(ReadEnd.Failure, true)]
+    [TestFixture(ReadEnd.Success, false)]
+    public class Given_the_caller_cancels_while_loop_shutdown_waits_for_a_renewal(
+        ReadEnd readEnd,
+        bool renewalFindsTheLeaseLost
+    )
+    {
+        private RefresherHarness _harness = null!;
+        private string[] _callsWhileShutdownWaited = null!;
+        private bool _completedWhileShutdownWaited;
+        private Exception? _exception;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new RefresherHarness();
+            TaskCompletionSource<SnapshotTargetResult> loopRenewal = new();
+            _harness.Renew = renewal =>
+                renewal == 2
+                    ? loopRenewal.Task
+                    : RefresherHarness.Result(new SnapshotTargetResult.Success(1));
+            TaskCompletionSource<ReadResult> read = new();
+            _harness.Read = _ => read.Task;
+            using CancellationTokenSource caller = new();
+
+            Task<TargetRefreshOutcome> run = _harness.RunAsync(caller.Token);
+            _harness.Time.Advance(_harness.Settings.RenewalInterval);
+            await _harness.RenewalCalled(2).WaitAsync(_wait);
+
+            // The read ends while the loop renewal is held open, so shutdown waits for it.
+            read.SetResult(
+                readEnd == ReadEnd.Success
+                    ? RefresherHarness.SuccessfulRead(_harness.ReadItems)
+                    : new ReadResult.Failure(
+                        EducationOrganizationProjectionFailure.Create(
+                            EducationOrganizationProjectionFailureCode.TargetSchemaIncompatible,
+                            EducationOrganizationProjectionStage.Page
+                        )
+                    )
+            );
+            _callsWhileShutdownWaited = [.. _harness.Calls];
+            _completedWhileShutdownWaited = run.IsCompleted;
+
+            await caller.CancelAsync();
+            loopRenewal.SetResult(
+                renewalFindsTheLeaseLost
+                    ? new SnapshotTargetResult.LeaseLost(SnapshotLeaseLossReason.Taken)
+                    : new SnapshotTargetResult.Success(1)
+            );
+            try
+            {
+                await run.WaitAsync(_wait);
+            }
+            catch (Exception exception)
+            {
+                _exception = exception;
+            }
+        }
+
+        [Test]
+        public void It_was_waiting_for_the_renewal_when_the_caller_cancelled()
+        {
+            _completedWhileShutdownWaited.Should().BeFalse();
+            _callsWhileShutdownWaited.Should().Equal("Acquire", "Reclaim", "Renew", "Read", "Renew");
+        }
+
+        [Test]
+        public void It_propagates_the_cancellation() =>
+            _exception.Should().BeAssignableTo<OperationCanceledException>();
+
+        [Test]
+        public void It_releases_once_without_staging_or_activating() =>
+            _harness.Calls.Should().Equal("Acquire", "Reclaim", "Renew", "Read", "Renew", "Release");
+
+        [Test]
+        public void It_releases_with_no_caller_token() =>
+            _harness.ReleaseTokens.Should().Equal(CancellationToken.None);
+
+        [Test]
+        public void It_logs_no_outcome() => _harness.Logger.Entries.Should().BeEmpty();
+    }
+
     public enum AcquisitionResult
     {
         Busy,
@@ -1016,6 +1105,41 @@ public class EducationOrganizationTargetRefresherTests
             entry.Field("ExceptionTypeChain").Should().Be(typeof(TimeoutException).FullName);
             entry.Field("FailedOperation").Should().Be("Release");
         }
+    }
+
+    [TestFixture]
+    public class Given_the_caller_cancels_during_the_prune
+    {
+        private RefresherHarness _harness = null!;
+        private TargetRefreshOutcome _outcome = null!;
+
+        [SetUp]
+        public async Task Setup()
+        {
+            _harness = new RefresherHarness();
+            using CancellationTokenSource caller = new();
+            _harness.Prune = () =>
+            {
+                caller.Cancel();
+                return Task.FromCanceled<SnapshotTargetResult>(caller.Token);
+            };
+            _outcome = await _harness.RunAsync(caller.Token);
+        }
+
+        [Test]
+        public void It_still_returns_refreshed() =>
+            _outcome.Should().Be(new TargetRefreshOutcome.Refreshed(RefresherHarness.Generation, 2));
+
+        [Test]
+        public void It_does_not_release_the_published_lease() =>
+            _harness.Calls.Should().NotContain("Release");
+
+        [Test]
+        public void It_logs_the_prune_failure() =>
+            _harness
+                .Logger.Entries.Last()
+                .EventId.Should()
+                .Be(EducationOrganizationTargetRefresher.SnapshotPruneFailed);
     }
 
     [TestFixture(true)]

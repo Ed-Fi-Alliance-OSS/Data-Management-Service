@@ -243,6 +243,10 @@ public sealed class EducationOrganizationTargetRefresher(
             loss = loop.Loss;
         }
 
+        // Stopping waits for an in-flight renewal; a caller cancellation during that wait wins over the read's
+        // result and the renewal's verdict.
+        cancellationToken.ThrowIfCancellationRequested();
+
         if (loss is not null || read is null)
         {
             return log.Report(
