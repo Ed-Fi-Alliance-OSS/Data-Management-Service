@@ -448,6 +448,12 @@ public sealed class ExecutorHarness : IDisposable
             1
         );
         services.AddJobErrorCode("ConsumerRejected", "The consumer rejected the job.");
+        services.AddJobErrorCode("ConsumerBusy", "The consumer was busy.");
+        services.AddJobCompositeErrorCode(
+            "ConsumerIncomplete",
+            "The consumer could not finish every part of the job.",
+            ["ConsumerRejected", "ConsumerBusy"]
+        );
         _provider = services.BuildServiceProvider();
         Scopes = new TrackingScopeFactory(_provider.GetRequiredService<IServiceScopeFactory>());
         Executor = new JobExecutor(
